@@ -288,7 +288,7 @@ impl Html5TreeBuilder {
         if self.insertion_mode == InsertionMode::Text
             && matches!(token, Token::ProcessingInstruction(_))
         {
-            return Err(EngineInvariantError);
+            return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
         }
         debug_assert!(self.pending_tokenizer_control.is_none());
         let validation_checkpoint = self.template_validation_checkpoint();
@@ -311,7 +311,7 @@ impl Html5TreeBuilder {
 
             let exact_state = self.exact_reprocess_state(mode);
             if seen_states.observe(exact_state) {
-                return Err(EngineInvariantError);
+                return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
             }
             self.perf_max_same_token_cycle_states = self
                 .perf_max_same_token_cycle_states

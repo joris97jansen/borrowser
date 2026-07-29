@@ -1,4 +1,3 @@
-use crate::html5::shared::EngineInvariantError;
 use crate::html5::shared::{AtomId, AtomTable, Attribute, AttributeValue, TextValue};
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::TreeBuilderError;
@@ -7,7 +6,9 @@ pub(in crate::html5::tree_builder) fn resolve_atom(
     atoms: &AtomTable,
     id: AtomId,
 ) -> Result<&str, TreeBuilderError> {
-    atoms.resolve(id).ok_or(EngineInvariantError)
+    atoms
+        .resolve(id)
+        .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)
 }
 
 pub(in crate::html5::tree_builder) fn resolve_attribute_value(
@@ -19,7 +20,7 @@ pub(in crate::html5::tree_builder) fn resolve_attribute_value(
         AttributeValue::Span(span) => text
             .resolve_span(*span)
             .map(str::to_string)
-            .map_err(|_| EngineInvariantError),
+            .map_err(|_| crate::html5::shared::ParserFatalError::EngineInvariant),
     }
 }
 
@@ -34,7 +35,7 @@ pub(in crate::html5::tree_builder) fn resolve_text_value(
         TextValue::Span(span) => text
             .resolve_span(*span)
             .map(|value| value.to_string())
-            .map_err(|_| EngineInvariantError),
+            .map_err(|_| crate::html5::shared::ParserFatalError::EngineInvariant),
     }
 }
 
@@ -49,7 +50,7 @@ pub(in crate::html5::tree_builder) fn is_html_whitespace_text(
         TextValue::Span(span) => text
             .resolve_span(*span)
             .map(is_html_whitespace_str)
-            .map_err(|_| EngineInvariantError),
+            .map_err(|_| crate::html5::shared::ParserFatalError::EngineInvariant),
     }
 }
 

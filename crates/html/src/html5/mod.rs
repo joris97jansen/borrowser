@@ -26,10 +26,13 @@ pub use fuzz::{
 ))]
 pub use fuzz::{Html5PipelineRegressionError, render_html5_pipeline_regression_snapshot};
 pub use session::Html5ParseSession;
+#[cfg(all(feature = "internal-api", feature = "parser-failure-injection"))]
+pub use shared::ParserFailureInjection;
 pub use shared::{
     AtomError, AtomId, AtomTable, Attribute, AttributeValue, ByteStreamDecoder, Counters,
     DocumentParseContext, EngineInvariantError, ErrorOrigin, ErrorPolicy, Html5SessionError, Input,
-    ParseError, Span, TextSpan, TextValue, Token,
+    ParseError, ParserFatalError, ParserReservationSite, ParserResourceExhaustion, Span, TextSpan,
+    TextValue, Token,
 };
 pub use tokenizer::{
     Html5Tokenizer, TextModeKind, TextModeNamespace, TextModeSpec, TextResolveError, TextResolver,

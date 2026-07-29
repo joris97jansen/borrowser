@@ -37,6 +37,28 @@ Non-goals / out of scope:
   `AtomTable` bindings
 - bypassing process-level out-of-memory conditions
 
+## Parser Fatal Failure Boundary
+
+AE13b2.2a adds allocation-free `ParserFatalError` identities for engine
+invariants and failures at three explicitly fallible parser-owned reservation
+sites: known-tag atom storage, known-tag lookup storage, and template child
+storage. A stable Rust reservation failure is described as parser-owned
+reservation/resource exhaustion, not definitive out-of-memory.
+
+Construction failure is returned directly. After construction,
+`Html5ParseSession` latches its first parser fatal failure and rejects later
+mutation, finish, patch drain, and requested observation drain operations with
+the same identity. Existing decode handling and recoverable configured
+tokenizer limits are unchanged.
+
+The deterministic failure-injection controller is parser-scoped, uses bounded
+semantic site and occurrence identities, and is available only through
+non-default internal test features. The selected occurrence fires once and
+disarms. It uses no mutable global allocator policy. This boundary does not
+cover tokenizer payload allocation, `Arc<str>` or ASCII-folding allocation,
+general collection growth, process-wide out-of-memory, recovery, retry,
+eviction, or partial-document success.
+
 ## What "Panic-Free" Means
 
 For Borrowser, "panic-free" means:

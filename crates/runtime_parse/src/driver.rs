@@ -10,6 +10,14 @@ use crate::patching::{emit_patch_update, estimate_patch_bytes_slice};
 use crate::policy::{PreviewPolicy, maybe_log_large_buffer};
 use crate::state::RuntimeState;
 
+pub(crate) fn parser_error_discards_unpublished(error: &HtmlParseError) -> bool {
+    matches!(error, HtmlParseError::Fatal(_))
+}
+
+pub(crate) fn parser_error_drains_on_completion(error: &HtmlParseError) -> bool {
+    matches!(error, HtmlParseError::Decode)
+}
+
 fn log_runtime_parse_error(tab_id: TabId, request_id: RequestId, err: &HtmlParseError) {
     match err {
         HtmlParseError::Decode => {
@@ -18,10 +26,10 @@ fn log_runtime_parse_error(tab_id: TabId, request_id: RequestId, err: &HtmlParse
                 "runtime parse decode error tab={tab_id:?} request={request_id:?}"
             );
         }
-        HtmlParseError::Invariant => {
+        HtmlParseError::Fatal(error) => {
             error!(
                 target: "runtime_parse",
-                "runtime parse invariant error tab={tab_id:?} request={request_id:?}"
+                "runtime parse fatal error tab={tab_id:?} request={request_id:?}: {error}"
             );
         }
         HtmlParseError::PatchValidation(detail) => {
@@ -100,6 +108,28 @@ impl RuntimeState {
         self.last_tokens_processed = total;
         self.pending_tokens = self.pending_tokens.saturating_add(delta as usize);
     }
+
+    pub(crate) fn discard_unpublished_after_parser_fatal(&mut self) {
+        self.patch_buffer.clear();
+        self.failed = true;
+        self.reset_pending();
+    }
+}
+
+fn handle_chunk_error(
+    st: &mut RuntimeState,
+    tab_id: TabId,
+    request_id: RequestId,
+    err: HtmlParseError,
+) -> bool {
+    log_runtime_parse_error(tab_id, request_id, &err);
+    if parser_error_discards_unpublished(&err) {
+        st.discard_unpublished_after_parser_fatal();
+        return true;
+    }
+    st.failed = true;
+    st.reset_pending();
+    false
 }
 
 pub(crate) fn handle_runtime_chunk(
@@ -118,17 +148,17 @@ pub(crate) fn handle_runtime_chunk(
     st.total_bytes = st.total_bytes.saturating_add(bytes.len());
     st.pending_bytes = st.pending_bytes.saturating_add(bytes.len());
     if let Err(err) = st.parser.push_bytes(bytes) {
-        log_runtime_parse_error(tab_id, request_id, &err);
-        st.failed = true;
-        st.reset_pending();
+        if handle_chunk_error(st, tab_id, request_id, err) {
+            return true;
+        }
     } else if let Err(err) = st.parser.pump() {
-        log_runtime_parse_error(tab_id, request_id, &err);
-        st.failed = true;
-        st.reset_pending();
+        if handle_chunk_error(st, tab_id, request_id, err) {
+            return true;
+        }
     } else if let Err(err) = st.drain_patches() {
-        log_runtime_parse_error(tab_id, request_id, &err);
-        st.failed = true;
-        st.reset_pending();
+        if handle_chunk_error(st, tab_id, request_id, err) {
+            return true;
+        }
     } else {
         st.update_pending_tokens();
     }
@@ -163,7 +193,11 @@ pub(crate) fn handle_runtime_done(
     }
     if let Err(err) = st.parser.finish() {
         log_runtime_parse_error(tab_id, request_id, &err);
-        if matches!(err, HtmlParseError::Decode) {
+        if parser_error_discards_unpublished(&err) {
+            st.discard_unpublished_after_parser_fatal();
+            return;
+        }
+        if parser_error_drains_on_completion(&err) {
             st.update_pending_tokens();
             let _ = st.drain_patches();
             st.flush_patch_buffer(evt_tx, tab_id, request_id);
@@ -175,6 +209,10 @@ pub(crate) fn handle_runtime_done(
     st.update_pending_tokens();
     if let Err(err) = st.drain_patches() {
         log_runtime_parse_error(tab_id, request_id, &err);
+        if parser_error_discards_unpublished(&err) {
+            st.discard_unpublished_after_parser_fatal();
+            return;
+        }
         st.failed = true;
         st.reset_pending();
         return;

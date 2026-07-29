@@ -2,6 +2,8 @@ use std::sync::atomic::AtomicU64;
 use std::time::Instant;
 
 use core_types::{DomHandle, DomVersion, RequestId, TabId};
+#[cfg(all(test, feature = "parser-failure-injection"))]
+use html::internal::{ParserFailureInjection, html_parser_with_failure_injection};
 use html::{DomPatch, HtmlParseError, HtmlParseOptions, HtmlParser};
 
 pub(crate) static HANDLE_GEN: AtomicU64 = AtomicU64::new(0);
@@ -49,6 +51,18 @@ impl RuntimeState {
             dom_handle,
             version: DomVersion::INITIAL,
         })
+    }
+
+    #[cfg(all(test, feature = "parser-failure-injection"))]
+    pub(crate) fn new_with_failure_injection(
+        now: Instant,
+        patch_buffer_retain: usize,
+        dom_handle: DomHandle,
+        injection: ParserFailureInjection,
+    ) -> Result<Self, HtmlParseError> {
+        let mut state = Self::new(now, patch_buffer_retain, dom_handle)?;
+        state.parser = html_parser_with_failure_injection(runtime_parse_options(), injection)?;
+        Ok(state)
     }
 }
 

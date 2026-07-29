@@ -77,7 +77,7 @@ jobs:
 
       - name: Clippy (deny warnings, html5 hardening/fuzz)
         if: matrix.run_lints
-        run: cargo clippy --workspace --all-targets --features "html5 html5-fuzzing parser-conformance parser_invariants" --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --features "html5 html5-fuzzing parser-conformance parser_invariants parser-failure-injection" --locked -- -D warnings
 
       - name: Build (debug, all targets)
         run: cargo build --workspace --all-targets --locked
@@ -90,6 +90,9 @@ jobs:
 
       - name: Run canonical HTML parser conformance observations
         run: cargo test -p html --test html5_parser_conformance --features parser-conformance --locked
+
+      - name: Run typed HTML parser fatal-failure lane
+        run: make test-html5-parser-fatal-failures
 
       - name: Run HTML5 semantic DOM golden fixtures
         run: cargo test -p html --test html5_golden_tree_builder --features "html5 dom-snapshot parser-conformance" --locked

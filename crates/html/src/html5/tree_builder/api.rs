@@ -1,5 +1,5 @@
 use crate::dom_patch::{DomPatch, PatchKey};
-use crate::html5::shared::{AtomTable, DocumentParseContext, EngineInvariantError, Token};
+use crate::html5::shared::{AtomTable, DocumentParseContext, ParserFatalError, Token};
 use crate::html5::tokenizer::{Html5Tokenizer, TextModeSpec, TextResolver, TokenizerControl};
 use crate::html5::tree_builder::document::{DocumentState, PendingDoctype};
 use crate::html5::tree_builder::formatting::ActiveFormattingList;
@@ -100,15 +100,17 @@ pub enum SuspendReason {
     Other,
 }
 
-/// Tree building should not fail on malformed HTML; internal/resource failures
-/// are the only error surface for now.
+/// Tree building should not fail on malformed HTML; fatal parser execution
+/// failures are the only error surface for now.
 ///
 /// Policy note:
 /// - Some invariants (like atom-table binding) are hard assertions and panic.
-/// - Resource/internal failures continue to flow through this `Result` surface
-///   (for example, key allocator exhaustion) to keep integration call sites
-///   explicit while Core v0 evolves.
-pub type TreeBuilderInternalError = EngineInvariantError;
+/// - Engine invariants and the explicitly covered parser-owned reservation
+///   failures flow through this `Result` surface.
+/// - AE13b2.2a provides typed reservation identity only for template child
+///   storage; later AE13b2.2 children own the remaining tree and patch
+///   allocation audit.
+pub type TreeBuilderInternalError = ParserFatalError;
 pub type TreeBuilderError = TreeBuilderInternalError;
 
 /// Stable parser-owned identity of the current form element.
@@ -151,8 +153,9 @@ impl PendingTextareaInitialLf {
 ///   treated as recoverable and does not surface as an error.
 /// - Public methods may panic on engine invariant violations/misuse (for
 ///   example, passing a foreign `AtomTable`).
-/// - `TreeBuilderError` is reserved for engine invariant violations only
-///   (e.g., invalid text spans or internal key allocator exhaustion).
+/// - `TreeBuilderError` represents fatal parser execution: engine invariants
+///   plus the explicitly covered parser-owned reservation failures. It is
+///   never an authored-input parse error or configured resource-limit result.
 /// - Emitted patch order is deterministic and source-ordered.
 /// - `PatchKey` values are monotonically increasing, non-zero, and never reused
 ///   within a builder instance.
@@ -357,7 +360,7 @@ impl Html5TreeBuilder {
         config: TreeBuilderConfig,
         ctx: &mut DocumentParseContext,
     ) -> Result<Self, TreeBuilderError> {
-        let known_tags = KnownTagIds::intern(&mut ctx.atoms).map_err(|_| EngineInvariantError)?;
+        let known_tags = KnownTagIds::intern(ctx)?;
         let scope_tags = known_tags.scope_tags();
         Ok(Self {
             config,

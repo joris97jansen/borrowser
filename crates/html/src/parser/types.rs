@@ -1,7 +1,7 @@
-use crate::html5::Html5SessionError;
 use crate::html5::shared::{
     Counters as Html5Counters, ErrorOrigin, LegacyParseErrorCode, ParseError as Html5ParseError,
 };
+use crate::html5::{Html5SessionError, ParserFatalError};
 
 /// Stable origin classification for surfaced parse events.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -137,9 +137,8 @@ impl From<Html5Counters> for HtmlParseCounters {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HtmlParseError {
     Decode,
-    /// Terminal parser-state violation, including use after a poisoned
-    /// patch-mirror failure.
-    Invariant,
+    /// Fatal parser execution failure.
+    Fatal(ParserFatalError),
     PatchValidation(String),
 }
 
@@ -147,7 +146,7 @@ impl core::fmt::Display for HtmlParseError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             HtmlParseError::Decode => write!(f, "decode error"),
-            HtmlParseError::Invariant => write!(f, "engine invariant violation"),
+            HtmlParseError::Fatal(error) => error.fmt(f),
             HtmlParseError::PatchValidation(detail) => {
                 write!(f, "patch validation error: {detail}")
             }
@@ -161,7 +160,7 @@ impl From<Html5SessionError> for HtmlParseError {
     fn from(value: Html5SessionError) -> Self {
         match value {
             Html5SessionError::Decode => Self::Decode,
-            Html5SessionError::Invariant => Self::Invariant,
+            Html5SessionError::Fatal(error) => Self::Fatal(error),
         }
     }
 }

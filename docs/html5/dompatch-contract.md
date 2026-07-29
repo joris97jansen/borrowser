@@ -169,8 +169,16 @@ Strict runtime rule (Core v0):
 
 Session API surface:
 
-- `Html5ParseSession::take_patches()` returns raw patches (legacy compatibility).
-- `Html5ParseSession::take_patch_batch()` returns atomic versioned batches.
+- `Html5ParseSession::take_patches()` returns
+  `Result<Vec<DomPatch>, Html5SessionError>`.
+- `Html5ParseSession::take_patch_batch()` returns
+  `Result<Option<DomPatchBatch>, Html5SessionError>`.
+- A live-session parser fatal failure latches the first fatal identity. Neither
+  drain substitutes empty output for that failure, so retained or
+  failed-operation output cannot be mistaken for a successful empty drain.
+- Patches successfully drained and published before a later fatal failure are
+  committed streaming history and are not rolled back. `runtime_parse`
+  discards only its unpublished current buffer after a parser fatal failure.
 
 ## Sink Contract
 

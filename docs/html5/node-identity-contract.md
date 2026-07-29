@@ -87,6 +87,11 @@ Related contracts:
 - Keys are allocated by builder-owned monotonic allocator.
 - Keys are stable and never reused within one builder instance.
 - Emission order is deterministic and source-ordered.
+- The AE13b2.2a template child-storage proof performs its explicitly fallible
+  reservation before logical insertion, patch emission, or patch-key
+  advancement. A failure therefore exposes no identity from the failed
+  operation. This narrow guarantee does not yet make other tree-state or patch
+  allocations fallible.
 
 ### Runtime applier (`crates/browser/src/dom_store.rs`)
 
@@ -124,6 +129,9 @@ For the HTML5 runtime path:
 
 - Emitted patch updates MUST satisfy handle/version continuity.
 - Emitted patch batches MUST be materializable without unknown-node references.
+- A parser fatal failure discards the runtime's unpublished buffer without
+  advancing its pending accounting. Previously published batches and their
+  identities remain valid and are not rolled back.
 - Contract enforcement is test-backed in:
   - `runtime_updates_are_well_formed_and_materializable_if_any`
   - `runtime_emits_updates_for_simple_document_when_strict_enabled`

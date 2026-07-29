@@ -11,6 +11,7 @@ mod error;
 mod input;
 mod observation;
 mod observation_model;
+mod reservation;
 mod span;
 mod token;
 
@@ -21,7 +22,7 @@ pub(crate) use diagnostics::{LegacyDiagnosticProjection, ParserDiagnosticSink};
 #[allow(unused_imports)]
 pub use error::{
     EngineInvariantError, ErrorOrigin, ErrorPolicy, Html5SessionError, LegacyParseErrorCode,
-    ParseError,
+    ParseError, ParserFatalError, ParserReservationSite, ParserResourceExhaustion,
 };
 #[allow(unused_imports)]
 pub use input::{ByteStreamDecoder, DecodeResult, Input};
@@ -35,5 +36,11 @@ pub(crate) use observation::{
     ParserObservationConfig, ParserObservationRecorder,
 };
 pub use observation_model::*;
+#[cfg(all(
+    feature = "parser-failure-injection",
+    any(test, feature = "internal-api")
+))]
+pub use reservation::ParserFailureInjection;
+pub(crate) use reservation::ParserReservationController;
 pub use span::{Span, TextSpan};
 pub use token::{Attribute, AttributeValue, ProcessingInstructionToken, TextValue, Token};

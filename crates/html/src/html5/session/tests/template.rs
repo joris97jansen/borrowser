@@ -81,6 +81,7 @@ fn session_eof_unwinds_template_nesting_beyond_old_dispatch_budget() {
     assert_eq!(
         session
             .take_patches()
+            .expect("session patch drain")
             .iter()
             .filter(|patch| matches!(patch, DomPatch::CreateTemplateContents { .. }))
             .count(),

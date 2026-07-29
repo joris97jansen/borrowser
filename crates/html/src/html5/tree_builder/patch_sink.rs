@@ -1,5 +1,4 @@
 use crate::dom_patch::{DomPatch, PatchKey};
-use crate::html5::shared::EngineInvariantError;
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 use std::num::NonZeroU32;
 
@@ -52,8 +51,9 @@ impl Html5TreeBuilder {
             .next_patch_key
             .get()
             .checked_add(1)
-            .ok_or(EngineInvariantError)?;
-        self.next_patch_key = NonZeroU32::new(next).ok_or(EngineInvariantError)?;
+            .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
+        self.next_patch_key =
+            NonZeroU32::new(next).ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
         Ok(key)
     }
 

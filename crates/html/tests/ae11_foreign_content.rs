@@ -17,7 +17,10 @@ fn parse(chunks: &[&str]) -> (Vec<DomPatch>, Vec<html::html5::ParseError>) {
         session.pump().unwrap();
     }
     session.finish().unwrap();
-    (session.take_patches(), session.parse_errors())
+    (
+        session.take_patches().expect("session patch drain"),
+        session.parse_errors(),
+    )
 }
 
 fn created_elements(patches: &[DomPatch]) -> Vec<(ElementNamespace, String)> {

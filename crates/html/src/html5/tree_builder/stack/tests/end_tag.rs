@@ -1,6 +1,6 @@
 use super::make_scope_tags;
 use crate::dom_patch::PatchKey;
-use crate::html5::shared::{DocumentParseContext, EngineInvariantError};
+use crate::html5::shared::DocumentParseContext;
 use crate::html5::tree_builder::stack::types::OpenElementMatch;
 use crate::html5::tree_builder::stack::{InBodyEndTagScan, OpenElement, OpenElementsStack};
 
@@ -102,7 +102,7 @@ fn exhausting_stack_without_html_root_is_invariant_error() {
 
     assert!(matches!(
         stack.scan_in_body_any_other_end_tag(option, &ctx.atoms),
-        Err(EngineInvariantError)
+        Err(crate::html5::shared::ParserFatalError::EngineInvariant)
     ));
 }
 
@@ -134,7 +134,7 @@ fn stale_generic_end_match_fails_before_mutating_the_stack_suffix() {
 
     assert!(matches!(
         stack.pop_suffix_from_match(matched),
-        Err(EngineInvariantError)
+        Err(crate::html5::shared::ParserFatalError::EngineInvariant)
     ));
     assert_eq!(stack.items, before_items);
     assert_eq!(stack.name_counts, before_name_counts);

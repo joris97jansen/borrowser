@@ -10,7 +10,7 @@ pub(super) fn finish_session_to_dom_lines(session: &mut Html5ParseSession) -> Ve
     session
         .finish_for_test()
         .expect("session finish should remain recoverable");
-    let patches = session.take_patches();
+    let patches = session.take_patches().expect("session patch drain");
     let dom = crate::test_harness::materialize_patch_batches(&[patches])
         .expect("session patches should materialize into a DOM");
     crate::html5::serialize_dom_for_test(&dom)
@@ -33,7 +33,7 @@ pub(super) fn run_session_collect_patches(chunks: &[&str], context: &str) -> Vec
 
     let finish_error = format!("{context} scenario should finish cleanly");
     session.finish_for_test().expect(&finish_error);
-    session.take_patches()
+    session.take_patches().expect("session patch drain")
 }
 
 pub(super) fn create_count_by_key(patches: &[DomPatch]) -> BTreeMap<PatchKey, usize> {

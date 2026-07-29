@@ -1,5 +1,125 @@
-use crate::html5::shared::{AtomError, AtomId, AtomTable};
+use crate::html5::shared::{
+    AtomError, AtomId, AtomTable, DocumentParseContext, ParserFatalError, ParserReservationSite,
+};
 use crate::html5::tree_builder::stack::ScopeTagSet;
+use crate::names::NameInternerStorageReservationError;
+
+const QUALIFIED_FOREIGN_ATTRIBUTE_LOCAL_NAMES: [&str; 12] = [
+    "definitionURL",
+    "actuate",
+    "arcrole",
+    "href",
+    "role",
+    "show",
+    "title",
+    "type",
+    "lang",
+    "space",
+    "xmlns",
+    "xlink",
+];
+
+/// Number of atom identities retained as fields by `KnownTagIds`.
+///
+/// Update this component whenever a retained field is added or removed. The
+/// bootstrap regression test independently counts every supported interning
+/// call through `KnownTagBootstrap`.
+const RETAINED_KNOWN_TAG_FIELD_COUNT: usize = 88;
+
+const KNOWN_TAG_BOOTSTRAP_RESERVATION_BOUND: usize =
+    crate::html5::tree_builder::foreign::SVG_TAG_NAME_ADJUSTMENTS.len()
+        + crate::html5::tree_builder::foreign::SVG_ATTRIBUTE_ADJUSTMENTS.len()
+        + QUALIFIED_FOREIGN_ATTRIBUTE_LOCAL_NAMES.len()
+        + RETAINED_KNOWN_TAG_FIELD_COUNT;
+
+struct KnownTagBootstrap<'a> {
+    atoms: &'a mut AtomTable,
+    #[cfg(test)]
+    calls: usize,
+}
+
+impl<'a> KnownTagBootstrap<'a> {
+    fn new(atoms: &'a mut AtomTable) -> Self {
+        Self {
+            atoms,
+            #[cfg(test)]
+            calls: 0,
+        }
+    }
+
+    fn intern_exact(&mut self, name: &str) -> Result<AtomId, ParserFatalError> {
+        #[cfg(test)]
+        {
+            self.calls += 1;
+        }
+        self.atoms.intern_exact(name).map_err(atom_bootstrap_error)
+    }
+
+    fn intern_ascii_folded(&mut self, name: &str) -> Result<AtomId, ParserFatalError> {
+        #[cfg(test)]
+        {
+            self.calls += 1;
+        }
+        self.atoms
+            .intern_ascii_folded(name)
+            .map_err(atom_bootstrap_error)
+    }
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct KnownTagBootstrapStats {
+    calls: usize,
+    unique_entries: usize,
+    capacities_after_reservation: (usize, usize),
+    capacities_after_population: (usize, usize),
+}
+
+fn atom_bootstrap_error(error: AtomError) -> ParserFatalError {
+    match error {
+        AtomError::InvalidUtf8 | AtomError::OutOfIds => ParserFatalError::EngineInvariant,
+    }
+}
+
+fn reserve_atom_storage(ctx: &mut DocumentParseContext) -> Result<(), ParserFatalError> {
+    let site = ParserReservationSite::KnownTagAtomStorage;
+    ctx.before_reservation(site)
+        .map_err(ParserFatalError::ResourceExhaustion)?;
+    match ctx
+        .atoms
+        .try_reserve_atom_storage(KNOWN_TAG_BOOTSTRAP_RESERVATION_BOUND)
+    {
+        Ok(()) => Ok(()),
+        Err(NameInternerStorageReservationError::LengthOverflow) => {
+            Err(ParserFatalError::EngineInvariant)
+        }
+        Err(NameInternerStorageReservationError::ReservationFailed) => {
+            Err(ParserFatalError::ResourceExhaustion(
+                crate::html5::shared::ParserResourceExhaustion::at(site),
+            ))
+        }
+    }
+}
+
+fn reserve_lookup_storage(ctx: &mut DocumentParseContext) -> Result<(), ParserFatalError> {
+    let site = ParserReservationSite::KnownTagLookupStorage;
+    ctx.before_reservation(site)
+        .map_err(ParserFatalError::ResourceExhaustion)?;
+    match ctx
+        .atoms
+        .try_reserve_lookup_storage(KNOWN_TAG_BOOTSTRAP_RESERVATION_BOUND)
+    {
+        Ok(()) => Ok(()),
+        Err(NameInternerStorageReservationError::LengthOverflow) => {
+            Err(ParserFatalError::EngineInvariant)
+        }
+        Err(NameInternerStorageReservationError::ReservationFailed) => {
+            Err(ParserFatalError::ResourceExhaustion(
+                crate::html5::shared::ParserResourceExhaustion::at(site),
+            ))
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub(in crate::html5::tree_builder) struct KnownTagIds {
@@ -102,119 +222,151 @@ pub(in crate::html5::tree_builder) struct KnownTagIds {
 }
 
 impl KnownTagIds {
-    pub(in crate::html5::tree_builder) fn intern(atoms: &mut AtomTable) -> Result<Self, AtomError> {
-        for &(_, adjusted) in &crate::html5::tree_builder::foreign::SVG_TAG_NAME_ADJUSTMENTS {
-            let _ = atoms.intern_exact(adjusted)?;
+    pub(in crate::html5::tree_builder) fn intern(
+        ctx: &mut DocumentParseContext,
+    ) -> Result<Self, ParserFatalError> {
+        Self::intern_impl(
+            ctx,
+            #[cfg(test)]
+            None,
+        )
+    }
+
+    #[cfg(test)]
+    fn intern_with_stats(
+        ctx: &mut DocumentParseContext,
+    ) -> Result<(Self, KnownTagBootstrapStats), ParserFatalError> {
+        let mut stats = KnownTagBootstrapStats::default();
+        let known = Self::intern_impl(ctx, Some(&mut stats))?;
+        Ok((known, stats))
+    }
+
+    fn intern_impl(
+        ctx: &mut DocumentParseContext,
+        #[cfg(test)] mut stats: Option<&mut KnownTagBootstrapStats>,
+    ) -> Result<Self, ParserFatalError> {
+        reserve_atom_storage(ctx)?;
+        reserve_lookup_storage(ctx)?;
+        #[cfg(test)]
+        let initial_len = ctx.atoms.len();
+        #[cfg(test)]
+        if let Some(stats) = stats.as_deref_mut() {
+            stats.capacities_after_reservation = ctx.atoms.storage_capacities();
         }
-        for &(_, adjusted) in &crate::html5::tree_builder::foreign::SVG_ATTRIBUTE_ADJUSTMENTS {
-            let _ = atoms.intern_exact(adjusted)?;
+        let known = {
+            let mut bootstrap = KnownTagBootstrap::new(&mut ctx.atoms);
+
+            for &(_, adjusted) in &crate::html5::tree_builder::foreign::SVG_TAG_NAME_ADJUSTMENTS {
+                let _ = bootstrap.intern_exact(adjusted)?;
+            }
+            for &(_, adjusted) in &crate::html5::tree_builder::foreign::SVG_ATTRIBUTE_ADJUSTMENTS {
+                let _ = bootstrap.intern_exact(adjusted)?;
+            }
+            for local in QUALIFIED_FOREIGN_ATTRIBUTE_LOCAL_NAMES {
+                let _ = bootstrap.intern_exact(local)?;
+            }
+            let known = Self {
+                a: bootstrap.intern_ascii_folded("a")?,
+                address: bootstrap.intern_ascii_folded("address")?,
+                article: bootstrap.intern_ascii_folded("article")?,
+                aside: bootstrap.intern_ascii_folded("aside")?,
+                b: bootstrap.intern_ascii_folded("b")?,
+                big: bootstrap.intern_ascii_folded("big")?,
+                blockquote: bootstrap.intern_ascii_folded("blockquote")?,
+                code: bootstrap.intern_ascii_folded("code")?,
+                div: bootstrap.intern_ascii_folded("div")?,
+                em: bootstrap.intern_ascii_folded("em")?,
+                footer: bootstrap.intern_ascii_folded("footer")?,
+                font: bootstrap.intern_ascii_folded("font")?,
+                form: bootstrap.intern_ascii_folded("form")?,
+                fieldset: bootstrap.intern_ascii_folded("fieldset")?,
+                h1: bootstrap.intern_ascii_folded("h1")?,
+                h2: bootstrap.intern_ascii_folded("h2")?,
+                h3: bootstrap.intern_ascii_folded("h3")?,
+                h4: bootstrap.intern_ascii_folded("h4")?,
+                h5: bootstrap.intern_ascii_folded("h5")?,
+                h6: bootstrap.intern_ascii_folded("h6")?,
+                header: bootstrap.intern_ascii_folded("header")?,
+                html: bootstrap.intern_ascii_folded("html")?,
+                head: bootstrap.intern_ascii_folded("head")?,
+                body: bootstrap.intern_ascii_folded("body")?,
+                area: bootstrap.intern_ascii_folded("area")?,
+                base: bootstrap.intern_ascii_folded("base")?,
+                basefont: bootstrap.intern_ascii_folded("basefont")?,
+                bgsound: bootstrap.intern_ascii_folded("bgsound")?,
+                br: bootstrap.intern_ascii_folded("br")?,
+                embed: bootstrap.intern_ascii_folded("embed")?,
+                hr: bootstrap.intern_ascii_folded("hr")?,
+                img: bootstrap.intern_ascii_folded("img")?,
+                input: bootstrap.intern_ascii_folded("input")?,
+                keygen: bootstrap.intern_ascii_folded("keygen")?,
+                link: bootstrap.intern_ascii_folded("link")?,
+                meta: bootstrap.intern_ascii_folded("meta")?,
+                param: bootstrap.intern_ascii_folded("param")?,
+                source: bootstrap.intern_ascii_folded("source")?,
+                track: bootstrap.intern_ascii_folded("track")?,
+                wbr: bootstrap.intern_ascii_folded("wbr")?,
+                p: bootstrap.intern_ascii_folded("p")?,
+                i: bootstrap.intern_ascii_folded("i")?,
+                nobr: bootstrap.intern_ascii_folded("nobr")?,
+                s: bootstrap.intern_ascii_folded("s")?,
+                script: bootstrap.intern_ascii_folded("script")?,
+                select: bootstrap.intern_ascii_folded("select")?,
+                option: bootstrap.intern_ascii_folded("option")?,
+                optgroup: bootstrap.intern_ascii_folded("optgroup")?,
+                small: bootstrap.intern_ascii_folded("small")?,
+                strike: bootstrap.intern_ascii_folded("strike")?,
+                strong: bootstrap.intern_ascii_folded("strong")?,
+                style: bootstrap.intern_ascii_folded("style")?,
+                title: bootstrap.intern_ascii_folded("title")?,
+                tt: bootstrap.intern_ascii_folded("tt")?,
+                textarea: bootstrap.intern_ascii_folded("textarea")?,
+                table: bootstrap.intern_ascii_folded("table")?,
+                template: bootstrap.intern_ascii_folded("template")?,
+                tbody: bootstrap.intern_ascii_folded("tbody")?,
+                td: bootstrap.intern_ascii_folded("td")?,
+                tfoot: bootstrap.intern_ascii_folded("tfoot")?,
+                th: bootstrap.intern_ascii_folded("th")?,
+                thead: bootstrap.intern_ascii_folded("thead")?,
+                caption: bootstrap.intern_ascii_folded("caption")?,
+                col: bootstrap.intern_ascii_folded("col")?,
+                colgroup: bootstrap.intern_ascii_folded("colgroup")?,
+                marquee: bootstrap.intern_ascii_folded("marquee")?,
+                object: bootstrap.intern_ascii_folded("object")?,
+                applet: bootstrap.intern_ascii_folded("applet")?,
+                button: bootstrap.intern_ascii_folded("button")?,
+                main: bootstrap.intern_ascii_folded("main")?,
+                nav: bootstrap.intern_ascii_folded("nav")?,
+                ol: bootstrap.intern_ascii_folded("ol")?,
+                pre: bootstrap.intern_ascii_folded("pre")?,
+                section: bootstrap.intern_ascii_folded("section")?,
+                u: bootstrap.intern_ascii_folded("u")?,
+                ul: bootstrap.intern_ascii_folded("ul")?,
+                li: bootstrap.intern_ascii_folded("li")?,
+                tr: bootstrap.intern_ascii_folded("tr")?,
+                svg: bootstrap.intern_ascii_folded("svg")?,
+                math: bootstrap.intern_ascii_folded("math")?,
+                mi: bootstrap.intern_ascii_folded("mi")?,
+                mo: bootstrap.intern_ascii_folded("mo")?,
+                mn: bootstrap.intern_ascii_folded("mn")?,
+                ms: bootstrap.intern_ascii_folded("ms")?,
+                mtext: bootstrap.intern_ascii_folded("mtext")?,
+                annotation_xml: bootstrap.intern_ascii_folded("annotation-xml")?,
+                desc: bootstrap.intern_ascii_folded("desc")?,
+                foreign_object: bootstrap.intern_exact("foreignObject")?,
+            };
+            #[cfg(test)]
+            if let Some(stats) = stats.as_deref_mut() {
+                stats.calls = bootstrap.calls;
+            }
+            known
+        };
+        #[cfg(test)]
+        if let Some(stats) = stats {
+            stats.unique_entries = ctx.atoms.len() - initial_len;
+            stats.capacities_after_population = ctx.atoms.storage_capacities();
         }
-        for local in [
-            "definitionURL",
-            "actuate",
-            "arcrole",
-            "href",
-            "role",
-            "show",
-            "title",
-            "type",
-            "lang",
-            "space",
-            "xmlns",
-            "xlink",
-        ] {
-            let _ = atoms.intern_exact(local)?;
-        }
-        Ok(Self {
-            a: atoms.intern_ascii_folded("a")?,
-            address: atoms.intern_ascii_folded("address")?,
-            article: atoms.intern_ascii_folded("article")?,
-            aside: atoms.intern_ascii_folded("aside")?,
-            b: atoms.intern_ascii_folded("b")?,
-            big: atoms.intern_ascii_folded("big")?,
-            blockquote: atoms.intern_ascii_folded("blockquote")?,
-            code: atoms.intern_ascii_folded("code")?,
-            div: atoms.intern_ascii_folded("div")?,
-            em: atoms.intern_ascii_folded("em")?,
-            footer: atoms.intern_ascii_folded("footer")?,
-            font: atoms.intern_ascii_folded("font")?,
-            form: atoms.intern_ascii_folded("form")?,
-            fieldset: atoms.intern_ascii_folded("fieldset")?,
-            h1: atoms.intern_ascii_folded("h1")?,
-            h2: atoms.intern_ascii_folded("h2")?,
-            h3: atoms.intern_ascii_folded("h3")?,
-            h4: atoms.intern_ascii_folded("h4")?,
-            h5: atoms.intern_ascii_folded("h5")?,
-            h6: atoms.intern_ascii_folded("h6")?,
-            header: atoms.intern_ascii_folded("header")?,
-            html: atoms.intern_ascii_folded("html")?,
-            head: atoms.intern_ascii_folded("head")?,
-            body: atoms.intern_ascii_folded("body")?,
-            area: atoms.intern_ascii_folded("area")?,
-            base: atoms.intern_ascii_folded("base")?,
-            basefont: atoms.intern_ascii_folded("basefont")?,
-            bgsound: atoms.intern_ascii_folded("bgsound")?,
-            br: atoms.intern_ascii_folded("br")?,
-            embed: atoms.intern_ascii_folded("embed")?,
-            hr: atoms.intern_ascii_folded("hr")?,
-            img: atoms.intern_ascii_folded("img")?,
-            input: atoms.intern_ascii_folded("input")?,
-            keygen: atoms.intern_ascii_folded("keygen")?,
-            link: atoms.intern_ascii_folded("link")?,
-            meta: atoms.intern_ascii_folded("meta")?,
-            param: atoms.intern_ascii_folded("param")?,
-            source: atoms.intern_ascii_folded("source")?,
-            track: atoms.intern_ascii_folded("track")?,
-            wbr: atoms.intern_ascii_folded("wbr")?,
-            p: atoms.intern_ascii_folded("p")?,
-            i: atoms.intern_ascii_folded("i")?,
-            nobr: atoms.intern_ascii_folded("nobr")?,
-            s: atoms.intern_ascii_folded("s")?,
-            script: atoms.intern_ascii_folded("script")?,
-            select: atoms.intern_ascii_folded("select")?,
-            option: atoms.intern_ascii_folded("option")?,
-            optgroup: atoms.intern_ascii_folded("optgroup")?,
-            small: atoms.intern_ascii_folded("small")?,
-            strike: atoms.intern_ascii_folded("strike")?,
-            strong: atoms.intern_ascii_folded("strong")?,
-            style: atoms.intern_ascii_folded("style")?,
-            title: atoms.intern_ascii_folded("title")?,
-            tt: atoms.intern_ascii_folded("tt")?,
-            textarea: atoms.intern_ascii_folded("textarea")?,
-            table: atoms.intern_ascii_folded("table")?,
-            template: atoms.intern_ascii_folded("template")?,
-            tbody: atoms.intern_ascii_folded("tbody")?,
-            td: atoms.intern_ascii_folded("td")?,
-            tfoot: atoms.intern_ascii_folded("tfoot")?,
-            th: atoms.intern_ascii_folded("th")?,
-            thead: atoms.intern_ascii_folded("thead")?,
-            caption: atoms.intern_ascii_folded("caption")?,
-            col: atoms.intern_ascii_folded("col")?,
-            colgroup: atoms.intern_ascii_folded("colgroup")?,
-            marquee: atoms.intern_ascii_folded("marquee")?,
-            object: atoms.intern_ascii_folded("object")?,
-            applet: atoms.intern_ascii_folded("applet")?,
-            button: atoms.intern_ascii_folded("button")?,
-            main: atoms.intern_ascii_folded("main")?,
-            nav: atoms.intern_ascii_folded("nav")?,
-            ol: atoms.intern_ascii_folded("ol")?,
-            pre: atoms.intern_ascii_folded("pre")?,
-            section: atoms.intern_ascii_folded("section")?,
-            u: atoms.intern_ascii_folded("u")?,
-            ul: atoms.intern_ascii_folded("ul")?,
-            li: atoms.intern_ascii_folded("li")?,
-            tr: atoms.intern_ascii_folded("tr")?,
-            svg: atoms.intern_ascii_folded("svg")?,
-            math: atoms.intern_ascii_folded("math")?,
-            mi: atoms.intern_ascii_folded("mi")?,
-            mo: atoms.intern_ascii_folded("mo")?,
-            mn: atoms.intern_ascii_folded("mn")?,
-            ms: atoms.intern_ascii_folded("ms")?,
-            mtext: atoms.intern_ascii_folded("mtext")?,
-            annotation_xml: atoms.intern_ascii_folded("annotation-xml")?,
-            desc: atoms.intern_ascii_folded("desc")?,
-            foreign_object: atoms.intern_exact("foreignObject")?,
-        })
+        Ok(known)
     }
 
     #[inline]
@@ -358,13 +510,62 @@ impl KnownTagIds {
 
 #[cfg(test)]
 mod tests {
-    use super::KnownTagIds;
+    use super::{
+        KNOWN_TAG_BOOTSTRAP_RESERVATION_BOUND, KnownTagIds, RETAINED_KNOWN_TAG_FIELD_COUNT,
+    };
     use crate::html5::shared::DocumentParseContext;
+
+    #[test]
+    fn bootstrap_bound_covers_calls_unique_entries_and_collection_capacity() {
+        let mut ctx = DocumentParseContext::new();
+        let (_, stats) = KnownTagIds::intern_with_stats(&mut ctx).expect("known tags");
+
+        assert_eq!(RETAINED_KNOWN_TAG_FIELD_COUNT, 88);
+        assert_eq!(KNOWN_TAG_BOOTSTRAP_RESERVATION_BOUND, 195);
+        assert_eq!(stats.calls, KNOWN_TAG_BOOTSTRAP_RESERVATION_BOUND);
+        assert!(stats.unique_entries <= KNOWN_TAG_BOOTSTRAP_RESERVATION_BOUND);
+        assert_eq!(
+            stats.capacities_after_population, stats.capacities_after_reservation,
+            "bootstrap population must not grow either reserved collection"
+        );
+        ctx.atoms.debug_validate();
+    }
+
+    #[cfg(feature = "parser-failure-injection")]
+    #[test]
+    fn bootstrap_reservation_failures_leave_logical_interner_contents_unchanged() {
+        use crate::html5::shared::{
+            ErrorPolicy, ParserFailureInjection, ParserFatalError, ParserReservationSite,
+        };
+        use std::num::NonZeroU64;
+
+        for site in [
+            ParserReservationSite::KnownTagAtomStorage,
+            ParserReservationSite::KnownTagLookupStorage,
+        ] {
+            let mut ctx = DocumentParseContext::with_failure_injection(
+                ErrorPolicy::default(),
+                ParserFailureInjection::new(site, NonZeroU64::MIN),
+            );
+            let initial_len = ctx.atoms.len();
+            assert_eq!(ctx.atoms.lookup_exact("html"), None);
+
+            let error = KnownTagIds::intern(&mut ctx).expect_err("injected reservation failure");
+            assert!(matches!(
+                error,
+                ParserFatalError::ResourceExhaustion(exhaustion)
+                    if exhaustion.site() == site
+            ));
+            assert_eq!(ctx.atoms.len(), initial_len);
+            assert_eq!(ctx.atoms.lookup_exact("html"), None);
+            ctx.atoms.debug_validate();
+        }
+    }
 
     #[test]
     fn known_tag_scope_tag_view_shares_ids() {
         let mut ctx = DocumentParseContext::new();
-        let known = KnownTagIds::intern(&mut ctx.atoms).expect("known tags");
+        let known = KnownTagIds::intern(&mut ctx).expect("known tags");
         let scope = known.scope_tags();
 
         assert_eq!(scope.html, known.html);
@@ -385,7 +586,7 @@ mod tests {
     #[test]
     fn known_tag_helpers_classify_formatting_and_marker_tags() {
         let mut ctx = DocumentParseContext::new();
-        let known = KnownTagIds::intern(&mut ctx.atoms).expect("known tags");
+        let known = KnownTagIds::intern(&mut ctx).expect("known tags");
 
         assert!(known.is_formatting_tag(known.b));
         assert!(known.is_formatting_tag(known.strong));
@@ -401,7 +602,7 @@ mod tests {
     #[test]
     fn known_tag_helpers_classify_supported_body_recovery_tags() {
         let mut ctx = crate::html5::shared::DocumentParseContext::new();
-        let known = KnownTagIds::intern(&mut ctx.atoms).expect("known tags");
+        let known = KnownTagIds::intern(&mut ctx).expect("known tags");
 
         assert!(known.is_supported_implied_end_tag(known.p));
         assert!(known.is_supported_implied_end_tag(known.li));
@@ -444,7 +645,7 @@ mod tests {
     #[test]
     fn known_tag_helpers_classify_ae9_void_tags() {
         let mut ctx = crate::html5::shared::DocumentParseContext::new();
-        let known = KnownTagIds::intern(&mut ctx.atoms).expect("known tags");
+        let known = KnownTagIds::intern(&mut ctx).expect("known tags");
 
         assert!(known.is_void_tag(known.input));
         assert!(known.is_void_tag(known.keygen));

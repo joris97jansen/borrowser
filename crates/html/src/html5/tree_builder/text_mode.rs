@@ -1,6 +1,6 @@
 use crate::html5::shared::{
-    AtomId, AtomTable, EngineInvariantError, ParserRecoveryAction, Token,
-    TreeConstructionImplementationDiagnosticCode, TreeConstructionParseErrorCode,
+    AtomId, AtomTable, ParserRecoveryAction, Token, TreeConstructionImplementationDiagnosticCode,
+    TreeConstructionParseErrorCode,
 };
 use crate::html5::tokenizer::{TextModeSpec, TextResolver, TokenizerControl};
 use crate::html5::tree_builder::api::PendingTextareaInitialLf;
@@ -52,7 +52,7 @@ impl Html5TreeBuilder {
                 self_closing,
             } => {
                 if context.is_integrated_token() {
-                    return Err(EngineInvariantError);
+                    return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
                 }
                 self.record_tree_implementation_diagnostic(
                     context,
@@ -106,7 +106,7 @@ impl Html5TreeBuilder {
             }
             Token::Doctype { .. } => {
                 if context.is_integrated_token() {
-                    return Err(EngineInvariantError);
+                    return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
                 }
                 self.record_tree_implementation_diagnostic(
                     context,
@@ -121,7 +121,7 @@ impl Html5TreeBuilder {
                     self.exit_text_mode();
                 } else {
                     if context.is_integrated_token() {
-                        return Err(EngineInvariantError);
+                        return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
                     }
                     self.record_tree_implementation_diagnostic(
                         context,

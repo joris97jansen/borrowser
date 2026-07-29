@@ -364,24 +364,27 @@ fn patch_validation_failure_poisons_parser_for_future_mutation_and_drains() {
 
     assert_eq!(
         parser.push_bytes(b"<div>").unwrap_err(),
-        crate::HtmlParseError::Invariant
+        crate::HtmlParseError::Fatal(crate::ParserFatalError::EngineInvariant)
     );
     assert_eq!(
         parser.push_str("<span>").unwrap_err(),
-        crate::HtmlParseError::Invariant
+        crate::HtmlParseError::Fatal(crate::ParserFatalError::EngineInvariant)
     );
-    assert_eq!(parser.pump().unwrap_err(), crate::HtmlParseError::Invariant);
+    assert_eq!(
+        parser.pump().unwrap_err(),
+        crate::HtmlParseError::Fatal(crate::ParserFatalError::EngineInvariant)
+    );
     assert_eq!(
         parser.finish().unwrap_err(),
-        crate::HtmlParseError::Invariant
+        crate::HtmlParseError::Fatal(crate::ParserFatalError::EngineInvariant)
     );
     assert_eq!(
         parser.take_patches().unwrap_err(),
-        crate::HtmlParseError::Invariant
+        crate::HtmlParseError::Fatal(crate::ParserFatalError::EngineInvariant)
     );
     assert_eq!(
         parser.take_patch_batch().unwrap_err(),
-        crate::HtmlParseError::Invariant
+        crate::HtmlParseError::Fatal(crate::ParserFatalError::EngineInvariant)
     );
 }
 
@@ -390,27 +393,52 @@ fn ae13b1_tokenizer_corruption_remains_generic_on_the_stable_facade() {
     let mut cdata = HtmlParser::new(HtmlParseOptions::default()).expect("session init");
     cdata.push_str("]]>").expect("CDATA bytes");
     cdata.force_cdata_end_state_for_test(None, 2);
-    assert_eq!(cdata.pump(), Err(crate::HtmlParseError::Invariant));
+    assert_eq!(
+        cdata.pump(),
+        Err(crate::HtmlParseError::Fatal(
+            crate::ParserFatalError::EngineInvariant
+        ))
+    );
 
     let mut doctype = HtmlParser::new(HtmlParseOptions::default()).expect("session init");
     doctype.force_empty_doctype_name_range_for_test();
-    assert_eq!(doctype.finish(), Err(crate::HtmlParseError::Invariant));
+    assert_eq!(
+        doctype.finish(),
+        Err(crate::HtmlParseError::Fatal(
+            crate::ParserFatalError::EngineInvariant
+        ))
+    );
 
     let mut comment = HtmlParser::new(HtmlParseOptions::default()).expect("session init");
     comment.push_str("<!--x").expect("comment bytes");
     comment.pump().expect("park comment");
     comment.force_comment_start_after_cursor_for_test();
-    assert_eq!(comment.finish(), Err(crate::HtmlParseError::Invariant));
+    assert_eq!(
+        comment.finish(),
+        Err(crate::HtmlParseError::Fatal(
+            crate::ParserFatalError::EngineInvariant
+        ))
+    );
 
     let mut candidate = HtmlParser::new(HtmlParseOptions::default()).expect("session init");
     candidate.push_str("<xtitle>").expect("candidate bytes");
     candidate.force_text_mode_end_tag_evidence_for_test(0, 8, None, None);
-    assert_eq!(candidate.pump(), Err(crate::HtmlParseError::Invariant));
+    assert_eq!(
+        candidate.pump(),
+        Err(crate::HtmlParseError::Fatal(
+            crate::ParserFatalError::EngineInvariant
+        ))
+    );
 
     let mut pi = HtmlParser::new(HtmlParseOptions::default()).expect("session init");
     pi.push_str("<?x").expect("PI bytes");
     pi.force_processing_instruction_metadata_missing_for_test();
-    assert_eq!(pi.pump(), Err(crate::HtmlParseError::Invariant));
+    assert_eq!(
+        pi.pump(),
+        Err(crate::HtmlParseError::Fatal(
+            crate::ParserFatalError::EngineInvariant
+        ))
+    );
 }
 
 #[cfg(feature = "parser-conformance")]
@@ -437,6 +465,7 @@ fn passive_observation_preserves_complete_parser_output_whole_and_chunked() {
         parser.finish().expect("observed finish");
         let capture = parser
             .take_observations_for_conformance()
+            .expect("observation drain")
             .expect("observation capture");
         let output = parser.into_output().expect("observed output");
         (output, capture.tokens.items)
@@ -513,6 +542,7 @@ fn document_mode_capture_is_whole_and_chunk_delivery_invariant() {
         let document_mode = parser.document_mode_for_conformance();
         let capture = parser
             .take_observations_for_conformance()
+            .expect("observation drain")
             .expect("document-mode observation capture");
         assert!(!capture.token_capture_failed);
         assert_eq!(capture.invariant, None);
@@ -625,6 +655,8 @@ fn comment_observation_is_neutral_and_legacy_projection_stays_lossy_at_every_spl
         let completion = parser.finish();
         let capture = observed
             .then(|| parser.take_observations_for_conformance())
+            .transpose()
+            .expect("observation drain")
             .flatten();
         let output = parser.into_output().expect("comment output");
         Run {
@@ -787,6 +819,8 @@ fn start_tag_solidus_semantics_preserve_tokens_diagnostics_dom_and_patches_at_ev
         parser.finish().expect("finish");
         let capture = observed
             .then(|| parser.take_observations_for_conformance())
+            .transpose()
+            .expect("observation drain")
             .flatten();
         let output = parser.into_output().expect("output");
         Run { output, capture }
@@ -997,6 +1031,8 @@ fn supported_void_rule_groups_acknowledge_self_closing_at_every_split() {
         parser.finish().expect("void-rule finish");
         let capture = observed
             .then(|| parser.take_observations_for_conformance())
+            .transpose()
+            .expect("observation drain")
             .flatten();
         let output = parser.into_output().expect("void-rule output");
         Run { output, capture }
@@ -1139,6 +1175,8 @@ fn configured_insertion_suppression_never_claims_legacy_stack_alteration() {
         parser.finish().expect("limit finish");
         let capture = observed
             .then(|| parser.take_observations_for_conformance())
+            .transpose()
+            .expect("observation drain")
             .flatten();
         let output = parser.into_output().expect("limit output");
         Run { output, capture }
@@ -1271,6 +1309,8 @@ fn text_mode_end_tag_position_observation_preserves_dom_patches_and_legacy_outpu
         let completion = parser.finish();
         let capture = observed
             .then(|| parser.take_observations_for_conformance())
+            .transpose()
+            .expect("observation drain")
             .flatten();
         let output = parser.into_output().expect("text-mode output");
         Run {
@@ -1389,6 +1429,8 @@ fn tokenizer_recovery_metadata_matches_literal_references_and_duplicate_attribut
         let completion = parser.finish();
         let capture = observed
             .then(|| parser.take_observations_for_conformance())
+            .transpose()
+            .expect("observation drain")
             .flatten();
         let output = parser.into_output().expect("output");
         Run {
@@ -1619,7 +1661,11 @@ fn malformed_byte_observation_is_counter_and_output_neutral_at_every_split() {
         }
         let completion = parser.finish();
         let normalized_input = parser.normalized_input_for_test().to_owned();
-        let capture = diagnostic_capacity.and_then(|_| parser.take_observations_for_conformance());
+        let capture = diagnostic_capacity
+            .map(|_| parser.take_observations_for_conformance())
+            .transpose()
+            .expect("observation drain")
+            .flatten();
         let output = parser
             .into_output()
             .expect("materialize malformed-byte parse");
@@ -1763,6 +1809,7 @@ fn tree_errors_count_without_becoming_fabricated_legacy_position_events() {
     assert_eq!(observed.counters().errors_dropped, 0);
     let capture = observed
         .take_observations_for_conformance()
+        .expect("observation drain")
         .expect("capture");
     assert_eq!(capture.parse_errors.items.len(), 1);
     assert_eq!(
@@ -1811,4 +1858,36 @@ fn integrated_text_mode_eof_counts_once_without_a_legacy_position_event() {
         );
         let _ = parser.into_output().expect("output");
     }
+}
+
+#[cfg(feature = "parser-failure-injection")]
+#[test]
+fn facade_and_one_shot_preserve_typed_parser_fatal_failure() {
+    use crate::html5::shared::{ParserFailureInjection, ParserReservationSite};
+    use std::num::NonZeroU64;
+
+    let injection =
+        ParserFailureInjection::new(ParserReservationSite::TemplateChildStorage, NonZeroU64::MIN);
+    let mut parser = HtmlParser::new_with_failure_injection(HtmlParseOptions::default(), injection)
+        .expect("injected facade construction");
+    parser.push_str("<template>").expect("template input");
+    let fatal = parser.pump().expect_err("template reservation failure");
+    assert!(matches!(
+        fatal,
+        crate::HtmlParseError::Fatal(crate::ParserFatalError::ResourceExhaustion(exhaustion))
+            if exhaustion.site() == ParserReservationSite::TemplateChildStorage
+    ));
+    assert_eq!(
+        parser.take_patches().expect_err("facade drain after fatal"),
+        fatal
+    );
+    assert_eq!(parser.into_output().expect_err("output after fatal"), fatal);
+
+    let one_shot = super::parse_document_with_failure_injection(
+        "<template>",
+        HtmlParseOptions::default(),
+        injection,
+    )
+    .expect_err("one-shot parse must publish no output after fatal failure");
+    assert_eq!(one_shot, fatal);
 }

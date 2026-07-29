@@ -11,9 +11,11 @@
 //! `check_patch_invariants`.
 
 use crate::dom_patch::{DomPatch, PatchKey};
+use crate::html5::shared::{ParserReservationSite, ParserResourceExhaustion};
 use crate::html5::tree_builder::invariants::{
     DomInvariantNode, DomInvariantNodeKind, DomInvariantState,
 };
+use crate::html5::tree_builder::process_context::TreeBuilderProcessContext;
 use crate::names::ElementNamespace;
 use crate::types::ParserCreatedFragmentKind;
 use crate::{ExpandedElementName, ParserCreatedAttribute};
@@ -35,7 +37,7 @@ pub(in crate::html5::tree_builder) enum ChildInsertionReservationError {
     InvalidBeforeSibling,
     InvalidChild,
     ArithmeticOverflow,
-    AllocationFailure,
+    ResourceExhaustion(ParserResourceExhaustion),
 }
 
 impl LiveNodeKind {
@@ -82,8 +84,6 @@ impl LiveNode {
 pub(in crate::html5::tree_builder) struct LiveTree {
     nodes: Vec<Option<LiveNode>>,
     root: Option<PatchKey>,
-    #[cfg(test)]
-    fail_next_child_reservation: Option<ChildInsertionReservationError>,
 }
 
 impl LiveTree {
@@ -105,12 +105,16 @@ impl LiveTree {
     ///
     /// `child` is `None` for a not-yet-created node. An existing child already
     /// attached to `parent` does not increase the final child count, including
-    /// insert-before moves within the same parent.
+    /// insert-before moves within the same parent. The requesting
+    /// tree-construction operation supplies the semantic reservation identity;
+    /// this generic storage helper only preserves it.
     pub(in crate::html5::tree_builder) fn try_reserve_child_insertion(
         &mut self,
         parent: PatchKey,
         child: Option<PatchKey>,
         before: Option<PatchKey>,
+        reservation_site: ParserReservationSite,
+        context: &mut TreeBuilderProcessContext<'_>,
     ) -> Result<(), ChildInsertionReservationError> {
         let parent_node = self
             .nodes
@@ -142,25 +146,20 @@ impl LiveTree {
         };
         checked_child_insertion_len(parent_node.children.len(), additional)?;
 
-        #[cfg(test)]
-        if additional > 0
-            && let Some(error) = self.fail_next_child_reservation.take()
-        {
-            return Err(error);
+        if additional > 0 {
+            context
+                .before_reservation(reservation_site)
+                .map_err(ChildInsertionReservationError::ResourceExhaustion)?;
         }
 
         self.node_mut(parent)
             .children
             .try_reserve(additional)
-            .map_err(|_| ChildInsertionReservationError::AllocationFailure)
-    }
-
-    #[cfg(test)]
-    pub(in crate::html5::tree_builder) fn fail_next_child_reservation_for_test(
-        &mut self,
-        error: ChildInsertionReservationError,
-    ) {
-        self.fail_next_child_reservation = Some(error);
+            .map_err(|_| {
+                ChildInsertionReservationError::ResourceExhaustion(ParserResourceExhaustion::at(
+                    reservation_site,
+                ))
+            })
     }
 
     pub(in crate::html5::tree_builder) fn apply_structural_patch(&mut self, patch: &DomPatch) {
@@ -535,6 +534,7 @@ mod reservation_tests {
 
     #[test]
     fn child_reservation_accounts_for_same_parent_insertions_and_fragment_parents() {
+        let mut context = crate::html5::shared::DocumentParseContext::new();
         let mut tree = LiveTree::default();
         for patch in [
             DomPatch::CreateDocument {
@@ -576,33 +576,95 @@ mod reservation_tests {
             apply(&mut tree, patch);
         }
 
-        tree.fail_next_child_reservation_for_test(
-            ChildInsertionReservationError::AllocationFailure,
-        );
-        tree.try_reserve_child_insertion(PatchKey(3), Some(PatchKey(5)), Some(PatchKey(4)))
-            .expect("same-parent insert-before does not increase final child count");
-        assert!(
-            tree.try_reserve_child_insertion(PatchKey(3), None, Some(PatchKey(4)))
-                .is_err(),
-            "fresh insertion under a template fragment must consume the reservation seam"
-        );
+        tree.try_reserve_child_insertion(
+            PatchKey(3),
+            Some(PatchKey(5)),
+            Some(PatchKey(4)),
+            crate::html5::shared::ParserReservationSite::TemplateChildStorage,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut context),
+        )
+        .expect("same-parent insert-before does not increase final child count");
+        tree.try_reserve_child_insertion(
+            PatchKey(3),
+            None,
+            Some(PatchKey(4)),
+            crate::html5::shared::ParserReservationSite::TemplateChildStorage,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut context),
+        )
+        .expect("fresh insertion under a template fragment reserves one child slot");
 
         assert_eq!(
-            tree.try_reserve_child_insertion(PatchKey(99), None, None),
+            tree.try_reserve_child_insertion(
+                PatchKey(99),
+                None,
+                None,
+                crate::html5::shared::ParserReservationSite::TemplateChildStorage,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut context),
+            ),
             Err(ChildInsertionReservationError::InvalidParent)
         );
         assert_eq!(
-            tree.try_reserve_child_insertion(PatchKey(3), None, Some(PatchKey(2))),
+            tree.try_reserve_child_insertion(
+                PatchKey(3),
+                None,
+                Some(PatchKey(2)),
+                crate::html5::shared::ParserReservationSite::TemplateChildStorage,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut context),
+            ),
             Err(ChildInsertionReservationError::InvalidBeforeSibling)
         );
         assert_eq!(
-            tree.try_reserve_child_insertion(PatchKey(3), Some(PatchKey(99)), None),
+            tree.try_reserve_child_insertion(
+                PatchKey(3),
+                Some(PatchKey(99)),
+                None,
+                crate::html5::shared::ParserReservationSite::TemplateChildStorage,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut context),
+            ),
             Err(ChildInsertionReservationError::InvalidChild)
         );
         assert_eq!(
             checked_child_insertion_len(usize::MAX, 1),
             Err(ChildInsertionReservationError::ArithmeticOverflow)
         );
+    }
+
+    #[cfg(feature = "parser-failure-injection")]
+    #[test]
+    fn child_reservation_preserves_the_operation_supplied_semantic_site() {
+        use crate::html5::shared::{
+            DocumentParseContext, ErrorPolicy, ParserFailureInjection, ParserReservationSite,
+        };
+        use std::num::NonZeroU64;
+
+        let operation_site = ParserReservationSite::KnownTagLookupStorage;
+        let mut context = DocumentParseContext::with_failure_injection(
+            ErrorPolicy::default(),
+            ParserFailureInjection::new(operation_site, NonZeroU64::MIN),
+        );
+        let mut tree = LiveTree::default();
+        apply(
+            &mut tree,
+            DomPatch::CreateDocument {
+                key: PatchKey(1),
+                doctype: None,
+            },
+        );
+
+        let error = tree
+            .try_reserve_child_insertion(
+                PatchKey(1),
+                None,
+                None,
+                operation_site,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut context),
+            )
+            .expect_err("operation-selected site must drive injected failure");
+        assert!(matches!(
+            error,
+            ChildInsertionReservationError::ResourceExhaustion(exhaustion)
+                if exhaustion.site() == operation_site
+        ));
     }
 }
 

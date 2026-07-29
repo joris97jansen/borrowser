@@ -101,6 +101,8 @@ pub use crate::dom_diff::{
     DomDiffState, diff_dom, diff_dom_stateless, diff_dom_with_state, diff_from_empty,
 };
 pub use crate::dom_patch::{DomPatch, DomPatchBatch, PatchKey};
+#[cfg(feature = "html5")]
+pub use crate::html5::{ParserFatalError, ParserReservationSite, ParserResourceExhaustion};
 pub use crate::names::{
     ElementNamespace, ExpandedElementName, InternedLocalName, NameAtomId as AtomId,
     NameInterner as AtomTable,
@@ -115,6 +117,8 @@ pub use crate::types::{ElementNode, Node, ProcessingInstructionNode};
 
 #[cfg(feature = "internal-api")]
 pub mod internal {
+    #[cfg(all(feature = "html5", feature = "parser-failure-injection"))]
+    pub use super::html5::ParserFailureInjection;
     pub use super::processing_instruction::{
         ParserCreatedProcessingInstructionError, validate_parser_created_processing_instruction,
     };
@@ -124,6 +128,23 @@ pub mod internal {
     };
     use super::{ElementNamespace, ExpandedElementName, Node, ParserCreatedAttribute};
     use std::sync::{Mutex, OnceLock};
+
+    #[cfg(all(feature = "html5", feature = "parser-failure-injection"))]
+    pub fn html_parser_with_failure_injection(
+        options: super::HtmlParseOptions,
+        injection: ParserFailureInjection,
+    ) -> Result<super::HtmlParser, super::HtmlParseError> {
+        super::HtmlParser::new_with_failure_injection(options, injection)
+    }
+
+    #[cfg(all(feature = "html5", feature = "parser-failure-injection"))]
+    pub fn parse_document_with_failure_injection(
+        input: impl AsRef<[u8]>,
+        options: super::HtmlParseOptions,
+        injection: ParserFailureInjection,
+    ) -> Result<super::ParseOutput, super::HtmlParseError> {
+        super::parser::parse_document_with_failure_injection(input, options, injection)
+    }
 
     fn synthetic_name_interner() -> &'static Mutex<super::AtomTable> {
         static NAMES: OnceLock<Mutex<super::AtomTable>> = OnceLock::new();

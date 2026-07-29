@@ -2,7 +2,8 @@ use crate::html5::shared::ObservedInsertionMode;
 use crate::html5::shared::Token;
 use crate::html5::shared::{
     AtomTable, DocumentParseContext, ParseErrorCode, ParserContextSummary, ParserDiagnosticSink,
-    ParserRecoveryAction, ParserResourceLimit, ParserTokenKind,
+    ParserRecoveryAction, ParserReservationController, ParserReservationSite,
+    ParserResourceExhaustion, ParserResourceLimit, ParserTokenKind,
     TreeConstructionImplementationDiagnosticCode, TreeConstructionParseErrorCode,
 };
 use crate::html5::tree_builder::TreeBuilderError;
@@ -72,6 +73,7 @@ pub struct TreeBuilderProcessContext<'a> {
     token_kind: ParserTokenKind,
     token_source: TreeBuilderTokenSource,
     self_closing_flag: SelfClosingFlagEffect,
+    reservations: &'a mut ParserReservationController,
 }
 
 impl<'a> TreeBuilderProcessContext<'a> {
@@ -94,6 +96,7 @@ impl<'a> TreeBuilderProcessContext<'a> {
             error_policy,
             errors,
             observations,
+            reservations,
         } = parse_context;
         Self {
             atoms,
@@ -103,6 +106,7 @@ impl<'a> TreeBuilderProcessContext<'a> {
             token_kind: ParserTokenKind::Eof,
             token_source,
             self_closing_flag: SelfClosingFlagEffect::NotPresent,
+            reservations,
         }
     }
 
@@ -118,6 +122,14 @@ impl<'a> TreeBuilderProcessContext<'a> {
 
     pub fn atoms(&self) -> &'a AtomTable {
         self.atoms
+    }
+
+    #[inline]
+    pub(in crate::html5::tree_builder) fn before_reservation(
+        &mut self,
+        site: ParserReservationSite,
+    ) -> Result<(), ParserResourceExhaustion> {
+        self.reservations.before_reservation(site)
     }
 
     pub(in crate::html5::tree_builder) fn is_integrated_token(&self) -> bool {
@@ -192,7 +204,7 @@ impl<'a> TreeBuilderProcessContext<'a> {
                 Ok(())
             }
             (current, next) if current == next => Ok(()),
-            _ => Err(crate::html5::shared::EngineInvariantError),
+            _ => Err(crate::html5::shared::ParserFatalError::EngineInvariant),
         }
     }
 

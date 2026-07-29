@@ -1,4 +1,6 @@
 mod aaa;
+#[cfg(feature = "parser-failure-injection")]
+mod fatal_failures;
 mod formatting;
 mod reconstruction;
 mod smoke;

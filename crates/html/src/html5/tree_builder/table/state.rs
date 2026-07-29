@@ -1,5 +1,5 @@
 use crate::dom_patch::PatchKey;
-use crate::html5::shared::{AtomId, EngineInvariantError};
+use crate::html5::shared::AtomId;
 use crate::html5::tokenizer::is_html_space;
 use crate::html5::tree_builder::Html5TreeBuilder;
 use crate::html5::tree_builder::TreeBuilderError;
@@ -80,7 +80,7 @@ impl Html5TreeBuilder {
         resolved: &str,
     ) -> Result<(), TreeBuilderError> {
         let Some(state) = self.pending_table_text.as_mut() else {
-            return Err(EngineInvariantError);
+            return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
         };
         state.tokens.push_str(resolved);
         Ok(())
@@ -95,13 +95,13 @@ impl Html5TreeBuilder {
         original_mode: InsertionMode,
     ) -> Result<(), TreeBuilderError> {
         if self.pending_table_text.is_some() {
-            return Err(EngineInvariantError);
+            return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
         }
         if !matches!(
             original_mode,
             InsertionMode::InTable | InsertionMode::InTableBody | InsertionMode::InRow
         ) {
-            return Err(EngineInvariantError);
+            return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
         }
         self.pending_table_text = Some(PendingTableTextState::new(original_mode));
         self.insertion_mode = InsertionMode::InTableText;
@@ -112,10 +112,10 @@ impl Html5TreeBuilder {
         &mut self,
     ) -> Result<PendingTableTextState, TreeBuilderError> {
         if self.insertion_mode != InsertionMode::InTableText {
-            return Err(EngineInvariantError);
+            return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
         }
         let Some(state) = self.pending_table_text.take() else {
-            return Err(EngineInvariantError);
+            return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
         };
         Ok(state)
     }
@@ -154,7 +154,10 @@ impl Html5TreeBuilder {
         for index in (0..self.open_elements.len()).rev() {
             self.perf_reset_insertion_mode_scan_steps =
                 self.perf_reset_insertion_mode_scan_steps.saturating_add(1);
-            let entry = self.open_elements.get(index).ok_or(EngineInvariantError)?;
+            let entry = self
+                .open_elements
+                .get(index)
+                .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
             if entry.namespace() != crate::ElementNamespace::Html {
                 continue;
             }
@@ -175,9 +178,12 @@ impl Html5TreeBuilder {
             } else if name == self.known_tags.table {
                 Some(InsertionMode::InTable)
             } else if name == self.known_tags.template {
-                let current = self.template_modes.current().ok_or(EngineInvariantError)?;
+                let current = self
+                    .template_modes
+                    .current()
+                    .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
                 if current.owner() != entry.key() {
-                    return Err(EngineInvariantError);
+                    return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
                 }
                 Some(current.mode().as_insertion_mode())
             } else if name == self.known_tags.head {
@@ -198,6 +204,6 @@ impl Html5TreeBuilder {
                 return Ok(mode);
             }
         }
-        Err(EngineInvariantError)
+        Err(crate::html5::shared::ParserFatalError::EngineInvariant)
     }
 }

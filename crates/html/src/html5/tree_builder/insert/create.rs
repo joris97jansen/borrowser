@@ -1,9 +1,7 @@
 use crate::attributes::ParserCreatedAttribute;
 use crate::dom_patch::DomPatch;
 use crate::dom_patch::PatchKey;
-use crate::html5::shared::{
-    AtomId, AtomTable, Attribute, EngineInvariantError, ProcessingInstructionToken, TextValue,
-};
+use crate::html5::shared::{AtomId, AtomTable, Attribute, ProcessingInstructionToken, TextValue};
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::attributes::{
     resolve_afe_attributes_first_wins, resolve_token_attributes_first_wins,
@@ -73,7 +71,7 @@ impl Html5TreeBuilder {
             let key = this.alloc_patch_key()?;
             let expanded_name = atoms
                 .expanded_name(namespace, name)
-                .ok_or(EngineInvariantError)?;
+                .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
             this.push_structural_patch(DomPatch::CreateElement {
                 key,
                 name: expanded_name,
@@ -85,7 +83,10 @@ impl Html5TreeBuilder {
             let entry = OpenElement::new_foreign(key, namespace, name);
             this.open_elements.push(entry);
             if self_closing {
-                let popped = this.open_elements.pop().ok_or(EngineInvariantError)?;
+                let popped = this
+                    .open_elements
+                    .pop()
+                    .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
                 debug_assert_eq!(popped, entry);
             }
             Ok(Some(key))
@@ -107,7 +108,7 @@ impl Html5TreeBuilder {
             key,
             name: atoms
                 .expanded_name(ElementNamespace::Html, name)
-                .ok_or(EngineInvariantError)?,
+                .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?,
             attributes: attrs.to_vec(),
         });
         self.note_node_created();
@@ -351,11 +352,14 @@ impl Html5TreeBuilder {
             return Ok(None);
         }
         let key_value = self.next_patch_key.get();
-        let next_value = key_value.checked_add(1).ok_or(EngineInvariantError)?;
-        let next_key = NonZeroU32::new(next_value).ok_or(EngineInvariantError)?;
+        let next_value = key_value
+            .checked_add(1)
+            .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
+        let next_key = NonZeroU32::new(next_value)
+            .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
         let expanded_name = atoms
             .expanded_name(ElementNamespace::Html, name)
-            .ok_or(EngineInvariantError)?;
+            .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
         Ok(Some(HtmlElementInsertionPreflight {
             location,
             key: PatchKey(key_value),
@@ -462,7 +466,7 @@ impl Html5TreeBuilder {
             &token.target,
             &data,
         )
-        .map_err(|_| EngineInvariantError)?;
+        .map_err(|_| crate::html5::shared::ParserFatalError::EngineInvariant)?;
         self.with_structural_mutation(|this| {
             let _ = this.ensure_document_created(context)?;
             let location = this.adjusted_insertion_location(override_parent)?;
@@ -481,7 +485,7 @@ impl Html5TreeBuilder {
             &token.target,
             &data,
         )
-        .map_err(|_| EngineInvariantError)?;
+        .map_err(|_| crate::html5::shared::ParserFatalError::EngineInvariant)?;
         self.with_structural_mutation(|this| {
             let document_key = this.ensure_document_created_for_initial_node()?;
             let location = this.adjusted_insertion_location(Some(document_key))?;

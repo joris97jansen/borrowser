@@ -1,5 +1,5 @@
 use crate::attributes::{ParserCreatedAttribute, QualifiedAttributeName};
-use crate::html5::shared::{AtomTable, Attribute, EngineInvariantError};
+use crate::html5::shared::{AtomTable, Attribute};
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::TreeBuilderError;
 use crate::html5::tree_builder::resolve::{resolve_atom, resolve_attribute_value};
@@ -29,7 +29,7 @@ pub(in crate::html5::tree_builder) fn adjust_foreign_attributes(
             atoms
                 .lookup_exact(local)
                 .and_then(|id| atoms.resolve_local_name(id))
-                .ok_or(EngineInvariantError)
+                .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)
         };
         let name = match super::qualified_foreign_attribute_adjustment(raw) {
             Some(super::QualifiedForeignAttributeAdjustment::Xml(local)) => {

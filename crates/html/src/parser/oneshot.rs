@@ -31,7 +31,13 @@ pub fn parse_document(
     #[cfg(feature = "parse-guards")]
     crate::parse_guards::record_full_parse_entry();
 
-    let mut parser = HtmlParser::new(options)?;
+    parse_document_with_parser(input, HtmlParser::new(options)?)
+}
+
+fn parse_document_with_parser(
+    input: impl AsRef<[u8]>,
+    mut parser: HtmlParser,
+) -> Result<ParseOutput, HtmlParseError> {
     parser.push_bytes(input.as_ref())?;
     parser.finish()?;
 
@@ -39,4 +45,22 @@ pub fn parse_document(
     crate::parse_guards::record_full_parse_output();
 
     parser.into_output()
+}
+
+#[cfg(all(
+    feature = "parser-failure-injection",
+    any(test, feature = "internal-api")
+))]
+pub(crate) fn parse_document_with_failure_injection(
+    input: impl AsRef<[u8]>,
+    options: HtmlParseOptions,
+    injection: crate::html5::shared::ParserFailureInjection,
+) -> Result<ParseOutput, HtmlParseError> {
+    #[cfg(feature = "parse-guards")]
+    crate::parse_guards::record_full_parse_entry();
+
+    parse_document_with_parser(
+        input,
+        HtmlParser::new_with_failure_injection(options, injection)?,
+    )
 }

@@ -1,5 +1,10 @@
 //! Document-level parse context and parser-owned observation fanout.
 
+#[cfg(all(
+    feature = "parser-failure-injection",
+    any(test, feature = "internal-api")
+))]
+use super::ParserFailureInjection;
 #[cfg(any(test, feature = "parser-conformance"))]
 use super::ParserObservationCapture;
 use super::{
@@ -8,6 +13,7 @@ use super::{
     ParserObservationConfig, ParserObservationRecorder, ParserRecoveryAction, ParserResourceLimit,
     ParserStage, Utf8ReplacementPayload, Utf8ReplacementReason, WhatwgParseErrorCode,
 };
+use super::{ParserReservationController, ParserReservationSite, ParserResourceExhaustion};
 use std::collections::VecDeque;
 
 /// Document-level resources shared by the production tokenizer and tree builder.
@@ -18,6 +24,7 @@ pub struct DocumentParseContext {
     pub error_policy: ErrorPolicy,
     pub errors: Option<VecDeque<ParseError>>,
     pub(crate) observations: Option<ParserObservationRecorder>,
+    pub(crate) reservations: ParserReservationController,
 }
 
 impl Default for DocumentParseContext {
@@ -50,6 +57,7 @@ impl DocumentParseContext {
             error_policy,
             errors: None,
             observations: ParserObservationRecorder::new(observations),
+            reservations: ParserReservationController::default(),
         };
         if ctx.error_policy.track
             && ctx.error_policy.max_stored != 0
@@ -58,6 +66,42 @@ impl DocumentParseContext {
             ctx.errors = Some(VecDeque::new());
         }
         ctx
+    }
+
+    #[cfg(all(
+        feature = "parser-failure-injection",
+        any(test, feature = "internal-api")
+    ))]
+    pub(crate) fn with_failure_injection(
+        error_policy: ErrorPolicy,
+        injection: ParserFailureInjection,
+    ) -> Self {
+        let mut ctx = Self::build(error_policy, ParserObservationConfig::default());
+        ctx.reservations = ParserReservationController::with_failure(injection);
+        ctx
+    }
+
+    #[cfg(all(
+        test,
+        feature = "parser-conformance",
+        feature = "parser-failure-injection"
+    ))]
+    pub(crate) fn with_observations_and_failure_injection(
+        error_policy: ErrorPolicy,
+        observations: ParserObservationConfig,
+        injection: ParserFailureInjection,
+    ) -> Self {
+        let mut ctx = Self::build(error_policy, observations);
+        ctx.reservations = ParserReservationController::with_failure(injection);
+        ctx
+    }
+
+    #[inline]
+    pub(crate) fn before_reservation(
+        &mut self,
+        site: ParserReservationSite,
+    ) -> Result<(), ParserResourceExhaustion> {
+        self.reservations.before_reservation(site)
     }
 
     /// Record one exact recoverable tokenizer error at its production source.
