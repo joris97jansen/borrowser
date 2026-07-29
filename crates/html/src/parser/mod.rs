@@ -8,6 +8,11 @@ mod types;
 mod tests;
 
 pub use self::oneshot::parse_document;
+#[cfg(all(
+    feature = "parser-failure-injection",
+    any(test, feature = "internal-api")
+))]
+pub(crate) use self::oneshot::parse_document_with_failure_injection;
 pub use self::options::{
     HtmlErrorPolicy, HtmlParseOptions, HtmlTokenizerLimits, HtmlTokenizerOptions,
     HtmlTreeBuilderLimits, HtmlTreeBuilderOptions,

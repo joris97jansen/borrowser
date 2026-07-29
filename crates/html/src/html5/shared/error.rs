@@ -55,25 +55,151 @@ impl Default for ErrorPolicy {
 }
 
 /// Engine invariant violation (bug/corruption), not a recoverable HTML error.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EngineInvariantError;
+
+/// Semantic parser-owned reservation boundary.
+///
+/// The identity deliberately does not expose the backing collection type.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ParserReservationSite {
+    KnownTagAtomStorage,
+    KnownTagLookupStorage,
+    TemplateChildStorage,
+}
+
+/// Failure of an explicitly fallible parser-owned reservation boundary.
+///
+/// Stable Rust does not expose the allocator-refusal/capacity-overflow
+/// distinction of `TryReserveError`, so this is intentionally not named
+/// "out of memory".
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ParserResourceExhaustion {
+    site: ParserReservationSite,
+}
+
+impl ParserResourceExhaustion {
+    pub const fn site(self) -> ParserReservationSite {
+        self.site
+    }
+
+    pub(crate) const fn at(site: ParserReservationSite) -> Self {
+        Self { site }
+    }
+}
+
+impl std::fmt::Display for ParserResourceExhaustion {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.site {
+            ParserReservationSite::KnownTagAtomStorage => {
+                formatter.write_str("HTML parser-owned reservation failed at KnownTagAtomStorage")
+            }
+            ParserReservationSite::KnownTagLookupStorage => {
+                formatter.write_str("HTML parser-owned reservation failed at KnownTagLookupStorage")
+            }
+            ParserReservationSite::TemplateChildStorage => {
+                formatter.write_str("HTML parser-owned reservation failed at TemplateChildStorage")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ParserResourceExhaustion {}
+
+/// Fatal parser execution failure.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ParserFatalError {
+    EngineInvariant,
+    ResourceExhaustion(ParserResourceExhaustion),
+}
+
+impl std::fmt::Display for ParserFatalError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EngineInvariant => formatter.write_str("HTML parser engine invariant violation"),
+            Self::ResourceExhaustion(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for ParserFatalError {}
+
+impl From<EngineInvariantError> for ParserFatalError {
+    fn from(_: EngineInvariantError) -> Self {
+        Self::EngineInvariant
+    }
+}
+
+impl From<ParserResourceExhaustion> for ParserFatalError {
+    fn from(error: ParserResourceExhaustion) -> Self {
+        Self::ResourceExhaustion(error)
+    }
+}
 
 /// Session error classification for the HTML5 parsing path.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Html5SessionError {
     /// Input/decoding failure (not an engine invariant).
     Decode,
-    /// Engine invariant violation (bug/corruption).
-    Invariant,
+    /// Fatal parser execution failure. Live sessions latch this category.
+    Fatal(ParserFatalError),
 }
 
 impl std::fmt::Display for Html5SessionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Html5SessionError::Decode => write!(f, "html5 decode error"),
-            Html5SessionError::Invariant => write!(f, "html5 engine invariant violation"),
+            Html5SessionError::Fatal(error) => error.fmt(f),
         }
     }
 }
 
 impl std::error::Error for Html5SessionError {}
+
+impl From<ParserFatalError> for Html5SessionError {
+    fn from(error: ParserFatalError) -> Self {
+        Self::Fatal(error)
+    }
+}
+
+impl From<EngineInvariantError> for Html5SessionError {
+    fn from(error: EngineInvariantError) -> Self {
+        Self::Fatal(error.into())
+    }
+}
+
+#[cfg(test)]
+mod fatal_display_tests {
+    use super::{ParserFatalError, ParserReservationSite, ParserResourceExhaustion};
+
+    #[test]
+    fn fatal_display_uses_static_semantic_text_for_every_current_identity() {
+        assert_eq!(
+            ParserFatalError::EngineInvariant.to_string(),
+            "HTML parser engine invariant violation"
+        );
+        for (site, expected) in [
+            (
+                ParserReservationSite::KnownTagAtomStorage,
+                "HTML parser-owned reservation failed at KnownTagAtomStorage",
+            ),
+            (
+                ParserReservationSite::KnownTagLookupStorage,
+                "HTML parser-owned reservation failed at KnownTagLookupStorage",
+            ),
+            (
+                ParserReservationSite::TemplateChildStorage,
+                "HTML parser-owned reservation failed at TemplateChildStorage",
+            ),
+        ] {
+            assert_eq!(
+                ParserFatalError::ResourceExhaustion(ParserResourceExhaustion::at(site))
+                    .to_string(),
+                expected
+            );
+        }
+    }
+}

@@ -1,5 +1,5 @@
 use crate::attributes::ParserCreatedAttribute;
-use crate::html5::shared::{AtomTable, Attribute, EngineInvariantError};
+use crate::html5::shared::{AtomTable, Attribute};
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::TreeBuilderError;
 use crate::html5::tree_builder::resolve::resolve_attribute_value;
@@ -20,7 +20,7 @@ pub(in crate::html5::tree_builder) fn resolve_token_attributes_first_wins(
         seen.push(attr.name);
         let local_name = atoms
             .resolve_local_name(attr.name)
-            .ok_or(EngineInvariantError)?;
+            .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
         attributes.push(ParserCreatedAttribute::new(
             crate::attributes::QualifiedAttributeName::unqualified(local_name),
             resolve_attribute_value(attr, text)?,

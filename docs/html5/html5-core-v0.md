@@ -536,8 +536,10 @@ Core v0 stance:
   created contents roots, owner-aware template modes, shared dispatch,
   template-aware adjusted/foster insertion, exact last-marker closure, semantic
   reprocessing cycle/progress separation, and deterministic depth-decreasing
-  EOF unwind. Template starts reserve final parent-child storage before commit;
-  typed reservation errors distinguish resource denial from engine corruption.
+  EOF unwind. AE13b2.2a makes the final template parent child-storage
+  reservation explicitly fallible before commit and distinguishes its
+  parser-owned reservation/resource exhaustion from engine corruption. Other
+  template and tree-state allocations remain outside this typed coverage.
   Ordinary tokens use O(1) template-validation fast paths, and start/replace/
   close validation is transition-local, while heavy full-model audits remain
   test/fuzz/invariant work. Same-token fingerprints are only lookup keys for
@@ -546,6 +548,28 @@ Core v0 stance:
   EOF close/owner/reset work with O(1) auxiliary recovery memory. Contents are
   preserved in the centralized full-model traversal and inert to active
   consumers.
+
+- AE13b2.2a defines allocation-free parser fatal identities and first-failure
+  terminal latching for live `Html5ParseSession` work. Construction failures
+  are returned directly because no session exists to latch them. Patch and
+  requested-observation drains preserve a fatal result; normal successful
+  incremental draining, repeated finish behavior, and final output behavior
+  are unchanged. Decode errors retain their separate propagation and runtime
+  completion policy.
+- The covered reservation sites are known-tag atom storage, known-tag lookup
+  storage, and template child storage. Known-tag bootstrap reserves both
+  interner collections before insertion using a conservative 195-call bound:
+  37 SVG adjusted tag names + 58 SVG adjusted attribute names + 12 qualified
+  foreign-attribute local names + 88 retained `KnownTagIds` fields. Duplicate
+  names may make the unique-entry count smaller. Call counting, bootstrap
+  statistics, and collection-capacity inspection exist only in test builds;
+  normal construction retains only the two reservations and the canonical
+  insertion sequence.
+- This is partial, explicitly fallible parser-owned reservation coverage. It
+  neither intercepts ordinary standard-library allocation failure nor provides
+  process-wide out-of-memory recovery. In particular, `Arc<str>` creation,
+  ASCII-folding allocation, ordinary insertion growth, and non-bootstrap name
+  interning remain deferred.
 
 <a id="explicitly-unsupported-or-deferred-in-core-v0"></a>
 ## Explicitly Unsupported Or Deferred In Core v0

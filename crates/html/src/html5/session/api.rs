@@ -3,7 +3,8 @@ use crate::html5::bridge::PatchEmitterAdapter;
 #[cfg(feature = "parser-conformance")]
 use crate::html5::shared::ParserObservationCapture;
 use crate::html5::shared::{
-    ByteStreamDecoder, Counters, DocumentParseContext, Html5SessionError, Input, ParseError,
+    ByteStreamDecoder, Counters, DocumentParseContext, EngineInvariantError, Html5SessionError,
+    Input, ParseError, ParserFatalError,
 };
 #[cfg(all(test, feature = "parser-conformance"))]
 use crate::html5::tokenizer::TokenizerControl;
@@ -21,8 +22,15 @@ pub struct Html5ParseSession {
     pub(super) builder: Html5TreeBuilder,
     pub(super) patch_emitter: PatchEmitterAdapter,
     pub(super) next_patch_batch_version: u64,
+    pub(super) state: Html5ParseSessionState,
     #[cfg(all(test, feature = "parser-conformance"))]
     pub(super) applied_tokenizer_controls_for_test: Vec<TokenizerControl>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Html5ParseSessionState {
+    Usable,
+    Failed(ParserFatalError),
 }
 
 // Post-finish draining should converge in a handful of iterations because
@@ -55,8 +63,8 @@ impl Html5ParseSession {
         mut ctx: DocumentParseContext,
     ) -> Result<Self, Html5SessionError> {
         let tokenizer = Html5Tokenizer::new(tokenizer_config, &mut ctx);
-        let builder = Html5TreeBuilder::new(builder_config, &mut ctx)
-            .map_err(|_| Html5SessionError::Invariant)?;
+        let builder =
+            Html5TreeBuilder::new(builder_config, &mut ctx).map_err(Html5SessionError::Fatal)?;
         Ok(Self {
             ctx,
             decoder: ByteStreamDecoder::new(),
@@ -65,12 +73,19 @@ impl Html5ParseSession {
             builder,
             patch_emitter: PatchEmitterAdapter::new(),
             next_patch_batch_version: 0,
+            state: Html5ParseSessionState::Usable,
             #[cfg(all(test, feature = "parser-conformance"))]
             applied_tokenizer_controls_for_test: Vec::new(),
         })
     }
 
     pub fn push_bytes(&mut self, bytes: &[u8]) -> Result<(), Html5SessionError> {
+        self.ensure_usable()?;
+        let result = self.push_bytes_usable(bytes);
+        self.latch_fatal(result)
+    }
+
+    fn push_bytes_usable(&mut self, bytes: &[u8]) -> Result<(), Html5SessionError> {
         if self.ctx.observation_enabled() {
             let _ = self
                 .decoder
@@ -83,6 +98,12 @@ impl Html5ParseSession {
     }
 
     pub fn push_str(&mut self, text: &str) -> Result<(), Html5SessionError> {
+        self.ensure_usable()?;
+        let result = self.push_str_usable(text);
+        self.latch_fatal(result)
+    }
+
+    fn push_str_usable(&mut self, text: &str) -> Result<(), Html5SessionError> {
         if self.ctx.observation_enabled() {
             self.input
                 .push_str_observed(text, self.ctx.observation_position_index_mut());
@@ -93,12 +114,20 @@ impl Html5ParseSession {
     }
 
     pub fn pump(&mut self) -> Result<(), Html5SessionError> {
-        self.pump_live_input()?;
+        self.ensure_usable()?;
+        let result = self.pump_live_input();
+        self.latch_fatal(result)?;
         self.sync_debug_counters();
         Ok(())
     }
 
     pub fn finish(&mut self) -> Result<(), Html5SessionError> {
+        self.ensure_usable()?;
+        let result = self.finish_usable();
+        self.latch_fatal(result)
+    }
+
+    fn finish_usable(&mut self) -> Result<(), Html5SessionError> {
         self.pump_live_input()?;
         if self.ctx.observation_enabled() {
             let _ = self
@@ -113,7 +142,7 @@ impl Html5ParseSession {
             .tokenizer
             .finish_with_context(&self.input, &mut self.ctx);
         if self.tokenizer.invariant_failure_kind().is_some() {
-            return Err(Html5SessionError::Invariant);
+            return Err(EngineInvariantError.into());
         }
         self.drain_post_finish_batches(POST_FINISH_DRAIN_BUDGET)?;
         self.finalize_adapter_invariants()?;
@@ -121,7 +150,8 @@ impl Html5ParseSession {
         Ok(())
     }
 
-    pub fn take_patches(&mut self) -> Vec<DomPatch> {
+    pub fn take_patches(&mut self) -> Result<Vec<DomPatch>, Html5SessionError> {
+        self.ensure_usable()?;
         let patches = self.patch_emitter.take_patches();
         if !patches.is_empty() {
             // patches_emitted counts patches returned to the runtime via take_patches.
@@ -131,21 +161,21 @@ impl Html5ParseSession {
                 .patches_emitted
                 .saturating_add(patches.len() as u64);
         }
-        patches
+        Ok(patches)
     }
 
     /// Drain the next atomic patch batch with explicit version transition.
     ///
     /// Empty drains return `None` and do not advance version.
-    pub fn take_patch_batch(&mut self) -> Option<DomPatchBatch> {
-        let patches = self.take_patches();
+    pub fn take_patch_batch(&mut self) -> Result<Option<DomPatchBatch>, Html5SessionError> {
+        let patches = self.take_patches()?;
         if patches.is_empty() {
-            return None;
+            return Ok(None);
         }
         let from = self.next_patch_batch_version;
         let batch = DomPatchBatch::new(from, patches);
         self.next_patch_batch_version = batch.to;
-        Some(batch)
+        Ok(Some(batch))
     }
 
     pub fn tokens_processed(&self) -> u64 {
@@ -161,8 +191,11 @@ impl Html5ParseSession {
     }
 
     #[cfg(feature = "parser-conformance")]
-    pub(crate) fn take_observations_for_conformance(&mut self) -> Option<ParserObservationCapture> {
-        self.ctx.take_observations()
+    pub(crate) fn take_observations_for_conformance(
+        &mut self,
+    ) -> Result<Option<ParserObservationCapture>, Html5SessionError> {
+        self.ensure_usable()?;
+        Ok(self.ctx.take_observations())
     }
 
     #[cfg(feature = "parser-conformance")]
@@ -175,6 +208,32 @@ impl Html5ParseSession {
         &self,
     ) -> Option<crate::html5::tokenizer::TokenizerInvariantKind> {
         self.tokenizer.invariant_failure_kind()
+    }
+
+    fn ensure_usable(&self) -> Result<(), Html5SessionError> {
+        match self.state {
+            Html5ParseSessionState::Usable => Ok(()),
+            Html5ParseSessionState::Failed(error) => Err(Html5SessionError::Fatal(error)),
+        }
+    }
+
+    fn latch_fatal<T>(
+        &mut self,
+        result: Result<T, Html5SessionError>,
+    ) -> Result<T, Html5SessionError> {
+        match result {
+            Err(Html5SessionError::Fatal(error)) => {
+                let authoritative = match self.state {
+                    Html5ParseSessionState::Usable => {
+                        self.state = Html5ParseSessionState::Failed(error);
+                        error
+                    }
+                    Html5ParseSessionState::Failed(first) => first,
+                };
+                Err(Html5SessionError::Fatal(authoritative))
+            }
+            other => other,
+        }
     }
 
     #[cfg(test)]

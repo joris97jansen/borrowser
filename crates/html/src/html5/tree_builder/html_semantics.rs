@@ -124,7 +124,7 @@ mod tests {
     use super::{HTML_SPECIAL_ELEMENT_NAMES, is_special_element, is_special_html_element};
     use crate::ElementNamespace;
     use crate::dom_patch::PatchKey;
-    use crate::html5::shared::{AtomId, DocumentParseContext, EngineInvariantError};
+    use crate::html5::shared::{AtomId, DocumentParseContext};
     use crate::html5::tree_builder::stack::OpenElement;
 
     // Independent pinned test oracle. Do not derive this from the production
@@ -355,7 +355,7 @@ mod tests {
                 AtomId::for_test(ctx.atoms.id() as u32, u32::MAX),
                 &ctx.atoms,
             ),
-            Err(EngineInvariantError)
+            Err(crate::html5::shared::ParserFatalError::EngineInvariant)
         ));
     }
 }

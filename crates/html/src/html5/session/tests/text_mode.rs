@@ -161,8 +161,10 @@ fn parser_observations_do_not_change_text_mode_tokenizer_controls() {
         let legacy_errors = session.parse_errors();
         let capture = observed
             .then(|| session.take_observations_for_conformance())
+            .transpose()
+            .expect("observation drain")
             .flatten();
-        let patches = session.take_patches();
+        let patches = session.take_patches().expect("session patch drain");
         let dom = crate::test_harness::materialize_patch_batches(std::slice::from_ref(&patches))
             .expect("session patches should materialize");
         let dom_summary = crate::html5::serialize_dom_for_test(&dom);

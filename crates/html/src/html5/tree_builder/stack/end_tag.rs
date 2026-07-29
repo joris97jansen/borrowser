@@ -1,6 +1,6 @@
 use super::open_elements::OpenElementsStack;
 use super::types::{InBodyEndTagScan, OpenElement, OpenElementMatch};
-use crate::html5::shared::{AtomId, AtomTable, EngineInvariantError};
+use crate::html5::shared::{AtomId, AtomTable};
 use crate::html5::tree_builder::TreeBuilderError;
 use crate::html5::tree_builder::html_semantics::is_special_element;
 
@@ -32,7 +32,7 @@ impl OpenElementsStack {
         // Full-document InBody processing must retain the special HTML root.
         // Exhaustion therefore identifies broken parser state, not malformed
         // input recovery.
-        Err(EngineInvariantError)
+        Err(crate::html5::shared::ParserFatalError::EngineInvariant)
     }
 
     /// Removes the stack suffix through an identity/index captured by a prior
@@ -42,18 +42,24 @@ impl OpenElementsStack {
         matched: OpenElementMatch,
     ) -> Result<OpenElement, TreeBuilderError> {
         if self.items.get(matched.index).copied() != Some(matched.element) {
-            return Err(EngineInvariantError);
+            return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
         }
         let old_len = self.items.len();
         self.foster_parenting_cache
             .note_suffix_removal(matched.index, old_len);
         while self.items.len() > matched.index + 1 {
-            let popped = self.items.pop().ok_or(EngineInvariantError)?;
+            let popped = self
+                .items
+                .pop()
+                .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
             self.note_name_pop(popped.expanded_name_key());
         }
-        let target = self.items.pop().ok_or(EngineInvariantError)?;
+        let target = self
+            .items
+            .pop()
+            .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
         if target != matched.element {
-            return Err(EngineInvariantError);
+            return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
         }
         self.note_name_pop(target.expanded_name_key());
         self.pop_ops = self

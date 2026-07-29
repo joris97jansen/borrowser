@@ -86,9 +86,10 @@ Public API (feature gated, `html5`):
   - `decoder(&mut self) -> &mut ByteStreamDecoder`
 - `pub struct Html5ParseSession { ... }` (runtime entrypoint; feature gated)
   - Owns `ByteStreamDecoder`, decoded `Input`, `Html5Tokenizer`, and `Html5TreeBuilder`
-  - `push_bytes(&mut self, bytes: &[u8]) -> Result<(), EngineInvariantError>`
-  - `pump(&mut self) -> Result<(), EngineInvariantError>`
-  - `take_patches(&mut self) -> Vec<DomPatch>`
+  - `push_bytes(&mut self, bytes: &[u8]) -> Result<(), Html5SessionError>`
+  - `pump(&mut self) -> Result<(), Html5SessionError>`
+  - `take_patches(&mut self) -> Result<Vec<DomPatch>, Html5SessionError>`
+  - `take_patch_batch(&mut self) -> Result<Option<DomPatchBatch>, Html5SessionError>`
 - `pub struct Html5TreeBuilder { ... }`
   - `new(config, ctx: &mut DocumentParseContext) -> Self`
   - `push_token(&mut self, token: &Token, atoms: &AtomTable, text: &dyn TextResolver, sink: &mut dyn PatchSink) -> Result<(), TreeBuilderError>`
@@ -102,9 +103,31 @@ Internal API:
 Error strategy:
 - HTML5 tokenization parse errors are **non-fatal**; they are recorded and processing continues.
 - HTML tree building is not expected to error on malformed HTML; it recovers per spec.
-- Tree builder errors are **engine invariant violations** (e.g., invalid patch keys, impossible internal states). These are fatal for the current stream and result in a controlled reset (see failure modes).
-- `TreeBuilderError` may be kept for recoverable/spec-level cases if ever introduced; `EngineInvariantError` is reserved for bug/corruption failures (aliasing allowed).
-- Allocation failures or internal panics are treated as fatal and reported to `runtime_parse`.
+- Fatal parser execution failures are typed as `ParserFatalError`. Engine
+  invariants and explicitly fallible parser-owned reservation/resource
+  exhaustion are distinct fatal identities and are never HTML parse errors or
+  configured resource-limit diagnostics.
+- A fatal failure during `Html5ParseSession` construction is returned directly.
+  After construction, the session latches the first `ParserFatalError`; later
+  mutation, finish, patch drain, and requested observation drain operations
+  return that same identity. Existing decode-error propagation is not part of
+  this fatal latch.
+- Fatal identities contain bounded enums and static display text only. They do
+  not retain `TryReserveError`, allocator text, paths, or owned diagnostic
+  payloads. Current reservation diagnostics end in the semantic identities
+  `KnownTagAtomStorage`, `KnownTagLookupStorage`, or
+  `TemplateChildStorage`.
+- AE13b2.2a covers only the explicitly fallible
+  `KnownTagAtomStorage`, `KnownTagLookupStorage`, and
+  `TemplateChildStorage` reservation boundaries. A stable Rust
+  `TryReserveError` is reported truthfully as parser-owned
+  reservation/resource exhaustion, not definitive process out-of-memory.
+  Ordinary `Arc<str>`, `String`, formatting, cloning, and collection-growth
+  allocations remain outside typed coverage pending later AE13b2.2 work.
+- Tree-construction operations own their semantic reservation-site identity.
+  Generic `LiveTree` child-storage validation and reservation accepts that
+  identity from its caller; template-start dispatch supplies
+  `TemplateChildStorage`.
 
 Parse error handling (html5):
 - **Model:** `ParseError { origin, code, position, detail, aux }` with `ErrorOrigin` (Tokenizer/TreeBuilder) and `ParseErrorCode` for spec-defined classes. `position` is a byte offset into the decoded Input buffer.
@@ -112,6 +135,13 @@ Parse error handling (html5):
 - **Storage:** store up to N most recent errors (oldest dropped). Counters increment when `track_counters` is enabled, even if storage is disabled.
 - **Panic-free guarantee:** malformed HTML must never panic; all spec parse errors are recoverable. Only engine invariant violations may stop the stream.
 - **Invariant violations include:** patch protocol violations, span resolution failures (epoch mismatch or invalid boundaries), and impossible internal state transitions.
+
+`runtime_parse` treats every parser fatal identity uniformly: it marks the
+request failed, clears unpublished runtime patches and pending accounting, and
+returns before flush-policy evaluation. It never rolls back batches already
+published by an earlier successful operation. Decode completion retains its
+existing, separate handling, including its existing opportunity to drain
+available patches.
 
 ## Atom + tag/attribute name normalization (HTML5)
 

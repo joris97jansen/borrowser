@@ -1,6 +1,12 @@
 use crate::dom_patch::{DomPatch, DomPatchBatch};
 use crate::html5::Html5ParseSession;
+use crate::html5::ParserFatalError;
 use crate::html5::shared::DocumentParseContext;
+#[cfg(all(
+    feature = "parser-failure-injection",
+    any(test, feature = "internal-api")
+))]
+use crate::html5::shared::ParserFailureInjection;
 #[cfg(feature = "parser-conformance")]
 use crate::html5::shared::{ParserObservationCapture, ParserObservationConfig};
 use crate::patch_validation::PatchValidationArena;
@@ -13,7 +19,7 @@ use super::types::{HtmlParseCounters, HtmlParseError, HtmlParseEvent};
 ///
 /// If internal patch-mirror validation fails while draining emitted patches, the
 /// parser transitions into a terminal poisoned state. Subsequent mutating or
-/// draining operations return `HtmlParseError::Invariant` deterministically
+/// draining operations return a fatal engine-invariant identity deterministically
 /// rather than continuing with a partially updated mirror.
 ///
 /// # Examples
@@ -49,6 +55,19 @@ impl HtmlParser {
         Self::with_context(options, ctx)
     }
 
+    #[cfg(all(
+        feature = "parser-failure-injection",
+        any(test, feature = "internal-api")
+    ))]
+    pub(crate) fn new_with_failure_injection(
+        options: HtmlParseOptions,
+        injection: ParserFailureInjection,
+    ) -> Result<Self, HtmlParseError> {
+        let ctx =
+            DocumentParseContext::with_failure_injection(options.error_policy.into(), injection);
+        Self::with_context(options, ctx)
+    }
+
     #[cfg(feature = "parser-conformance")]
     pub(crate) fn new_with_observations(
         options: HtmlParseOptions,
@@ -56,6 +75,24 @@ impl HtmlParser {
     ) -> Result<Self, HtmlParseError> {
         let ctx =
             DocumentParseContext::with_observations(options.error_policy.into(), observations);
+        Self::with_context(options, ctx)
+    }
+
+    #[cfg(all(
+        test,
+        feature = "parser-conformance",
+        feature = "parser-failure-injection"
+    ))]
+    pub(crate) fn new_with_observations_and_failure_injection(
+        options: HtmlParseOptions,
+        observations: ParserObservationConfig,
+        injection: ParserFailureInjection,
+    ) -> Result<Self, HtmlParseError> {
+        let ctx = DocumentParseContext::with_observations_and_failure_injection(
+            options.error_policy.into(),
+            observations,
+            injection,
+        );
         Self::with_context(options, ctx)
     }
 
@@ -74,8 +111,11 @@ impl HtmlParser {
     }
 
     #[cfg(feature = "parser-conformance")]
-    pub(crate) fn take_observations_for_conformance(&mut self) -> Option<ParserObservationCapture> {
-        self.session.take_observations_for_conformance()
+    pub(crate) fn take_observations_for_conformance(
+        &mut self,
+    ) -> Result<Option<ParserObservationCapture>, HtmlParseError> {
+        self.ensure_not_poisoned()?;
+        Ok(self.session.take_observations_for_conformance()?)
     }
 
     #[cfg(feature = "parser-conformance")]
@@ -88,6 +128,11 @@ impl HtmlParser {
         &self,
     ) -> Option<crate::html5::tokenizer::TokenizerInvariantKind> {
         self.session.tokenizer_invariant_for_conformance()
+    }
+
+    #[cfg(all(test, feature = "parser-conformance"))]
+    pub(crate) fn inject_patch_for_conformance_test(&mut self, patch: DomPatch) {
+        self.session.inject_patch_for_test(patch);
     }
 
     /// Append raw bytes to the session decoder/input buffer.
@@ -130,7 +175,7 @@ impl HtmlParser {
     /// exposes only the undrained remainder in `patches`.
     pub fn take_patches(&mut self) -> Result<Vec<DomPatch>, HtmlParseError> {
         self.ensure_not_poisoned()?;
-        let patches = self.session.take_patches();
+        let patches = self.session.take_patches()?;
         self.apply_patches(&patches)?;
         if !patches.is_empty() {
             self.patches_drained_before_output = true;
@@ -310,7 +355,7 @@ impl HtmlParser {
         record_user_drain: bool,
     ) -> Result<Option<DomPatchBatch>, HtmlParseError> {
         self.ensure_not_poisoned()?;
-        let Some(batch) = self.session.take_patch_batch() else {
+        let Some(batch) = self.session.take_patch_batch()? else {
             return Ok(None);
         };
         self.apply_patches(&batch.patches)?;
@@ -322,7 +367,7 @@ impl HtmlParser {
 
     fn ensure_not_poisoned(&self) -> Result<(), HtmlParseError> {
         if self.poisoned {
-            return Err(HtmlParseError::Invariant);
+            return Err(HtmlParseError::Fatal(ParserFatalError::EngineInvariant));
         }
         Ok(())
     }

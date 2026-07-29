@@ -54,6 +54,7 @@ pub struct ParserObservationRequest<'a> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ParserObservationExecutionError {
+    ParserFatal(crate::ParserFatalError),
     ParserInvariant,
     TokenizerInvariant(ParserTokenizerInvariantError),
     TokenCanonicalizationInvariant,
@@ -109,6 +110,7 @@ pub enum ParserObservationInvariantError {
 impl std::fmt::Display for ParserObservationExecutionError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::ParserFatal(error) => write!(formatter, "production HTML parser failed: {error}"),
             Self::ParserInvariant => formatter.write_str("production HTML parser invariant failed"),
             Self::TokenizerInvariant(invariant) => {
                 write!(
@@ -173,7 +175,7 @@ fn execute_document_parser(
 ) -> Result<(ParserObservationCapture, crate::DocumentMode), ParserObservationExecutionError> {
     let observation_requested = config.is_requested();
     let mut parser = HtmlParser::new_with_observations(HtmlParseOptions::default(), config)
-        .map_err(|_| ParserObservationExecutionError::ParserInvariant)?;
+        .map_err(parser_error_without_live_parser)?;
     match input {
         ParserObservationInput::Utf8(text) => {
             push_document_text(&mut parser, text)?;
@@ -192,16 +194,23 @@ fn execute_document_parser(
             }
         }
     }
-    if parser.finish().is_err() {
-        return Err(document_parser_error(&parser));
+    if let Err(error) = parser.finish() {
+        return Err(document_parser_operation_error(&parser, error));
     }
+    finalize_document_parser(parser, observation_requested)
+}
+
+fn finalize_document_parser(
+    mut parser: HtmlParser,
+    observation_requested: bool,
+) -> Result<(ParserObservationCapture, crate::DocumentMode), ParserObservationExecutionError> {
     let document_mode = parser.document_mode_for_conformance();
     let capture = take_document_capture(&mut parser, observation_requested)?;
     // Run the same final materialization path as the stable facade before
     // exposing observations, even though AE13b1 does not capture the tree.
     let _ = parser
         .into_output()
-        .map_err(|_| ParserObservationExecutionError::ParserInvariant)?;
+        .map_err(parser_error_without_live_parser)?;
     Ok((capture, document_mode))
 }
 
@@ -209,8 +218,8 @@ fn push_document_text(
     parser: &mut HtmlParser,
     text: &str,
 ) -> Result<(), ParserObservationExecutionError> {
-    if parser.push_str(text).and_then(|()| parser.pump()).is_err() {
-        return Err(document_parser_error(parser));
+    if let Err(error) = parser.push_str(text).and_then(|()| parser.pump()) {
+        return Err(document_parser_operation_error(parser, error));
     }
     Ok(())
 }
@@ -219,22 +228,51 @@ fn push_document_bytes(
     parser: &mut HtmlParser,
     bytes: &[u8],
 ) -> Result<(), ParserObservationExecutionError> {
-    if parser
-        .push_bytes(bytes)
-        .and_then(|()| parser.pump())
-        .is_err()
-    {
-        return Err(document_parser_error(parser));
+    if let Err(error) = parser.push_bytes(bytes).and_then(|()| parser.pump()) {
+        return Err(document_parser_operation_error(parser, error));
     }
     Ok(())
 }
 
+fn document_parser_operation_error(
+    parser: &HtmlParser,
+    error: crate::HtmlParseError,
+) -> ParserObservationExecutionError {
+    match error {
+        crate::HtmlParseError::Fatal(crate::ParserFatalError::EngineInvariant) => parser
+            .tokenizer_invariant_for_conformance()
+            .map(public_tokenizer_invariant)
+            .map(ParserObservationExecutionError::TokenizerInvariant)
+            .unwrap_or(ParserObservationExecutionError::ParserFatal(
+                crate::ParserFatalError::EngineInvariant,
+            )),
+        crate::HtmlParseError::Fatal(error) => ParserObservationExecutionError::ParserFatal(error),
+        crate::HtmlParseError::Decode | crate::HtmlParseError::PatchValidation(_) => {
+            ParserObservationExecutionError::ParserInvariant
+        }
+    }
+}
+
+#[cfg(test)]
 fn document_parser_error(parser: &HtmlParser) -> ParserObservationExecutionError {
     parser
         .tokenizer_invariant_for_conformance()
         .map(public_tokenizer_invariant)
         .map(ParserObservationExecutionError::TokenizerInvariant)
-        .unwrap_or(ParserObservationExecutionError::ParserInvariant)
+        .unwrap_or(ParserObservationExecutionError::ParserFatal(
+            crate::ParserFatalError::EngineInvariant,
+        ))
+}
+
+fn parser_error_without_live_parser(
+    error: crate::HtmlParseError,
+) -> ParserObservationExecutionError {
+    match error {
+        crate::HtmlParseError::Fatal(error) => ParserObservationExecutionError::ParserFatal(error),
+        crate::HtmlParseError::Decode | crate::HtmlParseError::PatchValidation(_) => {
+            ParserObservationExecutionError::ParserInvariant
+        }
+    }
 }
 
 fn execute_standalone_tokenizer(
@@ -467,10 +505,10 @@ fn take_document_capture(
     parser: &mut HtmlParser,
     observation_requested: bool,
 ) -> Result<ParserObservationCapture, ParserObservationExecutionError> {
-    require_capture(
-        parser.take_observations_for_conformance(),
-        observation_requested,
-    )
+    let capture = parser
+        .take_observations_for_conformance()
+        .map_err(|error| document_parser_operation_error(parser, error))?;
+    require_capture(capture, observation_requested)
 }
 
 fn take_standalone_capture(
@@ -571,6 +609,15 @@ mod tests {
 
     const DIAGNOSTIC_CAPACITY: usize = 128;
     const TOKEN_CAPACITY: usize = 256;
+
+    fn assert_invariant_latched_for_observation_drain(parser: &mut HtmlParser) {
+        assert_eq!(
+            parser.take_observations_for_conformance(),
+            Err(crate::HtmlParseError::Fatal(
+                crate::ParserFatalError::EngineInvariant
+            ))
+        );
+    }
 
     fn observe_bytes(input: ParserObservationInput<'_>) -> CanonicalParserResult {
         observe(ParserObservationTarget::StandaloneTokenizer, input)
@@ -723,12 +770,76 @@ mod tests {
 
         let mut parser = HtmlParser::new_with_observations(HtmlParseOptions::default(), config)
             .expect("observed document parser");
-        assert!(parser.take_observations_for_conformance().is_some());
+        assert!(
+            parser
+                .take_observations_for_conformance()
+                .expect("observation drain")
+                .is_some()
+        );
         assert_eq!(
             take_document_capture(&mut parser, true),
             Err(ParserObservationExecutionError::ObservationRecorderMissing)
         );
         assert_eq!(require_capture(None, false), Ok(empty_capture()));
+    }
+
+    #[cfg(feature = "parser-failure-injection")]
+    #[test]
+    fn parser_resource_fatal_is_typed_and_observations_do_not_escape() {
+        let config = ParserObservationConfig {
+            tokens: SurfaceCaptureRequest::Capture { capacity: 8 },
+            parse_errors: SurfaceCaptureRequest::Capture { capacity: 8 },
+            implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 8 },
+        };
+        let mut parser = HtmlParser::new_with_observations_and_failure_injection(
+            HtmlParseOptions::default(),
+            config,
+            crate::html5::shared::ParserFailureInjection::new(
+                crate::ParserReservationSite::TemplateChildStorage,
+                NonZeroU64::MIN,
+            ),
+        )
+        .expect("observed injected parser");
+        parser.push_str("<template>").expect("template input");
+        let error = parser.pump().expect_err("template reservation failure");
+        let fatal = match error {
+            crate::HtmlParseError::Fatal(fatal) => fatal,
+            other => panic!("expected typed parser fatal, got {other:?}"),
+        };
+        assert!(matches!(
+            fatal,
+            crate::ParserFatalError::ResourceExhaustion(exhaustion)
+                if exhaustion.site() == crate::ParserReservationSite::TemplateChildStorage
+        ));
+        assert_eq!(
+            document_parser_operation_error(&parser, crate::HtmlParseError::Fatal(fatal)),
+            ParserObservationExecutionError::ParserFatal(fatal)
+        );
+        assert_eq!(
+            parser.take_observations_for_conformance(),
+            Err(crate::HtmlParseError::Fatal(fatal))
+        );
+    }
+
+    #[test]
+    fn document_observation_is_not_returned_when_final_validation_fails() {
+        let config = ParserObservationConfig {
+            tokens: SurfaceCaptureRequest::Capture { capacity: 8 },
+            ..ParserObservationConfig::default()
+        };
+        let mut parser = HtmlParser::new_with_observations(HtmlParseOptions::default(), config)
+            .expect("observed parser");
+        parser.push_str("<p>x</p>").expect("document input");
+        parser.finish().expect("document finish");
+        parser.inject_patch_for_conformance_test(crate::DomPatch::AppendChild {
+            parent: crate::PatchKey(u32::MAX - 1),
+            child: crate::PatchKey(u32::MAX),
+        });
+
+        assert_eq!(
+            finalize_document_parser(parser, true),
+            Err(ParserObservationExecutionError::ParserInvariant)
+        );
     }
 
     #[test]
@@ -2068,7 +2179,12 @@ mod tests {
         parser.force_self_closing_flag_without_solidus_for_test();
         parser.push_str(">").expect("tag terminator");
 
-        assert_eq!(parser.pump(), Err(crate::HtmlParseError::Invariant));
+        assert_eq!(
+            parser.pump(),
+            Err(crate::HtmlParseError::Fatal(
+                crate::ParserFatalError::EngineInvariant
+            ))
+        );
         assert_eq!(
             document_parser_error(&parser),
             ParserObservationExecutionError::TokenizerInvariant(
@@ -2107,18 +2223,17 @@ mod tests {
                 .push_str(suffix)
                 .expect("corrupt doctype continuation push");
 
-            assert_eq!(parser.pump(), Err(crate::HtmlParseError::Invariant));
+            assert_eq!(
+                parser.pump(),
+                Err(crate::HtmlParseError::Fatal(
+                    crate::ParserFatalError::EngineInvariant
+                ))
+            );
             assert_eq!(
                 document_parser_error(&parser),
                 ParserObservationExecutionError::TokenizerInvariant(expected)
             );
-            let capture = parser
-                .take_observations_for_conformance()
-                .expect("requested capture");
-            assert!(
-                capture.implementation_diagnostics.items.is_empty(),
-                "corrupt doctype metadata must not retain a cursor-positioned diagnostic"
-            );
+            assert_invariant_latched_for_observation_drain(&mut parser);
         }
     }
 
@@ -2144,18 +2259,19 @@ mod tests {
                 .push_str(suffix)
                 .expect("corrupt doctype continuation push");
 
-            assert_eq!(parser.pump(), Err(crate::HtmlParseError::Invariant));
+            assert_eq!(
+                parser.pump(),
+                Err(crate::HtmlParseError::Fatal(
+                    crate::ParserFatalError::EngineInvariant
+                ))
+            );
             assert_eq!(
                 document_parser_error(&parser),
                 ParserObservationExecutionError::TokenizerInvariant(
                     ParserTokenizerInvariantError::DoctypeNameStartAfterCursor
                 )
             );
-            let capture = parser
-                .take_observations_for_conformance()
-                .expect("requested capture");
-            assert!(capture.tokens.items.is_empty());
-            assert!(capture.implementation_diagnostics.items.is_empty());
+            assert_invariant_latched_for_observation_drain(&mut parser);
         }
 
         let mut parser = HtmlParser::new_with_observations(
@@ -2172,18 +2288,19 @@ mod tests {
             .expect("partial doctype push");
         parser.pump().expect("partial doctype pump");
         parser.force_doctype_resource_start_after_cursor_for_test();
-        assert_eq!(parser.pump(), Err(crate::HtmlParseError::Invariant));
+        assert_eq!(
+            parser.pump(),
+            Err(crate::HtmlParseError::Fatal(
+                crate::ParserFatalError::EngineInvariant
+            ))
+        );
         assert_eq!(
             document_parser_error(&parser),
             ParserObservationExecutionError::TokenizerInvariant(
                 ParserTokenizerInvariantError::DoctypeNameStartAfterCursor
             )
         );
-        let capture = parser
-            .take_observations_for_conformance()
-            .expect("requested capture");
-        assert!(capture.tokens.items.is_empty());
-        assert!(capture.implementation_diagnostics.items.is_empty());
+        assert_invariant_latched_for_observation_drain(&mut parser);
     }
 
     #[test]
@@ -2200,18 +2317,19 @@ mod tests {
         comment.push_str("<!--xx-").expect("partial comment");
         comment.pump().expect("park comment at EOF");
         comment.force_comment_end_bang_state_for_test();
-        assert_eq!(comment.finish(), Err(crate::HtmlParseError::Invariant));
+        assert_eq!(
+            comment.finish(),
+            Err(crate::HtmlParseError::Fatal(
+                crate::ParserFatalError::EngineInvariant
+            ))
+        );
         assert_eq!(
             document_parser_error(&comment),
             ParserObservationExecutionError::TokenizerInvariant(
                 ParserTokenizerInvariantError::CommentPendingDelimiterDoesNotMatchState
             )
         );
-        let capture = comment
-            .take_observations_for_conformance()
-            .expect("requested capture");
-        assert!(capture.tokens.items.is_empty());
-        assert!(capture.parse_errors.items.is_empty());
+        assert_invariant_latched_for_observation_drain(&mut comment);
 
         for (attribute, solidus, expected) in [
             (
@@ -2241,15 +2359,17 @@ mod tests {
                 attribute,
                 solidus,
             );
-            assert_eq!(parser.pump(), Err(crate::HtmlParseError::Invariant));
+            assert_eq!(
+                parser.pump(),
+                Err(crate::HtmlParseError::Fatal(
+                    crate::ParserFatalError::EngineInvariant
+                ))
+            );
             assert_eq!(
                 document_parser_error(&parser),
                 ParserObservationExecutionError::TokenizerInvariant(expected)
             );
-            let capture = parser
-                .take_observations_for_conformance()
-                .expect("requested capture");
-            assert!(capture.parse_errors.items.is_empty());
+            assert_invariant_latched_for_observation_drain(&mut parser);
         }
     }
 
@@ -2274,19 +2394,19 @@ mod tests {
             crate::html5::tokenizer::TokenizerState::CommentEnd,
         );
         comment.push_str(">").expect("comment close");
-        assert_eq!(comment.pump(), Err(crate::HtmlParseError::Invariant));
+        assert_eq!(
+            comment.pump(),
+            Err(crate::HtmlParseError::Fatal(
+                crate::ParserFatalError::EngineInvariant
+            ))
+        );
         assert_eq!(
             document_parser_error(&comment),
             ParserObservationExecutionError::TokenizerInvariant(
                 ParserTokenizerInvariantError::CommentStateMissingPendingStart
             )
         );
-        let capture = comment
-            .take_observations_for_conformance()
-            .expect("requested capture");
-        assert!(capture.tokens.items.is_empty());
-        assert!(capture.parse_errors.items.is_empty());
-        assert!(capture.implementation_diagnostics.items.is_empty());
+        assert_invariant_latched_for_observation_drain(&mut comment);
 
         let mut comment_range = parser();
         comment_range
@@ -2296,7 +2416,9 @@ mod tests {
         comment_range.force_comment_start_after_cursor_for_test();
         assert_eq!(
             comment_range.finish(),
-            Err(crate::HtmlParseError::Invariant)
+            Err(crate::HtmlParseError::Fatal(
+                crate::ParserFatalError::EngineInvariant
+            ))
         );
         assert_eq!(
             document_parser_error(&comment_range),
@@ -2304,53 +2426,51 @@ mod tests {
                 ParserTokenizerInvariantError::CommentPendingRangeInvalid
             )
         );
-        let capture = comment_range
-            .take_observations_for_conformance()
-            .expect("requested capture");
-        assert!(capture.tokens.items.is_empty());
-        assert!(capture.parse_errors.items.is_empty());
-        assert!(capture.implementation_diagnostics.items.is_empty());
+        assert_invariant_latched_for_observation_drain(&mut comment_range);
 
         let mut cdata = parser();
         cdata.push_str("xx>").expect("CDATA corruption input");
         cdata.force_cdata_end_state_for_test(Some(0), 2);
-        assert_eq!(cdata.pump(), Err(crate::HtmlParseError::Invariant));
+        assert_eq!(
+            cdata.pump(),
+            Err(crate::HtmlParseError::Fatal(
+                crate::ParserFatalError::EngineInvariant
+            ))
+        );
         assert_eq!(
             document_parser_error(&cdata),
             ParserObservationExecutionError::TokenizerInvariant(
                 ParserTokenizerInvariantError::CdataEndDelimiterDoesNotMatchState
             )
         );
-        let capture = cdata
-            .take_observations_for_conformance()
-            .expect("requested capture");
-        assert!(capture.tokens.items.is_empty());
-        assert!(capture.parse_errors.items.is_empty());
+        assert_invariant_latched_for_observation_drain(&mut cdata);
 
         let mut missing_cdata = parser();
         missing_cdata
             .push_str("]]>")
             .expect("missing CDATA ownership input");
         missing_cdata.force_cdata_end_state_for_test(None, 2);
-        assert_eq!(missing_cdata.pump(), Err(crate::HtmlParseError::Invariant));
+        assert_eq!(
+            missing_cdata.pump(),
+            Err(crate::HtmlParseError::Fatal(
+                crate::ParserFatalError::EngineInvariant
+            ))
+        );
         assert_eq!(
             document_parser_error(&missing_cdata),
             ParserObservationExecutionError::TokenizerInvariant(
                 ParserTokenizerInvariantError::CdataStateMissingPendingTextStart
             )
         );
-        let capture = missing_cdata
-            .take_observations_for_conformance()
-            .expect("requested capture");
-        assert!(capture.tokens.items.is_empty());
-        assert!(capture.parse_errors.items.is_empty());
-        assert!(capture.implementation_diagnostics.items.is_empty());
+        assert_invariant_latched_for_observation_drain(&mut missing_cdata);
 
         let mut doctype_range = parser();
         doctype_range.force_empty_doctype_name_range_for_test();
         assert_eq!(
             doctype_range.finish(),
-            Err(crate::HtmlParseError::Invariant)
+            Err(crate::HtmlParseError::Fatal(
+                crate::ParserFatalError::EngineInvariant
+            ))
         );
         assert_eq!(
             document_parser_error(&doctype_range),
@@ -2358,17 +2478,17 @@ mod tests {
                 ParserTokenizerInvariantError::DoctypeNameRangeInvalid
             )
         );
-        let capture = doctype_range
-            .take_observations_for_conformance()
-            .expect("requested capture");
-        assert!(capture.tokens.items.is_empty());
-        assert!(capture.parse_errors.items.is_empty());
-        assert!(capture.implementation_diagnostics.items.is_empty());
+        assert_invariant_latched_for_observation_drain(&mut doctype_range);
 
         let mut candidate = parser();
         candidate.push_str("</title>").expect("candidate input");
         candidate.force_text_mode_end_tag_evidence_for_test(1, 8, None, None);
-        assert_eq!(candidate.pump(), Err(crate::HtmlParseError::Invariant));
+        assert_eq!(
+            candidate.pump(),
+            Err(crate::HtmlParseError::Fatal(
+                crate::ParserFatalError::EngineInvariant
+            ))
+        );
         assert_eq!(
             document_parser_error(&candidate),
             ParserObservationExecutionError::TokenizerInvariant(
@@ -2381,7 +2501,12 @@ mod tests {
             .push_str("<xtitle>")
             .expect("invalid retained opener input");
         invalid_opener.force_text_mode_end_tag_evidence_for_test(0, 8, None, None);
-        assert_eq!(invalid_opener.pump(), Err(crate::HtmlParseError::Invariant));
+        assert_eq!(
+            invalid_opener.pump(),
+            Err(crate::HtmlParseError::Fatal(
+                crate::ParserFatalError::EngineInvariant
+            ))
+        );
         assert_eq!(
             document_parser_error(&invalid_opener),
             ParserObservationExecutionError::TokenizerInvariant(
@@ -2394,7 +2519,12 @@ mod tests {
             .push_str("<!DOCTYPE html PUBLIC")
             .expect("doctype input");
         ascii_scan.force_doctype_ascii_prefix_range_invalid_for_test();
-        assert_eq!(ascii_scan.pump(), Err(crate::HtmlParseError::Invariant));
+        assert_eq!(
+            ascii_scan.pump(),
+            Err(crate::HtmlParseError::Fatal(
+                crate::ParserFatalError::EngineInvariant
+            ))
+        );
         assert_eq!(
             document_parser_error(&ascii_scan),
             ParserObservationExecutionError::TokenizerInvariant(
@@ -2405,7 +2535,12 @@ mod tests {
         let mut quoted_tail = parser();
         quoted_tail.push_str("\"x\"").expect("quoted tail input");
         quoted_tail.force_doctype_quoted_tail_range_invalid_for_test();
-        assert_eq!(quoted_tail.pump(), Err(crate::HtmlParseError::Invariant));
+        assert_eq!(
+            quoted_tail.pump(),
+            Err(crate::HtmlParseError::Fatal(
+                crate::ParserFatalError::EngineInvariant
+            ))
+        );
         assert_eq!(
             document_parser_error(&quoted_tail),
             ParserObservationExecutionError::TokenizerInvariant(
@@ -2420,7 +2555,9 @@ mod tests {
         processing_instruction.force_processing_instruction_metadata_missing_for_test();
         assert_eq!(
             processing_instruction.pump(),
-            Err(crate::HtmlParseError::Invariant)
+            Err(crate::HtmlParseError::Fatal(
+                crate::ParserFatalError::EngineInvariant
+            ))
         );
         assert_eq!(
             document_parser_error(&processing_instruction),

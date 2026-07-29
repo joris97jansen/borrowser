@@ -7,11 +7,146 @@ use html::{DomPatch, PatchKey};
 
 use crate::PreviewPolicy;
 use crate::clock::SystemClock;
-use crate::driver::handle_runtime_chunk;
+#[cfg(feature = "parser-failure-injection")]
+use crate::driver::handle_runtime_done;
+use crate::driver::{
+    handle_runtime_chunk, parser_error_discards_unpublished, parser_error_drains_on_completion,
+};
 use crate::patching::{estimate_patch_bytes, estimate_patch_bytes_slice};
 use crate::policy::{MAX_PATCH_BUFFER_RETAIN, MIN_PATCH_BUFFER_RETAIN, patch_buffer_retain_target};
 use crate::runtime::start_parse_runtime_with_policy_and_clock;
 use crate::state::RuntimeState;
+
+#[test]
+fn decode_keeps_existing_completion_policy_while_parser_fatal_discards() {
+    assert!(!parser_error_discards_unpublished(
+        &html::HtmlParseError::Decode
+    ));
+    assert!(parser_error_drains_on_completion(
+        &html::HtmlParseError::Decode
+    ));
+    assert!(parser_error_discards_unpublished(
+        &html::HtmlParseError::Fatal(html::ParserFatalError::EngineInvariant)
+    ));
+    assert!(!parser_error_drains_on_completion(
+        &html::HtmlParseError::Fatal(html::ParserFatalError::EngineInvariant)
+    ));
+    assert!(!parser_error_drains_on_completion(
+        &html::HtmlParseError::PatchValidation("test".to_owned())
+    ));
+}
+
+#[cfg(feature = "parser-failure-injection")]
+fn template_failure_runtime_state(now: Instant) -> RuntimeState {
+    RuntimeState::new_with_failure_injection(
+        now,
+        MIN_PATCH_BUFFER_RETAIN,
+        DomHandle(1),
+        html::internal::ParserFailureInjection::new(
+            html::ParserReservationSite::TemplateChildStorage,
+            std::num::NonZeroU64::MIN,
+        ),
+    )
+    .expect("injected runtime state")
+}
+
+#[cfg(feature = "parser-failure-injection")]
+#[test]
+fn parser_fatal_discards_unpublished_runtime_patch_buffer_before_policy_flush() {
+    let now = Instant::now();
+    let mut state = template_failure_runtime_state(now);
+    let policy = PreviewPolicy {
+        tick: Duration::from_secs(60),
+        token_threshold: None,
+        byte_threshold: None,
+        patch_threshold: None,
+        patch_byte_threshold: None,
+    };
+    let (evt_tx, evt_rx) = mpsc::channel();
+
+    assert!(!handle_runtime_chunk(
+        &mut state,
+        b"<div>x</div>",
+        &policy,
+        now,
+        &evt_tx,
+        1,
+        1,
+    ));
+    assert!(!state.patch_buffer.is_empty());
+
+    assert!(handle_runtime_chunk(
+        &mut state,
+        b"<template>",
+        &policy,
+        now,
+        &evt_tx,
+        1,
+        1,
+    ));
+    assert!(state.failed);
+    assert!(state.patch_buffer.is_empty());
+    assert_eq!(state.pending_bytes, 0);
+    assert_eq!(state.pending_tokens, 0);
+    assert_eq!(state.pending_patch_bytes, 0);
+    assert!(evt_rx.try_recv().is_err());
+}
+
+#[cfg(feature = "parser-failure-injection")]
+#[test]
+fn parser_fatal_during_done_does_not_drain_or_flush() {
+    let now = Instant::now();
+    let mut state = template_failure_runtime_state(now);
+    state
+        .parser
+        .push_bytes(b"<template>")
+        .expect("buffer template without pumping");
+    state.patch_buffer.push(DomPatch::Clear);
+    state.pending_patch_bytes = estimate_patch_bytes(&DomPatch::Clear);
+    let (evt_tx, evt_rx) = mpsc::channel();
+
+    handle_runtime_done(Box::new(state), &evt_tx, 1, 1);
+
+    assert!(evt_rx.try_recv().is_err());
+}
+
+#[cfg(feature = "parser-failure-injection")]
+#[test]
+fn parser_fatal_does_not_roll_back_an_already_published_batch() {
+    let now = Instant::now();
+    let mut state = template_failure_runtime_state(now);
+    let publish_each_batch = PreviewPolicy {
+        tick: Duration::ZERO,
+        token_threshold: None,
+        byte_threshold: None,
+        patch_threshold: Some(1),
+        patch_byte_threshold: None,
+    };
+    let (evt_tx, evt_rx) = mpsc::channel();
+
+    assert!(!handle_runtime_chunk(
+        &mut state,
+        b"<div>x</div>",
+        &publish_each_batch,
+        now,
+        &evt_tx,
+        1,
+        1,
+    ));
+    let published = evt_rx.try_recv().expect("first batch published");
+
+    assert!(handle_runtime_chunk(
+        &mut state,
+        b"<template>",
+        &publish_each_batch,
+        now,
+        &evt_tx,
+        1,
+        1,
+    ));
+    assert!(evt_rx.try_recv().is_err());
+    drop(published);
+}
 
 #[test]
 fn processing_instruction_patch_bytes_include_target_and_data() {

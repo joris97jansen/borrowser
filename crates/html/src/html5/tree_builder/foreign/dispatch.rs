@@ -1,7 +1,6 @@
 use crate::attributes::AttributeNamespace;
 use crate::html5::shared::{
-    AtomTable, Attribute, EngineInvariantError, ParserRecoveryAction, TextValue, Token,
-    TreeConstructionParseErrorCode,
+    AtomTable, Attribute, ParserRecoveryAction, TextValue, Token, TreeConstructionParseErrorCode,
 };
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::dispatch::DispatchOutcome;
@@ -116,7 +115,9 @@ impl Html5TreeBuilder {
             Some("unexpected-html-token-in-foreign-content"),
         );
         while !self.current_is_breakout_boundary() {
-            self.open_elements.pop().ok_or(EngineInvariantError)?;
+            self.open_elements
+                .pop()
+                .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
         }
         self.dispatch_token_in_html_mode(mode, token, context, text)
     }
@@ -193,13 +194,15 @@ impl Html5TreeBuilder {
                 }
                 let namespace = self
                     .adjusted_current_node_namespace()
-                    .ok_or(EngineInvariantError)?;
+                    .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
                 let local = if namespace == ElementNamespace::Svg {
                     super::svg_adjusted_tag_name(token_name)
                 } else {
                     token_name
                 };
-                let adjusted_name = atoms.lookup_exact(local).ok_or(EngineInvariantError)?;
+                let adjusted_name = atoms
+                    .lookup_exact(local)
+                    .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
                 let adjusted = super::adjust_foreign_attributes(namespace, attrs, atoms, text)?;
                 self.internal_post_adjustment_attribute_collisions = self
                     .internal_post_adjustment_attribute_collisions
@@ -222,7 +225,10 @@ impl Html5TreeBuilder {
                 if matches!(token_name, "br" | "p") {
                     return self.breakout_to_html(mode, token, context, text);
                 }
-                let current = self.open_elements.current().ok_or(EngineInvariantError)?;
+                let current = self
+                    .open_elements
+                    .current()
+                    .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
                 let current_name = resolve_atom(atoms, current.name())?;
                 if !current_name.eq_ignore_ascii_case(token_name) {
                     self.record_tree_parse_error(
@@ -233,13 +239,18 @@ impl Html5TreeBuilder {
                     );
                 }
                 for index in (0..self.open_elements.len()).rev() {
-                    let candidate = self.open_elements.get(index).ok_or(EngineInvariantError)?;
+                    let candidate = self
+                        .open_elements
+                        .get(index)
+                        .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
                     if candidate.namespace() == ElementNamespace::Html {
                         return self.dispatch_token_in_html_mode(mode, token, context, text);
                     }
                     if resolve_atom(atoms, candidate.name())?.eq_ignore_ascii_case(token_name) {
                         while self.open_elements.len() > index {
-                            self.open_elements.pop().ok_or(EngineInvariantError)?;
+                            self.open_elements
+                                .pop()
+                                .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
                         }
                         return Ok(DispatchOutcome::Done);
                     }

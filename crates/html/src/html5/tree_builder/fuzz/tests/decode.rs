@@ -153,7 +153,7 @@ fn fuzz_driver_exercises_central_text_mode_processing_instruction_invariant() {
         super::super::config::TreeBuilderFuzzError::TreeBuilderFailure {
             token_index: 1,
             ref detail,
-        } if detail.contains("EngineInvariantError")
+        } if detail.contains("EngineInvariant")
     ));
 }
 

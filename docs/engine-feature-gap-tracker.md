@@ -401,6 +401,20 @@ Missing or incomplete:
 
 Current supported subset:
 
+- AE13b2.2a typed parser fatal failures: allocation-free, extensible semantic
+  identities distinguish engine invariants from parser-owned
+  reservation/resource exhaustion. Construction-time known-tag bootstrap
+  reservations return directly; live-session template child-storage failure
+  latches first-wins in `Html5ParseSession`; facade, conformance, and runtime
+  propagation is lossless. Failure-preserving patch/observation drains prevent
+  empty-success substitution. Runtime fatal handling discards unpublished
+  patches but does not roll back prior published batches; decode completion is
+  unchanged. Coverage is limited to `KnownTagAtomStorage`,
+  `KnownTagLookupStorage`, and `TemplateChildStorage`; their deterministic
+  failure-injection suites execute in the authoritative CI path. Complete
+  tokenizer/input allocation auditing, tree-state and patch transactionality,
+  patch-mirror exhaustion, final materialization, ordinary Rust allocation
+  failure, and platform-wide OOM policy remain later work.
 - AE13b1 parser observation foundation: always-compiled HTML/parser semantic
   identities back exact canonical tokens, tokenizer parse errors, normalized
   positions, and payload-safe implementation diagnostics. Passive,

@@ -15,8 +15,13 @@ fn session_smoke() {
     .expect("session init");
     assert!(session.push_bytes(&[]).is_ok());
     assert!(session.pump().is_ok());
-    let _ = session.take_patches();
-    assert!(session.take_patch_batch().is_none());
+    let _ = session.take_patches().expect("session patch drain");
+    assert!(
+        session
+            .take_patch_batch()
+            .expect("session batch drain")
+            .is_none()
+    );
     let counters = session.debug_counters();
     assert_eq!(counters.patches_emitted, 0);
     assert_eq!(counters.decode_errors, 0);
@@ -34,8 +39,18 @@ fn session_patch_batches_are_version_monotonic_and_atomic() {
     )
     .expect("session init");
 
-    assert!(session.take_patch_batch().is_none());
-    assert!(session.take_patch_batch().is_none());
+    assert!(
+        session
+            .take_patch_batch()
+            .expect("empty batch drain")
+            .is_none()
+    );
+    assert!(
+        session
+            .take_patch_batch()
+            .expect("empty batch drain")
+            .is_none()
+    );
 
     session.inject_patch_for_test(DomPatch::CreateDocument {
         key: PatchKey(1),
@@ -43,6 +58,7 @@ fn session_patch_batches_are_version_monotonic_and_atomic() {
     });
     let batch0: DomPatchBatch = session
         .take_patch_batch()
+        .expect("session batch drain")
         .expect("first injected patch should produce batch");
     assert_eq!(batch0.from, 0);
     assert_eq!(batch0.to, 1);
@@ -54,7 +70,10 @@ fn session_patch_batches_are_version_monotonic_and_atomic() {
         }]
     );
     assert!(
-        session.take_patch_batch().is_none(),
+        session
+            .take_patch_batch()
+            .expect("empty batch drain")
+            .is_none(),
         "empty drain must not advance version"
     );
 
@@ -64,6 +83,7 @@ fn session_patch_batches_are_version_monotonic_and_atomic() {
     });
     let batch1: DomPatchBatch = session
         .take_patch_batch()
+        .expect("session batch drain")
         .expect("second injected patch should produce batch");
     assert_eq!(batch1.from, 1);
     assert_eq!(batch1.to, 2);
@@ -75,7 +95,10 @@ fn session_patch_batches_are_version_monotonic_and_atomic() {
         }]
     );
     assert!(
-        session.take_patch_batch().is_none(),
+        session
+            .take_patch_batch()
+            .expect("empty batch drain")
+            .is_none(),
         "empty drain must not advance version"
     );
 }

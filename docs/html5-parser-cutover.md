@@ -94,6 +94,8 @@ Contract:
 - `take_patches()` drains all currently available patches as one ordered vector
 - `take_patch_batch()` drains the next atomic patch batch
 - `into_output()` consumes the parser and materializes the DOM mirror
+- patch and batch drains return `Result`; after a parser fatal failure they
+  return the same latched fatal identity rather than successful empty output
 
 Important streaming notes:
 
@@ -109,15 +111,28 @@ Important streaming notes:
 The stable error type is `HtmlParseError`:
 
 - `Decode`
-  byte-stream decoding failed in a way the façade reports as terminal
-- `Invariant`
-  an engine invariant was violated, including use after parser poison
+  byte-stream decoding failed; its established completion/drain policy remains
+  separate from parser fatal latching
+- `Fatal(ParserFatalError)`
+  allocation-free identity for an engine invariant or covered parser-owned
+  reservation/resource exhaustion
 - `PatchValidation(String)`
   the internal patch mirror rejected emitted patches
 
 If patch validation fails during streaming drain, the parser becomes terminally
-poisoned. Any later mutating or draining call returns
-`HtmlParseError::Invariant`.
+poisoned under the existing facade-owned policy. A live session instead owns
+and latches its first `ParserFatalError`; later mutating, finishing, patch
+draining, and requested-observation draining operations return that same
+identity. The facade never applies the patch mirror after a failed session
+drain.
+
+AE13b2.2a provides typed coverage only at known-tag atom storage, known-tag
+lookup storage, and template child storage. Known-tag bootstrap preflights both
+collections with a conservative bound of 195 supported interning calls,
+derived as 37 adjusted SVG tag names + 58 adjusted SVG attribute names + 12
+qualified foreign-attribute local names + 88 retained known-tag fields.
+`TryReserveError` is not described as definitive out-of-memory. Ordinary Rust
+allocation paths and complete parser allocation coverage remain deferred.
 
 ### Events and counters
 

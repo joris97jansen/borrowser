@@ -28,7 +28,7 @@ fn finish_flushes_pending_table_text_and_clears_table_text_state() {
     assert!(after_finish.pending_table_character_tokens.is_empty());
     assert!(!after_finish.pending_table_character_tokens_contains_non_space);
 
-    let patches = session.take_patches();
+    let patches = session.take_patches().expect("session patch drain");
     let table_key = after_finish
         .current_table_key
         .expect("unfinished table should remain visible on SOE after EOF");

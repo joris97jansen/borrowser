@@ -1,6 +1,6 @@
 use crate::attributes::ParserCreatedAttribute;
 use crate::dom_patch::{DomPatch, PatchKey};
-use crate::html5::shared::{AtomTable, EngineInvariantError, Token};
+use crate::html5::shared::{AtomTable, Token};
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::attributes::resolve_token_attributes_first_wins;
 use crate::html5::tree_builder::dispatch::DispatchOutcome;
@@ -82,7 +82,9 @@ impl Html5TreeBuilder {
             &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         ) -> Result<T, TreeBuilderError>,
     ) -> Result<Option<T>, TreeBuilderError> {
-        let head = self.head_element_pointer.ok_or(EngineInvariantError)?;
+        let head = self
+            .head_element_pointer
+            .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
         if self.open_elements.contains_key(head) {
             return f(self, context).map(Some);
         }
@@ -97,7 +99,7 @@ impl Html5TreeBuilder {
         }
         self.open_elements
             .try_reserve_push(crate::names::ElementNamespace::Html, self.known_tags.head)
-            .map_err(|_| EngineInvariantError)?;
+            .map_err(|_| crate::html5::shared::ParserFatalError::EngineInvariant)?;
         self.open_elements
             .push(OpenElement::new_html(head, self.known_tags.head));
         let result = f(self, context);
@@ -117,14 +119,14 @@ impl Html5TreeBuilder {
         text: &dyn TextResolver,
     ) -> Result<Option<TemplateStartPreflight>, TreeBuilderError> {
         if self.document_key.is_none() {
-            return Err(EngineInvariantError);
+            return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
         }
         let (accepted_template_count, template_state_epoch) =
             self.checked_next_template_acceptance()?;
         let attributes = resolve_token_attributes_first_wins(attrs, atoms, text)?;
         let canonical_name = atoms
             .expanded_name(ElementNamespace::Html, self.known_tags.template)
-            .ok_or(EngineInvariantError)?;
+            .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
 
         if self.open_elements.len() >= self.config.limits.max_open_elements_depth {
             self.record_tree_resource_limit(
@@ -154,45 +156,53 @@ impl Html5TreeBuilder {
         }
 
         let host_value = self.next_patch_key.get();
-        let contents_value = host_value.checked_add(1).ok_or(EngineInvariantError)?;
-        let next_value = host_value.checked_add(2).ok_or(EngineInvariantError)?;
+        let contents_value = host_value
+            .checked_add(1)
+            .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
+        let next_value = host_value
+            .checked_add(2)
+            .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
         let host = PatchKey(host_value);
         let contents = PatchKey(contents_value);
-        let next_key = NonZeroU32::new(next_value).ok_or(EngineInvariantError)?;
+        let next_key = NonZeroU32::new(next_value)
+            .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
 
         self.patches
             .try_reserve(3)
-            .map_err(|_| EngineInvariantError)?;
+            .map_err(|_| crate::html5::shared::ParserFatalError::EngineInvariant)?;
         self.live_tree
             .try_reserve_through_key(contents)
-            .map_err(|_| EngineInvariantError)?;
-        match self
-            .live_tree
-            .try_reserve_child_insertion(location.parent, None, location.before)
-        {
+            .map_err(|_| crate::html5::shared::ParserFatalError::EngineInvariant)?;
+        match self.live_tree.try_reserve_child_insertion(
+            location.parent,
+            None,
+            location.before,
+            crate::html5::shared::ParserReservationSite::TemplateChildStorage,
+            context,
+        ) {
             Ok(()) => {}
-            Err(ChildInsertionReservationError::AllocationFailure) => {
-                return Err(EngineInvariantError);
+            Err(ChildInsertionReservationError::ResourceExhaustion(error)) => {
+                return Err(error.into());
             }
             Err(
                 ChildInsertionReservationError::InvalidParent
                 | ChildInsertionReservationError::InvalidBeforeSibling
                 | ChildInsertionReservationError::InvalidChild
                 | ChildInsertionReservationError::ArithmeticOverflow,
-            ) => return Err(EngineInvariantError),
+            ) => return Err(crate::html5::shared::ParserFatalError::EngineInvariant),
         }
         self.open_elements
             .try_reserve_push(
                 crate::names::ElementNamespace::Html,
                 self.known_tags.template,
             )
-            .map_err(|_| EngineInvariantError)?;
+            .map_err(|_| crate::html5::shared::ParserFatalError::EngineInvariant)?;
         self.active_formatting
             .try_reserve_one()
-            .map_err(|_| EngineInvariantError)?;
+            .map_err(|_| crate::html5::shared::ParserFatalError::EngineInvariant)?;
         self.template_modes
             .try_reserve_one()
-            .map_err(|_| EngineInvariantError)?;
+            .map_err(|_| crate::html5::shared::ParserFatalError::EngineInvariant)?;
         Ok(Some(TemplateStartPreflight {
             patch_start: self.patches.len(),
             host,
@@ -283,30 +293,33 @@ impl Html5TreeBuilder {
                 ScopeKind::InScope,
                 false,
             )
-            .ok_or(EngineInvariantError)?
+            .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?
         } else {
             let expected_owner = self
                 .template_modes
                 .current()
-                .ok_or(EngineInvariantError)?
+                .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?
                 .owner();
             let closed = self
                 .open_elements
                 .pop_until_including_key_unscoped(expected_owner)?
-                .ok_or(EngineInvariantError)?;
+                .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
             if closed.namespace() != crate::ElementNamespace::Html
                 || closed.name() != self.known_tags.template
             {
-                return Err(EngineInvariantError);
+                return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
             }
             self.invalidate_text_coalescing();
             closed
         };
         let marker_clear = self.active_formatting.clear_to_last_marker();
-        let mode = self.template_modes.pop().ok_or(EngineInvariantError)?;
+        let mode = self
+            .template_modes
+            .pop()
+            .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
         self.commit_template_state_epoch(next_template_state_epoch);
         if mode.owner() != closed.key() {
-            return Err(EngineInvariantError);
+            return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
         }
         let reset_mode = self.reset_supported_insertion_mode_from_soe()?;
         self.validate_template_close_local(
@@ -343,7 +356,7 @@ impl Html5TreeBuilder {
         context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
     ) -> Result<(), TreeBuilderError> {
         if self.insertion_mode == InsertionMode::InTableText || self.pending_table_text.is_some() {
-            return Err(EngineInvariantError);
+            return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
         }
         while !self.template_modes.is_empty() {
             let depth_before = self.template_modes.len();
@@ -357,14 +370,14 @@ impl Html5TreeBuilder {
             self.perf_template_eof_unwind_iterations =
                 self.perf_template_eof_unwind_iterations.saturating_add(1);
             if self.template_modes.len().checked_add(1) != Some(depth_before) {
-                return Err(EngineInvariantError);
+                return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
             }
         }
         if self
             .open_elements
             .contains_html_name(self.known_tags.template)
         {
-            return Err(EngineInvariantError);
+            return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
         }
         Ok(())
     }
@@ -437,15 +450,15 @@ impl Html5TreeBuilder {
         let owner_before = self
             .template_modes
             .current()
-            .ok_or(EngineInvariantError)?
+            .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?
             .owner();
         let next_template_state_epoch = self.checked_next_template_state_epoch()?;
         let entry = self
             .template_modes
             .replace_current(mode)
-            .ok_or(EngineInvariantError)?;
+            .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
         if entry.owner() != owner_before {
-            return Err(EngineInvariantError);
+            return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
         }
         self.insertion_mode = mode.as_insertion_mode();
         self.commit_template_state_epoch(next_template_state_epoch);

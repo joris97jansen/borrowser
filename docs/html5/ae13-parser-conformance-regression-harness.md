@@ -130,8 +130,11 @@ Genuine HTML tree-construction parse errors increment
 `Counters::parse_errors` whenever counter tracking is enabled, regardless of
 canonical capture and capacity. Configured resource limits and Borrowser
 implementation deviations use the implementation-diagnostic sequence and do
-not increment that counter. Fatal allocation, patch, materialization, and
-engine-invariant failures remain execution failures.
+not increment that counter. Fatal parser-owned reservation/resource exhaustion
+and engine-invariant failures remain execution failures. AE13b2.2a gives these
+failures bounded, allocation-free identities and latches the first live-session
+fatal failure; it does not claim that all allocation, patch, or
+materialization boundaries are fallible.
 
 The production taxonomy is:
 
@@ -140,13 +143,31 @@ The production taxonomy is:
 - typed implementation diagnostics for deterministic Borrowser deviations;
 - typed configured resource-limit diagnostics for bounded open-elements,
   node, child, and template-mode capacity;
-- fatal execution failure for allocator exhaustion and engine invariants; and
+- fatal execution failure for covered parser-owned reservation/resource
+  exhaustion and engine invariants; and
 - no observation for normal implied elements, mode transitions, delegation,
   reprocessing, scope scans, or stack mutation.
 
 One production rule may emit both a genuine parse error and a distinct
 implementation diagnostic. Descriptions are fixed, non-authoritative text,
 not identities or retained parser state.
+
+Canonical document results remain success-gated. A requested observation drain
+returns the latched parser fatal identity rather than partial observations, and
+document mode, observations, and the materialized document are assembled into
+the canonical result only after successful finish and final materialization.
+Fatal failures are not recorded as authored-input parse errors or observation
+events. The conformance execution error preserves the precise parser fatal
+identity; tokenizer invariant specialization remains available for tokenizer
+engine invariants.
+
+The deterministic failure-injection facility is internal, non-default,
+parser-scoped, and keyed by bounded semantic reservation-site identities. It
+can fail a selected occurrence once, then disarms, without mutable
+process-global allocator state. It exercises the production reservation path
+and exists only for engine tests; it is not part of stable parser options.
+`make test-html5-parser-fatal-failures` executes the HTML and runtime
+failure-injection suites and is part of both local `make ci` and GitHub CI.
 
 The stable `HtmlParser::parse_errors()` facade retains only events its legacy
 model can truthfully represent with an exact normalized-input offset. Current

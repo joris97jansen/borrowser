@@ -160,6 +160,37 @@ impl NameInterner {
         Ok(id)
     }
 
+    pub(crate) fn try_reserve_atom_storage(
+        &mut self,
+        additional: usize,
+    ) -> Result<(), NameInternerStorageReservationError> {
+        self.atoms
+            .len()
+            .checked_add(additional)
+            .ok_or(NameInternerStorageReservationError::LengthOverflow)?;
+        self.atoms
+            .try_reserve(additional)
+            .map_err(|_| NameInternerStorageReservationError::ReservationFailed)
+    }
+
+    pub(crate) fn try_reserve_lookup_storage(
+        &mut self,
+        additional: usize,
+    ) -> Result<(), NameInternerStorageReservationError> {
+        self.by_text
+            .len()
+            .checked_add(additional)
+            .ok_or(NameInternerStorageReservationError::LengthOverflow)?;
+        self.by_text
+            .try_reserve(additional)
+            .map_err(|_| NameInternerStorageReservationError::ReservationFailed)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn storage_capacities(&self) -> (usize, usize) {
+        (self.atoms.capacity(), self.by_text.capacity())
+    }
+
     pub fn intern_html_tag_name_utf8_bytes(
         &mut self,
         name: &[u8],
@@ -255,6 +286,12 @@ impl Default for NameInterner {
 pub enum NameInternerError {
     InvalidUtf8,
     OutOfIds,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NameInternerStorageReservationError {
+    LengthOverflow,
+    ReservationFailed,
 }
 
 #[cfg(test)]

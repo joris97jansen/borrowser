@@ -1052,8 +1052,15 @@ fn template_start_depth_and_parent_capacity_rejections_are_atomic() {
 }
 
 #[test]
+#[cfg(feature = "parser-failure-injection")]
 fn template_parent_child_reservation_failure_is_atomic() {
     let mut ctx = DocumentParseContext::with_tree_observations_for_test();
+    ctx.reservations = crate::html5::shared::ParserReservationController::with_failure(
+        crate::html5::shared::ParserFailureInjection::new(
+            crate::html5::shared::ParserReservationSite::TemplateChildStorage,
+            std::num::NonZeroU64::MIN,
+        ),
+    );
     let resolver = EmptyResolver;
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
@@ -1067,10 +1074,6 @@ fn template_parent_child_reservation_failure_is_atomic() {
     let node_count_before = builder.non_document_nodes_created;
     let frameset_before = builder.document_state.frameset_ok;
     let text_state_before = builder.last_text_patch.clone();
-    builder.live_tree.fail_next_child_reservation_for_test(
-        crate::html5::tree_builder::live_tree::ChildInsertionReservationError::AllocationFailure,
-    );
-
     let error = builder
         .process(
             &Token::StartTag {
@@ -1081,8 +1084,13 @@ fn template_parent_child_reservation_failure_is_atomic() {
             &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
-        .expect_err("allocator failure must be fatal");
-    let _: crate::html5::shared::EngineInvariantError = error;
+        .expect_err("reservation failure must be fatal");
+    assert!(matches!(
+        error,
+        crate::html5::shared::ParserFatalError::ResourceExhaustion(exhaustion)
+            if exhaustion.site()
+                == crate::html5::shared::ParserReservationSite::TemplateChildStorage
+    ));
 
     assert!(builder.drain_patches().is_empty());
     assert_eq!(builder.next_patch_key, key_before);

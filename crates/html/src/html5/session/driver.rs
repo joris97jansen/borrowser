@@ -1,6 +1,8 @@
 use super::api::{DrainMode, DrainOutcome, Html5ParseSession};
 use crate::html5::bridge::PatchEmitterAdapter;
-use crate::html5::shared::{DocumentParseContext, Html5SessionError, Token};
+use crate::html5::shared::{
+    DocumentParseContext, EngineInvariantError, Html5SessionError, ParserFatalError, Token,
+};
 use crate::html5::tokenizer::{TextResolver, TokenizeResult, TokenizerControl};
 use crate::html5::tree_builder::{
     Html5TreeBuilder, TreeBuilderControlFlow, TreeBuilderProcessContext, TreeBuilderStepResult,
@@ -16,7 +18,7 @@ impl Html5ParseSession {
                 .tokenizer
                 .push_input_until_token(&mut self.input, &mut self.ctx);
             if self.tokenizer.invariant_failure_kind().is_some() {
-                return Err(Html5SessionError::Invariant);
+                return Err(EngineInvariantError.into());
             }
             if self.drain_emitted_tokens(DrainMode::TokenGranular)? == DrainOutcome::Suspended {
                 break;
@@ -119,11 +121,11 @@ impl Html5ParseSession {
                 DrainOutcome::Idle => return Ok(()),
                 DrainOutcome::Continue => {}
                 DrainOutcome::Suspended => {
-                    return Err(Html5SessionError::Invariant);
+                    return Err(EngineInvariantError.into());
                 }
             }
         }
-        Err(Html5SessionError::Invariant)
+        Err(EngineInvariantError.into())
     }
 
     pub(super) fn process_token(
@@ -139,13 +141,15 @@ impl Html5ParseSession {
         match builder.push_token(token, &mut process_context, resolver, patch_emitter) {
             Ok(step) => Ok(step),
             Err(err) => {
-                ctx.counters.tree_builder_invariant_errors =
-                    ctx.counters.tree_builder_invariant_errors.saturating_add(1);
+                if matches!(err, ParserFatalError::EngineInvariant) {
+                    ctx.counters.tree_builder_invariant_errors =
+                        ctx.counters.tree_builder_invariant_errors.saturating_add(1);
+                }
                 #[cfg(any(test, feature = "debug-stats"))]
-                error!(target: "html5", "tree builder invariant error: {err:?}");
+                error!(target: "html5", "tree builder fatal error: {err:?}");
                 #[cfg(not(any(test, feature = "debug-stats")))]
                 let _ = err;
-                Err(Html5SessionError::Invariant)
+                Err(Html5SessionError::Fatal(err))
             }
         }
     }
@@ -168,7 +172,7 @@ impl Html5ParseSession {
                 .saturating_add(1);
             #[cfg(any(test, feature = "debug-stats"))]
             error!(target: "html5", "patch emitter invariant violation");
-            return Err(Html5SessionError::Invariant);
+            return Err(EngineInvariantError.into());
         }
 
         Ok(())
