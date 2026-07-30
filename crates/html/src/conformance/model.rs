@@ -7,9 +7,7 @@ use crate::html5::shared::{
     ImplementationDiagnosticEvent, ObservedInsertionMode, ObservedToken, ParseErrorEvent,
     ParserContextSummary,
 };
-use crate::{
-    AttributeNamespace, DocumentMode, DomPatch, ElementNamespace, ParserCreatedAttribute, PatchKey,
-};
+use crate::{AttributeNamespace, DocumentMode, ElementNamespace};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ObservationState<T> {
@@ -199,102 +197,6 @@ pub enum ObservedPatchOperation {
         node: PatchNodeLabel,
         text: String,
     },
-}
-
-/// Convert one production patch without exposing its raw `PatchKey` values.
-///
-/// The caller owns snapshot-local label assignment. AE13a deliberately does
-/// not define stream labeling or a patch-v3 serializer.
-pub fn canonicalize_dom_patch(
-    patch: &DomPatch,
-    mut label_for: impl FnMut(PatchKey) -> PatchNodeLabel,
-) -> ObservedPatchOperation {
-    match patch {
-        DomPatch::Clear => ObservedPatchOperation::Clear,
-        DomPatch::CreateDocument { key, doctype } => ObservedPatchOperation::CreateDocument {
-            node: label_for(*key),
-            legacy_doctype: doctype.clone(),
-        },
-        DomPatch::CreateDocumentType {
-            key,
-            name,
-            public_id,
-            system_id,
-        } => ObservedPatchOperation::CreateDocumentType {
-            node: label_for(*key),
-            name: name.clone(),
-            public_id: public_id.clone(),
-            system_id: system_id.clone(),
-        },
-        DomPatch::CreateElement {
-            key,
-            name,
-            attributes,
-        } => ObservedPatchOperation::CreateElement {
-            node: label_for(*key),
-            namespace: name.namespace(),
-            local_name: name.local_name_str().to_string(),
-            attributes: attributes.iter().map(canonicalize_dom_attribute).collect(),
-        },
-        DomPatch::CreateTemplateContents { host, contents } => {
-            ObservedPatchOperation::CreateTemplateContents {
-                host: label_for(*host),
-                contents: label_for(*contents),
-            }
-        }
-        DomPatch::CreateText { key, text } => ObservedPatchOperation::CreateText {
-            node: label_for(*key),
-            text: text.clone(),
-        },
-        DomPatch::CreateComment { key, text } => ObservedPatchOperation::CreateComment {
-            node: label_for(*key),
-            data: text.clone(),
-        },
-        DomPatch::CreateProcessingInstruction { key, target, data } => {
-            ObservedPatchOperation::CreateProcessingInstruction {
-                node: label_for(*key),
-                target: target.clone(),
-                data: data.clone(),
-            }
-        }
-        DomPatch::AppendChild { parent, child } => ObservedPatchOperation::AppendChild {
-            parent: label_for(*parent),
-            child: label_for(*child),
-        },
-        DomPatch::InsertBefore {
-            parent,
-            child,
-            before,
-        } => ObservedPatchOperation::InsertBefore {
-            parent: label_for(*parent),
-            child: label_for(*child),
-            before: label_for(*before),
-        },
-        DomPatch::RemoveNode { key } => ObservedPatchOperation::RemoveNode {
-            node: label_for(*key),
-        },
-        DomPatch::SetAttributes { key, attributes } => ObservedPatchOperation::SetAttributes {
-            node: label_for(*key),
-            attributes: attributes.iter().map(canonicalize_dom_attribute).collect(),
-        },
-        DomPatch::SetText { key, text } => ObservedPatchOperation::SetText {
-            node: label_for(*key),
-            text: text.clone(),
-        },
-        DomPatch::AppendText { key, text } => ObservedPatchOperation::AppendText {
-            node: label_for(*key),
-            text: text.clone(),
-        },
-    }
-}
-
-fn canonicalize_dom_attribute(attribute: &ParserCreatedAttribute) -> ObservedDomAttribute {
-    ObservedDomAttribute {
-        namespace: attribute.namespace(),
-        prefix: attribute.prefix().map(str::to_string),
-        local_name: attribute.local_name().to_string(),
-        value: attribute.value().to_string(),
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -592,8 +494,6 @@ mod tests {
     use crate::html5::shared::{
         InputCoordinateSpace, NormalizedInputPosition, NormalizedLineNumber, NormalizedScalarColumn,
     };
-    use crate::names::NameInterner;
-    use crate::{ExpandedElementName, QualifiedAttributeName};
 
     #[test]
     fn normalized_line_and_scalar_column_coordinates_are_one_based() {
@@ -744,105 +644,6 @@ mod tests {
                     && attributes[1].prefix.as_deref() == Some("xlink")
                     && attributes[2].namespace == AttributeNamespace::Xmlns
                     && attributes[3].prefix.as_deref() == Some("xmlns")
-        ));
-    }
-
-    #[test]
-    fn canonical_patch_conversion_acknowledges_every_current_production_variant() {
-        let mut names = NameInterner::new();
-        let div = names.intern_exact("div").unwrap();
-        let lang = names.intern_exact("lang").unwrap();
-        let element_name = ExpandedElementName::new(
-            ElementNamespace::Html,
-            names.resolve_local_name(div).unwrap(),
-        );
-        let xml_lang = ParserCreatedAttribute::new(
-            QualifiedAttributeName::xml(names.resolve_local_name(lang).unwrap()),
-            "en".to_string(),
-        );
-        let patches = vec![
-            DomPatch::Clear,
-            DomPatch::CreateDocument {
-                key: PatchKey(1),
-                doctype: Some("html".to_string()),
-            },
-            DomPatch::CreateDocumentType {
-                key: PatchKey(2),
-                name: Some("html".to_string()),
-                public_id: Some("public".to_string()),
-                system_id: Some("system".to_string()),
-            },
-            DomPatch::CreateElement {
-                key: PatchKey(3),
-                name: element_name,
-                attributes: vec![xml_lang.clone()],
-            },
-            DomPatch::CreateTemplateContents {
-                host: PatchKey(3),
-                contents: PatchKey(4),
-            },
-            DomPatch::CreateText {
-                key: PatchKey(5),
-                text: "text".to_string(),
-            },
-            DomPatch::CreateComment {
-                key: PatchKey(6),
-                text: "comment".to_string(),
-            },
-            DomPatch::CreateProcessingInstruction {
-                key: PatchKey(7),
-                target: "xml".to_string(),
-                data: "value".to_string(),
-            },
-            DomPatch::AppendChild {
-                parent: PatchKey(1),
-                child: PatchKey(3),
-            },
-            DomPatch::InsertBefore {
-                parent: PatchKey(1),
-                child: PatchKey(5),
-                before: PatchKey(3),
-            },
-            DomPatch::RemoveNode { key: PatchKey(6) },
-            DomPatch::SetAttributes {
-                key: PatchKey(3),
-                attributes: vec![xml_lang],
-            },
-            DomPatch::SetText {
-                key: PatchKey(5),
-                text: "replacement".to_string(),
-            },
-            DomPatch::AppendText {
-                key: PatchKey(5),
-                text: " suffix".to_string(),
-            },
-        ];
-
-        let observed = patches
-            .iter()
-            .map(|patch| {
-                canonicalize_dom_patch(patch, |key| PatchNodeLabel(format!("node-{}", key.0)))
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(observed.len(), 14);
-        assert!(matches!(observed[0], ObservedPatchOperation::Clear));
-        assert!(matches!(
-            &observed[2],
-            ObservedPatchOperation::CreateDocumentType {
-                public_id: Some(public_id),
-                system_id: Some(system_id),
-                ..
-            } if public_id == "public" && system_id == "system"
-        ));
-        assert!(matches!(
-            &observed[3],
-            ObservedPatchOperation::CreateElement { attributes, .. }
-                if attributes[0].namespace == AttributeNamespace::Xml
-                    && attributes[0].prefix.as_deref() == Some("xml")
-        ));
-        assert!(matches!(
-            &observed[13],
-            ObservedPatchOperation::AppendText { text, .. } if text == " suffix"
         ));
     }
 }

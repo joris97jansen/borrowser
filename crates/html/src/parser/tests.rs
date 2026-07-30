@@ -539,7 +539,7 @@ fn document_mode_capture_is_whole_and_chunk_delivery_invariant() {
             parser.pump().expect("document-mode chunk pump");
         }
         parser.finish().expect("document-mode finish");
-        let document_mode = parser.document_mode_for_conformance();
+        let document_mode = parser.document_mode_for_conformance().unwrap();
         let capture = parser
             .take_observations_for_conformance()
             .expect("observation drain")

@@ -39,6 +39,7 @@ impl Id {
 /// - Keys are stable for the lifetime of a document.
 /// - Keys are never reused within a document lifetime.
 /// - When deletion is introduced, deleted keys are never reused.
+/// - Resetting live structure does not release historical keys for reuse.
 /// - `NodeKey(0)` is reserved as invalid.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct NodeKey(pub u32);
@@ -110,6 +111,13 @@ impl DocumentFragmentNode {
     #[cfg(any(test, all(feature = "test-harness", feature = "internal-api")))]
     pub(crate) fn children_mut(&mut self) -> &mut Vec<Node> {
         &mut self.children
+    }
+
+    /// Narrow test seam for proving that canonical observation rejects a
+    /// fragment-kind contradiction without weakening production constructors.
+    #[cfg(test)]
+    pub(crate) fn force_unsupported_kind_for_conformance_test(&mut self) {
+        self.kind = ParserCreatedFragmentKind::TestOnlyUnsupported;
     }
 }
 
@@ -373,6 +381,28 @@ impl Node {
             Node::Document { children, .. } => Some(children),
             Node::Element { element } => Some(element.children()),
             _ => None,
+        }
+    }
+
+    /// Detach owned child groups so tests of iterative tree consumers can also
+    /// tear down adversarially deep values without recursive `Drop`.
+    #[cfg(test)]
+    pub(crate) fn take_child_groups_for_iterative_drop(
+        &mut self,
+    ) -> (Vec<Node>, Option<Vec<Node>>) {
+        match self {
+            Node::Document { children, .. } => (std::mem::take(children), None),
+            Node::Element { element } => {
+                let ordinary = std::mem::take(element.children_mut());
+                let template = element
+                    .template_contents_mut()
+                    .map(|contents| std::mem::take(contents.children_mut()));
+                (ordinary, template)
+            }
+            Node::DocumentType { .. }
+            | Node::Text { .. }
+            | Node::Comment { .. }
+            | Node::ProcessingInstruction { .. } => (Vec::new(), None),
         }
     }
 

@@ -203,8 +203,8 @@ AE1 keeps three identity domains separate.
 
 `PatchKey` is the parser output identity used by `DomPatch` streams. It is
 allocated by the HTML tree builder, is non-zero in emitted patches, and is not
-reused within the active parser document baseline except where the patch
-contract explicitly permits reuse after `Clear`.
+reused within the parser session. `Clear` resets live structure without
+releasing historical key allocation.
 
 ### `html::internal::Id`
 

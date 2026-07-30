@@ -97,11 +97,21 @@ Related contracts:
 
 - Applies patch batches atomically: all-or-none.
 - Rejects unknown/missing keys deterministically.
-- `Clear` resets DOM contents and key-allocation domain for that handle baseline.
+- `Clear` resets DOM contents and the strict applier's baseline-local
+  duplicate-key tracking for that document handle.
 - Legal structural moves preserve the moved node's `PatchKey`.
 - Key reuse policy in strict applier:
   - keys are non-reusable until `Clear`,
-  - keys MAY be reused after `Clear`.
+  - keys MAY be reused after `Clear` in a new runtime baseline.
+
+The production parser has a stricter, separate session-history contract:
+its allocator never reuses a `PatchKey` in the same parser session, including
+after `Clear`. AE13 retained-prefix validation enforces that parser-history
+rule without changing runtime baseline semantics.
+
+AE13 canonical patch labels are a separate snapshot-local display identity.
+They are assigned by first semantic operand appearance, remain monotonic across
+`Clear`, and never expose the numeric `PatchKey`.
 
 ### Legacy diff path (`runtime_parse` test diff helpers)
 

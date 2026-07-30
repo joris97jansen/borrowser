@@ -437,10 +437,18 @@ Current supported subset:
   contradictory self-closing effects propagate through the fatal invariant
   path. The finite, fail-on-incomplete legacy DOM-golden projection is isolated
   in parser-conformance test support and does not merge implementation/resource
-  diagnostics. Canonical serializers, fixture
-  sidecars, trees, patches, transitions, unsupported features, and AE13c final
-  invariants remain deferred. Full doctype classification conformance is not
-  claimed. See `docs/html5/ae13-parser-conformance-regression-harness.md`.
+  diagnostics. AE13b3 adds feature-gated in-memory canonical projection of the
+  successfully materialized parser-created document and complete pre-drain
+  semantic patch history. Tree projection is iterative and atomic under
+  node-and-template-boundary structural capacity; attributes do not consume
+  semantic capacity but remain fallibly allocated. Patch capture retains an operation-count prefix,
+  assigns first-appearance labels, and validates retained creation history.
+  These capacities are not byte budgets, and the existing parser-owned
+  materializer is not claimed to be stack-independent. Canonical serializers,
+  fixture sidecars/corpus migration, transitions, unsupported features, and
+  AE13c final invariants remain deferred. Full doctype classification
+  conformance is not claimed. See
+  `docs/html5/ae13-parser-conformance-regression-harness.md`.
 - AE1 HTML parser ownership architecture: HTML/parser owns tokenizer input
   preprocessing, tokenizer states, typed tokens, parse errors,
   tree-construction state, insertion modes, stack of open elements, active

@@ -52,10 +52,12 @@ fn session_patch_batches_are_version_monotonic_and_atomic() {
             .is_none()
     );
 
-    session.inject_patch_for_test(DomPatch::CreateDocument {
-        key: PatchKey(1),
-        doctype: None,
-    });
+    session
+        .inject_patch_for_test(DomPatch::CreateDocument {
+            key: PatchKey(1),
+            doctype: None,
+        })
+        .unwrap();
     let batch0: DomPatchBatch = session
         .take_patch_batch()
         .expect("session batch drain")
@@ -77,10 +79,12 @@ fn session_patch_batches_are_version_monotonic_and_atomic() {
         "empty drain must not advance version"
     );
 
-    session.inject_patch_for_test(DomPatch::CreateComment {
-        key: PatchKey(2),
-        text: "x".to_string(),
-    });
+    session
+        .inject_patch_for_test(DomPatch::CreateComment {
+            key: PatchKey(2),
+            text: "x".to_string(),
+        })
+        .unwrap();
     let batch1: DomPatchBatch = session
         .take_patch_batch()
         .expect("session batch drain")

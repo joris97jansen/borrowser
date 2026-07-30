@@ -3,7 +3,11 @@
 //! This is the only canonical observation request boundary. It deliberately
 //! does not participate in the stable parser facade.
 
+use super::projection::{ObservationAllocationController, project_patches, project_tree};
+#[cfg(test)]
+use super::projection::{ObservationAllocationStep, ObservationFailureInjection};
 use super::{CanonicalParserResult, IncompleteObservationReason, ObservationState};
+use crate::html5::PatchHistoryObservationConfig;
 use crate::html5::shared::{
     CapturedSurface, DocumentParseContext, ErrorPolicy, ObservationOccurrenceSequence,
     ObservationSurface, ParserObservationCapture, ParserObservationConfig,
@@ -50,6 +54,13 @@ pub struct ParserObservationRequest<'a> {
     pub parse_errors: ObservationRequest,
     pub implementation_diagnostics: ObservationRequest,
     pub document_mode: ScalarObservationRequest,
+    /// Maximum canonical structural units: document, document type, element or
+    /// HTML template host, text, comment, processing instruction, and typed
+    /// template-contents boundary. Attributes and the outer `ObservedTree`
+    /// wrapper do not consume units. This is not a byte budget.
+    pub tree: ObservationRequest,
+    /// Maximum semantic `DomPatch` operations. This is not a byte budget.
+    pub patches: ObservationRequest,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -59,8 +70,47 @@ pub enum ParserObservationExecutionError {
     TokenizerInvariant(ParserTokenizerInvariantError),
     TokenCanonicalizationInvariant,
     ObservationRecorderMissing,
+    PatchHistoryCaptureMissing,
     ObservationInvariant(ParserObservationInvariantError),
+    ResourceExhaustion(ObservationResourceExhaustion),
 }
+
+/// Fallible allocation boundary owned by post-parse canonical observation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ObservationReservationSite {
+    CanonicalTreeProjection,
+    CanonicalPatchProjection,
+    SnapshotLabelStorage,
+}
+
+/// Allocation or representable-capacity failure while constructing a
+/// canonical result after successful production parsing and materialization.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ObservationResourceExhaustion {
+    site: ObservationReservationSite,
+}
+
+impl ObservationResourceExhaustion {
+    pub const fn site(self) -> ObservationReservationSite {
+        self.site
+    }
+
+    pub(super) const fn at(site: ObservationReservationSite) -> Self {
+        Self { site }
+    }
+}
+
+impl std::fmt::Display for ObservationResourceExhaustion {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "canonical parser observation allocation failed at {:?}",
+            self.site
+        )
+    }
+}
+
+impl std::error::Error for ObservationResourceExhaustion {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ParserTokenizerInvariantError {
@@ -105,6 +155,18 @@ pub enum ParserObservationInvariantError {
     NormalizedPositionIndexDiscontinuity,
     NormalizedPositionIndexMissing,
     InvalidNormalizedPositionOffset,
+    PatchDroppedCountOverflow,
+    CanonicalTreeUnitCountOverflow,
+    CanonicalTreeRootNotDocument,
+    UnexpectedLegacyDocumentDoctypeMetadata,
+    MissingHtmlTemplateContents,
+    InvalidTemplateContentsKind,
+    CanonicalTreeTraversalContradiction,
+    CanonicalTreePreflightProjectionMismatch,
+    InvalidPatchKey,
+    DuplicatePatchCreation,
+    MissingPatchCreationHistory,
+    SnapshotLabelSequenceOverflow,
 }
 
 impl std::fmt::Display for ParserObservationExecutionError {
@@ -124,10 +186,20 @@ impl std::fmt::Display for ParserObservationExecutionError {
             Self::ObservationRecorderMissing => formatter.write_str(
                 "parser observation was requested but the production recorder was missing",
             ),
+            Self::PatchHistoryCaptureMissing => formatter.write_str(
+                "patch history was requested but the parser-session capture was missing",
+            ),
             Self::ObservationInvariant(invariant) => {
                 write!(
                     formatter,
                     "parser observation invariant failed: {invariant:?}"
+                )
+            }
+            Self::ResourceExhaustion(exhaustion) => {
+                write!(
+                    formatter,
+                    "parser observation allocation failed at {:?}",
+                    exhaustion.site()
                 )
             }
         }
@@ -146,7 +218,13 @@ pub fn execute_parser_observation(
         parse_errors: internal_request(request.parse_errors),
         implementation_diagnostics: internal_request(request.implementation_diagnostics),
     };
-    let (capture, document_mode) = match request.target {
+    let patch_config = match request.patches {
+        ObservationRequest::NotRequested => PatchHistoryObservationConfig::default(),
+        ObservationRequest::Capture { capacity } => {
+            PatchHistoryObservationConfig::capture(capacity)
+        }
+    };
+    let (capture, document_mode, tree, patches) = match request.target {
         ParserObservationTarget::StandaloneTokenizer => {
             let capture = execute_standalone_tokenizer(request.input, config)?;
             let mode = match request.document_mode {
@@ -155,27 +233,59 @@ pub fn execute_parser_observation(
                     reason: super::NotApplicableReason::StandaloneTokenizerRun,
                 },
             };
-            (capture, mode)
+            let tree = not_applicable_or_not_requested(request.tree);
+            let patches = not_applicable_or_not_requested(request.patches);
+            (capture, mode, tree, patches)
         }
         ParserObservationTarget::DocumentParser => {
-            let (capture, production_mode) = execute_document_parser(request.input, config)?;
+            let (capture, production_mode, tree, patches) = execute_document_parser(
+                request.input,
+                config,
+                patch_config,
+                request.tree,
+                request.patches,
+            )?;
             let mode = match request.document_mode {
                 ScalarObservationRequest::NotRequested => ObservationState::NotRequested,
                 ScalarObservationRequest::Capture => ObservationState::Captured(production_mode),
             };
-            (capture, mode)
+            (capture, mode, tree, patches)
         }
     };
-    canonical_result(capture, document_mode)
+    canonical_result(capture, document_mode, tree, patches)
+}
+
+fn not_applicable_or_not_requested<T>(request: ObservationRequest) -> ObservationState<T> {
+    match request {
+        ObservationRequest::NotRequested => ObservationState::NotRequested,
+        ObservationRequest::Capture { .. } => ObservationState::NotApplicable {
+            reason: super::NotApplicableReason::StandaloneTokenizerRun,
+        },
+    }
 }
 
 fn execute_document_parser(
     input: ParserObservationInput<'_>,
     config: ParserObservationConfig,
-) -> Result<(ParserObservationCapture, crate::DocumentMode), ParserObservationExecutionError> {
+    patch_config: PatchHistoryObservationConfig,
+    tree_request: ObservationRequest,
+    patch_request: ObservationRequest,
+) -> Result<
+    (
+        ParserObservationCapture,
+        crate::DocumentMode,
+        ObservationState<super::ObservedTree>,
+        ObservationState<super::ObservedPatchStream>,
+    ),
+    ParserObservationExecutionError,
+> {
     let observation_requested = config.is_requested();
-    let mut parser = HtmlParser::new_with_observations(HtmlParseOptions::default(), config)
-        .map_err(parser_error_without_live_parser)?;
+    let mut parser = HtmlParser::new_with_conformance_observations(
+        HtmlParseOptions::default(),
+        config,
+        patch_config,
+    )
+    .map_err(parser_error_without_live_parser)?;
     match input {
         ParserObservationInput::Utf8(text) => {
             push_document_text(&mut parser, text)?;
@@ -197,21 +307,75 @@ fn execute_document_parser(
     if let Err(error) = parser.finish() {
         return Err(document_parser_operation_error(&parser, error));
     }
-    finalize_document_parser(parser, observation_requested)
+    finalize_document_parser(parser, observation_requested, tree_request, patch_request)
 }
 
 fn finalize_document_parser(
-    mut parser: HtmlParser,
+    parser: HtmlParser,
     observation_requested: bool,
-) -> Result<(ParserObservationCapture, crate::DocumentMode), ParserObservationExecutionError> {
-    let document_mode = parser.document_mode_for_conformance();
-    let capture = take_document_capture(&mut parser, observation_requested)?;
-    // Run the same final materialization path as the stable facade before
-    // exposing observations, even though AE13b1 does not capture the tree.
-    let _ = parser
-        .into_output()
+    tree_request: ObservationRequest,
+    patch_request: ObservationRequest,
+) -> Result<
+    (
+        ParserObservationCapture,
+        crate::DocumentMode,
+        ObservationState<super::ObservedTree>,
+        ObservationState<super::ObservedPatchStream>,
+    ),
+    ParserObservationExecutionError,
+> {
+    finalize_document_parser_with_allocations(
+        parser,
+        observation_requested,
+        tree_request,
+        patch_request,
+        &mut ObservationAllocationController::default(),
+    )
+}
+
+fn finalize_document_parser_with_allocations(
+    parser: HtmlParser,
+    observation_requested: bool,
+    tree_request: ObservationRequest,
+    patch_request: ObservationRequest,
+    allocations: &mut ObservationAllocationController,
+) -> Result<
+    (
+        ParserObservationCapture,
+        crate::DocumentMode,
+        ObservationState<super::ObservedTree>,
+        ObservationState<super::ObservedPatchStream>,
+    ),
+    ParserObservationExecutionError,
+> {
+    let document_mode = parser
+        .document_mode_for_conformance()
+        .map_err(|error| document_parser_operation_error(&parser, error))?;
+    let (output, capture, patch_history) = parser
+        .into_output_with_observations()
         .map_err(parser_error_without_live_parser)?;
-    Ok((capture, document_mode))
+    let capture = require_capture(capture, observation_requested)?;
+    validate_capture(&capture)?;
+    let tree = match tree_request {
+        ObservationRequest::NotRequested => ObservationState::NotRequested,
+        ObservationRequest::Capture { capacity } => {
+            project_tree(&output.document, capacity, allocations)?
+        }
+    };
+    let patches = match patch_request {
+        ObservationRequest::NotRequested => {
+            if patch_history.is_some() {
+                return Err(ParserObservationExecutionError::ParserInvariant);
+            }
+            ObservationState::NotRequested
+        }
+        ObservationRequest::Capture { .. } => {
+            let history =
+                patch_history.ok_or(ParserObservationExecutionError::PatchHistoryCaptureMissing)?;
+            project_patches(history, allocations)?
+        }
+    };
+    Ok((capture, document_mode, tree, patches))
 }
 
 fn push_document_text(
@@ -239,13 +403,21 @@ fn document_parser_operation_error(
     error: crate::HtmlParseError,
 ) -> ParserObservationExecutionError {
     match error {
-        crate::HtmlParseError::Fatal(crate::ParserFatalError::EngineInvariant) => parser
-            .tokenizer_invariant_for_conformance()
-            .map(public_tokenizer_invariant)
-            .map(ParserObservationExecutionError::TokenizerInvariant)
-            .unwrap_or(ParserObservationExecutionError::ParserFatal(
-                crate::ParserFatalError::EngineInvariant,
-            )),
+        crate::HtmlParseError::Fatal(crate::ParserFatalError::EngineInvariant) => {
+            if let Some(invariant) = parser.patch_history_invariant_for_conformance() {
+                ParserObservationExecutionError::ObservationInvariant(public_observation_invariant(
+                    invariant,
+                ))
+            } else {
+                parser
+                    .tokenizer_invariant_for_conformance()
+                    .map(public_tokenizer_invariant)
+                    .map(ParserObservationExecutionError::TokenizerInvariant)
+                    .unwrap_or(ParserObservationExecutionError::ParserFatal(
+                        crate::ParserFatalError::EngineInvariant,
+                    ))
+            }
+        }
         crate::HtmlParseError::Fatal(error) => ParserObservationExecutionError::ParserFatal(error),
         crate::HtmlParseError::Decode | crate::HtmlParseError::PatchValidation(_) => {
             ParserObservationExecutionError::ParserInvariant
@@ -280,7 +452,11 @@ fn execute_standalone_tokenizer(
     config: ParserObservationConfig,
 ) -> Result<ParserObservationCapture, ParserObservationExecutionError> {
     let observation_requested = config.is_requested();
-    let mut ctx = DocumentParseContext::with_observations(ErrorPolicy::default(), config);
+    let mut ctx = if observation_requested {
+        DocumentParseContext::with_observations(ErrorPolicy::default(), config)
+    } else {
+        DocumentParseContext::with_error_policy(ErrorPolicy::default())
+    };
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
     let mut input = Input::new();
     let mut decoder = ByteStreamDecoder::new();
@@ -309,9 +485,16 @@ fn execute_standalone_tokenizer(
     };
 
     if byte_input {
-        let _ = decoder.finish_with_context(&mut input, &mut ctx);
-    } else {
+        if ctx.observation_enabled() {
+            let _ = decoder.finish_with_context(&mut input, &mut ctx);
+        } else {
+            let (_, replacements) = decoder.finish_counted(&mut input);
+            ctx.record_decode_replacements(replacements);
+        }
+    } else if ctx.observation_enabled() {
         let _ = input.finish_preprocessing_observed(ctx.observation_position_index_mut());
+    } else {
+        let _ = input.finish_preprocessing();
     }
     pump_standalone(&mut tokenizer, &mut input, &mut ctx)?;
     let _ = tokenizer.finish_with_context(&input, &mut ctx);
@@ -320,7 +503,7 @@ fn execute_standalone_tokenizer(
             public_tokenizer_invariant(invariant),
         ));
     }
-    drop(tokenizer.next_batch_observed(&mut input, &mut ctx));
+    drain_standalone_batch(&mut tokenizer, &mut input, &mut ctx);
 
     take_standalone_capture(&mut ctx, observation_requested)
 }
@@ -331,7 +514,11 @@ fn push_standalone_text(
     ctx: &mut DocumentParseContext,
     text: &str,
 ) -> Result<(), ParserObservationExecutionError> {
-    input.push_str_observed(text, ctx.observation_position_index_mut());
+    if ctx.observation_enabled() {
+        input.push_str_observed(text, ctx.observation_position_index_mut());
+    } else {
+        input.push_str(text);
+    }
     pump_standalone(tokenizer, input, ctx)
 }
 
@@ -342,7 +529,12 @@ fn push_standalone_bytes(
     ctx: &mut DocumentParseContext,
     bytes: &[u8],
 ) -> Result<(), ParserObservationExecutionError> {
-    let _ = decoder.push_bytes_with_context(bytes, input, ctx);
+    if ctx.observation_enabled() {
+        let _ = decoder.push_bytes_with_context(bytes, input, ctx);
+    } else {
+        let (_, replacements) = decoder.push_bytes_counted(bytes, input);
+        ctx.record_decode_replacements(replacements);
+    }
     pump_standalone(tokenizer, input, ctx)
 }
 
@@ -358,13 +550,25 @@ fn pump_standalone(
                 public_tokenizer_invariant(invariant),
             ));
         }
-        drop(tokenizer.next_batch_observed(input, ctx));
+        drain_standalone_batch(tokenizer, input, ctx);
         if result == TokenizeResult::NeedMoreInput {
             return Ok(());
         }
         if result == TokenizeResult::EmittedEof {
             return Ok(());
         }
+    }
+}
+
+fn drain_standalone_batch(
+    tokenizer: &mut Html5Tokenizer,
+    input: &mut Input,
+    ctx: &mut DocumentParseContext,
+) {
+    if ctx.observation_enabled() {
+        drop(tokenizer.next_batch_observed(input, ctx));
+    } else {
+        drop(tokenizer.next_batch(input));
     }
 }
 
@@ -501,6 +705,7 @@ fn require_capture(
     }
 }
 
+#[cfg(test)]
 fn take_document_capture(
     parser: &mut HtmlParser,
     observation_requested: bool,
@@ -521,7 +726,26 @@ fn take_standalone_capture(
 fn canonical_result(
     capture: ParserObservationCapture,
     document_mode: ObservationState<crate::DocumentMode>,
+    tree: ObservationState<super::ObservedTree>,
+    patches: ObservationState<super::ObservedPatchStream>,
 ) -> Result<CanonicalParserResult, ParserObservationExecutionError> {
+    validate_capture(&capture)?;
+    Ok(CanonicalParserResult {
+        tokens: finish_surface(capture.tokens),
+        parse_errors: finish_surface(capture.parse_errors),
+        implementation_diagnostics: finish_surface(capture.implementation_diagnostics),
+        document_mode,
+        tree,
+        patches,
+        transitions: ObservationState::NotRequested,
+        unsupported_features: ObservationState::NotRequested,
+        final_invariants: ObservationState::NotRequested,
+    })
+}
+
+fn validate_capture(
+    capture: &ParserObservationCapture,
+) -> Result<(), ParserObservationExecutionError> {
     if capture.token_capture_failed {
         return Err(ParserObservationExecutionError::TokenCanonicalizationInvariant);
     }
@@ -530,17 +754,7 @@ fn canonical_result(
             public_observation_invariant(invariant),
         ));
     }
-    Ok(CanonicalParserResult {
-        tokens: finish_surface(capture.tokens),
-        parse_errors: finish_surface(capture.parse_errors),
-        implementation_diagnostics: finish_surface(capture.implementation_diagnostics),
-        document_mode,
-        tree: ObservationState::NotRequested,
-        patches: ObservationState::NotRequested,
-        transitions: ObservationState::NotRequested,
-        unsupported_features: ObservationState::NotRequested,
-        final_invariants: ObservationState::NotRequested,
-    })
+    Ok(())
 }
 
 fn public_observation_invariant(
@@ -574,6 +788,9 @@ fn public_observation_invariant(
         ParserObservationInvariant::InvalidNormalizedPositionOffset => {
             ParserObservationInvariantError::InvalidNormalizedPositionOffset
         }
+        ParserObservationInvariant::PatchDroppedCountOverflow => {
+            ParserObservationInvariantError::PatchDroppedCountOverflow
+        }
     }
 }
 
@@ -597,7 +814,7 @@ fn finish_surface<T>(capture: CapturedSurface<T>) -> ObservationState<Vec<T>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::conformance::NotApplicableReason;
+    use crate::conformance::{NotApplicableReason, ObservedPatchStream, ObservedTreeNode};
     use crate::html5::shared::{
         EventPosition, ImplementationDiagnosticCode, InputCoordinateSpace, ParseErrorCode,
         SourceBytePosition, SourcePositionUnavailableReason, Utf8ReplacementReason,
@@ -640,6 +857,8 @@ mod tests {
                 capacity: DIAGNOSTIC_CAPACITY,
             },
             document_mode: ScalarObservationRequest::NotRequested,
+            tree: ObservationRequest::NotRequested,
+            patches: ObservationRequest::NotRequested,
         })
         .expect("production tokenizer observation should succeed")
     }
@@ -742,6 +961,8 @@ mod tests {
             parse_errors: ObservationRequest::NotRequested,
             implementation_diagnostics: ObservationRequest::NotRequested,
             document_mode: ScalarObservationRequest::NotRequested,
+            tree: ObservationRequest::NotRequested,
+            patches: ObservationRequest::NotRequested,
         })
         .expect("unobserved conformance execution still runs production parsing");
         assert!(matches!(result.tokens, ObservationState::NotRequested));
@@ -831,15 +1052,207 @@ mod tests {
             .expect("observed parser");
         parser.push_str("<p>x</p>").expect("document input");
         parser.finish().expect("document finish");
-        parser.inject_patch_for_conformance_test(crate::DomPatch::AppendChild {
-            parent: crate::PatchKey(u32::MAX - 1),
-            child: crate::PatchKey(u32::MAX),
-        });
+        parser
+            .inject_patch_for_conformance_test(crate::DomPatch::AppendChild {
+                parent: crate::PatchKey(u32::MAX - 1),
+                child: crate::PatchKey(u32::MAX),
+            })
+            .expect("unobserved injected patch");
 
         assert_eq!(
-            finalize_document_parser(parser, true),
+            finalize_document_parser(
+                parser,
+                true,
+                ObservationRequest::NotRequested,
+                ObservationRequest::NotRequested,
+            ),
             Err(ParserObservationExecutionError::ParserInvariant)
         );
+    }
+
+    #[test]
+    fn materialization_failure_returns_execution_failure_without_canonical_output() {
+        let mut parser = HtmlParser::new_with_conformance_observations(
+            HtmlParseOptions::default(),
+            ParserObservationConfig::default(),
+            PatchHistoryObservationConfig::capture(64),
+        )
+        .unwrap();
+        parser.push_str("<p>x</p>").unwrap();
+        parser.finish().unwrap();
+        let _ = parser.take_patches().unwrap();
+        parser.force_materialization_failure_for_test();
+        let error = parser.into_output_with_observations().unwrap_err();
+        assert_eq!(
+            parser_error_without_live_parser(error),
+            ParserObservationExecutionError::ParserInvariant
+        );
+    }
+
+    #[test]
+    fn requested_patch_observation_without_session_capture_is_an_execution_failure() {
+        let mut parser = HtmlParser::new_with_observations(
+            HtmlParseOptions::default(),
+            ParserObservationConfig::default(),
+        )
+        .unwrap();
+        parser.push_str("<p>x</p>").unwrap();
+        parser.finish().unwrap();
+        assert_eq!(
+            finalize_document_parser(
+                parser,
+                false,
+                ObservationRequest::NotRequested,
+                ObservationRequest::Capture { capacity: 64 },
+            ),
+            Err(ParserObservationExecutionError::PatchHistoryCaptureMissing)
+        );
+    }
+
+    #[test]
+    fn post_parse_projection_allocation_failure_suppresses_canonical_result() {
+        let mut parser = HtmlParser::new_with_conformance_observations(
+            HtmlParseOptions::default(),
+            ParserObservationConfig::default(),
+            PatchHistoryObservationConfig::default(),
+        )
+        .unwrap();
+        parser.push_str("<p>x</p>").unwrap();
+        parser.finish().unwrap();
+        let mut allocations =
+            ObservationAllocationController::with_failure(ObservationFailureInjection {
+                step: ObservationAllocationStep::CanonicalTreeChildStorage,
+                occurrence: NonZeroU64::MIN,
+            });
+        assert_eq!(
+            finalize_document_parser_with_allocations(
+                parser,
+                false,
+                ObservationRequest::Capture { capacity: 16 },
+                ObservationRequest::NotRequested,
+                &mut allocations,
+            ),
+            Err(ParserObservationExecutionError::ResourceExhaustion(
+                ObservationResourceExhaustion::at(
+                    ObservationReservationSite::CanonicalTreeProjection
+                )
+            ))
+        );
+    }
+
+    #[test]
+    fn live_patch_history_invariant_is_stable_fatal_but_exact_for_conformance() {
+        let mut parser = HtmlParser::new_with_conformance_observations(
+            HtmlParseOptions::default(),
+            ParserObservationConfig::default(),
+            PatchHistoryObservationConfig::capture(0),
+        )
+        .expect("parser");
+        parser.force_patch_history_dropped_for_test(u64::MAX);
+        let stable = parser
+            .inject_patch_for_conformance_test(crate::DomPatch::Clear)
+            .unwrap_err();
+        assert_eq!(
+            stable,
+            crate::HtmlParseError::Fatal(crate::ParserFatalError::EngineInvariant)
+        );
+        assert_eq!(
+            document_parser_operation_error(&parser, stable),
+            ParserObservationExecutionError::ObservationInvariant(
+                ParserObservationInvariantError::PatchDroppedCountOverflow
+            )
+        );
+        assert_eq!(
+            parser.take_patches(),
+            Err(crate::HtmlParseError::Fatal(
+                crate::ParserFatalError::EngineInvariant
+            ))
+        );
+        assert_eq!(
+            parser.document_mode_for_conformance(),
+            Err(crate::HtmlParseError::Fatal(
+                crate::ParserFatalError::EngineInvariant
+            ))
+        );
+        assert_eq!(
+            parser.take_observations_for_conformance(),
+            Err(crate::HtmlParseError::Fatal(
+                crate::ParserFatalError::EngineInvariant
+            ))
+        );
+    }
+
+    #[cfg(feature = "parser-failure-injection")]
+    #[test]
+    fn live_patch_history_resource_failure_keeps_exact_parser_fatal_identity() {
+        use crate::html5::shared::ParserFailureInjection;
+
+        let mut parser = HtmlParser::new_with_conformance_observations(
+            HtmlParseOptions::default(),
+            ParserObservationConfig::default(),
+            PatchHistoryObservationConfig::capture(8),
+        )
+        .expect("parser");
+        parser.set_patch_history_failure_injection_for_test(ParserFailureInjection::new(
+            crate::ParserReservationSite::PatchHistoryObservationStorage,
+            NonZeroU64::MIN,
+        ));
+        let exhaustion = crate::ParserResourceExhaustion::at(
+            crate::ParserReservationSite::PatchHistoryObservationStorage,
+        );
+        let fatal = crate::ParserFatalError::ResourceExhaustion(exhaustion);
+        assert_eq!(
+            parser.inject_patch_for_conformance_test(crate::DomPatch::Clear),
+            Err(crate::HtmlParseError::Fatal(fatal))
+        );
+        assert_eq!(
+            parser.take_patches(),
+            Err(crate::HtmlParseError::Fatal(fatal))
+        );
+        assert_eq!(
+            document_parser_operation_error(&parser, crate::HtmlParseError::Fatal(fatal)),
+            ParserObservationExecutionError::ParserFatal(fatal)
+        );
+    }
+
+    #[cfg(feature = "parser-failure-injection")]
+    #[test]
+    fn live_capture_failure_stops_before_next_token_and_blocks_all_output() {
+        use crate::html5::shared::ParserFailureInjection;
+
+        let mut parser = HtmlParser::new_with_conformance_observations(
+            HtmlParseOptions::default(),
+            ParserObservationConfig::default(),
+            PatchHistoryObservationConfig::capture(128),
+        )
+        .unwrap();
+        parser.set_patch_history_failure_injection_for_test(ParserFailureInjection::new(
+            crate::ParserReservationSite::PatchHistoryObservationStorage,
+            NonZeroU64::MIN,
+        ));
+        parser.push_str("<div><span>later</span></div>").unwrap();
+        let exhaustion = crate::ParserResourceExhaustion::at(
+            crate::ParserReservationSite::PatchHistoryObservationStorage,
+        );
+        let fatal = crate::ParserFatalError::ResourceExhaustion(exhaustion);
+        assert_eq!(parser.pump(), Err(crate::HtmlParseError::Fatal(fatal)));
+        assert_eq!(
+            parser.tokens_processed(),
+            1,
+            "the token after the synchronously failed emission must not run"
+        );
+        assert_eq!(
+            parser.push_str("<p>never</p>"),
+            Err(crate::HtmlParseError::Fatal(fatal))
+        );
+        assert_eq!(
+            parser.take_patch_batch(),
+            Err(crate::HtmlParseError::Fatal(fatal))
+        );
+        assert!(matches!(
+            parser.into_output_with_observations(),
+            Err(crate::HtmlParseError::Fatal(error)) if error == fatal
+        ));
     }
 
     #[test]
@@ -849,7 +1262,12 @@ mod tests {
             ObservationOccurrenceSequence::ParseErrors,
         ));
         assert_eq!(
-            canonical_result(capture, ObservationState::NotRequested),
+            canonical_result(
+                capture,
+                ObservationState::NotRequested,
+                ObservationState::NotRequested,
+                ObservationState::NotRequested,
+            ),
             Err(ParserObservationExecutionError::ObservationInvariant(
                 ParserObservationInvariantError::ParseErrorOccurrenceOverflow
             ))
@@ -858,7 +1276,12 @@ mod tests {
         let mut capture = empty_capture();
         capture.invariant = Some(ParserObservationInvariant::InvalidNormalizedPositionOffset);
         assert_eq!(
-            canonical_result(capture, ObservationState::NotRequested),
+            canonical_result(
+                capture,
+                ObservationState::NotRequested,
+                ObservationState::NotRequested,
+                ObservationState::NotRequested,
+            ),
             Err(ParserObservationExecutionError::ObservationInvariant(
                 ParserObservationInvariantError::InvalidNormalizedPositionOffset
             ))
@@ -867,7 +1290,12 @@ mod tests {
         let mut capture = empty_capture();
         capture.invariant = Some(ParserObservationInvariant::NormalizedPositionIndexMissing);
         assert_eq!(
-            canonical_result(capture, ObservationState::NotRequested),
+            canonical_result(
+                capture,
+                ObservationState::NotRequested,
+                ObservationState::NotRequested,
+                ObservationState::NotRequested,
+            ),
             Err(ParserObservationExecutionError::ObservationInvariant(
                 ParserObservationInvariantError::NormalizedPositionIndexMissing
             ))
@@ -898,7 +1326,12 @@ mod tests {
             "an invalid normalized offset must not retain a false unavailable-position event"
         );
         assert_eq!(
-            canonical_result(capture, ObservationState::NotRequested),
+            canonical_result(
+                capture,
+                ObservationState::NotRequested,
+                ObservationState::NotRequested,
+                ObservationState::NotRequested,
+            ),
             Err(ParserObservationExecutionError::ObservationInvariant(
                 ParserObservationInvariantError::InvalidNormalizedPositionOffset
             ))
@@ -930,7 +1363,12 @@ mod tests {
             "missing-index corruption must not retain a false unavailable event"
         );
         assert_eq!(
-            canonical_result(capture, ObservationState::NotRequested),
+            canonical_result(
+                capture,
+                ObservationState::NotRequested,
+                ObservationState::NotRequested,
+                ObservationState::NotRequested,
+            ),
             Err(ParserObservationExecutionError::ObservationInvariant(
                 ParserObservationInvariantError::NormalizedPositionIndexMissing
             ))
@@ -1043,6 +1481,8 @@ mod tests {
             parse_errors: ObservationRequest::NotRequested,
             implementation_diagnostics: ObservationRequest::Capture { capacity: 1 },
             document_mode: ScalarObservationRequest::NotRequested,
+            tree: ObservationRequest::NotRequested,
+            patches: ObservationRequest::NotRequested,
         })
         .unwrap();
         let ObservationState::Incomplete { partial, reason } = result.implementation_diagnostics
@@ -1449,6 +1889,8 @@ mod tests {
             parse_errors: ObservationRequest::Capture { capacity: 8 },
             implementation_diagnostics: ObservationRequest::NotRequested,
             document_mode: ScalarObservationRequest::NotRequested,
+            tree: ObservationRequest::NotRequested,
+            patches: ObservationRequest::NotRequested,
         })
         .expect("document parser observation");
         assert!(captured(&text_mode.parse_errors).iter().any(|event| {
@@ -2860,6 +3302,8 @@ mod tests {
                 capacity: diagnostic_capacity,
             },
             document_mode,
+            tree: ObservationRequest::NotRequested,
+            patches: ObservationRequest::NotRequested,
         })
         .expect("document observation should complete")
     }
@@ -3153,6 +3597,8 @@ mod tests {
                 parse_errors: ObservationRequest::NotRequested,
                 implementation_diagnostics: ObservationRequest::NotRequested,
                 document_mode: ScalarObservationRequest::Capture,
+                tree: ObservationRequest::NotRequested,
+                patches: ObservationRequest::NotRequested,
             })
             .expect("scalar-only production execution");
             assert_eq!(scalar_only.document_mode, result.document_mode);
@@ -3168,6 +3614,8 @@ mod tests {
             parse_errors: ObservationRequest::NotRequested,
             implementation_diagnostics: ObservationRequest::NotRequested,
             document_mode: ScalarObservationRequest::Capture,
+            tree: ObservationRequest::NotRequested,
+            patches: ObservationRequest::NotRequested,
         })
         .expect("standalone tokenizer execution");
         assert_eq!(
@@ -3176,5 +3624,422 @@ mod tests {
                 reason: NotApplicableReason::StandaloneTokenizerRun,
             }
         );
+    }
+
+    #[test]
+    fn canonical_document_tree_preserves_production_payloads_and_namespaces() {
+        let result = execute_parser_observation(ParserObservationRequest {
+            target: ParserObservationTarget::DocumentParser,
+            input: ParserObservationInput::Utf8(
+                "<!DOCTYPE html PUBLIC \"pub\" \"sys\"><?pi data?>\
+                 <html><body><!--comment--><svg viewBox=\"0\" xlink:href=\"#x\">s</svg>\
+                 <math><mi>m</mi></math><template><span>outer</span>\
+                 <template><b>inner</b></template></template></body></html>",
+            ),
+            tokens: ObservationRequest::NotRequested,
+            parse_errors: ObservationRequest::NotRequested,
+            implementation_diagnostics: ObservationRequest::NotRequested,
+            document_mode: ScalarObservationRequest::NotRequested,
+            tree: ObservationRequest::Capture { capacity: 256 },
+            patches: ObservationRequest::Capture { capacity: 512 },
+        })
+        .expect("canonical document observation");
+        assert!(matches!(result.tokens, ObservationState::NotRequested));
+        assert!(matches!(
+            result.parse_errors,
+            ObservationState::NotRequested
+        ));
+        assert!(matches!(
+            result.implementation_diagnostics,
+            ObservationState::NotRequested
+        ));
+        let ObservationState::Captured(tree) = result.tree else {
+            panic!("tree must be complete");
+        };
+        let [ObservedTreeNode::Document { children }] = tree.roots.as_slice() else {
+            panic!("document must remain the sole canonical root");
+        };
+        assert!(matches!(
+            &children[0],
+            ObservedTreeNode::DocumentType {
+                name: Some(name),
+                public_id: Some(public_id),
+                system_id: Some(system_id),
+            } if name == "html" && public_id == "pub" && system_id == "sys"
+        ));
+        assert!(children.iter().any(|node| matches!(
+            node,
+            ObservedTreeNode::ProcessingInstruction { target, data }
+                if target == "pi" && data == "data"
+        )));
+
+        let html = children
+            .iter()
+            .find(|node| {
+                matches!(
+                    node,
+                    ObservedTreeNode::Element {
+                        namespace: crate::ElementNamespace::Html,
+                        local_name,
+                        ..
+                    } if local_name == "html"
+                )
+            })
+            .expect("html element");
+        let mut stack = vec![html];
+        let mut saw_comment = false;
+        let mut saw_svg = false;
+        let mut saw_math = false;
+        let mut template_depths = Vec::new();
+        while let Some(node) = stack.pop() {
+            match node {
+                ObservedTreeNode::Comment { data } => saw_comment |= data == "comment",
+                ObservedTreeNode::Text { .. }
+                | ObservedTreeNode::DocumentType { .. }
+                | ObservedTreeNode::ProcessingInstruction { .. } => {}
+                ObservedTreeNode::Document { children }
+                | ObservedTreeNode::Element { children, .. } => {
+                    if let ObservedTreeNode::Element {
+                        namespace,
+                        local_name,
+                        attributes,
+                        ..
+                    } = node
+                    {
+                        if *namespace == crate::ElementNamespace::Svg && local_name == "svg" {
+                            saw_svg = attributes.iter().any(|attribute| {
+                                attribute.namespace == crate::AttributeNamespace::XLink
+                                    && attribute.prefix.as_deref() == Some("xlink")
+                                    && attribute.local_name == "href"
+                                    && attribute.value == "#x"
+                            }) && attributes
+                                .first()
+                                .is_some_and(|attribute| attribute.local_name == "viewBox");
+                        }
+                        saw_math |=
+                            *namespace == crate::ElementNamespace::MathMl && local_name == "math";
+                    }
+                    stack.extend(children.iter().rev());
+                }
+                ObservedTreeNode::HtmlTemplateElement {
+                    ordinary_children,
+                    contents,
+                    ..
+                } => {
+                    template_depths.push(contents.children.len());
+                    stack.extend(ordinary_children.iter().rev());
+                    stack.extend(contents.children.iter().rev());
+                }
+            }
+        }
+        assert!(saw_comment && saw_svg && saw_math);
+        assert_eq!(
+            template_depths.len(),
+            2,
+            "nested template contents retained"
+        );
+
+        let ObservationState::Captured(patches) = result.patches else {
+            panic!("patches must be complete");
+        };
+        assert!(!patches.operations.is_empty());
+        assert!(
+            patches
+                .operations
+                .iter()
+                .all(|operation| { !format!("{operation:?}").contains("PatchKey") })
+        );
+    }
+
+    #[test]
+    fn tree_and_patch_only_sessions_do_not_enable_diagnostic_observation() {
+        for patch_config in [
+            PatchHistoryObservationConfig::default(),
+            PatchHistoryObservationConfig::capture(128),
+        ] {
+            let mut parser = HtmlParser::new_with_conformance_observations(
+                HtmlParseOptions::default(),
+                ParserObservationConfig::default(),
+                patch_config,
+            )
+            .expect("parser");
+            assert!(!parser.diagnostic_observation_enabled_for_test());
+            assert_eq!(parser.take_observations_for_conformance().unwrap(), None);
+            parser.push_str("<p>x</p>").unwrap();
+            parser.finish().unwrap();
+            assert!(!parser.diagnostic_observation_enabled_for_test());
+            let (output, diagnostics, _) = parser.into_output_with_observations().unwrap();
+            assert_eq!(diagnostics, None);
+
+            let ordinary = crate::parse_document("<p>x</p>", HtmlParseOptions::default()).unwrap();
+            assert_eq!(output.patches, ordinary.patches);
+            assert_eq!(output.counters, ordinary.counters);
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    enum PatchDrainSchedule {
+        WholeInput,
+        Chunked,
+        TakePatches,
+        TakePatchBatch,
+    }
+
+    fn captured_raw_patches(schedule: PatchDrainSchedule) -> crate::html5::RawPatchHistoryCapture {
+        let mut parser = HtmlParser::new_with_conformance_observations(
+            HtmlParseOptions::default(),
+            ParserObservationConfig::default(),
+            PatchHistoryObservationConfig::capture(512),
+        )
+        .unwrap();
+        let chunks: &[&str] = match schedule {
+            PatchDrainSchedule::WholeInput => &["<!doctype html><div>a<span>b</span></div>"],
+            PatchDrainSchedule::Chunked
+            | PatchDrainSchedule::TakePatches
+            | PatchDrainSchedule::TakePatchBatch => {
+                &["<!doctype html><div>", "a<span>b", "</span></div>"]
+            }
+        };
+        for chunk in chunks {
+            parser.push_str(chunk).unwrap();
+            parser.pump().unwrap();
+            match schedule {
+                PatchDrainSchedule::WholeInput | PatchDrainSchedule::Chunked => {}
+                PatchDrainSchedule::TakePatches => {
+                    let _ = parser.take_patches().unwrap();
+                }
+                PatchDrainSchedule::TakePatchBatch => {
+                    while parser.take_patch_batch().unwrap().is_some() {}
+                }
+            }
+        }
+        parser.finish().unwrap();
+        if matches!(schedule, PatchDrainSchedule::TakePatches) {
+            let _ = parser.take_patches().unwrap();
+        }
+        if matches!(schedule, PatchDrainSchedule::TakePatchBatch) {
+            while parser.take_patch_batch().unwrap().is_some() {}
+        }
+        let (_, diagnostics, history) = parser.into_output_with_observations().unwrap();
+        assert_eq!(diagnostics, None);
+        history.expect("requested complete raw history")
+    }
+
+    #[test]
+    fn canonical_patch_history_is_independent_of_transport_drain_schedule() {
+        let whole = captured_raw_patches(PatchDrainSchedule::WholeInput);
+        let chunked = captured_raw_patches(PatchDrainSchedule::Chunked);
+        let by_vector = captured_raw_patches(PatchDrainSchedule::TakePatches);
+        let by_batch = captured_raw_patches(PatchDrainSchedule::TakePatchBatch);
+        assert_eq!(whole, chunked);
+        assert_eq!(whole, by_vector);
+        assert_eq!(whole, by_batch);
+        let whole = project_patches(whole, &mut ObservationAllocationController::default())
+            .expect("whole canonicalization");
+        let by_batch = project_patches(by_batch, &mut ObservationAllocationController::default())
+            .expect("batch canonicalization");
+        assert_eq!(whole, by_batch);
+    }
+
+    fn observe_patch_capacity(capacity: usize) -> ObservationState<ObservedPatchStream> {
+        execute_parser_observation(ParserObservationRequest {
+            target: ParserObservationTarget::DocumentParser,
+            input: ParserObservationInput::Utf8("<!doctype html><p>x</p>"),
+            tokens: ObservationRequest::NotRequested,
+            parse_errors: ObservationRequest::NotRequested,
+            implementation_diagnostics: ObservationRequest::NotRequested,
+            document_mode: ScalarObservationRequest::NotRequested,
+            tree: ObservationRequest::NotRequested,
+            patches: ObservationRequest::Capture { capacity },
+        })
+        .unwrap()
+        .patches
+    }
+
+    #[test]
+    fn patch_capacity_zero_exact_and_one_below_keep_semantic_prefixes() {
+        let ObservationState::Captured(complete) = observe_patch_capacity(256) else {
+            panic!("large capacity");
+        };
+        let required = complete.operations.len();
+        assert!(required > 1);
+        assert_eq!(
+            observe_patch_capacity(required),
+            ObservationState::Captured(complete.clone())
+        );
+
+        let ObservationState::Incomplete { partial, reason } = observe_patch_capacity(required - 1)
+        else {
+            panic!("one below must be incomplete");
+        };
+        assert_eq!(partial.operations, complete.operations[..required - 1]);
+        assert_eq!(
+            reason,
+            IncompleteObservationReason::StorageLimitExceeded {
+                retained: required - 1,
+                dropped: 1,
+            }
+        );
+
+        let ObservationState::Incomplete { partial, reason } = observe_patch_capacity(0) else {
+            panic!("zero capacity must be incomplete");
+        };
+        assert!(partial.operations.is_empty());
+        assert_eq!(
+            reason,
+            IncompleteObservationReason::StorageLimitExceeded {
+                retained: 0,
+                dropped: required as u64,
+            }
+        );
+    }
+
+    #[test]
+    fn standalone_tree_and_patch_requests_are_not_applicable_without_diagnostics() {
+        let result = execute_parser_observation(ParserObservationRequest {
+            target: ParserObservationTarget::StandaloneTokenizer,
+            input: ParserObservationInput::Utf8("<p>x"),
+            tokens: ObservationRequest::NotRequested,
+            parse_errors: ObservationRequest::NotRequested,
+            implementation_diagnostics: ObservationRequest::NotRequested,
+            document_mode: ScalarObservationRequest::NotRequested,
+            tree: ObservationRequest::Capture { capacity: 32 },
+            patches: ObservationRequest::Capture { capacity: 32 },
+        })
+        .unwrap();
+        assert!(matches!(result.tokens, ObservationState::NotRequested));
+        assert!(matches!(
+            result.tree,
+            ObservationState::NotApplicable {
+                reason: NotApplicableReason::StandaloneTokenizerRun
+            }
+        ));
+        assert!(matches!(
+            result.patches,
+            ObservationState::NotApplicable {
+                reason: NotApplicableReason::StandaloneTokenizerRun
+            }
+        ));
+    }
+
+    #[test]
+    fn integrated_parser_depth_within_materialization_limit_projects_successfully() {
+        let depth = 900;
+        let mut source = String::new();
+        source.try_reserve(depth * 11).unwrap();
+        for _ in 0..depth {
+            source.push_str("<div>");
+        }
+        source.push('x');
+        for _ in 0..depth {
+            source.push_str("</div>");
+        }
+        let result = execute_parser_observation(ParserObservationRequest {
+            target: ParserObservationTarget::DocumentParser,
+            input: ParserObservationInput::Utf8(&source),
+            tokens: ObservationRequest::NotRequested,
+            parse_errors: ObservationRequest::NotRequested,
+            implementation_diagnostics: ObservationRequest::NotRequested,
+            document_mode: ScalarObservationRequest::NotRequested,
+            tree: ObservationRequest::Capture {
+                capacity: depth + 5,
+            },
+            patches: ObservationRequest::NotRequested,
+        })
+        .unwrap();
+        let ObservationState::Captured(tree) = result.tree else {
+            panic!("integrated deep tree must be complete");
+        };
+        {
+            let [ObservedTreeNode::Document { children }] = tree.roots.as_slice() else {
+                panic!("exactly one document root");
+            };
+            let [
+                ObservedTreeNode::Element {
+                    namespace: crate::ElementNamespace::Html,
+                    local_name,
+                    children: html_children,
+                    ..
+                },
+            ] = children.as_slice()
+            else {
+                panic!("document must contain exactly one HTML root");
+            };
+            assert_eq!(local_name, "html");
+            let [
+                ObservedTreeNode::Element {
+                    local_name: head_name,
+                    children: head_children,
+                    ..
+                },
+                ObservedTreeNode::Element {
+                    local_name: body_name,
+                    children: body_children,
+                    ..
+                },
+            ] = html_children.as_slice()
+            else {
+                panic!("HTML children must preserve head-before-body source order");
+            };
+            assert_eq!(head_name, "head");
+            assert!(head_children.is_empty());
+            assert_eq!(body_name, "body");
+
+            let mut current = body_children.as_slice();
+            let mut div_count = 0usize;
+            let mut maximum_depth = 2usize;
+            let mut structural_units = 4usize; // document, html, head, body
+            while let [
+                ObservedTreeNode::Element {
+                    namespace: crate::ElementNamespace::Html,
+                    local_name,
+                    children,
+                    ..
+                },
+            ] = current
+            {
+                assert_eq!(local_name, "div");
+                div_count += 1;
+                maximum_depth = 2 + div_count;
+                structural_units += 1;
+                current = children;
+            }
+            assert!(matches!(
+                current,
+                [ObservedTreeNode::Text { data }] if data == "x"
+            ));
+            structural_units += 1;
+            maximum_depth += 1;
+            assert_eq!(div_count, depth);
+            let element_count = div_count.checked_add(3).unwrap();
+            assert_eq!(element_count, depth + 3);
+            assert_eq!(maximum_depth, depth + 3);
+            assert_eq!(structural_units, depth + 5);
+        }
+        drop_observed_tree_iteratively(tree);
+    }
+
+    fn drop_observed_tree_iteratively(tree: crate::conformance::ObservedTree) {
+        let mut stack = tree.roots;
+        while let Some(mut node) = stack.pop() {
+            match &mut node {
+                ObservedTreeNode::Document { children }
+                | ObservedTreeNode::Element { children, .. } => {
+                    stack.extend(std::mem::take(children));
+                }
+                ObservedTreeNode::HtmlTemplateElement {
+                    ordinary_children,
+                    contents,
+                    ..
+                } => {
+                    stack.extend(std::mem::take(ordinary_children));
+                    stack.extend(std::mem::take(&mut contents.children));
+                }
+                ObservedTreeNode::DocumentType { .. }
+                | ObservedTreeNode::Comment { .. }
+                | ObservedTreeNode::Text { .. }
+                | ObservedTreeNode::ProcessingInstruction { .. } => {}
+            }
+        }
     }
 }

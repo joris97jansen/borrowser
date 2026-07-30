@@ -14,6 +14,8 @@ pub mod tokenizer;
 pub mod tree_builder;
 
 // Public re-exports: consumers should import from `html::html5::*` rather than `shared::*`.
+#[cfg(any(test, feature = "parser-conformance"))]
+pub(crate) use bridge::{PatchHistoryObservationConfig, RawPatchHistoryCapture};
 #[cfg(any(test, feature = "html5-fuzzing"))]
 pub use fuzz::{
     Html5PipelineFuzzConfig, Html5PipelineFuzzError, Html5PipelineFuzzSummary,

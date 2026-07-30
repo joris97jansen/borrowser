@@ -4,7 +4,14 @@
 //! It is intentionally minimal and does not change patch semantics; it only
 //! validates lightweight invariants and buffers patches for the runtime.
 
-use crate::dom_patch::{DomPatch, PatchKey};
+use crate::dom_patch::DomPatch;
+#[cfg(debug_assertions)]
+use crate::dom_patch::PatchKey;
+#[cfg(any(test, feature = "parser-conformance"))]
+use crate::html5::shared::{
+    ParserObservationInvariant, ParserReservationController, ParserReservationSite,
+    ParserResourceExhaustion,
+};
 use crate::html5::tree_builder::PatchSink;
 #[cfg(debug_assertions)]
 use std::collections::HashSet;
@@ -23,18 +30,43 @@ use std::collections::HashSet;
 ///   a batch).
 /// - Versioning and flush boundaries are owned by the runtime (e.g. runtime_parse);
 ///   this adapter only buffers patches emitted during a pump.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct PatchEmitterAdapter {
     patches: Vec<DomPatch>,
     saw_clear: bool,
     invariant_violation: bool,
+    #[cfg(any(test, feature = "parser-conformance"))]
+    patch_history: Option<RawPatchHistoryCapture>,
+    #[cfg(any(test, feature = "parser-conformance"))]
+    patch_history_failure: Option<PatchHistoryCaptureFailure>,
+    #[cfg(any(test, feature = "parser-conformance"))]
+    patch_history_allocations: RawPatchObservationAllocationController,
     #[cfg(debug_assertions)]
     created_keys: HashSet<PatchKey>,
 }
 
 impl PatchEmitterAdapter {
     pub(crate) fn new() -> Self {
-        Self::default()
+        Self {
+            patches: Vec::new(),
+            saw_clear: false,
+            invariant_violation: false,
+            #[cfg(any(test, feature = "parser-conformance"))]
+            patch_history: None,
+            #[cfg(any(test, feature = "parser-conformance"))]
+            patch_history_failure: None,
+            #[cfg(any(test, feature = "parser-conformance"))]
+            patch_history_allocations: RawPatchObservationAllocationController::default(),
+            #[cfg(debug_assertions)]
+            created_keys: HashSet::new(),
+        }
+    }
+
+    #[cfg(any(test, feature = "parser-conformance"))]
+    pub(crate) fn new_with_patch_history(config: PatchHistoryObservationConfig) -> Self {
+        let mut adapter = Self::new();
+        adapter.patch_history = config.capacity.map(RawPatchHistoryCapture::new);
+        adapter
     }
 
     pub(crate) fn take_patches(&mut self) -> Vec<DomPatch> {
@@ -56,10 +88,88 @@ impl PatchEmitterAdapter {
         }
         had
     }
+
+    #[cfg(any(test, feature = "parser-conformance"))]
+    pub(crate) fn take_patch_history_failure(&mut self) -> Option<PatchHistoryCaptureFailure> {
+        self.patch_history_failure.take()
+    }
+
+    #[cfg(feature = "parser-conformance")]
+    pub(crate) fn take_patch_history(&mut self) -> Option<RawPatchHistoryCapture> {
+        self.patch_history.take()
+    }
+
+    #[cfg(any(test, feature = "parser-conformance"))]
+    fn retain_patch_for_history(&mut self, patch: &DomPatch) {
+        if self.patch_history_failure.is_some() {
+            return;
+        }
+        let Some(history) = self.patch_history.as_mut() else {
+            return;
+        };
+        if history.operations.len() >= history.capacity {
+            let Some(dropped) = history.dropped.checked_add(1) else {
+                self.patch_history_failure = Some(PatchHistoryCaptureFailure::Invariant(
+                    ParserObservationInvariant::PatchDroppedCountOverflow,
+                ));
+                return;
+            };
+            history.dropped = dropped;
+            return;
+        }
+
+        let site = ParserReservationSite::PatchHistoryObservationStorage;
+        let result = self
+            .patch_history_allocations
+            .before_reservation(RawPatchAllocationStep::RawPatchOperationStorage)
+            .and_then(|()| {
+                history
+                    .operations
+                    .try_reserve(1)
+                    .map_err(|_| ParserResourceExhaustion::at(site))
+            })
+            .and_then(|()| {
+                try_clone_dom_patch_for_observation(patch, &mut self.patch_history_allocations)
+            });
+        match result {
+            Ok(observed) => history.operations.push(observed),
+            Err(error) => {
+                self.patch_history_failure =
+                    Some(PatchHistoryCaptureFailure::ResourceExhaustion(error));
+            }
+        }
+    }
+
+    #[cfg(all(test, feature = "parser-conformance"))]
+    pub(crate) fn force_patch_history_dropped_for_test(&mut self, dropped: u64) {
+        if let Some(history) = self.patch_history.as_mut() {
+            history.dropped = dropped;
+        }
+    }
+
+    #[cfg(all(test, feature = "parser-failure-injection"))]
+    pub(crate) fn set_patch_history_failure_injection_for_test(
+        &mut self,
+        injection: crate::html5::shared::ParserFailureInjection,
+    ) {
+        self.patch_history_allocations.parser_reservations =
+            ParserReservationController::with_failure(injection);
+    }
+
+    #[cfg(all(test, feature = "parser-failure-injection"))]
+    fn set_raw_patch_semantic_failure_for_test(
+        &mut self,
+        injection: RawPatchObservationFailureInjection,
+    ) {
+        self.patch_history_allocations
+            .select_semantic_failure(injection);
+    }
 }
 
 impl PatchSink for PatchEmitterAdapter {
     fn push(&mut self, patch: DomPatch) {
+        #[cfg(any(test, feature = "parser-conformance"))]
+        self.retain_patch_for_history(&patch);
         if matches!(patch, DomPatch::Clear) {
             if !self.patches.is_empty() || self.saw_clear {
                 self.invariant_violation = true;
@@ -78,6 +188,288 @@ impl PatchSink for PatchEmitterAdapter {
     }
 }
 
+#[cfg(any(test, feature = "parser-conformance"))]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PatchHistoryObservationConfig {
+    capacity: Option<usize>,
+}
+
+#[cfg(any(test, feature = "parser-conformance"))]
+impl PatchHistoryObservationConfig {
+    pub(crate) const fn capture(capacity: usize) -> Self {
+        Self {
+            capacity: Some(capacity),
+        }
+    }
+}
+
+#[cfg(any(test, feature = "parser-conformance"))]
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct RawPatchHistoryCapture {
+    pub(crate) operations: Vec<DomPatch>,
+    pub(crate) dropped: u64,
+    pub(crate) capacity: usize,
+}
+
+#[cfg(any(test, feature = "parser-conformance"))]
+impl RawPatchHistoryCapture {
+    fn new(capacity: usize) -> Self {
+        Self {
+            operations: Vec::new(),
+            dropped: 0,
+            capacity,
+        }
+    }
+}
+
+#[cfg(any(test, feature = "parser-conformance"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PatchHistoryCaptureFailure {
+    ResourceExhaustion(ParserResourceExhaustion),
+    Invariant(ParserObservationInvariant),
+}
+
+/// Private semantic identity consumed only by deterministic allocation tests.
+///
+/// Production failures remain `PatchHistoryObservationStorage`.
+#[cfg(any(test, feature = "parser-conformance"))]
+#[allow(
+    clippy::enum_variant_names,
+    reason = "the Raw prefix distinguishes approved raw-history test identities from canonical allocation steps"
+)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RawPatchAllocationStep {
+    RawPatchOperationStorage,
+    RawTextOrCommentData,
+    RawDoctypeString,
+    RawProcessingInstructionTarget,
+    RawProcessingInstructionData,
+    RawAttributeVector,
+    RawAttributeValue,
+}
+
+#[cfg(all(test, feature = "parser-failure-injection"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct RawPatchObservationFailureInjection {
+    step: RawPatchAllocationStep,
+    occurrence: std::num::NonZeroU64,
+}
+
+#[derive(Debug, Default)]
+#[cfg(any(test, feature = "parser-conformance"))]
+struct RawPatchObservationAllocationController {
+    parser_reservations: ParserReservationController,
+    #[cfg(all(test, feature = "parser-failure-injection"))]
+    selected: Option<RawPatchObservationFailureInjection>,
+    #[cfg(all(test, feature = "parser-failure-injection"))]
+    matching_occurrences: u64,
+}
+
+#[cfg(any(test, feature = "parser-conformance"))]
+impl RawPatchObservationAllocationController {
+    fn before_reservation(
+        &mut self,
+        step: RawPatchAllocationStep,
+    ) -> Result<(), ParserResourceExhaustion> {
+        let site = ParserReservationSite::PatchHistoryObservationStorage;
+        #[cfg(all(test, feature = "parser-failure-injection"))]
+        if let Some(selected) = self.selected
+            && selected.step == step
+        {
+            self.matching_occurrences += 1;
+            if self.matching_occurrences == selected.occurrence.get() {
+                self.selected = None;
+                return Err(ParserResourceExhaustion::at(site));
+            }
+        }
+        let _ = step;
+        self.parser_reservations.before_reservation(site)
+    }
+
+    #[cfg(all(test, feature = "parser-failure-injection"))]
+    fn select_semantic_failure(&mut self, injection: RawPatchObservationFailureInjection) {
+        self.selected = Some(injection);
+        self.matching_occurrences = 0;
+    }
+}
+
+/// Fallibly duplicate every owned payload in a semantic patch.
+///
+/// `PatchKey`, namespace enums, and interned element/attribute name handles are
+/// copied normally: they are scalar values or `Arc`-backed handles and do not
+/// allocate. Every newly owned string and vector reserves at the parser-owned
+/// observation site before it is populated.
+#[cfg(any(test, feature = "parser-conformance"))]
+fn try_clone_dom_patch_for_observation(
+    patch: &DomPatch,
+    allocations: &mut RawPatchObservationAllocationController,
+) -> Result<DomPatch, ParserResourceExhaustion> {
+    use DomPatch::{
+        AppendChild, AppendText, Clear, CreateComment, CreateDocument, CreateDocumentType,
+        CreateElement, CreateProcessingInstruction, CreateTemplateContents, CreateText,
+        InsertBefore, RemoveNode, SetAttributes, SetText,
+    };
+    Ok(match patch {
+        Clear => Clear,
+        CreateDocument { key, doctype } => CreateDocument {
+            key: *key,
+            doctype: try_copy_optional_string(
+                doctype.as_deref(),
+                RawPatchAllocationStep::RawDoctypeString,
+                allocations,
+            )?,
+        },
+        CreateDocumentType {
+            key,
+            name,
+            public_id,
+            system_id,
+        } => CreateDocumentType {
+            key: *key,
+            name: try_copy_optional_string(
+                name.as_deref(),
+                RawPatchAllocationStep::RawDoctypeString,
+                allocations,
+            )?,
+            public_id: try_copy_optional_string(
+                public_id.as_deref(),
+                RawPatchAllocationStep::RawDoctypeString,
+                allocations,
+            )?,
+            system_id: try_copy_optional_string(
+                system_id.as_deref(),
+                RawPatchAllocationStep::RawDoctypeString,
+                allocations,
+            )?,
+        },
+        CreateElement {
+            key,
+            name,
+            attributes,
+        } => CreateElement {
+            key: *key,
+            name: name.clone(),
+            attributes: try_copy_attributes(attributes, allocations)?,
+        },
+        CreateTemplateContents { host, contents } => CreateTemplateContents {
+            host: *host,
+            contents: *contents,
+        },
+        CreateText { key, text } => CreateText {
+            key: *key,
+            text: try_copy_string(
+                text,
+                RawPatchAllocationStep::RawTextOrCommentData,
+                allocations,
+            )?,
+        },
+        CreateComment { key, text } => CreateComment {
+            key: *key,
+            text: try_copy_string(
+                text,
+                RawPatchAllocationStep::RawTextOrCommentData,
+                allocations,
+            )?,
+        },
+        CreateProcessingInstruction { key, target, data } => CreateProcessingInstruction {
+            key: *key,
+            target: try_copy_string(
+                target,
+                RawPatchAllocationStep::RawProcessingInstructionTarget,
+                allocations,
+            )?,
+            data: try_copy_string(
+                data,
+                RawPatchAllocationStep::RawProcessingInstructionData,
+                allocations,
+            )?,
+        },
+        AppendChild { parent, child } => AppendChild {
+            parent: *parent,
+            child: *child,
+        },
+        InsertBefore {
+            parent,
+            child,
+            before,
+        } => InsertBefore {
+            parent: *parent,
+            child: *child,
+            before: *before,
+        },
+        RemoveNode { key } => RemoveNode { key: *key },
+        SetAttributes { key, attributes } => SetAttributes {
+            key: *key,
+            attributes: try_copy_attributes(attributes, allocations)?,
+        },
+        SetText { key, text } => SetText {
+            key: *key,
+            text: try_copy_string(
+                text,
+                RawPatchAllocationStep::RawTextOrCommentData,
+                allocations,
+            )?,
+        },
+        AppendText { key, text } => AppendText {
+            key: *key,
+            text: try_copy_string(
+                text,
+                RawPatchAllocationStep::RawTextOrCommentData,
+                allocations,
+            )?,
+        },
+    })
+}
+
+#[cfg(any(test, feature = "parser-conformance"))]
+fn try_copy_optional_string(
+    value: Option<&str>,
+    step: RawPatchAllocationStep,
+    allocations: &mut RawPatchObservationAllocationController,
+) -> Result<Option<String>, ParserResourceExhaustion> {
+    value
+        .map(|value| try_copy_string(value, step, allocations))
+        .transpose()
+}
+
+#[cfg(any(test, feature = "parser-conformance"))]
+fn try_copy_string(
+    value: &str,
+    step: RawPatchAllocationStep,
+    allocations: &mut RawPatchObservationAllocationController,
+) -> Result<String, ParserResourceExhaustion> {
+    let site = ParserReservationSite::PatchHistoryObservationStorage;
+    allocations.before_reservation(step)?;
+    let mut copy = String::new();
+    copy.try_reserve_exact(value.len())
+        .map_err(|_| ParserResourceExhaustion::at(site))?;
+    copy.push_str(value);
+    Ok(copy)
+}
+
+#[cfg(any(test, feature = "parser-conformance"))]
+fn try_copy_attributes(
+    attributes: &[crate::ParserCreatedAttribute],
+    allocations: &mut RawPatchObservationAllocationController,
+) -> Result<Vec<crate::ParserCreatedAttribute>, ParserResourceExhaustion> {
+    let site = ParserReservationSite::PatchHistoryObservationStorage;
+    allocations.before_reservation(RawPatchAllocationStep::RawAttributeVector)?;
+    let mut copy = Vec::new();
+    copy.try_reserve_exact(attributes.len())
+        .map_err(|_| ParserResourceExhaustion::at(site))?;
+    for attribute in attributes {
+        copy.push(crate::ParserCreatedAttribute::new(
+            attribute.name().clone(),
+            try_copy_string(
+                attribute.value(),
+                RawPatchAllocationStep::RawAttributeValue,
+                allocations,
+            )?,
+        ));
+    }
+    Ok(copy)
+}
+
 #[cfg(debug_assertions)]
 fn created_key(patch: &DomPatch) -> Option<PatchKey> {
     match patch {
@@ -93,8 +485,13 @@ fn created_key(patch: &DomPatch) -> Option<PatchKey> {
 
 #[cfg(test)]
 mod tests {
-    use super::PatchEmitterAdapter;
+    use super::{PatchEmitterAdapter, PatchHistoryCaptureFailure, PatchHistoryObservationConfig};
+    #[cfg(feature = "parser-failure-injection")]
+    use super::{RawPatchAllocationStep, RawPatchObservationFailureInjection};
     use crate::dom_patch::{DomPatch, PatchKey};
+    use crate::html5::shared::ParserObservationInvariant;
+    #[cfg(all(feature = "parser-conformance", feature = "parser-failure-injection"))]
+    use crate::html5::shared::ParserReservationSite;
     use crate::html5::tree_builder::PatchSink;
 
     #[test]
@@ -120,5 +517,208 @@ mod tests {
             text: "y".into(),
         });
         assert!(adapter.take_invariant_violation());
+    }
+
+    #[cfg(feature = "parser-conformance")]
+    #[test]
+    fn patch_history_capacity_is_an_exact_semantic_prefix() {
+        let mut adapter =
+            PatchEmitterAdapter::new_with_patch_history(PatchHistoryObservationConfig::capture(1));
+        adapter.push(DomPatch::CreateDocument {
+            key: PatchKey(1),
+            doctype: None,
+        });
+        adapter.push(DomPatch::CreateText {
+            key: PatchKey(2),
+            text: "not retained".to_owned(),
+        });
+        let history = adapter.take_patch_history().expect("requested history");
+        assert_eq!(history.operations.len(), 1);
+        assert_eq!(history.dropped, 1);
+        assert_eq!(
+            adapter.take_patches().len(),
+            2,
+            "history capacity must not alter transport"
+        );
+    }
+
+    #[cfg(all(feature = "parser-conformance", feature = "parser-failure-injection"))]
+    #[test]
+    fn nested_patch_payload_reservations_fail_with_live_parser_identity() {
+        use std::num::NonZeroU64;
+
+        let cases = [
+            (
+                DomPatch::CreateText {
+                    key: PatchKey(1),
+                    text: "text".to_owned(),
+                },
+                RawPatchAllocationStep::RawTextOrCommentData,
+                1,
+            ),
+            (
+                DomPatch::CreateComment {
+                    key: PatchKey(1),
+                    text: "comment".to_owned(),
+                },
+                RawPatchAllocationStep::RawTextOrCommentData,
+                1,
+            ),
+            (
+                DomPatch::CreateDocumentType {
+                    key: PatchKey(1),
+                    name: Some("html".to_owned()),
+                    public_id: Some("public".to_owned()),
+                    system_id: Some("system".to_owned()),
+                },
+                RawPatchAllocationStep::RawDoctypeString,
+                1,
+            ),
+            (
+                DomPatch::CreateDocumentType {
+                    key: PatchKey(1),
+                    name: Some("html".to_owned()),
+                    public_id: Some("public".to_owned()),
+                    system_id: Some("system".to_owned()),
+                },
+                RawPatchAllocationStep::RawDoctypeString,
+                2,
+            ),
+            (
+                DomPatch::CreateDocumentType {
+                    key: PatchKey(1),
+                    name: Some("html".to_owned()),
+                    public_id: Some("public".to_owned()),
+                    system_id: Some("system".to_owned()),
+                },
+                RawPatchAllocationStep::RawDoctypeString,
+                3,
+            ),
+            (
+                DomPatch::CreateProcessingInstruction {
+                    key: PatchKey(1),
+                    target: "target".to_owned(),
+                    data: "data".to_owned(),
+                },
+                RawPatchAllocationStep::RawProcessingInstructionTarget,
+                1,
+            ),
+            (
+                DomPatch::CreateProcessingInstruction {
+                    key: PatchKey(1),
+                    target: "target".to_owned(),
+                    data: "data".to_owned(),
+                },
+                RawPatchAllocationStep::RawProcessingInstructionData,
+                1,
+            ),
+        ];
+        for (patch, step, occurrence) in cases {
+            let mut adapter = PatchEmitterAdapter::new_with_patch_history(
+                PatchHistoryObservationConfig::capture(8),
+            );
+            adapter.set_raw_patch_semantic_failure_for_test(RawPatchObservationFailureInjection {
+                step,
+                occurrence: NonZeroU64::new(occurrence).unwrap(),
+            });
+            adapter.push(patch);
+            assert!(matches!(
+                adapter.take_patch_history_failure(),
+                Some(PatchHistoryCaptureFailure::ResourceExhaustion(error))
+                    if error.site() == ParserReservationSite::PatchHistoryObservationStorage
+            ));
+            assert_eq!(
+                adapter.take_patches().len(),
+                1,
+                "the original transport patch must survive observation failure"
+            );
+        }
+    }
+
+    #[cfg(all(feature = "parser-conformance", feature = "parser-failure-injection"))]
+    #[test]
+    fn attribute_vector_and_value_reservations_are_independently_fallible() {
+        use crate::names::{ElementNamespace, ExpandedElementName, NameInterner};
+        use crate::{ParserCreatedAttribute, QualifiedAttributeName};
+        use std::num::NonZeroU64;
+
+        for step in [
+            RawPatchAllocationStep::RawAttributeVector,
+            RawPatchAllocationStep::RawAttributeValue,
+        ] {
+            let mut names = NameInterner::new();
+            let div = names.intern_exact("div").unwrap();
+            let title = names.intern_exact("title").unwrap();
+            let patch = DomPatch::CreateElement {
+                key: PatchKey(1),
+                name: ExpandedElementName::new(
+                    ElementNamespace::Html,
+                    names.resolve_local_name(div).unwrap(),
+                ),
+                attributes: vec![ParserCreatedAttribute::new(
+                    QualifiedAttributeName::unqualified(names.resolve_local_name(title).unwrap()),
+                    "value".to_owned(),
+                )],
+            };
+            let mut adapter = PatchEmitterAdapter::new_with_patch_history(
+                PatchHistoryObservationConfig::capture(8),
+            );
+            adapter.set_raw_patch_semantic_failure_for_test(RawPatchObservationFailureInjection {
+                step,
+                occurrence: NonZeroU64::MIN,
+            });
+            adapter.push(patch);
+            assert!(matches!(
+                adapter.take_patch_history_failure(),
+                Some(PatchHistoryCaptureFailure::ResourceExhaustion(_))
+            ));
+        }
+    }
+
+    #[cfg(all(feature = "parser-conformance", feature = "parser-failure-injection"))]
+    #[test]
+    fn first_capture_failure_latches_while_all_same_token_transport_survives() {
+        use std::num::NonZeroU64;
+
+        let mut adapter =
+            PatchEmitterAdapter::new_with_patch_history(PatchHistoryObservationConfig::capture(8));
+        adapter.set_raw_patch_semantic_failure_for_test(RawPatchObservationFailureInjection {
+            step: RawPatchAllocationStep::RawPatchOperationStorage,
+            occurrence: NonZeroU64::MIN,
+        });
+        // This is the narrow `PatchSink` seam used by one tree-builder token:
+        // both owned patches reach transport before the session performs its
+        // mandatory post-`push_token` failure check.
+        adapter.push(DomPatch::CreateText {
+            key: PatchKey(1),
+            text: "first".to_owned(),
+        });
+        adapter.push(DomPatch::AppendText {
+            key: PatchKey(1),
+            text: "second".to_owned(),
+        });
+        assert!(matches!(
+            adapter.take_patch_history_failure(),
+            Some(PatchHistoryCaptureFailure::ResourceExhaustion(error))
+                if error.site() == ParserReservationSite::PatchHistoryObservationStorage
+        ));
+        assert_eq!(adapter.take_patches().len(), 2);
+        assert_eq!(adapter.take_patch_history_failure(), None);
+    }
+
+    #[cfg(feature = "parser-conformance")]
+    #[test]
+    fn dropped_count_overflow_retains_exact_observation_invariant() {
+        let mut adapter =
+            PatchEmitterAdapter::new_with_patch_history(PatchHistoryObservationConfig::capture(0));
+        adapter.force_patch_history_dropped_for_test(u64::MAX);
+        adapter.push(DomPatch::Clear);
+        assert_eq!(
+            adapter.take_patch_history_failure(),
+            Some(PatchHistoryCaptureFailure::Invariant(
+                ParserObservationInvariant::PatchDroppedCountOverflow
+            ))
+        );
+        assert_eq!(adapter.take_patches(), vec![DomPatch::Clear]);
     }
 }
