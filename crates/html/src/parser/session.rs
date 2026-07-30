@@ -9,6 +9,8 @@ use crate::html5::shared::DocumentParseContext;
 use crate::html5::shared::ParserFailureInjection;
 #[cfg(feature = "parser-conformance")]
 use crate::html5::shared::{ParserObservationCapture, ParserObservationConfig};
+#[cfg(feature = "parser-conformance")]
+use crate::html5::{PatchHistoryObservationConfig, RawPatchHistoryCapture};
 use crate::patch_validation::PatchValidationArena;
 
 use super::options::HtmlParseOptions;
@@ -68,14 +70,26 @@ impl HtmlParser {
         Self::with_context(options, ctx)
     }
 
-    #[cfg(feature = "parser-conformance")]
+    #[cfg(all(test, feature = "parser-conformance"))]
     pub(crate) fn new_with_observations(
         options: HtmlParseOptions,
         observations: ParserObservationConfig,
     ) -> Result<Self, HtmlParseError> {
-        let ctx =
-            DocumentParseContext::with_observations(options.error_policy.into(), observations);
-        Self::with_context(options, ctx)
+        Self::new_with_conformance_observations(
+            options,
+            observations,
+            PatchHistoryObservationConfig::default(),
+        )
+    }
+
+    #[cfg(feature = "parser-conformance")]
+    pub(crate) fn new_with_conformance_observations(
+        options: HtmlParseOptions,
+        diagnostics: ParserObservationConfig,
+        patch_history: PatchHistoryObservationConfig,
+    ) -> Result<Self, HtmlParseError> {
+        let ctx = DocumentParseContext::with_observations(options.error_policy.into(), diagnostics);
+        Self::with_context_and_patch_history(options, ctx, patch_history)
     }
 
     #[cfg(all(
@@ -111,6 +125,26 @@ impl HtmlParser {
     }
 
     #[cfg(feature = "parser-conformance")]
+    fn with_context_and_patch_history(
+        options: HtmlParseOptions,
+        ctx: DocumentParseContext,
+        patch_history: PatchHistoryObservationConfig,
+    ) -> Result<Self, HtmlParseError> {
+        let session = Html5ParseSession::new_with_patch_history(
+            options.tokenizer.into(),
+            options.tree_builder.into(),
+            ctx,
+            patch_history,
+        )?;
+        Ok(Self {
+            session,
+            arena: PatchValidationArena::default(),
+            patches_drained_before_output: false,
+            poisoned: false,
+        })
+    }
+
+    #[cfg(all(test, feature = "parser-conformance"))]
     pub(crate) fn take_observations_for_conformance(
         &mut self,
     ) -> Result<Option<ParserObservationCapture>, HtmlParseError> {
@@ -119,8 +153,10 @@ impl HtmlParser {
     }
 
     #[cfg(feature = "parser-conformance")]
-    pub(crate) fn document_mode_for_conformance(&self) -> crate::DocumentMode {
-        self.session.document_mode_for_conformance()
+    pub(crate) fn document_mode_for_conformance(
+        &self,
+    ) -> Result<crate::DocumentMode, HtmlParseError> {
+        Ok(self.session.document_mode_for_conformance()?)
     }
 
     #[cfg(feature = "parser-conformance")]
@@ -130,9 +166,20 @@ impl HtmlParser {
         self.session.tokenizer_invariant_for_conformance()
     }
 
+    #[cfg(feature = "parser-conformance")]
+    pub(crate) fn patch_history_invariant_for_conformance(
+        &self,
+    ) -> Option<crate::html5::shared::ParserObservationInvariant> {
+        self.session.patch_history_invariant_for_conformance()
+    }
+
     #[cfg(all(test, feature = "parser-conformance"))]
-    pub(crate) fn inject_patch_for_conformance_test(&mut self, patch: DomPatch) {
-        self.session.inject_patch_for_test(patch);
+    pub(crate) fn inject_patch_for_conformance_test(
+        &mut self,
+        patch: DomPatch,
+    ) -> Result<(), HtmlParseError> {
+        self.session.inject_patch_for_test(patch)?;
+        Ok(())
     }
 
     /// Append raw bytes to the session decoder/input buffer.
@@ -222,6 +269,11 @@ impl HtmlParser {
     #[cfg(test)]
     pub(crate) fn normalized_input_for_test(&self) -> &str {
         self.session.normalized_input_for_test()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn diagnostic_observation_enabled_for_test(&self) -> bool {
+        self.session.diagnostic_observation_enabled_for_test()
     }
 
     #[cfg(test)]
@@ -322,6 +374,27 @@ impl HtmlParser {
     /// patch batches, `ParseOutput::patches` contains only the remaining
     /// undrained patches and `contains_full_patch_history` is `false`.
     pub fn into_output(mut self) -> Result<ParseOutput, HtmlParseError> {
+        self.materialize_output()
+    }
+
+    #[cfg(feature = "parser-conformance")]
+    pub(crate) fn into_output_with_observations(
+        mut self,
+    ) -> Result<
+        (
+            ParseOutput,
+            Option<ParserObservationCapture>,
+            Option<RawPatchHistoryCapture>,
+        ),
+        HtmlParseError,
+    > {
+        let output = self.materialize_output()?;
+        let diagnostics = self.session.take_observations_for_conformance()?;
+        let patch_history = self.session.take_patch_history_for_conformance()?;
+        Ok((output, diagnostics, patch_history))
+    }
+
+    fn materialize_output(&mut self) -> Result<ParseOutput, HtmlParseError> {
         let mut patches = Vec::new();
         while let Some(batch) = self.take_patch_batch_internal(false)? {
             patches.extend(batch.patches);
@@ -337,6 +410,25 @@ impl HtmlParser {
             counters: self.counters(),
             parse_errors: self.parse_errors(),
         })
+    }
+
+    #[cfg(all(test, feature = "parser-conformance"))]
+    pub(crate) fn force_patch_history_dropped_for_test(&mut self, dropped: u64) {
+        self.session.force_patch_history_dropped_for_test(dropped);
+    }
+
+    #[cfg(all(test, feature = "parser-failure-injection"))]
+    pub(crate) fn set_patch_history_failure_injection_for_test(
+        &mut self,
+        injection: ParserFailureInjection,
+    ) {
+        self.session
+            .set_patch_history_failure_injection_for_test(injection);
+    }
+
+    #[cfg(all(test, feature = "parser-conformance"))]
+    pub(crate) fn force_materialization_failure_for_test(&mut self) {
+        self.arena.root = Some(crate::PatchKey(u32::MAX));
     }
 
     pub(super) fn apply_patches(&mut self, patches: &[DomPatch]) -> Result<(), HtmlParseError> {

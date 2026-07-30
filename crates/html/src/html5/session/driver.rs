@@ -1,5 +1,7 @@
 use super::api::{DrainMode, DrainOutcome, Html5ParseSession};
 use crate::html5::bridge::PatchEmitterAdapter;
+#[cfg(any(test, feature = "parser-conformance"))]
+use crate::html5::bridge::PatchHistoryCaptureFailure;
 use crate::html5::shared::{
     DocumentParseContext, EngineInvariantError, Html5SessionError, ParserFatalError, Token,
 };
@@ -42,7 +44,7 @@ impl Html5ParseSession {
     }
 
     pub(super) fn drain_token_granular_batch(&mut self) -> Result<DrainOutcome, Html5SessionError> {
-        let step = {
+        let processed = {
             let batch = if self.ctx.observation_enabled() {
                 self.tokenizer
                     .next_batch_observed(&mut self.input, &mut self.ctx)
@@ -70,14 +72,15 @@ impl Html5ParseSession {
                 &mut self.patch_emitter,
                 token,
                 &resolver,
-            )?
+            )
         };
+        let step = self.resolve_processed_token(processed)?;
 
         Ok(self.apply_tree_builder_step(step))
     }
 
     pub(super) fn drain_all_queued_batches(&mut self) -> Result<DrainOutcome, Html5SessionError> {
-        let steps = {
+        let (steps, failure) = {
             let batch = if self.ctx.observation_enabled() {
                 self.tokenizer
                     .next_batch_observed(&mut self.input, &mut self.ctx)
@@ -90,18 +93,28 @@ impl Html5ParseSession {
 
             let resolver = batch.resolver();
             let mut steps = Vec::with_capacity(batch.tokens().len());
+            let mut failure = None;
             for token in batch.iter() {
-                let step = Self::process_token(
+                let processed = Self::process_token(
                     &mut self.ctx,
                     &mut self.builder,
                     &mut self.patch_emitter,
                     token,
                     &resolver,
-                )?;
-                steps.push(step);
+                );
+                match processed.into_outcome() {
+                    Ok(step) => steps.push(step),
+                    Err(error) => {
+                        failure = Some(error);
+                        break;
+                    }
+                }
             }
-            steps
+            (steps, failure)
         };
+        if let Some(failure) = failure {
+            return self.resolve_processed_token_failure(failure);
+        }
 
         for step in steps {
             if self.apply_tree_builder_step(step) == DrainOutcome::Suspended {
@@ -134,22 +147,80 @@ impl Html5ParseSession {
         patch_emitter: &mut PatchEmitterAdapter,
         token: &Token,
         resolver: &dyn TextResolver,
-    ) -> Result<TreeBuilderStepResult, Html5SessionError> {
+    ) -> ProcessedToken {
         ctx.counters.tokens_processed = ctx.counters.tokens_processed.saturating_add(1);
 
         let mut process_context = TreeBuilderProcessContext::for_integrated_parser(ctx);
-        match builder.push_token(token, &mut process_context, resolver, patch_emitter) {
-            Ok(step) => Ok(step),
-            Err(err) => {
+        let builder_result =
+            builder.push_token(token, &mut process_context, resolver, patch_emitter);
+        #[cfg(any(test, feature = "parser-conformance"))]
+        let patch_history_failure = patch_emitter.take_patch_history_failure();
+        ProcessedToken {
+            builder_result,
+            #[cfg(any(test, feature = "parser-conformance"))]
+            patch_history_failure,
+        }
+    }
+
+    fn resolve_processed_token(
+        &mut self,
+        processed: ProcessedToken,
+    ) -> Result<TreeBuilderStepResult, Html5SessionError> {
+        processed
+            .into_outcome()
+            .or_else(|failure| self.resolve_processed_token_failure(failure))
+    }
+
+    fn resolve_processed_token_failure<T>(
+        &mut self,
+        failure: ProcessedTokenFailure,
+    ) -> Result<T, Html5SessionError> {
+        match failure {
+            #[cfg(any(test, feature = "parser-conformance"))]
+            ProcessedTokenFailure::PatchHistory(failure) => {
+                self.resolve_patch_history_failure(failure)
+            }
+            ProcessedTokenFailure::TreeBuilder(err) => {
                 if matches!(err, ParserFatalError::EngineInvariant) {
-                    ctx.counters.tree_builder_invariant_errors =
-                        ctx.counters.tree_builder_invariant_errors.saturating_add(1);
+                    self.ctx.counters.tree_builder_invariant_errors = self
+                        .ctx
+                        .counters
+                        .tree_builder_invariant_errors
+                        .saturating_add(1);
                 }
                 #[cfg(any(test, feature = "debug-stats"))]
                 error!(target: "html5", "tree builder fatal error: {err:?}");
                 #[cfg(not(any(test, feature = "debug-stats")))]
                 let _ = err;
                 Err(Html5SessionError::Fatal(err))
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn resolve_patch_history_capture_failure(
+        &mut self,
+    ) -> Result<(), Html5SessionError> {
+        match self.patch_emitter.take_patch_history_failure() {
+            Some(failure) => self.resolve_patch_history_failure::<()>(failure),
+            None => Ok(()),
+        }
+    }
+
+    #[cfg(any(test, feature = "parser-conformance"))]
+    fn resolve_patch_history_failure<T>(
+        &mut self,
+        failure: PatchHistoryCaptureFailure,
+    ) -> Result<T, Html5SessionError> {
+        match failure {
+            PatchHistoryCaptureFailure::ResourceExhaustion(error) => Err(Html5SessionError::Fatal(
+                ParserFatalError::ResourceExhaustion(error),
+            )),
+            PatchHistoryCaptureFailure::Invariant(invariant) => {
+                if self.patch_history_invariant.is_none() {
+                    self.patch_history_invariant = Some(invariant);
+                }
+                Err(Html5SessionError::Fatal(ParserFatalError::EngineInvariant))
             }
         }
     }
@@ -184,5 +255,56 @@ impl Html5ParseSession {
             self.applied_tokenizer_controls_for_test.push(control);
             self.tokenizer.apply_control(control);
         }
+    }
+}
+
+pub(super) struct ProcessedToken {
+    builder_result: Result<TreeBuilderStepResult, ParserFatalError>,
+    #[cfg(any(test, feature = "parser-conformance"))]
+    patch_history_failure: Option<PatchHistoryCaptureFailure>,
+}
+
+impl ProcessedToken {
+    fn into_outcome(self) -> Result<TreeBuilderStepResult, ProcessedTokenFailure> {
+        // A capture failure is emitted synchronously while `push_token` owns
+        // the patch sink, so it is the earliest detected failure even when the
+        // same call also returns a tree-builder fatal.
+        #[cfg(any(test, feature = "parser-conformance"))]
+        if let Some(failure) = self.patch_history_failure {
+            return Err(ProcessedTokenFailure::PatchHistory(failure));
+        }
+        self.builder_result
+            .map_err(ProcessedTokenFailure::TreeBuilder)
+    }
+}
+
+enum ProcessedTokenFailure {
+    #[cfg(any(test, feature = "parser-conformance"))]
+    PatchHistory(PatchHistoryCaptureFailure),
+    TreeBuilder(ParserFatalError),
+}
+
+#[cfg(all(test, feature = "parser-conformance"))]
+mod patch_history_precedence_tests {
+    use super::{ProcessedToken, ProcessedTokenFailure};
+    use crate::html5::bridge::PatchHistoryCaptureFailure;
+    use crate::html5::shared::{ParserFatalError, ParserObservationInvariant};
+
+    #[test]
+    fn synchronously_latched_capture_failure_precedes_same_token_builder_fatal() {
+        let processed = ProcessedToken {
+            builder_result: Err(ParserFatalError::EngineInvariant),
+            patch_history_failure: Some(PatchHistoryCaptureFailure::Invariant(
+                ParserObservationInvariant::PatchDroppedCountOverflow,
+            )),
+        };
+        assert!(matches!(
+            processed.into_outcome(),
+            Err(ProcessedTokenFailure::PatchHistory(
+                PatchHistoryCaptureFailure::Invariant(
+                    ParserObservationInvariant::PatchDroppedCountOverflow
+                )
+            ))
+        ));
     }
 }

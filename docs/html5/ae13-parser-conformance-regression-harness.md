@@ -498,8 +498,91 @@ patch observations use a separate DOM attribute model containing namespace,
 prefix, local name, and value. Trees structurally retain doctype public/system
 identifiers and template contents beneath their host. Patch observations can
 faithfully represent every current `DomPatch` variant and payload; only
-`PatchKey` is replaced by caller-supplied snapshot-local labels. AE13a does not
-assign stream labels or implement the patch-v3 serializer.
+`PatchKey` is replaced by deterministic snapshot-local labels. AE13b3 assigns
+those labels in first semantic operand appearance order. Multi-key operand
+order is fixed as host then contents for `CreateTemplateContents`, parent then
+child for `AppendChild`, and parent then child then before for `InsertBefore`.
+`Clear` neither resets label numbering nor permits parser-session key reuse.
+No raw numeric `PatchKey`, runtime batch boundary, or batch version enters the
+canonical patch contract. AE13b3 does not implement a patch serializer.
+
+### Canonical parser-created tree and complete patch capture
+
+AE13b3 separates three observation owners:
+
+- `DocumentParseContext` records only tokenizer tokens, parse errors,
+  implementation diagnostics, diagnostic occurrence sequences, and normalized
+  positions.
+- `PatchEmitterAdapter` optionally retains raw semantic `DomPatch` history at
+  the single production boundary that receives each owned patch before
+  caller-controlled drains.
+- conformance execution retains the tree request until successful parser
+  finish, patch validation, and `ParseOutput::document` materialization.
+
+Tree-only and patch-only requests therefore do not install the diagnostic
+recorder, build the normalized-position index, use observed token drains, or
+change decoder/tokenizer execution. The final canonical tree is projected only
+from the successfully materialized `ParseOutput::document`. `LiveTree`,
+`PatchValidationArena` internals, legacy DOM snapshot text, and
+`ParseOutput::patches` are not canonical tree or complete-history sources.
+
+The tree projector preserves the document root, real `DocumentType` children
+and all three doctype strings, text, comments, processing instructions with
+separate target/data, element namespaces and exact local names, ordered
+qualified attributes, ordinary children, and the typed template-contents
+boundary. Template traversal order is host and attributes, ordinary children
+in source order, the contents boundary, then contents children in source
+order. Preflight and projection share one iterative event walker; children are
+scheduled in reverse on its LIFO work stack. This removes native recursion only
+from the AE13 canonical projector, not from the existing parser-owned
+materializer.
+
+Tree capacity counts canonical structural units: document, document type,
+element or HTML template host, text, comment, processing instruction, and the
+typed template-contents boundary each consume one unit. Ordered attributes and
+the outer `ObservedTree` wrapper consume no structural units, although their
+owned storage remains checked and fallible. A tree is atomic. Insufficient
+capacity returns an empty, clearly `Incomplete` tree with the exact required
+unit count dropped; it never returns a recursively truncated tree. The complete
+iterative preflight validates materialized tree invariants before capacity can
+produce `Incomplete`. Patch capacity counts semantic operations and retains
+the exact original prefix with an exact dropped count. Neither capacity is a
+byte-memory budget. Individual strings and attribute payloads may be large;
+every newly owned nested string, vector, attribute payload, label, map, history
+set, and traversal stack uses checked fallible allocation. A byte-budget
+request model is outside AE13b3.
+
+Preflight requires exactly one document root, rejects the legacy document-level
+doctype compatibility field, and requires every HTML-namespace `template` to
+own a `TemplateContents` fragment of the correct kind. Foreign SVG/MathML
+elements whose local name is `template` remain ordinary elements. These
+contradictions have typed observation-invariant identities and take precedence
+over every capacity outcome.
+
+Live patch-history allocation failure terminalizes the parser through
+`ParserFatalError::ResourceExhaustion(PatchHistoryObservationStorage)`. A
+patch-history dropped-count contradiction terminalizes stable parsing as the
+existing `EngineInvariant`; feature-gated conformance state retains and
+specializes the exact `PatchDroppedCountOverflow` identity. The adapter is
+checked immediately after every tree-builder token call, even when that call
+also returns a fatal error, and the synchronously latched capture failure has
+precedence. The original patch still enters ordinary transport unchanged, but
+the failed session exposes no drain, document mode, materialized output, or
+observation.
+
+Canonical tree/patch allocation occurs after successful production parsing and
+materialization, so it reports typed observation resource exhaustion at
+`CanonicalTreeProjection`, `CanonicalPatchProjection`, or
+`SnapshotLabelStorage`, never a false parser failure. Arithmetic and semantic
+contradictions remain typed observation invariants. Any failure suppresses the
+entire `CanonicalParserResult`.
+
+Retained patch prefixes are checked in release builds. Create operations
+introduce fresh non-zero keys; `CreateTemplateContents` requires its host and
+introduces contents; every structural/content operation requires retained
+creation history. Duplicate creation, `PatchKey::INVALID`, or a reference
+without retained creation history is an execution invariant. `Clear` resets
+live structure only and preserves historical creation identity.
 
 Transition token summaries, insertion modes, dispatch paths, and parser-context
 token kinds are typed semantic values. Unsupported-feature observations are

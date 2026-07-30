@@ -29,6 +29,10 @@ pub(crate) enum ParserObservationInvariant {
     NormalizedPositionIndexDiscontinuity,
     NormalizedPositionIndexMissing,
     InvalidNormalizedPositionOffset,
+    /// The exact count of semantic patch operations omitted after prefix
+    /// capacity exhaustion could not be represented.
+    #[cfg(any(test, feature = "parser-conformance"))]
+    PatchDroppedCountOverflow,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

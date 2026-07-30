@@ -157,8 +157,11 @@ requested and completed with zero events.
 
 Recognized default sidecars that are present but undeclared are rejected. A
 declared sidecar must exist even when its execution surface belongs to a later
-AE13 slice. In AE13a, only `tokens.txt` with `html5-token-v1` executes; an active
-fixture requesting another surface fails with typed `UnsupportedExpectation`.
+AE13 slice. The feature-gated AE13b3 execution API can capture canonical trees
+and complete semantic patch histories in memory. Fixture-v1 still executes
+only `tokens.txt` with `html5-token-v1`: tree and patch serializers, sidecars,
+and corpus migration remain deliberately absent, so an active fixture
+requesting either sidecar still fails with typed `UnsupportedExpectation`.
 
 ## Dispositions and sources
 

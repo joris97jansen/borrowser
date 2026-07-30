@@ -384,9 +384,13 @@ enabled.
 
 Patch transaction semantics:
 - A patch batch is an atomic transaction: apply all patches or none.
-- A `Clear` starts a new baseline for the document handle and invalidates all prior keys for that baseline.
-- Strict runtime appliers reset key-allocation domain on `Clear`; keys may be reused after `Clear`.
-- Producers may still choose monotonic non-reuse within their own session allocators (for example, HTML5 tree-builder allocators).
+- A `Clear` starts a new runtime baseline for the document handle, and strict
+  runtime appliers may reset their baseline-local duplicate-key tracking.
+- Independently, one production parser session owns a session-lifetime key
+  allocation domain: its allocator and AE13 semantic history do not reuse a
+  key after `Clear`.
+- A genuinely new parser session or document handle owns a fresh parser
+  identity domain.
 - On fatal parse failure, the runtime must either (a) emit a new handle and a full create stream, or (b) emit `Clear` + full create on the existing handle. The choice is explicit and consistent.
 - A “full create stream” is `CreateDocument` + a complete create/append stream for every node in document order, with a fresh key allocator for the new handle when a new handle is used.
 - `CreateDocument` is part of the patch protocol in this design; if not already present, it is introduced as a first-class patch operation.

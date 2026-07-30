@@ -1,11 +1,13 @@
 //! Typed, parser-owned semantic models for HTML conformance observations.
 //!
-//! AE13a defines these passive result shapes without wiring observation hooks
-//! into the tokenizer or tree builder. Snapshot serialization and integrated
-//! parser capture belong to later AE13 slices.
+//! Diagnostic capture is owned by production parser context, complete semantic
+//! patch history by the parser-session adapter, and final tree projection by
+//! conformance execution after successful materialization. Snapshot
+//! serialization remains outside this module.
 
 mod execution;
 mod model;
+mod projection;
 
 pub use crate::html5::shared::{
     DiagnosticEventMetadata, EventPosition, ImplementationDiagnosticCode,
@@ -19,8 +21,9 @@ pub use crate::html5::shared::{
     Utf8ReplacementPayload, Utf8ReplacementReason, WhatwgParseErrorCode,
 };
 pub use execution::{
-    ObservationRequest, ParserObservationExecutionError, ParserObservationInput,
-    ParserObservationInvariantError, ParserObservationRequest, ParserObservationTarget,
-    ParserTokenizerInvariantError, ScalarObservationRequest, execute_parser_observation,
+    ObservationRequest, ObservationReservationSite, ObservationResourceExhaustion,
+    ParserObservationExecutionError, ParserObservationInput, ParserObservationInvariantError,
+    ParserObservationRequest, ParserObservationTarget, ParserTokenizerInvariantError,
+    ScalarObservationRequest, execute_parser_observation,
 };
 pub use model::*;

@@ -73,6 +73,11 @@ Required invariants:
 - `SetText` and `AppendText` only target text nodes
 - the final post-batch DOM state must satisfy the DOM invariants above
 
+The production parser additionally maintains a session-history invariant that
+is intentionally stricter than this batch checker: `Clear` does not release
+historical parser keys for reuse. AE13 canonical retained-prefix validation
+checks that session-wide rule without changing the runtime baseline contract.
+
 ## API Surface
 
 Current checker entrypoints:

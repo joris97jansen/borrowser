@@ -20,6 +20,8 @@
 //! - Every element carries an explicit namespace and exact canonical local name.
 //! - All `PatchKey` values used in patches must be non-zero (`PatchKey::INVALID`
 //!   is never valid in a patch stream).
+//! - Patch keys are session-lifetime identities. Clearing the live document or
+//!   draining a runtime batch does not release historical keys for reuse.
 //! - Attribute vectors are applied exactly as emitted. HTML5 parser-created
 //!   output canonicalizes attributes before emission; appliers must not dedupe
 //!   or reorder attributes downstream.
@@ -85,8 +87,11 @@ impl DomPatchBatch {
 pub enum DomPatch {
     /// Clear all existing nodes for the document before applying subsequent patches.
     ///
-    /// This must be the first patch in a batch when used, and resets all key allocation state.
-    /// Implementations MUST treat mid-stream `Clear` as a protocol violation.
+    /// This must be the first patch in a runtime batch when used and resets the
+    /// live document structure. It does not reset session-lifetime key
+    /// allocation: every previously allocated `PatchKey` remains historical and
+    /// cannot be reused later in the same parser session. Implementations MUST
+    /// treat mid-batch `Clear` as a protocol violation.
     Clear,
     /// Create a document root node.
     CreateDocument {

@@ -67,6 +67,9 @@ pub enum ParserReservationSite {
     KnownTagAtomStorage,
     KnownTagLookupStorage,
     TemplateChildStorage,
+    /// Complete semantic patch-history observation retained by the live parser
+    /// before caller-controlled transport drains.
+    PatchHistoryObservationStorage,
 }
 
 /// Failure of an explicitly fallible parser-owned reservation boundary.
@@ -102,6 +105,9 @@ impl std::fmt::Display for ParserResourceExhaustion {
             ParserReservationSite::TemplateChildStorage => {
                 formatter.write_str("HTML parser-owned reservation failed at TemplateChildStorage")
             }
+            ParserReservationSite::PatchHistoryObservationStorage => formatter.write_str(
+                "HTML parser-owned reservation failed at PatchHistoryObservationStorage",
+            ),
         }
     }
 }
@@ -193,6 +199,10 @@ mod fatal_display_tests {
             (
                 ParserReservationSite::TemplateChildStorage,
                 "HTML parser-owned reservation failed at TemplateChildStorage",
+            ),
+            (
+                ParserReservationSite::PatchHistoryObservationStorage,
+                "HTML parser-owned reservation failed at PatchHistoryObservationStorage",
             ),
         ] {
             assert_eq!(

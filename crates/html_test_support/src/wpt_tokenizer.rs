@@ -199,6 +199,8 @@ pub fn run_tokenizer_whole_observed(
         parse_errors: ObservationRequest::NotRequested,
         implementation_diagnostics: ObservationRequest::NotRequested,
         document_mode: html::conformance::ScalarObservationRequest::NotRequested,
+        tree: ObservationRequest::NotRequested,
+        patches: ObservationRequest::NotRequested,
     })
     .map_err(|error| format!("canonical tokenizer observation failed for '{case_id}': {error}"))?;
     let observed_tokens = match result.tokens {

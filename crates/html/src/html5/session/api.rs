@@ -1,5 +1,7 @@
 use crate::dom_patch::{DomPatch, DomPatchBatch};
 use crate::html5::bridge::PatchEmitterAdapter;
+#[cfg(any(test, feature = "parser-conformance"))]
+use crate::html5::bridge::{PatchHistoryObservationConfig, RawPatchHistoryCapture};
 #[cfg(feature = "parser-conformance")]
 use crate::html5::shared::ParserObservationCapture;
 use crate::html5::shared::{
@@ -23,6 +25,8 @@ pub struct Html5ParseSession {
     pub(super) patch_emitter: PatchEmitterAdapter,
     pub(super) next_patch_batch_version: u64,
     pub(super) state: Html5ParseSessionState,
+    #[cfg(any(test, feature = "parser-conformance"))]
+    pub(super) patch_history_invariant: Option<crate::html5::shared::ParserObservationInvariant>,
     #[cfg(all(test, feature = "parser-conformance"))]
     pub(super) applied_tokenizer_controls_for_test: Vec<TokenizerControl>,
 }
@@ -60,7 +64,36 @@ impl Html5ParseSession {
     pub fn new(
         tokenizer_config: TokenizerConfig,
         builder_config: TreeBuilderConfig,
+        ctx: DocumentParseContext,
+    ) -> Result<Self, Html5SessionError> {
+        Self::new_with_patch_emitter(
+            tokenizer_config,
+            builder_config,
+            ctx,
+            PatchEmitterAdapter::new(),
+        )
+    }
+
+    #[cfg(any(test, feature = "parser-conformance"))]
+    pub(crate) fn new_with_patch_history(
+        tokenizer_config: TokenizerConfig,
+        builder_config: TreeBuilderConfig,
+        ctx: DocumentParseContext,
+        patch_history: PatchHistoryObservationConfig,
+    ) -> Result<Self, Html5SessionError> {
+        Self::new_with_patch_emitter(
+            tokenizer_config,
+            builder_config,
+            ctx,
+            PatchEmitterAdapter::new_with_patch_history(patch_history),
+        )
+    }
+
+    fn new_with_patch_emitter(
+        tokenizer_config: TokenizerConfig,
+        builder_config: TreeBuilderConfig,
         mut ctx: DocumentParseContext,
+        patch_emitter: PatchEmitterAdapter,
     ) -> Result<Self, Html5SessionError> {
         let tokenizer = Html5Tokenizer::new(tokenizer_config, &mut ctx);
         let builder =
@@ -71,9 +104,11 @@ impl Html5ParseSession {
             input: Input::new(),
             tokenizer,
             builder,
-            patch_emitter: PatchEmitterAdapter::new(),
+            patch_emitter,
             next_patch_batch_version: 0,
             state: Html5ParseSessionState::Usable,
+            #[cfg(any(test, feature = "parser-conformance"))]
+            patch_history_invariant: None,
             #[cfg(all(test, feature = "parser-conformance"))]
             applied_tokenizer_controls_for_test: Vec::new(),
         })
@@ -199,8 +234,11 @@ impl Html5ParseSession {
     }
 
     #[cfg(feature = "parser-conformance")]
-    pub(crate) fn document_mode_for_conformance(&self) -> crate::DocumentMode {
-        self.builder.document_mode()
+    pub(crate) fn document_mode_for_conformance(
+        &self,
+    ) -> Result<crate::DocumentMode, Html5SessionError> {
+        self.ensure_usable()?;
+        Ok(self.builder.document_mode())
     }
 
     #[cfg(feature = "parser-conformance")]
@@ -208,6 +246,21 @@ impl Html5ParseSession {
         &self,
     ) -> Option<crate::html5::tokenizer::TokenizerInvariantKind> {
         self.tokenizer.invariant_failure_kind()
+    }
+
+    #[cfg(feature = "parser-conformance")]
+    pub(crate) fn patch_history_invariant_for_conformance(
+        &self,
+    ) -> Option<crate::html5::shared::ParserObservationInvariant> {
+        self.patch_history_invariant
+    }
+
+    #[cfg(feature = "parser-conformance")]
+    pub(crate) fn take_patch_history_for_conformance(
+        &mut self,
+    ) -> Result<Option<RawPatchHistoryCapture>, Html5SessionError> {
+        self.ensure_usable()?;
+        Ok(self.patch_emitter.take_patch_history())
     }
 
     fn ensure_usable(&self) -> Result<(), Html5SessionError> {
@@ -237,8 +290,29 @@ impl Html5ParseSession {
     }
 
     #[cfg(test)]
-    pub(crate) fn inject_patch_for_test(&mut self, patch: DomPatch) {
+    pub(crate) fn inject_patch_for_test(
+        &mut self,
+        patch: DomPatch,
+    ) -> Result<(), Html5SessionError> {
+        self.ensure_usable()?;
         self.patch_emitter.push(patch);
+        let result = self.resolve_patch_history_capture_failure();
+        self.latch_fatal(result)
+    }
+
+    #[cfg(all(test, feature = "parser-conformance"))]
+    pub(crate) fn force_patch_history_dropped_for_test(&mut self, dropped: u64) {
+        self.patch_emitter
+            .force_patch_history_dropped_for_test(dropped);
+    }
+
+    #[cfg(all(test, feature = "parser-failure-injection"))]
+    pub(crate) fn set_patch_history_failure_injection_for_test(
+        &mut self,
+        injection: crate::html5::shared::ParserFailureInjection,
+    ) {
+        self.patch_emitter
+            .set_patch_history_failure_injection_for_test(injection);
     }
 
     #[cfg(test)]
@@ -262,6 +336,11 @@ impl Html5ParseSession {
     #[cfg(all(test, feature = "parser-conformance"))]
     pub(crate) fn applied_tokenizer_controls_for_test(&self) -> &[TokenizerControl] {
         &self.applied_tokenizer_controls_for_test
+    }
+
+    #[cfg(test)]
+    pub(crate) fn diagnostic_observation_enabled_for_test(&self) -> bool {
+        self.ctx.observation_enabled()
     }
 
     #[cfg(test)]

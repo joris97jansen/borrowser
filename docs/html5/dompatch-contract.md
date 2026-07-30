@@ -90,6 +90,11 @@ For all patch streams:
 3. Structural child ordering is explicit via `AppendChild` / `InsertBefore`; consumers must not reorder.
 4. `Clear` may only appear as the first patch in a batch.
 5. `PatchKey(0)` is invalid and must never appear in emitted patches.
+6. Within one production parser session, patch keys are session-lifetime
+   identities. `Clear` resets live structure but does not release any
+   historically allocated parser key for reuse. This parser-history rule is
+   distinct from a runtime applier resetting baseline-local duplicate-key
+   tracking at a batch-leading `Clear`.
 
 HTML5 tree-builder Core v0 emission profile:
 
