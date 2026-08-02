@@ -8,16 +8,20 @@ document-mode ownership, disposition policy, and one standalone-tokenizer
 fixture. AE13b1 adds the parser-owned observation foundation for tokens,
 tokenizer parse errors, and implementation diagnostics. AE13b2 extends that
 same production recorder to tree construction and captures the scalar
-`DocumentMode` selected by the production tree builder. It does not claim
-completion of overarching AE13.
+`DocumentMode` selected by the production tree builder. AE13b4 adds
+parser-owned central tree-dispatch transitions and exact observations for six
+encountered, deliberately unimplemented tree-construction behaviors. It does
+not claim completion of overarching AE13 or implementation of those six
+algorithms.
 
 ## Ownership
 
 The `html` crate owns parser semantics and typed canonical observation values.
 `html::DocumentMode` is the one document-mode type used by tree construction
-and future parser observations. The exact token, position, parse-error, and
-implementation-diagnostic semantic identities live in always-compiled
-HTML/parser ownership. `html::conformance` re-exports those same types and owns
+and future parser observations. The exact token, position, parse-error,
+implementation-diagnostic, transition, and unsupported-feature semantic
+identities live in always-compiled HTML/parser ownership.
+`html::conformance` re-exports those same types and owns
 the passive request/result execution boundary behind the non-default
 `parser-conformance` feature. These are versioned engine-test contracts rather
 than stable DOM or general-purpose parser APIs. `HtmlParseOptions`,
@@ -118,13 +122,16 @@ result. An absent recorder is normal only when every surface was unrequested.
 
 ## AE13b2 tree-construction observation boundary
 
-`DocumentParseContext` owns one diagnostic fanout for preprocessing,
+`DocumentParseContext` owns one neutral `ParserEventSink` fanout for
+diagnostics and non-diagnostic semantic observations across preprocessing,
 tokenization, and tree construction. A short-lived
 `TreeBuilderProcessContext` borrows only the atom table and that fanout for one
-token, including every reprocessing iteration. Tree modules emit typed events
-through this boundary but cannot reserve occurrences, retain canonical events,
-update counters, or project legacy events directly. Unobserved parsing uses
-the same path and installs no tree-owned recorder, queue, or string store.
+logical token, including every reprocessing iteration. The authoritative
+central dispatch boundary reserves and retains transitions through this
+context; exact production fallback branches reserve unsupported events.
+Individual insertion-mode modules cannot own counters, a second recorder, or
+legacy projection. Unobserved parsing uses the same production path and
+installs no tree-owned recorder, queue, or string store.
 
 Genuine HTML tree-construction parse errors increment
 `Counters::parse_errors` whenever counter tracking is enabled, regardless of
@@ -225,6 +232,164 @@ incomplete capture or drops, and projects authoritative typed tree parse
 events one way to non-canonical description lines. It neither captures nor
 merges implementation/resource diagnostics, and patch goldens do not use this
 adapter.
+
+## AE13b4 dispatch and unsupported-feature observations
+
+One `TreeTransitionEvent` is one invocation by the central iterative
+tree-builder driver of exactly one selected top-level algorithm family for the
+current logical token. The typed paths are `HtmlInsertionMode(mode)`,
+`SharedTemplateRules`, `ForeignContent`, and `TextMode`.
+
+The event captures its surface-local occurrence, an immutable canonical token
+summary, the committed insertion mode immediately before selection, the
+selected path, the committed mode after central outcome validation and
+application, and whether this is a later central attempt for the same logical
+token. `reprocessed` means attempt index greater than zero; it does not predict
+the current attempt's outcome.
+
+Internal delegation is not another attempt. Table-family calls to InBody,
+InTemplate calls to supported InHead behavior, temporary-head delegation, and
+other direct calls between rule sets remain inside the selected attempt.
+Changing insertion mode for the next tokenizer token likewise does not make
+that next token reprocessed. Shared-template selection precedes Text-mode
+selection, which precedes ordinary active insertion-mode handling.
+
+Foreign processing never calls an HTML insertion-mode handler directly. A
+foreign breakout or foreign end-tag fallback returns a central directive that
+redispatches the same token once under `HtmlRulesOnly` selection. That scope
+skips foreign selection exactly once and still selects shared-template,
+Text-mode, or ordinary HTML rules centrally. It participates in exact cycle
+identity, but the route-only move is not generic semantic progress. A forced
+HTML attempt cannot request the same forced route; ordinary reprocessing after
+it returns to normal selection. EOF and integration-point conditions selected
+as HTML rules by the normal foreign decision produce one HTML-family attempt.
+Template EOF depth unwind remains recovery before the next traced dispatch
+attempt.
+
+Handler outcomes are applied centrally before the event is retained. For
+`Reprocess(next_mode)`, handler-owned mode may remain at the committed before
+mode or already equal `next_mode`; any third mode is an engine invariant. The
+driver commits `next_mode` before capturing `after`. Foreign `Done` and
+`HtmlRulesOnly` directives cannot change insertion mode. Self-closing
+finalization still occurs exactly once after the logical token reaches its
+terminal outcome.
+
+Transition and unsupported-feature surfaces are independent. Each has its own
+request state, capacity, occurrence sequence beginning at one, retained
+prefix, dropped count, and exact occurrence/dropped-overflow invariant. There
+is no fabricated cross-surface sequence. Occurrence is reserved at the
+production boundary before capacity filtering, including at zero capacity.
+One logical token lazily creates at most one
+`Arc<TransitionTokenSummary>` when an attempt can retain it; later retained
+attempts share it. Unrequested, zero-capacity, and already-exhausted attempts
+do not resolve or clone token strings.
+
+Transition capacity bounds event count only. It does not bound bytes retained
+by token names, character data, or processing-instruction targets. AE13b4
+therefore does not describe this surface as byte-memory-bounded.
+
+Unsupported events are structurally phase-correct:
+`UnsupportedFeatureEvent::TreeConstruction` always carries a
+`ParserContextSummary`. The exact closed tree-construction identities are:
+
+- `MergeAttributesIntoExistingHtmlElement`;
+- `MergeAttributesIntoExistingBodyElement`;
+- `MarkFramesetNotOkForRepeatedBodyStartTag`;
+- `RequireSameNamedTableCellInScopeForEndTag`;
+- `GenerateImpliedEndTagsAndCheckCurrentNodeBeforeClosingTableCell`;
+- `GenerateImpliedEndTagsAndCheckCurrentNodeBeforeClosingCaption`.
+
+Repeated-html/body merge events occur only when the applicable production rule
+is reached, no HTML template is on the stack, the authoritative root/second
+stack entry has the required HTML identity, and at least one first-wins
+unqualified token attribute is absent by expanded name from the corresponding
+`LiveTree` element. Values, prefixes, encounter order, and already-present
+different values do not create a missing attribute. The check reads the stack
+entry's `PatchKey` and `LiveTree::element_semantics`, resolves no values,
+mutates no element, and is skipped entirely when unsupported observation is
+unrequested.
+
+For explicit `</td>`/`</th>`, no cell in table scope preserves the existing
+parse-error-and-ignore behavior and emits no unsupported event. An opposite
+scoped cell emits only `RequireSameNamedTableCellInScopeForEndTag`; it does not
+also claim downstream close preparation, because the Standard algorithm would
+stop at the failed same-name guard. A matching current cell emits no event. A
+matching non-current cell emits the compound preparation identity.
+Table-structure-driven closure has no failed same-name guard and emits the
+compound identity when the exact scoped cell `PatchKey` is not current.
+Caption closure uses the same exact-key rule for its compound preparation
+identity.
+
+General causality rule: an unsupported event is not emitted for a downstream
+algorithm step that would be unreachable if an earlier missing guard for the
+same token were implemented correctly.
+
+These events replace the four former attribute-merge, caption-close, and
+mismatched-cell implementation-diagnostic identities. Independent
+authored-input parse errors remain. Ordinary implementation diagnostics,
+configured limits, parser guardrails, operating-resource exhaustion, engine
+invariants, fixture limitations, unsupported execution targets, and deliberate
+fully implemented Borrowser deviations remain separate categories.
+
+All recorder failures share one first-observed
+`ParserObservationFailure::{Capture, Invariant}` slot. Observer-only token
+canonicalization, attribute comparison, or live-element lookup failure is
+latched without changing parser control flow. A separately occurring parser
+fatal remains authoritative and suppresses canonical observation output.
+Standalone-tokenizer transition requests are
+`NotApplicable(StandaloneTokenizerRun)`; unsupported-feature requests remain
+applicable because future exact preprocessing/tokenizer variants may use that
+surface. Tree-construction unsupported events can occur only when document
+tree construction actually runs. Unrequested surfaces remain `NotRequested`.
+
+AE13b4 adds no serializer, fixture sidecar, adapter, corpus migration, final
+invariant execution, or implementation of the observed missing algorithms.
+
+### Approved follow-up backlog
+
+Milestone: **AE follow-up — Remaining observed tree-construction conformance**
+
+Description: implement the exact tree-construction semantics exposed by
+AE13b4 while preserving parser ownership, production dispatch, patch/stack/AFE
+invariants, and whole-versus-chunked parity. The milestone does not add
+scripting, frameset insertion modes, fragment parsing, public DOM APIs, or
+runtime behavior.
+
+- **Implement attribute merging for repeated html start tags.** Implement the
+  applicable first-wins expanded-name merge into the authoritative existing
+  parser-created root element, preserving template suppression, patch/live-tree
+  consistency, source attribute order, and deterministic chunk parity.
+- **Implement attribute merging for repeated body start tags.** Implement the
+  applicable first-wins expanded-name merge into the authoritative second-stack
+  HTML body element, preserving template and stack-state exceptions,
+  patch/live-tree consistency, source order, and chunk parity.
+- **Mark frameset not ok for repeated body start tags.** Implement the
+  applicable repeated-body `frameset_ok = false` transition independently of
+  attribute merging, respecting template and second-stack-entry body
+  exceptions. Do not add frameset insertion modes or frameset element parsing.
+- **Implement complete table-cell end-tag and close preparation.** Implement
+  same-named `td`/`th` table-scope validation; parse-error-and-ignore behavior
+  for mismatched explicit cell end tags; implied-end-tag generation before
+  valid cell closure; the post-generation current-node check; and all explicit
+  and table-structure-driven `close_cell` paths. Preserve stack, AFE,
+  insertion-mode, patch, transition, and whole/chunk invariants.
+- **Implement complete caption close preparation.** Generate the required
+  implied end tags before caption closure, perform the post-generation
+  current-node check and parse error, and preserve caption scope, stack, AFE,
+  patch, transition, and whole/chunk invariants for explicit and
+  table-structure-driven closure.
+
+Milestone: **AE follow-up — Parser observation resource accounting**
+
+Description: complete parser observation memory accounting without changing
+semantic event identity or production parsing.
+
+- **Add byte-bounded parser observation payload policies.** Add explicit,
+  independently configured retained-string byte capacities for parser
+  observation surfaces while preserving event-count capacity, production-order
+  occurrences, drop accounting, passive failures, lazy logical-token
+  canonicalization, shared immutable summaries, and deterministic conformance
+  projection. Do not add serializers or infer events after parsing.
 
 ## Exact input and path boundary
 

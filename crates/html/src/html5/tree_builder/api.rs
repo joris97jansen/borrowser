@@ -728,6 +728,22 @@ impl Html5TreeBuilder {
         );
     }
 
+    pub(in crate::html5::tree_builder) fn record_tree_unsupported_feature(
+        &self,
+        context: &mut TreeBuilderProcessContext<'_>,
+        feature: crate::html5::shared::TreeConstructionUnsupportedFeature,
+    ) {
+        let Some(occurrence) = context.reserve_unsupported_feature() else {
+            return;
+        };
+        context.retain_unsupported_feature(
+            occurrence,
+            feature,
+            self.insertion_mode,
+            self.adjusted_current_node_namespace(),
+        );
+    }
+
     pub(in crate::html5::tree_builder) fn record_tree_resource_limit(
         &self,
         context: &mut TreeBuilderProcessContext<'_>,

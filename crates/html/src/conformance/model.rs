@@ -4,8 +4,8 @@
 //! public web-platform API and are available only with `parser-conformance`.
 
 use crate::html5::shared::{
-    ImplementationDiagnosticEvent, ObservedInsertionMode, ObservedToken, ParseErrorEvent,
-    ParserContextSummary,
+    ImplementationDiagnosticEvent, ObservedToken, ParseErrorEvent, TreeTransitionEvent,
+    UnsupportedFeatureEvent,
 };
 use crate::{AttributeNamespace, DocumentMode, ElementNamespace};
 
@@ -197,52 +197,6 @@ pub enum ObservedPatchOperation {
         node: PatchNodeLabel,
         text: String,
     },
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TreeDispatchPath {
-    HtmlInsertionMode(ObservedInsertionMode),
-    SharedTemplateRules,
-    ForeignContent,
-    TextMode,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum TransitionTokenSummary {
-    Doctype,
-    StartTag { name: String, self_closing: bool },
-    EndTag { name: String },
-    Character { data: String },
-    Comment,
-    ProcessingInstruction { target: String },
-    Eof,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TreeTransitionEvent {
-    pub occurrence: u64,
-    pub token: TransitionTokenSummary,
-    pub insertion_mode_before: ObservedInsertionMode,
-    pub dispatch_path: TreeDispatchPath,
-    pub insertion_mode_after: ObservedInsertionMode,
-    pub reprocessed: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct UnsupportedFeatureEvent {
-    pub occurrence: u64,
-    pub classification: UnsupportedFeatureClassification,
-    pub context: Option<ParserContextSummary>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum UnsupportedFeatureClassification {
-    UnsupportedInputPreprocessingBranch,
-    UnsupportedTokenizerBranch,
-    UnsupportedTreeConstructionRule,
-    DeferredFragmentParsing,
-    DeferredScriptingDependentParsing,
-    PartialForeignContentBranch,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

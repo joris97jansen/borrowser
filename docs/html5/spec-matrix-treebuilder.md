@@ -52,12 +52,13 @@ It defines HTML5 Core v0 tree-builder scope and explicitly records deferred and 
   - AE13b2 exposes a feature-gated in-memory scalar observation, not a patch,
     DOM API, or serialized fixture sidecar.
 
-## Tree-construction diagnostic contract
+## Tree-construction event contract
 
-- `DocumentParseContext` owns one shared diagnostic fanout and the independent
-  parse-error and implementation-diagnostic occurrence sequences.
+- `DocumentParseContext` owns one neutral parser event sink. It owns diagnostic
+  counters/projection and the parser observation recorder without categorizing
+  transitions or unsupported-feature observations as diagnostics.
 - `TreeBuilderProcessContext` is the one-token borrow boundary for the atom
-  table and tree diagnostic sink; `process`/`push_token` keep borrowed tokens,
+  table and tree event sink; `process`/`push_token` keep borrowed tokens,
   `TextResolver`, `PatchSink`, `TreeBuilderStepResult`, tokenizer controls, and
   `TreeBuilderError`.
 - HTML parse errors, Borrowser implementation diagnostics, configured
@@ -81,6 +82,11 @@ It defines HTML5 Core v0 tree-builder scope and explicitly records deferred and 
   finite fail-on-incomplete capture, and projects only typed tree parse errors.
   It does not establish a combined parse/implementation timeline or affect
   patch goldens.
+- AE13b4 transition and unsupported-feature surfaces have independent
+  requested state, capacities, occurrences, retained prefixes, and drop
+  accounting. There is no global event timeline. Parser-owned semantic types
+  are always compiled; `html::conformance` only re-exports and projects them.
+  Transition event capacity is not a retained-string byte budget.
 
 ## Historical Repository Baseline (Before D2 Execution)
 
@@ -109,11 +115,11 @@ It defines HTML5 Core v0 tree-builder scope and explicitly records deferred and 
 | `TB-MODE-TEXT` | MVP_PARTIAL | `Text` | `#the-text-insertion-mode` | `mod.rs`, `modes.rs`, `text_mode.rs` | Current coverage: `tree_builder/tests/text_mode.rs`; planned fixture umbrella: `tb-text-mode-core`. | Return-to-original-mode mechanics, mismatched end tags, and EOF in text mode. | `tb-text-mode-core` | Core-v0 text-mode routing for title/textarea/style and the dedicated script tokenizer family; parser execution/pause behavior remains out of scope. |
 | `TB-MODE-IN-TABLE` | MVP_PARTIAL | `In table` | `#parsing-main-intable` | `tree_builder/table/in_table.rs`, `insert/location.rs`, `stack/foster.rs` | Current: `ae8-*`, `i10-table-*`, `i3-in-table-*`; unit: `table_modes.rs`. | caption/colgroup/row-group/row/cell dispatch, implied wrappers, nested table recovery, foster-parented non-table content. | `tb-ae8-in-table` | AE8 supported static table construction routes table tokens through explicit table mode instead of generic in-body nesting. |
 | `TB-MODE-IN-TABLE-TEXT` | MVP_PARTIAL | `In table text` | `#parsing-main-intabletext` | `tree_builder/table/in_table_text.rs`, `table/state.rs`, `table/delegation.rs` | Current: `ae8-pending-table-text-eof`, `ae8-foster-text-and-element`; unit: table-text return-mode tests. | Chunk-safe pending character buffering, return-mode restoration, EOF flush, foster-parenting non-space runs. | `tb-ae8-in-table-text` | Needed so table whitespace and non-space table text are processed through parser-owned pending state. |
-| `TB-MODE-IN-CAPTION` | MVP_PARTIAL | `In caption` | `#parsing-main-incaption` | `tree_builder/table/in_caption.rs`, `table/close.rs` | Current: `i4-caption-colgroup-transition`; unit: `table_caption_colgroup.rs`. | Caption close, conflicting table-structure tokens, AFE marker cleanup. | `tb-ae8-in-caption` | Caption content delegates to body rules until a table-structure token closes and reprocesses. |
+| `TB-MODE-IN-CAPTION` | MVP_PARTIAL | `In caption` | `#parsing-main-incaption` | `tree_builder/table/in_caption.rs`, `table/close.rs` | Current: `i4-caption-colgroup-transition`; unit: `table_caption_colgroup.rs`; AE13b4 exact unsupported observation. | Caption close, conflicting table-structure tokens, AFE marker cleanup; implied-end-tag/current-node close preparation remains unimplemented. | `tb-ae8-in-caption` | Caption content delegates to body rules until a table-structure token closes and reprocesses. |
 | `TB-MODE-IN-COLUMN-GROUP` | MVP_PARTIAL | `In column group` | `#parsing-main-incolgroup` | `tree_builder/table/in_column_group.rs`, `table/close.rs` | Current: `ae8-basic-explicit-table`, `i4-colgroup-*`; unit: `table_caption_colgroup.rs`. | `col` insertion, missing `</colgroup>`, non-space recovery into table foster-parenting. | `tb-ae8-in-column-group` | Required for deterministic parser-created `colgroup`/`col` structure. |
 | `TB-MODE-IN-TABLE-BODY` | MVP_PARTIAL | `In table body` | `#parsing-main-intbody` | `tree_builder/table/in_table_body.rs`, `table/scope.rs`, `table/close.rs` | Current: `ae8-multiple-bodies`, `ae8-implied-row-direct-cell`; unit: `table_body_row.rs`. | row insertion, implied row for cells, row-group transitions, table end recovery. | `tb-ae8-in-table-body` | Owns row-group context instead of encoding row-group behavior in generic element insertion. |
 | `TB-MODE-IN-ROW` | MVP_PARTIAL | `In row` | `#parsing-main-intr` | `tree_builder/table/in_row.rs`, `table/close.rs` | Current: `ae8-malformed-row-and-cell-recovery`, `i5-stray-tr`; unit: `table_body_row.rs`. | cell insertion, conflicting row starts, row closure, row-group/table boundaries. | `tb-ae8-in-row` | Owns row context and cell transition behavior. |
-| `TB-MODE-IN-CELL` | MVP_PARTIAL | `In cell` | `#parsing-main-intd` | `tree_builder/table/in_cell.rs`, `table/close.rs` | Current: `ae8-malformed-row-and-cell-recovery`, `i6-*`; unit: `table_cell.rs`. | explicit/mismatched cell end tags, implied cell close, AFE marker clearing, nested table support. | `tb-ae8-in-cell` | Owns table-cell recovery without introducing layout-cell concepts. |
+| `TB-MODE-IN-CELL` | MVP_PARTIAL | `In cell` | `#parsing-main-intd` | `tree_builder/table/in_cell.rs`, `table/close.rs` | Current: `ae8-malformed-row-and-cell-recovery`, `i6-*`; unit: `table_cell.rs`; AE13b4 exact unsupported observations. | deterministic explicit/mismatched cell substitute recovery and AFE clearing; same-name guard plus implied-end-tag/current-node close preparation remain unimplemented. | `tb-ae8-in-cell` | Owns a partial table-cell recovery boundary without introducing layout-cell concepts. |
 | `TB-MODE-IN-TEMPLATE` | MVP_PARTIAL | `In template` | `#parsing-main-intemplate` | `tree_builder/dispatch/template.rs`, `tree_builder/template_state.rs`, `tree_builder/modes.rs` | Current local `ae10-*`; pinned WPT `template-*`; unit/session template tests. | category delegation, owner-mode replacement, same-token reprocessing, nested close and EOF unwind. | `tb-ae10-template-construction` | AE10 static ordinary-template subset with typed contents; no declarative shadow DOM or public template APIs. |
 
 ## `TB-MODE-IN-HEAD` Core v0 Partial Scope
@@ -136,7 +142,7 @@ Explicitly deferred from Core v0 `In head`:
 
 | ID | Tier | Algorithm / structure | Spec anchor(s) | Implementation mapping | Test mapping (current + planned) | Key edge cases | Acceptance placeholder | Rationale |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `TB-ALGO-REPROCESS` | MVP | Token reprocessing semantics | `#tree-construction`, `#parsing-main-inbody` | `tree_builder/mod.rs`, `tree_builder/modes.rs` | Planned fixtures: `tb-reprocess-mode-switch`, `tb-reprocess-no-duplicate-patch`. | Reprocess current token after insertion-mode switch without losing token identity and without duplicate patch emission. | `tb-reprocess-core` | Required for spec-faithful mode transitions and deterministic emission. |
+| `TB-ALGO-REPROCESS` | MVP | Token reprocessing semantics | `#tree-construction`, `#parsing-main-inbody` | `tree_builder/dispatch/drive.rs`, `tree_builder/dispatch/template.rs`, `tree_builder/foreign/dispatch.rs` | AE13b4 dispatch, template/table, foreign-route, cycle, and whole/chunk tests. | Central same-token redispatch after insertion-mode switch; one-shot foreign HTML-rules route; internal delegation creates no attempt. | `tb-reprocess-core` | Required for spec-faithful mode transitions, deterministic emission, and authoritative production tracing. |
 | `TB-ALGO-SOE` | MVP | Stack of open elements (SOE) | `#stack-of-open-elements` | `tree_builder/stack.rs`, `tree_builder/mod.rs` | Current proxy: `tree_builder/simple-element`. Planned fixtures: `tb-soe-nested-pop`, `tb-soe-implied-end-tags`. | Correct push/pop ordering, implied end tags, scope checks for end-tag processing. | `tb-soe-core` | Foundational invariant for all insertion modes. |
 | `TB-ALGO-BODY-RECOVERY` | MVP_PARTIAL | Body-mode malformed-content recovery | `#parsing-main-inbody`, implied end tags | `tree_builder/body_recovery.rs`, `tree_builder/dispatch/in_body.rs`, `tree_builder/known_tags.rs` | Current fixtures: `ae7-*`, `f7-in-body-stray-end-tags`. | Paragraph auto-close, unmatched `</p>` synthesis, list-item sibling recovery, supported implied end tags. | `tb-ae7-body-recovery` | AE7-supported subset only; not full `In body` conformance. |
 | `TB-ALGO-AFE` | MVP_PARTIAL | Active formatting elements (AFE) | `#the-list-of-active-formatting-elements` | `tree_builder/formatting.rs`, `mod.rs` | Current fixtures: `h8-*`, `f13-*`; unit/session reconstruction tests. | Reconstruction triggers, marker boundaries, duplicate formatting entries. | `tb-afe-core` | Needed for supported in-body formatting fidelity; full formatting conformance remains out of scope. |
@@ -161,6 +167,11 @@ Explicitly deferred from Core v0 `In head`:
   - No duplicate patch emission for the same semantic action during mode switches.
   - Reprocessing must be implemented with the iterative dispatch loop above; recursion is not permitted in Core v0.
   - Implementation should include a bounded reprocess-iteration guard in debug builds (for example, max 64 loop iterations per token) to catch infinite mode-flip bugs early.
+- AE13b4 observes one transition for each central attempt. Shared-template and
+  Text-mode handling are distinct paths; internal InBody/InHead/table
+  delegation is not a central attempt. Foreign breakout/end fallback returns
+  one `HtmlRulesOnly` redispatch, whose scope is included in exact cycle
+  identity. Template EOF unwind remains outside this trace boundary.
 
 ## SOE Ownership And Ordering Invariants (`TB-ALGO-SOE`)
 
@@ -206,6 +217,9 @@ Rationale:
   supported static table parsing.
 - The promoted scope remains declared and partial so Borrowser does not claim
   full WHATWG table conformance.
+- AE13b4 exposes exact unsupported events for the missing same-named cell guard,
+  cell close preparation, and caption close preparation. It preserves AE8's
+  substitute tree/stack/AFE behavior and does not implement those algorithms.
 
 ## Core v0 Tree Builder Subset
 

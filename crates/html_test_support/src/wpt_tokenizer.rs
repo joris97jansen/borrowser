@@ -198,6 +198,8 @@ pub fn run_tokenizer_whole_observed(
         tokens: ObservationRequest::Capture { capacity },
         parse_errors: ObservationRequest::NotRequested,
         implementation_diagnostics: ObservationRequest::NotRequested,
+        transitions: ObservationRequest::NotRequested,
+        unsupported_features: ObservationRequest::NotRequested,
         document_mode: html::conformance::ScalarObservationRequest::NotRequested,
         tree: ObservationRequest::NotRequested,
         patches: ObservationRequest::NotRequested,

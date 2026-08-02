@@ -9,7 +9,7 @@ use super::ParserFailureInjection;
 use super::ParserObservationCapture;
 use super::{
     AtomTable, Counters, ErrorOrigin, ErrorPolicy, Input, LegacyParseErrorCode,
-    NormalizedPositionIndex, ParseError, ParseErrorCode, ParserDiagnosticSink, ParserGuardrail,
+    NormalizedPositionIndex, ParseError, ParseErrorCode, ParserEventSink, ParserGuardrail,
     ParserObservationConfig, ParserObservationRecorder, ParserRecoveryAction, ParserResourceLimit,
     ParserStage, Utf8ReplacementPayload, Utf8ReplacementReason, WhatwgParseErrorCode,
 };
@@ -174,7 +174,7 @@ impl DocumentParseContext {
         legacy_aux: Option<u32>,
         legacy_code_override: Option<LegacyParseErrorCode>,
     ) {
-        let mut sink = ParserDiagnosticSink::new(
+        let mut sink = ParserEventSink::new(
             &mut self.counters,
             self.error_policy,
             &mut self.errors,
@@ -206,7 +206,7 @@ impl DocumentParseContext {
         position: usize,
         description: Option<&'static str>,
     ) {
-        let mut sink = ParserDiagnosticSink::new(
+        let mut sink = ParserEventSink::new(
             &mut self.counters,
             self.error_policy,
             &mut self.errors,
@@ -236,7 +236,7 @@ impl DocumentParseContext {
         position: usize,
         description: Option<&'static str>,
     ) {
-        let mut sink = ParserDiagnosticSink::new(
+        let mut sink = ParserEventSink::new(
             &mut self.counters,
             self.error_policy,
             &mut self.errors,
@@ -265,7 +265,7 @@ impl DocumentParseContext {
         reason: Utf8ReplacementReason,
         payload: Utf8ReplacementPayload,
     ) {
-        let mut sink = ParserDiagnosticSink::new(
+        let mut sink = ParserEventSink::new(
             &mut self.counters,
             self.error_policy,
             &mut self.errors,
@@ -309,6 +309,7 @@ impl DocumentParseContext {
                 implementation_diagnostics: super::SurfaceCaptureRequest::Capture {
                     capacity: 4_096,
                 },
+                ..ParserObservationConfig::default()
             });
         }
     }
@@ -517,8 +518,10 @@ mod tests {
         let parse_capture = parse_ctx.take_observations().expect("parse capture");
         assert!(parse_capture.parse_errors.items.is_empty());
         assert_eq!(
-            parse_capture.invariant,
-            Some(crate::html5::shared::ParserObservationInvariant::NormalizedPositionIndexMissing)
+            parse_capture.failure,
+            Some(crate::html5::shared::ParserObservationFailure::Invariant(
+                crate::html5::shared::ParserObservationInvariant::NormalizedPositionIndexMissing
+            ))
         );
 
         let mut diagnostic_ctx = observed_context(0, 1);
@@ -540,8 +543,10 @@ mod tests {
                 .is_empty()
         );
         assert_eq!(
-            diagnostic_capture.invariant,
-            Some(crate::html5::shared::ParserObservationInvariant::NormalizedPositionIndexMissing)
+            diagnostic_capture.failure,
+            Some(crate::html5::shared::ParserObservationFailure::Invariant(
+                crate::html5::shared::ParserObservationInvariant::NormalizedPositionIndexMissing
+            ))
         );
     }
 
@@ -802,8 +807,10 @@ mod tests {
         assert!(capture.parse_errors.items.is_empty());
         assert!(capture.implementation_diagnostics.items.is_empty());
         assert_eq!(
-            capture.invariant,
-            Some(super::super::ParserObservationInvariant::InvalidNormalizedPositionOffset)
+            capture.failure,
+            Some(super::super::ParserObservationFailure::Invariant(
+                super::super::ParserObservationInvariant::InvalidNormalizedPositionOffset
+            ))
         );
     }
 }

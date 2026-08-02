@@ -80,6 +80,108 @@ fn in_caption_conflicting_colgroup_start_closes_caption_and_reprocesses() {
 }
 
 #[test]
+fn every_caption_close_caller_preserves_stack_and_afe_close_contract() {
+    use crate::html5::shared::Token;
+    use crate::html5::tree_builder::modes::InsertionMode;
+
+    for (caller, nested) in [
+        ("explicit", false),
+        ("explicit", true),
+        ("conflicting-start", false),
+        ("conflicting-start", true),
+        ("table-end", false),
+        ("table-end", true),
+    ] {
+        let resolver = EmptyResolver;
+        let mut ctx = crate::html5::shared::DocumentParseContext::new();
+        let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+            crate::html5::tree_builder::TreeBuilderConfig::default(),
+            &mut ctx,
+        )
+        .unwrap();
+        let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
+        let table = ctx.atoms.intern_ascii_folded("table").unwrap();
+        let caption = ctx.atoms.intern_ascii_folded("caption").unwrap();
+        let paragraph = ctx.atoms.intern_ascii_folded("p").unwrap();
+        let colgroup = ctx.atoms.intern_ascii_folded("colgroup").unwrap();
+        let body = ctx.atoms.intern_ascii_folded("body").unwrap();
+
+        for token in [
+            Token::StartTag {
+                name: table,
+                attrs: Vec::new(),
+                self_closing: false,
+            },
+            Token::StartTag {
+                name: caption,
+                attrs: Vec::new(),
+                self_closing: false,
+            },
+        ] {
+            let _ = builder
+                .process(
+                    &token,
+                    &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                    &resolver,
+                )
+                .unwrap();
+        }
+        if nested {
+            let _ = builder
+                .process(
+                    &Token::StartTag {
+                        name: paragraph,
+                        attrs: Vec::new(),
+                        self_closing: false,
+                    },
+                    &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                    &resolver,
+                )
+                .unwrap();
+        }
+
+        let close_token = match caller {
+            "explicit" => Token::EndTag { name: caption },
+            "conflicting-start" => Token::StartTag {
+                name: colgroup,
+                attrs: Vec::new(),
+                self_closing: false,
+            },
+            "table-end" => Token::EndTag { name: table },
+            _ => unreachable!(),
+        };
+        let _ = builder
+            .process(
+                &close_token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
+            .unwrap();
+
+        let state = builder.state_snapshot();
+        let (expected_mode, expected_current) = match caller {
+            "explicit" => (InsertionMode::InTable, table),
+            "conflicting-start" => (InsertionMode::InColumnGroup, colgroup),
+            "table-end" => (InsertionMode::InBody, body),
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            state.insertion_mode, expected_mode,
+            "caller={caller} nested={nested}"
+        );
+        assert_eq!(
+            state.open_element_names.last().copied(),
+            Some(expected_current),
+            "caller={caller} nested={nested}"
+        );
+        assert!(
+            builder.active_formatting.entries().is_empty(),
+            "caller={caller} nested={nested}"
+        );
+    }
+}
+
+#[test]
 fn in_caption_stray_end_tag_is_ignored_without_popping_caption() {
     use crate::html5::shared::Token;
     use crate::html5::tree_builder::modes::InsertionMode;

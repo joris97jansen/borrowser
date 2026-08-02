@@ -198,7 +198,11 @@ Core v0 tree-builder partial-scope guards:
 - `TB-ALGO-AAA` (`MVP_PARTIAL`) is limited to Borrowser's supported
   formatting-element set and representative deterministic recovery fixtures.
   This does not claim full WHATWG adoption-agency conformance.
-- `TB-ALGO-REPROCESS` guarantees that reprocessing reuses the same token instance and does not emit duplicate patches for a single logical token unless explicitly required by the spec algorithm.
+- `TB-ALGO-REPROCESS` guarantees that reprocessing reuses the same logical
+  token and does not emit duplicate patches for a single semantic action.
+  AE13b4 observes only central-driver attempts. Internal calls between rule
+  sets are delegation, not redispatch; foreign-to-HTML fallback is an explicit
+  one-shot central `HtmlRulesOnly` route.
 
 ### Text Coalescing Policy (Core v0)
 
@@ -331,12 +335,13 @@ Core v0 guarantees:
 
 ### Parse-Error Diagnostics
 
-Core v0 parser diagnostics are deterministic internal regression/debug data:
+Core v0 parser events are deterministic internal regression/debug data:
 
-- one `DocumentParseContext` diagnostic fanout owns counters, the independent
+- one neutral `DocumentParseContext` event sink owns counters, the independent
   parse-error and implementation-diagnostic occurrence sequences, bounded
-  canonical retention, dropped counts, and optional legacy projection for
-  preprocessing, tokenizer, and tree-construction production rules;
+  canonical diagnostic retention, parser observations, dropped counts, and
+  optional legacy diagnostic projection. Transition and unsupported-feature
+  observations are not diagnostics and have independent sequences/capacities;
 - tokenizer-origin malformed input records exact-position legacy `ParseError`
   entries where representable. Tree-construction canonical events currently
   use `Unavailable(ParserDidNotProvidePosition)` and are not projected with a
@@ -517,7 +522,10 @@ Core v0 stance:
   `thead`, `tfoot`, `tr`, `td`, and `th`.
 - supported omitted wrappers, malformed row/cell/body recovery, pending
   table-character-token handling, and foster-parent insertion locations are
-  parser-owned behavior.
+  parser-owned deterministic behavior. This does not claim the same-named
+  `td`/`th` end-tag guard, implied-end-tag preparation/current-node check for
+  table-cell closure, or caption-close preparation; AE13b4 observes those
+  exact omissions without implementing them.
 - unsupported table interactions still require robust fallback:
   - parser MUST remain deterministic,
   - parser MUST preserve core invariants (SOE/patch ordering),
@@ -547,7 +555,19 @@ Core v0 stance:
   wrap, and counter-backed depth-16/depth-256 fixtures prove linear aggregate
   EOF close/owner/reset work with O(1) auxiliary recovery memory. Contents are
   preserved in the centralized full-model traversal and inert to active
-  consumers.
+  consumers. AE13b4 classifies shared-template interception as one central
+  `SharedTemplateRules` attempt; its internal InHead/InBody delegation creates
+  no extra attempt, and template EOF unwind remains outside the attempt trace.
+
+- AE13b4 adds parser-owned dispatch-attempt and exact unsupported-feature
+  observations. The central driver records ordinary HTML, shared-template,
+  Text-mode, and foreign attempts with before/after insertion modes and
+  same-token redispatch identity. Foreign breakout and HTML fallback use a
+  one-shot HTML-rules-only route rather than hidden handler calls. The exact
+  unsupported identities cover repeated html/body attribute merging, repeated
+  body `frameset_ok`, table-cell same-name/close preparation, and caption close
+  preparation. These observations do not implement the six missing algorithms.
+  Event capacity bounds retained event count, not retained token-string bytes.
 
 - AE13b2.2a defines allocation-free parser fatal identities and first-failure
   terminal latching for live `Html5ParseSession` work. Construction failures
@@ -591,6 +611,9 @@ The following are intentionally not part of the Core v0 guarantee:
     CharacterData mutation, cloning, public mutation, and broader DOM PI
     validity
   - `PLAINTEXT`, frameset insertion modes, and fragment parsing for AE12
+  - repeated html/body attribute merging; repeated-body `frameset_ok = false`;
+    same-named table-cell end-tag recovery; cell/caption implied-end-tag and
+    post-generation current-node preparation observed by AE13b4
 
 Policy classification requirements:
 

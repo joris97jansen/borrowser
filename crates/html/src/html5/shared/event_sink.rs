@@ -1,4 +1,4 @@
-//! Shared parser-owned diagnostic fanout.
+//! Shared parser-owned diagnostic and semantic-observation fanout.
 
 use super::{
     Counters, DiagnosticEventMetadata, ErrorOrigin, ErrorPolicy, EventPosition,
@@ -7,7 +7,8 @@ use super::{
     ParseErrorEvent, ParserContextSummary, ParserGuardrail, ParserGuardrailPayload,
     ParserObservationRecorder, ParserRecoveryAction, ParserResourceLimit,
     ParserResourceLimitPayload, ParserStage, PositionUnavailableReason,
-    TreeConstructionImplementationDiagnosticCode, Utf8ReplacementPayload, Utf8ReplacementReason,
+    TreeConstructionImplementationDiagnosticCode, TreeTransitionEvent, UnsupportedFeatureEvent,
+    UnsupportedFeatureObservationFailure, Utf8ReplacementPayload, Utf8ReplacementReason,
 };
 use std::collections::VecDeque;
 
@@ -20,14 +21,14 @@ pub(crate) struct LegacyDiagnosticProjection {
     pub(crate) aux: Option<u32>,
 }
 
-pub(crate) struct ParserDiagnosticSink<'a> {
+pub(crate) struct ParserEventSink<'a> {
     counters: &'a mut Counters,
     error_policy: ErrorPolicy,
     errors: &'a mut Option<VecDeque<ParseError>>,
     observations: &'a mut Option<ParserObservationRecorder>,
 }
 
-impl<'a> ParserDiagnosticSink<'a> {
+impl<'a> ParserEventSink<'a> {
     pub(crate) fn new(
         counters: &'a mut Counters,
         error_policy: ErrorPolicy,
@@ -305,6 +306,51 @@ impl<'a> ParserDiagnosticSink<'a> {
                 payload,
             },
         );
+    }
+
+    pub(crate) fn reserve_tree_transition(&mut self) -> Option<u64> {
+        self.observations
+            .as_mut()
+            .and_then(ParserObservationRecorder::reserve_tree_transition)
+    }
+
+    pub(crate) fn retain_tree_transition(&mut self, event: TreeTransitionEvent) {
+        if let Some(recorder) = self.observations.as_mut() {
+            recorder.retain_tree_transition(event);
+        }
+    }
+
+    pub(crate) fn record_tree_transition_capture_failure(&mut self) {
+        if let Some(recorder) = self.observations.as_mut() {
+            recorder.record_tree_transition_capture_failure();
+        }
+    }
+
+    pub(crate) fn unsupported_features_requested(&self) -> bool {
+        self.observations
+            .as_ref()
+            .is_some_and(ParserObservationRecorder::unsupported_features_requested)
+    }
+
+    pub(crate) fn reserve_unsupported_feature(&mut self) -> Option<u64> {
+        self.observations
+            .as_mut()
+            .and_then(ParserObservationRecorder::reserve_unsupported_feature)
+    }
+
+    pub(crate) fn retain_unsupported_feature(&mut self, event: UnsupportedFeatureEvent) {
+        if let Some(recorder) = self.observations.as_mut() {
+            recorder.retain_unsupported_feature(event);
+        }
+    }
+
+    pub(crate) fn record_unsupported_feature_observation_failure(
+        &mut self,
+        failure: UnsupportedFeatureObservationFailure,
+    ) {
+        if let Some(recorder) = self.observations.as_mut() {
+            recorder.record_unsupported_feature_observation_failure(failure);
+        }
     }
 
     fn record_implementation_diagnostic_known(

@@ -1,5 +1,5 @@
 use crate::attributes::ParserCreatedAttribute;
-use crate::html5::shared::{AtomTable, Attribute};
+use crate::html5::shared::{AtomTable, Attribute, UnsupportedFeatureObservationFailure};
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::TreeBuilderError;
 use crate::html5::tree_builder::resolve::resolve_attribute_value;
@@ -43,6 +43,38 @@ pub(in crate::html5::tree_builder) fn resolve_afe_attributes_first_wins(
     attrs.to_vec()
 }
 
+/// Returns whether the applicable repeated-html/body rule would need to add
+/// at least one unqualified token attribute to the authoritative live element.
+///
+/// This is observation-only: it neither resolves values nor mutates the
+/// parser-created element. The quadratic first-wins scan avoids observer-owned
+/// allocation and matches the canonical token attribute semantics.
+pub(in crate::html5::tree_builder) fn has_missing_unqualified_token_attribute_first_wins(
+    attrs: &[Attribute],
+    existing: &[ParserCreatedAttribute],
+    atoms: &AtomTable,
+) -> Result<bool, UnsupportedFeatureObservationFailure> {
+    for (index, attr) in attrs.iter().enumerate() {
+        if attrs[..index]
+            .iter()
+            .any(|earlier| earlier.name == attr.name)
+        {
+            continue;
+        }
+        let local_name = atoms
+            .resolve(attr.name)
+            .ok_or(UnsupportedFeatureObservationFailure::TokenAttributeNameUnavailable)?;
+        let already_present = existing.iter().any(|existing| {
+            existing.namespace() == crate::attributes::AttributeNamespace::None
+                && existing.local_name() == local_name
+        });
+        if !already_present {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// HTML tree-construction "same attributes" comparison.
 ///
 /// Encounter order and prefix do not participate. Parser-created lists contain
@@ -64,8 +96,11 @@ pub(in crate::html5::tree_builder) fn same_attributes_for_html_parser(
 
 #[cfg(test)]
 mod tests {
-    use super::same_attributes_for_html_parser;
+    use super::{
+        has_missing_unqualified_token_attribute_first_wins, same_attributes_for_html_parser,
+    };
     use crate::attributes::{ParserCreatedAttribute, QualifiedAttributeName};
+    use crate::html5::shared::{AtomTable, Attribute, AttributeValue};
     use crate::names::NameInterner;
 
     #[test]
@@ -116,5 +151,65 @@ mod tests {
             "different".to_string(),
         );
         assert!(!same_attributes_for_html_parser(&first, &changed_value));
+    }
+
+    #[test]
+    fn repeated_element_merge_eligibility_is_first_wins_and_expanded_name_only() {
+        let mut atoms = AtomTable::default();
+        let a = atoms.intern_ascii_folded("a").unwrap();
+        let b = atoms.intern_ascii_folded("b").unwrap();
+        let a_local = atoms.resolve_local_name(a).unwrap();
+        let existing = vec![ParserCreatedAttribute::new(
+            QualifiedAttributeName::unqualified(a_local.clone()),
+            "old".to_string(),
+        )];
+        let token_attribute = |name, value: &str| Attribute {
+            name,
+            value: AttributeValue::Owned(value.to_string()),
+        };
+
+        assert!(
+            !has_missing_unqualified_token_attribute_first_wins(&[], &existing, &atoms).unwrap()
+        );
+        assert!(
+            !has_missing_unqualified_token_attribute_first_wins(
+                &[token_attribute(a, "different")],
+                &existing,
+                &atoms
+            )
+            .unwrap()
+        );
+        assert!(
+            !has_missing_unqualified_token_attribute_first_wins(
+                &[token_attribute(a, "first"), token_attribute(a, "duplicate")],
+                &existing,
+                &atoms
+            )
+            .unwrap()
+        );
+        assert!(
+            has_missing_unqualified_token_attribute_first_wins(
+                &[
+                    token_attribute(a, "existing"),
+                    token_attribute(b, "missing")
+                ],
+                &existing,
+                &atoms
+            )
+            .unwrap()
+        );
+
+        let namespaced_only = vec![ParserCreatedAttribute::new(
+            QualifiedAttributeName::xlink(a_local),
+            "old".to_string(),
+        )];
+        assert!(
+            has_missing_unqualified_token_attribute_first_wins(
+                &[token_attribute(a, "unqualified")],
+                &namespaced_only,
+                &atoms
+            )
+            .unwrap()
+        );
     }
 }

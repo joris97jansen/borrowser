@@ -445,8 +445,18 @@ Current supported subset:
   assigns first-appearance labels, and validates retained creation history.
   These capacities are not byte budgets, and the existing parser-owned
   materializer is not claimed to be stack-independent. Canonical serializers,
-  fixture sidecars/corpus migration, transitions, unsupported features, and
-  AE13c final invariants remain deferred. Full doctype classification
+  fixture sidecars/corpus migration, and AE13c final invariants remain
+  deferred. AE13b4 adds always-compiled parser-owned tree dispatch transitions
+  and exact unsupported-feature observations. One central event records each
+  ordinary HTML, shared-template, Text-mode, or foreign attempt; foreign
+  breakout/end fallback uses a visible one-shot HTML-rules-only redispatch.
+  Both surfaces independently own bounded retained prefixes, occurrences,
+  drops, and passive first-observed failure. Transition capacity bounds event
+  count, not retained string bytes. The exact unsupported set records six
+  production omissions: repeated html/body attribute merge, repeated-body
+  `frameset_ok`, same-named table-cell end-tag validation, cell close
+  preparation, and caption close preparation. None of those algorithms is
+  implemented by AE13b4. Full doctype classification
   conformance is not claimed. See
   `docs/html5/ae13-parser-conformance-regression-harness.md`.
 - AE1 HTML parser ownership architecture: HTML/parser owns tokenizer input
@@ -558,6 +568,9 @@ Current supported subset:
   construction; table-specific scope and stack-clearing helpers; table-cell
   AFE markers; pending table-character-token buffering and EOF flushing; and
   foster parenting as adjusted insertion-location selection before insertion.
+  Its deterministic mismatched-cell substitute does not implement the
+  same-named `td`/`th` end-tag guard, and cell/caption closure omits the required
+  implied-end-tag/current-node preparation; AE13b4 reports those exact gaps.
   See `docs/html5/ae8-specialized-table-tree-construction-contract.md`.
   AE8 does not claim full WHATWG table conformance, table layout, CSS table
   formatting, select/template table branches, foreign-content table behavior,
@@ -609,6 +622,9 @@ Missing or incomplete:
   subsets, including
   advanced insertion modes and malformed-markup recovery outside the documented
   Core-v0 scope
+- repeated html/body attribute merging and repeated-body `frameset_ok`;
+  same-named table-cell end-tag recovery and complete cell/caption close
+  preparation (observed exactly by AE13b4, not implemented)
 - full DOM API surface
 - public DOM `DocumentType` API exposure
 - script integration

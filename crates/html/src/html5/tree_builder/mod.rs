@@ -24,6 +24,7 @@ mod known_tags;
 mod limits;
 mod live_tree;
 pub(crate) mod modes;
+mod observation;
 mod parser_validation;
 mod patch_sink;
 mod process_context;
@@ -33,6 +34,7 @@ mod stack;
 mod table;
 mod template_state;
 mod text_mode;
+mod unsupported;
 
 #[cfg(any(test, feature = "html5-fuzzing"))]
 pub(crate) use api::TreeBuilderProgressWitness;

@@ -143,10 +143,16 @@ Entering `td` or `th`:
 Closing a cell, whether explicit or parser-recovery-driven:
 
 - finds the current table cell in table scope;
-- performs the supported implied-end-tag stack cleanup by closing through the
-  table-scope path;
+- closes through that scoped cell using Borrowser's deterministic substitute
+  stack path;
 - clears active formatting entries back to the last marker;
 - switches to `InRow`.
+
+AE8 does not implement the Standard's same-named `td`/`th` scope guard for
+explicit end tags, implied-end-tag generation before cell closure, or the
+post-generation current-node check. It likewise does not implement caption
+close preparation. AE13b4 observes those exact production omissions without
+changing AE8's substitute tree, stack, AFE, insertion mode, or parse errors.
 
 AE8 does not introduce layout cell concepts into the parser.
 AE10 adds marker kind/owner diagnostics without changing AE8's last-marker

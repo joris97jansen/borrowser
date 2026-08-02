@@ -5,11 +5,21 @@ use crate::dom_patch::DomPatch;
 
 #[test]
 fn mismatched_cell_end_tag_closes_current_cell_and_returns_to_in_row() {
-    use crate::html5::shared::{TextValue, Token};
+    use crate::html5::shared::{
+        ErrorPolicy, ParserObservationConfig, SurfaceCaptureRequest, TextValue, Token,
+        TreeConstructionUnsupportedFeature, UnsupportedFeatureEvent,
+    };
     use crate::html5::tree_builder::modes::InsertionMode;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_observations(
+        ErrorPolicy::default(),
+        ParserObservationConfig {
+            parse_errors: SurfaceCaptureRequest::Capture { capacity: 16 },
+            unsupported_features: SurfaceCaptureRequest::Capture { capacity: 4 },
+            ..ParserObservationConfig::default()
+        },
+    );
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -53,7 +63,7 @@ fn mismatched_cell_end_tag_closes_current_cell_and_returns_to_in_row() {
 
     let tr = ctx.atoms.intern_ascii_folded("tr").expect("atom interning");
     let state = builder.state_snapshot();
-    let diagnostics = ctx.take_tree_implementation_diagnostic_descriptions_for_test();
+    let capture = ctx.take_observations().expect("requested observations");
 
     assert_eq!(state.insertion_mode, InsertionMode::InRow);
     assert_eq!(
@@ -65,10 +75,24 @@ fn mismatched_cell_end_tag_closes_current_cell_and_returns_to_in_row() {
         builder.active_formatting.entries().is_empty(),
         "closing a mismatched cell must clear AFE back to the cell marker"
     );
-    assert!(
-        diagnostics.contains(&"in-cell-cell-end-tag-open-cell-mismatch"),
-        "mismatched cell end tags should record the cell-name mismatch"
+    assert_eq!(capture.unsupported_features.items.len(), 1);
+    let UnsupportedFeatureEvent::TreeConstruction {
+        occurrence,
+        feature,
+        ..
+    } = &capture.unsupported_features.items[0];
+    assert_eq!(*occurrence, 1);
+    assert_eq!(
+        *feature,
+        TreeConstructionUnsupportedFeature::RequireSameNamedTableCellInScopeForEndTag
     );
+    assert!(capture.parse_errors.items.iter().any(|event| {
+        event.code
+            == crate::html5::shared::ParseErrorCode::TreeConstruction(
+                crate::html5::shared::TreeConstructionParseErrorCode::
+                    CurrentNodeMismatchAfterImpliedEndTags,
+            )
+    }));
 }
 
 #[test]

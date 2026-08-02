@@ -22,6 +22,8 @@ impl TreeDiagnosticProjection {
                     capacity: GOLDEN_TREE_PARSE_ERROR_CAPACITY,
                 },
                 implementation_diagnostics: SurfaceCaptureRequest::NotRequested,
+                tree_transitions: SurfaceCaptureRequest::NotRequested,
+                unsupported_features: SurfaceCaptureRequest::NotRequested,
             },
         )
     }
@@ -38,13 +40,8 @@ impl TreeDiagnosticProjection {
         let capture = context
             .take_observations()
             .ok_or_else(|| "tree diagnostic observation recorder was not installed".to_string())?;
-        if let Some(invariant) = capture.invariant {
-            return Err(format!(
-                "tree diagnostic observation invariant failed: {invariant:?}"
-            ));
-        }
-        if capture.token_capture_failed {
-            return Err("unexpected token-capture failure in tree diagnostic adapter".to_string());
+        if let Some(failure) = capture.failure {
+            return Err(format!("tree diagnostic observation failed: {failure:?}"));
         }
         if !capture.parse_errors.requested {
             return Err("tree parse-error capture was not requested".to_string());

@@ -1,3 +1,4 @@
+use super::close::CellCloseCause;
 use crate::html5::shared::{AtomTable, Token};
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::dispatch::DispatchOutcome;
@@ -37,13 +38,20 @@ impl Html5TreeBuilder {
                     self.record_tree_parse_error(context, crate::html5::shared::TreeConstructionParseErrorCode::TableContextElementNotInRequiredScope, Some(crate::html5::shared::ParserRecoveryAction::IgnoreToken), Some("in-cell-cell-end-tag-not-in-table-scope"));
                     return Ok(DispatchOutcome::Done);
                 };
-                if open_cell.name() != *name {
-                    self.record_tree_implementation_diagnostic(context, crate::html5::shared::TreeConstructionImplementationDiagnosticCode::MismatchedCellEndTagClosedOpenCell, Some("in-cell-cell-end-tag-open-cell-mismatch"));
-                }
+                let close_cause = if open_cell.name() == *name {
+                    CellCloseCause::SameNamedEndTag
+                } else {
+                    self.record_tree_unsupported_feature(
+                        context,
+                        crate::html5::shared::TreeConstructionUnsupportedFeature::
+                            RequireSameNamedTableCellInScopeForEndTag,
+                    );
+                    CellCloseCause::MismatchedEndTagSubstitute
+                };
                 if self.current_node_name() != Some(*name) {
                     self.record_tree_parse_error(context, crate::html5::shared::TreeConstructionParseErrorCode::CurrentNodeMismatchAfterImpliedEndTags, Some(crate::html5::shared::ParserRecoveryAction::PopOpenElements), Some("in-cell-cell-end-tag-current-node-mismatch"));
                 }
-                let _ = self.close_cell(context);
+                let _ = self.close_cell(context, close_cause);
                 Ok(DispatchOutcome::Done)
             }
             Token::StartTag { name, .. }
@@ -67,7 +75,7 @@ impl Html5TreeBuilder {
                     );
                     return Ok(DispatchOutcome::Done);
                 }
-                if !self.close_cell(context) {
+                if !self.close_cell(context, CellCloseCause::TableStructureRecovery) {
                     return Ok(DispatchOutcome::Done);
                 }
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InRow))
@@ -83,7 +91,7 @@ impl Html5TreeBuilder {
                     self.record_tree_parse_error(context, crate::html5::shared::TreeConstructionParseErrorCode::TableContextElementNotInRequiredScope, Some(crate::html5::shared::ParserRecoveryAction::IgnoreToken), Some("in-cell-table-structure-end-tag-not-in-table-scope"));
                     return Ok(DispatchOutcome::Done);
                 }
-                if !self.close_cell(context) {
+                if !self.close_cell(context, CellCloseCause::TableStructureRecovery) {
                     return Ok(DispatchOutcome::Done);
                 }
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InRow))

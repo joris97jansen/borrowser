@@ -455,6 +455,7 @@ fn passive_observation_preserves_complete_parser_output_whole_and_chunked() {
                 tokens: SurfaceCaptureRequest::Capture { capacity: 256 },
                 parse_errors: SurfaceCaptureRequest::Capture { capacity: 256 },
                 implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 256 },
+                ..ParserObservationConfig::default()
             },
         )
         .expect("observed parser init");
@@ -531,6 +532,7 @@ fn document_mode_capture_is_whole_and_chunk_delivery_invariant() {
                 tokens: SurfaceCaptureRequest::Capture { capacity: 256 },
                 parse_errors: SurfaceCaptureRequest::Capture { capacity: 256 },
                 implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 256 },
+                ..ParserObservationConfig::default()
             },
         )
         .expect("observed parser init");
@@ -544,8 +546,7 @@ fn document_mode_capture_is_whole_and_chunk_delivery_invariant() {
             .take_observations_for_conformance()
             .expect("observation drain")
             .expect("document-mode observation capture");
-        assert!(!capture.token_capture_failed);
-        assert_eq!(capture.invariant, None);
+        assert_eq!(capture.failure, None);
         assert_eq!(capture.tokens.dropped, 0);
         assert_eq!(capture.parse_errors.dropped, 0);
         assert_eq!(capture.implementation_diagnostics.dropped, 0);
@@ -642,6 +643,7 @@ fn comment_observation_is_neutral_and_legacy_projection_stays_lossy_at_every_spl
                     tokens: SurfaceCaptureRequest::Capture { capacity: 32 },
                     parse_errors: SurfaceCaptureRequest::Capture { capacity: 32 },
                     implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 32 },
+                    ..ParserObservationConfig::default()
                 },
             )
             .expect("observed parser")
@@ -806,6 +808,7 @@ fn start_tag_solidus_semantics_preserve_tokens_diagnostics_dom_and_patches_at_ev
                     tokens: SurfaceCaptureRequest::Capture { capacity: 32 },
                     parse_errors: SurfaceCaptureRequest::Capture { capacity: 32 },
                     implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 32 },
+                    ..ParserObservationConfig::default()
                 },
             )
             .expect("observed parser")
@@ -1018,6 +1021,7 @@ fn supported_void_rule_groups_acknowledge_self_closing_at_every_split() {
                     tokens: SurfaceCaptureRequest::NotRequested,
                     parse_errors: SurfaceCaptureRequest::Capture { capacity: 256 },
                     implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 256 },
+                    ..ParserObservationConfig::default()
                 },
             )
             .expect("observed parser")
@@ -1153,6 +1157,7 @@ fn configured_insertion_suppression_never_claims_legacy_stack_alteration() {
                     tokens: SurfaceCaptureRequest::NotRequested,
                     parse_errors: SurfaceCaptureRequest::Capture { capacity: 16 },
                     implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 16 },
+                    ..ParserObservationConfig::default()
                 },
             )
             .expect("observed parser")
@@ -1296,6 +1301,7 @@ fn text_mode_end_tag_position_observation_preserves_dom_patches_and_legacy_outpu
                     tokens: SurfaceCaptureRequest::Capture { capacity: 64 },
                     parse_errors: SurfaceCaptureRequest::Capture { capacity: 64 },
                     implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 64 },
+                    ..ParserObservationConfig::default()
                 },
             )
             .expect("observed parser")
@@ -1416,6 +1422,7 @@ fn tokenizer_recovery_metadata_matches_literal_references_and_duplicate_attribut
                     tokens: SurfaceCaptureRequest::Capture { capacity: 32 },
                     parse_errors: SurfaceCaptureRequest::Capture { capacity: 32 },
                     implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 32 },
+                    ..ParserObservationConfig::default()
                 },
             )
             .expect("observed parser")
@@ -1650,6 +1657,7 @@ fn malformed_byte_observation_is_counter_and_output_neutral_at_every_split() {
                     tokens: SurfaceCaptureRequest::Capture { capacity: 256 },
                     parse_errors: SurfaceCaptureRequest::Capture { capacity: 256 },
                     implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity },
+                    ..ParserObservationConfig::default()
                 },
             )
             .expect("observed parser init"),
@@ -1799,6 +1807,7 @@ fn tree_errors_count_without_becoming_fabricated_legacy_position_events() {
             tokens: SurfaceCaptureRequest::NotRequested,
             parse_errors: SurfaceCaptureRequest::Capture { capacity: 8 },
             implementation_diagnostics: SurfaceCaptureRequest::NotRequested,
+            ..ParserObservationConfig::default()
         },
     )
     .expect("observed parser");

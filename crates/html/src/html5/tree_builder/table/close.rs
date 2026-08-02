@@ -1,16 +1,33 @@
-use crate::html5::shared::AtomId;
+use crate::html5::shared::{AtomId, TreeConstructionUnsupportedFeature};
 use crate::html5::tree_builder::Html5TreeBuilder;
 use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::stack::ScopeKind;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::html5::tree_builder) enum CellCloseCause {
+    SameNamedEndTag,
+    MismatchedEndTagSubstitute,
+    TableStructureRecovery,
+}
+
 impl Html5TreeBuilder {
     pub(in crate::html5::tree_builder) fn close_cell(
         &mut self,
-        _context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
+        cause: CellCloseCause,
     ) -> bool {
         let Some(cell) = self.current_table_cell_in_scope() else {
             return false;
         };
+        if cause != CellCloseCause::MismatchedEndTagSubstitute
+            && self.open_elements.current().map(|entry| entry.key()) != Some(cell.key())
+        {
+            self.record_tree_unsupported_feature(
+                context,
+                TreeConstructionUnsupportedFeature::
+                    GenerateImpliedEndTagsAndCheckCurrentNodeBeforeClosingTableCell,
+            );
+        }
         let closed = self.close_element_in_scope(cell.name(), ScopeKind::Table);
         if !closed {
             return false;
@@ -93,12 +110,16 @@ impl Html5TreeBuilder {
         &mut self,
         context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
     ) -> bool {
-        if !self.has_in_table_scope(self.known_tags.caption) {
+        let Some(caption) = self.element_in_table_scope(self.known_tags.caption) else {
             self.record_tree_parse_error(context, crate::html5::shared::TreeConstructionParseErrorCode::TableContextElementNotInRequiredScope, Some(crate::html5::shared::ParserRecoveryAction::IgnoreToken), Some("caption-end-tag-not-in-table-scope"));
             return false;
-        }
-        if self.current_node_name() != Some(self.known_tags.caption) {
-            self.record_tree_implementation_diagnostic(context, crate::html5::shared::TreeConstructionImplementationDiagnosticCode::CaptionCloseImpliedEndTagsNotImplemented, Some("caption-close-current-node-mismatch"));
+        };
+        if self.open_elements.current().map(|entry| entry.key()) != Some(caption.key()) {
+            self.record_tree_unsupported_feature(
+                context,
+                TreeConstructionUnsupportedFeature::
+                    GenerateImpliedEndTagsAndCheckCurrentNodeBeforeClosingCaption,
+            );
         }
         let closed = self.close_element_in_scope(self.known_tags.caption, ScopeKind::Table);
         if !closed {
