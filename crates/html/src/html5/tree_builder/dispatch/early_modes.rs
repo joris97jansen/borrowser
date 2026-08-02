@@ -1,7 +1,6 @@
 use super::DispatchOutcome;
 use crate::html5::shared::{
-    AtomTable, ParserRecoveryAction, Token, TreeConstructionImplementationDiagnosticCode,
-    TreeConstructionParseErrorCode,
+    AtomTable, ParserRecoveryAction, Token, TreeConstructionParseErrorCode,
 };
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::modes::InsertionMode;
@@ -254,13 +253,7 @@ impl Html5TreeBuilder {
                     Some(ParserRecoveryAction::IgnoreToken),
                     Some("in-head-unexpected-html-start-tag"),
                 );
-                if !attrs.is_empty() {
-                    self.record_tree_implementation_diagnostic(
-                        context,
-                        TreeConstructionImplementationDiagnosticCode::HtmlElementAttributesNotMerged,
-                        Some("html-start-tag-attributes-ignored"),
-                    );
-                }
+                self.observe_repeated_html_start_rule(attrs, atoms, context);
                 Ok(DispatchOutcome::Done)
             }
             Token::StartTag {
@@ -369,13 +362,7 @@ impl Html5TreeBuilder {
                     Some(ParserRecoveryAction::IgnoreToken),
                     Some("after-head-unexpected-html-start-tag"),
                 );
-                if !attrs.is_empty() {
-                    self.record_tree_implementation_diagnostic(
-                        context,
-                        TreeConstructionImplementationDiagnosticCode::HtmlElementAttributesNotMerged,
-                        Some("html-start-tag-attributes-ignored"),
-                    );
-                }
+                self.observe_repeated_html_start_rule(attrs, atoms, context);
                 Ok(DispatchOutcome::Done)
             }
             Token::StartTag { name, .. } if *name == self.known_tags.head => {
@@ -470,7 +457,7 @@ impl Html5TreeBuilder {
     pub(in crate::html5::tree_builder) fn handle_after_body(
         &mut self,
         token: &Token,
-        _atoms: &AtomTable,
+        atoms: &AtomTable,
         context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<DispatchOutcome, TreeBuilderError> {
@@ -517,13 +504,7 @@ impl Html5TreeBuilder {
                     Some(ParserRecoveryAction::IgnoreToken),
                     Some("after-body-unexpected-html-start-tag"),
                 );
-                if !attrs.is_empty() {
-                    self.record_tree_implementation_diagnostic(
-                        context,
-                        TreeConstructionImplementationDiagnosticCode::HtmlElementAttributesNotMerged,
-                        Some("html-start-tag-attributes-ignored"),
-                    );
-                }
+                self.observe_repeated_html_start_rule(attrs, atoms, context);
                 Ok(DispatchOutcome::Done)
             }
             Token::EndTag { name } if *name == self.known_tags.html => {
@@ -547,7 +528,7 @@ impl Html5TreeBuilder {
     pub(in crate::html5::tree_builder) fn handle_after_after_body(
         &mut self,
         token: &Token,
-        _atoms: &AtomTable,
+        atoms: &AtomTable,
         context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<DispatchOutcome, TreeBuilderError> {
@@ -579,13 +560,14 @@ impl Html5TreeBuilder {
                 );
                 Ok(DispatchOutcome::Done)
             }
-            Token::StartTag { name, .. } if *name == self.known_tags.html => {
+            Token::StartTag { name, attrs, .. } if *name == self.known_tags.html => {
                 self.record_tree_parse_error(
                     context,
                     TreeConstructionParseErrorCode::HtmlStartTagAfterHtmlElement,
                     Some(ParserRecoveryAction::IgnoreToken),
                     Some("after-after-body-unexpected-html-start-tag"),
                 );
+                self.observe_repeated_html_start_rule(attrs, atoms, context);
                 Ok(DispatchOutcome::Done)
             }
             Token::Eof => Ok(DispatchOutcome::Done),

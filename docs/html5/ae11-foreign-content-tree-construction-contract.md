@@ -222,8 +222,9 @@ replacement/error path.
 
 ## Per-token dispatch and namespace selection
 
-The active HTML insertion mode never becomes a foreign or XML mode. Before
-ordinary insertion-mode dispatch, each supported token is classified:
+The active HTML insertion mode never becomes a foreign or XML mode. The
+central tree-builder driver classifies each supported token before selecting
+an HTML-rules-family attempt:
 
 - empty stack, HTML adjusted current node, or EOF: ordinary HTML dispatch;
 - MathML `mi`, `mo`, `mn`, `ms`, or `mtext`: character tokens and start tags
@@ -283,15 +284,19 @@ For a foreign end tag, the current foreign local name is compared ASCII-
 insensitively with the token and one mismatch error is emitted only when they
 differ. The stack is walked backward deterministically. A matching foreign
 local name pops through the match. Reaching the root guard returns safely.
-Reaching an HTML element reprocesses the same token through the active HTML
-mode without a synthetic boundary error; that handler may independently emit
-its own specified error.
+Reaching an HTML element returns a one-shot central `HtmlRulesOnly` directive.
+That route skips foreign selection exactly once and selects shared-template,
+Text-mode, or ordinary active insertion-mode rules centrally, even when the
+adjusted current node remains foreign. It cannot request itself again; any
+ordinary reprocessing afterward returns to normal selection.
 
 Breakout emits `unexpected-html-token-in-foreign-content`, pops to HTML or a
-supported integration point, then reprocesses the identical token through the
-still-active HTML insertion mode. Exact-state fingerprints and bounded
-reprocessing guards require every retry to change state or terminate, including
-template and table delegation.
+supported integration point, then uses the same one-shot route for the
+identical token. AE13b4 therefore observes a foreign attempt followed by an
+HTML-rules-family attempt. Dispatch-selection scope is part of exact cycle
+identity, although that route-only move is not generic semantic progress.
+Normal HTML/MathML integration-point selection and EOF select HTML rules
+directly and produce no preceding foreign attempt.
 
 ## CSS, rendering, and runtime consumers
 

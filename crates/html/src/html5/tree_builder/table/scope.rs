@@ -25,6 +25,11 @@ impl Html5TreeBuilder {
             .has_in_scope(name, ScopeKind::Table, &self.scope_tags)
     }
 
+    pub(super) fn element_in_table_scope(&mut self, name: AtomId) -> Option<OpenElement> {
+        self.open_elements
+            .find_in_scope(name, ScopeKind::Table, &self.scope_tags)
+    }
+
     pub(super) fn current_table_cell_in_scope(&mut self) -> Option<OpenElement> {
         self.open_elements.find_last_table_cell_in_scope(
             self.known_tags.td,

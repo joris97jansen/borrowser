@@ -1,9 +1,12 @@
 //! Passive, bounded observation storage owned by the production parser.
 
+#[cfg(test)]
+use super::TransitionTokenSummary;
 use super::{
     ImplementationDiagnosticEvent, InputCoordinateSpace, InputPosition, NormalizedInputPosition,
     NormalizedLineNumber, NormalizedScalarColumn, ObservedToken, ParseErrorEvent,
     PositionUnavailableReason, SourceBytePosition, SourcePositionUnavailableReason,
+    TreeTransitionEvent, UnsupportedFeatureEvent,
 };
 
 const POSITION_CHECKPOINT_STRIDE: u64 = 256;
@@ -12,6 +15,8 @@ const POSITION_CHECKPOINT_STRIDE: u64 = 256;
 pub(crate) enum ObservationOccurrenceSequence {
     ParseErrors,
     ImplementationDiagnostics,
+    TreeTransitions,
+    UnsupportedFeatures,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -19,6 +24,8 @@ pub(crate) enum ObservationSurface {
     Tokens,
     ParseErrors,
     ImplementationDiagnostics,
+    TreeTransitions,
+    UnsupportedFeatures,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,6 +40,27 @@ pub(crate) enum ParserObservationInvariant {
     /// capacity exhaustion could not be represented.
     #[cfg(any(test, feature = "parser-conformance"))]
     PatchDroppedCountOverflow,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum UnsupportedFeatureObservationFailure {
+    TokenAttributeNameUnavailable,
+    ExistingHtmlElementSemanticsUnavailable,
+    ExistingBodyElementSemanticsUnavailable,
+    ExistingElementIdentityContradiction,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ParserObservationCaptureFailure {
+    TokenCanonicalization,
+    TreeTransitionTokenCanonicalization,
+    UnsupportedFeatureEligibility(UnsupportedFeatureObservationFailure),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ParserObservationFailure {
+    Capture(ParserObservationCaptureFailure),
+    Invariant(ParserObservationInvariant),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,6 +101,8 @@ pub(crate) struct ParserObservationConfig {
     pub(crate) tokens: SurfaceCaptureRequest,
     pub(crate) parse_errors: SurfaceCaptureRequest,
     pub(crate) implementation_diagnostics: SurfaceCaptureRequest,
+    pub(crate) tree_transitions: SurfaceCaptureRequest,
+    pub(crate) unsupported_features: SurfaceCaptureRequest,
 }
 
 impl ParserObservationConfig {
@@ -81,6 +111,11 @@ impl ParserObservationConfig {
             || !matches!(self.parse_errors, SurfaceCaptureRequest::NotRequested)
             || !matches!(
                 self.implementation_diagnostics,
+                SurfaceCaptureRequest::NotRequested
+            )
+            || !matches!(self.tree_transitions, SurfaceCaptureRequest::NotRequested)
+            || !matches!(
+                self.unsupported_features,
                 SurfaceCaptureRequest::NotRequested
             )
     }
@@ -147,12 +182,15 @@ impl<T> BoundedCapture<T> {
 pub(crate) struct ParserObservationRecorder {
     next_parse_error_occurrence: Option<u64>,
     next_implementation_diagnostic_occurrence: Option<u64>,
+    next_tree_transition_occurrence: Option<u64>,
+    next_unsupported_feature_occurrence: Option<u64>,
     tokens: BoundedCapture<ObservedToken>,
     parse_errors: BoundedCapture<ParseErrorEvent>,
     implementation_diagnostics: BoundedCapture<ImplementationDiagnosticEvent>,
+    tree_transitions: BoundedCapture<TreeTransitionEvent>,
+    unsupported_features: BoundedCapture<UnsupportedFeatureEvent>,
     position_index: Option<NormalizedPositionIndex>,
-    token_capture_failed: bool,
-    invariant: Option<ParserObservationInvariant>,
+    failure: Option<ParserObservationFailure>,
 }
 
 impl ParserObservationRecorder {
@@ -171,12 +209,15 @@ impl ParserObservationRecorder {
         Some(Self {
             next_parse_error_occurrence: Some(1),
             next_implementation_diagnostic_occurrence: Some(1),
+            next_tree_transition_occurrence: Some(1),
+            next_unsupported_feature_occurrence: Some(1),
             tokens: BoundedCapture::new(config.tokens),
             parse_errors: BoundedCapture::new(config.parse_errors),
             implementation_diagnostics: BoundedCapture::new(config.implementation_diagnostics),
+            tree_transitions: BoundedCapture::new(config.tree_transitions),
+            unsupported_features: BoundedCapture::new(config.unsupported_features),
             position_index: position_requested.then(NormalizedPositionIndex::new),
-            token_capture_failed: false,
-            invariant: None,
+            failure: None,
         })
     }
 
@@ -201,7 +242,7 @@ impl ParserObservationRecorder {
     }
 
     pub(crate) fn record_token_capture_failure(&mut self) {
-        self.token_capture_failed = true;
+        self.record_capture_failure(ParserObservationCaptureFailure::TokenCanonicalization);
     }
 
     /// Assign the next parse-error occurrence before applying capacity.
@@ -277,6 +318,91 @@ impl ParserObservationRecorder {
         self.disable_position_index_if_exhausted();
     }
 
+    /// Assign the next tree-transition occurrence before applying capacity.
+    pub(crate) fn reserve_tree_transition(&mut self) -> Option<u64> {
+        if !self.tree_transitions.is_requested() {
+            return None;
+        }
+        let Some(occurrence) = self.next_tree_transition_occurrence else {
+            self.record_invariant(ParserObservationInvariant::OccurrenceSequenceOverflow(
+                ObservationOccurrenceSequence::TreeTransitions,
+            ));
+            return None;
+        };
+        self.next_tree_transition_occurrence = occurrence.checked_add(1);
+        if self.next_tree_transition_occurrence.is_none() {
+            self.record_invariant(ParserObservationInvariant::OccurrenceSequenceOverflow(
+                ObservationOccurrenceSequence::TreeTransitions,
+            ));
+        }
+        if self.tree_transitions.can_retain() {
+            Some(occurrence)
+        } else {
+            if !self.tree_transitions.record_drop() {
+                self.record_invariant(ParserObservationInvariant::DroppedCountOverflow(
+                    ObservationSurface::TreeTransitions,
+                ));
+            }
+            None
+        }
+    }
+
+    pub(crate) fn retain_tree_transition(&mut self, event: TreeTransitionEvent) {
+        self.tree_transitions.push_reserved(event);
+    }
+
+    pub(crate) fn unsupported_features_requested(&self) -> bool {
+        self.unsupported_features.is_requested()
+    }
+
+    /// Assign the next unsupported-feature occurrence before applying capacity.
+    pub(crate) fn reserve_unsupported_feature(&mut self) -> Option<u64> {
+        if !self.unsupported_features.is_requested() {
+            return None;
+        }
+        let Some(occurrence) = self.next_unsupported_feature_occurrence else {
+            self.record_invariant(ParserObservationInvariant::OccurrenceSequenceOverflow(
+                ObservationOccurrenceSequence::UnsupportedFeatures,
+            ));
+            return None;
+        };
+        self.next_unsupported_feature_occurrence = occurrence.checked_add(1);
+        if self.next_unsupported_feature_occurrence.is_none() {
+            self.record_invariant(ParserObservationInvariant::OccurrenceSequenceOverflow(
+                ObservationOccurrenceSequence::UnsupportedFeatures,
+            ));
+        }
+        if self.unsupported_features.can_retain() {
+            Some(occurrence)
+        } else {
+            if !self.unsupported_features.record_drop() {
+                self.record_invariant(ParserObservationInvariant::DroppedCountOverflow(
+                    ObservationSurface::UnsupportedFeatures,
+                ));
+            }
+            None
+        }
+    }
+
+    pub(crate) fn retain_unsupported_feature(&mut self, event: UnsupportedFeatureEvent) {
+        self.unsupported_features.push_reserved(event);
+    }
+
+    pub(crate) fn record_tree_transition_capture_failure(&mut self) {
+        self.record_capture_failure(
+            ParserObservationCaptureFailure::TreeTransitionTokenCanonicalization,
+        );
+    }
+
+    pub(crate) fn record_unsupported_feature_observation_failure(
+        &mut self,
+        failure: UnsupportedFeatureObservationFailure,
+    ) {
+        self.record_capture_failure(
+            ParserObservationCaptureFailure::UnsupportedFeatureEligibility(failure),
+        );
+    }
+
     pub(crate) fn position_index_mut(&mut self) -> Option<&mut NormalizedPositionIndex> {
         self.position_index.as_mut()
     }
@@ -322,8 +448,16 @@ impl ParserObservationRecorder {
     }
 
     fn record_invariant(&mut self, invariant: ParserObservationInvariant) {
-        if self.invariant.is_none() {
-            self.invariant = Some(invariant);
+        self.record_failure(ParserObservationFailure::Invariant(invariant));
+    }
+
+    fn record_capture_failure(&mut self, failure: ParserObservationCaptureFailure) {
+        self.record_failure(ParserObservationFailure::Capture(failure));
+    }
+
+    fn record_failure(&mut self, failure: ParserObservationFailure) {
+        if self.failure.is_none() {
+            self.failure = Some(failure);
         }
     }
 
@@ -338,8 +472,9 @@ impl ParserObservationRecorder {
             tokens: self.tokens.finish(),
             parse_errors: self.parse_errors.finish(),
             implementation_diagnostics: self.implementation_diagnostics.finish(),
-            token_capture_failed: self.token_capture_failed,
-            invariant: self.invariant,
+            tree_transitions: self.tree_transitions.finish(),
+            unsupported_features: self.unsupported_features.finish(),
+            failure: self.failure,
         }
     }
 
@@ -372,8 +507,9 @@ pub(crate) struct ParserObservationCapture {
     pub(crate) tokens: CapturedSurface<ObservedToken>,
     pub(crate) parse_errors: CapturedSurface<ParseErrorEvent>,
     pub(crate) implementation_diagnostics: CapturedSurface<ImplementationDiagnosticEvent>,
-    pub(crate) token_capture_failed: bool,
-    pub(crate) invariant: Option<ParserObservationInvariant>,
+    pub(crate) tree_transitions: CapturedSurface<TreeTransitionEvent>,
+    pub(crate) unsupported_features: CapturedSurface<UnsupportedFeatureEvent>,
+    pub(crate) failure: Option<ParserObservationFailure>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -629,7 +765,7 @@ mod tests {
         assert_eq!(recorder.position_checkpoint_count(), 0);
         assert_eq!(recorder.reserve_parse_error(), None);
         assert_eq!(
-            recorder.finish().invariant,
+            recorder.finish().failure,
             None,
             "intentional bounded-work index retirement is not corruption"
         );
@@ -656,9 +792,11 @@ mod tests {
             vec![u64::MAX]
         );
         assert_eq!(
-            capture.invariant,
-            Some(ParserObservationInvariant::OccurrenceSequenceOverflow(
-                ObservationOccurrenceSequence::ParseErrors
+            capture.failure,
+            Some(ParserObservationFailure::Invariant(
+                ParserObservationInvariant::OccurrenceSequenceOverflow(
+                    ObservationOccurrenceSequence::ParseErrors
+                )
             ))
         );
     }
@@ -684,9 +822,11 @@ mod tests {
             vec![u64::MAX]
         );
         assert_eq!(
-            capture.invariant,
-            Some(ParserObservationInvariant::OccurrenceSequenceOverflow(
-                ObservationOccurrenceSequence::ImplementationDiagnostics
+            capture.failure,
+            Some(ParserObservationFailure::Invariant(
+                ParserObservationInvariant::OccurrenceSequenceOverflow(
+                    ObservationOccurrenceSequence::ImplementationDiagnostics
+                )
             ))
         );
     }
@@ -703,9 +843,11 @@ mod tests {
         let parse_capture = parse_recorder.finish();
         assert_eq!(parse_capture.parse_errors.dropped, 1);
         assert_eq!(
-            parse_capture.invariant,
-            Some(ParserObservationInvariant::OccurrenceSequenceOverflow(
-                ObservationOccurrenceSequence::ParseErrors
+            parse_capture.failure,
+            Some(ParserObservationFailure::Invariant(
+                ParserObservationInvariant::OccurrenceSequenceOverflow(
+                    ObservationOccurrenceSequence::ParseErrors
+                )
             ))
         );
 
@@ -722,9 +864,11 @@ mod tests {
         let diagnostic_capture = diagnostic_recorder.finish();
         assert_eq!(diagnostic_capture.implementation_diagnostics.dropped, 1);
         assert_eq!(
-            diagnostic_capture.invariant,
-            Some(ParserObservationInvariant::OccurrenceSequenceOverflow(
-                ObservationOccurrenceSequence::ImplementationDiagnostics
+            diagnostic_capture.failure,
+            Some(ParserObservationFailure::Invariant(
+                ParserObservationInvariant::OccurrenceSequenceOverflow(
+                    ObservationOccurrenceSequence::ImplementationDiagnostics
+                )
             ))
         );
     }
@@ -748,9 +892,11 @@ mod tests {
         assert_eq!(capture.parse_errors.items.len(), 0);
         assert_eq!(capture.parse_errors.dropped, u64::MAX);
         assert_eq!(
-            capture.invariant,
-            Some(ParserObservationInvariant::OccurrenceSequenceOverflow(
-                ObservationOccurrenceSequence::ParseErrors
+            capture.failure,
+            Some(ParserObservationFailure::Invariant(
+                ParserObservationInvariant::OccurrenceSequenceOverflow(
+                    ObservationOccurrenceSequence::ParseErrors
+                )
             ))
         );
     }
@@ -778,8 +924,10 @@ mod tests {
             vec![u64::MAX]
         );
         assert_eq!(
-            capture.invariant,
-            Some(ParserObservationInvariant::NormalizedPositionOverflow)
+            capture.failure,
+            Some(ParserObservationFailure::Invariant(
+                ParserObservationInvariant::NormalizedPositionOverflow
+            ))
         );
     }
 
@@ -793,9 +941,9 @@ mod tests {
         recorder.parse_errors.dropped = u64::MAX;
         assert_eq!(recorder.reserve_parse_error(), None);
         assert_eq!(
-            recorder.finish().invariant,
-            Some(ParserObservationInvariant::DroppedCountOverflow(
-                ObservationSurface::ParseErrors
+            recorder.finish().failure,
+            Some(ParserObservationFailure::Invariant(
+                ParserObservationInvariant::DroppedCountOverflow(ObservationSurface::ParseErrors)
             ))
         );
     }
@@ -857,8 +1005,10 @@ mod tests {
             )
         );
         assert_eq!(
-            recorder.finish().invariant,
-            Some(ParserObservationInvariant::InvalidNormalizedPositionOffset)
+            recorder.finish().failure,
+            Some(ParserObservationFailure::Invariant(
+                ParserObservationInvariant::InvalidNormalizedPositionOffset
+            ))
         );
     }
 
@@ -883,8 +1033,10 @@ mod tests {
         let capture = recorder.finish();
         assert!(capture.parse_errors.items.is_empty());
         assert_eq!(
-            capture.invariant,
-            Some(ParserObservationInvariant::NormalizedPositionIndexMissing)
+            capture.failure,
+            Some(ParserObservationFailure::Invariant(
+                ParserObservationInvariant::NormalizedPositionIndexMissing
+            ))
         );
     }
 
@@ -913,7 +1065,160 @@ mod tests {
 
         let capture = recorder.finish();
         assert_eq!(capture.parse_errors.items.len(), 1);
-        assert_eq!(capture.invariant, None);
+        assert_eq!(capture.failure, None);
+    }
+
+    #[test]
+    fn transition_and_unsupported_surfaces_have_independent_prefix_capacity() {
+        let mut recorder = ParserObservationRecorder::new(ParserObservationConfig {
+            tree_transitions: SurfaceCaptureRequest::Capture { capacity: 1 },
+            unsupported_features: SurfaceCaptureRequest::Capture { capacity: 0 },
+            ..ParserObservationConfig::default()
+        })
+        .unwrap();
+
+        let transition_occurrence = recorder.reserve_tree_transition().unwrap();
+        recorder.retain_tree_transition(TreeTransitionEvent {
+            occurrence: transition_occurrence,
+            token: std::sync::Arc::new(TransitionTokenSummary::Eof),
+            insertion_mode_before: super::super::ObservedInsertionMode::InBody,
+            dispatch_path: super::super::TreeDispatchPath::HtmlInsertionMode(
+                super::super::ObservedInsertionMode::InBody,
+            ),
+            insertion_mode_after: super::super::ObservedInsertionMode::InBody,
+            reprocessed: false,
+        });
+        assert_eq!(recorder.reserve_unsupported_feature(), None);
+        assert_eq!(recorder.reserve_tree_transition(), None);
+        assert_eq!(recorder.reserve_unsupported_feature(), None);
+
+        let capture = recorder.finish();
+        assert_eq!(capture.tree_transitions.items.len(), 1);
+        assert_eq!(capture.tree_transitions.items[0].occurrence, 1);
+        assert_eq!(capture.tree_transitions.dropped, 1);
+        assert!(capture.unsupported_features.items.is_empty());
+        assert_eq!(capture.unsupported_features.dropped, 2);
+        assert_eq!(capture.failure, None);
+    }
+
+    #[test]
+    fn one_failure_slot_preserves_cross_category_detection_order() {
+        let mut capture_first = ParserObservationRecorder::new(ParserObservationConfig {
+            tree_transitions: SurfaceCaptureRequest::Capture { capacity: 0 },
+            ..ParserObservationConfig::default()
+        })
+        .unwrap();
+        capture_first.record_tree_transition_capture_failure();
+        capture_first.next_tree_transition_occurrence = Some(u64::MAX);
+        assert_eq!(capture_first.reserve_tree_transition(), None);
+        assert_eq!(
+            capture_first.finish().failure,
+            Some(ParserObservationFailure::Capture(
+                ParserObservationCaptureFailure::TreeTransitionTokenCanonicalization
+            ))
+        );
+
+        let mut invariant_first = ParserObservationRecorder::new(ParserObservationConfig {
+            tree_transitions: SurfaceCaptureRequest::Capture { capacity: 0 },
+            ..ParserObservationConfig::default()
+        })
+        .unwrap();
+        invariant_first.next_tree_transition_occurrence = Some(u64::MAX);
+        assert_eq!(invariant_first.reserve_tree_transition(), None);
+        invariant_first.record_tree_transition_capture_failure();
+        assert_eq!(
+            invariant_first.finish().failure,
+            Some(ParserObservationFailure::Invariant(
+                ParserObservationInvariant::OccurrenceSequenceOverflow(
+                    ObservationOccurrenceSequence::TreeTransitions
+                )
+            ))
+        );
+    }
+
+    #[test]
+    fn capture_failure_precedes_later_dropped_count_overflow() {
+        let mut recorder = ParserObservationRecorder::new(ParserObservationConfig {
+            tree_transitions: SurfaceCaptureRequest::Capture { capacity: 0 },
+            ..ParserObservationConfig::default()
+        })
+        .unwrap();
+        recorder.record_tree_transition_capture_failure();
+        recorder.tree_transitions.dropped = u64::MAX;
+        assert_eq!(recorder.reserve_tree_transition(), None);
+        assert_eq!(
+            recorder.finish().failure,
+            Some(ParserObservationFailure::Capture(
+                ParserObservationCaptureFailure::TreeTransitionTokenCanonicalization
+            ))
+        );
+    }
+
+    #[test]
+    fn transition_and_unsupported_overflows_use_exact_surface_identities() {
+        let mut transition = ParserObservationRecorder::new(ParserObservationConfig {
+            tree_transitions: SurfaceCaptureRequest::Capture { capacity: 0 },
+            ..ParserObservationConfig::default()
+        })
+        .unwrap();
+        transition.next_tree_transition_occurrence = Some(u64::MAX);
+        assert_eq!(transition.reserve_tree_transition(), None);
+        assert_eq!(
+            transition.finish().failure,
+            Some(ParserObservationFailure::Invariant(
+                ParserObservationInvariant::OccurrenceSequenceOverflow(
+                    ObservationOccurrenceSequence::TreeTransitions
+                )
+            ))
+        );
+
+        let mut transition_drop = ParserObservationRecorder::new(ParserObservationConfig {
+            tree_transitions: SurfaceCaptureRequest::Capture { capacity: 0 },
+            ..ParserObservationConfig::default()
+        })
+        .unwrap();
+        transition_drop.tree_transitions.dropped = u64::MAX;
+        assert_eq!(transition_drop.reserve_tree_transition(), None);
+        assert_eq!(
+            transition_drop.finish().failure,
+            Some(ParserObservationFailure::Invariant(
+                ParserObservationInvariant::DroppedCountOverflow(
+                    ObservationSurface::TreeTransitions
+                )
+            ))
+        );
+
+        let mut unsupported_occurrence = ParserObservationRecorder::new(ParserObservationConfig {
+            unsupported_features: SurfaceCaptureRequest::Capture { capacity: 0 },
+            ..ParserObservationConfig::default()
+        })
+        .unwrap();
+        unsupported_occurrence.next_unsupported_feature_occurrence = Some(u64::MAX);
+        assert_eq!(unsupported_occurrence.reserve_unsupported_feature(), None);
+        assert_eq!(
+            unsupported_occurrence.finish().failure,
+            Some(ParserObservationFailure::Invariant(
+                ParserObservationInvariant::OccurrenceSequenceOverflow(
+                    ObservationOccurrenceSequence::UnsupportedFeatures
+                )
+            ))
+        );
+
+        let mut unsupported_drop = ParserObservationRecorder::new(ParserObservationConfig {
+            unsupported_features: SurfaceCaptureRequest::Capture { capacity: 0 },
+            ..ParserObservationConfig::default()
+        })
+        .unwrap();
+        unsupported_drop.unsupported_features.dropped = u64::MAX;
+        assert_eq!(unsupported_drop.reserve_unsupported_feature(), None);
+        assert_eq!(
+            unsupported_drop.finish().failure,
+            Some(ParserObservationFailure::Invariant(
+                ParserObservationInvariant::DroppedCountOverflow(
+                    ObservationSurface::UnsupportedFeatures
+                )
+            ))
+        );
     }
 
     #[test]

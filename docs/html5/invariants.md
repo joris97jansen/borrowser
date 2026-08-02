@@ -181,6 +181,10 @@ Table cell and AFE interaction:
 - closing a cell, explicit or implied, clears AFE entries back to the last
   marker;
 - cell close recovery must not expand into unrelated adoption-agency behavior.
+- AE13b4 observes, but does not implement, the same-named explicit cell-end-tag
+  guard and implied-end-tag/current-node preparation. If the missing same-name
+  guard would have ignored a token, no downstream close-preparation omission is
+  reported for that token.
 
 ## AE9a Form And Void-Insertion Invariants
 
@@ -304,10 +308,42 @@ Table cell and AFE interaction:
   foster parenting, and other adjusted insertion locations.
 - Breakout reprocesses the exact token only after a stack change establishes
   progress. Foreign end-tag scanning never corrupts stack caches.
+- Foreign breakout and end-tag HTML fallback return a one-shot central
+  `HtmlRulesOnly` directive; foreign handlers never call HTML handlers
+  directly. Selection scope participates in exact cycle identity but a
+  route-only scope change is not generic semantic progress. A forced HTML
+  attempt cannot force the same route again.
 - Unknown foreign elements retain their inherited foreign namespace. Results,
   patches, errors, and attribute order do not depend on chunk boundaries.
 - Layout inability cannot alter DOM/style truth; unsupported SVG/MathML roots
   suppress complete box subtrees at the centralized Layout decision boundary.
+
+## AE13b4 Parser Observation Invariants
+
+- One tree transition is one central-driver invocation of one selected
+  top-level family: ordinary HTML insertion mode, shared template rules,
+  foreign content, or Text mode. Internal rule-set delegation is not an
+  additional attempt.
+- The central driver captures committed insertion mode before selection and
+  after outcome validation/application. A handler returning
+  `Reprocess(next_mode)` may leave the mode unchanged or already set it to
+  `next_mode`; any third mode is an engine invariant.
+- A logical token is finalized for self-closing semantics exactly once after
+  its terminal attempt. Its retained attempts share one lazily canonicalized
+  immutable token summary.
+- Transition and unsupported-feature surfaces independently own request state,
+  capacity, occurrence sequence, retained prefix, drop count, and overflow
+  identity. No cross-surface timeline exists. Capacity zero and exhausted
+  capacity still reserve occurrences and count drops without constructing
+  owned transition payloads.
+- Transition capacity bounds event count, not retained token-string bytes.
+- All observation failures latch through one first-observed
+  `ParserObservationFailure` slot. Observer-only failure remains passive;
+  independently occurring parser fatal failure remains authoritative and
+  suppresses canonical observation output.
+- Unsupported observations originate only at the exact production fallback.
+  A downstream omission is not reported when a missing earlier guard would
+  have made that downstream step unreachable for the same token.
 
 ## AE12 processing-instruction invariants
 

@@ -41,12 +41,24 @@ impl OpenElementsStack {
         kind: ScopeKind,
         tags: &ScopeTagSet,
     ) -> bool {
+        self.find_in_scope(target, kind, tags).is_some()
+    }
+
+    /// Returns the exact parser-owned element identity visible in the
+    /// requested scope without mutating the stack.
+    pub(crate) fn find_in_scope(
+        &mut self,
+        target: AtomId,
+        kind: ScopeKind,
+        tags: &ScopeTagSet,
+    ) -> Option<OpenElement> {
         // Probe-only check: no stack mutation, but contributes to scan counters.
         self.scope_scan_calls = self.scope_scan_calls.saturating_add(1);
         if !self.has_name_count(ElementNamespace::Html, target) {
-            return false;
+            return None;
         }
-        self.find_in_scope_match_index(target, kind, tags).is_some()
+        let index = self.find_in_scope_match_index(target, kind, tags)?;
+        self.items.get(index).copied()
     }
 
     /// Removes elements from the top down to and including `target` when it is

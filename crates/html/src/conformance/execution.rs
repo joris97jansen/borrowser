@@ -10,8 +10,9 @@ use super::{CanonicalParserResult, IncompleteObservationReason, ObservationState
 use crate::html5::PatchHistoryObservationConfig;
 use crate::html5::shared::{
     CapturedSurface, DocumentParseContext, ErrorPolicy, ObservationOccurrenceSequence,
-    ObservationSurface, ParserObservationCapture, ParserObservationConfig,
-    ParserObservationInvariant, SurfaceCaptureRequest,
+    ObservationSurface, ParserObservationCapture, ParserObservationCaptureFailure,
+    ParserObservationConfig, ParserObservationFailure, ParserObservationInvariant,
+    SurfaceCaptureRequest, UnsupportedFeatureObservationFailure,
 };
 use crate::html5::{ByteStreamDecoder, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig};
 use crate::{HtmlParseOptions, HtmlParser};
@@ -53,6 +54,10 @@ pub struct ParserObservationRequest<'a> {
     pub tokens: ObservationRequest,
     pub parse_errors: ObservationRequest,
     pub implementation_diagnostics: ObservationRequest,
+    /// Maximum retained central tree-builder dispatch attempts. This is an
+    /// event-count capacity, not a retained-string byte budget.
+    pub transitions: ObservationRequest,
+    pub unsupported_features: ObservationRequest,
     pub document_mode: ScalarObservationRequest,
     /// Maximum canonical structural units: document, document type, element or
     /// HTML template host, text, comment, processing instruction, and typed
@@ -69,6 +74,8 @@ pub enum ParserObservationExecutionError {
     ParserInvariant,
     TokenizerInvariant(ParserTokenizerInvariantError),
     TokenCanonicalizationInvariant,
+    TreeTransitionTokenCanonicalizationInvariant,
+    UnsupportedFeatureObservationInvariant(UnsupportedFeatureObservationInvariantError),
     ObservationRecorderMissing,
     PatchHistoryCaptureMissing,
     ObservationInvariant(ParserObservationInvariantError),
@@ -148,9 +155,13 @@ pub enum ParserTokenizerInvariantError {
 pub enum ParserObservationInvariantError {
     ParseErrorOccurrenceOverflow,
     ImplementationDiagnosticOccurrenceOverflow,
+    TreeTransitionOccurrenceOverflow,
+    UnsupportedFeatureOccurrenceOverflow,
     TokenDroppedCountOverflow,
     ParseErrorDroppedCountOverflow,
     ImplementationDiagnosticDroppedCountOverflow,
+    TreeTransitionDroppedCountOverflow,
+    UnsupportedFeatureDroppedCountOverflow,
     NormalizedPositionOverflow,
     NormalizedPositionIndexDiscontinuity,
     NormalizedPositionIndexMissing,
@@ -169,6 +180,14 @@ pub enum ParserObservationInvariantError {
     SnapshotLabelSequenceOverflow,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnsupportedFeatureObservationInvariantError {
+    TokenAttributeNameUnavailable,
+    ExistingHtmlElementSemanticsUnavailable,
+    ExistingBodyElementSemanticsUnavailable,
+    ExistingElementIdentityContradiction,
+}
+
 impl std::fmt::Display for ParserObservationExecutionError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -183,6 +202,13 @@ impl std::fmt::Display for ParserObservationExecutionError {
             Self::TokenCanonicalizationInvariant => {
                 formatter.write_str("production token could not be resolved at its drain boundary")
             }
+            Self::TreeTransitionTokenCanonicalizationInvariant => formatter.write_str(
+                "tree transition token summary could not be resolved at its dispatch boundary",
+            ),
+            Self::UnsupportedFeatureObservationInvariant(invariant) => write!(
+                formatter,
+                "unsupported-feature observation invariant failed: {invariant:?}"
+            ),
             Self::ObservationRecorderMissing => formatter.write_str(
                 "parser observation was requested but the production recorder was missing",
             ),
@@ -217,6 +243,11 @@ pub fn execute_parser_observation(
         tokens: internal_request(request.tokens),
         parse_errors: internal_request(request.parse_errors),
         implementation_diagnostics: internal_request(request.implementation_diagnostics),
+        tree_transitions: match request.target {
+            ParserObservationTarget::StandaloneTokenizer => SurfaceCaptureRequest::NotRequested,
+            ParserObservationTarget::DocumentParser => internal_request(request.transitions),
+        },
+        unsupported_features: internal_request(request.unsupported_features),
     };
     let patch_config = match request.patches {
         ObservationRequest::NotRequested => PatchHistoryObservationConfig::default(),
@@ -252,7 +283,14 @@ pub fn execute_parser_observation(
             (capture, mode, tree, patches)
         }
     };
-    canonical_result(capture, document_mode, tree, patches)
+    canonical_result(
+        capture,
+        document_mode,
+        tree,
+        patches,
+        request.target,
+        request.transitions,
+    )
 }
 
 fn not_applicable_or_not_requested<T>(request: ObservationRequest) -> ObservationState<T> {
@@ -689,8 +727,17 @@ fn empty_capture() -> ParserObservationCapture {
             items: Vec::new(),
             dropped: 0,
         },
-        token_capture_failed: false,
-        invariant: None,
+        tree_transitions: CapturedSurface {
+            requested: false,
+            items: Vec::new(),
+            dropped: 0,
+        },
+        unsupported_features: CapturedSurface {
+            requested: false,
+            items: Vec::new(),
+            dropped: 0,
+        },
+        failure: None,
     }
 }
 
@@ -728,8 +775,16 @@ fn canonical_result(
     document_mode: ObservationState<crate::DocumentMode>,
     tree: ObservationState<super::ObservedTree>,
     patches: ObservationState<super::ObservedPatchStream>,
+    target: ParserObservationTarget,
+    transitions_request: ObservationRequest,
 ) -> Result<CanonicalParserResult, ParserObservationExecutionError> {
     validate_capture(&capture)?;
+    let transitions = match target {
+        ParserObservationTarget::StandaloneTokenizer => {
+            not_applicable_or_not_requested(transitions_request)
+        }
+        ParserObservationTarget::DocumentParser => finish_surface(capture.tree_transitions),
+    };
     Ok(CanonicalParserResult {
         tokens: finish_surface(capture.tokens),
         parse_errors: finish_surface(capture.parse_errors),
@@ -737,8 +792,8 @@ fn canonical_result(
         document_mode,
         tree,
         patches,
-        transitions: ObservationState::NotRequested,
-        unsupported_features: ObservationState::NotRequested,
+        transitions,
+        unsupported_features: finish_surface(capture.unsupported_features),
         final_invariants: ObservationState::NotRequested,
     })
 }
@@ -746,15 +801,52 @@ fn canonical_result(
 fn validate_capture(
     capture: &ParserObservationCapture,
 ) -> Result<(), ParserObservationExecutionError> {
-    if capture.token_capture_failed {
-        return Err(ParserObservationExecutionError::TokenCanonicalizationInvariant);
-    }
-    if let Some(invariant) = capture.invariant {
-        return Err(ParserObservationExecutionError::ObservationInvariant(
-            public_observation_invariant(invariant),
-        ));
+    if let Some(failure) = capture.failure {
+        return Err(public_observation_failure(failure));
     }
     Ok(())
+}
+
+fn public_observation_failure(
+    failure: ParserObservationFailure,
+) -> ParserObservationExecutionError {
+    match failure {
+        ParserObservationFailure::Capture(
+            ParserObservationCaptureFailure::TokenCanonicalization,
+        ) => ParserObservationExecutionError::TokenCanonicalizationInvariant,
+        ParserObservationFailure::Capture(
+            ParserObservationCaptureFailure::TreeTransitionTokenCanonicalization,
+        ) => ParserObservationExecutionError::TreeTransitionTokenCanonicalizationInvariant,
+        ParserObservationFailure::Capture(
+            ParserObservationCaptureFailure::UnsupportedFeatureEligibility(failure),
+        ) => ParserObservationExecutionError::UnsupportedFeatureObservationInvariant(
+            public_unsupported_feature_observation_failure(failure),
+        ),
+        ParserObservationFailure::Invariant(invariant) => {
+            ParserObservationExecutionError::ObservationInvariant(public_observation_invariant(
+                invariant,
+            ))
+        }
+    }
+}
+
+fn public_unsupported_feature_observation_failure(
+    failure: UnsupportedFeatureObservationFailure,
+) -> UnsupportedFeatureObservationInvariantError {
+    match failure {
+        UnsupportedFeatureObservationFailure::TokenAttributeNameUnavailable => {
+            UnsupportedFeatureObservationInvariantError::TokenAttributeNameUnavailable
+        }
+        UnsupportedFeatureObservationFailure::ExistingHtmlElementSemanticsUnavailable => {
+            UnsupportedFeatureObservationInvariantError::ExistingHtmlElementSemanticsUnavailable
+        }
+        UnsupportedFeatureObservationFailure::ExistingBodyElementSemanticsUnavailable => {
+            UnsupportedFeatureObservationInvariantError::ExistingBodyElementSemanticsUnavailable
+        }
+        UnsupportedFeatureObservationFailure::ExistingElementIdentityContradiction => {
+            UnsupportedFeatureObservationInvariantError::ExistingElementIdentityContradiction
+        }
+    }
 }
 
 fn public_observation_invariant(
@@ -767,6 +859,12 @@ fn public_observation_invariant(
         ParserObservationInvariant::OccurrenceSequenceOverflow(
             ObservationOccurrenceSequence::ImplementationDiagnostics,
         ) => ParserObservationInvariantError::ImplementationDiagnosticOccurrenceOverflow,
+        ParserObservationInvariant::OccurrenceSequenceOverflow(
+            ObservationOccurrenceSequence::TreeTransitions,
+        ) => ParserObservationInvariantError::TreeTransitionOccurrenceOverflow,
+        ParserObservationInvariant::OccurrenceSequenceOverflow(
+            ObservationOccurrenceSequence::UnsupportedFeatures,
+        ) => ParserObservationInvariantError::UnsupportedFeatureOccurrenceOverflow,
         ParserObservationInvariant::DroppedCountOverflow(ObservationSurface::Tokens) => {
             ParserObservationInvariantError::TokenDroppedCountOverflow
         }
@@ -776,6 +874,12 @@ fn public_observation_invariant(
         ParserObservationInvariant::DroppedCountOverflow(
             ObservationSurface::ImplementationDiagnostics,
         ) => ParserObservationInvariantError::ImplementationDiagnosticDroppedCountOverflow,
+        ParserObservationInvariant::DroppedCountOverflow(ObservationSurface::TreeTransitions) => {
+            ParserObservationInvariantError::TreeTransitionDroppedCountOverflow
+        }
+        ParserObservationInvariant::DroppedCountOverflow(
+            ObservationSurface::UnsupportedFeatures,
+        ) => ParserObservationInvariantError::UnsupportedFeatureDroppedCountOverflow,
         ParserObservationInvariant::NormalizedPositionOverflow => {
             ParserObservationInvariantError::NormalizedPositionOverflow
         }
@@ -856,6 +960,8 @@ mod tests {
             implementation_diagnostics: ObservationRequest::Capture {
                 capacity: DIAGNOSTIC_CAPACITY,
             },
+            transitions: ObservationRequest::NotRequested,
+            unsupported_features: ObservationRequest::NotRequested,
             document_mode: ScalarObservationRequest::NotRequested,
             tree: ObservationRequest::NotRequested,
             patches: ObservationRequest::NotRequested,
@@ -868,6 +974,66 @@ mod tests {
             ObservationState::Captured(items) => items,
             other => panic!("expected captured observation, got {other:?}"),
         }
+    }
+
+    fn observe_ae13b4(
+        source: &str,
+        transitions: ObservationRequest,
+        unsupported_features: ObservationRequest,
+    ) -> CanonicalParserResult {
+        observe_ae13b4_input(
+            ParserObservationInput::Utf8(source),
+            transitions,
+            unsupported_features,
+            ObservationRequest::NotRequested,
+        )
+    }
+
+    fn observe_ae13b4_input(
+        input: ParserObservationInput<'_>,
+        transitions: ObservationRequest,
+        unsupported_features: ObservationRequest,
+        tree: ObservationRequest,
+    ) -> CanonicalParserResult {
+        execute_parser_observation(ParserObservationRequest {
+            target: ParserObservationTarget::DocumentParser,
+            input,
+            tokens: ObservationRequest::NotRequested,
+            parse_errors: ObservationRequest::Capture { capacity: 256 },
+            implementation_diagnostics: ObservationRequest::Capture { capacity: 256 },
+            transitions,
+            unsupported_features,
+            document_mode: ScalarObservationRequest::NotRequested,
+            tree,
+            patches: ObservationRequest::NotRequested,
+        })
+        .expect("AE13b4 production observation")
+    }
+
+    fn unsupported_identities(
+        result: &CanonicalParserResult,
+    ) -> Vec<crate::html5::shared::TreeConstructionUnsupportedFeature> {
+        captured(&result.unsupported_features)
+            .iter()
+            .map(|event| match event {
+                crate::html5::shared::UnsupportedFeatureEvent::TreeConstruction {
+                    feature, ..
+                } => *feature,
+            })
+            .collect()
+    }
+
+    fn canonical_result_with_unrequested_projections(
+        capture: ParserObservationCapture,
+    ) -> Result<CanonicalParserResult, ParserObservationExecutionError> {
+        canonical_result(
+            capture,
+            ObservationState::NotRequested,
+            ObservationState::NotRequested,
+            ObservationState::NotRequested,
+            ParserObservationTarget::DocumentParser,
+            ObservationRequest::NotRequested,
+        )
     }
 
     fn observed_scalars(result: &CanonicalParserResult) -> String {
@@ -960,6 +1126,8 @@ mod tests {
             tokens: ObservationRequest::NotRequested,
             parse_errors: ObservationRequest::NotRequested,
             implementation_diagnostics: ObservationRequest::NotRequested,
+            transitions: ObservationRequest::NotRequested,
+            unsupported_features: ObservationRequest::NotRequested,
             document_mode: ScalarObservationRequest::NotRequested,
             tree: ObservationRequest::NotRequested,
             patches: ObservationRequest::NotRequested,
@@ -974,6 +1142,662 @@ mod tests {
             result.implementation_diagnostics,
             ObservationState::NotRequested
         ));
+    }
+
+    #[test]
+    fn ae13b4_target_applicability_is_explicit_and_surface_local() {
+        let standalone = execute_parser_observation(ParserObservationRequest {
+            target: ParserObservationTarget::StandaloneTokenizer,
+            input: ParserObservationInput::Utf8("<p>x"),
+            tokens: ObservationRequest::NotRequested,
+            parse_errors: ObservationRequest::NotRequested,
+            implementation_diagnostics: ObservationRequest::NotRequested,
+            transitions: ObservationRequest::Capture { capacity: 8 },
+            unsupported_features: ObservationRequest::Capture { capacity: 8 },
+            document_mode: ScalarObservationRequest::NotRequested,
+            tree: ObservationRequest::NotRequested,
+            patches: ObservationRequest::NotRequested,
+        })
+        .unwrap();
+        assert_eq!(
+            standalone.transitions,
+            ObservationState::NotApplicable {
+                reason: NotApplicableReason::StandaloneTokenizerRun
+            }
+        );
+        assert_eq!(
+            standalone.unsupported_features,
+            ObservationState::Captured(Vec::new())
+        );
+
+        let document = observe_ae13b4(
+            "<p>x",
+            ObservationRequest::Capture { capacity: 32 },
+            ObservationRequest::NotRequested,
+        );
+        assert!(matches!(
+            document.transitions,
+            ObservationState::Captured(_)
+        ));
+        assert!(matches!(
+            document.unsupported_features,
+            ObservationState::NotRequested
+        ));
+    }
+
+    #[test]
+    fn eof_reprocessing_records_each_central_attempt_with_committed_modes() {
+        use crate::html5::shared::{ObservedInsertionMode as Mode, TreeDispatchPath};
+
+        let result = observe_ae13b4(
+            "",
+            ObservationRequest::Capture { capacity: 16 },
+            ObservationRequest::NotRequested,
+        );
+        let transitions = captured(&result.transitions);
+        let modes = [
+            (Mode::Initial, Mode::BeforeHtml),
+            (Mode::BeforeHtml, Mode::BeforeHead),
+            (Mode::BeforeHead, Mode::InHead),
+            (Mode::InHead, Mode::AfterHead),
+            (Mode::AfterHead, Mode::InBody),
+            (Mode::InBody, Mode::InBody),
+        ];
+        assert_eq!(transitions.len(), modes.len());
+        for (index, (event, (before, after))) in transitions.iter().zip(modes).enumerate() {
+            assert_eq!(event.occurrence, index as u64 + 1);
+            assert_eq!(event.insertion_mode_before, before);
+            assert_eq!(event.insertion_mode_after, after);
+            assert_eq!(
+                event.dispatch_path,
+                TreeDispatchPath::HtmlInsertionMode(before)
+            );
+            assert_eq!(event.reprocessed, index != 0);
+            assert!(matches!(
+                event.token.as_ref(),
+                crate::html5::shared::TransitionTokenSummary::Eof
+            ));
+        }
+    }
+
+    #[test]
+    fn dispatch_paths_distinguish_template_text_foreign_and_internal_delegation() {
+        use crate::html5::shared::{
+            ObservedInsertionMode as Mode, TransitionTokenSummary, TreeDispatchPath,
+        };
+
+        let result = observe_ae13b4(
+            "<template><title>x</title></template><svg><g></g></svg>",
+            ObservationRequest::Capture { capacity: 128 },
+            ObservationRequest::NotRequested,
+        );
+        let transitions = captured(&result.transitions);
+        assert!(transitions.iter().any(|event| {
+            event.dispatch_path == TreeDispatchPath::SharedTemplateRules
+                && matches!(
+                    event.token.as_ref(),
+                    TransitionTokenSummary::StartTag { name, .. } if name == "template"
+                )
+        }));
+        assert!(transitions.iter().any(|event| {
+            event.dispatch_path == TreeDispatchPath::TextMode
+                && event.insertion_mode_before == Mode::Text
+                && matches!(
+                    event.token.as_ref(),
+                    TransitionTokenSummary::Character { data } if data == "x"
+                )
+        }));
+        assert!(transitions.iter().any(|event| {
+            event.insertion_mode_before == Mode::InTemplate
+                && event.insertion_mode_after == Mode::Text
+                && !event.reprocessed
+                && matches!(
+                    event.token.as_ref(),
+                    TransitionTokenSummary::StartTag { name, .. } if name == "title"
+                )
+        }));
+        assert!(transitions.iter().any(|event| {
+            event.dispatch_path == TreeDispatchPath::ForeignContent
+                && matches!(
+                    event.token.as_ref(),
+                    TransitionTokenSummary::StartTag { name, .. } if name == "g"
+                )
+        }));
+
+        let delegated = observe_ae13b4(
+            "<table><tr><td><html data-x=1>",
+            ObservationRequest::Capture { capacity: 64 },
+            ObservationRequest::NotRequested,
+        );
+        let html_attempts = captured(&delegated.transitions)
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event.token.as_ref(),
+                    TransitionTokenSummary::StartTag { name, .. } if name == "html"
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(html_attempts.len(), 1);
+        assert_eq!(
+            html_attempts[0].dispatch_path,
+            TreeDispatchPath::HtmlInsertionMode(Mode::InCell)
+        );
+    }
+
+    #[test]
+    fn template_and_table_mode_changes_redispatch_only_through_the_driver() {
+        use crate::html5::shared::{
+            ObservedInsertionMode as Mode, TransitionTokenSummary, TreeDispatchPath,
+        };
+
+        for (source, name, expected_paths) in [
+            (
+                "<template><col>",
+                "col",
+                [
+                    TreeDispatchPath::HtmlInsertionMode(Mode::InTemplate),
+                    TreeDispatchPath::HtmlInsertionMode(Mode::InColumnGroup),
+                ],
+            ),
+            (
+                "<table><tr>",
+                "tr",
+                [
+                    TreeDispatchPath::HtmlInsertionMode(Mode::InTable),
+                    TreeDispatchPath::HtmlInsertionMode(Mode::InTableBody),
+                ],
+            ),
+        ] {
+            let result = observe_ae13b4(
+                source,
+                ObservationRequest::Capture { capacity: 128 },
+                ObservationRequest::NotRequested,
+            );
+            let attempts = captured(&result.transitions)
+                .iter()
+                .filter(|event| {
+                    matches!(
+                        event.token.as_ref(),
+                        TransitionTokenSummary::StartTag { name: actual, .. } if actual == name
+                    )
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(attempts.len(), 2, "source={source}");
+            assert_eq!(attempts[0].dispatch_path, expected_paths[0]);
+            assert!(!attempts[0].reprocessed);
+            assert_eq!(attempts[1].dispatch_path, expected_paths[1]);
+            assert!(attempts[1].reprocessed);
+        }
+    }
+
+    #[test]
+    fn foreign_breakout_and_end_fallback_are_two_observable_attempts() {
+        use crate::html5::shared::{TransitionTokenSummary, TreeDispatchPath};
+
+        for (source, token_name, start_tag) in [
+            ("<svg><g><p>x", "p", true),
+            ("<svg><g></span>", "span", false),
+        ] {
+            let result = observe_ae13b4(
+                source,
+                ObservationRequest::Capture { capacity: 128 },
+                ObservationRequest::NotRequested,
+            );
+            let attempts = captured(&result.transitions)
+                .iter()
+                .filter(|event| match event.token.as_ref() {
+                    TransitionTokenSummary::StartTag { name, .. } => {
+                        start_tag && name == token_name
+                    }
+                    TransitionTokenSummary::EndTag { name } => !start_tag && name == token_name,
+                    _ => false,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(attempts.len(), 2, "source={source}");
+            assert_eq!(attempts[0].dispatch_path, TreeDispatchPath::ForeignContent);
+            assert!(!attempts[0].reprocessed);
+            assert!(matches!(
+                attempts[1].dispatch_path,
+                TreeDispatchPath::HtmlInsertionMode(_)
+            ));
+            assert!(attempts[1].reprocessed);
+            assert_eq!(attempts[0].token, attempts[1].token);
+        }
+    }
+
+    #[test]
+    fn integration_points_and_foreign_eof_select_html_rules_centrally() {
+        use crate::html5::shared::{TransitionTokenSummary, TreeDispatchPath};
+
+        let integration = observe_ae13b4(
+            "<svg><foreignObject><p>x</p></foreignObject></svg>",
+            ObservationRequest::Capture { capacity: 128 },
+            ObservationRequest::NotRequested,
+        );
+        let paragraph = captured(&integration.transitions)
+            .iter()
+            .find(|event| {
+                matches!(
+                    event.token.as_ref(),
+                    TransitionTokenSummary::StartTag { name, .. } if name == "p"
+                )
+            })
+            .unwrap();
+        assert!(matches!(
+            paragraph.dispatch_path,
+            TreeDispatchPath::HtmlInsertionMode(_)
+        ));
+
+        let eof = observe_ae13b4(
+            "<svg><g>",
+            ObservationRequest::Capture { capacity: 128 },
+            ObservationRequest::NotRequested,
+        );
+        let eof_attempts = captured(&eof.transitions)
+            .iter()
+            .filter(|event| matches!(event.token.as_ref(), TransitionTokenSummary::Eof))
+            .collect::<Vec<_>>();
+        assert_eq!(eof_attempts.len(), 1);
+        assert!(matches!(
+            eof_attempts[0].dispatch_path,
+            TreeDispatchPath::HtmlInsertionMode(_)
+        ));
+    }
+
+    #[test]
+    fn transition_and_unsupported_capacities_are_independent_prefixes() {
+        let zero = observe_ae13b4(
+            "",
+            ObservationRequest::Capture { capacity: 0 },
+            ObservationRequest::NotRequested,
+        );
+        assert_eq!(
+            zero.transitions,
+            ObservationState::Incomplete {
+                partial: Vec::new(),
+                reason: IncompleteObservationReason::StorageLimitExceeded {
+                    retained: 0,
+                    dropped: 6,
+                },
+            }
+        );
+
+        let bounded = observe_ae13b4(
+            "<body><body data-missing=1>",
+            ObservationRequest::Capture { capacity: 1 },
+            ObservationRequest::Capture { capacity: 1 },
+        );
+        let ObservationState::Incomplete {
+            partial: transition_prefix,
+            reason: transition_reason,
+        } = &bounded.transitions
+        else {
+            panic!("transition prefix must be incomplete");
+        };
+        assert_eq!(transition_prefix.len(), 1);
+        assert_eq!(transition_prefix[0].occurrence, 1);
+        assert!(matches!(
+            transition_reason,
+            IncompleteObservationReason::StorageLimitExceeded { dropped, .. } if *dropped > 0
+        ));
+        let ObservationState::Incomplete {
+            partial: unsupported_prefix,
+            reason: unsupported_reason,
+        } = &bounded.unsupported_features
+        else {
+            panic!("unsupported prefix must be incomplete");
+        };
+        assert_eq!(unsupported_prefix.len(), 1);
+        let crate::html5::shared::UnsupportedFeatureEvent::TreeConstruction { occurrence, .. } =
+            &unsupported_prefix[0];
+        assert_eq!(*occurrence, 1);
+        assert_eq!(
+            *unsupported_reason,
+            IncompleteObservationReason::StorageLimitExceeded {
+                retained: 1,
+                dropped: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn html_and_body_attribute_eligibility_uses_missing_expanded_names() {
+        use crate::html5::shared::TreeConstructionUnsupportedFeature as Feature;
+
+        for source in [
+            "<html a=one><head></head><body><html>",
+            "<html a=one><head></head><body><html a=two>",
+            "<html a=one><head></head><body><html a=two a=three>",
+        ] {
+            let result = observe_ae13b4(
+                source,
+                ObservationRequest::NotRequested,
+                ObservationRequest::Capture { capacity: 16 },
+            );
+            assert!(
+                !unsupported_identities(&result)
+                    .contains(&Feature::MergeAttributesIntoExistingHtmlElement),
+                "source={source}"
+            );
+        }
+
+        for source in [
+            "<html a=one><head><html b=two></head>",
+            "<html a=one><head></head><html b=two><body>",
+            "<html a=one><head></head><body><html b=two>",
+            "<html a=one><head></head><body></body><html b=two>",
+            "<html a=one><head></head><body></body></html><html b=two>",
+        ] {
+            let result = observe_ae13b4(
+                source,
+                ObservationRequest::NotRequested,
+                ObservationRequest::Capture { capacity: 16 },
+            );
+            assert_eq!(
+                unsupported_identities(&result)
+                    .into_iter()
+                    .filter(|feature| {
+                        *feature == Feature::MergeAttributesIntoExistingHtmlElement
+                    })
+                    .count(),
+                1,
+                "source={source}"
+            );
+        }
+
+        let mixed = observe_ae13b4(
+            "<html><head></head><body a=one><body a=two b=three c=four>",
+            ObservationRequest::NotRequested,
+            ObservationRequest::Capture { capacity: 16 },
+        );
+        let mixed_features = unsupported_identities(&mixed);
+        assert_eq!(
+            mixed_features,
+            vec![
+                Feature::MarkFramesetNotOkForRepeatedBodyStartTag,
+                Feature::MergeAttributesIntoExistingBodyElement,
+            ]
+        );
+
+        let existing_only = observe_ae13b4(
+            "<html><head></head><body a=one><body a=two>",
+            ObservationRequest::NotRequested,
+            ObservationRequest::Capture { capacity: 16 },
+        );
+        assert!(
+            !unsupported_identities(&existing_only)
+                .contains(&Feature::MergeAttributesIntoExistingBodyElement)
+        );
+
+        for source in [
+            "<html><head></head><body><template><html missing=one></template>",
+            "<html><head></head><body><template><body missing=one></template>",
+        ] {
+            let result = observe_ae13b4(
+                source,
+                ObservationRequest::NotRequested,
+                ObservationRequest::Capture { capacity: 16 },
+            );
+            let features = unsupported_identities(&result);
+            assert!(!features.contains(&Feature::MergeAttributesIntoExistingHtmlElement));
+            assert!(!features.contains(&Feature::MergeAttributesIntoExistingBodyElement));
+            assert!(!features.contains(&Feature::MarkFramesetNotOkForRepeatedBodyStartTag));
+        }
+    }
+
+    #[test]
+    fn explicit_cell_end_tags_follow_the_non_cascading_decision_table() {
+        use crate::html5::shared::TreeConstructionUnsupportedFeature as Feature;
+
+        for source in [
+            "<table><tr><th></td>",
+            "<table><tr><td></th>",
+            "<table><tr><th><p></td>",
+            "<table><tr><td><p></th>",
+            "<table><tr><th><div></td>",
+            "<table><tr><td><div></th>",
+        ] {
+            let result = observe_ae13b4(
+                source,
+                ObservationRequest::NotRequested,
+                ObservationRequest::Capture { capacity: 16 },
+            );
+            let features = unsupported_identities(&result);
+            assert_eq!(
+                features,
+                vec![Feature::RequireSameNamedTableCellInScopeForEndTag],
+                "source={source}"
+            );
+        }
+
+        for source in ["<table><tr><td></td>", "<table><tr><th></th>"] {
+            let result = observe_ae13b4(
+                source,
+                ObservationRequest::NotRequested,
+                ObservationRequest::Capture { capacity: 16 },
+            );
+            assert!(
+                unsupported_identities(&result).is_empty(),
+                "source={source}"
+            );
+        }
+
+        for source in [
+            "<table><tr><td><p></td>",
+            "<table><tr><th><p></th>",
+            "<table><tr><td><div></td>",
+            "<table><tr><th><b></th>",
+        ] {
+            let result = observe_ae13b4(
+                source,
+                ObservationRequest::NotRequested,
+                ObservationRequest::Capture { capacity: 16 },
+            );
+            assert_eq!(
+                unsupported_identities(&result),
+                vec![Feature::GenerateImpliedEndTagsAndCheckCurrentNodeBeforeClosingTableCell],
+                "source={source}"
+            );
+        }
+    }
+
+    #[test]
+    fn table_structure_cell_closures_remain_independently_eligible() {
+        use crate::html5::shared::TreeConstructionUnsupportedFeature as Feature;
+
+        for source in [
+            "<table><tbody><tr><td><p><caption>",
+            "<table><tbody><tr><td><p><col>",
+            "<table><tbody><tr><td><p><colgroup>",
+            "<table><tbody><tr><td><p><tbody>",
+            "<table><tbody><tr><td><p><td>",
+            "<table><tbody><tr><td><p><tfoot>",
+            "<table><tbody><tr><td><p><th>",
+            "<table><tbody><tr><td><p><thead>",
+            "<table><tbody><tr><td><p><tr>",
+            "<table><tbody><tr><td><p></table>",
+            "<table><tbody><tr><td><p></tbody>",
+            "<table><tfoot><tr><td><p></tfoot>",
+            "<table><thead><tr><td><p></thead>",
+            "<table><tbody><tr><td><p></tr>",
+        ] {
+            let result = observe_ae13b4(
+                source,
+                ObservationRequest::NotRequested,
+                ObservationRequest::Capture { capacity: 32 },
+            );
+            assert!(
+                unsupported_identities(&result).contains(
+                    &Feature::GenerateImpliedEndTagsAndCheckCurrentNodeBeforeClosingTableCell
+                ),
+                "source={source}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_caption_close_caller_observes_exact_identity_and_reprocessing() {
+        use crate::html5::shared::{
+            ObservedInsertionMode as Mode, TransitionTokenSummary,
+            TreeConstructionUnsupportedFeature as Feature, TreeDispatchPath,
+            UnsupportedFeatureEvent,
+        };
+
+        for (token, token_name, start_tag, reprocesses) in [
+            ("</caption>", "caption", false, false),
+            ("<colgroup>", "colgroup", true, true),
+            ("</table>", "table", false, true),
+        ] {
+            for nested in [false, true] {
+                let source = if nested {
+                    format!("<table><caption><p>x{token}")
+                } else {
+                    format!("<table><caption>{token}")
+                };
+                let observed = observe_ae13b4_input(
+                    ParserObservationInput::Utf8(&source),
+                    ObservationRequest::Capture { capacity: 128 },
+                    ObservationRequest::Capture { capacity: 8 },
+                    ObservationRequest::Capture { capacity: 256 },
+                );
+                let baseline = observe_ae13b4_input(
+                    ParserObservationInput::Utf8(&source),
+                    ObservationRequest::Capture { capacity: 128 },
+                    ObservationRequest::NotRequested,
+                    ObservationRequest::Capture { capacity: 256 },
+                );
+
+                assert_eq!(observed.tree, baseline.tree, "source={source}");
+                assert_eq!(
+                    observed.transitions, baseline.transitions,
+                    "source={source}"
+                );
+                assert_eq!(
+                    observed.parse_errors, baseline.parse_errors,
+                    "source={source}"
+                );
+
+                let events = captured(&observed.unsupported_features);
+                if nested {
+                    assert_eq!(events.len(), 1, "source={source}");
+                    let UnsupportedFeatureEvent::TreeConstruction {
+                        occurrence,
+                        feature,
+                        ..
+                    } = &events[0];
+                    assert_eq!(*occurrence, 1, "source={source}");
+                    assert_eq!(
+                        *feature,
+                        Feature::GenerateImpliedEndTagsAndCheckCurrentNodeBeforeClosingCaption,
+                        "source={source}"
+                    );
+                } else {
+                    assert!(events.is_empty(), "source={source}");
+                }
+
+                let attempts = captured(&observed.transitions)
+                    .iter()
+                    .filter(|event| match event.token.as_ref() {
+                        TransitionTokenSummary::StartTag { name, .. } => {
+                            start_tag && name == token_name
+                        }
+                        TransitionTokenSummary::EndTag { name } => !start_tag && name == token_name,
+                        _ => false,
+                    })
+                    .collect::<Vec<_>>();
+                let expected_attempts = if reprocesses { 2 } else { 1 };
+                assert_eq!(attempts.len(), expected_attempts, "source={source}");
+                assert_eq!(
+                    attempts[0].dispatch_path,
+                    TreeDispatchPath::HtmlInsertionMode(Mode::InCaption),
+                    "source={source}"
+                );
+                assert!(!attempts[0].reprocessed, "source={source}");
+                if reprocesses {
+                    assert_eq!(
+                        attempts[1].dispatch_path,
+                        TreeDispatchPath::HtmlInsertionMode(Mode::InTable),
+                        "source={source}"
+                    );
+                    assert!(attempts[1].reprocessed, "source={source}");
+                }
+            }
+        }
+
+        let whole_source = "<table><caption><p>x</table>";
+        let chunks = ["<table><caption><p>x", "</table>"];
+        let whole = observe_ae13b4_input(
+            ParserObservationInput::Utf8(whole_source),
+            ObservationRequest::Capture { capacity: 128 },
+            ObservationRequest::Capture { capacity: 8 },
+            ObservationRequest::Capture { capacity: 256 },
+        );
+        let chunked = observe_ae13b4_input(
+            ParserObservationInput::Utf8Chunks(&chunks),
+            ObservationRequest::Capture { capacity: 128 },
+            ObservationRequest::Capture { capacity: 8 },
+            ObservationRequest::Capture { capacity: 256 },
+        );
+        assert_eq!(whole.unsupported_features, chunked.unsupported_features);
+        assert_eq!(whole.transitions, chunked.transitions);
+        assert_eq!(whole.parse_errors, chunked.parse_errors);
+        assert_eq!(whole.tree, chunked.tree);
+    }
+
+    #[test]
+    fn ae13b4_observations_are_whole_chunked_equal_and_do_not_change_tree_output() {
+        let chunks = ["<table><tr><th><p>", "</td><svg><g><p>", "x"];
+        let source = chunks.concat();
+        let whole = observe_ae13b4(
+            &source,
+            ObservationRequest::Capture { capacity: 256 },
+            ObservationRequest::Capture { capacity: 64 },
+        );
+        let chunked = execute_parser_observation(ParserObservationRequest {
+            target: ParserObservationTarget::DocumentParser,
+            input: ParserObservationInput::Utf8Chunks(&chunks),
+            tokens: ObservationRequest::NotRequested,
+            parse_errors: ObservationRequest::Capture { capacity: 256 },
+            implementation_diagnostics: ObservationRequest::Capture { capacity: 256 },
+            transitions: ObservationRequest::Capture { capacity: 256 },
+            unsupported_features: ObservationRequest::Capture { capacity: 64 },
+            document_mode: ScalarObservationRequest::NotRequested,
+            tree: ObservationRequest::NotRequested,
+            patches: ObservationRequest::NotRequested,
+        })
+        .unwrap();
+        assert_eq!(whole.transitions, chunked.transitions);
+        assert_eq!(whole.unsupported_features, chunked.unsupported_features);
+        assert_eq!(whole.parse_errors, chunked.parse_errors);
+
+        let observed_tree = execute_parser_observation(ParserObservationRequest {
+            target: ParserObservationTarget::DocumentParser,
+            input: ParserObservationInput::Utf8(&source),
+            tokens: ObservationRequest::NotRequested,
+            parse_errors: ObservationRequest::NotRequested,
+            implementation_diagnostics: ObservationRequest::NotRequested,
+            transitions: ObservationRequest::Capture { capacity: 256 },
+            unsupported_features: ObservationRequest::Capture { capacity: 64 },
+            document_mode: ScalarObservationRequest::NotRequested,
+            tree: ObservationRequest::Capture { capacity: 256 },
+            patches: ObservationRequest::NotRequested,
+        })
+        .unwrap();
+        let unobserved_tree = execute_parser_observation(ParserObservationRequest {
+            target: ParserObservationTarget::DocumentParser,
+            input: ParserObservationInput::Utf8(&source),
+            tokens: ObservationRequest::NotRequested,
+            parse_errors: ObservationRequest::NotRequested,
+            implementation_diagnostics: ObservationRequest::NotRequested,
+            transitions: ObservationRequest::NotRequested,
+            unsupported_features: ObservationRequest::NotRequested,
+            document_mode: ScalarObservationRequest::NotRequested,
+            tree: ObservationRequest::Capture { capacity: 256 },
+            patches: ObservationRequest::NotRequested,
+        })
+        .unwrap();
+        assert_eq!(observed_tree.tree, unobserved_tree.tree);
     }
 
     #[test]
@@ -1011,6 +1835,7 @@ mod tests {
             tokens: SurfaceCaptureRequest::Capture { capacity: 8 },
             parse_errors: SurfaceCaptureRequest::Capture { capacity: 8 },
             implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 8 },
+            ..ParserObservationConfig::default()
         };
         let mut parser = HtmlParser::new_with_observations_and_failure_injection(
             HtmlParseOptions::default(),
@@ -1258,44 +2083,35 @@ mod tests {
     #[test]
     fn observation_invariants_are_typed_execution_failures() {
         let mut capture = empty_capture();
-        capture.invariant = Some(ParserObservationInvariant::OccurrenceSequenceOverflow(
-            ObservationOccurrenceSequence::ParseErrors,
+        capture.failure = Some(ParserObservationFailure::Invariant(
+            ParserObservationInvariant::OccurrenceSequenceOverflow(
+                ObservationOccurrenceSequence::ParseErrors,
+            ),
         ));
         assert_eq!(
-            canonical_result(
-                capture,
-                ObservationState::NotRequested,
-                ObservationState::NotRequested,
-                ObservationState::NotRequested,
-            ),
+            canonical_result_with_unrequested_projections(capture),
             Err(ParserObservationExecutionError::ObservationInvariant(
                 ParserObservationInvariantError::ParseErrorOccurrenceOverflow
             ))
         );
 
         let mut capture = empty_capture();
-        capture.invariant = Some(ParserObservationInvariant::InvalidNormalizedPositionOffset);
+        capture.failure = Some(ParserObservationFailure::Invariant(
+            ParserObservationInvariant::InvalidNormalizedPositionOffset,
+        ));
         assert_eq!(
-            canonical_result(
-                capture,
-                ObservationState::NotRequested,
-                ObservationState::NotRequested,
-                ObservationState::NotRequested,
-            ),
+            canonical_result_with_unrequested_projections(capture),
             Err(ParserObservationExecutionError::ObservationInvariant(
                 ParserObservationInvariantError::InvalidNormalizedPositionOffset
             ))
         );
 
         let mut capture = empty_capture();
-        capture.invariant = Some(ParserObservationInvariant::NormalizedPositionIndexMissing);
+        capture.failure = Some(ParserObservationFailure::Invariant(
+            ParserObservationInvariant::NormalizedPositionIndexMissing,
+        ));
         assert_eq!(
-            canonical_result(
-                capture,
-                ObservationState::NotRequested,
-                ObservationState::NotRequested,
-                ObservationState::NotRequested,
-            ),
+            canonical_result_with_unrequested_projections(capture),
             Err(ParserObservationExecutionError::ObservationInvariant(
                 ParserObservationInvariantError::NormalizedPositionIndexMissing
             ))
@@ -1326,12 +2142,7 @@ mod tests {
             "an invalid normalized offset must not retain a false unavailable-position event"
         );
         assert_eq!(
-            canonical_result(
-                capture,
-                ObservationState::NotRequested,
-                ObservationState::NotRequested,
-                ObservationState::NotRequested,
-            ),
+            canonical_result_with_unrequested_projections(capture),
             Err(ParserObservationExecutionError::ObservationInvariant(
                 ParserObservationInvariantError::InvalidNormalizedPositionOffset
             ))
@@ -1363,16 +2174,37 @@ mod tests {
             "missing-index corruption must not retain a false unavailable event"
         );
         assert_eq!(
-            canonical_result(
-                capture,
-                ObservationState::NotRequested,
-                ObservationState::NotRequested,
-                ObservationState::NotRequested,
-            ),
+            canonical_result_with_unrequested_projections(capture),
             Err(ParserObservationExecutionError::ObservationInvariant(
                 ParserObservationInvariantError::NormalizedPositionIndexMissing
             ))
         );
+    }
+
+    #[test]
+    fn observation_capture_failures_have_one_deterministic_public_mapping() {
+        let cases = [
+            (
+                ParserObservationCaptureFailure::TreeTransitionTokenCanonicalization,
+                ParserObservationExecutionError::TreeTransitionTokenCanonicalizationInvariant,
+            ),
+            (
+                ParserObservationCaptureFailure::UnsupportedFeatureEligibility(
+                    UnsupportedFeatureObservationFailure::TokenAttributeNameUnavailable,
+                ),
+                ParserObservationExecutionError::UnsupportedFeatureObservationInvariant(
+                    UnsupportedFeatureObservationInvariantError::TokenAttributeNameUnavailable,
+                ),
+            ),
+        ];
+        for (failure, expected) in cases {
+            let mut capture = empty_capture();
+            capture.failure = Some(ParserObservationFailure::Capture(failure));
+            assert_eq!(
+                canonical_result_with_unrequested_projections(capture),
+                Err(expected)
+            );
+        }
     }
 
     #[test]
@@ -1480,6 +2312,8 @@ mod tests {
             tokens: ObservationRequest::NotRequested,
             parse_errors: ObservationRequest::NotRequested,
             implementation_diagnostics: ObservationRequest::Capture { capacity: 1 },
+            transitions: ObservationRequest::NotRequested,
+            unsupported_features: ObservationRequest::NotRequested,
             document_mode: ScalarObservationRequest::NotRequested,
             tree: ObservationRequest::NotRequested,
             patches: ObservationRequest::NotRequested,
@@ -1888,6 +2722,8 @@ mod tests {
             tokens: ObservationRequest::NotRequested,
             parse_errors: ObservationRequest::Capture { capacity: 8 },
             implementation_diagnostics: ObservationRequest::NotRequested,
+            transitions: ObservationRequest::NotRequested,
+            unsupported_features: ObservationRequest::NotRequested,
             document_mode: ScalarObservationRequest::NotRequested,
             tree: ObservationRequest::NotRequested,
             patches: ObservationRequest::NotRequested,
@@ -2613,6 +3449,7 @@ mod tests {
                 tokens: SurfaceCaptureRequest::Capture { capacity: 8 },
                 parse_errors: SurfaceCaptureRequest::Capture { capacity: 8 },
                 implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 8 },
+                ..ParserObservationConfig::default()
             },
         )
         .expect("observed parser");
@@ -2655,6 +3492,7 @@ mod tests {
                     tokens: SurfaceCaptureRequest::Capture { capacity: 8 },
                     parse_errors: SurfaceCaptureRequest::Capture { capacity: 8 },
                     implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 8 },
+                    ..ParserObservationConfig::default()
                 },
             )
             .expect("observed parser");
@@ -2691,6 +3529,7 @@ mod tests {
                     tokens: SurfaceCaptureRequest::Capture { capacity: 8 },
                     parse_errors: SurfaceCaptureRequest::Capture { capacity: 8 },
                     implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 8 },
+                    ..ParserObservationConfig::default()
                 },
             )
             .expect("observed parser");
@@ -2722,6 +3561,7 @@ mod tests {
                 tokens: SurfaceCaptureRequest::Capture { capacity: 8 },
                 parse_errors: SurfaceCaptureRequest::Capture { capacity: 8 },
                 implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 8 },
+                ..ParserObservationConfig::default()
             },
         )
         .expect("observed parser");
@@ -2753,6 +3593,7 @@ mod tests {
                 tokens: SurfaceCaptureRequest::Capture { capacity: 8 },
                 parse_errors: SurfaceCaptureRequest::Capture { capacity: 8 },
                 implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 8 },
+                ..ParserObservationConfig::default()
             },
         )
         .expect("observed parser");
@@ -2791,6 +3632,7 @@ mod tests {
                     tokens: SurfaceCaptureRequest::Capture { capacity: 8 },
                     parse_errors: SurfaceCaptureRequest::Capture { capacity: 8 },
                     implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 8 },
+                    ..ParserObservationConfig::default()
                 },
             )
             .expect("observed parser");
@@ -2824,6 +3666,7 @@ mod tests {
                     tokens: SurfaceCaptureRequest::Capture { capacity: 8 },
                     parse_errors: SurfaceCaptureRequest::Capture { capacity: 8 },
                     implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 8 },
+                    ..ParserObservationConfig::default()
                 },
             )
             .expect("observed parser")
@@ -3301,6 +4144,8 @@ mod tests {
             implementation_diagnostics: ObservationRequest::Capture {
                 capacity: diagnostic_capacity,
             },
+            transitions: ObservationRequest::NotRequested,
+            unsupported_features: ObservationRequest::NotRequested,
             document_mode,
             tree: ObservationRequest::NotRequested,
             patches: ObservationRequest::NotRequested,
@@ -3596,6 +4441,8 @@ mod tests {
                 tokens: ObservationRequest::NotRequested,
                 parse_errors: ObservationRequest::NotRequested,
                 implementation_diagnostics: ObservationRequest::NotRequested,
+                transitions: ObservationRequest::NotRequested,
+                unsupported_features: ObservationRequest::NotRequested,
                 document_mode: ScalarObservationRequest::Capture,
                 tree: ObservationRequest::NotRequested,
                 patches: ObservationRequest::NotRequested,
@@ -3613,6 +4460,8 @@ mod tests {
             tokens: ObservationRequest::NotRequested,
             parse_errors: ObservationRequest::NotRequested,
             implementation_diagnostics: ObservationRequest::NotRequested,
+            transitions: ObservationRequest::NotRequested,
+            unsupported_features: ObservationRequest::NotRequested,
             document_mode: ScalarObservationRequest::Capture,
             tree: ObservationRequest::NotRequested,
             patches: ObservationRequest::NotRequested,
@@ -3639,6 +4488,8 @@ mod tests {
             tokens: ObservationRequest::NotRequested,
             parse_errors: ObservationRequest::NotRequested,
             implementation_diagnostics: ObservationRequest::NotRequested,
+            transitions: ObservationRequest::NotRequested,
+            unsupported_features: ObservationRequest::NotRequested,
             document_mode: ScalarObservationRequest::NotRequested,
             tree: ObservationRequest::Capture { capacity: 256 },
             patches: ObservationRequest::Capture { capacity: 512 },
@@ -3848,6 +4699,8 @@ mod tests {
             tokens: ObservationRequest::NotRequested,
             parse_errors: ObservationRequest::NotRequested,
             implementation_diagnostics: ObservationRequest::NotRequested,
+            transitions: ObservationRequest::NotRequested,
+            unsupported_features: ObservationRequest::NotRequested,
             document_mode: ScalarObservationRequest::NotRequested,
             tree: ObservationRequest::NotRequested,
             patches: ObservationRequest::Capture { capacity },
@@ -3902,6 +4755,8 @@ mod tests {
             tokens: ObservationRequest::NotRequested,
             parse_errors: ObservationRequest::NotRequested,
             implementation_diagnostics: ObservationRequest::NotRequested,
+            transitions: ObservationRequest::Capture { capacity: 32 },
+            unsupported_features: ObservationRequest::NotRequested,
             document_mode: ScalarObservationRequest::NotRequested,
             tree: ObservationRequest::Capture { capacity: 32 },
             patches: ObservationRequest::Capture { capacity: 32 },
@@ -3940,6 +4795,8 @@ mod tests {
             tokens: ObservationRequest::NotRequested,
             parse_errors: ObservationRequest::NotRequested,
             implementation_diagnostics: ObservationRequest::NotRequested,
+            transitions: ObservationRequest::NotRequested,
+            unsupported_features: ObservationRequest::NotRequested,
             document_mode: ScalarObservationRequest::NotRequested,
             tree: ObservationRequest::Capture {
                 capacity: depth + 5,

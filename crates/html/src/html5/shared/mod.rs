@@ -6,8 +6,8 @@
 mod atom;
 mod context;
 mod counters;
-mod diagnostics;
 mod error;
+mod event_sink;
 mod input;
 mod observation;
 mod observation_model;
@@ -18,22 +18,23 @@ mod token;
 pub use atom::{AtomError, AtomId, AtomTable};
 pub use context::DocumentParseContext;
 pub use counters::Counters;
-pub(crate) use diagnostics::{LegacyDiagnosticProjection, ParserDiagnosticSink};
 #[allow(unused_imports)]
 pub use error::{
     EngineInvariantError, ErrorOrigin, ErrorPolicy, Html5SessionError, LegacyParseErrorCode,
     ParseError, ParserFatalError, ParserReservationSite, ParserResourceExhaustion,
 };
+pub(crate) use event_sink::{LegacyDiagnosticProjection, ParserEventSink};
 #[allow(unused_imports)]
 pub use input::{ByteStreamDecoder, DecodeResult, Input};
 #[cfg(any(test, feature = "parser-conformance"))]
 pub(crate) use observation::{
     CapturedSurface, ObservationOccurrenceSequence, ObservationSurface, ParserObservationCapture,
-    ParserObservationInvariant, SurfaceCaptureRequest,
+    ParserObservationCaptureFailure, ParserObservationFailure, ParserObservationInvariant,
+    SurfaceCaptureRequest,
 };
 pub(crate) use observation::{
     NormalizedPositionIndex, ObservationPositionResolution, ObservationPositionSource,
-    ParserObservationConfig, ParserObservationRecorder,
+    ParserObservationConfig, ParserObservationRecorder, UnsupportedFeatureObservationFailure,
 };
 pub use observation_model::*;
 #[cfg(all(

@@ -233,6 +233,14 @@ table/column/body/row starts replace the template mode and reprocess; other
 starts replace with `InBody`; template end tags use shared close; EOF uses
 template recovery.
 
+AE13b4 makes that interception visible as exactly one central
+`SharedTemplateRules` dispatch attempt. Calls from the shared algorithm into
+InHead or InBody rules remain internal delegation and do not create another
+transition. A template/table mode replacement that returns `Reprocess` creates
+a later central attempt for the same logical token. The dedicated template EOF
+unwind happens before the next traced attempt and is not itself a dispatch
+attempt.
+
 Adjusted insertion-location calculation redirects insertions whose target is a
 template host to its contents root. That applies to elements, text, comments,
 reconstructed formatting elements, foster-parented nodes, and supported AAA

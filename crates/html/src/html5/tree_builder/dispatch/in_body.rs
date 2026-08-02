@@ -213,9 +213,7 @@ impl Html5TreeBuilder {
                 self_closing,
             } if *name == self.known_tags.html => {
                 self.record_tree_parse_error(context, crate::html5::shared::TreeConstructionParseErrorCode::HtmlStartTagAfterHtmlElement, Some(crate::html5::shared::ParserRecoveryAction::IgnoreToken), Some("unexpected-html-start-tag-after-html-created"));
-                if !attrs.is_empty() {
-                    self.record_tree_implementation_diagnostic(context, crate::html5::shared::TreeConstructionImplementationDiagnosticCode::HtmlElementAttributesNotMerged, Some("html-start-tag-attributes-ignored"));
-                }
+                self.observe_repeated_html_start_rule(attrs, atoms, context);
             }
             Token::StartTag {
                 name,
@@ -223,9 +221,7 @@ impl Html5TreeBuilder {
                 self_closing,
             } if *name == self.known_tags.body => {
                 self.record_tree_parse_error(context, crate::html5::shared::TreeConstructionParseErrorCode::BodyStartTagAfterBodyElement, Some(crate::html5::shared::ParserRecoveryAction::IgnoreToken), Some("unexpected-body-start-tag-after-body-created"));
-                if !attrs.is_empty() {
-                    self.record_tree_implementation_diagnostic(context, crate::html5::shared::TreeConstructionImplementationDiagnosticCode::BodyElementAttributesNotMerged, Some("body-start-tag-attributes-ignored"));
-                }
+                self.observe_repeated_body_start_rule(attrs, atoms, context);
             }
             Token::StartTag { name, .. } if *name == self.known_tags.head => {
                 self.record_tree_parse_error(context, crate::html5::shared::TreeConstructionParseErrorCode::StartTagForbiddenByActiveInsertionMode, Some(crate::html5::shared::ParserRecoveryAction::IgnoreToken), Some("in-body-unexpected-head-start-tag"));

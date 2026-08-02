@@ -6,6 +6,7 @@
 
 use crate::ElementNamespace;
 use std::num::NonZeroU64;
+use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ObservedTokenAttribute {
@@ -236,16 +237,12 @@ pub enum ParserResourceLimit {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(not(any(test, feature = "parser-conformance")), allow(dead_code))]
 pub enum TreeConstructionImplementationDiagnosticCode {
-    HtmlElementAttributesNotMerged,
-    BodyElementAttributesNotMerged,
     UnsupportedTableInsertionModeFallback,
     UnexpectedStartTagTokenInTextMode,
     TextModeStartTagAttributeValuesDiscarded,
     TextModeStartTagAttributeNamesCanonicalized,
     UnexpectedDoctypeTokenInTextMode,
     UnexpectedEndTagTokenInTextMode,
-    MismatchedCellEndTagClosedOpenCell,
-    CaptionCloseImpliedEndTagsNotImplemented,
     NonVoidHtmlSelfClosingFlagAlteredStackDisposition,
 }
 
@@ -491,4 +488,52 @@ pub enum ObservedInsertionMode {
     InCell,
     InTemplate,
     Text,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TreeDispatchPath {
+    HtmlInsertionMode(ObservedInsertionMode),
+    SharedTemplateRules,
+    ForeignContent,
+    TextMode,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TransitionTokenSummary {
+    Doctype,
+    StartTag { name: String, self_closing: bool },
+    EndTag { name: String },
+    Character { data: String },
+    Comment,
+    ProcessingInstruction { target: String },
+    Eof,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TreeTransitionEvent {
+    pub occurrence: u64,
+    pub token: Arc<TransitionTokenSummary>,
+    pub insertion_mode_before: ObservedInsertionMode,
+    pub dispatch_path: TreeDispatchPath,
+    pub insertion_mode_after: ObservedInsertionMode,
+    pub reprocessed: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TreeConstructionUnsupportedFeature {
+    MergeAttributesIntoExistingHtmlElement,
+    MergeAttributesIntoExistingBodyElement,
+    MarkFramesetNotOkForRepeatedBodyStartTag,
+    RequireSameNamedTableCellInScopeForEndTag,
+    GenerateImpliedEndTagsAndCheckCurrentNodeBeforeClosingTableCell,
+    GenerateImpliedEndTagsAndCheckCurrentNodeBeforeClosingCaption,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum UnsupportedFeatureEvent {
+    TreeConstruction {
+        occurrence: u64,
+        feature: TreeConstructionUnsupportedFeature,
+        context: ParserContextSummary,
+    },
 }

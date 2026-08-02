@@ -130,9 +130,11 @@ fn direct_tree_error_occurrence_overflow_is_a_recorder_invariant() {
     assert_eq!(capture.parse_errors.items.len(), 1);
     assert_eq!(capture.parse_errors.items[0].occurrence, u64::MAX);
     assert_eq!(
-        capture.invariant,
-        Some(ParserObservationInvariant::OccurrenceSequenceOverflow(
-            ObservationOccurrenceSequence::ParseErrors,
+        capture.failure,
+        Some(crate::html5::shared::ParserObservationFailure::Invariant(
+            ParserObservationInvariant::OccurrenceSequenceOverflow(
+                ObservationOccurrenceSequence::ParseErrors,
+            )
         ))
     );
 }

@@ -1,13 +1,30 @@
 use crate::dom_patch::PatchKey;
-use crate::html5::shared::{EngineInvariantError, Token};
+use crate::html5::shared::{EngineInvariantError, Token, TreeDispatchPath};
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::formatting::AfeDiagnosticEntry;
 use crate::html5::tree_builder::modes::InsertionMode;
+use crate::html5::tree_builder::observation::{
+    LogicalTokenSummaryCache, PendingTreeTransition, prepare_tree_transition,
+};
 use crate::html5::tree_builder::process_context::TreeBuilderProcessContext;
 use crate::html5::tree_builder::template_state::TemplateInsertionMode;
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError, TreeBuilderStepResult};
 use crate::{ExpandedElementName, ParserCreatedAttribute};
 use std::collections::HashMap;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum DispatchSelectionScope {
+    Normal,
+    HtmlRulesOnly,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SelectedDispatchPath {
+    HtmlInsertionMode(InsertionMode),
+    SharedTemplateRules,
+    ForeignContent,
+    TextMode,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct SemanticFingerprint {
@@ -37,6 +54,7 @@ impl SemanticFingerprint {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct ReprocessFingerprint {
     mode: InsertionMode,
+    selection_scope: DispatchSelectionScope,
     original_mode: Option<InsertionMode>,
     pending_table_mode: Option<InsertionMode>,
     open_elements: SemanticFingerprint,
@@ -71,6 +89,7 @@ struct ExactAdjustedCurrentNode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct ExactReprocessState {
     mode: InsertionMode,
+    selection_scope: DispatchSelectionScope,
     original_mode: Option<InsertionMode>,
     pending_table_mode: Option<InsertionMode>,
     open_elements: Vec<PatchKey>,
@@ -113,6 +132,7 @@ impl ExactReprocessState {
         );
         ReprocessFingerprint {
             mode: self.mode,
+            selection_scope: self.selection_scope,
             original_mode: self.original_mode,
             pending_table_mode: self.pending_table_mode,
             open_elements,
@@ -205,6 +225,7 @@ impl ReprocessStateTracker {
 fn forced_collision_fingerprint() -> ReprocessFingerprint {
     ReprocessFingerprint {
         mode: InsertionMode::Initial,
+        selection_scope: DispatchSelectionScope::Normal,
         original_mode: None,
         pending_table_mode: None,
         open_elements: SemanticFingerprint::from_values([]),
@@ -237,6 +258,33 @@ pub(in crate::html5::tree_builder) enum DispatchOutcome {
     Reprocess(InsertionMode),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::html5::tree_builder) enum ForeignDispatchOutcome {
+    Done,
+    RedispatchUsingHtmlRules,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CentralDispatchOutcome {
+    HtmlRules(DispatchOutcome),
+    Foreign(ForeignDispatchOutcome),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DispatchContinuation {
+    Finish,
+    Redispatch {
+        mode: InsertionMode,
+        selection_scope: DispatchSelectionScope,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct AppliedDispatchOutcome {
+    insertion_mode_after: InsertionMode,
+    continuation: DispatchContinuation,
+}
+
 impl Html5TreeBuilder {
     pub(in crate::html5::tree_builder) fn dispatch_token_in_html_mode(
         &mut self,
@@ -246,11 +294,6 @@ impl Html5TreeBuilder {
         text: &dyn TextResolver,
     ) -> Result<DispatchOutcome, TreeBuilderError> {
         let atoms = context.atoms();
-        if let Some(outcome) =
-            self.handle_shared_template_token(mode, token, atoms, context, text)?
-        {
-            return Ok(outcome);
-        }
         match mode {
             InsertionMode::Initial => self.handle_initial(token, atoms, context, text),
             InsertionMode::BeforeHtml => self.handle_before_html(token, atoms, context, text),
@@ -272,7 +315,127 @@ impl Html5TreeBuilder {
             InsertionMode::InRow => self.handle_in_row(token, atoms, context, text),
             InsertionMode::InCell => self.handle_in_cell(token, atoms, context, text),
             InsertionMode::InTemplate => self.handle_in_template(token, atoms, context, text),
-            InsertionMode::Text => self.handle_text_mode(token, atoms, context, text),
+            InsertionMode::Text => Err(crate::html5::shared::ParserFatalError::EngineInvariant),
+        }
+    }
+
+    fn select_dispatch_path(
+        &self,
+        scope: DispatchSelectionScope,
+        mode: InsertionMode,
+        token: &Token,
+        atoms: &crate::html5::shared::AtomTable,
+    ) -> Result<SelectedDispatchPath, TreeBuilderError> {
+        if scope == DispatchSelectionScope::Normal
+            && self.foreign_dispatch_decision(token, atoms)?
+                == crate::html5::tree_builder::foreign::ForeignDispatchDecision::Foreign
+        {
+            return Ok(SelectedDispatchPath::ForeignContent);
+        }
+        if self.shared_template_rules_apply(mode, token) {
+            return Ok(SelectedDispatchPath::SharedTemplateRules);
+        }
+        if mode == InsertionMode::Text {
+            return Ok(SelectedDispatchPath::TextMode);
+        }
+        Ok(SelectedDispatchPath::HtmlInsertionMode(mode))
+    }
+
+    fn dispatch_selected_path(
+        &mut self,
+        selected: SelectedDispatchPath,
+        token: &Token,
+        context: &mut TreeBuilderProcessContext<'_>,
+        text: &dyn TextResolver,
+    ) -> Result<CentralDispatchOutcome, TreeBuilderError> {
+        let atoms = context.atoms();
+        match selected {
+            SelectedDispatchPath::HtmlInsertionMode(mode) => self
+                .dispatch_token_in_html_mode(mode, token, context, text)
+                .map(CentralDispatchOutcome::HtmlRules),
+            SelectedDispatchPath::SharedTemplateRules => self
+                .dispatch_shared_template_token(self.insertion_mode, token, atoms, context, text)
+                .map(CentralDispatchOutcome::HtmlRules),
+            SelectedDispatchPath::ForeignContent => self
+                .process_foreign_token(token, atoms, context, text)
+                .map(CentralDispatchOutcome::Foreign),
+            SelectedDispatchPath::TextMode => self
+                .handle_text_mode(token, atoms, context, text)
+                .map(CentralDispatchOutcome::HtmlRules),
+        }
+    }
+
+    fn apply_dispatch_outcome(
+        &mut self,
+        selected: SelectedDispatchPath,
+        selection_scope: DispatchSelectionScope,
+        mode_before: InsertionMode,
+        before_progress: BoundedProgressMeasure,
+        outcome: CentralDispatchOutcome,
+    ) -> Result<AppliedDispatchOutcome, TreeBuilderError> {
+        match (selected, outcome) {
+            (SelectedDispatchPath::ForeignContent, CentralDispatchOutcome::Foreign(outcome)) => {
+                if selection_scope != DispatchSelectionScope::Normal
+                    || self.insertion_mode != mode_before
+                {
+                    return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
+                }
+                let continuation = match outcome {
+                    ForeignDispatchOutcome::Done => DispatchContinuation::Finish,
+                    ForeignDispatchOutcome::RedispatchUsingHtmlRules => {
+                        DispatchContinuation::Redispatch {
+                            mode: mode_before,
+                            selection_scope: DispatchSelectionScope::HtmlRulesOnly,
+                        }
+                    }
+                };
+                Ok(AppliedDispatchOutcome {
+                    insertion_mode_after: mode_before,
+                    continuation,
+                })
+            }
+            (
+                SelectedDispatchPath::HtmlInsertionMode(_)
+                | SelectedDispatchPath::SharedTemplateRules
+                | SelectedDispatchPath::TextMode,
+                CentralDispatchOutcome::HtmlRules(outcome),
+            ) => match outcome {
+                DispatchOutcome::Done => Ok(AppliedDispatchOutcome {
+                    insertion_mode_after: self.insertion_mode,
+                    continuation: DispatchContinuation::Finish,
+                }),
+                DispatchOutcome::Reprocess(next_mode) => {
+                    if self.insertion_mode != mode_before && self.insertion_mode != next_mode {
+                        return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
+                    }
+                    self.insertion_mode = next_mode;
+                    let after_progress = self.bounded_progress_measure(next_mode);
+                    require_bounded_reprocess_progress(
+                        before_progress,
+                        after_progress,
+                        self.config.limits,
+                    )?;
+                    Ok(AppliedDispatchOutcome {
+                        insertion_mode_after: next_mode,
+                        continuation: DispatchContinuation::Redispatch {
+                            mode: next_mode,
+                            selection_scope: DispatchSelectionScope::Normal,
+                        },
+                    })
+                }
+            },
+            _ => Err(crate::html5::shared::ParserFatalError::EngineInvariant),
+        }
+    }
+
+    fn observed_dispatch_path(selected: SelectedDispatchPath) -> TreeDispatchPath {
+        match selected {
+            SelectedDispatchPath::HtmlInsertionMode(mode) => TreeDispatchPath::HtmlInsertionMode(
+                crate::html5::tree_builder::process_context::observed_insertion_mode(mode),
+            ),
+            SelectedDispatchPath::SharedTemplateRules => TreeDispatchPath::SharedTemplateRules,
+            SelectedDispatchPath::ForeignContent => TreeDispatchPath::ForeignContent,
+            SelectedDispatchPath::TextMode => TreeDispatchPath::TextMode,
         }
     }
 
@@ -293,6 +456,9 @@ impl Html5TreeBuilder {
         debug_assert!(self.pending_tokenizer_control.is_none());
         let validation_checkpoint = self.template_validation_checkpoint();
         let mut mode = self.insertion_mode;
+        let mut selection_scope = DispatchSelectionScope::Normal;
+        let mut reprocessed = false;
+        let mut token_summary_cache = LogicalTokenSummaryCache::default();
         let mut seen_states = ReprocessStateTracker::default();
         loop {
             self.insertion_mode = mode;
@@ -309,27 +475,47 @@ impl Html5TreeBuilder {
                 mode = self.insertion_mode;
             }
 
-            let exact_state = self.exact_reprocess_state(mode);
+            let exact_state = self.exact_reprocess_state(mode, selection_scope);
             if seen_states.observe(exact_state) {
                 return Err(crate::html5::shared::ParserFatalError::EngineInvariant);
             }
             self.perf_max_same_token_cycle_states = self
                 .perf_max_same_token_cycle_states
                 .max(seen_states.retained_states() as u64);
-            let before = self.bounded_progress_measure(mode);
-            let outcome = if self.foreign_dispatch_decision(token, atoms)?
-                == crate::html5::tree_builder::foreign::ForeignDispatchDecision::Foreign
-            {
-                self.process_foreign_token(mode, token, atoms, context, text)?
-            } else {
-                self.dispatch_token_in_html_mode(mode, token, context, text)?
-            };
-            match outcome {
-                DispatchOutcome::Done => break,
-                DispatchOutcome::Reprocess(next_mode) => {
-                    let after = self.bounded_progress_measure(next_mode);
-                    require_bounded_reprocess_progress(before, after, self.config.limits)?;
+            let selected = self.select_dispatch_path(selection_scope, mode, token, atoms)?;
+            let pending_transition =
+                prepare_tree_transition(context, &mut token_summary_cache, token, text);
+            let before_progress = self.bounded_progress_measure(mode);
+            let outcome = self.dispatch_selected_path(selected, token, context, text)?;
+            let applied = self.apply_dispatch_outcome(
+                selected,
+                selection_scope,
+                mode,
+                before_progress,
+                outcome,
+            )?;
+            if let Some(PendingTreeTransition { occurrence, token }) = pending_transition {
+                context.retain_tree_transition(
+                    occurrence,
+                    token,
+                    mode,
+                    Self::observed_dispatch_path(selected),
+                    applied.insertion_mode_after,
+                    reprocessed,
+                );
+            }
+            match applied.continuation {
+                DispatchContinuation::Finish => {
+                    mode = applied.insertion_mode_after;
+                    break;
+                }
+                DispatchContinuation::Redispatch {
+                    mode: next_mode,
+                    selection_scope: next_scope,
+                } => {
                     mode = next_mode;
+                    selection_scope = next_scope;
+                    reprocessed = true;
                 }
             }
         }
@@ -367,9 +553,14 @@ impl Html5TreeBuilder {
         ))
     }
 
-    fn exact_reprocess_state(&self, mode: InsertionMode) -> ExactReprocessState {
+    fn exact_reprocess_state(
+        &self,
+        mode: InsertionMode,
+        selection_scope: DispatchSelectionScope,
+    ) -> ExactReprocessState {
         ExactReprocessState {
             mode,
+            selection_scope,
             original_mode: self.original_insertion_mode,
             pending_table_mode: self.pending_table_text.as_ref().map(
                 crate::html5::tree_builder::table::PendingTableTextState::original_insertion_mode,
@@ -469,6 +660,7 @@ mod tests {
     fn exact_state(mode: InsertionMode) -> ExactReprocessState {
         ExactReprocessState {
             mode,
+            selection_scope: DispatchSelectionScope::Normal,
             original_mode: None,
             pending_table_mode: None,
             open_elements: vec![PatchKey(1), PatchKey(2)],
@@ -606,5 +798,97 @@ mod tests {
         assert!(!seen.observe(different_owner));
         assert!(!seen.observe(different_mode));
         assert_eq!(seen.retained_states(), 3);
+    }
+
+    #[test]
+    fn selection_scope_participates_in_exact_cycle_identity() {
+        let normal = exact_state(InsertionMode::InBody);
+        let mut html_rules_only = normal.clone();
+        html_rules_only.selection_scope = DispatchSelectionScope::HtmlRulesOnly;
+        assert_ne!(normal.fingerprint(), html_rules_only.fingerprint());
+
+        let mut seen = ReprocessStateTracker::default();
+        assert!(!seen.observe(normal.clone()));
+        assert!(!seen.observe(html_rules_only));
+        assert!(seen.observe(normal));
+    }
+
+    #[test]
+    fn dispatcher_applies_and_validates_outcomes_before_observation() {
+        let mut context = crate::html5::shared::DocumentParseContext::new();
+        let mut builder = Html5TreeBuilder::new(
+            crate::html5::tree_builder::TreeBuilderConfig::default(),
+            &mut context,
+        )
+        .unwrap();
+        builder.insertion_mode = InsertionMode::InBody;
+        let before = builder.bounded_progress_measure(InsertionMode::InBody);
+
+        let forced = builder
+            .apply_dispatch_outcome(
+                SelectedDispatchPath::ForeignContent,
+                DispatchSelectionScope::Normal,
+                InsertionMode::InBody,
+                before,
+                CentralDispatchOutcome::Foreign(ForeignDispatchOutcome::RedispatchUsingHtmlRules),
+            )
+            .unwrap();
+        assert_eq!(forced.insertion_mode_after, InsertionMode::InBody);
+        assert_eq!(
+            forced.continuation,
+            DispatchContinuation::Redispatch {
+                mode: InsertionMode::InBody,
+                selection_scope: DispatchSelectionScope::HtmlRulesOnly,
+            }
+        );
+
+        assert!(
+            builder
+                .apply_dispatch_outcome(
+                    SelectedDispatchPath::ForeignContent,
+                    DispatchSelectionScope::HtmlRulesOnly,
+                    InsertionMode::InBody,
+                    before,
+                    CentralDispatchOutcome::Foreign(ForeignDispatchOutcome::Done),
+                )
+                .is_err(),
+            "a forced HTML-rules attempt cannot select foreign content again"
+        );
+
+        builder.insertion_mode = InsertionMode::InBody;
+        let ordinary_after_forced = builder
+            .apply_dispatch_outcome(
+                SelectedDispatchPath::HtmlInsertionMode(InsertionMode::InBody),
+                DispatchSelectionScope::HtmlRulesOnly,
+                InsertionMode::InBody,
+                before,
+                CentralDispatchOutcome::HtmlRules(DispatchOutcome::Reprocess(
+                    InsertionMode::InTable,
+                )),
+            )
+            .unwrap();
+        assert_eq!(
+            ordinary_after_forced.continuation,
+            DispatchContinuation::Redispatch {
+                mode: InsertionMode::InTable,
+                selection_scope: DispatchSelectionScope::Normal,
+            }
+        );
+
+        builder.insertion_mode = InsertionMode::InTable;
+        assert!(
+            builder
+                .apply_dispatch_outcome(
+                    SelectedDispatchPath::HtmlInsertionMode(InsertionMode::InBody),
+                    DispatchSelectionScope::Normal,
+                    InsertionMode::InBody,
+                    before,
+                    CentralDispatchOutcome::HtmlRules(DispatchOutcome::Reprocess(
+                        InsertionMode::InRow,
+                    )),
+                )
+                .is_err(),
+            "a third handler-owned mode is an engine invariant"
+        );
     }
 }

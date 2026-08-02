@@ -122,6 +122,49 @@ fn in_table_text_without_pending_state_is_internal_invariant_error() {
 }
 
 #[test]
+fn in_cell_without_a_scoped_cell_reports_only_the_existing_parse_error() {
+    use crate::html5::shared::{
+        ErrorPolicy, ParserObservationConfig, SurfaceCaptureRequest, Token,
+        TreeConstructionParseErrorCode,
+    };
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_observations(
+        ErrorPolicy::default(),
+        ParserObservationConfig {
+            parse_errors: SurfaceCaptureRequest::Capture { capacity: 4 },
+            unsupported_features: SurfaceCaptureRequest::Capture { capacity: 4 },
+            ..ParserObservationConfig::default()
+        },
+    );
+    let td = ctx.atoms.intern_ascii_folded("td").expect("td atom");
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+    builder.insertion_mode = InsertionMode::InCell;
+
+    let _ = builder
+        .process(
+            &Token::EndTag { name: td },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
+        .expect("the authored token is ignored recoverably");
+
+    let capture = ctx.take_observations().expect("requested capture");
+    assert!(capture.unsupported_features.items.is_empty());
+    assert_eq!(capture.parse_errors.items.len(), 1);
+    assert_eq!(
+        capture.parse_errors.items[0].code,
+        crate::html5::shared::ParseErrorCode::TreeConstruction(
+            TreeConstructionParseErrorCode::TableContextElementNotInRequiredScope
+        )
+    );
+}
+
+#[test]
 fn entering_in_table_text_twice_is_non_destructive_internal_invariant_error() {
     let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(

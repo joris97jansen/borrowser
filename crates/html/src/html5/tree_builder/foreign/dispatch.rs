@@ -3,8 +3,7 @@ use crate::html5::shared::{
     AtomTable, Attribute, ParserRecoveryAction, TextValue, Token, TreeConstructionParseErrorCode,
 };
 use crate::html5::tokenizer::TextResolver;
-use crate::html5::tree_builder::dispatch::DispatchOutcome;
-use crate::html5::tree_builder::modes::InsertionMode;
+use crate::html5::tree_builder::dispatch::ForeignDispatchOutcome;
 use crate::html5::tree_builder::resolve::{resolve_atom, resolve_text_value};
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 use crate::names::ElementNamespace;
@@ -103,11 +102,8 @@ impl Html5TreeBuilder {
 
     fn breakout_to_html(
         &mut self,
-        mode: InsertionMode,
-        token: &Token,
         context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
-        text: &dyn TextResolver,
-    ) -> Result<DispatchOutcome, TreeBuilderError> {
+    ) -> Result<ForeignDispatchOutcome, TreeBuilderError> {
         self.record_tree_parse_error(
             context,
             TreeConstructionParseErrorCode::HtmlTokenNotAllowedInForeignContent,
@@ -119,17 +115,16 @@ impl Html5TreeBuilder {
                 .pop()
                 .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
         }
-        self.dispatch_token_in_html_mode(mode, token, context, text)
+        Ok(ForeignDispatchOutcome::RedispatchUsingHtmlRules)
     }
 
     pub(in crate::html5::tree_builder) fn process_foreign_token(
         &mut self,
-        mode: InsertionMode,
         token: &Token,
         atoms: &AtomTable,
         context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
-    ) -> Result<DispatchOutcome, TreeBuilderError> {
+    ) -> Result<ForeignDispatchOutcome, TreeBuilderError> {
         match token {
             Token::Text { text: token_text } => {
                 let resolved = resolve_text_value(token_text, text)?;
@@ -161,15 +156,15 @@ impl Html5TreeBuilder {
                     self.document_state.frameset_ok = false;
                 }
                 self.insert_text(&TextValue::Owned(normalized), context, text)?;
-                Ok(DispatchOutcome::Done)
+                Ok(ForeignDispatchOutcome::Done)
             }
             Token::Comment { text: token_text } => {
                 self.insert_comment(token_text, context, text)?;
-                Ok(DispatchOutcome::Done)
+                Ok(ForeignDispatchOutcome::Done)
             }
             Token::ProcessingInstruction(processing_instruction) => {
                 self.insert_processing_instruction(processing_instruction, context, text, None)?;
-                Ok(DispatchOutcome::Done)
+                Ok(ForeignDispatchOutcome::Done)
             }
             Token::Doctype { .. } => {
                 self.record_tree_parse_error(
@@ -178,7 +173,7 @@ impl Html5TreeBuilder {
                     Some(ParserRecoveryAction::IgnoreToken),
                     Some("doctype-in-foreign-content"),
                 );
-                Ok(DispatchOutcome::Done)
+                Ok(ForeignDispatchOutcome::Done)
             }
             Token::StartTag {
                 name,
@@ -190,7 +185,7 @@ impl Html5TreeBuilder {
                     || (token_name == "font"
                         && Self::token_has_html_font_breakout_attribute(attrs, atoms)?)
                 {
-                    return self.breakout_to_html(mode, token, context, text);
+                    return self.breakout_to_html(context);
                 }
                 let namespace = self
                     .adjusted_current_node_namespace()
@@ -218,12 +213,12 @@ impl Html5TreeBuilder {
                 if *self_closing {
                     context.acknowledge_self_closing_flag()?;
                 }
-                Ok(DispatchOutcome::Done)
+                Ok(ForeignDispatchOutcome::Done)
             }
             Token::EndTag { name } => {
                 let token_name = resolve_atom(atoms, *name)?;
                 if matches!(token_name, "br" | "p") {
-                    return self.breakout_to_html(mode, token, context, text);
+                    return self.breakout_to_html(context);
                 }
                 let current = self
                     .open_elements
@@ -244,7 +239,7 @@ impl Html5TreeBuilder {
                         .get(index)
                         .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
                     if candidate.namespace() == ElementNamespace::Html {
-                        return self.dispatch_token_in_html_mode(mode, token, context, text);
+                        return Ok(ForeignDispatchOutcome::RedispatchUsingHtmlRules);
                     }
                     if resolve_atom(atoms, candidate.name())?.eq_ignore_ascii_case(token_name) {
                         while self.open_elements.len() > index {
@@ -252,12 +247,12 @@ impl Html5TreeBuilder {
                                 .pop()
                                 .ok_or(crate::html5::shared::ParserFatalError::EngineInvariant)?;
                         }
-                        return Ok(DispatchOutcome::Done);
+                        return Ok(ForeignDispatchOutcome::Done);
                     }
                 }
-                Ok(DispatchOutcome::Done)
+                Ok(ForeignDispatchOutcome::Done)
             }
-            Token::Eof => self.dispatch_token_in_html_mode(mode, token, context, text),
+            Token::Eof => Ok(ForeignDispatchOutcome::RedispatchUsingHtmlRules),
         }
     }
 }

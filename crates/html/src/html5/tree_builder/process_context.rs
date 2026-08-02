@@ -1,14 +1,17 @@
 use crate::html5::shared::ObservedInsertionMode;
 use crate::html5::shared::Token;
 use crate::html5::shared::{
-    AtomTable, DocumentParseContext, ParseErrorCode, ParserContextSummary, ParserDiagnosticSink,
+    AtomTable, DocumentParseContext, ParseErrorCode, ParserContextSummary, ParserEventSink,
     ParserRecoveryAction, ParserReservationController, ParserReservationSite,
-    ParserResourceExhaustion, ParserResourceLimit, ParserTokenKind,
+    ParserResourceExhaustion, ParserResourceLimit, ParserTokenKind, TransitionTokenSummary,
     TreeConstructionImplementationDiagnosticCode, TreeConstructionParseErrorCode,
+    TreeConstructionUnsupportedFeature, TreeDispatchPath, TreeTransitionEvent,
+    UnsupportedFeatureEvent, UnsupportedFeatureObservationFailure,
 };
 use crate::html5::tree_builder::TreeBuilderError;
 use crate::html5::tree_builder::modes::InsertionMode;
 use crate::names::ElementNamespace;
+use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TreeBuilderTokenSource {
@@ -24,11 +27,11 @@ pub(in crate::html5::tree_builder) enum SelfClosingFlagEffect {
     AlteredHtmlStackDisposition,
 }
 
-pub(crate) struct TreeConstructionDiagnosticSink<'a> {
-    shared: ParserDiagnosticSink<'a>,
+pub(crate) struct TreeConstructionEventSink<'a> {
+    shared: ParserEventSink<'a>,
 }
 
-impl TreeConstructionDiagnosticSink<'_> {
+impl TreeConstructionEventSink<'_> {
     fn record_parse_error(
         &mut self,
         code: TreeConstructionParseErrorCode,
@@ -64,12 +67,54 @@ impl TreeConstructionDiagnosticSink<'_> {
         self.shared
             .record_tree_resource_limit(limit, configured_limit, context, description);
     }
+
+    fn reserve_tree_transition(&mut self) -> Option<u64> {
+        self.shared.reserve_tree_transition()
+    }
+
+    fn retain_tree_transition(&mut self, event: TreeTransitionEvent) {
+        self.shared.retain_tree_transition(event);
+    }
+
+    fn record_tree_transition_capture_failure(&mut self) {
+        self.shared.record_tree_transition_capture_failure();
+    }
+
+    fn unsupported_features_requested(&self) -> bool {
+        self.shared.unsupported_features_requested()
+    }
+
+    fn reserve_unsupported_feature(&mut self) -> Option<u64> {
+        self.shared.reserve_unsupported_feature()
+    }
+
+    fn retain_unsupported_feature(
+        &mut self,
+        occurrence: u64,
+        feature: TreeConstructionUnsupportedFeature,
+        context: ParserContextSummary,
+    ) {
+        self.shared
+            .retain_unsupported_feature(UnsupportedFeatureEvent::TreeConstruction {
+                occurrence,
+                feature,
+                context,
+            });
+    }
+
+    fn record_unsupported_feature_observation_failure(
+        &mut self,
+        failure: UnsupportedFeatureObservationFailure,
+    ) {
+        self.shared
+            .record_unsupported_feature_observation_failure(failure);
+    }
 }
 
 /// Per-token tree-construction dependencies borrowed from the parser owner.
 pub struct TreeBuilderProcessContext<'a> {
     atoms: &'a AtomTable,
-    diagnostics: TreeConstructionDiagnosticSink<'a>,
+    events: TreeConstructionEventSink<'a>,
     token_kind: ParserTokenKind,
     token_source: TreeBuilderTokenSource,
     self_closing_flag: SelfClosingFlagEffect,
@@ -100,8 +145,8 @@ impl<'a> TreeBuilderProcessContext<'a> {
         } = parse_context;
         Self {
             atoms,
-            diagnostics: TreeConstructionDiagnosticSink {
-                shared: ParserDiagnosticSink::new(counters, *error_policy, errors, observations),
+            events: TreeConstructionEventSink {
+                shared: ParserEventSink::new(counters, *error_policy, errors, observations),
             },
             token_kind: ParserTokenKind::Eof,
             token_source,
@@ -136,6 +181,61 @@ impl<'a> TreeBuilderProcessContext<'a> {
         self.token_source == TreeBuilderTokenSource::IntegratedTokenizer
     }
 
+    pub(in crate::html5::tree_builder) fn reserve_tree_transition(&mut self) -> Option<u64> {
+        self.events.reserve_tree_transition()
+    }
+
+    pub(in crate::html5::tree_builder) fn retain_tree_transition(
+        &mut self,
+        occurrence: u64,
+        token: Arc<TransitionTokenSummary>,
+        insertion_mode_before: InsertionMode,
+        dispatch_path: TreeDispatchPath,
+        insertion_mode_after: InsertionMode,
+        reprocessed: bool,
+    ) {
+        self.events.retain_tree_transition(TreeTransitionEvent {
+            occurrence,
+            token,
+            insertion_mode_before: observed_insertion_mode(insertion_mode_before),
+            dispatch_path,
+            insertion_mode_after: observed_insertion_mode(insertion_mode_after),
+            reprocessed,
+        });
+    }
+
+    pub(in crate::html5::tree_builder) fn record_tree_transition_capture_failure(&mut self) {
+        self.events.record_tree_transition_capture_failure();
+    }
+
+    pub(in crate::html5::tree_builder) fn unsupported_features_requested(&self) -> bool {
+        self.events.unsupported_features_requested()
+    }
+
+    pub(in crate::html5::tree_builder) fn reserve_unsupported_feature(&mut self) -> Option<u64> {
+        self.events.reserve_unsupported_feature()
+    }
+
+    pub(in crate::html5::tree_builder) fn retain_unsupported_feature(
+        &mut self,
+        occurrence: u64,
+        feature: TreeConstructionUnsupportedFeature,
+        insertion_mode: InsertionMode,
+        adjusted_current_node_namespace: Option<ElementNamespace>,
+    ) {
+        let parser_context = self.parser_context(insertion_mode, adjusted_current_node_namespace);
+        self.events
+            .retain_unsupported_feature(occurrence, feature, parser_context);
+    }
+
+    pub(in crate::html5::tree_builder) fn record_unsupported_feature_observation_failure(
+        &mut self,
+        failure: UnsupportedFeatureObservationFailure,
+    ) {
+        self.events
+            .record_unsupported_feature_observation_failure(failure);
+    }
+
     pub(in crate::html5::tree_builder) fn record_parse_error(
         &mut self,
         code: TreeConstructionParseErrorCode,
@@ -144,7 +244,7 @@ impl<'a> TreeBuilderProcessContext<'a> {
         adjusted_current_node_namespace: Option<ElementNamespace>,
         description: Option<&'static str>,
     ) {
-        self.diagnostics.record_parse_error(
+        self.events.record_parse_error(
             code,
             recovery,
             self.parser_context(insertion_mode, adjusted_current_node_namespace),
@@ -159,7 +259,7 @@ impl<'a> TreeBuilderProcessContext<'a> {
         adjusted_current_node_namespace: Option<ElementNamespace>,
         description: Option<&'static str>,
     ) {
-        self.diagnostics.record_implementation_diagnostic(
+        self.events.record_implementation_diagnostic(
             code,
             self.parser_context(insertion_mode, adjusted_current_node_namespace),
             description,
@@ -174,7 +274,7 @@ impl<'a> TreeBuilderProcessContext<'a> {
         adjusted_current_node_namespace: Option<ElementNamespace>,
         description: Option<&'static str>,
     ) {
-        self.diagnostics.record_resource_limit(
+        self.events.record_resource_limit(
             limit,
             configured_limit,
             self.parser_context(insertion_mode, adjusted_current_node_namespace),
@@ -254,7 +354,9 @@ fn parser_token_kind(token: &Token) -> ParserTokenKind {
     }
 }
 
-fn observed_insertion_mode(mode: InsertionMode) -> ObservedInsertionMode {
+pub(in crate::html5::tree_builder) fn observed_insertion_mode(
+    mode: InsertionMode,
+) -> ObservedInsertionMode {
     match mode {
         InsertionMode::Initial => ObservedInsertionMode::Initial,
         InsertionMode::BeforeHtml => ObservedInsertionMode::BeforeHtml,

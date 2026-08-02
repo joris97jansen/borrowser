@@ -60,7 +60,10 @@ impl crate::html5::tree_builder::Html5TreeBuilder {
         ctx: &mut crate::html5::shared::DocumentParseContext,
     ) -> bool {
         let mut context = crate::html5::tree_builder::TreeBuilderProcessContext::new(ctx);
-        self.close_cell(&mut context)
+        self.close_cell(
+            &mut context,
+            crate::html5::tree_builder::table::CellCloseCause::TableStructureRecovery,
+        )
     }
 
     pub(in crate::html5::tree_builder) fn run_adoption_agency_algorithm_for_test(

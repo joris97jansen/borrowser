@@ -15,4 +15,6 @@ mod in_table_text;
 mod scope;
 mod state;
 
+#[cfg(test)]
+pub(in crate::html5::tree_builder) use close::CellCloseCause;
 pub(in crate::html5::tree_builder) use state::PendingTableTextState;

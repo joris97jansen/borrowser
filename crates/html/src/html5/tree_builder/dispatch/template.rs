@@ -26,15 +26,12 @@ struct TemplateStartPreflight {
 }
 
 impl Html5TreeBuilder {
-    pub(in crate::html5::tree_builder) fn handle_shared_template_token(
-        &mut self,
+    pub(in crate::html5::tree_builder) fn shared_template_rules_apply(
+        &self,
         mode: InsertionMode,
         token: &Token,
-        atoms: &AtomTable,
-        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
-        text: &dyn TextResolver,
-    ) -> Result<Option<DispatchOutcome>, TreeBuilderError> {
-        if !matches!(
+    ) -> bool {
+        matches!(
             mode,
             InsertionMode::InHead
                 | InsertionMode::AfterHead
@@ -46,10 +43,21 @@ impl Html5TreeBuilder {
                 | InsertionMode::InRow
                 | InsertionMode::InCell
                 | InsertionMode::InTemplate
-        ) {
-            return Ok(None);
-        }
+        ) && matches!(
+            token,
+            Token::StartTag { name, .. } | Token::EndTag { name }
+                if *name == self.known_tags.template
+        )
+    }
 
+    pub(in crate::html5::tree_builder) fn dispatch_shared_template_token(
+        &mut self,
+        mode: InsertionMode,
+        token: &Token,
+        atoms: &AtomTable,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
+        text: &dyn TextResolver,
+    ) -> Result<DispatchOutcome, TreeBuilderError> {
         match token {
             Token::StartTag {
                 name,
@@ -64,13 +72,13 @@ impl Html5TreeBuilder {
                     let _ =
                         self.handle_template_start_tag(attrs, *self_closing, atoms, context, text)?;
                 }
-                Ok(Some(DispatchOutcome::Done))
+                Ok(DispatchOutcome::Done)
             }
             Token::EndTag { name } if *name == self.known_tags.template => {
                 self.handle_template_end_tag(context)?;
-                Ok(Some(DispatchOutcome::Done))
+                Ok(DispatchOutcome::Done)
             }
-            _ => Ok(None),
+            _ => Err(crate::html5::shared::ParserFatalError::EngineInvariant),
         }
     }
 

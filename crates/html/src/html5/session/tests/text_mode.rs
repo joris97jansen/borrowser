@@ -102,6 +102,7 @@ fn parser_observations_do_not_change_text_mode_tokenizer_controls() {
                     tokens: SurfaceCaptureRequest::Capture { capacity: 64 },
                     parse_errors: SurfaceCaptureRequest::Capture { capacity: 64 },
                     implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 64 },
+                    ..ParserObservationConfig::default()
                 },
             )
         } else {
@@ -212,8 +213,7 @@ fn parser_observations_do_not_change_text_mode_tokenizer_controls() {
     assert_eq!(observed.document_mode, unobserved.document_mode);
 
     let capture = observed.capture.expect("explicit observation capture");
-    assert_eq!(capture.invariant, None);
-    assert!(!capture.token_capture_failed);
+    assert_eq!(capture.failure, None);
     assert_eq!(capture.tokens.dropped, 0);
     assert_eq!(capture.parse_errors.dropped, 0);
     assert_eq!(capture.implementation_diagnostics.dropped, 0);
