@@ -12,6 +12,13 @@ format = "borrowser-html-parser-fixture-v1"
 Core fields are strict. Unknown fields at any core nesting level are malformed
 fixture errors. Future optional metadata belongs only under `extensions`.
 
+AE13b5 freezes this complete grammar as a compatibility contract. Fixture v1
+continues to deserialize directly into its original strict schema after typed
+format dispatch. Its scalar expected-failure spellings and interpretations are
+unchanged. Native AE13 canonical fixtures use
+`borrowser-html-parser-fixture-v2`; v1 declarations are never normalized into
+broader v2 failure identities.
+
 Minimal AE13a fixture:
 
 ```toml
@@ -157,11 +164,18 @@ requested and completed with zero events.
 
 Recognized default sidecars that are present but undeclared are rejected. A
 declared sidecar must exist even when its execution surface belongs to a later
-AE13 slice. The feature-gated AE13b3 execution API can capture canonical trees
-and complete semantic patch histories in memory. Fixture-v1 still executes
-only `tokens.txt` with `html5-token-v1`: tree and patch serializers, sidecars,
-and corpus migration remain deliberately absent, so an active fixture
-requesting either sidecar still fails with typed `UnsupportedExpectation`.
+AE13 slice. As part of the frozen fixture-v1 compatibility boundary, declaration
+validation fully reads every declared sidecar and reports an unreadable sidecar
+as a `FixtureLoadError`, including for a skipped fixture. The legacy token
+runner rereads `tokens.txt` during execution; AE13b5 does not optimize or alter
+that behavior. Fixture-v2 alone owns metadata-only declaration validation and
+the skipped zero-content-read guarantee.
+
+The feature-gated AE13b3 execution API can capture canonical trees and complete
+semantic patch histories in memory. Fixture-v1 still executes only `tokens.txt`
+with `html5-token-v1`: tree and patch serializers, sidecars, and corpus
+migration remain deliberately absent, so an active fixture requesting either
+sidecar still fails with typed `UnsupportedExpectation`.
 
 ## Dispositions and sources
 
@@ -258,6 +272,24 @@ The compatibility reader requires exactly one `# format: html5-token-v1`
 header, valid `html5-token-v1` token lines, and a final `EOF`. Snapshot-format
 failures are distinct from fixture-TOML failures.
 
+The exact accepted compatibility behavior is intentionally not tightened:
+
+- a line beginning exactly `# format:` is a format header; the value is
+  trimmed, the header may occur after token records or after EOF, and a second
+  header is rejected;
+- other lines beginning `#` are comments and are ignored, including after EOF;
+- physically empty lines are ignored, while whitespace-only lines remain
+  token content and are malformed;
+- Rust `str::lines` compatibility accepts CRLF and does not treat a lone CR as
+  a separator;
+- a final physical newline is optional;
+- EOF is mandatory; semantic token content after EOF is rejected, while the
+  accepted comments, empty lines, and first format header may follow EOF;
+- a UTF-8 BOM is not accepted as part of the header or token grammar.
+
+These rules belong only to `html5-token-v1`. The strict v2 lexer is not reused
+for v1 unless complete acceptance compatibility is first proven.
+
 Bare token names follow the production tokenizer and compatibility-writer
 grammar: they must be non-empty, and ASCII whitespace is rejected because it is
 structural syntax. Non-ASCII Unicode whitespace is not treated as a delimiter
@@ -276,6 +308,6 @@ AE13b1 formalizes payload-safe in-memory implementation diagnostics before any
 implementation-diagnostic sidecar serializer is enabled. This does not change
 the fixture-v1 declaration, expectation surfaces, or serialized formats.
 AE13b2 likewise captures typed tree-construction diagnostics and the
-production-selected scalar document mode in memory. It does not activate
-`parse_errors`, `implementation_diagnostics`, or `document_mode` sidecars and
-does not define canonical serializers for them.
+production-selected scalar document mode in memory. AE13b5 activates those
+surfaces only through fixture v2; fixture-v1 syntax and interpretation remain
+unchanged.

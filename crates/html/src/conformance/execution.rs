@@ -26,6 +26,167 @@ pub enum ObservationRequest {
     },
 }
 
+#[cfg(test)]
+mod execution_identity_tests {
+    use super::*;
+
+    #[test]
+    fn every_closed_parser_observation_error_identity_is_preserved_without_text_classification() {
+        for (error, identity) in [
+            (
+                ParserObservationExecutionError::ParserInvariant,
+                ParserObservationExecutionIdentity::ParserInvariant,
+            ),
+            (
+                ParserObservationExecutionError::TokenCanonicalizationInvariant,
+                ParserObservationExecutionIdentity::TokenCanonicalizationInvariant,
+            ),
+            (
+                ParserObservationExecutionError::TreeTransitionTokenCanonicalizationInvariant,
+                ParserObservationExecutionIdentity::TreeTransitionTokenCanonicalizationInvariant,
+            ),
+            (
+                ParserObservationExecutionError::ObservationRecorderMissing,
+                ParserObservationExecutionIdentity::ObservationRecorderMissing,
+            ),
+            (
+                ParserObservationExecutionError::PatchHistoryCaptureMissing,
+                ParserObservationExecutionIdentity::PatchHistoryCaptureMissing,
+            ),
+        ] {
+            assert_eq!(error.identity(), identity);
+        }
+
+        assert_eq!(
+            ParserObservationExecutionError::ParserFatal(crate::ParserFatalError::EngineInvariant)
+                .identity(),
+            ParserObservationExecutionIdentity::ParserFatal(ParserFatalIdentity::EngineInvariant),
+        );
+        for (site, identity) in [
+            (
+                crate::ParserReservationSite::KnownTagAtomStorage,
+                ParserReservationSiteIdentity::KnownTagAtomStorage,
+            ),
+            (
+                crate::ParserReservationSite::KnownTagLookupStorage,
+                ParserReservationSiteIdentity::KnownTagLookupStorage,
+            ),
+            (
+                crate::ParserReservationSite::TemplateChildStorage,
+                ParserReservationSiteIdentity::TemplateChildStorage,
+            ),
+            (
+                crate::ParserReservationSite::PatchHistoryObservationStorage,
+                ParserReservationSiteIdentity::PatchHistoryObservationStorage,
+            ),
+        ] {
+            let error = crate::ParserResourceExhaustion::at(site);
+            assert_eq!(
+                ParserObservationExecutionError::ParserFatal(error.into()).identity(),
+                ParserObservationExecutionIdentity::ParserFatal(
+                    ParserFatalIdentity::ResourceExhaustion(identity)
+                )
+            );
+        }
+
+        for code in [
+            ParserTokenizerInvariantError::SelfClosingFlagMissingSolidusPosition,
+            ParserTokenizerInvariantError::SolidusPositionWithoutPendingTag,
+            ParserTokenizerInvariantError::SolidusPositionOutsideCurrentPendingTag,
+            ParserTokenizerInvariantError::SolidusPositionDoesNotReferenceConsumedSlash,
+            ParserTokenizerInvariantError::DoctypeNameStartMissingForNameState,
+            ParserTokenizerInvariantError::DoctypeNameStartMissingForTailScan,
+            ParserTokenizerInvariantError::DoctypeNameStartMissingForResourceObservation,
+            ParserTokenizerInvariantError::DoctypeNameStartAfterCursor,
+            ParserTokenizerInvariantError::DoctypeNameRangeInvalid,
+            ParserTokenizerInvariantError::DoctypeTailRangeInvalid,
+            ParserTokenizerInvariantError::AsciiPrefixCandidateRangeInvalid,
+            ParserTokenizerInvariantError::CommentStateMissingPendingStart,
+            ParserTokenizerInvariantError::CommentPendingRangeInvalid,
+            ParserTokenizerInvariantError::CommentPendingDelimiterOutsideCurrentRange,
+            ParserTokenizerInvariantError::CommentPendingDelimiterDoesNotMatchState,
+            ParserTokenizerInvariantError::TextModeEndTagCandidateRangeInvalid,
+            ParserTokenizerInvariantError::TextModeEndTagAttributePositionInvalid,
+            ParserTokenizerInvariantError::TextModeEndTagSolidusPositionInvalid,
+            ParserTokenizerInvariantError::PendingTextRangeInvalid,
+            ParserTokenizerInvariantError::CdataStateMissingPendingTextStart,
+            ParserTokenizerInvariantError::CdataEndDelimiterOutsidePendingTextRange,
+            ParserTokenizerInvariantError::CdataEndDelimiterDoesNotMatchState,
+            ParserTokenizerInvariantError::ProcessingInstructionStateMissingPendingMetadata,
+            ParserTokenizerInvariantError::ProcessingInstructionMetadataOutsideState,
+            ParserTokenizerInvariantError::ProcessingInstructionTargetRangeInvalid,
+            ParserTokenizerInvariantError::ProcessingInstructionDataRangeInvalid,
+            ParserTokenizerInvariantError::ProcessingInstructionTargetStartAfterCursor,
+            ParserTokenizerInvariantError::ProcessingInstructionDataStartAfterCursor,
+        ] {
+            assert_eq!(
+                ParserObservationExecutionError::TokenizerInvariant(code).identity(),
+                ParserObservationExecutionIdentity::TokenizerInvariant(code)
+            );
+        }
+
+        for code in [
+            UnsupportedFeatureObservationInvariantError::TokenAttributeNameUnavailable,
+            UnsupportedFeatureObservationInvariantError::ExistingHtmlElementSemanticsUnavailable,
+            UnsupportedFeatureObservationInvariantError::ExistingBodyElementSemanticsUnavailable,
+            UnsupportedFeatureObservationInvariantError::ExistingElementIdentityContradiction,
+        ] {
+            assert_eq!(
+                ParserObservationExecutionError::UnsupportedFeatureObservationInvariant(code)
+                    .identity(),
+                ParserObservationExecutionIdentity::UnsupportedFeatureObservationInvariant(code)
+            );
+        }
+
+        for code in [
+            ParserObservationInvariantError::ParseErrorOccurrenceOverflow,
+            ParserObservationInvariantError::ImplementationDiagnosticOccurrenceOverflow,
+            ParserObservationInvariantError::TreeTransitionOccurrenceOverflow,
+            ParserObservationInvariantError::UnsupportedFeatureOccurrenceOverflow,
+            ParserObservationInvariantError::TokenDroppedCountOverflow,
+            ParserObservationInvariantError::ParseErrorDroppedCountOverflow,
+            ParserObservationInvariantError::ImplementationDiagnosticDroppedCountOverflow,
+            ParserObservationInvariantError::TreeTransitionDroppedCountOverflow,
+            ParserObservationInvariantError::UnsupportedFeatureDroppedCountOverflow,
+            ParserObservationInvariantError::NormalizedPositionOverflow,
+            ParserObservationInvariantError::NormalizedPositionIndexDiscontinuity,
+            ParserObservationInvariantError::NormalizedPositionIndexMissing,
+            ParserObservationInvariantError::InvalidNormalizedPositionOffset,
+            ParserObservationInvariantError::PatchDroppedCountOverflow,
+            ParserObservationInvariantError::CanonicalTreeUnitCountOverflow,
+            ParserObservationInvariantError::CanonicalTreeRootNotDocument,
+            ParserObservationInvariantError::UnexpectedLegacyDocumentDoctypeMetadata,
+            ParserObservationInvariantError::MissingHtmlTemplateContents,
+            ParserObservationInvariantError::InvalidTemplateContentsKind,
+            ParserObservationInvariantError::CanonicalTreeTraversalContradiction,
+            ParserObservationInvariantError::CanonicalTreePreflightProjectionMismatch,
+            ParserObservationInvariantError::InvalidPatchKey,
+            ParserObservationInvariantError::DuplicatePatchCreation,
+            ParserObservationInvariantError::MissingPatchCreationHistory,
+            ParserObservationInvariantError::SnapshotLabelSequenceOverflow,
+        ] {
+            assert_eq!(
+                ParserObservationExecutionError::ObservationInvariant(code).identity(),
+                ParserObservationExecutionIdentity::ObservationInvariant(code)
+            );
+        }
+
+        for site in [
+            ObservationReservationSite::CanonicalTreeProjection,
+            ObservationReservationSite::CanonicalPatchProjection,
+            ObservationReservationSite::SnapshotLabelStorage,
+        ] {
+            assert_eq!(
+                ParserObservationExecutionError::ResourceExhaustion(
+                    ObservationResourceExhaustion::at(site)
+                )
+                .identity(),
+                ParserObservationExecutionIdentity::ResourceExhaustion(site)
+            );
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ScalarObservationRequest {
     #[default]
@@ -80,6 +241,104 @@ pub enum ParserObservationExecutionError {
     PatchHistoryCaptureMissing,
     ObservationInvariant(ParserObservationInvariantError),
     ResourceExhaustion(ObservationResourceExhaustion),
+}
+
+/// Closed, message-independent identity for fixture disposition matching.
+///
+/// `ParserFatalError` and its reservation site are deliberately non-exhaustive
+/// at the ordinary parser API boundary. Canonical test support therefore asks
+/// the owning HTML subsystem for this feature-gated identity instead of
+/// classifying `Display` or `Debug` text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParserObservationExecutionIdentity {
+    ParserFatal(ParserFatalIdentity),
+    ParserInvariant,
+    TokenizerInvariant(ParserTokenizerInvariantError),
+    TokenCanonicalizationInvariant,
+    TreeTransitionTokenCanonicalizationInvariant,
+    UnsupportedFeatureObservationInvariant(UnsupportedFeatureObservationInvariantError),
+    ObservationRecorderMissing,
+    PatchHistoryCaptureMissing,
+    ObservationInvariant(ParserObservationInvariantError),
+    ResourceExhaustion(ObservationReservationSite),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParserFatalIdentity {
+    EngineInvariant,
+    ResourceExhaustion(ParserReservationSiteIdentity),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParserReservationSiteIdentity {
+    KnownTagAtomStorage,
+    KnownTagLookupStorage,
+    TemplateChildStorage,
+    PatchHistoryObservationStorage,
+}
+
+impl ParserObservationExecutionError {
+    #[must_use]
+    pub const fn identity(self) -> ParserObservationExecutionIdentity {
+        match self {
+            Self::ParserFatal(error) => {
+                ParserObservationExecutionIdentity::ParserFatal(parser_fatal_identity(error))
+            }
+            Self::ParserInvariant => ParserObservationExecutionIdentity::ParserInvariant,
+            Self::TokenizerInvariant(error) => {
+                ParserObservationExecutionIdentity::TokenizerInvariant(error)
+            }
+            Self::TokenCanonicalizationInvariant => {
+                ParserObservationExecutionIdentity::TokenCanonicalizationInvariant
+            }
+            Self::TreeTransitionTokenCanonicalizationInvariant => {
+                ParserObservationExecutionIdentity::TreeTransitionTokenCanonicalizationInvariant
+            }
+            Self::UnsupportedFeatureObservationInvariant(error) => {
+                ParserObservationExecutionIdentity::UnsupportedFeatureObservationInvariant(error)
+            }
+            Self::ObservationRecorderMissing => {
+                ParserObservationExecutionIdentity::ObservationRecorderMissing
+            }
+            Self::PatchHistoryCaptureMissing => {
+                ParserObservationExecutionIdentity::PatchHistoryCaptureMissing
+            }
+            Self::ObservationInvariant(error) => {
+                ParserObservationExecutionIdentity::ObservationInvariant(error)
+            }
+            Self::ResourceExhaustion(error) => {
+                ParserObservationExecutionIdentity::ResourceExhaustion(error.site())
+            }
+        }
+    }
+}
+
+const fn parser_fatal_identity(error: crate::ParserFatalError) -> ParserFatalIdentity {
+    match error {
+        crate::ParserFatalError::EngineInvariant => ParserFatalIdentity::EngineInvariant,
+        crate::ParserFatalError::ResourceExhaustion(error) => {
+            ParserFatalIdentity::ResourceExhaustion(parser_reservation_site_identity(error.site()))
+        }
+    }
+}
+
+const fn parser_reservation_site_identity(
+    site: crate::ParserReservationSite,
+) -> ParserReservationSiteIdentity {
+    match site {
+        crate::ParserReservationSite::KnownTagAtomStorage => {
+            ParserReservationSiteIdentity::KnownTagAtomStorage
+        }
+        crate::ParserReservationSite::KnownTagLookupStorage => {
+            ParserReservationSiteIdentity::KnownTagLookupStorage
+        }
+        crate::ParserReservationSite::TemplateChildStorage => {
+            ParserReservationSiteIdentity::TemplateChildStorage
+        }
+        crate::ParserReservationSite::PatchHistoryObservationStorage => {
+            ParserReservationSiteIdentity::PatchHistoryObservationStorage
+        }
+    }
 }
 
 /// Fallible allocation boundary owned by post-parse canonical observation.

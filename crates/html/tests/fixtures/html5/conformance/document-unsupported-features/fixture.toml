@@ -1,0 +1,35 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "document-unsupported-features"
+
+[source]
+kind = "native"
+
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "a5a2563a71c0fea391a581fb1eae5f1355d73104a04a8baae3e633afd419c853"
+
+[execution]
+reference_delivery = "whole"
+
+[execution.target]
+kind = "document"
+scripting = "disabled"
+
+[[execution.deliveries]]
+name = "whole"
+unit = "unicode-scalars"
+strategy = "whole"
+
+[expectations]
+unsupported_features = "unsupported-features.txt"
+
+[[expectations.transitions]]
+delivery = "whole"
+path = "transitions.whole.txt"
+
+[disposition]
+status = "active"
+
+[metadata]
+description = "Unsupported-feature identity and transition order come from one unioned production observation."

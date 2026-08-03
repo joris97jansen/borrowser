@@ -890,28 +890,69 @@ AE13a intentionally has no speculative generic adapter registry. A real known
 semantic extension must later receive an exact-version typed adapter at the
 single validation boundary.
 
-## Snapshot format status
+## AE13b5 snapshot and runner status
 
-- `html5-token-v1`: executable AE13a compatibility format.
-- `html5-dom-v2`: existing compatibility tree format.
-- `html5-dompatch-v2`: existing compatibility patch format.
-- `html5-dompatch-v3`: planned native AE13 patch format using labels assigned by
-  first semantic appearance and no normative transport batch boundaries.
-- Native parse-error, implementation-diagnostic, document-mode, transition,
-  unsupported-feature, and final-invariant formats are reserved/planned for
-  later AE13 slices. AE13b2 captures tree diagnostics and document mode only in
-  memory; it does not activate canonical serializers or fixture sidecars.
+Fixture v2 activates `html5-token-v2`, `html5-parse-errors-v1`,
+`html5-implementation-diagnostics-v1`, `html5-document-mode-v1`,
+`html5-dom-v3`, `html5-dompatch-v3`, `html5-tree-transitions-v1`, and
+`html5-unsupported-features-v1`. Writers consume only typed
+`CanonicalParserResult` surfaces. The native standalone token path no longer
+runs `TokenFmt` and canonical observation as two semantic executions.
 
-The `html5-token-v1` reader lives beside the existing token formatter and emits
-dedicated typed snapshot-format errors. Malformed snapshots are not reported as
-fixture-TOML errors.
+Fixture v1 and `html5-token-v1` remain isolated compatibility contracts. Their
+accepted syntax and scalar failure identities are unchanged.
+
+Every declared delivery is capability-checked. Only reference and
+transition-selected deliveries are planned; requests are unioned per delivery
+and each planned delivery executes once in declaration order. No comparison
+begins until every execution succeeds and every requested observation is
+authoritative. Completed reports are all-or-nothing.
+
+Private fixture guardrails are expectation-independent. Canonical tree capacity
+counts document, document type, element/template host, text, comment,
+processing instruction, and template-contents boundary. Attributes and the
+outer `ObservedTree` wrapper do not consume units. Incomplete prefixes never
+reach serialization or comparison. The private policy is injected through
+request construction so tests exercise exact and capacity-plus-one boundaries;
+fixture declarations and sidecars cannot configure it. Incomplete diagnostics
+retain exact delivery, surface, reason, retained count, and dropped count.
+
+Canonical tree snapshot writing and framing validation are iterative. The
+writer preserves canonical preorder and the template ordinary/content split
+without recursive descent. The reader enforces only physical traversal
+framing, including immediate owner attributes and one contents boundary per
+template host, while remaining deliberately agnostic about parser and namespace
+correctness. Lexical paths accept repeated complete `/contents` segments for
+nested template hosts; the independent framing stack proves which host owns
+each boundary and rejects consecutive boundaries without an intervening host.
+Canonical patch labels are quoted `node-<positive-canonical-decimal>` values,
+and all patch ordinals/attribute indices use canonical decimal spellings.
+
+Fixture-v2 declaration validation inspects expected-sidecar metadata without
+opening or reading the complete content. Non-skipped v2 execution reads content
+only in the ordered expected-sidecar phase. A skipped v2 disposition therefore
+performs zero sidecar-content reads as well as zero parser executions and
+exposes no canonical result. Fixture-v1 preserves its frozen legacy boundary:
+validation fully reads declared sidecars, including for skipped fixtures, and
+the legacy token runner rereads its sidecar during execution.
+
+Surface-specific parsed/canonical snapshot types seal each format at compile
+time. V2 completed reports store each delivery result once and borrow the
+reference result through the compatibility accessor. One authoritative
+failure-spelling codec owns structured declaration parsing and stable identity
+formatting.
+
+See `parser-fixture-format-v2.md` and
+`ae13b5-parser-snapshot-formats.md` for normative grammar, precedence, and
+diagnostics.
 
 ## Later slices
 
 - AE13b1: parser-owned token and tokenizer-diagnostic observation foundation.
 - AE13b2: tree-construction diagnostics and production document-mode capture.
-- AE13b3 through AE13b5: remaining parser observations, shared escaping, and
-  stable serializers.
+- AE13b3 and AE13b4: canonical tree/patch/transition/unsupported observations
+  are complete. AE13b5 strict serializers and fixture diagnostics are
+  implemented; issue closure remains pending formal architecture review.
 - AE13c: semantic whole/chunked parity and production final-invariant execution.
 - AE13d: existing corpus consolidation and migration.
 - AE13e: external html5lib/WPT adapter, intentional snapshot updates, final
@@ -919,4 +960,4 @@ fixture-TOML errors.
 
 Fragment execution, scripting-dependent parsing, original source-byte
 provenance, Layout, Paint, JavaScript execution, navigation, and resource
-loading are not implemented by AE13a.
+loading are not implemented by AE13b5.

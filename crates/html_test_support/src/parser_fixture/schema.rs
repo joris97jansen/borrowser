@@ -17,6 +17,29 @@ pub struct FixtureFileV1 {
     pub extensions: BTreeMap<String, ExtensionDeclaration>,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FixtureFileV2 {
+    pub format: String,
+    pub id: String,
+    pub source: FixtureSourceDeclaration,
+    pub input: InputDeclaration,
+    pub execution: ExecutionDeclaration,
+    pub expectations: FixtureExpectationDeclarations,
+    pub disposition: FixtureDispositionDeclarationV2,
+    #[serde(default)]
+    pub metadata: FixtureMetadataDeclaration,
+    #[serde(default)]
+    pub extensions: BTreeMap<String, ExtensionDeclaration>,
+}
+
+/// Minimal typed dispatch envelope. This selects a complete versioned schema;
+/// it is not a permissive common fixture declaration.
+#[derive(Clone, Debug, Deserialize)]
+pub struct FixtureFormatEnvelope {
+    pub format: String,
+}
+
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FixtureMetadataDeclaration {
@@ -159,6 +182,17 @@ pub struct FixtureDispositionDeclaration {
     pub reference: Option<DispositionReferenceDeclaration>,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FixtureDispositionDeclarationV2 {
+    pub status: FixtureDispositionStatusDeclaration,
+    pub reason: Option<String>,
+    pub capability: Option<FixtureCapabilityDeclaration>,
+    pub failure: Option<ExpectedFailureDeclarationV2>,
+    pub classification: Option<SkipClassificationDeclaration>,
+    pub reference: Option<DispositionReferenceDeclaration>,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum DispositionReferenceKindDeclaration {
@@ -233,6 +267,41 @@ pub enum ExpectedFailureDeclaration {
     TemplateAssociationInvalidInvariant,
     PatchMaterializationIncompleteInvariant,
     LiveTreeMismatchInvariant,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExpectationSurfaceDeclaration {
+    Tokens,
+    ParseErrors,
+    ImplementationDiagnostics,
+    DocumentMode,
+    Tree,
+    Patches,
+    Transitions,
+    UnsupportedFeatures,
+    FinalInvariants,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExpectedFailureKindDeclarationV2 {
+    SnapshotRead,
+    SnapshotFormat,
+    ParserObservation,
+    ValidatedRunnerInvariant,
+    ExpectationMismatch,
+    FinalInvariant,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ExpectedFailureDeclarationV2 {
+    pub kind: ExpectedFailureKindDeclarationV2,
+    pub surface: Option<ExpectationSurfaceDeclaration>,
+    pub identity: Option<String>,
+    pub code: Option<String>,
+    pub site: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]

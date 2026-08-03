@@ -273,3 +273,17 @@ apply. Strict validation and Browser application are staged and atomic, and
 Browser calls the same `html::internal` validator instead of reimplementing
 payload validity. Deterministic patch formatting escapes target and data as
 separate fields.
+
+## AE13b5 canonical patch snapshots
+
+`html5-dompatch-v3` is the native parser-fixture patch format. Its writer
+consumes only the AE13b3 `ObservedPatchStream`, including first-appearance
+labels and canonical operation order. Runtime batch boundaries, `PatchKey`,
+materialized IDs, and legacy patch strings are forbidden.
+
+The strict reader validates fixed operation shapes, canonical contiguous
+one-based operation ordinals, canonical grouped zero-based attribute indices,
+and every quoted label as `node-<positive-canonical-decimal>`. Zero or
+leading-zero label numbers, arbitrary prefixes, unquoted labels, signs, and
+leading-zero integer spellings are malformed. It does not validate live-DOM
+applicability or recreate patch creation history.

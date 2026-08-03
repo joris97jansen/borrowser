@@ -1,0 +1,32 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "document-recovery-diagnostics"
+
+[source]
+kind = "native"
+
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "f6a8bd0ddf91049b25303c3e04f39f422817603e9a9b4ed051a8d0832294bb8a"
+
+[execution]
+reference_delivery = "whole"
+
+[execution.target]
+kind = "document"
+scripting = "disabled"
+
+[[execution.deliveries]]
+name = "whole"
+unit = "unicode-scalars"
+strategy = "whole"
+
+[expectations]
+parse_errors = "parse-errors.txt"
+implementation_diagnostics = "implementation-diagnostics.txt"
+
+[disposition]
+status = "active"
+
+[metadata]
+description = "Duplicate-attribute and non-void self-closing recovery use typed canonical diagnostics."

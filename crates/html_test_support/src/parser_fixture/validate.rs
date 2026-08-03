@@ -1,6 +1,7 @@
+use super::failure_spelling::{parse_parser_observation_failure, parse_runner_invariant};
 use super::load::{
-    FixtureLoadError, FixtureLoadErrorKind, FixtureRepositoryPolicy, normalize_relative_path,
-    read_regular_file, validate_relative_path,
+    FixtureFileAccess, FixtureLoadError, FixtureLoadErrorKind, FixtureRepositoryPolicy,
+    normalize_relative_path, validate_relative_path,
 };
 use super::model::*;
 use super::schema::*;
@@ -12,13 +13,14 @@ use std::fmt::Write;
 use std::fs;
 use std::path::Path;
 
-/// A fixture whose complete serialized declaration passed the canonical v1
-/// validation boundary.
+/// A fixture whose complete serialized declaration passed its selected strict
+/// versioned validation boundary.
 ///
 /// Fields and construction stay in this module so callers cannot assemble a
 /// partially validated value from otherwise plausible component values.
 #[derive(Clone, Debug)]
 pub struct ValidatedFixtureSpec {
+    format: FixtureFormatVersion,
     id: FixtureId,
     bundle: FixtureBundle,
     source: FixtureSource,
@@ -142,6 +144,10 @@ impl ValidatedFixtureSpec {
         &self.bundle
     }
 
+    pub(super) fn format(&self) -> FixtureFormatVersion {
+        self.format
+    }
+
     pub(super) fn input(&self) -> &ExactInput {
         &self.input
     }
@@ -163,10 +169,11 @@ impl ValidatedFixtureSpec {
     }
 }
 
-pub(super) fn validate_fixture(
+pub(super) fn validate_fixture_v1(
     declaration: FixtureFileV1,
     bundle: FixtureBundle,
     repository_policy: FixtureRepositoryPolicy,
+    file_access: &mut impl FixtureFileAccess,
 ) -> Result<ValidatedFixtureSpec, FixtureLoadError> {
     if declaration.format != FIXTURE_FORMAT_V1 {
         return Err(bundle_error(
@@ -179,12 +186,18 @@ pub(super) fn validate_fixture(
 
     let input_path = declaration.input.path.clone();
     validate_relative_path(&input_path).map_err(|kind| bundle_error(&bundle, kind))?;
-    let input_bytes = read_regular_file(&bundle, &input_path)?;
+    let input_bytes = file_access.read_regular_file(&bundle, &input_path)?;
     validate_sha256(&bundle, &declaration.input.sha256, &input_bytes)?;
     let input = validate_input(&bundle, declaration.input, input_bytes)?;
 
     let execution = validate_execution(&bundle, &input, declaration.execution)?;
-    let expectations = validate_expectations(&bundle, &execution, declaration.expectations)?;
+    let expectations = validate_expectations(
+        &bundle,
+        &execution,
+        declaration.expectations,
+        SidecarValidationPolicy::LegacyV1ContentReadable,
+        file_access,
+    )?;
     if !has_any_expectation(&expectations) {
         return invalid_combination(&bundle, "fixture must declare at least one expectation");
     }
@@ -202,6 +215,88 @@ pub(super) fn validate_fixture(
     validate_source_disposition_policy(&bundle, repository_policy, &source, &disposition)?;
 
     Ok(ValidatedFixtureSpec {
+        format: FixtureFormatVersion::V1,
+        id,
+        bundle,
+        source,
+        input,
+        execution,
+        expectations,
+        disposition,
+        description: declaration.metadata.description,
+        comments: declaration.metadata.comments,
+        optional_extensions,
+        required_unknown_extensions,
+    })
+}
+
+fn validate_v2_expectation_identities(
+    bundle: &FixtureBundle,
+    expectations: &EnabledExpectations,
+) -> Result<(), FixtureLoadError> {
+    let ExpectedSurface::Compare(transitions) = expectations.transitions() else {
+        return Ok(());
+    };
+    let mut deliveries = BTreeSet::new();
+    for transition in transitions {
+        if !deliveries.insert(transition.delivery().clone()) {
+            return invalid_combination(
+                bundle,
+                "fixture-v2 transition expectations must have unique delivery identities",
+            );
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn validate_fixture_v2(
+    declaration: FixtureFileV2,
+    bundle: FixtureBundle,
+    repository_policy: FixtureRepositoryPolicy,
+    file_access: &mut impl FixtureFileAccess,
+) -> Result<ValidatedFixtureSpec, FixtureLoadError> {
+    if declaration.format != FIXTURE_FORMAT_V2 {
+        return Err(bundle_error(
+            &bundle,
+            FixtureLoadErrorKind::UnsupportedFixtureFormat(declaration.format),
+        ));
+    }
+    let id = validate_fixture_id(&bundle, declaration.id)?;
+    let source = validate_source(&bundle, declaration.source)?;
+
+    let input_path = declaration.input.path.clone();
+    validate_relative_path(&input_path).map_err(|kind| bundle_error(&bundle, kind))?;
+    let input_bytes = file_access.read_regular_file(&bundle, &input_path)?;
+    validate_sha256(&bundle, &declaration.input.sha256, &input_bytes)?;
+    let input = validate_input(&bundle, declaration.input, input_bytes)?;
+
+    let execution = validate_execution(&bundle, &input, declaration.execution)?;
+    let expectations = validate_expectations(
+        &bundle,
+        &execution,
+        declaration.expectations,
+        SidecarValidationPolicy::MetadataOnlyV2,
+        file_access,
+    )?;
+    validate_v2_expectation_identities(&bundle, &expectations)?;
+    if !has_any_expectation(&expectations) {
+        return invalid_combination(&bundle, "fixture must declare at least one expectation");
+    }
+    validate_orphan_sidecars(&bundle, &input_path, &expectations)?;
+    let (optional_extensions, required_unknown_extensions) =
+        validate_extensions(&bundle, declaration.extensions)?;
+    let disposition = validate_disposition_v2(
+        &bundle,
+        declaration.disposition,
+        &input,
+        &execution,
+        &expectations,
+        &required_unknown_extensions,
+    )?;
+    validate_source_disposition_policy(&bundle, repository_policy, &source, &disposition)?;
+
+    Ok(ValidatedFixtureSpec {
+        format: FixtureFormatVersion::V2,
         id,
         bundle,
         source,
@@ -345,6 +440,188 @@ fn validate_disposition(
             bundle,
             "disposition fields do not match the declared status",
         ),
+    }
+}
+
+fn validate_disposition_v2(
+    bundle: &FixtureBundle,
+    disposition: FixtureDispositionDeclarationV2,
+    input: &ExactInput,
+    execution: &ValidatedExecution,
+    expectations: &EnabledExpectations,
+    required_unknown_extensions: &[String],
+) -> Result<FixtureDisposition, FixtureLoadError> {
+    match (
+        disposition.status,
+        disposition.reason,
+        disposition.capability,
+        disposition.failure,
+        disposition.classification,
+        disposition.reference,
+    ) {
+        (FixtureDispositionStatusDeclaration::Active, None, None, None, None, None) => {
+            Ok(FixtureDisposition::Active)
+        }
+        (
+            FixtureDispositionStatusDeclaration::ExpectedUnsupported,
+            Some(reason),
+            Some(capability),
+            None,
+            None,
+            Some(reference),
+        ) => {
+            require_non_empty(bundle, "expected-unsupported reason", &reason)?;
+            let capability = map_capability(bundle, capability)?;
+            require_non_active_capability(bundle, &capability, "expected unsupported")?;
+            Ok(FixtureDisposition::ExpectedUnsupported {
+                reason,
+                capability,
+                reference: validate_reference(bundle, reference)?,
+            })
+        }
+        (
+            FixtureDispositionStatusDeclaration::ExpectedFailure,
+            Some(reason),
+            None,
+            Some(failure),
+            None,
+            Some(reference),
+        ) => {
+            require_non_empty(bundle, "expected-failure reason", &reason)?;
+            Ok(FixtureDisposition::ExpectedFailureV2 {
+                reason,
+                failure: map_expected_failure_v2(bundle, failure)?,
+                reference: validate_reference(bundle, reference)?,
+            })
+        }
+        (
+            FixtureDispositionStatusDeclaration::Skipped,
+            Some(reason),
+            None,
+            None,
+            Some(classification),
+            Some(reference),
+        ) => {
+            require_non_empty(bundle, "skipped reason", &reason)?;
+            let classification = validate_skip_classification(bundle, classification)?;
+            let SkipClassification::UnsupportedCapability(capability) = &classification;
+            if !capability_is_relevant(
+                capability,
+                input,
+                execution,
+                expectations,
+                required_unknown_extensions,
+            ) {
+                return Err(bundle_error(
+                    bundle,
+                    FixtureLoadErrorKind::InvalidDisposition(format!(
+                        "skipped unsupported capability '{}' is not relevant to the fixture's declared semantics",
+                        capability_name(capability)
+                    )),
+                ));
+            }
+            Ok(FixtureDisposition::Skipped {
+                reason,
+                classification,
+                reference: validate_reference(bundle, reference)?,
+            })
+        }
+        _ => invalid_combination(
+            bundle,
+            "fixture-v2 disposition fields do not match the declared status",
+        ),
+    }
+}
+
+fn map_expected_failure_v2(
+    bundle: &FixtureBundle,
+    declaration: ExpectedFailureDeclarationV2,
+) -> Result<ExpectedFailureClassificationV2, FixtureLoadError> {
+    let invalid = || {
+        bundle_error(
+            bundle,
+            FixtureLoadErrorKind::InvalidDisposition(
+                "fixture-v2 failure fields do not match the selected failure kind".to_string(),
+            ),
+        )
+    };
+    match (
+        declaration.kind,
+        declaration.surface,
+        declaration.identity,
+        declaration.code,
+        declaration.site,
+    ) {
+        (ExpectedFailureKindDeclarationV2::SnapshotRead, Some(surface), None, None, None) => {
+            Ok(ExpectedFailureClassificationV2::Execution(
+                ExecutionFailureClass::SnapshotRead(map_surface(surface)),
+            ))
+        }
+        (ExpectedFailureKindDeclarationV2::SnapshotFormat, Some(surface), None, None, None) => {
+            Ok(ExpectedFailureClassificationV2::Execution(
+                ExecutionFailureClass::SnapshotFormat(map_surface(surface)),
+            ))
+        }
+        (ExpectedFailureKindDeclarationV2::ParserObservation, None, Some(identity), code, site) => {
+            Ok(ExpectedFailureClassificationV2::Execution(
+                ExecutionFailureClass::ParserObservation(
+                    parse_parser_observation_failure(&identity, code.as_deref(), site.as_deref())
+                        .map_err(|error| {
+                        bundle_error(
+                            bundle,
+                            FixtureLoadErrorKind::InvalidDisposition(error.to_string()),
+                        )
+                    })?,
+                ),
+            ))
+        }
+        (
+            ExpectedFailureKindDeclarationV2::ValidatedRunnerInvariant,
+            None,
+            None,
+            Some(code),
+            None,
+        ) => Ok(ExpectedFailureClassificationV2::Execution(
+            ExecutionFailureClass::ValidatedFixtureInvariant(
+                parse_runner_invariant(&code).map_err(|error| {
+                    bundle_error(
+                        bundle,
+                        FixtureLoadErrorKind::InvalidDisposition(error.to_string()),
+                    )
+                })?,
+            ),
+        )),
+        (
+            ExpectedFailureKindDeclarationV2::ExpectationMismatch,
+            Some(surface),
+            None,
+            None,
+            None,
+        ) => Ok(ExpectedFailureClassificationV2::ExpectationMismatch(
+            map_surface(surface),
+        )),
+        (ExpectedFailureKindDeclarationV2::FinalInvariant, None, None, Some(code), None) => Ok(
+            ExpectedFailureClassificationV2::FinalInvariant(map_final_invariant(bundle, &code)?),
+        ),
+        _ => Err(invalid()),
+    }
+}
+
+fn map_surface(surface: ExpectationSurfaceDeclaration) -> ExpectationSurface {
+    match surface {
+        ExpectationSurfaceDeclaration::Tokens => ExpectationSurface::Tokens,
+        ExpectationSurfaceDeclaration::ParseErrors => ExpectationSurface::ParseErrors,
+        ExpectationSurfaceDeclaration::ImplementationDiagnostics => {
+            ExpectationSurface::ImplementationDiagnostics
+        }
+        ExpectationSurfaceDeclaration::DocumentMode => ExpectationSurface::DocumentMode,
+        ExpectationSurfaceDeclaration::Tree => ExpectationSurface::Tree,
+        ExpectationSurfaceDeclaration::Patches => ExpectationSurface::Patches,
+        ExpectationSurfaceDeclaration::Transitions => ExpectationSurface::Transitions,
+        ExpectationSurfaceDeclaration::UnsupportedFeatures => {
+            ExpectationSurface::UnsupportedFeatures
+        }
+        ExpectationSurfaceDeclaration::FinalInvariants => ExpectationSurface::FinalInvariants,
     }
 }
 
@@ -583,10 +860,37 @@ fn validate_execution(
     ))
 }
 
+#[derive(Clone, Copy)]
+enum SidecarValidationPolicy {
+    LegacyV1ContentReadable,
+    MetadataOnlyV2,
+}
+
+impl SidecarValidationPolicy {
+    fn validate_declared_sidecar(
+        self,
+        bundle: &FixtureBundle,
+        path: &str,
+        file_access: &mut impl FixtureFileAccess,
+    ) -> Result<(), FixtureLoadError> {
+        match self {
+            Self::LegacyV1ContentReadable => {
+                let _ = file_access.read_regular_file(bundle, path)?;
+            }
+            Self::MetadataOnlyV2 => {
+                file_access.validate_regular_file_metadata(bundle, path)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 fn validate_expectations(
     bundle: &FixtureBundle,
     execution: &ValidatedExecution,
     declaration: FixtureExpectationDeclarations,
+    sidecar_policy: SidecarValidationPolicy,
+    file_access: &mut impl FixtureFileAccess,
 ) -> Result<EnabledExpectations, FixtureLoadError> {
     let delivery_names = execution
         .deliveries()
@@ -605,7 +909,7 @@ fn validate_expectations(
                     "transition expectation references an undeclared delivery",
                 );
             }
-            read_regular_file(bundle, &transition.path)?;
+            sidecar_policy.validate_declared_sidecar(bundle, &transition.path, file_access)?;
             Ok(TransitionSnapshotExpectation::validated(
                 delivery,
                 SnapshotPath::validated(transition.path),
@@ -614,31 +918,58 @@ fn validate_expectations(
         .collect::<Result<Vec<_>, FixtureLoadError>>()?;
 
     Ok(EnabledExpectations::validated(
-        snapshot_surface(bundle, declaration.tokens)?,
-        snapshot_surface(bundle, declaration.parse_errors)?,
-        snapshot_surface(bundle, declaration.implementation_diagnostics)?,
-        snapshot_surface(bundle, declaration.document_mode)?,
-        snapshot_surface(bundle, declaration.tree)?,
-        snapshot_surface(bundle, declaration.patches)?,
+        snapshot_surface(bundle, declaration.tokens, sidecar_policy, file_access)?,
+        snapshot_surface(
+            bundle,
+            declaration.parse_errors,
+            sidecar_policy,
+            file_access,
+        )?,
+        snapshot_surface(
+            bundle,
+            declaration.implementation_diagnostics,
+            sidecar_policy,
+            file_access,
+        )?,
+        snapshot_surface(
+            bundle,
+            declaration.document_mode,
+            sidecar_policy,
+            file_access,
+        )?,
+        snapshot_surface(bundle, declaration.tree, sidecar_policy, file_access)?,
+        snapshot_surface(bundle, declaration.patches, sidecar_policy, file_access)?,
         if transitions.is_empty() {
             ExpectedSurface::NotDeclared
         } else {
             ExpectedSurface::Compare(transitions)
         },
-        snapshot_surface(bundle, declaration.unsupported_features)?,
-        snapshot_surface(bundle, declaration.final_invariants)?,
+        snapshot_surface(
+            bundle,
+            declaration.unsupported_features,
+            sidecar_policy,
+            file_access,
+        )?,
+        snapshot_surface(
+            bundle,
+            declaration.final_invariants,
+            sidecar_policy,
+            file_access,
+        )?,
     ))
 }
 
 fn snapshot_surface(
     bundle: &FixtureBundle,
     path: Option<String>,
+    sidecar_policy: SidecarValidationPolicy,
+    file_access: &mut impl FixtureFileAccess,
 ) -> Result<ExpectedSurface<SnapshotPath>, FixtureLoadError> {
     let Some(path) = path else {
         return Ok(ExpectedSurface::NotDeclared);
     };
     validate_relative_path(&path).map_err(|kind| bundle_error(bundle, kind))?;
-    read_regular_file(bundle, &path)?;
+    sidecar_policy.validate_declared_sidecar(bundle, &path, file_access)?;
     Ok(ExpectedSurface::Compare(SnapshotPath::validated(path)))
 }
 
@@ -912,19 +1243,19 @@ fn map_capability(
 fn map_expected_failure(value: ExpectedFailureDeclaration) -> ExpectedFailureClassification {
     match value {
         ExpectedFailureDeclaration::TokenSnapshotRead => ExpectedFailureClassification::Execution(
-            ExecutionFailureClass::SnapshotRead(ExpectationSurface::Tokens),
+            LegacyExecutionFailureClass::SnapshotRead(ExpectationSurface::Tokens),
         ),
         ExpectedFailureDeclaration::TokenSnapshotFormat => {
-            ExpectedFailureClassification::Execution(ExecutionFailureClass::SnapshotFormat(
+            ExpectedFailureClassification::Execution(LegacyExecutionFailureClass::SnapshotFormat(
                 ExpectationSurface::Tokens,
             ))
         }
         ExpectedFailureDeclaration::TokenizerDriver => {
-            ExpectedFailureClassification::Execution(ExecutionFailureClass::TokenizerDriver)
+            ExpectedFailureClassification::Execution(LegacyExecutionFailureClass::TokenizerDriver)
         }
         ExpectedFailureDeclaration::ValidatedFixtureInvariant => {
             ExpectedFailureClassification::Execution(
-                ExecutionFailureClass::ValidatedFixtureInvariant,
+                LegacyExecutionFailureClass::ValidatedFixtureInvariant,
             )
         }
         ExpectedFailureDeclaration::TokensMismatch => {
@@ -1035,6 +1366,39 @@ fn map_expected_failure(value: ExpectedFailureDeclaration) -> ExpectedFailureCla
             ExpectedFailureClassification::InvariantFailure(InvariantFailureCode::LiveTreeMismatch)
         }
     }
+}
+
+fn map_final_invariant(
+    bundle: &FixtureBundle,
+    code: &str,
+) -> Result<InvariantFailureCode, FixtureLoadError> {
+    let value = match code {
+        "decoder-carry-not-empty" => InvariantFailureCode::DecoderCarryNotEmpty,
+        "preprocessing-not-flushed" => InvariantFailureCode::PreprocessingNotFlushed,
+        "eof-emission-invalid" => InvariantFailureCode::EofEmissionInvalid,
+        "pending-tokenizer-construct" => InvariantFailureCode::PendingTokenizerConstruct,
+        "tokenizer-output-unaccounted" => InvariantFailureCode::TokenizerOutputUnaccounted,
+        "pending-table-text" => InvariantFailureCode::PendingTableText,
+        "invalid-insertion-mode" => InvariantFailureCode::InvalidInsertionMode,
+        "open-elements-inconsistent" => InvariantFailureCode::OpenElementsInconsistent,
+        "active-formatting-inconsistent" => InvariantFailureCode::ActiveFormattingInconsistent,
+        "template-modes-inconsistent" => InvariantFailureCode::TemplateModesInconsistent,
+        "form-pointer-invalid" => InvariantFailureCode::FormPointerInvalid,
+        "parent-child-relationship-invalid" => InvariantFailureCode::ParentChildRelationshipInvalid,
+        "namespace-relationship-invalid" => InvariantFailureCode::NamespaceRelationshipInvalid,
+        "template-association-invalid" => InvariantFailureCode::TemplateAssociationInvalid,
+        "patch-materialization-incomplete" => InvariantFailureCode::PatchMaterializationIncomplete,
+        "live-tree-mismatch" => InvariantFailureCode::LiveTreeMismatch,
+        _ => {
+            return Err(bundle_error(
+                bundle,
+                FixtureLoadErrorKind::InvalidDisposition(
+                    "unknown final-invariant code".to_string(),
+                ),
+            ));
+        }
+    };
+    Ok(value)
 }
 
 fn validate_skip_classification(
@@ -1178,7 +1542,8 @@ fn require_non_active_capability(
         return Err(bundle_error(
             bundle,
             FixtureLoadErrorKind::InvalidDisposition(format!(
-                "completed Milestone AE capability {capability:?} cannot use {disposition}"
+                "completed Milestone AE capability {} cannot use {disposition}",
+                capability_name(capability)
             )),
         ));
     }
@@ -1190,21 +1555,23 @@ fn require_non_active_failure(
     failure: &ExpectedFailureClassification,
 ) -> Result<(), FixtureLoadError> {
     let capability = match failure {
-        ExpectedFailureClassification::Execution(ExecutionFailureClass::SnapshotRead(surface))
-        | ExpectedFailureClassification::Execution(ExecutionFailureClass::SnapshotFormat(
+        ExpectedFailureClassification::Execution(LegacyExecutionFailureClass::SnapshotRead(
+            surface,
+        ))
+        | ExpectedFailureClassification::Execution(LegacyExecutionFailureClass::SnapshotFormat(
             surface,
         ))
         | ExpectedFailureClassification::ExpectationMismatch(surface) => {
             Some(FixtureCapability::Expectation(*surface))
         }
-        ExpectedFailureClassification::Execution(ExecutionFailureClass::TokenizerDriver) => {
+        ExpectedFailureClassification::Execution(LegacyExecutionFailureClass::TokenizerDriver) => {
             Some(FixtureCapability::Expectation(ExpectationSurface::Tokens))
         }
         ExpectedFailureClassification::InvariantFailure(_) => Some(FixtureCapability::Expectation(
             ExpectationSurface::FinalInvariants,
         )),
         ExpectedFailureClassification::Execution(
-            ExecutionFailureClass::ValidatedFixtureInvariant,
+            LegacyExecutionFailureClass::ValidatedFixtureInvariant,
         ) => None,
     };
     let Some(capability) = capability else {

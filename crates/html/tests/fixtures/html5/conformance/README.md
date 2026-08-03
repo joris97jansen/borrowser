@@ -1,6 +1,6 @@
 # Canonical HTML Parser Conformance Fixtures
 
-This is the native fixture root for `borrowser-html-parser-fixture-v1`. Discovery
+This is the native fixture root for `borrowser-html-parser-fixture-v2`. Discovery
 is recursive and sorted by normalized repository-relative bundle path. Add a
 directory containing `fixture.toml`, exact input, and declared snapshots; no Rust
 registration is required.
@@ -12,7 +12,7 @@ directory containing `fixture.toml` is a leaf; nested bundles are rejected.
 Native fixtures in this directory must be `source = native` and
 `disposition.status = active`. Xfail, skip, and expected-unsupported entries
 belong only to later external/adapted inputs or a separately identified
-quarantine source. Fixture-v1 permits skips only for an exact unsupported
+quarantine source. Fixture-v2 permits skips only for an exact unsupported
 capability; broad external-source and environment skips are rejected.
 
 Use `input.html` only for valid UTF-8 input whose intended checkout form has LF
@@ -21,11 +21,19 @@ byte delivery, and any byte-sensitive case. `input.html` containing a carriage
 return is rejected. Always update the mandatory SHA-256 from the exact stored
 bytes; the loader never trims input.
 
-AE13a executes only whole-input standalone-tokenizer fixtures with a declared
-`tokens.txt` in `html5-token-v1`. Other fixture-v1 surfaces are declarable but
-fail explicitly as unsupported expectations until their owning AE13 slice lands.
+AE13b5 executes supported whole-input standalone-tokenizer and document
+fixtures from typed canonical observations. Ordinary surfaces are unioned on
+the reference delivery; transition expectations may name another declared
+whole delivery. Each planned delivery executes once. Unused declared whole
+deliveries are capability-checked but do not execute.
 
-See `docs/html5/parser-fixture-format-v1.md` for the complete schema and
+Canonical sidecars use the exact AE13b5 formats, including `html5-token-v2`,
+`html5-dom-v3`, and `html5-dompatch-v3`. Header-only diagnostic, transition,
+unsupported-feature, tree, and patch snapshots represent requested empty
+collections. Fixture-v1 remains an isolated compatibility format.
+
+See `docs/html5/parser-fixture-format-v2.md` and
+`docs/html5/ae13b5-parser-snapshot-formats.md` for the schema/codecs, and
 `docs/html5/ae13-parser-conformance-regression-harness.md` for ownership and
 slice boundaries.
 

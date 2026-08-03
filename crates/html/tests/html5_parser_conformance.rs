@@ -40,4 +40,35 @@ fn canonical_parser_conformance_corpus_executes_every_discovered_fixture() {
             ObservedToken::Eof,
         ])
     );
+
+    let structured = reports
+        .iter()
+        .find(|report| report.fixture_id().as_str() == "document-structured-observations")
+        .expect("structured document fixture report must exist");
+    assert_eq!(
+        structured
+            .delivery_results()
+            .iter()
+            .map(|delivery| delivery.delivery().as_str())
+            .collect::<Vec<_>>(),
+        ["whole", "trace-whole"]
+    );
+    let whole = structured.delivery_results()[0].result();
+    assert!(matches!(whole.transitions, ObservationState::NotRequested));
+    assert!(matches!(whole.tree, ObservationState::Captured(_)));
+    let trace = structured.delivery_results()[1].result();
+    assert!(matches!(trace.transitions, ObservationState::Captured(_)));
+    assert!(matches!(trace.tree, ObservationState::NotRequested));
+
+    let unsupported = reports
+        .iter()
+        .find(|report| report.fixture_id().as_str() == "document-unsupported-features")
+        .expect("unsupported-feature fixture report must exist");
+    assert_eq!(unsupported.delivery_results().len(), 1);
+    let unioned = unsupported.delivery_results()[0].result();
+    assert!(matches!(unioned.transitions, ObservationState::Captured(_)));
+    assert!(matches!(
+        unioned.unsupported_features,
+        ObservationState::Captured(_)
+    ));
 }

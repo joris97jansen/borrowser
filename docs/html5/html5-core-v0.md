@@ -701,3 +701,19 @@ Any change to supported/unsupported status MUST update all of:
 3. acceptance fixtures and/or WPT manifest policy as applicable.
 
 Without those updates, behavior changes are non-contractual and must not be treated as stabilized API/engine behavior.
+
+## AE13b5 Canonical Fixture Serialization Boundary
+
+Fixture v2 is the native serialized regression boundary for the AE13b1-b4
+observations. Test support executes the production tokenizer or document parser
+once per planned whole Unicode-scalar delivery, validates authoritative states,
+then writes explicit versioned token, diagnostic, mode, tree, patch, transition,
+and unsupported-feature snapshots. No textual reader reconstructs tokenizer,
+tree-construction, namespace, document-mode, patch-order, transition, or
+unsupported-feature semantics.
+
+The native token format is `html5-token-v2`; quoted semantic names keep an
+absent optional name distinct from the literal string `null`. V1 remains a
+legacy compatibility format. Final invariants, chunk parity, fragments,
+scripting, external adapters, blessing, rendering integration, and public APIs
+remain outside AE13b5.

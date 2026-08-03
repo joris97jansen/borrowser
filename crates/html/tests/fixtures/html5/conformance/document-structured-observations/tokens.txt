@@ -1,0 +1,13 @@
+# format: html5-token-v2
+TOKEN ordinal=1 kind=doctype name="html" public-id=null system-id=null force-quirks=false
+TOKEN ordinal=2 kind=start-tag name="template" self-closing=false
+TOKEN_ATTRIBUTE token=2 index=0 name="id" value="t"
+TOKEN ordinal=3 kind=start-tag name="svg" self-closing=false
+TOKEN_ATTRIBUTE token=3 index=0 name="viewbox" value="0 0 1 1"
+TOKEN ordinal=4 kind=start-tag name="title" self-closing=false
+TOKEN ordinal=5 kind=character data="x"
+TOKEN ordinal=6 kind=end-tag name="title"
+TOKEN ordinal=7 kind=end-tag name="svg"
+TOKEN ordinal=8 kind=end-tag name="template"
+TOKEN ordinal=9 kind=character data="\n"
+TOKEN ordinal=10 kind=eof
