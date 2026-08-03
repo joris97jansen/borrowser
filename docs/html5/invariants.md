@@ -385,3 +385,50 @@ Table cell and AFE interaction:
 - DOM identity does not imply retained render identity. Selector indexing
   ignores the non-element; Layout records central PI suppression; Paint
   receives no PI artifact.
+
+## AE13b5 Snapshot and Fixture-Runner Invariants
+
+- A minimal format envelope selects the exact fixture-v1 or fixture-v2 strict
+  schema. The loader never probes schemas and never treats the envelope as a
+  permissive shared declaration.
+- Fixture-v1 grammar and scalar failure identities retain their original
+  interpretation. Fixture-v2 structured identities cannot reinterpret them.
+- A validated skipped fixture-v2 produces its exact `NotExecuted`
+  classification after metadata-only sidecar validation, without opening or
+  reading sidecar contents, planning deliveries, executing the parser,
+  serializing, comparing, or exposing canonical results. Non-skipped v2
+  execution reads content only in the ordered sidecar phase. Fixture-v1 retains
+  its legacy validation-time full reads, including for skipped fixtures, and
+  its token runner's execution-time reread.
+- Required unknown extensions are selected in ASCII lexicographic ID order.
+- Every declared delivery is capability-checked. Only planned deliveries run,
+  and each runs once with one request containing the union of its surfaces.
+- Every planned execution and requested state must be authoritative before any
+  serialization or comparison. Incomplete outcomes retain delivery, surface,
+  typed reason, retained count, and dropped count; retained prefixes never
+  serialize or compare. Unrequested incomplete capture is a distinct impossible
+  runner state.
+- Snapshot surface and format are sealed by surface-specific parsed and
+  canonical newtypes with codec-private constructors. Writers consume only
+  `CanonicalParserResult`; readers validate grammar and local framing, not
+  parser algorithms. One backing string plus record ranges avoids duplicated
+  owned record text.
+- Canonical tree writing and reading are iterative. The writer preserves
+  canonical preorder and template boundaries without native-stack recursion;
+  lexical paths accept any sequence of complete canonical `/child[n]` and
+  `/contents` segments, including repeated contents segments for nested
+  templates. The independent reader framing state enforces parent-before-child,
+  immediate attributes, contiguous local indices, and one ordinary/content
+  phase per template host without deciding whether the tree is browser-correct.
+- Canonical patch labels are quoted `node-<positive-canonical-decimal>` values;
+  operation ordinals and attribute indices use canonical decimals before
+  conversion.
+- Completed reports are all-or-nothing and v2 owns each delivery result once.
+  The first mismatch follows the fixed documented surface and
+  transition-delivery order and retains the exact failing delivery.
+- One fixture-v2 failure spelling codec owns both declaration parsing and
+  diagnostic formatting for every nested parser-observation identity and
+  validated-runner invariant.
+- Canonical tree guardrail accounting counts parser-created structural units
+  plus typed template contents. Attributes and the outer `ObservedTree` wrapper
+  do not consume tree units.

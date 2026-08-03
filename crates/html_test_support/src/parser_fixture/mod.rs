@@ -1,5 +1,8 @@
 mod disposition;
+mod execution;
+mod failure_spelling;
 mod load;
+mod mismatch;
 mod model;
 mod runner;
 mod schema;
@@ -9,9 +12,10 @@ pub use load::{
     FixtureLoadError, FixtureLoadErrorKind, FixtureRepository, FixtureRepositoryPolicy,
     discover_and_load,
 };
+pub(crate) use model::ExpectationSurface;
 pub use model::{
-    DeliveryName, DispositionEvaluation, FixtureId, FixtureRunReport, FixtureSourceKind,
-    ParserTargetKind, ScriptingMode, SnapshotPath,
+    DeliveryName, DispositionEvaluation, FixtureDeliveryRunReport, FixtureId, FixtureRunReport,
+    FixtureSourceKind, ParserTargetKind, ScriptingMode, SnapshotPath,
 };
 pub use runner::{
     FixtureCorpusFailure, FixtureCorpusRunError, FixtureRunError, run_fixture, run_fixture_corpus,

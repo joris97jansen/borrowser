@@ -1,0 +1,2 @@
+# format: html5-implementation-diagnostics-v1
+IMPLEMENTATION_DIAGNOSTIC occurrence=1 stage=tree-construction code=tree-construction:non-void-html-self-closing-flag-altered-stack-disposition payload=none position=unavailable:parser-did-not-provide-position context=present context-token=start-tag context-mode=in-body context-namespace=html

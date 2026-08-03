@@ -338,6 +338,30 @@ mod tests {
     }
 
     #[test]
+    fn html5_token_v1_reader_preserves_legacy_physical_acceptance() {
+        let compatibility =
+            b"# preliminary comment\r\n\r\nCHAR text=\"x\"\r\nEOF\r\n# format: html5-token-v1";
+        assert_eq!(
+            read_html5_token_v1(compatibility),
+            Ok(vec!["CHAR text=\"x\"".to_string(), "EOF".to_string()])
+        );
+        assert_eq!(
+            read_html5_token_v1(b"# format: html5-token-v1\nEOF"),
+            Ok(vec!["EOF".to_string()])
+        );
+        assert!(matches!(
+            read_html5_token_v1(b"\xEF\xBB\xBF# format: html5-token-v1\nEOF\n"),
+            Err(TokenSnapshotReadError::MalformedTokenLine { line: 1, .. })
+        ));
+        assert!(matches!(
+            read_html5_token_v1(
+                b"# format: html5-token-v1\nEOF\n# trailing comment\nCHAR text=\"x\"\n"
+            ),
+            Err(TokenSnapshotReadError::ContentAfterEof { line: 4 })
+        ));
+    }
+
+    #[test]
     fn html5_token_v1_reader_rejects_malformed_content() {
         assert!(matches!(
             read_html5_token_v1(b"# format: html5-token-v1\nTOKEN???\nEOF\n"),

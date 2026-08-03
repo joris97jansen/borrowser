@@ -24,8 +24,9 @@ pub use crate::html5::shared::{
 };
 pub use execution::{
     ObservationRequest, ObservationReservationSite, ObservationResourceExhaustion,
-    ParserObservationExecutionError, ParserObservationInput, ParserObservationInvariantError,
-    ParserObservationRequest, ParserObservationTarget, ParserTokenizerInvariantError,
+    ParserFatalIdentity, ParserObservationExecutionError, ParserObservationExecutionIdentity,
+    ParserObservationInput, ParserObservationInvariantError, ParserObservationRequest,
+    ParserObservationTarget, ParserReservationSiteIdentity, ParserTokenizerInvariantError,
     ScalarObservationRequest, UnsupportedFeatureObservationInvariantError,
     execute_parser_observation,
 };

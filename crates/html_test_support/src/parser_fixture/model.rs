@@ -1,8 +1,17 @@
 use html::ElementNamespace;
-use html::conformance::{CanonicalParserResult, InvariantFailureCode};
+use html::conformance::{
+    CanonicalParserResult, InvariantFailureCode, ParserObservationExecutionIdentity,
+};
 use std::path::PathBuf;
 
 pub const FIXTURE_FORMAT_V1: &str = "borrowser-html-parser-fixture-v1";
+pub const FIXTURE_FORMAT_V2: &str = "borrowser-html-parser-fixture-v2";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FixtureFormatVersion {
+    V1,
+    V2,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FixtureId(String);
@@ -399,7 +408,7 @@ pub(super) enum FixtureCapability {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum ExpectationSurface {
+pub(crate) enum ExpectationSurface {
     Tokens,
     ParseErrors,
     ImplementationDiagnostics,
@@ -411,19 +420,69 @@ pub(super) enum ExpectationSurface {
     FinalInvariants,
 }
 
+impl ExpectationSurface {
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Self::Tokens => "tokens",
+            Self::ParseErrors => "parse-errors",
+            Self::ImplementationDiagnostics => "implementation-diagnostics",
+            Self::DocumentMode => "document-mode",
+            Self::Tree => "tree",
+            Self::Patches => "patches",
+            Self::Transitions => "transitions",
+            Self::UnsupportedFeatures => "unsupported-features",
+            Self::FinalInvariants => "final-invariants",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum ExpectedFailureClassification {
-    Execution(ExecutionFailureClass),
+    Execution(LegacyExecutionFailureClass),
     ExpectationMismatch(ExpectationSurface),
     InvariantFailure(InvariantFailureCode),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum LegacyExecutionFailureClass {
+    SnapshotRead(ExpectationSurface),
+    SnapshotFormat(ExpectationSurface),
+    TokenizerDriver,
+    ValidatedFixtureInvariant,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ExecutionFailureClass {
     SnapshotRead(ExpectationSurface),
     SnapshotFormat(ExpectationSurface),
-    TokenizerDriver,
-    ValidatedFixtureInvariant,
+    ParserObservation(ParserObservationFailureClass),
+    ValidatedFixtureInvariant(ValidatedFixtureInvariantCode),
+}
+
+pub(super) type ParserObservationFailureClass = ParserObservationExecutionIdentity;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ValidatedFixtureInvariantCode {
+    PlannedReferenceDeliveryMissing,
+    PlannedDeliveryMissing,
+    DuplicatePlannedDelivery,
+    RequestedSurfaceUnexpectedlyNotRequested,
+    RequestedSurfaceUnexpectedlyNotApplicable,
+    UnrequestedSurfaceUnexpectedlyCaptured,
+    UnrequestedSurfaceUnexpectedlyIncomplete,
+    SnapshotVariantSurfaceContradiction,
+    CanonicalSerializerSurfaceContradiction,
+    ComparisonSurfaceContradiction,
+    MissingExecutedDeliveryResult,
+    DuplicateExecutedDeliveryResult,
+    DuplicateExpectationIdentity,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum ExpectedFailureClassificationV2 {
+    Execution(ExecutionFailureClass),
+    ExpectationMismatch(ExpectationSurface),
+    FinalInvariant(InvariantFailureCode),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -450,6 +509,11 @@ pub(super) enum FixtureDisposition {
         failure: ExpectedFailureClassification,
         reference: DispositionReference,
     },
+    ExpectedFailureV2 {
+        reason: String,
+        failure: ExpectedFailureClassificationV2,
+        reference: DispositionReference,
+    },
     Skipped {
         reason: String,
         classification: SkipClassification,
@@ -459,12 +523,23 @@ pub(super) enum FixtureDisposition {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum FixtureExecutionOutcome {
-    NotExecuted,
+    NotExecuted {
+        classification: SkipClassification,
+    },
     Completed {
         result: Box<CanonicalParserResult>,
     },
+    CompletedV2 {
+        deliveries: Vec<FixtureDeliveryRunReport>,
+        reference_delivery: Option<DeliveryName>,
+    },
     ExpectationMismatch {
         result: Box<CanonicalParserResult>,
+        surface: ExpectationSurface,
+        diff: String,
+    },
+    ExpectationMismatchV2 {
+        delivery: DeliveryName,
         surface: ExpectationSurface,
         diff: String,
     },
@@ -475,6 +550,10 @@ pub(super) enum FixtureExecutionOutcome {
         capability: FixtureCapability,
     },
     ExecutionFailed {
+        class: LegacyExecutionFailureClass,
+        message: String,
+    },
+    ExecutionFailedV2 {
         class: ExecutionFailureClass,
         message: String,
     },
@@ -484,6 +563,13 @@ pub(super) enum FixtureExecutionOutcome {
     },
     IncompleteObservation {
         result: Box<CanonicalParserResult>,
+    },
+    IncompleteObservationV2 {
+        delivery: DeliveryName,
+        surface: ExpectationSurface,
+        reason: html::conformance::IncompleteObservationReason,
+        retained: usize,
+        dropped: u64,
     },
 }
 
@@ -498,7 +584,35 @@ pub struct FixtureRunReport {
     fixture_id: FixtureId,
     repository_relative_path: String,
     disposition: DispositionEvaluation,
-    result: Option<CanonicalParserResult>,
+    completed_results: Option<CompletedFixtureResults>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum CompletedFixtureResults {
+    V1(Box<CanonicalParserResult>),
+    V2 {
+        reference_delivery: Option<DeliveryName>,
+        deliveries: Vec<FixtureDeliveryRunReport>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FixtureDeliveryRunReport {
+    delivery: DeliveryName,
+    result: CanonicalParserResult,
+}
+
+impl FixtureDeliveryRunReport {
+    pub(super) fn new(delivery: DeliveryName, result: CanonicalParserResult) -> Self {
+        Self { delivery, result }
+    }
+
+    pub fn delivery(&self) -> &DeliveryName {
+        &self.delivery
+    }
+    pub fn result(&self) -> &CanonicalParserResult {
+        &self.result
+    }
 }
 
 impl FixtureRunReport {
@@ -512,7 +626,25 @@ impl FixtureRunReport {
             fixture_id,
             repository_relative_path,
             disposition,
-            result,
+            completed_results: result.map(|result| CompletedFixtureResults::V1(Box::new(result))),
+        }
+    }
+
+    pub(super) fn new_v2(
+        fixture_id: FixtureId,
+        repository_relative_path: String,
+        disposition: DispositionEvaluation,
+        reference_delivery: Option<&DeliveryName>,
+        delivery_results: Vec<FixtureDeliveryRunReport>,
+    ) -> Self {
+        Self {
+            fixture_id,
+            repository_relative_path,
+            disposition,
+            completed_results: Some(CompletedFixtureResults::V2 {
+                reference_delivery: reference_delivery.cloned(),
+                deliveries: delivery_results,
+            }),
         }
     }
 
@@ -529,6 +661,24 @@ impl FixtureRunReport {
     }
 
     pub fn result(&self) -> Option<&CanonicalParserResult> {
-        self.result.as_ref()
+        match self.completed_results.as_ref()? {
+            CompletedFixtureResults::V1(result) => Some(result),
+            CompletedFixtureResults::V2 {
+                reference_delivery,
+                deliveries,
+            } => reference_delivery.as_ref().and_then(|reference| {
+                deliveries
+                    .iter()
+                    .find(|delivery| delivery.delivery() == reference)
+                    .map(FixtureDeliveryRunReport::result)
+            }),
+        }
+    }
+
+    pub fn delivery_results(&self) -> &[FixtureDeliveryRunReport] {
+        match &self.completed_results {
+            Some(CompletedFixtureResults::V2 { deliveries, .. }) => deliveries,
+            Some(CompletedFixtureResults::V1(_)) | None => &[],
+        }
     }
 }

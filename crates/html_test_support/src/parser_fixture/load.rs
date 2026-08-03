@@ -1,6 +1,6 @@
-use super::model::{FixtureBundle, FixtureId};
-use super::schema::FixtureFileV1;
-use super::validate::{ValidatedFixtureSpec, validate_fixture};
+use super::model::{FIXTURE_FORMAT_V1, FIXTURE_FORMAT_V2, FixtureBundle, FixtureId};
+use super::schema::{FixtureFileV1, FixtureFileV2, FixtureFormatEnvelope};
+use super::validate::{ValidatedFixtureSpec, validate_fixture_v1, validate_fixture_v2};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -16,6 +16,41 @@ pub struct FixtureRepository {
     pub repository_root: PathBuf,
     pub fixture_root: PathBuf,
     pub policy: FixtureRepositoryPolicy,
+}
+
+pub(super) trait FixtureFileAccess {
+    fn validate_regular_file_metadata(
+        &mut self,
+        bundle: &FixtureBundle,
+        relative: &str,
+    ) -> Result<(), FixtureLoadError>;
+
+    fn read_regular_file(
+        &mut self,
+        bundle: &FixtureBundle,
+        relative: &str,
+    ) -> Result<Vec<u8>, FixtureLoadError>;
+}
+
+#[derive(Default)]
+pub(super) struct ProductionFixtureFileAccess;
+
+impl FixtureFileAccess for ProductionFixtureFileAccess {
+    fn validate_regular_file_metadata(
+        &mut self,
+        bundle: &FixtureBundle,
+        relative: &str,
+    ) -> Result<(), FixtureLoadError> {
+        validate_regular_file_metadata(bundle, relative)
+    }
+
+    fn read_regular_file(
+        &mut self,
+        bundle: &FixtureBundle,
+        relative: &str,
+    ) -> Result<Vec<u8>, FixtureLoadError> {
+        read_regular_file(bundle, relative)
+    }
 }
 
 impl FixtureRepository {
@@ -75,7 +110,7 @@ impl std::fmt::Display for FixtureLoadError {
             }
             FixtureLoadErrorKind::Io(message) => write!(f, "I/O error: {message}"),
             FixtureLoadErrorKind::InvalidFixtureToml(message) => {
-                write!(f, "invalid fixture-v1 TOML: {message}")
+                write!(f, "invalid versioned fixture TOML: {message}")
             }
             FixtureLoadErrorKind::UnsupportedFixtureFormat(value) => {
                 write!(f, "unsupported fixture format '{value}'")
@@ -155,6 +190,13 @@ impl std::error::Error for FixtureLoadError {}
 pub fn discover_and_load(
     repository: &FixtureRepository,
 ) -> Result<Vec<ValidatedFixtureSpec>, FixtureLoadError> {
+    discover_and_load_with_access(repository, &mut ProductionFixtureFileAccess)
+}
+
+pub(super) fn discover_and_load_with_access(
+    repository: &FixtureRepository,
+    file_access: &mut impl FixtureFileAccess,
+) -> Result<Vec<ValidatedFixtureSpec>, FixtureLoadError> {
     let fixture_root_relative = repository
         .fixture_root
         .strip_prefix(&repository.repository_root)
@@ -194,35 +236,32 @@ pub fn discover_and_load(
     let mut declarations = Vec::with_capacity(bundles.len());
     let mut case_ids = BTreeMap::<String, (String, String)>::new();
     for bundle in bundles {
-        let fixture_toml = read_regular_file(&bundle, "fixture.toml")?;
+        let fixture_toml = file_access.read_regular_file(&bundle, "fixture.toml")?;
         let fixture_text = std::str::from_utf8(&fixture_toml).map_err(|_| FixtureLoadError {
             path: format!("{}/fixture.toml", bundle.repository_relative_path()),
             kind: FixtureLoadErrorKind::InvalidFixtureToml(
                 "fixture metadata must be UTF-8".to_string(),
             ),
         })?;
-        let parsed: FixtureFileV1 =
-            toml::from_str(fixture_text).map_err(|err| FixtureLoadError {
-                path: format!("{}/fixture.toml", bundle.repository_relative_path()),
-                kind: FixtureLoadErrorKind::InvalidFixtureToml(err.to_string()),
-            })?;
-        let folded = parsed.id.to_ascii_lowercase();
+        let parsed = parse_versioned_fixture(fixture_text, &bundle)?;
+        let folded = parsed.id().to_ascii_lowercase();
         if let Some((first_id, first_path)) = case_ids.insert(
             folded,
             (
-                parsed.id.clone(),
+                parsed.id().to_string(),
                 bundle.repository_relative_path().to_string(),
             ),
         ) {
-            let kind = if first_id == parsed.id {
+            let kind = if first_id == parsed.id() {
                 FixtureLoadErrorKind::DuplicateFixtureId(format!(
                     "{} (first declared at {first_path})",
-                    parsed.id
+                    parsed.id()
                 ))
             } else {
                 FixtureLoadErrorKind::CaseCollidingFixtureId(format!(
                     "'{}' at {first_path} and '{}'",
-                    first_id, parsed.id
+                    first_id,
+                    parsed.id()
                 ))
             };
             return Err(FixtureLoadError {
@@ -236,7 +275,14 @@ pub fn discover_and_load(
     let mut loaded = Vec::with_capacity(declarations.len());
     let mut ids = BTreeMap::<FixtureId, String>::new();
     for (bundle, parsed) in declarations {
-        let fixture = validate_fixture(parsed, bundle, repository.policy)?;
+        let fixture = match parsed {
+            ParsedFixtureFile::V1(parsed) => {
+                validate_fixture_v1(parsed, bundle, repository.policy, file_access)?
+            }
+            ParsedFixtureFile::V2(parsed) => {
+                validate_fixture_v2(parsed, bundle, repository.policy, file_access)?
+            }
+        };
         if let Some(first_path) = ids.insert(
             fixture.id().clone(),
             fixture.repository_relative_path().to_string(),
@@ -252,6 +298,55 @@ pub fn discover_and_load(
         loaded.push(fixture);
     }
     Ok(loaded)
+}
+
+#[derive(Clone, Debug)]
+enum ParsedFixtureFile {
+    V1(FixtureFileV1),
+    V2(FixtureFileV2),
+}
+
+impl ParsedFixtureFile {
+    fn id(&self) -> &str {
+        match self {
+            Self::V1(value) => &value.id,
+            Self::V2(value) => &value.id,
+        }
+    }
+}
+
+fn parse_versioned_fixture(
+    fixture_text: &str,
+    bundle: &FixtureBundle,
+) -> Result<ParsedFixtureFile, FixtureLoadError> {
+    let path = format!("{}/fixture.toml", bundle.repository_relative_path());
+    let envelope: FixtureFormatEnvelope =
+        toml::from_str(fixture_text).map_err(|err| FixtureLoadError {
+            path: path.clone(),
+            kind: FixtureLoadErrorKind::InvalidFixtureToml(format!("format envelope: {err}")),
+        })?;
+    match envelope.format.as_str() {
+        FIXTURE_FORMAT_V1 => toml::from_str(fixture_text)
+            .map(ParsedFixtureFile::V1)
+            .map_err(|err| FixtureLoadError {
+                path,
+                kind: FixtureLoadErrorKind::InvalidFixtureToml(format!(
+                    "{FIXTURE_FORMAT_V1}: {err}"
+                )),
+            }),
+        FIXTURE_FORMAT_V2 => toml::from_str(fixture_text)
+            .map(ParsedFixtureFile::V2)
+            .map_err(|err| FixtureLoadError {
+                path,
+                kind: FixtureLoadErrorKind::InvalidFixtureToml(format!(
+                    "{FIXTURE_FORMAT_V2}: {err}"
+                )),
+            }),
+        _ => Err(FixtureLoadError {
+            path,
+            kind: FixtureLoadErrorKind::UnsupportedFixtureFormat(envelope.format),
+        }),
+    }
 }
 
 fn discover_recursive(
@@ -376,6 +471,21 @@ pub(super) fn read_regular_file(
     bundle: &FixtureBundle,
     relative: &str,
 ) -> Result<Vec<u8>, FixtureLoadError> {
+    let current = regular_file_path(bundle, relative)?;
+    fs::read(&current).map_err(|err| FixtureLoadError {
+        path: bundle.repository_relative_path().to_string(),
+        kind: FixtureLoadErrorKind::Io(err.to_string()),
+    })
+}
+
+pub(super) fn validate_regular_file_metadata(
+    bundle: &FixtureBundle,
+    relative: &str,
+) -> Result<(), FixtureLoadError> {
+    regular_file_path(bundle, relative).map(|_| ())
+}
+
+fn regular_file_path(bundle: &FixtureBundle, relative: &str) -> Result<PathBuf, FixtureLoadError> {
     validate_relative_path(relative).map_err(|kind| FixtureLoadError {
         path: bundle.repository_relative_path().to_string(),
         kind,
@@ -419,10 +529,7 @@ pub(super) fn read_regular_file(
             kind: FixtureLoadErrorKind::DeclaredPathNotFile(relative.to_string()),
         });
     }
-    fs::read(&current).map_err(|err| FixtureLoadError {
-        path: bundle.repository_relative_path().to_string(),
-        kind: FixtureLoadErrorKind::Io(err.to_string()),
-    })
+    Ok(current)
 }
 
 pub(super) fn validate_relative_path(relative: &str) -> Result<(), FixtureLoadErrorKind> {

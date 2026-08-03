@@ -421,7 +421,8 @@ Current supported subset:
   independently bounded capture is exposed only through the non-default
   `html::conformance` engine-test boundary; ordinary parser APIs and output are
   unchanged. UTF-8 decoding now uses one chunk-independent constrained state
-  machine, and fixture-v1 serialized diagnostic surfaces remain inactive.
+  machine. Fixture-v1 remains compatibility-only; AE13b5 activates strict
+  fixture-v2 serialized diagnostic surfaces.
 - AE13b2 tree diagnostics and document-mode capture: the same parser-owned
   fanout now records typed tree-construction parse errors, Borrowser
   implementation deviations, and configured tree resource limits at their
@@ -444,9 +445,8 @@ Current supported subset:
   semantic capacity but remain fallibly allocated. Patch capture retains an operation-count prefix,
   assigns first-appearance labels, and validates retained creation history.
   These capacities are not byte budgets, and the existing parser-owned
-  materializer is not claimed to be stack-independent. Canonical serializers,
-  fixture sidecars/corpus migration, and AE13c final invariants remain
-  deferred. AE13b4 adds always-compiled parser-owned tree dispatch transitions
+  materializer is not claimed to be stack-independent. AE13b4 adds
+  always-compiled parser-owned tree dispatch transitions
   and exact unsupported-feature observations. One central event records each
   ordinary HTML, shared-template, Text-mode, or foreign attempt; foreign
   breakout/end fallback uses a visible one-shot HTML-rules-only redispatch.
@@ -459,6 +459,36 @@ Current supported subset:
   implemented by AE13b4. Full doctype classification
   conformance is not claimed. See
   `docs/html5/ae13-parser-conformance-regression-harness.md`.
+- AE13b5 deterministic parser snapshots and fixture diagnostics: native
+  `borrowser-html-parser-fixture-v2` bundles dispatch through an exact typed
+  loader and execute supported whole Unicode-scalar tokenizer/document
+  deliveries once per planned delivery. Requests union ordinary and
+  delivery-specific transition surfaces; every declared delivery is
+  capability-checked, unused supported deliveries do not execute, and
+  incomplete observations never compare. Test support owns strict versioned
+  codecs for tokens v2, diagnostics, document mode, canonical tree v3,
+  canonical patch stream v3, transitions, and unsupported features, with stable
+  first-record mismatch diagnostics. Fixture-v1 parsing, token-v1 acceptance,
+  and scalar failure identities remain unchanged. The focused native corpus
+  covers absent versus literal `null` doctype names, template contents, foreign
+  namespaces, empty requested diagnostics, canonical patch order,
+  delivery-specific transitions, and unsupported-feature identity. AE13c final
+  invariants and parity, broad corpus migration, external adapters, blessing,
+  fragments, scripting, rendering, and public APIs remain deferred. See
+  `docs/html5/parser-fixture-format-v2.md` and
+  `docs/html5/ae13b5-parser-snapshot-formats.md`. Architecture-review hardening
+  now uses iterative stack-safe tree writing, strict preorder/template framing,
+  canonical `node-<positive-decimal>` patch labels, exact incomplete-state
+  identities, single-owner v2 delivery results, injectable private test
+  guardrails, one failure-spelling codec, and surface-specific snapshot types.
+  Nested template paths may contain repeated complete `/contents` segments;
+  lexical validation remains separate from the per-host traversal framing
+  stack. Fixture-v2 sidecars receive metadata-only validation, and the v2
+  runner's ordered execution phase is the sole complete-content read boundary,
+  so skipped v2 fixtures read zero sidecar bytes. Fixture-v1 retains its legacy
+  validation-time full read and execution-time token-sidecar reread.
+  Implementation remains pending formal review and AE13b5 is not yet recorded
+  as closed.
 - AE1 HTML parser ownership architecture: HTML/parser owns tokenizer input
   preprocessing, tokenizer states, typed tokens, parse errors,
   tree-construction state, insertion modes, stack of open elements, active

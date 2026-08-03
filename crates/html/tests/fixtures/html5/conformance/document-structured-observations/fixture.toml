@@ -1,0 +1,46 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "document-structured-observations"
+
+[source]
+kind = "native"
+
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "0da2862be1c0ca4cfcebe04b6619baebf478aa3009bddbfb32d5347cd7e3a1ae"
+
+[execution]
+reference_delivery = "whole"
+
+[execution.target]
+kind = "document"
+scripting = "disabled"
+
+[[execution.deliveries]]
+name = "whole"
+unit = "unicode-scalars"
+strategy = "whole"
+
+[[execution.deliveries]]
+name = "trace-whole"
+unit = "unicode-scalars"
+strategy = "whole"
+
+[expectations]
+tokens = "tokens.txt"
+parse_errors = "parse-errors.txt"
+implementation_diagnostics = "implementation-diagnostics.txt"
+document_mode = "document-mode.txt"
+tree = "tree.txt"
+patches = "patches.txt"
+unsupported_features = "unsupported-features.txt"
+
+[[expectations.transitions]]
+delivery = "trace-whole"
+path = "transitions.trace-whole.txt"
+
+[disposition]
+status = "active"
+
+[metadata]
+description = "Canonical document observations preserve template contents, foreign namespaces, production patch order, and delivery-specific transitions."

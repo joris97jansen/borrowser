@@ -1,0 +1,23 @@
+# format: html5-dompatch-v3
+PATCH operation=1 kind=create-document node="node-1" legacy-doctype=null
+PATCH operation=2 kind=create-document-type node="node-2" name="html" public-id=null system-id=null
+PATCH operation=3 kind=append-child parent="node-1" child="node-2"
+PATCH operation=4 kind=create-element node="node-3" namespace=html local-name="html"
+PATCH operation=5 kind=append-child parent="node-1" child="node-3"
+PATCH operation=6 kind=create-element node="node-4" namespace=html local-name="head"
+PATCH operation=7 kind=append-child parent="node-3" child="node-4"
+PATCH operation=8 kind=create-element node="node-5" namespace=html local-name="template"
+PATCH_ATTRIBUTE operation=8 index=0 namespace=none prefix=null local-name="id" value="t"
+PATCH operation=9 kind=create-template-contents host="node-5" contents="node-6"
+PATCH operation=10 kind=append-child parent="node-4" child="node-5"
+PATCH operation=11 kind=create-element node="node-7" namespace=svg local-name="svg"
+PATCH_ATTRIBUTE operation=11 index=0 namespace=none prefix=null local-name="viewBox" value="0 0 1 1"
+PATCH operation=12 kind=append-child parent="node-6" child="node-7"
+PATCH operation=13 kind=create-element node="node-8" namespace=svg local-name="title"
+PATCH operation=14 kind=append-child parent="node-7" child="node-8"
+PATCH operation=15 kind=create-text node="node-9" text="x"
+PATCH operation=16 kind=append-child parent="node-8" child="node-9"
+PATCH operation=17 kind=create-text node="node-10" text="\n"
+PATCH operation=18 kind=append-child parent="node-4" child="node-10"
+PATCH operation=19 kind=create-element node="node-11" namespace=html local-name="body"
+PATCH operation=20 kind=append-child parent="node-3" child="node-11"

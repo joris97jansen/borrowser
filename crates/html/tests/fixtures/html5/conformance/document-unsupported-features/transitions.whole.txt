@@ -1,0 +1,9 @@
+# format: html5-tree-transitions-v1
+TRANSITION occurrence=1 token-kind=doctype token-name=null token-data=null token-self-closing=null mode-before=initial dispatch=html-insertion-mode:initial mode-after=before-html reprocessed=false
+TRANSITION occurrence=2 token-kind=start-tag token-name="body" token-data=null token-self-closing=false mode-before=before-html dispatch=html-insertion-mode:before-html mode-after=before-head reprocessed=false
+TRANSITION occurrence=3 token-kind=start-tag token-name="body" token-data=null token-self-closing=false mode-before=before-head dispatch=html-insertion-mode:before-head mode-after=in-head reprocessed=true
+TRANSITION occurrence=4 token-kind=start-tag token-name="body" token-data=null token-self-closing=false mode-before=in-head dispatch=html-insertion-mode:in-head mode-after=after-head reprocessed=true
+TRANSITION occurrence=5 token-kind=start-tag token-name="body" token-data=null token-self-closing=false mode-before=after-head dispatch=html-insertion-mode:after-head mode-after=in-body reprocessed=true
+TRANSITION occurrence=6 token-kind=start-tag token-name="body" token-data=null token-self-closing=false mode-before=in-body dispatch=html-insertion-mode:in-body mode-after=in-body reprocessed=false
+TRANSITION occurrence=7 token-kind=character token-name=null token-data="\n" token-self-closing=null mode-before=in-body dispatch=html-insertion-mode:in-body mode-after=in-body reprocessed=false
+TRANSITION occurrence=8 token-kind=eof token-name=null token-data=null token-self-closing=null mode-before=in-body dispatch=html-insertion-mode:in-body mode-after=in-body reprocessed=false

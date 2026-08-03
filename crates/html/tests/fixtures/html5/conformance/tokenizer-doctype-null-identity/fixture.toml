@@ -1,5 +1,5 @@
 format = "borrowser-html-parser-fixture-v2"
-id = "tokenizer-character-data"
+id = "tokenizer-doctype-null-identity"
 
 [source]
 kind = "native"
@@ -7,7 +7,7 @@ kind = "native"
 [input]
 path = "input.html"
 kind = "utf8-text"
-sha256 = "fb91b5863b2d586d53db989dcc88eaeb8f78d6ba8c4d351b0a5ac31172efe592"
+sha256 = "19607cbfde051163f480d2d8b4f27fc03c3046d855a27e2c88c3e261865da2c6"
 
 [execution]
 reference_delivery = "whole"
@@ -27,4 +27,4 @@ tokens = "tokens.txt"
 status = "active"
 
 [metadata]
-description = "Ordinary standalone-tokenizer character data through the canonical AE13 runner."
+description = "Token v2 distinguishes an absent doctype name from the literal name null."

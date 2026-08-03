@@ -1,0 +1,2 @@
+# format: html5-unsupported-features-v1
+UNSUPPORTED_FEATURE occurrence=1 subsystem=tree-construction feature=mark-frameset-not-ok-for-repeated-body-start-tag context-token=start-tag context-mode=in-body context-namespace=html
