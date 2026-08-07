@@ -472,9 +472,9 @@ Current supported subset:
   and scalar failure identities remain unchanged. The focused native corpus
   covers absent versus literal `null` doctype names, template contents, foreign
   namespaces, empty requested diagnostics, canonical patch order,
-  delivery-specific transitions, and unsupported-feature identity. AE13c final
-  invariants and parity, broad corpus migration, external adapters, blessing,
-  fragments, scripting, rendering, and public APIs remain deferred. See
+  delivery-specific transitions, and unsupported-feature identity. Broad corpus
+  migration, external adapters, blessing, fragments, scripting, rendering, and
+  public APIs remain deferred; AE13c parity and final audits are tracked below. See
   `docs/html5/parser-fixture-format-v2.md` and
   `docs/html5/ae13b5-parser-snapshot-formats.md`. Architecture-review hardening
   now uses iterative stack-safe tree writing, strict preorder/template framing,
@@ -489,6 +489,38 @@ Current supported subset:
   validation-time full read and execution-time token-sidecar reread.
   Implementation remains pending formal review and AE13b5 is not yet recorded
   as closed.
+- AE13c whole/chunk parser parity and mandatory final audits: supported
+  fixture-v2 executions now use one authoritative whole-input baseline and a
+  bounded deterministic schedule of declared and representative scalar/byte
+  strategies. UTF-8 scalar coordinates remain scalar ordinals; byte delivery
+  preserves exact stored bytes and may split code points. Semantic aliases
+  execute once with ordered origins and fixture-local ordinals; fixed strategies
+  stream incrementally without boundary vectors. Every applicable canonical
+  surface—tokens, parse errors, implementation diagnostics, document mode,
+  tree, patches, transitions, unsupported features, and final invariants—is
+  compared in fixed order, one candidate at a time. Fixture-v1 remains on its
+  unchanged compatibility path. Production-owned read-only audits cover the
+  decoder/preprocessor, tokenizer EOF lifecycle, insertion modes, SOE, AFE,
+  template modes/diagnostic markers, form pointer, namespaces, template
+  associations, complete patch drain/application, and both live/arena
+  structural and arena/materialized semantic equivalence. Final-audit
+  allocations are fallible typed observation-resource failures at each real
+  reservation, with deterministic occurrence injection; the semantic
+  traversal is iterative with one frame per active ancestor. Typed canonical
+  parity runs before candidate serialization, retains one baseline without a
+  deep clone, and computes boundary digests lazily through streaming SHA-256.
+  AFE/live attributes use exact ordered typed equality distinct from Noah's Ark
+  duplicate equality; marker ownership is marker-kind-specific, residual closed
+  template markers are handled separately, and terminal tokenizer/tree-builder
+  text-mode coordination is audited by the session. Explicit scalar offset
+  resolution reports the fixture-harness resource site
+  `scalar-boundary-execution-offsets`. The private
+  trusted patch arena remains deliberately non-transactional and is discarded
+  immediately on failure. Focused native fixtures cover decoder/preprocessing,
+  tags/attributes, references, EOF, text modes, tables, formatting, forms,
+  templates, foreign integration, and processing instructions. Fragment and
+  scripting execution, external adapters, broad corpus migration, snapshot
+  blessing, rendering, and public parser/DOM APIs remain outside AE13c.
 - AE1 HTML parser ownership architecture: HTML/parser owns tokenizer input
   preprocessing, tokenizer states, typed tokens, parse errors,
   tree-construction state, insertion modes, stack of open elements, active

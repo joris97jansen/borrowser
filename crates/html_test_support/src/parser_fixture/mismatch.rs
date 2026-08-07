@@ -1,6 +1,7 @@
 use super::model::{DeliveryName, ExpectationSurface, SnapshotPath, ValidatedFixtureInvariantCode};
 use super::validate::ValidatedFixtureSpec;
 use crate::parser_snapshot::{CanonicalSnapshot, ParsedSnapshot};
+use html::conformance::CanonicalParserResult;
 use std::fmt::Write;
 
 pub(super) fn compare_snapshots(
@@ -110,7 +111,7 @@ pub(super) fn compare_snapshots(
     Ok(Some(message))
 }
 
-pub(super) const fn comparison_order() -> [ExpectationSurface; 8] {
+pub(super) const fn comparison_order() -> [ExpectationSurface; 9] {
     [
         ExpectationSurface::Tokens,
         ExpectationSurface::ParseErrors,
@@ -120,5 +121,103 @@ pub(super) const fn comparison_order() -> [ExpectationSurface; 8] {
         ExpectationSurface::Patches,
         ExpectationSurface::Transitions,
         ExpectationSurface::UnsupportedFeatures,
+        ExpectationSurface::FinalInvariants,
     ]
+}
+
+/// Compare parser observations as typed canonical values. Snapshot text is a
+/// diagnostic representation only and is intentionally not part of parity
+/// equality.
+pub(super) fn first_typed_parity_mismatch(
+    baseline: &CanonicalParserResult,
+    candidate: &CanonicalParserResult,
+) -> Result<Option<ExpectationSurface>, ValidatedFixtureInvariantCode> {
+    for surface in comparison_order() {
+        let equal = match surface {
+            ExpectationSurface::Tokens => baseline.tokens == candidate.tokens,
+            ExpectationSurface::ParseErrors => baseline.parse_errors == candidate.parse_errors,
+            ExpectationSurface::ImplementationDiagnostics => {
+                baseline.implementation_diagnostics == candidate.implementation_diagnostics
+            }
+            ExpectationSurface::DocumentMode => baseline.document_mode == candidate.document_mode,
+            ExpectationSurface::Tree => baseline.tree == candidate.tree,
+            ExpectationSurface::Patches => baseline.patches == candidate.patches,
+            ExpectationSurface::Transitions => baseline.transitions == candidate.transitions,
+            ExpectationSurface::UnsupportedFeatures => {
+                baseline.unsupported_features == candidate.unsupported_features
+            }
+            ExpectationSurface::FinalInvariants => {
+                baseline.final_invariants == candidate.final_invariants
+            }
+        };
+        if !equal {
+            return Ok(Some(surface));
+        }
+    }
+    Ok(None)
+}
+
+pub(super) fn compare_parity_snapshots(
+    fixture: &ValidatedFixtureSpec,
+    strategy: &str,
+    baseline: &CanonicalSnapshot,
+    candidate: &CanonicalSnapshot,
+) -> Result<Option<String>, ValidatedFixtureInvariantCode> {
+    if baseline.surface() != candidate.surface() || baseline.format() != candidate.format() {
+        return Err(ValidatedFixtureInvariantCode::ComparisonSurfaceContradiction);
+    }
+    let baseline_records = baseline.snapshot();
+    let candidate_records = candidate.snapshot();
+    let shared = baseline_records
+        .record_count()
+        .min(candidate_records.record_count());
+    let first = (0..shared)
+        .find(|index| {
+            baseline_records.record(*index).map(|record| record.line)
+                != candidate_records.record(*index).map(|record| record.line)
+        })
+        .or_else(|| {
+            (baseline_records.record_count() != candidate_records.record_count()).then_some(shared)
+        });
+    let Some(first) = first else {
+        return Ok(None);
+    };
+    let missing = "<missing>";
+    let baseline_record = baseline_records.record(first);
+    let candidate_record = candidate_records.record(first);
+    let location = baseline_record
+        .map(|record| record.location)
+        .or_else(|| candidate_record.map(|record| record.location))
+        .unwrap_or("end of snapshot");
+    let mut message = String::new();
+    let _ = writeln!(&mut message, "fixture: {}", fixture.id().as_str());
+    let _ = writeln!(
+        &mut message,
+        "fixture path: {}",
+        fixture.repository_relative_path()
+    );
+    let _ = writeln!(&mut message, "delivery strategy: {strategy}");
+    let _ = writeln!(
+        &mut message,
+        "canonical surface: {}",
+        baseline.surface().name()
+    );
+    let _ = writeln!(
+        &mut message,
+        "first meaningful difference: record {} ({location})",
+        first + 1
+    );
+    let _ = writeln!(
+        &mut message,
+        "baseline: {}",
+        baseline_record.map(|record| record.line).unwrap_or(missing)
+    );
+    let _ = writeln!(
+        &mut message,
+        "candidate: {}",
+        candidate_record
+            .map(|record| record.line)
+            .unwrap_or(missing)
+    );
+    Ok(Some(message))
 }

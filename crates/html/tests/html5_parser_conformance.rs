@@ -51,14 +51,19 @@ fn canonical_parser_conformance_corpus_executes_every_discovered_fixture() {
             .iter()
             .map(|delivery| delivery.delivery().as_str())
             .collect::<Vec<_>>(),
-        ["whole", "trace-whole"]
+        ["whole"]
     );
     let whole = structured.delivery_results()[0].result();
-    assert!(matches!(whole.transitions, ObservationState::NotRequested));
+    assert!(matches!(whole.transitions, ObservationState::Captured(_)));
     assert!(matches!(whole.tree, ObservationState::Captured(_)));
-    let trace = structured.delivery_results()[1].result();
-    assert!(matches!(trace.transitions, ObservationState::Captured(_)));
-    assert!(matches!(trace.tree, ObservationState::NotRequested));
+    assert_eq!(
+        structured.delivery_results()[0]
+            .aliases()
+            .iter()
+            .map(|alias| alias.as_str())
+            .collect::<Vec<_>>(),
+        ["whole", "trace-whole"]
+    );
 
     let unsupported = reports
         .iter()

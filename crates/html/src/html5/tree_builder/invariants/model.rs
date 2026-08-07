@@ -45,12 +45,12 @@ impl DomInvariantNodeKind {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DomInvariantNode {
-    pub(in crate::html5::tree_builder) kind: DomInvariantNodeKind,
-    pub(in crate::html5::tree_builder) parent: Option<PatchKey>,
-    pub(in crate::html5::tree_builder) children: Vec<PatchKey>,
-    pub(in crate::html5::tree_builder) template_contents: Option<PatchKey>,
-    pub(in crate::html5::tree_builder) fragment_host: Option<PatchKey>,
-    pub(in crate::html5::tree_builder) is_template_element: bool,
+    pub(crate) kind: DomInvariantNodeKind,
+    pub(crate) parent: Option<PatchKey>,
+    pub(crate) children: Vec<PatchKey>,
+    pub(crate) template_contents: Option<PatchKey>,
+    pub(crate) fragment_host: Option<PatchKey>,
+    pub(crate) is_template_element: bool,
 }
 
 impl DomInvariantNode {
@@ -82,8 +82,8 @@ impl DomInvariantNode {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DomInvariantState {
-    pub(in crate::html5::tree_builder) nodes: Vec<Option<DomInvariantNode>>,
-    pub(in crate::html5::tree_builder) root: Option<PatchKey>,
+    pub(crate) nodes: Vec<Option<DomInvariantNode>>,
+    pub(crate) root: Option<PatchKey>,
 }
 
 impl DomInvariantState {

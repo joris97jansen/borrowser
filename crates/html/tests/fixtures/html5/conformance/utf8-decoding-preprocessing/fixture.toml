@@ -1,0 +1,36 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "utf8-decoding-preprocessing"
+
+[source]
+kind = "native"
+
+[input]
+path = "input.bin"
+kind = "raw-bytes"
+sha256 = "7c146e51598f9c7daa770f8c2aacc77fed2e4b82c18e754aff8b3ea5aad4b66b"
+
+[execution]
+reference_delivery = "whole-bytes"
+
+[execution.target]
+kind = "standalone-tokenizer"
+
+[[execution.deliveries]]
+name = "whole-bytes"
+unit = "bytes"
+strategy = "whole"
+
+[[execution.deliveries]]
+name = "declared-byte-splits"
+unit = "bytes"
+strategy = "boundaries"
+boundaries = [1, 2]
+
+[expectations]
+final_invariants = "final-invariants.txt"
+
+[disposition]
+status = "active"
+
+[metadata]
+description = "Raw decoder entry, multibyte UTF-8 splitting, preprocessing, and EOF finalization remain chunk-independent."

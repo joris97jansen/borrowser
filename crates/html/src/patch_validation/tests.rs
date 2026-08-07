@@ -1,6 +1,6 @@
 use super::PatchValidationArena;
 use crate::dom_patch::PatchKey;
-use crate::test_support::html_name;
+use crate::test_support::{html_attribute, html_name};
 use crate::{DomPatch, Node};
 
 #[test]
@@ -37,6 +37,306 @@ fn patch_validation_arena_accepts_valid_batches_and_materializes() {
         crate::Node::Document { children, .. } => assert_eq!(children.len(), 1),
         other => panic!("expected document root, got {other:?}"),
     }
+}
+
+#[cfg(feature = "parser-conformance")]
+#[test]
+fn semantic_compare_wide_tree_uses_ancestor_depth_not_sibling_count() {
+    const WIDTH: u32 = 2_000;
+    let mut patches = Vec::new();
+    patches.push(DomPatch::CreateDocument {
+        key: PatchKey(1),
+        doctype: None,
+    });
+    patches.push(DomPatch::CreateElement {
+        key: PatchKey(2),
+        name: html_name("html"),
+        attributes: Vec::new(),
+    });
+    patches.push(DomPatch::AppendChild {
+        parent: PatchKey(1),
+        child: PatchKey(2),
+    });
+    for offset in 0..WIDTH {
+        let key = PatchKey(3 + offset);
+        patches.push(DomPatch::CreateElement {
+            key,
+            name: html_name("div"),
+            attributes: Vec::new(),
+        });
+        patches.push(DomPatch::AppendChild {
+            parent: PatchKey(2),
+            child: key,
+        });
+    }
+    let mut arena = PatchValidationArena::default();
+    arena.apply_batch(&patches).expect("wide tree batch");
+    let document = arena.materialize().expect("wide tree materialization");
+    let (matches, maximum_depth) = arena
+        .semantic_compare_depth_for_test(&document)
+        .expect("wide semantic traversal");
+    assert!(matches);
+    assert_eq!(maximum_depth, 3);
+}
+
+#[cfg(feature = "parser-conformance")]
+#[test]
+fn semantic_compare_deep_tree_is_iterative_and_tracks_active_ancestors() {
+    const DEPTH: u32 = 300;
+    let mut patches = Vec::new();
+    patches.push(DomPatch::CreateDocument {
+        key: PatchKey(1),
+        doctype: None,
+    });
+    let mut parent = PatchKey(1);
+    for offset in 0..DEPTH {
+        let key = PatchKey(2 + offset);
+        patches.push(DomPatch::CreateElement {
+            key,
+            name: html_name("div"),
+            attributes: Vec::new(),
+        });
+        patches.push(DomPatch::AppendChild { parent, child: key });
+        parent = key;
+    }
+    let mut arena = PatchValidationArena::default();
+    arena.apply_batch(&patches).expect("deep tree batch");
+    let document = arena.materialize().expect("deep tree materialization");
+    let (matches, maximum_depth) = arena
+        .semantic_compare_depth_for_test(&document)
+        .expect("deep semantic traversal");
+    assert!(matches);
+    assert_eq!(maximum_depth, DEPTH as usize + 1);
+}
+
+#[cfg(feature = "parser-conformance")]
+#[test]
+fn semantic_compare_rejects_complete_payload_and_child_order_mismatches() {
+    let patches = vec![
+        DomPatch::CreateDocument {
+            key: PatchKey(1),
+            doctype: Some("legacy-html".to_string()),
+        },
+        DomPatch::CreateDocumentType {
+            key: PatchKey(2),
+            name: Some("html".to_string()),
+            public_id: Some("public".to_string()),
+            system_id: Some("system".to_string()),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(1),
+            child: PatchKey(2),
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(3),
+            name: html_name("html"),
+            attributes: Vec::new(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(1),
+            child: PatchKey(3),
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(4),
+            name: html_name("template"),
+            attributes: vec![
+                html_attribute("a", Some("1")),
+                html_attribute("b", Some("2")),
+            ],
+        },
+        DomPatch::CreateTemplateContents {
+            host: PatchKey(4),
+            contents: PatchKey(5),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(3),
+            child: PatchKey(4),
+        },
+        DomPatch::CreateText {
+            key: PatchKey(6),
+            text: "text".to_string(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(5),
+            child: PatchKey(6),
+        },
+        DomPatch::CreateComment {
+            key: PatchKey(7),
+            text: "inside".to_string(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(5),
+            child: PatchKey(7),
+        },
+        DomPatch::CreateComment {
+            key: PatchKey(8),
+            text: "outside".to_string(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(3),
+            child: PatchKey(8),
+        },
+        DomPatch::CreateProcessingInstruction {
+            key: PatchKey(9),
+            target: "target".to_string(),
+            data: "data".to_string(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(3),
+            child: PatchKey(9),
+        },
+    ];
+    let mut arena = PatchValidationArena::default();
+    arena.apply_batch(&patches).expect("semantic seed batch");
+    let document = arena.materialize().expect("semantic seed materializes");
+    let mut reserve = |_| Ok(());
+    assert!(
+        arena
+            .semantic_equals_materialized_dom_for_final_audit(&document, &mut reserve)
+            .expect("semantic seed comparison")
+    );
+
+    let assert_mismatch = |mutate: &dyn Fn(&mut Node)| {
+        let mut changed = arena.materialize().expect("fresh semantic materialization");
+        mutate(&mut changed);
+        let mut reserve = |_| Ok(());
+        assert!(
+            !arena
+                .semantic_equals_materialized_dom_for_final_audit(&changed, &mut reserve)
+                .expect("mismatch comparison")
+        );
+    };
+
+    assert_mismatch(&|document| {
+        let Node::Document { doctype, .. } = document else {
+            panic!("document root");
+        };
+        *doctype = Some("changed".to_string());
+    });
+    assert_mismatch(&|document| {
+        let Node::Document { children, .. } = document else {
+            panic!("document root");
+        };
+        let Node::DocumentType {
+            name,
+            public_id,
+            system_id,
+            ..
+        } = &mut children[0]
+        else {
+            panic!("doctype child");
+        };
+        *name = Some("changed".to_string());
+        *public_id = Some("changed".to_string());
+        *system_id = Some("changed".to_string());
+    });
+    assert_mismatch(&|document| {
+        let Node::Document { children, .. } = document else {
+            panic!("document root");
+        };
+        let replacement = {
+            let Node::Element { element } = &mut children[1] else {
+                panic!("html child");
+            };
+            Node::new_element(
+                html_name("body"),
+                element.attributes().to_vec(),
+                Vec::new(),
+                std::mem::take(element.children_mut()),
+            )
+        };
+        children[1] = replacement;
+    });
+    assert_mismatch(&|document| {
+        let template = template_element_mut(document);
+        template.attributes_mut().swap(0, 1);
+    });
+    assert_mismatch(&|document| {
+        let template = template_element_mut(document);
+        template.attributes_mut()[0] = html_attribute("a", Some("changed"));
+    });
+    assert_mismatch(&|document| {
+        let contents = template_element_mut(document)
+            .template_contents_mut()
+            .expect("template contents");
+        let Node::Text { text, .. } = &mut contents.children_mut()[0] else {
+            panic!("text child");
+        };
+        text.push_str("-changed");
+    });
+    assert_mismatch(&|document| {
+        let contents = template_element_mut(document)
+            .template_contents_mut()
+            .expect("template contents");
+        let Node::Comment { text, .. } = &mut contents.children_mut()[1] else {
+            panic!("comment child");
+        };
+        text.push_str("-changed");
+    });
+    assert_mismatch(&|document| {
+        let Node::Document { children, .. } = document else {
+            panic!("document root");
+        };
+        let Node::Element { element } = &mut children[1] else {
+            panic!("html child");
+        };
+        element.children_mut().swap(1, 2);
+    });
+    assert_mismatch(&|document| {
+        let Node::Document { children, .. } = document else {
+            panic!("document root");
+        };
+        let Node::Element { element } = &mut children[1] else {
+            panic!("html child");
+        };
+        let Node::ProcessingInstruction {
+            processing_instruction,
+        } = &mut element.children_mut()[2]
+        else {
+            panic!("processing instruction child");
+        };
+        *processing_instruction =
+            crate::types::ProcessingInstructionNode::try_from_parser_created_parts(
+                crate::types::Id::INVALID,
+                "changed".to_string(),
+                "changed".to_string(),
+            )
+            .expect("valid changed processing instruction");
+    });
+    assert_mismatch(&|document| {
+        let contents = template_element_mut(document)
+            .template_contents_mut()
+            .expect("template contents");
+        contents.children_mut().swap(0, 1);
+    });
+    assert_mismatch(&|document| {
+        let Node::Document { children, .. } = document else {
+            panic!("document root");
+        };
+        let Node::Element { element } = &mut children[1] else {
+            panic!("html child");
+        };
+        let attributes = match &element.children()[0] {
+            Node::Element { element } => element.attributes().to_vec(),
+            _ => panic!("template child"),
+        };
+        element.children_mut()[0] =
+            Node::new_element(html_name("template"), attributes, Vec::new(), Vec::new());
+    });
+}
+
+#[cfg(feature = "parser-conformance")]
+fn template_element_mut(document: &mut Node) -> &mut crate::ElementNode {
+    let Node::Document { children, .. } = document else {
+        panic!("document root");
+    };
+    let Node::Element { element: html } = &mut children[1] else {
+        panic!("html child");
+    };
+    let Node::Element { element: template } = &mut html.children_mut()[0] else {
+        panic!("template child");
+    };
+    template
 }
 
 #[test]

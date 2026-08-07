@@ -46,6 +46,10 @@ pub(crate) struct PatchEmitterAdapter {
 }
 
 impl PatchEmitterAdapter {
+    #[cfg(feature = "parser-conformance")]
+    pub(crate) fn buffered_patch_count_for_final_audit(&self) -> usize {
+        self.patches.len()
+    }
     pub(crate) fn new() -> Self {
         Self {
             patches: Vec::new(),

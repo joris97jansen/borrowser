@@ -164,6 +164,21 @@ Strict runtime rule (Core v0):
 - A batch starting with `Clear` must produce a rooted document state by the end
   of the batch (`CreateDocument` required in practice).
 
+The private `PatchValidationArena::apply_batch_trusted` engine path is a narrow
+exception to the rollback mechanism, not to batch ordering or validation. It
+applies in place because the owning parser session treats any failure as
+terminal. A failed trusted application may leave its private arena partially
+updated; the caller must return immediately and must never inspect,
+materialize, audit, expose, or reuse that arena. Public `apply_batch` and
+runtime-facing appliers retain the staged transactional rule above.
+
+AE13c conformance finalization checked-adds the exact drained batch operation
+count, passes that same batch once to `apply_batch_trusted`, and increments the
+successfully applied count only after the complete batch succeeds. Its final
+witness proves complete successful application through equal drained/applied
+counts, terminal empty drain/buffers, and materialization after terminal drain;
+it does not claim that trusted application is transactional.
+
 ## Version Rules
 
 `DomPatchBatch` carries `{ from, to, patches }` and requires:

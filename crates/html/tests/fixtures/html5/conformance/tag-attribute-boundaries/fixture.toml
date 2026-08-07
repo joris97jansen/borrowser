@@ -1,0 +1,28 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "tag-attribute-boundaries"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "13945839303f2c8823b92220d9555060cd18abf2af292d1c709a4cde74d18702"
+[execution]
+reference_delivery = "whole-unicode"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole-unicode"
+unit = "unicode-scalars"
+strategy = "whole"
+[[execution.deliveries]]
+name = "declared-scalar-split"
+unit = "unicode-scalars"
+strategy = "boundaries"
+boundaries = [1]
+[expectations]
+final_invariants = "final-invariants.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "Tag delimiters and ordered attribute names and values remain chunk-independent."

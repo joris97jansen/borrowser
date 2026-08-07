@@ -1,10 +1,14 @@
 use super::disposition::*;
+use super::mismatch::first_typed_parity_mismatch;
 use super::model::*;
-use super::runner::{FixtureFailureDetails, execute_fixture};
+use super::runner::{
+    FixtureFailureDetails, execute_fixture, resolve_scalar_ordinals,
+    with_scalar_boundary_offset_failure, with_serialization_counter,
+};
 use super::*;
 use html::conformance::{
     CanonicalParserResult, IncompleteObservationReason, InvariantFailureCode, ObservationState,
-    ParserObservationExecutionError, ParserObservationRequest,
+    ParserObservationDeliveryError, ParserObservationExecutionError, ParserObservationRequest,
 };
 use ring::digest::{SHA256, digest};
 use std::collections::BTreeSet;
@@ -29,6 +33,129 @@ struct RecordingFileAccess {
 #[derive(Default)]
 struct CountingObservationExecutor {
     calls: usize,
+}
+
+#[test]
+fn scalar_boundary_offset_reservation_failure_is_typed_and_pre_parser() {
+    let error = with_scalar_boundary_offset_failure(|| {
+        resolve_scalar_ordinals("aé", 2, &[1]).expect_err("injected allocation failure")
+    });
+    assert!(matches!(
+        error,
+        super::runner::ResolveExecutionError::ScalarBoundaryOffsets
+    ));
+}
+
+#[test]
+fn scalar_boundary_offset_failure_stops_fixture_runner_before_candidate_parser() {
+    struct CountingProductionExecutor {
+        calls: usize,
+    }
+    impl super::runner::ParserObservationExecutor for CountingProductionExecutor {
+        fn execute(
+            &mut self,
+            request: ParserObservationRequest<'_>,
+        ) -> Result<CanonicalParserResult, ParserObservationExecutionError> {
+            self.calls += 1;
+            html::conformance::execute_parser_observation(request)
+        }
+    }
+
+    let repository = TestRepository::new();
+    let bundle = add_fixture_v2(&repository, "scalar-resource", "scalar-resource", b"hello");
+    rewrite(&bundle.join("fixture.toml"), |text| {
+        text.replace(
+            "[expectations]",
+            "[[execution.deliveries]]\nname = \"split\"\nunit = \"unicode-scalars\"\nstrategy = \"boundaries\"\nboundaries = [1]\n\n[expectations]",
+        )
+    });
+    let fixture = load_single_native_fixture(&repository);
+    let mut executor = CountingProductionExecutor { calls: 0 };
+    let outcome = with_scalar_boundary_offset_failure(|| {
+        super::runner::execute_fixture_v2_with(&fixture, &mut executor)
+    });
+    assert_eq!(
+        executor.calls, 1,
+        "only the whole baseline reaches the parser"
+    );
+    assert!(matches!(
+        &outcome,
+        FixtureExecutionOutcome::ExecutionFailedV2 {
+            class: ExecutionFailureClass::FixtureExecutionResourceExhaustion(
+                FixtureExecutionResourceSite::ScalarBoundaryExecutionOffsets
+            ),
+            ..
+        }
+    ));
+    assert_eq!(
+        super::failure_spelling::execution_failure_name(
+            ExecutionFailureClass::FixtureExecutionResourceExhaustion(
+                FixtureExecutionResourceSite::ScalarBoundaryExecutionOffsets,
+            ),
+        ),
+        "fixture-execution-resource-exhaustion:scalar-boundary-execution-offsets"
+    );
+}
+
+#[test]
+fn validated_fixture_delivery_rejection_is_a_runner_contradiction() {
+    struct RejectingCandidate {
+        calls: usize,
+    }
+    impl super::runner::ParserObservationExecutor for RejectingCandidate {
+        fn execute(
+            &mut self,
+            request: ParserObservationRequest<'_>,
+        ) -> Result<CanonicalParserResult, ParserObservationExecutionError> {
+            self.calls += 1;
+            if self.calls == 1 {
+                return html::conformance::execute_parser_observation(request);
+            }
+            Err(ParserObservationExecutionError::InvalidDelivery(
+                ParserObservationDeliveryError::BoundaryOutOfRange { boundary_index: 7 },
+            ))
+        }
+    }
+
+    let repository = TestRepository::new();
+    let bundle = add_fixture_v2(
+        &repository,
+        "validated-rejection",
+        "validated-rejection",
+        b"hello",
+    );
+    rewrite(&bundle.join("fixture.toml"), |text| {
+        text.replace(
+            "[expectations]",
+            "[[execution.deliveries]]\nname = \"split\"\nunit = \"unicode-scalars\"\nstrategy = \"boundaries\"\nboundaries = [1]\n\n[expectations]",
+        )
+    });
+    let fixture = load_single_native_fixture(&repository);
+    let mut executor = RejectingCandidate { calls: 0 };
+    let outcome = super::runner::execute_fixture_v2_with(&fixture, &mut executor);
+    assert_eq!(
+        executor.calls, 2,
+        "baseline and one rejected candidate execute"
+    );
+    assert!(matches!(
+        &outcome,
+        FixtureExecutionOutcome::ExecutionFailedV2 {
+            class: ExecutionFailureClass::ValidatedFixtureInvariant(
+                ValidatedFixtureInvariantCode::ValidatedBoundaryRejectedByExecutor,
+            ),
+            ..
+        }
+    ));
+    assert_eq!(
+        super::failure_spelling::runner_invariant_name(
+            ValidatedFixtureInvariantCode::ValidatedBoundaryRejectedByExecutor,
+        ),
+        "validated-boundary-rejected-by-executor"
+    );
+    assert!(!matches!(
+        &outcome,
+        FixtureExecutionOutcome::CompletedV2 { .. }
+    ));
 }
 
 impl super::runner::ParserObservationExecutor for CountingObservationExecutor {
@@ -233,6 +360,36 @@ fn fixture_loader_dispatches_exact_v1_and_v2_schemas_before_validation() {
         discover_and_load(&strict.native()).unwrap_err().kind,
         FixtureLoadErrorKind::InvalidFixtureToml(_)
     ));
+}
+
+#[test]
+fn fixture_v1_compatibility_path_has_no_representatives_or_mandatory_final_audit() {
+    use html::conformance::{ParserObservationExecutionError, ParserObservationRequest};
+    struct MustNotExecute;
+    impl super::runner::ParserObservationExecutor for MustNotExecute {
+        fn execute(
+            &mut self,
+            _: ParserObservationRequest<'_>,
+        ) -> Result<CanonicalParserResult, ParserObservationExecutionError> {
+            panic!("fixture-v1 must not enter the fixture-v2 strategy executor")
+        }
+    }
+
+    let repository = TestRepository::new();
+    add_fixture(&repository, "legacy", "legacy", b"hello");
+    let fixture = load_single_native_fixture(&repository);
+    assert!(matches!(
+        fixture.policy(),
+        ValidatedFixturePolicy::V1Compatibility(_)
+    ));
+    let report = super::runner::run_fixture_with_executor(&fixture, &mut MustNotExecute)
+        .expect("existing fixture-v1 bundle remains compatible");
+    let result = report.result().expect("fixture-v1 canonical result");
+    assert!(matches!(
+        result.final_invariants,
+        ObservationState::NotRequested
+    ));
+    assert!(report.delivery_results().is_empty());
 }
 
 #[test]
@@ -480,6 +637,15 @@ fn fixture_v2_failure_spellings_round_trip_exhaustively_through_one_codec() {
             .copied()
             .map(I::ResourceExhaustion),
     );
+    identities.extend(
+        all_delivery_errors()
+            .iter()
+            .copied()
+            .map(I::InvalidDelivery),
+    );
+    for error in all_delivery_errors() {
+        assert_eq!(delivery_error_name(*error), error.diagnostic_name());
+    }
 
     let mut names = BTreeSet::new();
     for identity in identities {
@@ -565,6 +731,43 @@ fn disposition_mismatch_names_exact_expected_and_actual_parser_identities() {
 }
 
 #[test]
+fn fixture_v2_expected_final_invariant_requires_an_exact_singleton() {
+    let disposition = FixtureDisposition::ExpectedFailureV2 {
+        reason: "known final audit failure".to_string(),
+        failure: ExpectedFailureClassificationV2::FinalInvariant(
+            InvariantFailureCode::PendingTableText,
+        ),
+        reference: DispositionReference::TrackingIssue("#ae13c".to_string()),
+    };
+    let exact = FixtureExecutionOutcome::FinalInvariantFailedV2 {
+        strategy: "ordinal=1".to_string(),
+        first_failure: InvariantFailureCode::PendingTableText,
+        failure_count: 1,
+    };
+    assert_eq!(
+        evaluate_disposition(&disposition, &exact),
+        Ok(DispositionEvaluation::Pass)
+    );
+    for outcome in [
+        FixtureExecutionOutcome::FinalInvariantFailedV2 {
+            strategy: "ordinal=1".to_string(),
+            first_failure: InvariantFailureCode::PendingTableText,
+            failure_count: 2,
+        },
+        FixtureExecutionOutcome::FinalInvariantFailedV2 {
+            strategy: "ordinal=1".to_string(),
+            first_failure: InvariantFailureCode::InvalidInsertionMode,
+            failure_count: 1,
+        },
+    ] {
+        assert!(matches!(
+            evaluate_disposition(&disposition, &outcome),
+            Err(DispositionEvaluationError::UnexpectedOutcome { .. })
+        ));
+    }
+}
+
+#[test]
 fn required_unknown_extensions_are_selected_in_ascii_lexicographic_order() {
     fn selected(extension_tables: &str) -> FixtureCapability {
         let repository = TestRepository::new();
@@ -592,7 +795,7 @@ fn required_unknown_extensions_are_selected_in_ascii_lexicographic_order() {
 }
 
 #[test]
-fn fixture_v2_skipped_disposition_short_circuits_malformed_sidecars_and_unsupported_delivery() {
+fn fixture_v2_skipped_disposition_short_circuits_malformed_sidecars_and_execution() {
     use html::conformance::{ParserObservationExecutionError, ParserObservationRequest};
 
     struct CountingExecutor {
@@ -616,7 +819,7 @@ fn fixture_v2_skipped_disposition_short_circuits_malformed_sidecars_and_unsuppor
     fs::write(bundle.join("tokens.txt"), malformed).expect("large malformed sidecar");
     rewrite(&bundle.join("fixture.toml"), |text| {
         format!("{}\n[extensions.\"org.example.required-v1\"]\nrequired = true\nvalue = {{}}\n", text.replace("[source]\nkind = \"native\"", "[source]\nkind = \"external\"\nprovenance = \"upstream/case\"")
-            .replace("strategy = \"whole\"", "strategy = \"boundaries\"\nboundaries = [1]")
+            .replace("[expectations]", "[[execution.deliveries]]\nname = \"chunked\"\nunit = \"unicode-scalars\"\nstrategy = \"boundaries\"\nboundaries = [1]\n\n[expectations]")
             .replace("status = \"active\"", "status = \"skipped\"\nreason = \"chunking deferred\"\nclassification = { kind = \"unsupported-capability\", capability = { kind = \"unicode-scalar-chunking\" } }\nreference = { kind = \"tracking-issue\", value = \"#1\" }"))
     });
     let mut file_access = RecordingFileAccess {
@@ -651,10 +854,10 @@ fn skipped_fixture_precedes_unsupported_raw_input_without_reading_sidecars() {
     impl super::runner::ParserObservationExecutor for CountingExecutor {
         fn execute(
             &mut self,
-            _: ParserObservationRequest<'_>,
+            request: ParserObservationRequest<'_>,
         ) -> Result<CanonicalParserResult, ParserObservationExecutionError> {
             self.0 += 1;
-            Ok(canonical_result())
+            html::conformance::execute_parser_observation(request)
         }
     }
 
@@ -711,10 +914,10 @@ fn active_fixture_reads_each_expected_sidecar_once_after_metadata_validation() {
     impl super::runner::ParserObservationExecutor for CountingExecutor {
         fn execute(
             &mut self,
-            _: ParserObservationRequest<'_>,
+            request: ParserObservationRequest<'_>,
         ) -> Result<CanonicalParserResult, ParserObservationExecutionError> {
             self.0 += 1;
-            Ok(canonical_result())
+            html::conformance::execute_parser_observation(request)
         }
     }
 
@@ -740,7 +943,10 @@ fn active_fixture_reads_each_expected_sidecar_once_after_metadata_validation() {
         }
     ));
     assert_eq!(file_access.content_read_count("tokens.txt"), 1);
-    assert_eq!(executor.0, 0, "snapshot parsing precedes parser execution");
+    assert_eq!(
+        executor.0, 1,
+        "authoritative baseline precedes sidecar parsing"
+    );
 }
 
 #[test]
@@ -764,8 +970,9 @@ fn unsupported_input_and_unknown_extension_precede_malformed_v2_sidecars() {
         .remove(0);
     assert!(matches!(
         execute_fixture(&raw),
-        FixtureExecutionOutcome::UnsupportedFixtureSemantics {
-            capability: FixtureCapability::RawByteInput
+        FixtureExecutionOutcome::ExecutionFailedV2 {
+            class: ExecutionFailureClass::SnapshotFormat(ExpectationSurface::Tokens),
+            ..
         }
     ));
 
@@ -786,22 +993,42 @@ fn unsupported_input_and_unknown_extension_precede_malformed_v2_sidecars() {
 }
 
 #[test]
-fn declared_delivery_capability_and_planned_execution_are_distinct() {
+fn fixture_v2_semantically_aliases_duplicate_declarations_and_executes_chunking() {
     let supported = TestRepository::new();
     let bundle = add_fixture_v2(&supported, "supported", "supported", b"hello");
     rewrite(&bundle.join("fixture.toml"), |text| {
-        text.replace(
-        "[expectations]",
-        "[[execution.deliveries]]\nname = \"unused-whole\"\nunit = \"unicode-scalars\"\nstrategy = \"whole\"\n\n[expectations]",
-    )
+        text.replace("reference_delivery = \"whole\"", "reference_delivery = \"unused-whole\"")
+            .replace(
+                "[expectations]",
+                "[[execution.deliveries]]\nname = \"unused-whole\"\nunit = \"unicode-scalars\"\nstrategy = \"whole\"\n\n[expectations]",
+            )
     });
     let fixture = load_single_native_fixture(&supported);
-    let plan = super::execution::build_delivery_plan(&fixture).expect("plan");
+    assert_eq!(fixture.reference_delivery().as_str(), "unused-whole");
+    let ValidatedFixturePolicy::V2Parity(policy) = fixture.policy() else {
+        panic!("fixture-v2 policy");
+    };
     assert_eq!(
-        plan.iter()
-            .map(|delivery| delivery.name.as_str())
-            .collect::<Vec<_>>(),
-        ["whole"]
+        policy.strategies()[0]
+            .origins
+            .iter()
+            .filter(|origin| matches!(origin, DeliveryStrategyOrigin::Declared(_)))
+            .count(),
+        2
+    );
+    let FixtureExecutionOutcome::CompletedV2 {
+        deliveries,
+        reference_delivery: Some(reference_delivery),
+    } = execute_fixture(&fixture)
+    else {
+        panic!("aliased reference baseline should execute successfully");
+    };
+    assert_eq!(reference_delivery.as_str(), "unused-whole");
+    assert!(
+        deliveries[0]
+            .aliases()
+            .iter()
+            .any(|alias| alias == &reference_delivery)
     );
 
     let unsupported = TestRepository::new();
@@ -815,14 +1042,91 @@ fn declared_delivery_capability_and_planned_execution_are_distinct() {
     let fixture = load_single_native_fixture(&unsupported);
     assert!(matches!(
         execute_fixture(&fixture),
-        FixtureExecutionOutcome::UnsupportedFixtureSemantics {
-            capability: FixtureCapability::UnicodeScalarChunking
-        }
+        FixtureExecutionOutcome::CompletedV2 { .. }
     ));
 }
 
 #[test]
-fn fixture_v2_precedence_rejects_final_invariants_before_malformed_sidecars() {
+fn strategy_semantic_equality_uses_transport_coordinates_not_storage_shape() {
+    use std::num::NonZeroUsize;
+    let scalar_whole = ResolvedDeliveryStrategy {
+        transport: DeliveryTransport::UnicodeScalars,
+        coordinate_space: DeliveryCoordinateSpace::UnicodeScalarOrdinals,
+        input_extent: 1,
+        boundaries: CanonicalBoundarySequence::Whole,
+    };
+    let scalar_fixed = ResolvedDeliveryStrategy {
+        boundaries: CanonicalBoundarySequence::Fixed {
+            units_per_chunk: NonZeroUsize::MIN,
+        },
+        ..scalar_whole.clone()
+    };
+    let scalar_explicit = ResolvedDeliveryStrategy {
+        boundaries: CanonicalBoundarySequence::Explicit(Box::new([])),
+        ..scalar_whole.clone()
+    };
+    assert!(scalar_whole.semantically_equals(&scalar_fixed));
+    assert!(scalar_whole.semantically_equals(&scalar_explicit));
+
+    // The text "éx" has scalar extent 2 and byte extent 3. Coordinate 1
+    // therefore names different semantic strategies for the two transports,
+    // even though both declarations store the decimal value 1.
+    let scalar_boundary = ResolvedDeliveryStrategy {
+        transport: DeliveryTransport::UnicodeScalars,
+        coordinate_space: DeliveryCoordinateSpace::UnicodeScalarOrdinals,
+        input_extent: 2,
+        boundaries: CanonicalBoundarySequence::Explicit(Box::new([1])),
+    };
+    let byte_boundary = ResolvedDeliveryStrategy {
+        transport: DeliveryTransport::Bytes,
+        coordinate_space: DeliveryCoordinateSpace::ByteOffsets,
+        input_extent: 3,
+        boundaries: CanonicalBoundarySequence::Explicit(Box::new([1])),
+    };
+    assert!(!scalar_boundary.semantically_equals(&byte_boundary));
+}
+
+#[test]
+fn empty_and_one_scalar_v2_strategies_collapse_to_semantic_aliases() {
+    for (id, input) in [("empty", b"".as_slice()), ("one", b"x".as_slice())] {
+        let repository = TestRepository::new();
+        let bundle = add_fixture_v2(&repository, id, id, input);
+        rewrite(&bundle.join("fixture.toml"), |text| {
+            text.replace(
+                "[expectations]",
+                "[[execution.deliveries]]\nname = \"explicit-empty\"\nunit = \"unicode-scalars\"\nstrategy = \"boundaries\"\nboundaries = []\n\n[expectations]",
+            )
+        });
+        let fixture = load_single_native_fixture(&repository);
+        let ValidatedFixturePolicy::V2Parity(policy) = fixture.policy() else {
+            panic!("fixture-v2 policy");
+        };
+        assert_eq!(
+            policy.strategies().len(),
+            2,
+            "scalar baseline and byte baseline are the only semantic strategies for {id}"
+        );
+        assert!(policy.strategies()[0].origins.iter().any(
+            |origin| matches!(origin, DeliveryStrategyOrigin::Declared(name) if name.as_str() == "explicit-empty")
+        ));
+    }
+
+    let legacy = TestRepository::new();
+    let bundle = add_fixture(&legacy, "legacy-empty", "legacy-empty", b"");
+    rewrite(&bundle.join("fixture.toml"), |text| {
+        text.replace(
+            "strategy = \"whole\"",
+            "strategy = \"boundaries\"\nboundaries = []",
+        )
+    });
+    assert!(
+        discover_and_load(&legacy.native()).is_err(),
+        "fixture-v1 retains its non-empty declared-boundary compatibility rule"
+    );
+}
+
+#[test]
+fn fixture_v2_final_invariants_are_supported_and_snapshot_order_remains_canonical() {
     let repository = TestRepository::new();
     let bundle = add_fixture_v2(&repository, "precedence", "precedence", b"hello");
     fs::write(bundle.join("tokens.txt"), "malformed").expect("malformed tokens");
@@ -837,8 +1141,9 @@ fn fixture_v2_precedence_rejects_final_invariants_before_malformed_sidecars() {
     let fixture = load_single_native_fixture(&repository);
     assert!(matches!(
         execute_fixture(&fixture),
-        FixtureExecutionOutcome::UnsupportedExpectation {
-            surface: ExpectationSurface::FinalInvariants
+        FixtureExecutionOutcome::ExecutionFailedV2 {
+            class: ExecutionFailureClass::SnapshotFormat(ExpectationSurface::Tokens),
+            ..
         }
     ));
 }
@@ -863,18 +1168,44 @@ fn malformed_fixture_v2_sidecar_is_snapshot_format_for_its_exact_surface() {
 }
 
 #[test]
-fn fixture_v2_unions_requests_once_per_planned_delivery_and_separates_transition_only_delivery() {
+fn fixture_v2_executes_each_unique_strategy_once_with_the_surface_union() {
     use html::conformance::{
         ObservationRequest, ParserObservationExecutionError, ParserObservationRequest,
     };
     struct CountingExecutor {
         requests: Vec<(bool, bool, bool)>,
+        shapes: Vec<String>,
     }
     impl super::runner::ParserObservationExecutor for CountingExecutor {
         fn execute(
             &mut self,
             request: ParserObservationRequest<'_>,
         ) -> Result<CanonicalParserResult, ParserObservationExecutionError> {
+            let shape = match request.input {
+                html::conformance::ParserObservationInput::Utf8(_) => "utf8-whole".to_string(),
+                html::conformance::ParserObservationInput::Utf8FixedScalarChunks {
+                    scalars_per_chunk,
+                    ..
+                } => format!("utf8-fixed:{scalars_per_chunk}"),
+                html::conformance::ParserObservationInput::Utf8BoundaryChunks {
+                    byte_offsets,
+                    ..
+                } => format!("utf8-explicit:{byte_offsets:?}"),
+                html::conformance::ParserObservationInput::Bytes(_) => "bytes-whole".to_string(),
+                html::conformance::ParserObservationInput::ByteFixedChunks {
+                    bytes_per_chunk,
+                    ..
+                } => format!("bytes-fixed:{bytes_per_chunk}"),
+                html::conformance::ParserObservationInput::ByteBoundaryChunks {
+                    byte_offsets,
+                    ..
+                } => format!("bytes-explicit:{byte_offsets:?}"),
+                html::conformance::ParserObservationInput::Utf8Chunks(_)
+                | html::conformance::ParserObservationInput::ByteChunks(_) => {
+                    panic!("fixture-v2 does not use pre-materialized chunk arrays")
+                }
+            };
+            self.shapes.push(shape);
             self.requests.push((
                 matches!(request.tokens, ObservationRequest::Capture { .. }),
                 matches!(request.transitions, ObservationRequest::Capture { .. }),
@@ -901,18 +1232,260 @@ fn fixture_v2_unions_requests_once_per_planned_delivery_and_separates_transition
     .unwrap();
     rewrite(&bundle.join("fixture.toml"), |text| {
         text.replace("kind = \"standalone-tokenizer\"", "kind = \"document\"\nscripting = \"disabled\"")
-            .replace("[expectations]", "[[execution.deliveries]]\nname = \"trace-whole\"\nunit = \"unicode-scalars\"\nstrategy = \"whole\"\n\n[expectations]")
+            .replace("[expectations]", "[[execution.deliveries]]\nname = \"trace-whole\"\nunit = \"unicode-scalars\"\nstrategy = \"whole\"\n\n[[execution.deliveries]]\nname = \"declared-three\"\nunit = \"unicode-scalars\"\nstrategy = \"boundaries\"\nboundaries = [3]\n\n[expectations]")
             .replace("tokens = \"tokens.txt\"", "tokens = \"tokens.txt\"\nunsupported_features = \"unsupported-features.txt\"\n\n[[expectations.transitions]]\ndelivery = \"trace-whole\"\npath = \"transitions.txt\"")
     });
     let fixture = load_single_native_fixture(&repository);
     let mut executor = CountingExecutor {
         requests: Vec::new(),
+        shapes: Vec::new(),
     };
-    let _ = super::runner::execute_fixture_v2_with(&fixture, &mut executor);
-    assert_eq!(
-        executor.requests,
-        [(true, false, true), (false, true, false)]
+    let (_, serialization_calls) = with_serialization_counter(|| {
+        super::runner::execute_fixture_v2_with(&fixture, &mut executor)
+    });
+    assert_eq!(executor.requests.len(), 7);
+    assert!(
+        executor
+            .requests
+            .iter()
+            .all(|request| *request == (true, true, true))
     );
+    assert_eq!(
+        executor.shapes.iter().collect::<BTreeSet<_>>().len(),
+        executor.shapes.len(),
+        "each semantically unique generated strategy executes once"
+    );
+    assert_eq!(
+        executor.shapes,
+        [
+            "utf8-whole",
+            "utf8-explicit:[3]",
+            "bytes-whole",
+            "utf8-fixed:1",
+            "utf8-explicit:[1, 2, 4]",
+            "bytes-fixed:1",
+            "bytes-explicit:[1, 2, 4]",
+        ]
+    );
+    assert_eq!(
+        serialization_calls, 2,
+        "only the applicable baseline token and transition expectations are serialized"
+    );
+}
+
+#[test]
+fn parity_mismatch_names_fixture_strategy_surface_and_first_record() {
+    use html::conformance::{
+        ObservedToken, ParserObservationExecutionError, ParserObservationRequest,
+    };
+    struct DivergingCandidate {
+        calls: usize,
+    }
+    impl super::runner::ParserObservationExecutor for DivergingCandidate {
+        fn execute(
+            &mut self,
+            request: ParserObservationRequest<'_>,
+        ) -> Result<CanonicalParserResult, ParserObservationExecutionError> {
+            self.calls += 1;
+            let mut result = html::conformance::execute_parser_observation(request)?;
+            if self.calls == 2
+                && let ObservationState::Captured(tokens) = &mut result.tokens
+                && let Some(ObservedToken::Character { data }) = tokens.first_mut()
+            {
+                data.push_str("-candidate-only");
+            }
+            Ok(result)
+        }
+    }
+    let repository = TestRepository::new();
+    add_fixture_v2(
+        &repository,
+        "parity-diagnostic",
+        "parity-diagnostic",
+        b"hello",
+    );
+    let fixture = load_single_native_fixture(&repository);
+    let (outcome, serialization_calls) = with_serialization_counter(|| {
+        super::runner::execute_fixture_v2_with(&fixture, &mut DivergingCandidate { calls: 0 })
+    });
+    assert_eq!(
+        serialization_calls, 3,
+        "baseline expectation plus the selected baseline/candidate token diagnostics"
+    );
+    assert!(matches!(
+        super::runner::failure_details(&fixture, &outcome),
+        Some(FixtureFailureDetails::ParityDiff {
+            surface: ExpectationSurface::Tokens,
+            ..
+        })
+    ));
+    let FixtureExecutionOutcome::ParityMismatchV2 {
+        strategy,
+        surface: ExpectationSurface::Tokens,
+        diff,
+    } = &outcome
+    else {
+        panic!("expected token parity mismatch: {outcome:?}");
+    };
+    assert!(strategy.contains("ordinal=2"), "{strategy}");
+    for expected in [
+        "fixture: parity-diagnostic",
+        "fixture path: fixtures/parity-diagnostic",
+        "delivery strategy: ordinal=2",
+        "canonical surface: tokens",
+        "first meaningful difference: record 1",
+    ] {
+        assert!(diff.contains(expected), "missing {expected}: {diff}");
+    }
+}
+
+#[test]
+fn successful_parity_candidate_does_not_serialize_candidate_surfaces() {
+    struct CountingProductionExecutor {
+        calls: usize,
+    }
+    impl super::runner::ParserObservationExecutor for CountingProductionExecutor {
+        fn execute(
+            &mut self,
+            request: ParserObservationRequest<'_>,
+        ) -> Result<CanonicalParserResult, ParserObservationExecutionError> {
+            self.calls += 1;
+            html::conformance::execute_parser_observation(request)
+        }
+    }
+    let repository = TestRepository::new();
+    add_fixture_v2(&repository, "parity-memory", "parity-memory", b"hello");
+    let fixture = load_single_native_fixture(&repository);
+    let (outcome, serialization_calls) = with_serialization_counter(|| {
+        super::runner::execute_fixture_v2_with(
+            &fixture,
+            &mut CountingProductionExecutor { calls: 0 },
+        )
+    });
+    assert!(
+        matches!(outcome, FixtureExecutionOutcome::CompletedV2 { .. }),
+        "{outcome:?}"
+    );
+    assert_eq!(
+        serialization_calls, 1,
+        "only the applicable baseline token expectation is serialized"
+    );
+}
+
+#[test]
+fn tree_parity_mismatch_serializes_only_the_selected_tree_surface() {
+    struct DivergingTree {
+        calls: usize,
+    }
+    impl super::runner::ParserObservationExecutor for DivergingTree {
+        fn execute(
+            &mut self,
+            request: ParserObservationRequest<'_>,
+        ) -> Result<CanonicalParserResult, ParserObservationExecutionError> {
+            self.calls += 1;
+            let mut result = html::conformance::execute_parser_observation(request)?;
+            if self.calls == 2
+                && let ObservationState::Captured(tree) = &mut result.tree
+            {
+                tree.roots.clear();
+            }
+            Ok(result)
+        }
+    }
+
+    let repository = TestRepository::new();
+    let bundle = add_fixture_v2(&repository, "tree-parity", "tree-parity", b"hello");
+    rewrite(&bundle.join("fixture.toml"), |text| {
+        text.replace(
+            "kind = \"standalone-tokenizer\"",
+            "kind = \"document\"\nscripting = \"disabled\"",
+        )
+    });
+    let fixture = load_single_native_fixture(&repository);
+    let (outcome, serialization_calls) = with_serialization_counter(|| {
+        super::runner::execute_fixture_v2_with(&fixture, &mut DivergingTree { calls: 0 })
+    });
+    assert!(matches!(
+        outcome,
+        FixtureExecutionOutcome::ParityMismatchV2 {
+            surface: ExpectationSurface::Tree,
+            ..
+        }
+    ));
+    assert_eq!(
+        serialization_calls, 3,
+        "baseline token expectation plus the selected baseline and candidate trees"
+    );
+}
+
+#[test]
+fn invalid_baseline_stops_before_candidates_and_sidecar_reads() {
+    use html::conformance::{ParserObservationExecutionError, ParserObservationRequest};
+    struct FailingBaseline {
+        calls: usize,
+    }
+    impl super::runner::ParserObservationExecutor for FailingBaseline {
+        fn execute(
+            &mut self,
+            _: ParserObservationRequest<'_>,
+        ) -> Result<CanonicalParserResult, ParserObservationExecutionError> {
+            self.calls += 1;
+            Err(ParserObservationExecutionError::ParserInvariant)
+        }
+    }
+    let repository = TestRepository::new();
+    add_fixture_v2(&repository, "baseline-stop", "baseline-stop", b"hello");
+    let fixture = load_single_native_fixture(&repository);
+    let mut executor = FailingBaseline { calls: 0 };
+    let outcome = super::runner::execute_fixture_v2_with(&fixture, &mut executor);
+    assert!(matches!(
+        outcome,
+        FixtureExecutionOutcome::ExecutionFailedV2 {
+            class: ExecutionFailureClass::ParserObservation(
+                html::conformance::ParserObservationExecutionIdentity::ParserInvariant
+            ),
+            ..
+        }
+    ));
+    assert_eq!(executor.calls, 1);
+}
+
+#[test]
+fn candidate_final_invariant_failure_is_not_parity_compared() {
+    use html::conformance::{
+        InvariantOutcome, ParserObservationExecutionError, ParserObservationRequest,
+    };
+    struct FailedCandidateAudit {
+        calls: usize,
+    }
+    impl super::runner::ParserObservationExecutor for FailedCandidateAudit {
+        fn execute(
+            &mut self,
+            request: ParserObservationRequest<'_>,
+        ) -> Result<CanonicalParserResult, ParserObservationExecutionError> {
+            self.calls += 1;
+            let mut result = html::conformance::execute_parser_observation(request)?;
+            if self.calls == 2
+                && let ObservationState::Captured(report) = &mut result.final_invariants
+            {
+                report.tree_builder.pending_table_text_empty = InvariantOutcome::Failed;
+            }
+            Ok(result)
+        }
+    }
+    let repository = TestRepository::new();
+    add_fixture_v2(&repository, "candidate-audit", "candidate-audit", b"hello");
+    let fixture = load_single_native_fixture(&repository);
+    let outcome =
+        super::runner::execute_fixture_v2_with(&fixture, &mut FailedCandidateAudit { calls: 0 });
+    assert!(matches!(
+        outcome,
+        FixtureExecutionOutcome::FinalInvariantFailedV2 {
+            first_failure: InvariantFailureCode::PendingTableText,
+            failure_count: 1,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -1040,11 +1613,11 @@ fn transition_mismatch_selection_follows_fixture_declaration_order() {
     let fixture = load_single_native_fixture(&repository);
     match execute_fixture(&fixture) {
         FixtureExecutionOutcome::ExpectationMismatchV2 {
-            ref delivery,
+            ref strategy,
             surface: ExpectationSurface::Transitions,
             diff,
         } => {
-            assert_eq!(delivery.as_str(), "first-trace");
+            assert!(strategy.contains("declared:first-trace"), "{strategy}");
             assert!(diff.contains("transition delivery: first-trace"), "{diff}");
         }
         other => panic!("unexpected outcome: {other:?}"),
@@ -1069,6 +1642,7 @@ fn canonical_fixture_guardrails_are_fixed_and_expectation_independent() {
             patches: true,
             transitions: true,
             unsupported_features: true,
+            final_invariants: true,
         },
         guardrails,
     );
@@ -1247,8 +1821,6 @@ fn incomplete_diagnostics_retain_exact_identity_for_every_surface() {
     let repository = TestRepository::new();
     add_fixture_v2(&repository, "incomplete", "incomplete", b"hello");
     let fixture = load_single_native_fixture(&repository);
-    let delivery = DeliveryName::validated("whole".to_string());
-
     for surface in [
         ExpectationSurface::Tokens,
         ExpectationSurface::ParseErrors,
@@ -1258,9 +1830,10 @@ fn incomplete_diagnostics_retain_exact_identity_for_every_surface() {
         ExpectationSurface::Patches,
         ExpectationSurface::Transitions,
         ExpectationSurface::UnsupportedFeatures,
+        ExpectationSurface::FinalInvariants,
     ] {
         let outcome = FixtureExecutionOutcome::IncompleteObservationV2 {
-            delivery: delivery.clone(),
+            strategy: "ordinal=1 origins=[baseline,declared:whole]".to_string(),
             surface,
             reason: IncompleteObservationReason::StorageLimitExceeded {
                 retained: 11,
@@ -1275,7 +1848,7 @@ fn incomplete_diagnostics_retain_exact_identity_for_every_surface() {
             panic!("missing incomplete details for {}", surface.name());
         };
         for expected in [
-            "delivery: whole".to_string(),
+            "strategy:".to_string(),
             format!("surface: {}", surface.name()),
             "reason: storage-limit-exceeded".to_string(),
             "retained count: 11".to_string(),
@@ -1358,6 +1931,7 @@ fn injected_guardrails_cover_exact_and_capacity_plus_one_for_every_retained_surf
         patches: true,
         transitions: true,
         unsupported_features: true,
+        final_invariants: true,
     };
     let high = FixtureObservationGuardrails {
         tokens: 1_024,
@@ -1519,7 +2093,7 @@ fn incomplete_prefix_equal_to_expected_snapshot_cannot_reach_serialization_or_co
     assert!(matches!(
         outcome,
         FixtureExecutionOutcome::IncompleteObservationV2 {
-            ref delivery,
+            ref strategy,
             surface: ExpectationSurface::Tokens,
             reason: IncompleteObservationReason::StorageLimitExceeded {
                 retained: 2,
@@ -1527,14 +2101,14 @@ fn incomplete_prefix_equal_to_expected_snapshot_cannot_reach_serialization_or_co
             },
             retained: 2,
             dropped: 1,
-        } if delivery.as_str() == "whole"
+        } if strategy.contains("declared:whole")
     ));
 
     let error = super::runner::run_fixture_with_executor(&fixture, &mut IncompleteMatchingPrefix)
         .expect_err("incomplete capture cannot produce a completed report");
     let diagnostic = error.to_string();
     for expected in [
-        "delivery: whole",
+        "strategy:",
         "surface: tokens",
         "reason: storage-limit-exceeded",
         "retained count: 2",
@@ -1565,7 +2139,7 @@ fn successful_v2_report_borrows_reference_result_from_its_single_delivery_owner(
         .find(|fixture| fixture.id().as_str() == "document-structured-observations")
         .expect("multi-delivery canonical fixture");
     let report = run_fixture(fixture).expect("multi-delivery fixture passes");
-    assert_eq!(report.delivery_results().len(), 2);
+    assert_eq!(report.delivery_results().len(), 1);
     let reference = report.result().expect("ordinary reference result");
     let owned = report
         .delivery_results()
@@ -1574,6 +2148,14 @@ fn successful_v2_report_borrows_reference_result_from_its_single_delivery_owner(
         .expect("reference delivery")
         .result();
     assert!(std::ptr::eq(reference, owned));
+    assert_eq!(
+        report.delivery_results()[0]
+            .aliases()
+            .iter()
+            .map(DeliveryName::as_str)
+            .collect::<Vec<_>>(),
+        ["whole", "trace-whole"]
+    );
 }
 
 #[test]
@@ -1970,7 +2552,9 @@ fn illegal_input_delivery_and_target_combinations_are_rejected() {
     });
     assert!(matches!(
         discover_and_load(&repository.native()).unwrap_err().kind,
-        FixtureLoadErrorKind::InvalidCombination(_)
+        FixtureLoadErrorKind::InvalidDelivery(
+            DeliveryValidationError::UnitNotSupportedForInputDomain { .. }
+        )
     ));
 
     let repository = TestRepository::new();
@@ -1985,6 +2569,564 @@ fn illegal_input_delivery_and_target_combinations_are_rejected() {
         discover_and_load(&repository.native()).unwrap_err().kind,
         FixtureLoadErrorKind::InvalidCombination(_)
     ));
+
+    let repository = TestRepository::new();
+    let bundle = add_fixture_v2(&repository, "reference-name", "reference-name", b"hello");
+    rewrite(&bundle.join("fixture.toml"), |text| {
+        text.replace(
+            "reference_delivery = \"whole\"",
+            "reference_delivery = \"Bad Name\"",
+        )
+    });
+    assert!(matches!(
+        discover_and_load(&repository.native()).unwrap_err().kind,
+        FixtureLoadErrorKind::InvalidDelivery(
+            DeliveryValidationError::InvalidReferenceDeliveryName { ref declared_name }
+        ) if declared_name == "Bad Name"
+    ));
+}
+
+#[test]
+fn delivery_name_validation_reports_exact_typed_context() {
+    let repository = TestRepository::new();
+    let bundle = add_fixture_v2(&repository, "invalid-name", "invalid-name", b"hello");
+    rewrite(&bundle.join("fixture.toml"), |text| {
+        text.replace("name = \"whole\"", "name = \"Bad Name\"")
+    });
+    assert_eq!(
+        discover_and_load(&repository.native()).unwrap_err().kind,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::InvalidDeliveryName {
+            delivery_index: 0,
+            declared_name: "Bad Name".to_string(),
+        })
+    );
+
+    let repository = TestRepository::new();
+    let bundle = add_fixture_v2(&repository, "duplicate-name", "duplicate-name", b"hello");
+    rewrite(&bundle.join("fixture.toml"), |text| {
+        text.replace(
+            "[expectations]",
+            "[[execution.deliveries]]\nname = \"whole\"\nunit = \"unicode-scalars\"\nstrategy = \"whole\"\n\n[expectations]",
+        )
+    });
+    assert_eq!(
+        discover_and_load(&repository.native()).unwrap_err().kind,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::DuplicateDeliveryName {
+            delivery_index: 1,
+            declared_name: "whole".to_string(),
+        })
+    );
+}
+
+fn load_v2_delivery_error(
+    input: &[u8],
+    raw_bytes: bool,
+    transform: impl FnOnce(String) -> String,
+) -> FixtureLoadErrorKind {
+    let repository = TestRepository::new();
+    let bundle = add_fixture_v2(
+        &repository,
+        "typed-delivery-error",
+        "typed-delivery-error",
+        input,
+    );
+    let mut metadata = fs::read_to_string(bundle.join("fixture.toml")).expect("fixture metadata");
+    if raw_bytes {
+        fs::rename(bundle.join("input.html"), bundle.join("input.bin")).expect("raw input rename");
+        metadata = metadata
+            .replace("path = \"input.html\"", "path = \"input.bin\"")
+            .replace("kind = \"utf8-text\"", "kind = \"raw-bytes\"");
+    }
+    fs::write(bundle.join("fixture.toml"), transform(metadata)).expect("fixture metadata rewrite");
+    discover_and_load(&repository.native())
+        .expect_err("fixture must produce the requested typed validation error")
+        .kind
+}
+
+#[test]
+fn fixture_validator_emits_every_delivery_validation_error_with_exact_context() {
+    let error = load_v2_delivery_error(b"hello", false, |text| {
+        let mut extra = String::new();
+        for index in 0..32 {
+            extra.push_str(&format!(
+                "[[execution.deliveries]]\nname = \"split-{index}\"\nunit = \"unicode-scalars\"\nstrategy = \"boundaries\"\nboundaries = [{}]\n\n",
+                index + 1
+            ));
+        }
+        text.replace("[expectations]", &format!("{extra}[expectations]"))
+    });
+    assert_eq!(
+        error,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::TooManyDeclaredDeliveries {
+            declared: 33,
+            maximum: 32,
+        })
+    );
+
+    let error = load_v2_delivery_error(b"hello", false, |text| {
+        let boundaries = (1..=4_097)
+            .map(|value| value.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        text.replace(
+            "[expectations]",
+            &format!(
+                "[[execution.deliveries]]\nname = \"oversized\"\nunit = \"unicode-scalars\"\nstrategy = \"boundaries\"\nboundaries = [{boundaries}]\n\n[expectations]"
+            ),
+        )
+    });
+    assert_eq!(
+        error,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::TooManyBoundaries {
+            delivery_index: 1,
+            declared_name: "oversized".to_owned(),
+            declared: 4_097,
+            maximum: 4_096,
+        })
+    );
+
+    let error = load_v2_delivery_error(b"hello", false, |text| {
+        text.replace("name = \"whole\"", "name = \"Bad Name\"")
+    });
+    assert_eq!(
+        error,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::InvalidDeliveryName {
+            delivery_index: 0,
+            declared_name: "Bad Name".to_owned(),
+        })
+    );
+
+    let error = load_v2_delivery_error(b"hello", false, |text| {
+        text.replace(
+            "[expectations]",
+            "[[execution.deliveries]]\nname = \"whole\"\nunit = \"unicode-scalars\"\nstrategy = \"whole\"\n\n[expectations]",
+        )
+    });
+    assert_eq!(
+        error,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::DuplicateDeliveryName {
+            delivery_index: 1,
+            declared_name: "whole".to_owned(),
+        })
+    );
+
+    let error = load_v2_delivery_error(b"hello", false, |text| {
+        text.replace(
+            "reference_delivery = \"whole\"",
+            "reference_delivery = \"Bad Ref\"",
+        )
+    });
+    assert_eq!(
+        error,
+        FixtureLoadErrorKind::InvalidDelivery(
+            DeliveryValidationError::InvalidReferenceDeliveryName {
+                declared_name: "Bad Ref".to_owned(),
+            }
+        )
+    );
+
+    let error = load_v2_delivery_error(b"hello", true, |text| text);
+    assert_eq!(
+        error,
+        FixtureLoadErrorKind::InvalidDelivery(
+            DeliveryValidationError::UnitNotSupportedForInputDomain {
+                delivery: DeliveryName::validated("whole".to_owned()),
+            }
+        )
+    );
+
+    let error = load_v2_delivery_error(b"hello", false, |text| {
+        text.replace(
+            "[expectations]",
+            "[[execution.deliveries]]\nname = \"split\"\nunit = \"unicode-scalars\"\nstrategy = \"boundaries\"\n\n[expectations]",
+        )
+    });
+    assert_eq!(
+        error,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::BoundariesMissing {
+            delivery: DeliveryName::validated("split".to_owned()),
+        })
+    );
+
+    let error = load_v2_delivery_error(b"hello", false, |text| {
+        text.replace(
+            "[expectations]",
+            "[[execution.deliveries]]\nname = \"split\"\nunit = \"unicode-scalars\"\nstrategy = \"whole\"\nboundaries = [1]\n\n[expectations]",
+        )
+    });
+    assert_eq!(
+        error,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::BoundariesUnexpected {
+            delivery: DeliveryName::validated("split".to_owned()),
+        })
+    );
+
+    for (boundaries, expected) in [
+        (
+            "[0]",
+            DeliveryValidationError::BoundaryAtStart {
+                delivery: DeliveryName::validated("split".to_owned()),
+                boundary_index: 0,
+            },
+        ),
+        (
+            "[5]",
+            DeliveryValidationError::BoundaryAtEnd {
+                delivery: DeliveryName::validated("split".to_owned()),
+                boundary_index: 0,
+            },
+        ),
+        (
+            "[6]",
+            DeliveryValidationError::BoundaryOutOfRange {
+                delivery: DeliveryName::validated("split".to_owned()),
+                boundary_index: 0,
+            },
+        ),
+        (
+            "[1, 1]",
+            DeliveryValidationError::DuplicateBoundary {
+                delivery: DeliveryName::validated("split".to_owned()),
+                boundary_index: 1,
+            },
+        ),
+        (
+            "[2, 1]",
+            DeliveryValidationError::UnsortedBoundary {
+                delivery: DeliveryName::validated("split".to_owned()),
+                boundary_index: 1,
+            },
+        ),
+    ] {
+        let error = load_v2_delivery_error(b"hello", false, |text| {
+            text.replace(
+                "[expectations]",
+                &format!(
+                    "[[execution.deliveries]]\nname = \"split\"\nunit = \"unicode-scalars\"\nstrategy = \"boundaries\"\nboundaries = {boundaries}\n\n[expectations]"
+                ),
+            )
+        });
+        assert_eq!(
+            error,
+            FixtureLoadErrorKind::InvalidDelivery(expected),
+            "boundary declaration {boundaries}"
+        );
+    }
+
+    let error = load_v2_delivery_error(b"hello", false, |text| {
+        text.replace(
+            "unit = \"unicode-scalars\"\nstrategy = \"whole\"",
+            "unit = \"bytes\"\nstrategy = \"whole\"",
+        )
+    });
+    assert_eq!(
+        error,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::MissingDomainBaseline)
+    );
+
+    let error = load_v2_delivery_error(b"hello", false, |text| {
+        text.replace(
+            "reference_delivery = \"whole\"",
+            "reference_delivery = \"missing\"",
+        )
+    });
+    assert_eq!(
+        error,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::ReferenceDeliveryMissing {
+            delivery: DeliveryName::validated("missing".to_owned()),
+        })
+    );
+
+    let error = load_v2_delivery_error(b"hello", false, |text| {
+        text.replace(
+            "reference_delivery = \"whole\"",
+            "reference_delivery = \"bytes\"",
+        )
+        .replace(
+            "[expectations]",
+            "[[execution.deliveries]]\nname = \"bytes\"\nunit = \"bytes\"\nstrategy = \"whole\"\n\n[expectations]",
+        )
+    });
+    assert_eq!(
+        error,
+        FixtureLoadErrorKind::InvalidDelivery(
+            DeliveryValidationError::ReferenceIsNotDomainBaseline {
+                delivery: DeliveryName::validated("bytes".to_owned()),
+            }
+        )
+    );
+
+    let error = load_v2_delivery_error(&[b'x'; 100], false, |text| {
+        let mut unique = String::new();
+        for index in 1..=23 {
+            unique.push_str(&format!(
+                "[[execution.deliveries]]\nname = \"unique-{index}\"\nunit = \"unicode-scalars\"\nstrategy = \"boundaries\"\nboundaries = [{index}]\n\n"
+            ));
+        }
+        text.replace("[expectations]", &format!("{unique}[expectations]"))
+    });
+    assert_eq!(
+        error,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::TooManyUniqueStrategies {
+            planned: 25,
+            maximum: 24,
+        })
+    );
+}
+
+#[test]
+fn fixture_delivery_validation_precedence_is_exact_for_combined_defects() {
+    let error = load_v2_delivery_error(b"hello", false, |text| {
+        let mut extra = String::new();
+        for index in 0..32 {
+            extra.push_str(&format!(
+                "[[execution.deliveries]]\nname = \"Bad Name {index}\"\nunit = \"unicode-scalars\"\nstrategy = \"whole\"\n\n"
+            ));
+        }
+        text.replace("[expectations]", &format!("{extra}[expectations]"))
+    });
+    assert!(matches!(
+        error,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::TooManyDeclaredDeliveries {
+            declared: 33,
+            maximum: 32,
+        })
+    ));
+
+    let error = load_v2_delivery_error(b"hello", false, |text| {
+        let boundaries = (1..=4_097)
+            .map(|value| value.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        text.replace(
+            "[expectations]",
+            &format!(
+                "[[execution.deliveries]]\nname = \"Bad Name\"\nunit = \"unicode-scalars\"\nstrategy = \"boundaries\"\nboundaries = [{boundaries}]\n\n[expectations]"
+            ),
+        )
+    });
+    assert!(matches!(
+        error,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::TooManyBoundaries {
+            delivery_index: 1,
+            declared_name,
+            declared: 4_097,
+            maximum: 4_096,
+        }) if declared_name == "Bad Name"
+    ));
+
+    let error = load_v2_delivery_error(b"hello", false, |text| {
+        text.replace(
+            "[expectations]",
+            "[[execution.deliveries]]\nname = \"Bad Name\"\nunit = \"unicode-scalars\"\nstrategy = \"boundaries\"\nboundaries = [0]\n\n[expectations]",
+        )
+    });
+    assert!(matches!(
+        error,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::InvalidDeliveryName {
+            delivery_index: 1,
+            declared_name,
+        }) if declared_name == "Bad Name"
+    ));
+
+    let error = load_v2_delivery_error(b"hello", true, |text| {
+        text.replace(
+            "unit = \"unicode-scalars\"\nstrategy = \"whole\"",
+            "unit = \"bytes\"\nstrategy = \"boundaries\"\nboundaries = [0]",
+        )
+    });
+    assert!(matches!(
+        error,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::BoundaryAtStart {
+            delivery,
+            boundary_index: 0,
+        }) if delivery.as_str() == "whole"
+    ));
+
+    let error = load_v2_delivery_error(b"hello", false, |text| {
+        text.replace(
+            "unit = \"unicode-scalars\"\nstrategy = \"whole\"",
+            "unit = \"bytes\"\nstrategy = \"whole\"",
+        )
+        .replace(
+            "reference_delivery = \"whole\"",
+            "reference_delivery = \"Bad Ref\"",
+        )
+    });
+    assert!(matches!(
+        error,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::MissingDomainBaseline)
+    ));
+
+    let error = load_v2_delivery_error(b"hello", false, |text| {
+        text.replace("reference_delivery = \"whole\"", "reference_delivery = \"bytes\"")
+            .replace(
+                "[expectations]",
+                "[[execution.deliveries]]\nname = \"bytes\"\nunit = \"bytes\"\nstrategy = \"whole\"\n\n[expectations]",
+            )
+    });
+    assert!(matches!(
+        error,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::ReferenceIsNotDomainBaseline {
+            delivery,
+        }) if delivery.as_str() == "bytes"
+    ));
+}
+
+#[test]
+fn fixture_v2_guardrails_reject_excess_before_execution_without_truncation() {
+    let deliveries_repository = TestRepository::new();
+    let deliveries_bundle = add_fixture_v2(
+        &deliveries_repository,
+        "too-many-deliveries",
+        "too-many-deliveries",
+        &[b'x'; 100],
+    );
+    let mut extra = String::new();
+    for index in 0..32 {
+        extra.push_str(&format!(
+            "[[execution.deliveries]]\nname = \"split-{index}\"\nunit = \"unicode-scalars\"\nstrategy = \"boundaries\"\nboundaries = [{}]\n\n",
+            index + 1
+        ));
+    }
+    rewrite(&deliveries_bundle.join("fixture.toml"), |text| {
+        text.replace("[expectations]", &format!("{extra}[expectations]"))
+    });
+    let error = discover_and_load(&deliveries_repository.native())
+        .expect_err("declared delivery guardrail");
+    assert!(matches!(
+        error.kind,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::TooManyDeclaredDeliveries {
+            declared: 33,
+            maximum: 32,
+        })
+    ));
+
+    let boundaries_repository = TestRepository::new();
+    let boundaries_bundle = add_fixture_v2(
+        &boundaries_repository,
+        "too-many-boundaries",
+        "too-many-boundaries",
+        &vec![b'x'; 5_000],
+    );
+    let boundaries = (1..=4_097)
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    rewrite(&boundaries_bundle.join("fixture.toml"), |text| {
+        text.replace(
+            "[expectations]",
+            &format!(
+                "[[execution.deliveries]]\nname = \"oversized\"\nunit = \"unicode-scalars\"\nstrategy = \"boundaries\"\nboundaries = [{boundaries}]\n\n[expectations]"
+            ),
+        )
+    });
+    let error = discover_and_load(&boundaries_repository.native()).expect_err("boundary guardrail");
+    assert!(matches!(
+        error.kind,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::TooManyBoundaries {
+            delivery_index: 1,
+            ref declared_name,
+            declared: 4_097,
+            maximum: 4_096,
+        }) if declared_name == "oversized"
+    ));
+
+    let strategies_repository = TestRepository::new();
+    let strategies_bundle = add_fixture_v2(
+        &strategies_repository,
+        "too-many-strategies",
+        "too-many-strategies",
+        &[b'x'; 100],
+    );
+    let mut unique = String::new();
+    for index in 1..=23 {
+        unique.push_str(&format!(
+            "[[execution.deliveries]]\nname = \"unique-{index}\"\nunit = \"unicode-scalars\"\nstrategy = \"boundaries\"\nboundaries = [{index}]\n\n"
+        ));
+    }
+    rewrite(&strategies_bundle.join("fixture.toml"), |text| {
+        text.replace("[expectations]", &format!("{unique}[expectations]"))
+    });
+    let error =
+        discover_and_load(&strategies_repository.native()).expect_err("unique strategy guardrail");
+    assert!(matches!(
+        error.kind,
+        FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::TooManyUniqueStrategies {
+            planned: 25,
+            maximum: 24,
+        })
+    ));
+}
+
+#[test]
+fn fixture_v2_delivery_validation_reports_exact_boundary_variants_and_order() {
+    let cases = [
+        (vec![0], "start"),
+        (vec![5], "end"),
+        (vec![6], "range"),
+        (vec![1, 1], "duplicate"),
+        (vec![2, 1], "unsorted"),
+    ];
+    for (boundaries, expected) in cases {
+        let repository = TestRepository::new();
+        let bundle = add_fixture_v2(&repository, "boundary", "boundary", b"hello");
+        let encoded = boundaries
+            .iter()
+            .map(usize::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        rewrite(&bundle.join("fixture.toml"), |text| {
+            text.replace(
+                "[expectations]",
+                &format!(
+                    "[[execution.deliveries]]\nname = \"split\"\nunit = \"unicode-scalars\"\nstrategy = \"boundaries\"\nboundaries = [{encoded}]\n\n[expectations]"
+                ),
+            )
+        });
+        let error = discover_and_load(&repository.native()).expect_err("invalid boundaries");
+        let expected_name = DeliveryName::validated("split".to_string());
+        match (expected, error.kind) {
+            (
+                "start",
+                FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::BoundaryAtStart {
+                    delivery,
+                    boundary_index: 0,
+                }),
+            ) => assert_eq!(delivery, expected_name),
+            (
+                "end",
+                FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::BoundaryAtEnd {
+                    delivery,
+                    boundary_index: 0,
+                }),
+            ) => assert_eq!(delivery, expected_name),
+            (
+                "range",
+                FixtureLoadErrorKind::InvalidDelivery(
+                    DeliveryValidationError::BoundaryOutOfRange {
+                        delivery,
+                        boundary_index: 0,
+                    },
+                ),
+            ) => assert_eq!(delivery, expected_name),
+            (
+                "duplicate",
+                FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::DuplicateBoundary {
+                    delivery,
+                    boundary_index: 1,
+                }),
+            ) => assert_eq!(delivery, expected_name),
+            (
+                "unsorted",
+                FixtureLoadErrorKind::InvalidDelivery(DeliveryValidationError::UnsortedBoundary {
+                    delivery,
+                    boundary_index: 1,
+                }),
+            ) => assert_eq!(delivery, expected_name),
+            _ => panic!("unexpected typed validation result"),
+        }
+    }
 }
 
 #[test]
@@ -3026,6 +4168,24 @@ fn canonical_result() -> CanonicalParserResult {
         unsupported_features: ObservationState::NotRequested,
         final_invariants: ObservationState::NotRequested,
     }
+}
+
+#[test]
+fn typed_parity_comparison_precedes_snapshot_serialization() {
+    let baseline = canonical_result();
+    let mut candidate = canonical_result();
+    candidate.document_mode = ObservationState::NotApplicable {
+        reason: html::conformance::NotApplicableReason::DocumentParserRun,
+    };
+    assert_eq!(
+        first_typed_parity_mismatch(&baseline, &candidate).unwrap(),
+        Some(ExpectationSurface::DocumentMode)
+    );
+    let equal = canonical_result();
+    assert_eq!(
+        first_typed_parity_mismatch(&baseline, &equal).unwrap(),
+        None
+    );
 }
 
 #[test]

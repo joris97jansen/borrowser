@@ -35,6 +35,55 @@ pub(crate) enum TokenizerInvariantKind {
     ProcessingInstructionDataStartAfterCursor,
 }
 
+#[cfg(feature = "parser-conformance")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TokenizerFinalAudit {
+    pub(crate) eof_lifecycle_complete: bool,
+    pub(crate) pending_constructs_flushed: bool,
+    pub(crate) output_queue_empty: bool,
+    pub(crate) active_text_mode: Option<crate::html5::tokenizer::TextModeSpec>,
+}
+
+#[cfg(feature = "parser-conformance")]
+impl Html5Tokenizer {
+    /// Read-only terminal audit over the tokenizer's authoritative lifecycle
+    /// and pending-construction state. EOF emission has no parallel witness:
+    /// `finish_with_context` owns the guarded `end_of_stream`/`eof_emitted`
+    /// transition inspected here.
+    pub(crate) fn final_audit_for_conformance(&self) -> TokenizerFinalAudit {
+        TokenizerFinalAudit {
+            eof_lifecycle_complete: self.end_of_stream && self.eof_emitted == self.config.emit_eof,
+            pending_constructs_flushed: self.pending_text_mode_end_tag_matcher.is_none()
+                && self.pending_text_mode_end_tag.is_none()
+                && self.pending_text_start.is_none()
+                && self.pending_comment_start.is_none()
+                && !self.pending_comment_limit_reported
+                && self.pending_processing_instruction.is_none()
+                && self.pending_doctype_name.is_none()
+                && self.pending_doctype_name_start.is_none()
+                && self.pending_doctype_public_id.is_none()
+                && self.pending_doctype_system_id.is_none()
+                && !self.pending_doctype_force_quirks
+                && !self.pending_doctype_limit_reported
+                && self.tag_name_start.is_none()
+                && self.tag_name_end.is_none()
+                && !self.tag_name_complete
+                && !self.current_tag_is_end
+                && !self.current_tag_self_closing
+                && self.current_tag_self_closing_solidus_position.is_none()
+                && self.current_tag_attrs.is_empty()
+                && self.current_attr_name_start.is_none()
+                && self.current_attr_name_end.is_none()
+                && !self.current_attr_has_value
+                && self.current_attr_value_start.is_none()
+                && self.current_attr_value_end.is_none()
+                && !self.end_tag_prefix_consumed,
+            output_queue_empty: self.tokens.is_empty(),
+            active_text_mode: self.active_text_mode,
+        }
+    }
+}
+
 /// Debug/runtime tokenizer hardening checks.
 ///
 /// These checks are enabled in debug/test builds and in release when the

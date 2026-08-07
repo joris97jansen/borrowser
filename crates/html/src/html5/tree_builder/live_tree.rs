@@ -86,7 +86,150 @@ pub(in crate::html5::tree_builder) struct LiveTree {
     root: Option<PatchKey>,
 }
 
+#[cfg(feature = "parser-conformance")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::html5::tree_builder) struct LiveTreeFinalAudit {
+    pub(in crate::html5::tree_builder) parent_child_links_valid: bool,
+    pub(in crate::html5::tree_builder) namespaces_valid: bool,
+    pub(in crate::html5::tree_builder) template_associations_valid: bool,
+}
+
 impl LiveTree {
+    #[cfg(feature = "parser-conformance")]
+    pub(in crate::html5::tree_builder) fn try_final_audit(
+        &self,
+        reserve: &mut impl FnMut(crate::conformance::ObservationReservationSite) -> Result<(), ()>,
+    ) -> Result<LiveTreeFinalAudit, ()> {
+        use std::collections::HashSet;
+
+        let mut visited = HashSet::new();
+        reserve(crate::conformance::ObservationReservationSite::FinalAuditDomStructuralTraversal)?;
+        visited.try_reserve(self.nodes.len()).map_err(|_| ())?;
+        let mut stack = Vec::new();
+        if let Some(root) = self.root {
+            reserve(
+                crate::conformance::ObservationReservationSite::FinalAuditDomStructuralTraversal,
+            )?;
+            stack.try_reserve(1).map_err(|_| ())?;
+            stack.push((root, None));
+        }
+
+        let mut parent_child_links_valid =
+            self.root.is_some() || self.nodes.iter().all(Option::is_none);
+        let mut namespaces_valid = true;
+        let mut template_associations_valid = true;
+        while let Some((key, expected_parent)) = stack.pop() {
+            if key == PatchKey::INVALID || !visited.insert(key) {
+                parent_child_links_valid = false;
+                continue;
+            }
+            let Some(index) = usize::try_from(key.0).ok() else {
+                parent_child_links_valid = false;
+                continue;
+            };
+            let Some(node) = self.nodes.get(index).and_then(Option::as_ref) else {
+                parent_child_links_valid = false;
+                continue;
+            };
+            if node.parent != expected_parent {
+                parent_child_links_valid = false;
+            }
+            match node.kind {
+                LiveNodeKind::Element => {
+                    if let Some(name) = node.expanded_name.as_ref() {
+                        if node.is_template_element != name.is(ElementNamespace::Html, "template") {
+                            namespaces_valid = false;
+                        }
+                    } else {
+                        namespaces_valid = false;
+                    }
+                    // Qualified attribute namespace/prefix shapes are valid by
+                    // construction; the audit consumes the typed values and
+                    // never reparses qualified-name strings.
+                    for attribute in &node.attributes {
+                        let _ = (
+                            attribute.name().namespace(),
+                            attribute.name().prefix(),
+                            attribute.name().local_name(),
+                        );
+                    }
+                }
+                LiveNodeKind::Document
+                | LiveNodeKind::DocumentType
+                | LiveNodeKind::DocumentFragment(_)
+                | LiveNodeKind::Text
+                | LiveNodeKind::Comment
+                | LiveNodeKind::ProcessingInstruction => {
+                    if node.expanded_name.is_some() {
+                        namespaces_valid = false;
+                    }
+                }
+            }
+            for child in node.children.iter().rev() {
+                reserve(crate::conformance::ObservationReservationSite::FinalAuditDomStructuralTraversal)?;
+                stack.try_reserve(1).map_err(|_| ())?;
+                stack.push((*child, Some(key)));
+            }
+            match (node.kind, node.template_contents, node.fragment_host) {
+                (LiveNodeKind::Element, Some(contents), None) if node.is_template_element => {
+                    if !node.children.is_empty() {
+                        // Parser-created template hosts keep ordinary children
+                        // out of the host; content belongs to the associated
+                        // template-contents fragment.
+                        template_associations_valid = false;
+                    }
+                    let association = usize::try_from(contents.0)
+                        .ok()
+                        .and_then(|index| self.nodes.get(index))
+                        .and_then(Option::as_ref)
+                        .is_some_and(|contents_node| {
+                            contents_node.kind
+                                == LiveNodeKind::DocumentFragment(
+                                    ParserCreatedFragmentKind::TemplateContents,
+                                )
+                                && contents_node.fragment_host == Some(key)
+                                && contents_node.parent.is_none()
+                        });
+                    if !association {
+                        template_associations_valid = false;
+                    }
+                    reserve(crate::conformance::ObservationReservationSite::FinalAuditDomStructuralTraversal)?;
+                    stack.try_reserve(1).map_err(|_| ())?;
+                    stack.push((contents, None));
+                }
+                (LiveNodeKind::Element, None, None) if !node.is_template_element => {}
+                (
+                    LiveNodeKind::DocumentFragment(ParserCreatedFragmentKind::TemplateContents),
+                    None,
+                    Some(host),
+                ) => {
+                    if usize::try_from(host.0)
+                        .ok()
+                        .and_then(|index| self.nodes.get(index))
+                        .and_then(Option::as_ref)
+                        .and_then(|host_node| host_node.template_contents)
+                        != Some(key)
+                    {
+                        template_associations_valid = false;
+                    }
+                }
+                (LiveNodeKind::Document, None, None)
+                | (LiveNodeKind::DocumentType, None, None)
+                | (LiveNodeKind::Text, None, None)
+                | (LiveNodeKind::Comment, None, None)
+                | (LiveNodeKind::ProcessingInstruction, None, None) => {}
+                _ => template_associations_valid = false,
+            }
+        }
+        if visited.len() != self.nodes.iter().filter(|node| node.is_some()).count() {
+            parent_child_links_valid = false;
+        }
+        Ok(LiveTreeFinalAudit {
+            parent_child_links_valid,
+            namespaces_valid,
+            template_associations_valid,
+        })
+    }
     pub(in crate::html5::tree_builder) fn try_reserve_through_key(
         &mut self,
         key: PatchKey,
@@ -225,6 +368,31 @@ impl LiveTree {
         self.node_mut(host).template_contents = None;
     }
 
+    #[cfg(test)]
+    pub(in crate::html5::tree_builder) fn corrupt_element_name_for_test(
+        &mut self,
+        key: PatchKey,
+        name: ExpandedElementName,
+    ) {
+        self.node_mut(key).expanded_name = Some(name);
+    }
+
+    #[cfg(test)]
+    pub(in crate::html5::tree_builder) fn corrupt_template_host_with_ordinary_child_for_test(
+        &mut self,
+        host: PatchKey,
+        name: ExpandedElementName,
+    ) {
+        let child = PatchKey(
+            u32::try_from(self.nodes.len()).expect("test live-tree key space must fit in u32"),
+        );
+        let mut node = LiveNode::new(LiveNodeKind::Element);
+        node.parent = Some(host);
+        node.expanded_name = Some(name);
+        self.nodes.push(Some(node));
+        self.node_mut(host).children.push(child);
+    }
+
     pub(in crate::html5::tree_builder) fn is_template_element(&self, key: PatchKey) -> bool {
         self.node(key).is_template_element
     }
@@ -237,6 +405,32 @@ impl LiveTree {
         node.expanded_name
             .as_ref()
             .map(|name| (name, node.attributes.as_slice()))
+    }
+
+    #[cfg(feature = "parser-conformance")]
+    pub(in crate::html5::tree_builder) fn element_semantics_for_final_audit(
+        &self,
+        key: PatchKey,
+    ) -> Option<(&ExpandedElementName, &[ParserCreatedAttribute])> {
+        let index = usize::try_from(key.0).ok()?;
+        let node = self.nodes.get(index)?.as_ref()?;
+        node.expanded_name
+            .as_ref()
+            .map(|name| (name, node.attributes.as_slice()))
+    }
+
+    #[cfg(feature = "parser-conformance")]
+    pub(in crate::html5::tree_builder) fn template_state_for_final_audit(
+        &self,
+        key: PatchKey,
+    ) -> Option<(bool, Option<PatchKey>, usize)> {
+        let index = usize::try_from(key.0).ok()?;
+        let node = self.nodes.get(index)?.as_ref()?;
+        Some((
+            node.is_template_element,
+            node.template_contents,
+            node.children.len(),
+        ))
     }
 
     pub(in crate::html5::tree_builder) fn contains(&self, key: PatchKey) -> bool {
@@ -298,6 +492,54 @@ impl LiveTree {
             });
         }
         state
+    }
+
+    #[cfg(feature = "parser-conformance")]
+    pub(in crate::html5::tree_builder) fn try_invariant_state_for_final_audit(
+        &self,
+        reserve: &mut impl FnMut(crate::conformance::ObservationReservationSite) -> Result<(), ()>,
+    ) -> Result<DomInvariantState, ()> {
+        let mut nodes = Vec::new();
+        reserve(
+            crate::conformance::ObservationReservationSite::FinalAuditLiveTreeStructuralProjection,
+        )?;
+        nodes.try_reserve_exact(self.nodes.len()).map_err(|_| ())?;
+        nodes.resize_with(self.nodes.len(), || None);
+        for (index, maybe_node) in self.nodes.iter().enumerate() {
+            let Some(node) = maybe_node else {
+                continue;
+            };
+            let mut children = Vec::new();
+            reserve(crate::conformance::ObservationReservationSite::FinalAuditLiveTreeStructuralProjection)?;
+            children
+                .try_reserve_exact(node.children.len())
+                .map_err(|_| ())?;
+            children.extend_from_slice(&node.children);
+            let kind = match node.kind {
+                LiveNodeKind::Document => DomInvariantNodeKind::Document,
+                LiveNodeKind::DocumentType => DomInvariantNodeKind::DocumentType,
+                LiveNodeKind::Element => DomInvariantNodeKind::Element,
+                LiveNodeKind::DocumentFragment(kind) => {
+                    DomInvariantNodeKind::DocumentFragment(kind)
+                }
+                LiveNodeKind::Text => DomInvariantNodeKind::Text,
+                LiveNodeKind::Comment => DomInvariantNodeKind::Comment,
+                LiveNodeKind::ProcessingInstruction => DomInvariantNodeKind::ProcessingInstruction,
+            };
+            let slot = nodes.get_mut(index).ok_or(())?;
+            *slot = Some(DomInvariantNode {
+                kind,
+                parent: node.parent,
+                children,
+                template_contents: node.template_contents,
+                fragment_host: node.fragment_host,
+                is_template_element: node.is_template_element,
+            });
+        }
+        Ok(DomInvariantState {
+            nodes,
+            root: self.root,
+        })
     }
 
     fn insert_node(&mut self, key: PatchKey, kind: LiveNodeKind) {

@@ -28,6 +28,8 @@ pub use fuzz::{
 ))]
 pub use fuzz::{Html5PipelineRegressionError, render_html5_pipeline_regression_snapshot};
 pub use session::Html5ParseSession;
+#[cfg(feature = "parser-conformance")]
+pub(crate) use session::Html5SessionFinalAudit;
 #[cfg(all(feature = "internal-api", feature = "parser-failure-injection"))]
 pub use shared::ParserFailureInjection;
 pub use shared::{

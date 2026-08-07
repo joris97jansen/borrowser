@@ -21,14 +21,26 @@ byte delivery, and any byte-sensitive case. `input.html` containing a carriage
 return is rejected. Always update the mandatory SHA-256 from the exact stored
 bytes; the loader never trims input.
 
-AE13b5 executes supported whole-input standalone-tokenizer and document
-fixtures from typed canonical observations. Ordinary surfaces are unioned on
-the reference delivery; transition expectations may name another declared
-whole delivery. Each planned delivery executes once. Unused declared whole
-deliveries are capability-checked but do not execute.
+AE13c executes supported standalone-tokenizer and document fixtures through an
+authoritative whole-input baseline plus bounded declared and representative
+scalar/byte strategies. Semantic aliases execute once. Fixed-one and
+fixed-seven delivery are incremental and allocate no boundary vector; the
+edge-triplet strategy is bounded and generic. Strategy generation never scans
+HTML syntax. Every applicable canonical surface and the mandatory production
+final audit must match the baseline.
+
+Parity compares typed canonical values before serialization. The runner keeps
+one owned baseline and disposes successful parity-only candidates; it does not
+deep-clone the baseline. Final-audit failure injection is attached to each real
+fallible reservation and reports the exact observation-resource site. Explicit
+scalar boundary resolution is the fixture-harness resource
+`scalar-boundary-execution-offsets`; fixed scalar delivery remains allocation
+independent of chunk count. Boundary digests are lazy, streaming diagnostic
+metadata and are never used for semantic equality.
 
 Canonical sidecars use the exact AE13b5 formats, including `html5-token-v2`,
-`html5-dom-v3`, and `html5-dompatch-v3`. Header-only diagnostic, transition,
+`html5-dom-v3`, `html5-dompatch-v3`, and the exact 16-record
+`html5-final-invariants-v1`. Header-only diagnostic, transition,
 unsupported-feature, tree, and patch snapshots represent requested empty
 collections. Fixture-v1 remains an isolated compatibility format.
 

@@ -23,11 +23,12 @@ pub use crate::html5::shared::{
     WhatwgParseErrorCode,
 };
 pub use execution::{
-    ObservationRequest, ObservationReservationSite, ObservationResourceExhaustion,
-    ParserFatalIdentity, ParserObservationExecutionError, ParserObservationExecutionIdentity,
-    ParserObservationInput, ParserObservationInvariantError, ParserObservationRequest,
-    ParserObservationTarget, ParserReservationSiteIdentity, ParserTokenizerInvariantError,
-    ScalarObservationRequest, UnsupportedFeatureObservationInvariantError,
-    execute_parser_observation,
+    FinalInvariantRequest, ObservationRequest, ObservationReservationSite,
+    ObservationResourceExhaustion, ParserFatalIdentity, ParserObservationDeliveryError,
+    ParserObservationDeliveryErrorIdentity, ParserObservationExecutionError,
+    ParserObservationExecutionIdentity, ParserObservationInput, ParserObservationInvariantError,
+    ParserObservationRequest, ParserObservationTarget, ParserReservationSiteIdentity,
+    ParserTokenizerInvariantError, ScalarObservationRequest,
+    UnsupportedFeatureObservationInvariantError, execute_parser_observation,
 };
 pub use model::*;

@@ -1,4 +1,4 @@
-use super::model::{FIXTURE_FORMAT_V1, FIXTURE_FORMAT_V2, FixtureBundle, FixtureId};
+use super::model::{DeliveryName, FIXTURE_FORMAT_V1, FIXTURE_FORMAT_V2, FixtureBundle, FixtureId};
 use super::schema::{FixtureFileV1, FixtureFileV2, FixtureFormatEnvelope};
 use super::validate::{ValidatedFixtureSpec, validate_fixture_v1, validate_fixture_v2};
 use std::collections::{BTreeMap, BTreeSet};
@@ -70,6 +70,76 @@ pub struct FixtureLoadError {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DeliveryValidationError {
+    TooManyDeclaredDeliveries {
+        declared: usize,
+        maximum: usize,
+    },
+    TooManyBoundaries {
+        delivery_index: usize,
+        declared_name: String,
+        declared: usize,
+        maximum: usize,
+    },
+    InvalidDeliveryName {
+        delivery_index: usize,
+        declared_name: String,
+    },
+    InvalidReferenceDeliveryName {
+        declared_name: String,
+    },
+    DuplicateDeliveryName {
+        delivery_index: usize,
+        declared_name: String,
+    },
+    UnitNotSupportedForInputDomain {
+        delivery: DeliveryName,
+    },
+    BoundariesMissing {
+        delivery: DeliveryName,
+    },
+    BoundariesUnexpected {
+        delivery: DeliveryName,
+    },
+    BoundaryAtStart {
+        delivery: DeliveryName,
+        boundary_index: usize,
+    },
+    BoundaryAtEnd {
+        delivery: DeliveryName,
+        boundary_index: usize,
+    },
+    BoundaryOutOfRange {
+        delivery: DeliveryName,
+        boundary_index: usize,
+    },
+    DuplicateBoundary {
+        delivery: DeliveryName,
+        boundary_index: usize,
+    },
+    UnsortedBoundary {
+        delivery: DeliveryName,
+        boundary_index: usize,
+    },
+    MissingDomainBaseline,
+    ReferenceIsNotDomainBaseline {
+        delivery: DeliveryName,
+    },
+    ReferenceDeliveryMissing {
+        delivery: DeliveryName,
+    },
+    TooManyUniqueStrategies {
+        planned: usize,
+        maximum: usize,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FixturePlanningInvariant {
+    StrategyOrdinalOverflow,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FixtureLoadErrorKind {
     FixtureRootOutsideRepository,
     NonUtf8Path,
@@ -95,6 +165,8 @@ pub enum FixtureLoadErrorKind {
     InvalidExtensionId(String),
     InvalidDisposition(String),
     InvalidCombination(String),
+    InvalidDelivery(DeliveryValidationError),
+    InternalPlanningInvariant(FixturePlanningInvariant),
 }
 
 impl std::fmt::Display for FixtureLoadError {
@@ -180,6 +252,112 @@ impl std::fmt::Display for FixtureLoadError {
             }
             FixtureLoadErrorKind::InvalidCombination(message) => {
                 write!(f, "invalid fixture combination: {message}")
+            }
+            FixtureLoadErrorKind::InvalidDelivery(error) => {
+                write!(f, "invalid fixture delivery: {error}")
+            }
+            FixtureLoadErrorKind::InternalPlanningInvariant(invariant) => match invariant {
+                FixturePlanningInvariant::StrategyOrdinalOverflow => {
+                    f.write_str("internal fixture-planning invariant: strategy ordinal overflow")
+                }
+            },
+        }
+    }
+}
+
+impl std::fmt::Display for DeliveryValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TooManyDeclaredDeliveries { declared, maximum } => {
+                write!(f, "too-many-declared-deliveries:{declared}:{maximum}")
+            }
+            Self::TooManyBoundaries {
+                delivery_index,
+                declared_name,
+                declared,
+                maximum,
+            } => {
+                write!(
+                    f,
+                    "too-many-boundaries:{delivery_index}:{declared_name}:{declared}:{maximum}"
+                )
+            }
+            Self::InvalidDeliveryName {
+                delivery_index,
+                declared_name,
+            } => {
+                write!(f, "invalid-delivery-name:{delivery_index}:{declared_name}")
+            }
+            Self::InvalidReferenceDeliveryName { declared_name } => {
+                write!(f, "invalid-reference-delivery-name:{declared_name}")
+            }
+            Self::DuplicateDeliveryName {
+                delivery_index,
+                declared_name,
+            } => {
+                write!(
+                    f,
+                    "duplicate-delivery-name:{delivery_index}:{declared_name}"
+                )
+            }
+            Self::UnitNotSupportedForInputDomain { delivery } => {
+                write!(
+                    f,
+                    "unit-not-supported-for-input-domain:{}",
+                    delivery.as_str()
+                )
+            }
+            Self::BoundariesMissing { delivery } => {
+                write!(f, "boundaries-missing:{}", delivery.as_str())
+            }
+            Self::BoundariesUnexpected { delivery } => {
+                write!(f, "boundaries-unexpected:{}", delivery.as_str())
+            }
+            Self::BoundaryAtStart {
+                delivery,
+                boundary_index,
+            } => write!(
+                f,
+                "boundary-at-start:{}:{boundary_index}",
+                delivery.as_str()
+            ),
+            Self::BoundaryAtEnd {
+                delivery,
+                boundary_index,
+            } => write!(f, "boundary-at-end:{}:{boundary_index}", delivery.as_str()),
+            Self::BoundaryOutOfRange {
+                delivery,
+                boundary_index,
+            } => write!(
+                f,
+                "boundary-out-of-range:{}:{boundary_index}",
+                delivery.as_str()
+            ),
+            Self::DuplicateBoundary {
+                delivery,
+                boundary_index,
+            } => write!(
+                f,
+                "duplicate-boundary:{}:{boundary_index}",
+                delivery.as_str()
+            ),
+            Self::UnsortedBoundary {
+                delivery,
+                boundary_index,
+            } => write!(
+                f,
+                "unsorted-boundary:{}:{boundary_index}",
+                delivery.as_str()
+            ),
+            Self::MissingDomainBaseline => f.write_str("missing-domain-baseline"),
+            Self::ReferenceIsNotDomainBaseline { delivery } => {
+                write!(f, "reference-is-not-domain-baseline:{}", delivery.as_str())
+            }
+            Self::ReferenceDeliveryMissing { delivery } => {
+                write!(f, "reference-delivery-missing:{}", delivery.as_str())
+            }
+            Self::TooManyUniqueStrategies { planned, maximum } => {
+                write!(f, "too-many-unique-strategies:{planned}:{maximum}")
             }
         }
     }

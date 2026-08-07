@@ -1,10 +1,12 @@
 use super::model::{
-    ExecutionFailureClass, ParserObservationFailureClass, ValidatedFixtureInvariantCode,
+    ExecutionFailureClass, FixtureExecutionResourceSite, ParserObservationFailureClass,
+    ValidatedFixtureInvariantCode,
 };
 use html::conformance::{
-    ObservationReservationSite, ParserFatalIdentity, ParserObservationExecutionIdentity as I,
-    ParserObservationInvariantError as O, ParserReservationSiteIdentity as P,
-    ParserTokenizerInvariantError as T, UnsupportedFeatureObservationInvariantError as U,
+    ObservationReservationSite, ParserFatalIdentity, ParserObservationDeliveryErrorIdentity as D,
+    ParserObservationExecutionIdentity as I, ParserObservationInvariantError as O,
+    ParserReservationSiteIdentity as P, ParserTokenizerInvariantError as T,
+    UnsupportedFeatureObservationInvariantError as U,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -148,6 +150,8 @@ closed_codec!(
         O::DuplicatePatchCreation => "duplicate-patch-creation",
         O::MissingPatchCreationHistory => "missing-patch-creation-history",
         O::SnapshotLabelSequenceOverflow => "snapshot-label-sequence-overflow",
+        O::FinalAuditPatchCountOverflow => "final-audit-patch-count-overflow",
+        O::DerivedDeliverySlicingInvariant => "derived-delivery-slicing-invariant",
     }
 );
 
@@ -173,6 +177,29 @@ closed_codec!(
         ObservationReservationSite::CanonicalTreeProjection => "canonical-tree-projection",
         ObservationReservationSite::CanonicalPatchProjection => "canonical-patch-projection",
         ObservationReservationSite::SnapshotLabelStorage => "snapshot-label-storage",
+        ObservationReservationSite::FinalAuditLiveTreeStructuralProjection => "final-audit-live-tree-structural-projection",
+        ObservationReservationSite::FinalAuditPatchArenaStructuralProjection => "final-audit-patch-arena-structural-projection",
+        ObservationReservationSite::FinalAuditDomStructuralTraversal => "final-audit-dom-structural-traversal",
+        ObservationReservationSite::FinalAuditOpenElementsIndex => "final-audit-open-elements-index",
+        ObservationReservationSite::FinalAuditActiveFormattingIndex => "final-audit-active-formatting-index",
+        ObservationReservationSite::FinalAuditTemplateCoordinationIndex => "final-audit-template-coordination-index",
+        ObservationReservationSite::FinalAuditSemanticTraversal => "final-audit-semantic-traversal",
+    }
+);
+
+closed_codec!(
+    delivery_error_name,
+    parse_delivery_error,
+    all_delivery_errors,
+    D,
+    {
+        D::BoundaryAtStart => "boundary-at-start",
+        D::BoundaryAtEnd => "boundary-at-end",
+        D::BoundaryOutOfRange => "boundary-out-of-range",
+        D::BoundaryNotIncreasing => "boundary-not-increasing",
+        D::UnicodeBoundaryNotScalar => "unicode-boundary-not-scalar",
+        D::ZeroFixedChunkExtent => "zero-fixed-chunk-extent",
+        D::ArithmeticOverflow => "arithmetic-overflow",
     }
 );
 
@@ -195,6 +222,8 @@ closed_codec!(
         ValidatedFixtureInvariantCode::MissingExecutedDeliveryResult => "missing-executed-delivery-result",
         ValidatedFixtureInvariantCode::DuplicateExecutedDeliveryResult => "duplicate-executed-delivery-result",
         ValidatedFixtureInvariantCode::DuplicateExpectationIdentity => "duplicate-expectation-identity",
+        ValidatedFixtureInvariantCode::ValidatedBoundaryRejectedByExecutor => "validated-boundary-rejected-by-executor",
+        ValidatedFixtureInvariantCode::StrategyScheduleContradiction => "strategy-schedule-contradiction",
     }
 );
 
@@ -207,6 +236,10 @@ pub(super) fn parse_parser_observation_failure(
         ("parser-fatal-engine-invariant", None, None) => {
             I::ParserFatal(ParserFatalIdentity::EngineInvariant)
         }
+        ("invalid-delivery", Some(code), None) => I::InvalidDelivery(
+            parse_delivery_error(code)
+                .ok_or(FailureSpellingError::UnknownParserObservationIdentity)?,
+        ),
         ("parser-fatal-resource-exhaustion", None, Some(site)) => {
             I::ParserFatal(ParserFatalIdentity::ResourceExhaustion(
                 parse_parser_reservation_site(site)
@@ -249,7 +282,8 @@ pub(super) fn parse_parser_observation_failure(
 fn is_parser_observation_identity(identity: &str) -> bool {
     matches!(
         identity,
-        "parser-fatal-engine-invariant"
+        "invalid-delivery"
+            | "parser-fatal-engine-invariant"
             | "parser-fatal-resource-exhaustion"
             | "parser-invariant"
             | "tokenizer-invariant"
@@ -270,6 +304,11 @@ pub(super) const fn parser_observation_failure_spelling(
         I::ParserFatal(ParserFatalIdentity::EngineInvariant) => ParserObservationFailureSpelling {
             identity: "parser-fatal-engine-invariant",
             code: None,
+            site: None,
+        },
+        I::InvalidDelivery(code) => ParserObservationFailureSpelling {
+            identity: "invalid-delivery",
+            code: Some(delivery_error_name(code)),
             site: None,
         },
         I::ParserFatal(ParserFatalIdentity::ResourceExhaustion(site)) => {
@@ -355,8 +394,20 @@ pub(super) fn execution_failure_name(value: ExecutionFailureClass) -> String {
             "parser-observation:{}",
             parser_observation_failure_name(identity)
         ),
+        ExecutionFailureClass::FixtureExecutionResourceExhaustion(site) => format!(
+            "fixture-execution-resource-exhaustion:{}",
+            fixture_execution_resource_site_name(site)
+        ),
         ExecutionFailureClass::ValidatedFixtureInvariant(code) => {
             format!("validated-runner-invariant:{}", runner_invariant_name(code))
+        }
+    }
+}
+
+const fn fixture_execution_resource_site_name(site: FixtureExecutionResourceSite) -> &'static str {
+    match site {
+        FixtureExecutionResourceSite::ScalarBoundaryExecutionOffsets => {
+            "scalar-boundary-execution-offsets"
         }
     }
 }

@@ -127,6 +127,15 @@ impl TemplateModeStack {
         self.entries.last_mut().expect("open template mode").owner = owner;
     }
 
+    #[cfg(test)]
+    pub(in crate::html5::tree_builder) fn swap_entries_for_test(
+        &mut self,
+        left: usize,
+        right: usize,
+    ) {
+        self.entries.swap(left, right);
+    }
+
     #[cfg(any(test, feature = "internal-api", feature = "html5-fuzzing"))]
     pub(in crate::html5::tree_builder) fn snapshot(
         &self,

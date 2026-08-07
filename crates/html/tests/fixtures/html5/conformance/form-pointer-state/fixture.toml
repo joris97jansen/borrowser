@@ -1,0 +1,28 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "form-pointer-state"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "d4f9d28efbe1d9fea5dd38f8dd373f7d210bd286f8b7da39f4b5da5540609b50"
+[execution]
+reference_delivery = "whole-unicode"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole-unicode"
+unit = "unicode-scalars"
+strategy = "whole"
+[[execution.deliveries]]
+name = "declared-scalar-split"
+unit = "unicode-scalars"
+strategy = "boundaries"
+boundaries = [1]
+[expectations]
+final_invariants = "final-invariants.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "Nested-form recovery and the form element pointer remain chunk-independent."

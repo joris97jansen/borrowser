@@ -19,4 +19,8 @@ pub use self::options::{
 };
 pub use self::output::ParseOutput;
 pub use self::session::HtmlParser;
+#[cfg(feature = "parser-conformance")]
+pub(crate) use self::session::{
+    ConformanceFinalizationError, ConformanceFinalizedOutput, PatchMaterializationWitness,
+};
 pub use self::types::{HtmlParseCounters, HtmlParseError, HtmlParseEvent};

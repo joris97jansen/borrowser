@@ -15,7 +15,11 @@ pub(super) enum FixtureOutcomeClassification {
     ExecutionFailedV1(LegacyExecutionFailureClass),
     ExecutionFailedV2(ExecutionFailureClass),
     ExpectationMismatch(ExpectationSurface),
-    InvariantFailure(Vec<InvariantFailureCode>),
+    ParityMismatch(ExpectationSurface),
+    InvariantFailure {
+        first: Option<InvariantFailureCode>,
+        count: u8,
+    },
     IncompleteObservation,
 }
 
@@ -153,6 +157,9 @@ fn classify_outcome(outcome: &FixtureExecutionOutcome) -> FixtureOutcomeClassifi
         | FixtureExecutionOutcome::ExpectationMismatchV2 { surface, .. } => {
             FixtureOutcomeClassification::ExpectationMismatch(*surface)
         }
+        FixtureExecutionOutcome::ParityMismatchV2 { surface, .. } => {
+            FixtureOutcomeClassification::ParityMismatch(*surface)
+        }
         FixtureExecutionOutcome::UnsupportedExpectation { surface } => {
             FixtureOutcomeClassification::UnsupportedExpectation(*surface)
         }
@@ -166,8 +173,19 @@ fn classify_outcome(outcome: &FixtureExecutionOutcome) -> FixtureOutcomeClassifi
             FixtureOutcomeClassification::ExecutionFailedV2(*class)
         }
         FixtureExecutionOutcome::InvariantFailed { failures, .. } => {
-            FixtureOutcomeClassification::InvariantFailure(failures.clone())
+            FixtureOutcomeClassification::InvariantFailure {
+                first: failures.first().copied(),
+                count: u8::try_from(failures.len()).unwrap_or(u8::MAX),
+            }
         }
+        FixtureExecutionOutcome::FinalInvariantFailedV2 {
+            first_failure,
+            failure_count,
+            ..
+        } => FixtureOutcomeClassification::InvariantFailure {
+            first: Some(*first_failure),
+            count: *failure_count,
+        },
         FixtureExecutionOutcome::IncompleteObservation { .. }
         | FixtureExecutionOutcome::IncompleteObservationV2 { .. } => {
             FixtureOutcomeClassification::IncompleteObservation
@@ -190,8 +208,8 @@ fn failure_matches(
         ) => expected == actual,
         (
             ExpectedFailureClassification::InvariantFailure(expected),
-            FixtureOutcomeClassification::InvariantFailure(actual),
-        ) => actual.as_slice() == [*expected],
+            FixtureOutcomeClassification::InvariantFailure { first, count },
+        ) => *count == 1 && *first == Some(*expected),
         _ => false,
     }
 }
@@ -211,8 +229,8 @@ fn failure_matches_v2(
         ) => expected == actual,
         (
             ExpectedFailureClassificationV2::FinalInvariant(expected),
-            FixtureOutcomeClassification::InvariantFailure(actual),
-        ) => actual.as_slice() == [*expected],
+            FixtureOutcomeClassification::InvariantFailure { first, count },
+        ) => *count == 1 && *first == Some(*expected),
         _ => false,
     }
 }
@@ -264,7 +282,12 @@ fn outcome_name(value: &FixtureOutcomeClassification) -> String {
         FixtureOutcomeClassification::ExpectationMismatch(surface) => {
             format!("expectation-mismatch:{}", surface.name())
         }
-        FixtureOutcomeClassification::InvariantFailure(_) => "final-invariant-failure".to_string(),
+        FixtureOutcomeClassification::ParityMismatch(surface) => {
+            format!("parity-mismatch:{}", surface.name())
+        }
+        FixtureOutcomeClassification::InvariantFailure { .. } => {
+            "final-invariant-failure".to_string()
+        }
         FixtureOutcomeClassification::IncompleteObservation => "incomplete-observation".to_string(),
     }
 }

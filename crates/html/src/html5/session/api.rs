@@ -14,6 +14,18 @@ use crate::html5::tokenizer::{Html5Tokenizer, TokenizerConfig};
 #[cfg(test)]
 use crate::html5::tree_builder::PatchSink;
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderConfig};
+#[cfg(feature = "parser-conformance")]
+use crate::html5::tree_builder::{TreeBuilderFinalAudit, TreeBuilderFinalAuditAllocation};
+
+#[cfg(feature = "parser-conformance")]
+pub(crate) struct Html5SessionFinalAudit {
+    pub(crate) decoder_carry_empty: bool,
+    pub(crate) preprocessing_flushed: bool,
+    pub(crate) tokenizer_eof_lifecycle_complete: bool,
+    pub(crate) tokenizer_pending_constructs_flushed: bool,
+    pub(crate) tokenizer_output_accounted_for: bool,
+    pub(crate) tree_builder: TreeBuilderFinalAudit,
+}
 
 /// Feature-gated runtime entrypoint for the HTML5 parsing path.
 pub struct Html5ParseSession {
@@ -256,6 +268,44 @@ impl Html5ParseSession {
     }
 
     #[cfg(feature = "parser-conformance")]
+    pub(crate) fn final_audit_for_conformance(
+        &self,
+        reserve: &mut impl FnMut(crate::conformance::ObservationReservationSite) -> Result<(), ()>,
+    ) -> Result<Html5SessionFinalAudit, TreeBuilderFinalAuditAllocation> {
+        let tokenizer = self.tokenizer.final_audit_for_conformance();
+        let mut tree_builder = self
+            .builder
+            .final_audit_for_conformance(&self.ctx.atoms, reserve)?;
+        tree_builder.insertion_mode_valid = tokenizer.active_text_mode.is_none()
+            && tree_builder.active_text_mode.is_none()
+            && tree_builder.original_insertion_mode.is_none()
+            && tree_builder.pending_tokenizer_control.is_none()
+            && !matches!(
+                tree_builder.insertion_mode,
+                crate::html5::tree_builder::modes::InsertionMode::Text
+                    | crate::html5::tree_builder::modes::InsertionMode::InTableText
+            );
+        Ok(Html5SessionFinalAudit {
+            decoder_carry_empty: !self.decoder.has_pending_bytes(),
+            preprocessing_flushed: !self.input.has_pending_preprocessing(),
+            tokenizer_eof_lifecycle_complete: tokenizer.eof_lifecycle_complete,
+            tokenizer_pending_constructs_flushed: tokenizer.pending_constructs_flushed,
+            tokenizer_output_accounted_for: tokenizer.output_queue_empty,
+            tree_builder,
+        })
+    }
+
+    #[cfg(feature = "parser-conformance")]
+    pub(crate) fn builder_pending_patch_count_for_final_audit(&self) -> usize {
+        self.builder.pending_patch_count_for_final_audit()
+    }
+
+    #[cfg(feature = "parser-conformance")]
+    pub(crate) fn emitter_pending_patch_count_for_final_audit(&self) -> usize {
+        self.patch_emitter.buffered_patch_count_for_final_audit()
+    }
+
+    #[cfg(feature = "parser-conformance")]
     pub(crate) fn take_patch_history_for_conformance(
         &mut self,
     ) -> Result<Option<RawPatchHistoryCapture>, Html5SessionError> {
@@ -331,6 +381,25 @@ impl Html5ParseSession {
         &self,
     ) -> Option<crate::html5::tokenizer::TextModeSpec> {
         self.tokenizer.active_text_mode_for_test()
+    }
+
+    #[cfg(all(test, feature = "parser-conformance"))]
+    pub(crate) fn set_terminal_text_state_for_test(
+        &mut self,
+        tokenizer_active_text_mode: Option<crate::html5::tokenizer::TextModeSpec>,
+        tree_builder_active_text_mode: Option<crate::html5::tokenizer::TextModeSpec>,
+        original_insertion_mode: Option<crate::html5::tree_builder::modes::InsertionMode>,
+        pending_tokenizer_control: Option<TokenizerControl>,
+        insertion_mode: crate::html5::tree_builder::modes::InsertionMode,
+    ) {
+        self.tokenizer
+            .set_active_text_mode_for_test(tokenizer_active_text_mode);
+        self.builder.set_terminal_text_state_for_test(
+            tree_builder_active_text_mode,
+            original_insertion_mode,
+            pending_tokenizer_control,
+            insertion_mode,
+        );
     }
 
     #[cfg(all(test, feature = "parser-conformance"))]

@@ -269,9 +269,19 @@ impl OpenElementsStack {
         self.items.iter().map(|entry| entry.name())
     }
 
-    #[cfg(any(test, feature = "parser_invariants", feature = "html5-fuzzing"))]
+    #[cfg(any(
+        test,
+        feature = "parser_invariants",
+        feature = "html5-fuzzing",
+        feature = "parser-conformance"
+    ))]
     pub(crate) fn iter_entries(&self) -> impl Iterator<Item = OpenElement> + '_ {
         self.items.iter().copied()
+    }
+
+    #[cfg(feature = "parser-conformance")]
+    pub(crate) fn cached_name_counts(&self) -> &[(ExpandedNameKey, usize)] {
+        &self.name_counts
     }
 
     #[cfg(any(test, feature = "parser_invariants", feature = "html5-fuzzing"))]

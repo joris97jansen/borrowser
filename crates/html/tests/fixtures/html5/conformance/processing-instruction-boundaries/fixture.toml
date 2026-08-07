@@ -1,0 +1,28 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "processing-instruction-boundaries"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "3ede96a0f270ad9d2f668285f24cf78e4a91eb31edaadc98c9c7d061fd92d288"
+[execution]
+reference_delivery = "whole-unicode"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole-unicode"
+unit = "unicode-scalars"
+strategy = "whole"
+[[execution.deliveries]]
+name = "declared-scalar-split"
+unit = "unicode-scalars"
+strategy = "boundaries"
+boundaries = [1]
+[expectations]
+final_invariants = "final-invariants.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "Processing-instruction target and data construction remain chunk-independent."

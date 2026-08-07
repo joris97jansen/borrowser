@@ -319,6 +319,10 @@ pub struct TreeBuilderStateSnapshot {
 }
 
 impl Html5TreeBuilder {
+    #[cfg(feature = "parser-conformance")]
+    pub(crate) fn pending_patch_count_for_final_audit(&self) -> usize {
+        self.patches.len()
+    }
     pub(in crate::html5::tree_builder) fn adjusted_current_node(
         &self,
     ) -> Option<crate::html5::tree_builder::foreign::AdjustedCurrentNode<'_>> {
@@ -658,6 +662,20 @@ impl Html5TreeBuilder {
             quirks_mode: self.document_state.quirks_mode,
             frameset_ok: self.document_state.frameset_ok,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_terminal_text_state_for_test(
+        &mut self,
+        active_text_mode: Option<TextModeSpec>,
+        original_insertion_mode: Option<InsertionMode>,
+        pending_tokenizer_control: Option<TokenizerControl>,
+        insertion_mode: InsertionMode,
+    ) {
+        self.active_text_mode = active_text_mode;
+        self.original_insertion_mode = original_insertion_mode;
+        self.pending_tokenizer_control = pending_tokenizer_control;
+        self.insertion_mode = insertion_mode;
     }
 
     #[cold]

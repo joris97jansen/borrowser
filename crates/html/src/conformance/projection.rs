@@ -46,6 +46,13 @@ pub(super) enum ObservationAllocationStep {
     PatchCreationHistoryStorage,
     SnapshotLabelMapStorage,
     SnapshotLabelStringStorage,
+    FinalAuditLiveTreeStructuralProjection,
+    FinalAuditPatchArenaStructuralProjection,
+    FinalAuditDomStructuralTraversal,
+    FinalAuditOpenElementsIndex,
+    FinalAuditActiveFormattingIndex,
+    FinalAuditTemplateCoordinationIndex,
+    FinalAuditSemanticTraversal,
 }
 
 #[cfg(test)]
@@ -59,6 +66,37 @@ impl ObservationAllocationController {
 }
 
 impl ObservationAllocationController {
+    pub(super) fn before_final_audit(
+        &mut self,
+        site: ObservationReservationSite,
+    ) -> Result<(), ObservationResourceExhaustion> {
+        let step = match site {
+            ObservationReservationSite::FinalAuditLiveTreeStructuralProjection => {
+                ObservationAllocationStep::FinalAuditLiveTreeStructuralProjection
+            }
+            ObservationReservationSite::FinalAuditPatchArenaStructuralProjection => {
+                ObservationAllocationStep::FinalAuditPatchArenaStructuralProjection
+            }
+            ObservationReservationSite::FinalAuditDomStructuralTraversal => {
+                ObservationAllocationStep::FinalAuditDomStructuralTraversal
+            }
+            ObservationReservationSite::FinalAuditOpenElementsIndex => {
+                ObservationAllocationStep::FinalAuditOpenElementsIndex
+            }
+            ObservationReservationSite::FinalAuditActiveFormattingIndex => {
+                ObservationAllocationStep::FinalAuditActiveFormattingIndex
+            }
+            ObservationReservationSite::FinalAuditTemplateCoordinationIndex => {
+                ObservationAllocationStep::FinalAuditTemplateCoordinationIndex
+            }
+            ObservationReservationSite::FinalAuditSemanticTraversal => {
+                ObservationAllocationStep::FinalAuditSemanticTraversal
+            }
+            _ => return Ok(()),
+        };
+        self.before_reservation(site, step)
+    }
+
     fn before_reservation(
         &mut self,
         site: ObservationReservationSite,
