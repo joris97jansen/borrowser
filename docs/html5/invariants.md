@@ -318,6 +318,78 @@ Table cell and AFE interaction:
 - Layout inability cannot alter DOM/style truth; unsupported SVG/MathML roots
   suppress complete box subtrees at the centralized Layout decision boundary.
 
+## AE13c final-audit ownership matrix
+
+All final-audit entry points are read-only, deterministic, checked-arithmetic
+based, non-recursive where traversal is required, and safe to continue after an
+independent field has failed. They do not use assertion-based `LiveTree`
+mutation helpers. Allocation failure aborts observation with
+`ParserObservationExecutionError::ResourceExhaustion`; it is not reclassified
+as an ordinary parser fatal error and no partial report is returned.
+
+`Satisfied` means the stated production-owned predicate holds. `Failed` means
+the predicate is representably false while execution otherwise completed.
+`NotApplicable` is used only as stated below. Tests exercise production parsing
+or narrow production-owned corruption/failure hooks and compare typed reports;
+test support does not reproduce the algorithm.
+
+| Field | Owner and production state | Production helper and phase | Outcomes and test boundary |
+|---|---|---|---|
+| `decoder_carry_empty` | session input; `ByteStreamDecoder` pending bytes | `Html5ParseSession::final_audit_for_conformance`, pre-materialization | satisfied iff no decoder carry; tokenizer and document runs apply; direct whole/fixed/explicit byte tests cover invalid/incomplete UTF-8 EOF |
+| `preprocessing_flushed` | session input; `Input` preprocessing carry | same session audit, pre | satisfied iff no pending preprocessing state; CRLF, lone/trailing CR tests; never N/A for supported runs |
+| `eof_emitted_once` | tokenizer; authoritative `end_of_stream`, `eof_emitted`, and guarded EOF transition | `Html5Tokenizer::final_audit_for_conformance`, pre | satisfied iff terminal lifecycle agrees with configured EOF emission; no second counter; never N/A |
+| `pending_constructs_flushed` | tokenizer pending text/tag/comment/doctype/PI construction fields | tokenizer final audit, pre | satisfied iff every supported pending construct is terminally cleared; EOF recovery/text-mode/PI fixtures |
+| `output_accounted_for` | tokenizer output queue | tokenizer final audit plus session drain ownership, pre | satisfied iff tokenizer output queue is empty after authoritative draining; token/EOF tests |
+| `pending_table_text_empty` | tree builder pending table-text state | `Html5TreeBuilder::final_audit_for_conformance`, pre | satisfied iff no table-text buffer remains; standalone tokenizer is N/A; table and template-EOF fixtures |
+| `insertion_mode_valid` | session tokenizer active text mode plus tree-builder active/original text-mode state, insertion mode, and pending tokenizer control | session/tree-builder final audit, pre | satisfied iff tokenizer and tree-builder active text modes are absent, original insertion mode and pending tokenizer control are absent, and terminal insertion mode is neither Text nor InTableText; standalone N/A |
+| `open_elements_consistent` | SOE entries, expanded-name cache, atoms, and `LiveTree` expanded names | fallible SOE key set and expanded-name count map, pre | satisfied iff keys are unique/valid and cached namespace/name counts and live expanded names agree; standalone N/A; tree-builder production tests |
+| `active_formatting_consistent` | AFE element references, exact typed AFE attributes, and live expanded names/attributes | fallible AFE owner key set, pre | satisfied iff every element key is unique/live, the live HTML name agrees, and ordered typed attribute slices match in length, namespace, prefix, local name, and value; marker ownership is checked by marker kind and coordinated by the template field; standalone N/A |
+| `template_modes_consistent` | open template SOE entries, template-mode owner stack, typed AFE template markers, live host/content associations | fallible template owner/index structures, pre | satisfied iff open modes/owners/associations align and each open template has its marker; retained EOF diagnostic markers are valid when their owner still names a live template association; standalone N/A |
+| `form_pointer_valid` | tree-builder form pointer and live expanded name | tree-builder final audit, pre | satisfied when absent or naming a live HTML `form`; it is not required to be empty; standalone N/A |
+| `parent_child_links_valid` | `LiveTree` node/parent/ordinary-child graph | fallible read-only live-model traversal, pre | satisfied iff every reachable ordinary/association node has coherent typed endpoints and all live nodes are reached; standalone N/A |
+| `namespaces_valid` | `LiveTree` typed expanded names and typed qualified attributes | same live-model audit, pre | satisfied iff element/name/template-host namespace relationships hold and non-elements have no expanded name; qualified attribute namespace/prefix shapes are consumed as typed values, never reparsed; standalone N/A |
+| `template_associations_valid` | `LiveTree` host/content kind and reciprocal endpoints | same live-model audit, pre | satisfied iff every template host/content association is one-to-one, typed, reciprocal, non-parented, and host ordinary children remain empty; standalone N/A |
+| `all_patches_materialized` | parser-session `PatchMaterializationWitness`, builder patch buffer, emitter buffer, checked drained/applied operation counts, terminal drain and materialization ordering | `HtmlParser::into_output_with_final_audit`, post-drain/post-materialization | satisfied only after terminal `None`, empty terminal buffers, equal successfully applied complete-batch counts, and materialization after drain; patch/drain/apply/materialize errors abort without a report; standalone N/A |
+| `live_tree_matches_materialized_dom` | session live structural projection, fully applied patch-arena structural projection, complete patch-arena semantics, materialized DOM | fallible structural projections plus `semantic_equals_materialized_dom_for_final_audit`, post | satisfied only when live structure equals arena structure and arena semantics equal DOM semantics; covers document/doctype, names/namespaces, ordered qualified attributes, text/comment/PI, children, and template contents; standalone N/A |
+
+Cross-owner coordination fields intentionally require their referenced live
+node or template association to exist. A corrupted live expanded name may
+therefore fail both its intrinsic `namespaces_valid` check and an SOE/AFE
+reference check; a corrupted template host/content association may fail both
+`template_modes_consistent` and `template_associations_valid`. This overlap is
+deliberate: the former outcome records the broken tree-builder reference and
+the latter records the independently broken live-model object. No other audit
+field is derived from those failures or made false merely because an earlier
+field failed. Likewise, incomplete patch drain may fail
+`all_patches_materialized` and also leave an independently observable
+live/arena structural mismatch; the two outcomes distinguish lifecycle proof
+from end-state equivalence.
+
+The AFE final check deliberately does not use Noah's Ark duplicate equality.
+`same_attributes_for_html_parser` remains order- and prefix-insensitive for
+duplicate matching. Final AFE/live consistency uses exact ordered typed
+attribute equality, including namespace, prefix, local name, and value.
+
+SOE and AFE audits are effectively linear in their entry counts. Template
+coordination is linear in SOE plus AFE plus template-mode counts. Their hash
+indexes are used only for membership, lookup, and exact count reconstruction;
+hash iteration order never selects a failure or report order. Reservation sites
+are `FinalAuditOpenElementsIndex`, `FinalAuditActiveFormattingIndex`, and
+`FinalAuditTemplateCoordinationIndex`.
+
+Structural projections allocate fallibly at
+`FinalAuditLiveTreeStructuralProjection` and
+`FinalAuditPatchArenaStructuralProjection`; live structural traversal uses
+`FinalAuditDomStructuralTraversal`. The arena/materialized semantic comparator
+uses `FinalAuditSemanticTraversal`, one frame per active ancestor, and never
+pushes all siblings. Thus its temporary storage is `O(tree depth)`. Wide and
+deep regression tests prove the depth witness and iterative execution.
+
+Final reports always expose exactly 16 fields in the table order. Independent
+false predicates are all collected. Allocation, representational overflow,
+patch application, patch-history, adapter, drain, or materialization errors
+remain higher-priority execution failures with no partial report.
+
 ## AE13b4 Parser Observation Invariants
 
 - One tree transition is one central-driver invocation of one selected

@@ -1,7 +1,8 @@
 use super::failure_spelling::{parse_parser_observation_failure, parse_runner_invariant};
 use super::load::{
-    FixtureFileAccess, FixtureLoadError, FixtureLoadErrorKind, FixtureRepositoryPolicy,
-    normalize_relative_path, validate_relative_path,
+    DeliveryValidationError, FixtureFileAccess, FixtureLoadError, FixtureLoadErrorKind,
+    FixturePlanningInvariant, FixtureRepositoryPolicy, normalize_relative_path,
+    validate_relative_path,
 };
 use super::model::*;
 use super::schema::*;
@@ -11,6 +12,7 @@ use ring::digest::{SHA256, digest};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 use std::fs;
+use std::num::NonZeroUsize;
 use std::path::Path;
 
 /// A fixture whose complete serialized declaration passed its selected strict
@@ -20,12 +22,11 @@ use std::path::Path;
 /// partially validated value from otherwise plausible component values.
 #[derive(Clone, Debug)]
 pub struct ValidatedFixtureSpec {
-    format: FixtureFormatVersion,
     id: FixtureId,
     bundle: FixtureBundle,
     source: FixtureSource,
     input: ExactInput,
-    execution: ValidatedExecution,
+    policy: ValidatedFixturePolicy,
     expectations: EnabledExpectations,
     disposition: FixtureDisposition,
     description: Option<String>,
@@ -68,7 +69,7 @@ impl ValidatedFixtureSpec {
     }
 
     pub fn target_kind(&self) -> ParserTargetKind {
-        match self.execution.target() {
+        match self.execution().target() {
             ValidatedParserTarget::StandaloneTokenizer => ParserTargetKind::StandaloneTokenizer,
             ValidatedParserTarget::Document { .. } => ParserTargetKind::Document,
             ValidatedParserTarget::Fragment { .. } => ParserTargetKind::Fragment,
@@ -76,7 +77,7 @@ impl ValidatedFixtureSpec {
     }
 
     pub fn scripting_mode(&self) -> Option<ScriptingMode> {
-        match self.execution.target() {
+        match self.execution().target() {
             ValidatedParserTarget::StandaloneTokenizer => None,
             ValidatedParserTarget::Document { scripting }
             | ValidatedParserTarget::Fragment { scripting, .. } => Some(*scripting),
@@ -84,7 +85,7 @@ impl ValidatedFixtureSpec {
     }
 
     pub fn fragment_namespace(&self) -> Option<ElementNamespace> {
-        match self.execution.target() {
+        match self.execution().target() {
             ValidatedParserTarget::Fragment { context, .. } => Some(context.namespace()),
             ValidatedParserTarget::StandaloneTokenizer | ValidatedParserTarget::Document { .. } => {
                 None
@@ -93,7 +94,7 @@ impl ValidatedFixtureSpec {
     }
 
     pub fn fragment_local_name(&self) -> Option<&str> {
-        match self.execution.target() {
+        match self.execution().target() {
             ValidatedParserTarget::Fragment { context, .. } => Some(context.local_name()),
             ValidatedParserTarget::StandaloneTokenizer | ValidatedParserTarget::Document { .. } => {
                 None
@@ -102,18 +103,18 @@ impl ValidatedFixtureSpec {
     }
 
     pub fn reference_delivery(&self) -> &DeliveryName {
-        self.execution.reference_delivery()
+        self.execution().reference_delivery()
     }
 
     pub fn delivery_names(&self) -> impl ExactSizeIterator<Item = &DeliveryName> {
-        self.execution
+        self.execution()
             .deliveries()
             .iter()
             .map(ValidatedDelivery::name)
     }
 
     pub fn delivery_boundaries(&self, name: &str) -> Option<Option<&[usize]>> {
-        self.execution
+        self.execution()
             .deliveries()
             .iter()
             .find(|delivery| delivery.name().as_str() == name)
@@ -144,8 +145,12 @@ impl ValidatedFixtureSpec {
         &self.bundle
     }
 
+    #[cfg(test)]
     pub(super) fn format(&self) -> FixtureFormatVersion {
-        self.format
+        match self.policy {
+            ValidatedFixturePolicy::V1Compatibility(_) => FixtureFormatVersion::V1,
+            ValidatedFixturePolicy::V2Parity(_) => FixtureFormatVersion::V2,
+        }
     }
 
     pub(super) fn input(&self) -> &ExactInput {
@@ -153,7 +158,11 @@ impl ValidatedFixtureSpec {
     }
 
     pub(super) fn execution(&self) -> &ValidatedExecution {
-        &self.execution
+        self.policy.execution()
+    }
+
+    pub(super) fn policy(&self) -> &ValidatedFixturePolicy {
+        &self.policy
     }
 
     pub(super) fn expectations(&self) -> &EnabledExpectations {
@@ -190,7 +199,7 @@ pub(super) fn validate_fixture_v1(
     validate_sha256(&bundle, &declaration.input.sha256, &input_bytes)?;
     let input = validate_input(&bundle, declaration.input, input_bytes)?;
 
-    let execution = validate_execution(&bundle, &input, declaration.execution)?;
+    let execution = validate_execution_v1(&bundle, &input, declaration.execution)?;
     let expectations = validate_expectations(
         &bundle,
         &execution,
@@ -215,12 +224,11 @@ pub(super) fn validate_fixture_v1(
     validate_source_disposition_policy(&bundle, repository_policy, &source, &disposition)?;
 
     Ok(ValidatedFixtureSpec {
-        format: FixtureFormatVersion::V1,
         id,
         bundle,
         source,
         input,
-        execution,
+        policy: ValidatedFixturePolicy::V1Compatibility(ValidatedV1Execution::validated(execution)),
         expectations,
         disposition,
         description: declaration.metadata.description,
@@ -270,7 +278,7 @@ pub(super) fn validate_fixture_v2(
     validate_sha256(&bundle, &declaration.input.sha256, &input_bytes)?;
     let input = validate_input(&bundle, declaration.input, input_bytes)?;
 
-    let execution = validate_execution(&bundle, &input, declaration.execution)?;
+    let execution = validate_execution_v2(&bundle, &input, declaration.execution)?;
     let expectations = validate_expectations(
         &bundle,
         &execution,
@@ -295,13 +303,15 @@ pub(super) fn validate_fixture_v2(
     )?;
     validate_source_disposition_policy(&bundle, repository_policy, &source, &disposition)?;
 
+    let strategies = plan_v2_strategies(&bundle, &input, &execution)?;
     Ok(ValidatedFixtureSpec {
-        format: FixtureFormatVersion::V2,
         id,
         bundle,
         source,
         input,
-        execution,
+        policy: ValidatedFixturePolicy::V2Parity(ValidatedV2Execution::validated(
+            execution, strategies,
+        )),
         expectations,
         disposition,
         description: declaration.metadata.description,
@@ -721,10 +731,296 @@ fn validate_input(
     }
 }
 
+fn validate_execution_v1(
+    bundle: &FixtureBundle,
+    input: &ExactInput,
+    declaration: ExecutionDeclaration,
+) -> Result<ValidatedExecution, FixtureLoadError> {
+    validate_execution(
+        bundle,
+        input,
+        declaration,
+        ExecutionValidationPolicy::V1Compatibility,
+    )
+}
+
+fn validate_execution_v2(
+    bundle: &FixtureBundle,
+    input: &ExactInput,
+    declaration: ExecutionDeclaration,
+) -> Result<ValidatedExecution, FixtureLoadError> {
+    validate_execution(
+        bundle,
+        input,
+        declaration,
+        ExecutionValidationPolicy::V2Parity,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum ExecutionValidationPolicy {
+    V1Compatibility,
+    V2Parity,
+}
+
+const MAX_DECLARED_DELIVERIES_V2: usize = 32;
+const MAX_BOUNDARIES_PER_DELIVERY_V2: usize = 4096;
+const MAX_UNIQUE_PLANNED_STRATEGIES_V2: usize = 24;
+
+fn plan_v2_strategies(
+    bundle: &FixtureBundle,
+    input: &ExactInput,
+    execution: &ValidatedExecution,
+) -> Result<Vec<ScheduledDeliveryStrategy>, FixtureLoadError> {
+    let scalar_extent = input.text().map(|text| text.chars().count());
+    let byte_extent = input.bytes().len();
+    let baseline = match input {
+        ExactInput::Utf8Text { .. } => ResolvedDeliveryStrategy {
+            transport: DeliveryTransport::UnicodeScalars,
+            coordinate_space: DeliveryCoordinateSpace::UnicodeScalarOrdinals,
+            input_extent: scalar_extent.unwrap_or(0),
+            boundaries: CanonicalBoundarySequence::Whole,
+        },
+        ExactInput::RawBytes { .. } => ResolvedDeliveryStrategy {
+            transport: DeliveryTransport::Bytes,
+            coordinate_space: DeliveryCoordinateSpace::ByteOffsets,
+            input_extent: byte_extent,
+            boundaries: CanonicalBoundarySequence::Whole,
+        },
+    };
+    let mut planned = Vec::new();
+    push_or_alias_strategy(
+        bundle,
+        &mut planned,
+        baseline,
+        DeliveryStrategyOrigin::Baseline,
+    )?;
+
+    for declaration in execution.deliveries() {
+        let strategy = resolved_declared_strategy(declaration, scalar_extent, byte_extent);
+        push_or_alias_strategy(
+            bundle,
+            &mut planned,
+            strategy,
+            DeliveryStrategyOrigin::Declared(declaration.name().clone()),
+        )?;
+    }
+
+    let fixed_seven = NonZeroUsize::new(7).ok_or_else(|| {
+        bundle_error(
+            bundle,
+            FixtureLoadErrorKind::InvalidCombination(
+                "representative fixed extent is zero".to_string(),
+            ),
+        )
+    })?;
+    let mut representatives = Vec::new();
+    match input {
+        ExactInput::Utf8Text { .. } => {
+            representatives.push((
+                "whole-bytes",
+                ResolvedDeliveryStrategy {
+                    transport: DeliveryTransport::Bytes,
+                    coordinate_space: DeliveryCoordinateSpace::ByteOffsets,
+                    input_extent: byte_extent,
+                    boundaries: CanonicalBoundarySequence::Whole,
+                },
+            ));
+            representatives.extend([
+                (
+                    "scalar-fixed-one",
+                    ResolvedDeliveryStrategy {
+                        transport: DeliveryTransport::UnicodeScalars,
+                        coordinate_space: DeliveryCoordinateSpace::UnicodeScalarOrdinals,
+                        input_extent: scalar_extent.unwrap_or(0),
+                        boundaries: CanonicalBoundarySequence::Fixed {
+                            units_per_chunk: NonZeroUsize::MIN,
+                        },
+                    },
+                ),
+                (
+                    "scalar-fixed-seven",
+                    ResolvedDeliveryStrategy {
+                        transport: DeliveryTransport::UnicodeScalars,
+                        coordinate_space: DeliveryCoordinateSpace::UnicodeScalarOrdinals,
+                        input_extent: scalar_extent.unwrap_or(0),
+                        boundaries: CanonicalBoundarySequence::Fixed {
+                            units_per_chunk: fixed_seven,
+                        },
+                    },
+                ),
+                (
+                    "scalar-edge-triplet",
+                    ResolvedDeliveryStrategy {
+                        transport: DeliveryTransport::UnicodeScalars,
+                        coordinate_space: DeliveryCoordinateSpace::UnicodeScalarOrdinals,
+                        input_extent: scalar_extent.unwrap_or(0),
+                        boundaries: CanonicalBoundarySequence::Explicit(edge_triplet(
+                            scalar_extent.unwrap_or(0),
+                        )),
+                    },
+                ),
+                (
+                    "byte-fixed-one",
+                    ResolvedDeliveryStrategy {
+                        transport: DeliveryTransport::Bytes,
+                        coordinate_space: DeliveryCoordinateSpace::ByteOffsets,
+                        input_extent: byte_extent,
+                        boundaries: CanonicalBoundarySequence::Fixed {
+                            units_per_chunk: NonZeroUsize::MIN,
+                        },
+                    },
+                ),
+                (
+                    "byte-fixed-seven",
+                    ResolvedDeliveryStrategy {
+                        transport: DeliveryTransport::Bytes,
+                        coordinate_space: DeliveryCoordinateSpace::ByteOffsets,
+                        input_extent: byte_extent,
+                        boundaries: CanonicalBoundarySequence::Fixed {
+                            units_per_chunk: fixed_seven,
+                        },
+                    },
+                ),
+                (
+                    "byte-edge-triplet",
+                    ResolvedDeliveryStrategy {
+                        transport: DeliveryTransport::Bytes,
+                        coordinate_space: DeliveryCoordinateSpace::ByteOffsets,
+                        input_extent: byte_extent,
+                        boundaries: CanonicalBoundarySequence::Explicit(edge_triplet(byte_extent)),
+                    },
+                ),
+            ]);
+        }
+        ExactInput::RawBytes { .. } => representatives.extend([
+            (
+                "byte-fixed-one",
+                ResolvedDeliveryStrategy {
+                    transport: DeliveryTransport::Bytes,
+                    coordinate_space: DeliveryCoordinateSpace::ByteOffsets,
+                    input_extent: byte_extent,
+                    boundaries: CanonicalBoundarySequence::Fixed {
+                        units_per_chunk: NonZeroUsize::MIN,
+                    },
+                },
+            ),
+            (
+                "byte-fixed-seven",
+                ResolvedDeliveryStrategy {
+                    transport: DeliveryTransport::Bytes,
+                    coordinate_space: DeliveryCoordinateSpace::ByteOffsets,
+                    input_extent: byte_extent,
+                    boundaries: CanonicalBoundarySequence::Fixed {
+                        units_per_chunk: fixed_seven,
+                    },
+                },
+            ),
+            (
+                "byte-edge-triplet",
+                ResolvedDeliveryStrategy {
+                    transport: DeliveryTransport::Bytes,
+                    coordinate_space: DeliveryCoordinateSpace::ByteOffsets,
+                    input_extent: byte_extent,
+                    boundaries: CanonicalBoundarySequence::Explicit(edge_triplet(byte_extent)),
+                },
+            ),
+        ]),
+    }
+    for (name, strategy) in representatives {
+        push_or_alias_strategy(
+            bundle,
+            &mut planned,
+            strategy,
+            DeliveryStrategyOrigin::Representative(name),
+        )?;
+    }
+    Ok(planned)
+}
+
+fn resolved_declared_strategy(
+    delivery: &ValidatedDelivery,
+    scalar_extent: Option<usize>,
+    byte_extent: usize,
+) -> ResolvedDeliveryStrategy {
+    let boundaries = match delivery.boundaries() {
+        Some(boundaries) => CanonicalBoundarySequence::Explicit(boundaries.into()),
+        None => CanonicalBoundarySequence::Whole,
+    };
+    match delivery.transport() {
+        DeliveryTransport::UnicodeScalars => ResolvedDeliveryStrategy {
+            transport: DeliveryTransport::UnicodeScalars,
+            coordinate_space: delivery.coordinate_space(),
+            input_extent: scalar_extent.unwrap_or(0),
+            boundaries,
+        },
+        DeliveryTransport::Bytes => ResolvedDeliveryStrategy {
+            transport: DeliveryTransport::Bytes,
+            coordinate_space: delivery.coordinate_space(),
+            input_extent: byte_extent,
+            boundaries,
+        },
+    }
+}
+
+fn push_or_alias_strategy(
+    bundle: &FixtureBundle,
+    planned: &mut Vec<ScheduledDeliveryStrategy>,
+    strategy: ResolvedDeliveryStrategy,
+    origin: DeliveryStrategyOrigin,
+) -> Result<(), FixtureLoadError> {
+    if let Some(existing) = planned
+        .iter_mut()
+        .find(|existing| existing.strategy.semantically_equals(&strategy))
+    {
+        existing.origins.push(origin);
+        return Ok(());
+    }
+    if planned.len() >= MAX_UNIQUE_PLANNED_STRATEGIES_V2 {
+        return invalid_delivery(
+            bundle,
+            DeliveryValidationError::TooManyUniqueStrategies {
+                planned: planned.len() + 1,
+                maximum: MAX_UNIQUE_PLANNED_STRATEGIES_V2,
+            },
+        );
+    }
+    let ordinal = StrategyOrdinal::checked_from_index(planned.len()).ok_or_else(|| {
+        bundle_error(
+            bundle,
+            FixtureLoadErrorKind::InternalPlanningInvariant(
+                FixturePlanningInvariant::StrategyOrdinalOverflow,
+            ),
+        )
+    })?;
+    planned.push(ScheduledDeliveryStrategy {
+        ordinal,
+        strategy,
+        origins: vec![origin],
+    });
+    Ok(())
+}
+
+fn edge_triplet(extent: usize) -> Box<[usize]> {
+    if extent <= 1 {
+        return Box::new([]);
+    }
+    let mut boundaries = Vec::with_capacity(3);
+    for candidate in [1, extent / 2, extent - 1] {
+        if candidate > 0 && candidate < extent && boundaries.last() != Some(&candidate) {
+            boundaries.push(candidate);
+        }
+    }
+    boundaries.sort_unstable();
+    boundaries.dedup();
+    boundaries.into_boxed_slice()
+}
+
 fn validate_execution(
     bundle: &FixtureBundle,
     input: &ExactInput,
     declaration: ExecutionDeclaration,
+    policy: ExecutionValidationPolicy,
 ) -> Result<ValidatedExecution, FixtureLoadError> {
     let target = match declaration.target.kind {
         ParserTargetKindDeclaration::StandaloneTokenizer => {
@@ -786,28 +1082,75 @@ fn validate_execution(
     if declaration.deliveries.is_empty() {
         return invalid_combination(bundle, "execution must declare at least one delivery");
     }
-    if !is_kebab_identifier(&declaration.reference_delivery) {
-        return invalid_combination(
+    if matches!(policy, ExecutionValidationPolicy::V2Parity)
+        && declaration.deliveries.len() > MAX_DECLARED_DELIVERIES_V2
+    {
+        return invalid_delivery(
             bundle,
-            "reference delivery must be a lowercase kebab identifier",
+            DeliveryValidationError::TooManyDeclaredDeliveries {
+                declared: declaration.deliveries.len(),
+                maximum: MAX_DECLARED_DELIVERIES_V2,
+            },
         );
     }
-    let reference_delivery = DeliveryName::validated(declaration.reference_delivery);
+    let reference_delivery_name = declaration.reference_delivery;
     let mut names = BTreeSet::new();
     let mut deliveries = Vec::with_capacity(declaration.deliveries.len());
-    let extent = match input {
-        ExactInput::Utf8Text { text, .. } => text.chars().count(),
-        ExactInput::RawBytes { bytes, .. } => bytes.len(),
-    };
-    for delivery in declaration.deliveries {
-        if !is_kebab_identifier(&delivery.name) || !names.insert(delivery.name.clone()) {
-            return invalid_combination(
+    let byte_extent = input.bytes().len();
+    let scalar_extent = input.text().map(|text| text.chars().count());
+    for (delivery_index, delivery) in declaration.deliveries.into_iter().enumerate() {
+        if matches!(policy, ExecutionValidationPolicy::V2Parity)
+            && delivery
+                .boundaries
+                .as_ref()
+                .is_some_and(|boundaries| boundaries.len() > MAX_BOUNDARIES_PER_DELIVERY_V2)
+        {
+            return invalid_delivery(
                 bundle,
-                "delivery names must be unique lowercase kebab identifiers",
+                DeliveryValidationError::TooManyBoundaries {
+                    delivery_index,
+                    declared_name: delivery.name.clone(),
+                    declared: delivery.boundaries.as_ref().map_or(0, Vec::len),
+                    maximum: MAX_BOUNDARIES_PER_DELIVERY_V2,
+                },
+            );
+        }
+        if !is_kebab_identifier(&delivery.name) {
+            return invalid_delivery(
+                bundle,
+                DeliveryValidationError::InvalidDeliveryName {
+                    delivery_index,
+                    declared_name: delivery.name,
+                },
+            );
+        }
+        if !names.insert(delivery.name.clone()) {
+            return invalid_delivery(
+                bundle,
+                DeliveryValidationError::DuplicateDeliveryName {
+                    delivery_index,
+                    declared_name: delivery.name,
+                },
             );
         }
         let name = DeliveryName::validated(delivery.name);
         let validated = match (input, delivery.unit, delivery.strategy, delivery.boundaries) {
+            (_, _, DeliveryStrategyDeclaration::Whole, Some(_))
+                if matches!(policy, ExecutionValidationPolicy::V2Parity) =>
+            {
+                return invalid_delivery(
+                    bundle,
+                    DeliveryValidationError::BoundariesUnexpected { delivery: name },
+                );
+            }
+            (_, _, DeliveryStrategyDeclaration::Boundaries, None)
+                if matches!(policy, ExecutionValidationPolicy::V2Parity) =>
+            {
+                return invalid_delivery(
+                    bundle,
+                    DeliveryValidationError::BoundariesMissing { delivery: name },
+                );
+            }
             (
                 ExactInput::RawBytes { .. },
                 DeliveryUnitDeclaration::Bytes,
@@ -820,8 +1163,8 @@ fn validate_execution(
                 DeliveryStrategyDeclaration::Boundaries,
                 Some(boundaries),
             ) => ValidatedDelivery::ByteBoundaries {
-                name,
-                boundaries: validate_boundaries(bundle, boundaries, extent)?,
+                name: name.clone(),
+                boundaries: validate_boundaries(bundle, &name, boundaries, byte_extent, policy)?,
             },
             (
                 ExactInput::Utf8Text { .. },
@@ -835,23 +1178,105 @@ fn validate_execution(
                 DeliveryStrategyDeclaration::Boundaries,
                 Some(boundaries),
             ) => ValidatedDelivery::UnicodeScalarBoundaries {
-                name,
-                boundaries: validate_boundaries(bundle, boundaries, extent)?,
-            },
-            _ => {
-                return invalid_combination(
+                name: name.clone(),
+                boundaries: validate_boundaries(
                     bundle,
-                    "input kind, delivery unit, strategy, and boundaries are inconsistent",
+                    &name,
+                    boundaries,
+                    scalar_extent.ok_or_else(|| {
+                        bundle_error(
+                            bundle,
+                            FixtureLoadErrorKind::InvalidDelivery(
+                                DeliveryValidationError::UnitNotSupportedForInputDomain {
+                                    delivery: name.clone(),
+                                },
+                            ),
+                        )
+                    })?,
+                    policy,
+                )?,
+            },
+            (
+                ExactInput::Utf8Text { .. },
+                DeliveryUnitDeclaration::Bytes,
+                DeliveryStrategyDeclaration::Whole,
+                None,
+            ) if matches!(policy, ExecutionValidationPolicy::V2Parity) => {
+                ValidatedDelivery::WholeBytes { name }
+            }
+            (
+                ExactInput::Utf8Text { .. },
+                DeliveryUnitDeclaration::Bytes,
+                DeliveryStrategyDeclaration::Boundaries,
+                Some(boundaries),
+            ) if matches!(policy, ExecutionValidationPolicy::V2Parity) => {
+                ValidatedDelivery::ByteBoundaries {
+                    name: name.clone(),
+                    boundaries: validate_boundaries(
+                        bundle,
+                        &name,
+                        boundaries,
+                        byte_extent,
+                        policy,
+                    )?,
+                }
+            }
+            _ => {
+                return invalid_delivery(
+                    bundle,
+                    DeliveryValidationError::UnitNotSupportedForInputDomain { delivery: name },
                 );
             }
         };
         deliveries.push(validated);
     }
-    if !names.contains(reference_delivery.as_str()) {
-        return invalid_combination(
+    if matches!(policy, ExecutionValidationPolicy::V2Parity) {
+        let is_domain_baseline = |delivery: &ValidatedDelivery| match input {
+            ExactInput::Utf8Text { .. } => {
+                matches!(delivery, ValidatedDelivery::WholeUnicodeScalars { .. })
+            }
+            ExactInput::RawBytes { .. } => matches!(delivery, ValidatedDelivery::WholeBytes { .. }),
+        };
+        if !deliveries.iter().any(is_domain_baseline) {
+            return invalid_delivery(bundle, DeliveryValidationError::MissingDomainBaseline);
+        }
+    }
+    if !is_kebab_identifier(&reference_delivery_name) {
+        return invalid_delivery(
             bundle,
-            "reference delivery does not name a declared delivery",
+            DeliveryValidationError::InvalidReferenceDeliveryName {
+                declared_name: reference_delivery_name,
+            },
         );
+    }
+    let reference_delivery = DeliveryName::validated(reference_delivery_name);
+    if !names.contains(reference_delivery.as_str()) {
+        return invalid_delivery(
+            bundle,
+            DeliveryValidationError::ReferenceDeliveryMissing {
+                delivery: reference_delivery.clone(),
+            },
+        );
+    }
+    if matches!(policy, ExecutionValidationPolicy::V2Parity) {
+        let is_domain_baseline = |delivery: &ValidatedDelivery| match input {
+            ExactInput::Utf8Text { .. } => {
+                matches!(delivery, ValidatedDelivery::WholeUnicodeScalars { .. })
+            }
+            ExactInput::RawBytes { .. } => matches!(delivery, ValidatedDelivery::WholeBytes { .. }),
+        };
+        let reference_is_domain_baseline = deliveries
+            .iter()
+            .find(|delivery| delivery.name() == &reference_delivery)
+            .is_some_and(is_domain_baseline);
+        if !reference_is_domain_baseline {
+            return invalid_delivery(
+                bundle,
+                DeliveryValidationError::ReferenceIsNotDomainBaseline {
+                    delivery: reference_delivery.clone(),
+                },
+            );
+        }
     }
     Ok(ValidatedExecution::validated(
         target,
@@ -1151,19 +1576,63 @@ fn validate_sha256(
 
 fn validate_boundaries(
     bundle: &FixtureBundle,
+    delivery: &DeliveryName,
     boundaries: Vec<usize>,
     extent: usize,
+    policy: ExecutionValidationPolicy,
 ) -> Result<Vec<usize>, FixtureLoadError> {
-    if boundaries.is_empty()
-        || boundaries.windows(2).any(|pair| pair[0] >= pair[1])
-        || boundaries
-            .iter()
-            .any(|boundary| *boundary == 0 || *boundary >= extent)
-    {
-        return invalid_combination(
-            bundle,
-            "chunk boundaries must be strictly increasing interior offsets",
-        );
+    if boundaries.is_empty() && matches!(policy, ExecutionValidationPolicy::V1Compatibility) {
+        return invalid_combination(bundle, "delivery boundaries must not be empty");
+    }
+    for (index, boundary) in boundaries.iter().copied().enumerate() {
+        if boundary == 0 {
+            return invalid_delivery(
+                bundle,
+                DeliveryValidationError::BoundaryAtStart {
+                    delivery: delivery.clone(),
+                    boundary_index: index,
+                },
+            );
+        }
+        if boundary == extent {
+            return invalid_delivery(
+                bundle,
+                DeliveryValidationError::BoundaryAtEnd {
+                    delivery: delivery.clone(),
+                    boundary_index: index,
+                },
+            );
+        }
+        if boundary > extent {
+            return invalid_delivery(
+                bundle,
+                DeliveryValidationError::BoundaryOutOfRange {
+                    delivery: delivery.clone(),
+                    boundary_index: index,
+                },
+            );
+        }
+        if index > 0 {
+            let previous = boundaries[index - 1];
+            if boundary == previous {
+                return invalid_delivery(
+                    bundle,
+                    DeliveryValidationError::DuplicateBoundary {
+                        delivery: delivery.clone(),
+                        boundary_index: index,
+                    },
+                );
+            }
+            if boundary < previous {
+                return invalid_delivery(
+                    bundle,
+                    DeliveryValidationError::UnsortedBoundary {
+                        delivery: delivery.clone(),
+                        boundary_index: index,
+                    },
+                );
+            }
+        }
     }
     Ok(boundaries)
 }
@@ -1628,6 +2097,16 @@ fn invalid_combination<T>(bundle: &FixtureBundle, message: &str) -> Result<T, Fi
     Err(bundle_error(
         bundle,
         FixtureLoadErrorKind::InvalidCombination(message.to_string()),
+    ))
+}
+
+fn invalid_delivery<T>(
+    bundle: &FixtureBundle,
+    error: DeliveryValidationError,
+) -> Result<T, FixtureLoadError> {
+    Err(bundle_error(
+        bundle,
+        FixtureLoadErrorKind::InvalidDelivery(error),
     ))
 }
 

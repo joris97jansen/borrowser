@@ -29,6 +29,7 @@ macro_rules! define_snapshot_types {
 }
 
 mod document_mode;
+mod final_invariants;
 mod implementation_diagnostics;
 mod lexical;
 mod parse_errors;
@@ -53,6 +54,7 @@ pub(crate) enum SnapshotFormat {
     DomPatchV3,
     TreeTransitionsV1,
     UnsupportedFeaturesV1,
+    FinalInvariantsV1,
 }
 
 impl SnapshotFormat {
@@ -66,6 +68,7 @@ impl SnapshotFormat {
             Self::DomPatchV3 => "html5-dompatch-v3",
             Self::TreeTransitionsV1 => "html5-tree-transitions-v1",
             Self::UnsupportedFeaturesV1 => "html5-unsupported-features-v1",
+            Self::FinalInvariantsV1 => "html5-final-invariants-v1",
         }
     }
 }
@@ -137,6 +140,7 @@ pub(crate) enum ParsedSnapshot {
     Patches(patches::ParsedPatchesSnapshot),
     Transitions(transitions::ParsedTransitionsSnapshot),
     UnsupportedFeatures(unsupported_features::ParsedUnsupportedFeaturesSnapshot),
+    FinalInvariants(final_invariants::ParsedFinalInvariantsSnapshot),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -151,6 +155,7 @@ pub(crate) enum CanonicalSnapshot {
     Patches(patches::CanonicalPatchesSnapshot),
     Transitions(transitions::CanonicalTransitionsSnapshot),
     UnsupportedFeatures(unsupported_features::CanonicalUnsupportedFeaturesSnapshot),
+    FinalInvariants(final_invariants::CanonicalFinalInvariantsSnapshot),
 }
 
 macro_rules! snapshot_accessors {
@@ -168,6 +173,7 @@ macro_rules! snapshot_accessors {
                     Self::Patches(_) => ExpectationSurface::Patches,
                     Self::Transitions(_) => ExpectationSurface::Transitions,
                     Self::UnsupportedFeatures(_) => ExpectationSurface::UnsupportedFeatures,
+                    Self::FinalInvariants(_) => ExpectationSurface::FinalInvariants,
                 }
             }
 
@@ -183,6 +189,7 @@ macro_rules! snapshot_accessors {
                     Self::Patches(_) => SnapshotFormat::DomPatchV3,
                     Self::Transitions(_) => SnapshotFormat::TreeTransitionsV1,
                     Self::UnsupportedFeatures(_) => SnapshotFormat::UnsupportedFeaturesV1,
+                    Self::FinalInvariants(_) => SnapshotFormat::FinalInvariantsV1,
                 }
             }
 
@@ -196,6 +203,7 @@ macro_rules! snapshot_accessors {
                     Self::Patches(value) => value.data(),
                     Self::Transitions(value) => value.data(),
                     Self::UnsupportedFeatures(value) => value.data(),
+                    Self::FinalInvariants(value) => value.data(),
                 }
             }
         }
@@ -228,7 +236,9 @@ pub(crate) fn read_snapshot(
         ExpectationSurface::UnsupportedFeatures => {
             unsupported_features::read(bytes).map(ParsedSnapshot::UnsupportedFeatures)
         }
-        ExpectationSurface::FinalInvariants => Err(SnapshotReadError::InvalidHeader),
+        ExpectationSurface::FinalInvariants => {
+            final_invariants::read(bytes).map(ParsedSnapshot::FinalInvariants)
+        }
     }
 }
 
@@ -261,7 +271,8 @@ pub(crate) fn serialize_snapshot(
             unsupported_features::write(&result.unsupported_features)
                 .map(CanonicalSnapshot::UnsupportedFeatures)
         }
-        ExpectationSurface::FinalInvariants => Err(()),
+        ExpectationSurface::FinalInvariants => final_invariants::write(&result.final_invariants)
+            .map(CanonicalSnapshot::FinalInvariants),
     }
 }
 

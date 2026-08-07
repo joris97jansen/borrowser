@@ -1,0 +1,28 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "foreign-content-integration"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "9846bfa95b313a045fcf274668262ac3a5c7dfafbce1a69c396e4decf893bc67"
+[execution]
+reference_delivery = "whole-unicode"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole-unicode"
+unit = "unicode-scalars"
+strategy = "whole"
+[[execution.deliveries]]
+name = "declared-scalar-split"
+unit = "unicode-scalars"
+strategy = "boundaries"
+boundaries = [1]
+[expectations]
+final_invariants = "final-invariants.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "SVG and MathML namespace boundaries and HTML integration points remain chunk-independent."

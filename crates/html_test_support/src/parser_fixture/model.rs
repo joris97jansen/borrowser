@@ -2,11 +2,13 @@ use html::ElementNamespace;
 use html::conformance::{
     CanonicalParserResult, InvariantFailureCode, ParserObservationExecutionIdentity,
 };
+use std::num::{NonZeroU32, NonZeroUsize};
 use std::path::PathBuf;
 
 pub const FIXTURE_FORMAT_V1: &str = "borrowser-html-parser-fixture-v1";
 pub const FIXTURE_FORMAT_V2: &str = "borrowser-html-parser-fixture-v2";
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum FixtureFormatVersion {
     V1,
@@ -202,6 +204,18 @@ pub(super) enum ValidatedDelivery {
     },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum DeliveryCoordinateSpace {
+    UnicodeScalarOrdinals,
+    ByteOffsets,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum DeliveryTransport {
+    UnicodeScalars,
+    Bytes,
+}
+
 impl ValidatedDelivery {
     pub(super) fn name(&self) -> &DeliveryName {
         match self {
@@ -219,6 +233,22 @@ impl ValidatedDelivery {
             | Self::UnicodeScalarBoundaries { boundaries, .. } => Some(boundaries),
         }
     }
+
+    pub(super) const fn transport(&self) -> DeliveryTransport {
+        match self {
+            Self::WholeBytes { .. } | Self::ByteBoundaries { .. } => DeliveryTransport::Bytes,
+            Self::WholeUnicodeScalars { .. } | Self::UnicodeScalarBoundaries { .. } => {
+                DeliveryTransport::UnicodeScalars
+            }
+        }
+    }
+
+    pub(super) const fn coordinate_space(&self) -> DeliveryCoordinateSpace {
+        match self.transport() {
+            DeliveryTransport::UnicodeScalars => DeliveryCoordinateSpace::UnicodeScalarOrdinals,
+            DeliveryTransport::Bytes => DeliveryCoordinateSpace::ByteOffsets,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -226,6 +256,160 @@ pub(super) struct ValidatedExecution {
     target: ValidatedParserTarget,
     reference_delivery: DeliveryName,
     deliveries: Vec<ValidatedDelivery>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct ValidatedV1Execution(ValidatedExecution);
+
+#[derive(Clone, Debug)]
+pub(super) struct ValidatedV2Execution {
+    execution: ValidatedExecution,
+    strategies: Vec<ScheduledDeliveryStrategy>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) enum ValidatedFixturePolicy {
+    V1Compatibility(ValidatedV1Execution),
+    V2Parity(ValidatedV2Execution),
+}
+
+impl ValidatedV1Execution {
+    pub(super) fn validated(execution: ValidatedExecution) -> Self {
+        Self(execution)
+    }
+
+    pub(super) fn execution(&self) -> &ValidatedExecution {
+        &self.0
+    }
+}
+
+impl ValidatedV2Execution {
+    pub(super) fn validated(
+        execution: ValidatedExecution,
+        strategies: Vec<ScheduledDeliveryStrategy>,
+    ) -> Self {
+        Self {
+            execution,
+            strategies,
+        }
+    }
+
+    pub(super) fn execution(&self) -> &ValidatedExecution {
+        &self.execution
+    }
+
+    pub(super) fn strategies(&self) -> &[ScheduledDeliveryStrategy] {
+        &self.strategies
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct StrategyOrdinal(NonZeroU32);
+
+impl StrategyOrdinal {
+    pub(super) fn checked_from_index(index: usize) -> Option<Self> {
+        let one_based = index.checked_add(1)?;
+        Some(Self(NonZeroU32::new(u32::try_from(one_based).ok()?)?))
+    }
+
+    pub(super) const fn get(self) -> u32 {
+        self.0.get()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum DeliveryStrategyOrigin {
+    Baseline,
+    Declared(DeliveryName),
+    Representative(&'static str),
+}
+
+#[derive(Clone, Debug)]
+pub(super) enum CanonicalBoundarySequence {
+    Whole,
+    Fixed { units_per_chunk: NonZeroUsize },
+    Explicit(Box<[usize]>),
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct ResolvedDeliveryStrategy {
+    pub(super) transport: DeliveryTransport,
+    pub(super) coordinate_space: DeliveryCoordinateSpace,
+    pub(super) input_extent: usize,
+    pub(super) boundaries: CanonicalBoundarySequence,
+}
+
+impl ResolvedDeliveryStrategy {
+    pub(super) fn semantic_boundary_count(&self) -> usize {
+        match &self.boundaries {
+            CanonicalBoundarySequence::Whole => 0,
+            CanonicalBoundarySequence::Explicit(boundaries) => boundaries.len(),
+            CanonicalBoundarySequence::Fixed { units_per_chunk } => self
+                .input_extent
+                .checked_sub(1)
+                .map_or(0, |interior| interior / units_per_chunk.get()),
+        }
+    }
+
+    pub(super) fn semantic_boundary_at(&self, index: usize) -> Option<usize> {
+        match &self.boundaries {
+            CanonicalBoundarySequence::Whole => None,
+            CanonicalBoundarySequence::Explicit(boundaries) => boundaries.get(index).copied(),
+            CanonicalBoundarySequence::Fixed { units_per_chunk } => index
+                .checked_add(1)
+                .and_then(|ordinal| ordinal.checked_mul(units_per_chunk.get()))
+                .filter(|boundary| *boundary < self.input_extent),
+        }
+    }
+
+    /// Representation-independent semantic equality. Fixed strategies are
+    /// never expanded and digests are never consulted.
+    pub(super) fn semantically_equals(&self, other: &Self) -> bool {
+        if self.transport != other.transport
+            || self.coordinate_space != other.coordinate_space
+            || self.input_extent != other.input_extent
+        {
+            return false;
+        }
+        let count = self.semantic_boundary_count();
+        if count != other.semantic_boundary_count() {
+            return false;
+        }
+        match (&self.boundaries, &other.boundaries) {
+            (CanonicalBoundarySequence::Whole, CanonicalBoundarySequence::Whole) => true,
+            (
+                CanonicalBoundarySequence::Fixed {
+                    units_per_chunk: left,
+                },
+                CanonicalBoundarySequence::Fixed {
+                    units_per_chunk: right,
+                },
+            ) => count == 0 || left == right,
+            (
+                CanonicalBoundarySequence::Explicit(left),
+                CanonicalBoundarySequence::Explicit(right),
+            ) => left == right,
+            _ if count == 0 => true,
+            _ => (0..count)
+                .all(|index| self.semantic_boundary_at(index) == other.semantic_boundary_at(index)),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct ScheduledDeliveryStrategy {
+    pub(super) ordinal: StrategyOrdinal,
+    pub(super) strategy: ResolvedDeliveryStrategy,
+    pub(super) origins: Vec<DeliveryStrategyOrigin>,
+}
+
+impl ValidatedFixturePolicy {
+    pub(super) fn execution(&self) -> &ValidatedExecution {
+        match self {
+            Self::V1Compatibility(execution) => execution.execution(),
+            Self::V2Parity(execution) => execution.execution(),
+        }
+    }
 }
 
 impl ValidatedExecution {
@@ -456,7 +640,13 @@ pub(super) enum ExecutionFailureClass {
     SnapshotRead(ExpectationSurface),
     SnapshotFormat(ExpectationSurface),
     ParserObservation(ParserObservationFailureClass),
+    FixtureExecutionResourceExhaustion(FixtureExecutionResourceSite),
     ValidatedFixtureInvariant(ValidatedFixtureInvariantCode),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FixtureExecutionResourceSite {
+    ScalarBoundaryExecutionOffsets,
 }
 
 pub(super) type ParserObservationFailureClass = ParserObservationExecutionIdentity;
@@ -476,6 +666,8 @@ pub(super) enum ValidatedFixtureInvariantCode {
     MissingExecutedDeliveryResult,
     DuplicateExecutedDeliveryResult,
     DuplicateExpectationIdentity,
+    ValidatedBoundaryRejectedByExecutor,
+    StrategyScheduleContradiction,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -539,7 +731,12 @@ pub(super) enum FixtureExecutionOutcome {
         diff: String,
     },
     ExpectationMismatchV2 {
-        delivery: DeliveryName,
+        strategy: String,
+        surface: ExpectationSurface,
+        diff: String,
+    },
+    ParityMismatchV2 {
+        strategy: String,
         surface: ExpectationSurface,
         diff: String,
     },
@@ -561,11 +758,16 @@ pub(super) enum FixtureExecutionOutcome {
         result: Box<CanonicalParserResult>,
         failures: Vec<InvariantFailureCode>,
     },
+    FinalInvariantFailedV2 {
+        strategy: String,
+        first_failure: InvariantFailureCode,
+        failure_count: u8,
+    },
     IncompleteObservation {
         result: Box<CanonicalParserResult>,
     },
     IncompleteObservationV2 {
-        delivery: DeliveryName,
+        strategy: String,
         surface: ExpectationSurface,
         reason: html::conformance::IncompleteObservationReason,
         retained: usize,
@@ -599,12 +801,27 @@ enum CompletedFixtureResults {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FixtureDeliveryRunReport {
     delivery: DeliveryName,
+    strategy_ordinal: u32,
+    aliases: Vec<DeliveryName>,
+    origins: Vec<String>,
     result: CanonicalParserResult,
 }
 
 impl FixtureDeliveryRunReport {
-    pub(super) fn new(delivery: DeliveryName, result: CanonicalParserResult) -> Self {
-        Self { delivery, result }
+    pub(super) fn new(
+        delivery: DeliveryName,
+        strategy_ordinal: u32,
+        aliases: Vec<DeliveryName>,
+        origins: Vec<String>,
+        result: CanonicalParserResult,
+    ) -> Self {
+        Self {
+            delivery,
+            strategy_ordinal,
+            aliases,
+            origins,
+            result,
+        }
     }
 
     pub fn delivery(&self) -> &DeliveryName {
@@ -612,6 +829,22 @@ impl FixtureDeliveryRunReport {
     }
     pub fn result(&self) -> &CanonicalParserResult {
         &self.result
+    }
+
+    pub fn strategy_ordinal(&self) -> u32 {
+        self.strategy_ordinal
+    }
+
+    pub fn aliases(&self) -> &[DeliveryName] {
+        &self.aliases
+    }
+
+    pub fn origins(&self) -> &[String] {
+        &self.origins
+    }
+
+    fn names_delivery(&self, delivery: &DeliveryName) -> bool {
+        &self.delivery == delivery || self.aliases.iter().any(|alias| alias == delivery)
     }
 }
 
@@ -669,7 +902,7 @@ impl FixtureRunReport {
             } => reference_delivery.as_ref().and_then(|reference| {
                 deliveries
                     .iter()
-                    .find(|delivery| delivery.delivery() == reference)
+                    .find(|delivery| delivery.names_delivery(reference))
                     .map(FixtureDeliveryRunReport::result)
             }),
         }

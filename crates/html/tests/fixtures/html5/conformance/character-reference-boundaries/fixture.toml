@@ -1,0 +1,28 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "character-reference-boundaries"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "c2ac69f8cc71b9a4a129955ce2481fa35740f89ebb67566296bb0e95fdfd4d07"
+[execution]
+reference_delivery = "whole-unicode"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole-unicode"
+unit = "unicode-scalars"
+strategy = "whole"
+[[execution.deliveries]]
+name = "declared-scalar-split"
+unit = "unicode-scalars"
+strategy = "boundaries"
+boundaries = [1]
+[expectations]
+final_invariants = "final-invariants.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "Named, numeric, and ambiguous character-reference recovery remains chunk-independent."

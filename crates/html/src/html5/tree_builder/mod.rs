@@ -13,6 +13,8 @@ mod body_recovery;
 mod coalescing;
 mod dispatch;
 pub(crate) mod document;
+#[cfg(feature = "parser-conformance")]
+mod final_audit;
 mod foreign;
 mod formatting;
 #[cfg(any(test, feature = "html5-fuzzing"))]
@@ -42,6 +44,8 @@ pub use api::{
     Html5TreeBuilder, SuspendReason, TreeBuilderConfig, TreeBuilderControlFlow, TreeBuilderError,
     TreeBuilderInternalError, TreeBuilderLimits, TreeBuilderStepResult,
 };
+#[cfg(feature = "parser-conformance")]
+pub(crate) use final_audit::{TreeBuilderFinalAudit, TreeBuilderFinalAuditAllocation};
 #[cfg(any(test, feature = "html5-fuzzing"))]
 pub(crate) use formatting::AfeDiagnosticEntry;
 #[cfg(test)]

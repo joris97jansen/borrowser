@@ -9,8 +9,8 @@ mod schema;
 mod validate;
 
 pub use load::{
-    FixtureLoadError, FixtureLoadErrorKind, FixtureRepository, FixtureRepositoryPolicy,
-    discover_and_load,
+    DeliveryValidationError, FixtureLoadError, FixtureLoadErrorKind, FixturePlanningInvariant,
+    FixtureRepository, FixtureRepositoryPolicy, discover_and_load,
 };
 pub(crate) use model::ExpectationSurface;
 pub use model::{

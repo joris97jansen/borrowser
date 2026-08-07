@@ -6,7 +6,12 @@
 use super::projection::{ObservationAllocationController, project_patches, project_tree};
 #[cfg(test)]
 use super::projection::{ObservationAllocationStep, ObservationFailureInjection};
-use super::{CanonicalParserResult, IncompleteObservationReason, ObservationState};
+use super::{
+    CanonicalParserResult, DomFinalizationChecks, IncompleteObservationReason,
+    InputFinalizationChecks, InvariantNotApplicableReason, InvariantOutcome, ObservationState,
+    ParserFinalizationReport, PatchFinalizationChecks, TokenizerFinalizationChecks,
+    TreeBuilderFinalizationChecks,
+};
 use crate::html5::PatchHistoryObservationConfig;
 use crate::html5::shared::{
     CapturedSurface, DocumentParseContext, ErrorPolicy, ObservationOccurrenceSequence,
@@ -15,6 +20,7 @@ use crate::html5::shared::{
     SurfaceCaptureRequest, UnsupportedFeatureObservationFailure,
 };
 use crate::html5::{ByteStreamDecoder, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig};
+use crate::parser::{ConformanceFinalizationError, ConformanceFinalizedOutput};
 use crate::{HtmlParseOptions, HtmlParser};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -194,6 +200,13 @@ pub enum ScalarObservationRequest {
     Capture,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FinalInvariantRequest {
+    #[default]
+    NotRequested,
+    Capture,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ParserObservationTarget {
     StandaloneTokenizer,
@@ -204,8 +217,94 @@ pub enum ParserObservationTarget {
 pub enum ParserObservationInput<'a> {
     Utf8(&'a str),
     Utf8Chunks(&'a [&'a str]),
+    Utf8FixedScalarChunks {
+        text: &'a str,
+        scalars_per_chunk: usize,
+    },
+    Utf8BoundaryChunks {
+        text: &'a str,
+        byte_offsets: &'a [usize],
+    },
     Bytes(&'a [u8]),
     ByteChunks(&'a [&'a [u8]]),
+    ByteFixedChunks {
+        bytes: &'a [u8],
+        bytes_per_chunk: usize,
+    },
+    ByteBoundaryChunks {
+        bytes: &'a [u8],
+        byte_offsets: &'a [usize],
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParserObservationDeliveryError {
+    BoundaryAtStart { boundary_index: usize },
+    BoundaryAtEnd { boundary_index: usize },
+    BoundaryOutOfRange { boundary_index: usize },
+    BoundaryNotIncreasing { boundary_index: usize },
+    UnicodeBoundaryNotScalar { boundary_index: usize },
+    ZeroFixedChunkExtent,
+    ArithmeticOverflow,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParserObservationDeliveryErrorIdentity {
+    BoundaryAtStart,
+    BoundaryAtEnd,
+    BoundaryOutOfRange,
+    BoundaryNotIncreasing,
+    UnicodeBoundaryNotScalar,
+    ZeroFixedChunkExtent,
+    ArithmeticOverflow,
+}
+
+impl ParserObservationDeliveryErrorIdentity {
+    pub const fn diagnostic_name(self) -> &'static str {
+        match self {
+            Self::BoundaryAtStart => "boundary-at-start",
+            Self::BoundaryAtEnd => "boundary-at-end",
+            Self::BoundaryOutOfRange => "boundary-out-of-range",
+            Self::BoundaryNotIncreasing => "boundary-not-increasing",
+            Self::UnicodeBoundaryNotScalar => "unicode-boundary-not-scalar",
+            Self::ZeroFixedChunkExtent => "zero-fixed-chunk-extent",
+            Self::ArithmeticOverflow => "arithmetic-overflow",
+        }
+    }
+}
+
+impl ParserObservationDeliveryError {
+    pub const fn diagnostic_name(self) -> &'static str {
+        match self {
+            Self::BoundaryAtStart { .. } => "boundary-at-start",
+            Self::BoundaryAtEnd { .. } => "boundary-at-end",
+            Self::BoundaryOutOfRange { .. } => "boundary-out-of-range",
+            Self::BoundaryNotIncreasing { .. } => "boundary-not-increasing",
+            Self::UnicodeBoundaryNotScalar { .. } => "unicode-boundary-not-scalar",
+            Self::ZeroFixedChunkExtent => "zero-fixed-chunk-extent",
+            Self::ArithmeticOverflow => "arithmetic-overflow",
+        }
+    }
+
+    pub const fn identity(self) -> ParserObservationDeliveryErrorIdentity {
+        match self {
+            Self::BoundaryAtStart { .. } => ParserObservationDeliveryErrorIdentity::BoundaryAtStart,
+            Self::BoundaryAtEnd { .. } => ParserObservationDeliveryErrorIdentity::BoundaryAtEnd,
+            Self::BoundaryOutOfRange { .. } => {
+                ParserObservationDeliveryErrorIdentity::BoundaryOutOfRange
+            }
+            Self::BoundaryNotIncreasing { .. } => {
+                ParserObservationDeliveryErrorIdentity::BoundaryNotIncreasing
+            }
+            Self::UnicodeBoundaryNotScalar { .. } => {
+                ParserObservationDeliveryErrorIdentity::UnicodeBoundaryNotScalar
+            }
+            Self::ZeroFixedChunkExtent => {
+                ParserObservationDeliveryErrorIdentity::ZeroFixedChunkExtent
+            }
+            Self::ArithmeticOverflow => ParserObservationDeliveryErrorIdentity::ArithmeticOverflow,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -227,10 +326,14 @@ pub struct ParserObservationRequest<'a> {
     pub tree: ObservationRequest,
     /// Maximum semantic `DomPatch` operations. This is not a byte budget.
     pub patches: ObservationRequest,
+    /// Mandatory terminal parser audit for fixture-v2. Independent from every
+    /// bounded collection surface.
+    pub final_invariants: FinalInvariantRequest,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ParserObservationExecutionError {
+    InvalidDelivery(ParserObservationDeliveryError),
     ParserFatal(crate::ParserFatalError),
     ParserInvariant,
     TokenizerInvariant(ParserTokenizerInvariantError),
@@ -251,6 +354,7 @@ pub enum ParserObservationExecutionError {
 /// classifying `Display` or `Debug` text.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ParserObservationExecutionIdentity {
+    InvalidDelivery(ParserObservationDeliveryErrorIdentity),
     ParserFatal(ParserFatalIdentity),
     ParserInvariant,
     TokenizerInvariant(ParserTokenizerInvariantError),
@@ -281,6 +385,9 @@ impl ParserObservationExecutionError {
     #[must_use]
     pub const fn identity(self) -> ParserObservationExecutionIdentity {
         match self {
+            Self::InvalidDelivery(error) => {
+                ParserObservationExecutionIdentity::InvalidDelivery(error.identity())
+            }
             Self::ParserFatal(error) => {
                 ParserObservationExecutionIdentity::ParserFatal(parser_fatal_identity(error))
             }
@@ -347,6 +454,13 @@ pub enum ObservationReservationSite {
     CanonicalTreeProjection,
     CanonicalPatchProjection,
     SnapshotLabelStorage,
+    FinalAuditLiveTreeStructuralProjection,
+    FinalAuditPatchArenaStructuralProjection,
+    FinalAuditDomStructuralTraversal,
+    FinalAuditOpenElementsIndex,
+    FinalAuditActiveFormattingIndex,
+    FinalAuditTemplateCoordinationIndex,
+    FinalAuditSemanticTraversal,
 }
 
 /// Allocation or representable-capacity failure while constructing a
@@ -361,7 +475,7 @@ impl ObservationResourceExhaustion {
         self.site
     }
 
-    pub(super) const fn at(site: ObservationReservationSite) -> Self {
+    pub(crate) const fn at(site: ObservationReservationSite) -> Self {
         Self { site }
     }
 }
@@ -437,6 +551,8 @@ pub enum ParserObservationInvariantError {
     DuplicatePatchCreation,
     MissingPatchCreationHistory,
     SnapshotLabelSequenceOverflow,
+    FinalAuditPatchCountOverflow,
+    DerivedDeliverySlicingInvariant,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -450,6 +566,13 @@ pub enum UnsupportedFeatureObservationInvariantError {
 impl std::fmt::Display for ParserObservationExecutionError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::InvalidDelivery(error) => {
+                write!(
+                    formatter,
+                    "invalid parser observation delivery: {}",
+                    error.diagnostic_name()
+                )
+            }
             Self::ParserFatal(error) => write!(formatter, "production HTML parser failed: {error}"),
             Self::ParserInvariant => formatter.write_str("production HTML parser invariant failed"),
             Self::TokenizerInvariant(invariant) => {
@@ -514,9 +637,10 @@ pub fn execute_parser_observation(
             PatchHistoryObservationConfig::capture(capacity)
         }
     };
-    let (capture, document_mode, tree, patches) = match request.target {
+    let (capture, document_mode, tree, patches, final_invariants) = match request.target {
         ParserObservationTarget::StandaloneTokenizer => {
-            let capture = execute_standalone_tokenizer(request.input, config)?;
+            let (capture, final_invariants) =
+                execute_standalone_tokenizer(request.input, config, request.final_invariants)?;
             let mode = match request.document_mode {
                 ScalarObservationRequest::NotRequested => ObservationState::NotRequested,
                 ScalarObservationRequest::Capture => ObservationState::NotApplicable {
@@ -525,21 +649,23 @@ pub fn execute_parser_observation(
             };
             let tree = not_applicable_or_not_requested(request.tree);
             let patches = not_applicable_or_not_requested(request.patches);
-            (capture, mode, tree, patches)
+            (capture, mode, tree, patches, final_invariants)
         }
         ParserObservationTarget::DocumentParser => {
-            let (capture, production_mode, tree, patches) = execute_document_parser(
-                request.input,
-                config,
-                patch_config,
-                request.tree,
-                request.patches,
-            )?;
+            let (capture, production_mode, tree, patches, final_invariants) =
+                execute_document_parser(
+                    request.input,
+                    config,
+                    patch_config,
+                    request.tree,
+                    request.patches,
+                    request.final_invariants,
+                )?;
             let mode = match request.document_mode {
                 ScalarObservationRequest::NotRequested => ObservationState::NotRequested,
                 ScalarObservationRequest::Capture => ObservationState::Captured(production_mode),
             };
-            (capture, mode, tree, patches)
+            (capture, mode, tree, patches, final_invariants)
         }
     };
     canonical_result(
@@ -549,6 +675,7 @@ pub fn execute_parser_observation(
         patches,
         request.target,
         request.transitions,
+        final_invariants,
     )
 }
 
@@ -561,21 +688,247 @@ fn not_applicable_or_not_requested<T>(request: ObservationRequest) -> Observatio
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    static FORCE_DERIVED_DELIVERY_SLICING_FAILURE: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+struct DerivedDeliverySlicingFailureGuard {
+    previous: bool,
+}
+
+#[cfg(test)]
+impl Drop for DerivedDeliverySlicingFailureGuard {
+    fn drop(&mut self) {
+        FORCE_DERIVED_DELIVERY_SLICING_FAILURE.with(|flag| flag.set(self.previous));
+    }
+}
+
+#[cfg(test)]
+fn with_forced_derived_delivery_slicing_failure<R>(f: impl FnOnce() -> R) -> R {
+    let previous = FORCE_DERIVED_DELIVERY_SLICING_FAILURE.with(|flag| flag.replace(true));
+    let guard = DerivedDeliverySlicingFailureGuard { previous };
+    let result = f();
+    drop(guard);
+    result
+}
+
+#[cfg(test)]
+fn derived_delivery_slicing_failure_requested() -> bool {
+    FORCE_DERIVED_DELIVERY_SLICING_FAILURE.with(|flag| flag.replace(false))
+}
+
+fn deliver_utf8_fixed(
+    text: &str,
+    scalars_per_chunk: usize,
+    mut push: impl FnMut(&str) -> Result<(), ParserObservationExecutionError>,
+) -> Result<(), ParserObservationExecutionError> {
+    if scalars_per_chunk == 0 {
+        return Err(ParserObservationExecutionError::InvalidDelivery(
+            ParserObservationDeliveryError::ZeroFixedChunkExtent,
+        ));
+    }
+    if text.is_empty() {
+        return Ok(());
+    }
+
+    let mut start = 0usize;
+    let mut scalars = 0usize;
+    for (offset, _) in text.char_indices() {
+        if scalars == scalars_per_chunk {
+            #[cfg(test)]
+            if derived_delivery_slicing_failure_requested() {
+                return Err(ParserObservationExecutionError::ObservationInvariant(
+                    ParserObservationInvariantError::DerivedDeliverySlicingInvariant,
+                ));
+            }
+            let chunk = text.get(start..offset).ok_or(
+                ParserObservationExecutionError::ObservationInvariant(
+                    ParserObservationInvariantError::DerivedDeliverySlicingInvariant,
+                ),
+            )?;
+            if !chunk.is_empty() {
+                push(chunk)?;
+            }
+            start = offset;
+            scalars = 0;
+        }
+        scalars =
+            scalars
+                .checked_add(1)
+                .ok_or(ParserObservationExecutionError::ObservationInvariant(
+                    ParserObservationInvariantError::DerivedDeliverySlicingInvariant,
+                ))?;
+    }
+    #[cfg(test)]
+    if derived_delivery_slicing_failure_requested() {
+        return Err(ParserObservationExecutionError::ObservationInvariant(
+            ParserObservationInvariantError::DerivedDeliverySlicingInvariant,
+        ));
+    }
+    let chunk = text
+        .get(start..)
+        .ok_or(ParserObservationExecutionError::ObservationInvariant(
+            ParserObservationInvariantError::DerivedDeliverySlicingInvariant,
+        ))?;
+    if !chunk.is_empty() {
+        push(chunk)?;
+    }
+    Ok(())
+}
+
+fn deliver_utf8_boundaries(
+    text: &str,
+    byte_offsets: &[usize],
+    mut push: impl FnMut(&str) -> Result<(), ParserObservationExecutionError>,
+) -> Result<(), ParserObservationExecutionError> {
+    validate_boundaries(text.len(), byte_offsets, |offset| {
+        text.is_char_boundary(offset)
+    })?;
+    let mut start = 0usize;
+    for &end in byte_offsets {
+        let chunk =
+            text.get(start..end)
+                .ok_or(ParserObservationExecutionError::ObservationInvariant(
+                    ParserObservationInvariantError::DerivedDeliverySlicingInvariant,
+                ))?;
+        push(chunk)?;
+        start = end;
+    }
+    let chunk = text
+        .get(start..)
+        .ok_or(ParserObservationExecutionError::ObservationInvariant(
+            ParserObservationInvariantError::DerivedDeliverySlicingInvariant,
+        ))?;
+    if !chunk.is_empty() {
+        push(chunk)?;
+    }
+    Ok(())
+}
+
+fn deliver_byte_fixed(
+    bytes: &[u8],
+    bytes_per_chunk: usize,
+    mut push: impl FnMut(&[u8]) -> Result<(), ParserObservationExecutionError>,
+) -> Result<(), ParserObservationExecutionError> {
+    if bytes_per_chunk == 0 {
+        return Err(ParserObservationExecutionError::InvalidDelivery(
+            ParserObservationDeliveryError::ZeroFixedChunkExtent,
+        ));
+    }
+    let mut start = 0usize;
+    while start < bytes.len() {
+        let end = start
+            .checked_add(bytes_per_chunk)
+            .ok_or(ParserObservationExecutionError::ObservationInvariant(
+                ParserObservationInvariantError::DerivedDeliverySlicingInvariant,
+            ))?
+            .min(bytes.len());
+        #[cfg(test)]
+        if derived_delivery_slicing_failure_requested() {
+            return Err(ParserObservationExecutionError::ObservationInvariant(
+                ParserObservationInvariantError::DerivedDeliverySlicingInvariant,
+            ));
+        }
+        let chunk =
+            bytes
+                .get(start..end)
+                .ok_or(ParserObservationExecutionError::ObservationInvariant(
+                    ParserObservationInvariantError::DerivedDeliverySlicingInvariant,
+                ))?;
+        push(chunk)?;
+        start = end;
+    }
+    Ok(())
+}
+
+fn deliver_byte_boundaries(
+    bytes: &[u8],
+    byte_offsets: &[usize],
+    mut push: impl FnMut(&[u8]) -> Result<(), ParserObservationExecutionError>,
+) -> Result<(), ParserObservationExecutionError> {
+    validate_boundaries(bytes.len(), byte_offsets, |_| true)?;
+    let mut start = 0usize;
+    for &end in byte_offsets {
+        let chunk =
+            bytes
+                .get(start..end)
+                .ok_or(ParserObservationExecutionError::ObservationInvariant(
+                    ParserObservationInvariantError::DerivedDeliverySlicingInvariant,
+                ))?;
+        push(chunk)?;
+        start = end;
+    }
+    if start < bytes.len() {
+        let chunk =
+            bytes
+                .get(start..)
+                .ok_or(ParserObservationExecutionError::ObservationInvariant(
+                    ParserObservationInvariantError::DerivedDeliverySlicingInvariant,
+                ))?;
+        push(chunk)?;
+    }
+    Ok(())
+}
+
+fn validate_boundaries(
+    extent: usize,
+    boundaries: &[usize],
+    is_valid_boundary: impl Fn(usize) -> bool,
+) -> Result<(), ParserObservationExecutionError> {
+    let mut previous = 0usize;
+    for (boundary_index, &boundary) in boundaries.iter().enumerate() {
+        if boundary == 0 {
+            return Err(ParserObservationExecutionError::InvalidDelivery(
+                ParserObservationDeliveryError::BoundaryAtStart { boundary_index },
+            ));
+        }
+        if boundary == extent {
+            return Err(ParserObservationExecutionError::InvalidDelivery(
+                ParserObservationDeliveryError::BoundaryAtEnd { boundary_index },
+            ));
+        }
+        if boundary > extent {
+            return Err(ParserObservationExecutionError::InvalidDelivery(
+                ParserObservationDeliveryError::BoundaryOutOfRange { boundary_index },
+            ));
+        }
+        if boundary <= previous {
+            return Err(ParserObservationExecutionError::InvalidDelivery(
+                ParserObservationDeliveryError::BoundaryNotIncreasing { boundary_index },
+            ));
+        }
+        if !is_valid_boundary(boundary) {
+            return Err(ParserObservationExecutionError::InvalidDelivery(
+                ParserObservationDeliveryError::UnicodeBoundaryNotScalar { boundary_index },
+            ));
+        }
+        previous = boundary;
+    }
+    Ok(())
+}
+
+type DocumentObservationResult = (
+    ParserObservationCapture,
+    crate::DocumentMode,
+    ObservationState<super::ObservedTree>,
+    ObservationState<super::ObservedPatchStream>,
+    ObservationState<ParserFinalizationReport>,
+);
+
+type DocumentObservationExecutionResult =
+    Result<DocumentObservationResult, ParserObservationExecutionError>;
+
 fn execute_document_parser(
     input: ParserObservationInput<'_>,
     config: ParserObservationConfig,
     patch_config: PatchHistoryObservationConfig,
     tree_request: ObservationRequest,
     patch_request: ObservationRequest,
-) -> Result<
-    (
-        ParserObservationCapture,
-        crate::DocumentMode,
-        ObservationState<super::ObservedTree>,
-        ObservationState<super::ObservedPatchStream>,
-    ),
-    ParserObservationExecutionError,
-> {
+    final_request: FinalInvariantRequest,
+) -> DocumentObservationExecutionResult {
     let observation_requested = config.is_requested();
     let mut parser = HtmlParser::new_with_conformance_observations(
         HtmlParseOptions::default(),
@@ -592,6 +945,17 @@ fn execute_document_parser(
                 push_document_text(&mut parser, chunk)?;
             }
         }
+        ParserObservationInput::Utf8FixedScalarChunks {
+            text,
+            scalars_per_chunk,
+        } => deliver_utf8_fixed(text, scalars_per_chunk, |chunk| {
+            push_document_text(&mut parser, chunk)
+        })?,
+        ParserObservationInput::Utf8BoundaryChunks { text, byte_offsets } => {
+            deliver_utf8_boundaries(text, byte_offsets, |chunk| {
+                push_document_text(&mut parser, chunk)
+            })?
+        }
         ParserObservationInput::Bytes(bytes) => {
             push_document_bytes(&mut parser, bytes)?;
         }
@@ -600,11 +964,29 @@ fn execute_document_parser(
                 push_document_bytes(&mut parser, chunk)?;
             }
         }
+        ParserObservationInput::ByteFixedChunks {
+            bytes,
+            bytes_per_chunk,
+        } => deliver_byte_fixed(bytes, bytes_per_chunk, |chunk| {
+            push_document_bytes(&mut parser, chunk)
+        })?,
+        ParserObservationInput::ByteBoundaryChunks {
+            bytes,
+            byte_offsets,
+        } => deliver_byte_boundaries(bytes, byte_offsets, |chunk| {
+            push_document_bytes(&mut parser, chunk)
+        })?,
     }
     if let Err(error) = parser.finish() {
         return Err(document_parser_operation_error(&parser, error));
     }
-    finalize_document_parser(parser, observation_requested, tree_request, patch_request)
+    finalize_document_parser(
+        parser,
+        observation_requested,
+        tree_request,
+        patch_request,
+        final_request,
+    )
 }
 
 fn finalize_document_parser(
@@ -612,20 +994,14 @@ fn finalize_document_parser(
     observation_requested: bool,
     tree_request: ObservationRequest,
     patch_request: ObservationRequest,
-) -> Result<
-    (
-        ParserObservationCapture,
-        crate::DocumentMode,
-        ObservationState<super::ObservedTree>,
-        ObservationState<super::ObservedPatchStream>,
-    ),
-    ParserObservationExecutionError,
-> {
+    final_request: FinalInvariantRequest,
+) -> DocumentObservationExecutionResult {
     finalize_document_parser_with_allocations(
         parser,
         observation_requested,
         tree_request,
         patch_request,
+        final_request,
         &mut ObservationAllocationController::default(),
     )
 }
@@ -635,22 +1011,38 @@ fn finalize_document_parser_with_allocations(
     observation_requested: bool,
     tree_request: ObservationRequest,
     patch_request: ObservationRequest,
+    final_request: FinalInvariantRequest,
     allocations: &mut ObservationAllocationController,
-) -> Result<
-    (
-        ParserObservationCapture,
-        crate::DocumentMode,
-        ObservationState<super::ObservedTree>,
-        ObservationState<super::ObservedPatchStream>,
-    ),
-    ParserObservationExecutionError,
-> {
+) -> DocumentObservationExecutionResult {
     let document_mode = parser
         .document_mode_for_conformance()
         .map_err(|error| document_parser_operation_error(&parser, error))?;
-    let (output, capture, patch_history) = parser
-        .into_output_with_observations()
-        .map_err(parser_error_without_live_parser)?;
+    let (output, capture, patch_history, final_invariants) = match final_request {
+        FinalInvariantRequest::NotRequested => {
+            let (output, capture, patch_history) = parser
+                .into_output_with_observations()
+                .map_err(parser_error_without_live_parser)?;
+            (
+                output,
+                capture,
+                patch_history,
+                ObservationState::NotRequested,
+            )
+        }
+        FinalInvariantRequest::Capture => {
+            let mut reserve = |site| allocations.before_final_audit(site).map_err(|_| ());
+            let finalized = parser
+                .into_output_with_final_audit(&mut reserve)
+                .map_err(finalization_execution_error)?;
+            let report = document_finalization_report(&finalized);
+            (
+                finalized.output,
+                finalized.observations,
+                finalized.patch_history,
+                ObservationState::Captured(report),
+            )
+        }
+    };
     let capture = require_capture(capture, observation_requested)?;
     validate_capture(&capture)?;
     let tree = match tree_request {
@@ -672,7 +1064,82 @@ fn finalize_document_parser_with_allocations(
             project_patches(history, allocations)?
         }
     };
-    Ok((capture, document_mode, tree, patches))
+    Ok((capture, document_mode, tree, patches, final_invariants))
+}
+
+fn finalization_execution_error(
+    error: ConformanceFinalizationError,
+) -> ParserObservationExecutionError {
+    match error {
+        ConformanceFinalizationError::Parser(error) => parser_error_without_live_parser(error),
+        ConformanceFinalizationError::ObservationResource(error) => {
+            ParserObservationExecutionError::ResourceExhaustion(error)
+        }
+        ConformanceFinalizationError::PatchOperationCountOverflow => {
+            ParserObservationExecutionError::ObservationInvariant(
+                ParserObservationInvariantError::FinalAuditPatchCountOverflow,
+            )
+        }
+    }
+}
+
+fn document_finalization_report(
+    finalized: &ConformanceFinalizedOutput,
+) -> ParserFinalizationReport {
+    let session = &finalized.session_audit;
+    let tree = &session.tree_builder;
+    let witness = finalized.patch_witness;
+    let all_patches_materialized = patch_materialization_complete(witness);
+    ParserFinalizationReport {
+        input: InputFinalizationChecks {
+            decoder_carry_empty: outcome(session.decoder_carry_empty),
+            preprocessing_flushed: outcome(session.preprocessing_flushed),
+        },
+        tokenizer: TokenizerFinalizationChecks {
+            eof_emitted_once: outcome(session.tokenizer_eof_lifecycle_complete),
+            pending_constructs_flushed: outcome(session.tokenizer_pending_constructs_flushed),
+            output_accounted_for: outcome(session.tokenizer_output_accounted_for),
+        },
+        tree_builder: TreeBuilderFinalizationChecks {
+            pending_table_text_empty: outcome(tree.pending_table_text_empty),
+            insertion_mode_valid: outcome(tree.insertion_mode_valid),
+            open_elements_consistent: outcome(tree.open_elements_consistent),
+            active_formatting_consistent: outcome(tree.active_formatting_consistent),
+            template_modes_consistent: outcome(tree.template_modes_consistent),
+            form_pointer_valid: outcome(tree.form_pointer_valid),
+        },
+        dom: DomFinalizationChecks {
+            parent_child_links_valid: outcome(tree.parent_child_links_valid),
+            namespaces_valid: outcome(tree.namespaces_valid),
+            template_associations_valid: outcome(tree.template_associations_valid),
+        },
+        patches: PatchFinalizationChecks {
+            all_patches_materialized: outcome(all_patches_materialized),
+            live_tree_matches_materialized_dom: outcome(
+                finalized.live_structure_matches_patch_arena
+                    && finalized.patch_arena_matches_materialized_dom,
+            ),
+        },
+    }
+}
+
+const fn patch_materialization_complete(
+    witness: crate::parser::PatchMaterializationWitness,
+) -> bool {
+    witness.terminal_empty_drain_observed
+        && witness.builder_pending_patch_count_after_finish == 0
+        && witness.builder_pending_patch_count_after_terminal_drain == 0
+        && witness.emitter_pending_patch_count_after_terminal_drain == 0
+        && witness.drained_operation_count == witness.applied_operation_count
+        && witness.materialized_after_terminal_drain
+}
+
+const fn outcome(satisfied: bool) -> InvariantOutcome {
+    if satisfied {
+        InvariantOutcome::Satisfied
+    } else {
+        InvariantOutcome::Failed
+    }
 }
 
 fn push_document_text(
@@ -747,7 +1214,14 @@ fn parser_error_without_live_parser(
 fn execute_standalone_tokenizer(
     source: ParserObservationInput<'_>,
     config: ParserObservationConfig,
-) -> Result<ParserObservationCapture, ParserObservationExecutionError> {
+    final_request: FinalInvariantRequest,
+) -> Result<
+    (
+        ParserObservationCapture,
+        ObservationState<ParserFinalizationReport>,
+    ),
+    ParserObservationExecutionError,
+> {
     let observation_requested = config.is_requested();
     let mut ctx = if observation_requested {
         DocumentParseContext::with_observations(ErrorPolicy::default(), config)
@@ -769,6 +1243,21 @@ fn execute_standalone_tokenizer(
             }
             false
         }
+        ParserObservationInput::Utf8FixedScalarChunks {
+            text,
+            scalars_per_chunk,
+        } => {
+            deliver_utf8_fixed(text, scalars_per_chunk, |chunk| {
+                push_standalone_text(&mut tokenizer, &mut input, &mut ctx, chunk)
+            })?;
+            false
+        }
+        ParserObservationInput::Utf8BoundaryChunks { text, byte_offsets } => {
+            deliver_utf8_boundaries(text, byte_offsets, |chunk| {
+                push_standalone_text(&mut tokenizer, &mut input, &mut ctx, chunk)
+            })?;
+            false
+        }
         ParserObservationInput::Bytes(bytes) => {
             push_standalone_bytes(&mut tokenizer, &mut decoder, &mut input, &mut ctx, bytes)?;
             true
@@ -777,6 +1266,24 @@ fn execute_standalone_tokenizer(
             for chunk in chunks {
                 push_standalone_bytes(&mut tokenizer, &mut decoder, &mut input, &mut ctx, chunk)?;
             }
+            true
+        }
+        ParserObservationInput::ByteFixedChunks {
+            bytes,
+            bytes_per_chunk,
+        } => {
+            deliver_byte_fixed(bytes, bytes_per_chunk, |chunk| {
+                push_standalone_bytes(&mut tokenizer, &mut decoder, &mut input, &mut ctx, chunk)
+            })?;
+            true
+        }
+        ParserObservationInput::ByteBoundaryChunks {
+            bytes,
+            byte_offsets,
+        } => {
+            deliver_byte_boundaries(bytes, byte_offsets, |chunk| {
+                push_standalone_bytes(&mut tokenizer, &mut decoder, &mut input, &mut ctx, chunk)
+            })?;
             true
         }
     };
@@ -801,8 +1308,47 @@ fn execute_standalone_tokenizer(
         ));
     }
     drain_standalone_batch(&mut tokenizer, &mut input, &mut ctx);
-
-    take_standalone_capture(&mut ctx, observation_requested)
+    let final_invariants = match final_request {
+        FinalInvariantRequest::NotRequested => ObservationState::NotRequested,
+        FinalInvariantRequest::Capture => {
+            let audit = tokenizer.final_audit_for_conformance();
+            let not_applicable = InvariantOutcome::NotApplicable(
+                InvariantNotApplicableReason::StandaloneTokenizerRun,
+            );
+            ObservationState::Captured(ParserFinalizationReport {
+                input: InputFinalizationChecks {
+                    decoder_carry_empty: outcome(!decoder.has_pending_bytes()),
+                    preprocessing_flushed: outcome(!input.has_pending_preprocessing()),
+                },
+                tokenizer: TokenizerFinalizationChecks {
+                    eof_emitted_once: outcome(audit.eof_lifecycle_complete),
+                    pending_constructs_flushed: outcome(audit.pending_constructs_flushed),
+                    output_accounted_for: outcome(audit.output_queue_empty),
+                },
+                tree_builder: TreeBuilderFinalizationChecks {
+                    pending_table_text_empty: not_applicable.clone(),
+                    insertion_mode_valid: not_applicable.clone(),
+                    open_elements_consistent: not_applicable.clone(),
+                    active_formatting_consistent: not_applicable.clone(),
+                    template_modes_consistent: not_applicable.clone(),
+                    form_pointer_valid: not_applicable.clone(),
+                },
+                dom: DomFinalizationChecks {
+                    parent_child_links_valid: not_applicable.clone(),
+                    namespaces_valid: not_applicable.clone(),
+                    template_associations_valid: not_applicable.clone(),
+                },
+                patches: PatchFinalizationChecks {
+                    all_patches_materialized: not_applicable.clone(),
+                    live_tree_matches_materialized_dom: not_applicable,
+                },
+            })
+        }
+    };
+    Ok((
+        take_standalone_capture(&mut ctx, observation_requested)?,
+        final_invariants,
+    ))
 }
 
 fn push_standalone_text(
@@ -1036,6 +1582,7 @@ fn canonical_result(
     patches: ObservationState<super::ObservedPatchStream>,
     target: ParserObservationTarget,
     transitions_request: ObservationRequest,
+    final_invariants: ObservationState<ParserFinalizationReport>,
 ) -> Result<CanonicalParserResult, ParserObservationExecutionError> {
     validate_capture(&capture)?;
     let transitions = match target {
@@ -1053,7 +1600,7 @@ fn canonical_result(
         patches,
         transitions,
         unsupported_features: finish_surface(capture.unsupported_features),
-        final_invariants: ObservationState::NotRequested,
+        final_invariants,
     })
 }
 
@@ -1177,7 +1724,9 @@ fn finish_surface<T>(capture: CapturedSurface<T>) -> ObservationState<Vec<T>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::conformance::{NotApplicableReason, ObservedPatchStream, ObservedTreeNode};
+    use crate::conformance::{
+        InvariantFailureCode, NotApplicableReason, ObservedPatchStream, ObservedTreeNode,
+    };
     use crate::html5::shared::{
         EventPosition, ImplementationDiagnosticCode, InputCoordinateSpace, ParseErrorCode,
         SourceBytePosition, SourcePositionUnavailableReason, Utf8ReplacementReason,
@@ -1224,8 +1773,318 @@ mod tests {
             document_mode: ScalarObservationRequest::NotRequested,
             tree: ObservationRequest::NotRequested,
             patches: ObservationRequest::NotRequested,
+            final_invariants: FinalInvariantRequest::NotRequested,
         })
         .expect("production tokenizer observation should succeed")
+    }
+
+    fn final_audit_request(
+        target: ParserObservationTarget,
+        input: ParserObservationInput<'_>,
+    ) -> ParserObservationRequest<'_> {
+        let document = matches!(target, ParserObservationTarget::DocumentParser);
+        ParserObservationRequest {
+            target,
+            input,
+            tokens: ObservationRequest::Capture { capacity: 512 },
+            parse_errors: ObservationRequest::Capture { capacity: 512 },
+            implementation_diagnostics: ObservationRequest::Capture { capacity: 512 },
+            transitions: if document {
+                ObservationRequest::Capture { capacity: 2_048 }
+            } else {
+                ObservationRequest::NotRequested
+            },
+            unsupported_features: ObservationRequest::Capture { capacity: 512 },
+            document_mode: if document {
+                ScalarObservationRequest::Capture
+            } else {
+                ScalarObservationRequest::NotRequested
+            },
+            tree: if document {
+                ObservationRequest::Capture { capacity: 2_048 }
+            } else {
+                ObservationRequest::NotRequested
+            },
+            patches: if document {
+                ObservationRequest::Capture { capacity: 4_096 }
+            } else {
+                ObservationRequest::NotRequested
+            },
+            final_invariants: FinalInvariantRequest::Capture,
+        }
+    }
+
+    #[test]
+    fn delivery_fixed_and_explicit_shapes_match_whole_input_without_boundary_vectors() {
+        let source = "<!doctype html><p title='é'>a&amp;b</p>";
+        let whole = execute_parser_observation(final_audit_request(
+            ParserObservationTarget::DocumentParser,
+            ParserObservationInput::Utf8(source),
+        ))
+        .expect("whole Unicode observation");
+        let scalar_fixed = execute_parser_observation(final_audit_request(
+            ParserObservationTarget::DocumentParser,
+            ParserObservationInput::Utf8FixedScalarChunks {
+                text: source,
+                scalars_per_chunk: 1,
+            },
+        ))
+        .expect("fixed scalar observation");
+        let byte_fixed = execute_parser_observation(final_audit_request(
+            ParserObservationTarget::DocumentParser,
+            ParserObservationInput::ByteFixedChunks {
+                bytes: source.as_bytes(),
+                bytes_per_chunk: 1,
+            },
+        ))
+        .expect("fixed byte observation");
+        assert_eq!(whole, scalar_fixed);
+        assert_eq!(whole, byte_fixed);
+    }
+
+    #[test]
+    fn delivery_errors_have_closed_typed_identities_and_never_panic() {
+        for (input, expected, identity) in [
+            (
+                ParserObservationInput::Utf8FixedScalarChunks {
+                    text: "x",
+                    scalars_per_chunk: 0,
+                },
+                ParserObservationDeliveryError::ZeroFixedChunkExtent,
+                ParserObservationDeliveryErrorIdentity::ZeroFixedChunkExtent,
+            ),
+            (
+                ParserObservationInput::Utf8BoundaryChunks {
+                    text: "é",
+                    byte_offsets: &[1],
+                },
+                ParserObservationDeliveryError::UnicodeBoundaryNotScalar { boundary_index: 0 },
+                ParserObservationDeliveryErrorIdentity::UnicodeBoundaryNotScalar,
+            ),
+            (
+                ParserObservationInput::ByteBoundaryChunks {
+                    bytes: b"abc",
+                    byte_offsets: &[0],
+                },
+                ParserObservationDeliveryError::BoundaryAtStart { boundary_index: 0 },
+                ParserObservationDeliveryErrorIdentity::BoundaryAtStart,
+            ),
+            (
+                ParserObservationInput::ByteBoundaryChunks {
+                    bytes: b"abc",
+                    byte_offsets: &[2, 1],
+                },
+                ParserObservationDeliveryError::BoundaryNotIncreasing { boundary_index: 1 },
+                ParserObservationDeliveryErrorIdentity::BoundaryNotIncreasing,
+            ),
+        ] {
+            let error = execute_parser_observation(final_audit_request(
+                ParserObservationTarget::StandaloneTokenizer,
+                input,
+            ))
+            .expect_err("invalid delivery must be rejected");
+            assert!(matches!(
+                &error,
+                ParserObservationExecutionError::InvalidDelivery(actual) if *actual == expected
+            ));
+            assert_eq!(
+                error.identity(),
+                ParserObservationExecutionIdentity::InvalidDelivery(identity)
+            );
+        }
+    }
+
+    #[test]
+    fn internally_derived_slicing_failure_is_an_observation_invariant() {
+        let error = with_forced_derived_delivery_slicing_failure(|| {
+            execute_parser_observation(final_audit_request(
+                ParserObservationTarget::StandaloneTokenizer,
+                ParserObservationInput::Utf8FixedScalarChunks {
+                    text: "ab",
+                    scalars_per_chunk: 1,
+                },
+            ))
+            .expect_err("test seam must reject the derived slice")
+        });
+        assert_eq!(
+            error,
+            ParserObservationExecutionError::ObservationInvariant(
+                ParserObservationInvariantError::DerivedDeliverySlicingInvariant,
+            )
+        );
+        assert_eq!(
+            error.identity(),
+            ParserObservationExecutionIdentity::ObservationInvariant(
+                ParserObservationInvariantError::DerivedDeliverySlicingInvariant,
+            )
+        );
+    }
+
+    #[test]
+    fn delivery_byte_chunks_preserve_crlf_and_incomplete_utf8_eof_semantics() {
+        for bytes in [
+            b"a\r\nb\r".as_slice(),
+            b"a\rb".as_slice(),
+            &[0xff][..],
+            &[0xf0, 0x9f][..],
+        ] {
+            let whole = execute_parser_observation(final_audit_request(
+                ParserObservationTarget::StandaloneTokenizer,
+                ParserObservationInput::Bytes(bytes),
+            ))
+            .expect("whole bytes");
+            let chunked = execute_parser_observation(final_audit_request(
+                ParserObservationTarget::StandaloneTokenizer,
+                ParserObservationInput::ByteFixedChunks {
+                    bytes,
+                    bytes_per_chunk: 1,
+                },
+            ))
+            .expect("fixed bytes");
+            assert_eq!(whole, chunked);
+        }
+    }
+
+    #[test]
+    fn final_audit_reports_all_fields_and_standalone_not_applicable_outcomes() {
+        let standalone = execute_parser_observation(final_audit_request(
+            ParserObservationTarget::StandaloneTokenizer,
+            ParserObservationInput::Utf8("<p>x"),
+        ))
+        .expect("standalone audit");
+        let ObservationState::Captured(standalone) = standalone.final_invariants else {
+            panic!("standalone final report");
+        };
+        assert_eq!(standalone.fields().count(), 16);
+        assert_eq!(
+            standalone
+                .fields()
+                .filter(|(_, outcome)| matches!(
+                    outcome,
+                    InvariantOutcome::NotApplicable(
+                        InvariantNotApplicableReason::StandaloneTokenizerRun
+                    )
+                ))
+                .count(),
+            11
+        );
+        assert!(!standalone.has_failure());
+
+        let document = execute_parser_observation(final_audit_request(
+            ParserObservationTarget::DocumentParser,
+            ParserObservationInput::Utf8(
+                "<!doctype html><table>x<tr><td><b>y</table><template><svg><foreignObject><p>z",
+            ),
+        ))
+        .expect("document audit");
+        let ObservationState::Captured(document) = document.final_invariants else {
+            panic!("document final report");
+        };
+        assert_eq!(document.fields().count(), 16);
+        assert!(
+            document
+                .fields()
+                .all(|(_, outcome)| matches!(outcome, InvariantOutcome::Satisfied))
+        );
+    }
+
+    #[test]
+    fn final_audit_failed_field_iteration_is_allocation_free_and_canonical() {
+        let failed = InvariantOutcome::Failed;
+        let report = ParserFinalizationReport {
+            input: InputFinalizationChecks {
+                decoder_carry_empty: failed.clone(),
+                preprocessing_flushed: failed.clone(),
+            },
+            tokenizer: TokenizerFinalizationChecks {
+                eof_emitted_once: failed.clone(),
+                pending_constructs_flushed: failed.clone(),
+                output_accounted_for: failed.clone(),
+            },
+            tree_builder: TreeBuilderFinalizationChecks {
+                pending_table_text_empty: failed.clone(),
+                insertion_mode_valid: failed.clone(),
+                open_elements_consistent: failed.clone(),
+                active_formatting_consistent: failed.clone(),
+                template_modes_consistent: failed.clone(),
+                form_pointer_valid: failed.clone(),
+            },
+            dom: DomFinalizationChecks {
+                parent_child_links_valid: failed.clone(),
+                namespaces_valid: failed.clone(),
+                template_associations_valid: failed.clone(),
+            },
+            patches: PatchFinalizationChecks {
+                all_patches_materialized: failed.clone(),
+                live_tree_matches_materialized_dom: failed,
+            },
+        };
+        assert_eq!(
+            report
+                .failed_fields()
+                .map(|(_, code)| code)
+                .collect::<Vec<_>>(),
+            [
+                InvariantFailureCode::DecoderCarryNotEmpty,
+                InvariantFailureCode::PreprocessingNotFlushed,
+                InvariantFailureCode::EofEmissionInvalid,
+                InvariantFailureCode::PendingTokenizerConstruct,
+                InvariantFailureCode::TokenizerOutputUnaccounted,
+                InvariantFailureCode::PendingTableText,
+                InvariantFailureCode::InvalidInsertionMode,
+                InvariantFailureCode::OpenElementsInconsistent,
+                InvariantFailureCode::ActiveFormattingInconsistent,
+                InvariantFailureCode::TemplateModesInconsistent,
+                InvariantFailureCode::FormPointerInvalid,
+                InvariantFailureCode::ParentChildRelationshipInvalid,
+                InvariantFailureCode::NamespaceRelationshipInvalid,
+                InvariantFailureCode::TemplateAssociationInvalid,
+                InvariantFailureCode::PatchMaterializationIncomplete,
+                InvariantFailureCode::LiveTreeMismatch,
+            ]
+        );
+    }
+
+    #[test]
+    fn final_audit_patch_witness_requires_every_terminal_lifecycle_fact() {
+        let complete = crate::parser::PatchMaterializationWitness {
+            terminal_empty_drain_observed: true,
+            builder_pending_patch_count_after_finish: 0,
+            builder_pending_patch_count_after_terminal_drain: 0,
+            emitter_pending_patch_count_after_terminal_drain: 0,
+            drained_operation_count: 7,
+            applied_operation_count: 7,
+            materialized_after_terminal_drain: true,
+        };
+        assert!(patch_materialization_complete(complete));
+        for incomplete in [
+            crate::parser::PatchMaterializationWitness {
+                terminal_empty_drain_observed: false,
+                ..complete
+            },
+            crate::parser::PatchMaterializationWitness {
+                builder_pending_patch_count_after_finish: 1,
+                ..complete
+            },
+            crate::parser::PatchMaterializationWitness {
+                builder_pending_patch_count_after_terminal_drain: 1,
+                ..complete
+            },
+            crate::parser::PatchMaterializationWitness {
+                emitter_pending_patch_count_after_terminal_drain: 1,
+                ..complete
+            },
+            crate::parser::PatchMaterializationWitness {
+                applied_operation_count: 6,
+                ..complete
+            },
+            crate::parser::PatchMaterializationWitness {
+                materialized_after_terminal_drain: false,
+                ..complete
+            },
+        ] {
+            assert!(!patch_materialization_complete(incomplete));
+        }
     }
 
     fn captured<T: std::fmt::Debug>(surface: &ObservationState<Vec<T>>) -> &[T] {
@@ -1265,6 +2124,7 @@ mod tests {
             document_mode: ScalarObservationRequest::NotRequested,
             tree,
             patches: ObservationRequest::NotRequested,
+            final_invariants: FinalInvariantRequest::NotRequested,
         })
         .expect("AE13b4 production observation")
     }
@@ -1292,6 +2152,7 @@ mod tests {
             ObservationState::NotRequested,
             ParserObservationTarget::DocumentParser,
             ObservationRequest::NotRequested,
+            ObservationState::NotRequested,
         )
     }
 
@@ -1390,6 +2251,7 @@ mod tests {
             document_mode: ScalarObservationRequest::NotRequested,
             tree: ObservationRequest::NotRequested,
             patches: ObservationRequest::NotRequested,
+            final_invariants: FinalInvariantRequest::NotRequested,
         })
         .expect("unobserved conformance execution still runs production parsing");
         assert!(matches!(result.tokens, ObservationState::NotRequested));
@@ -1416,6 +2278,7 @@ mod tests {
             document_mode: ScalarObservationRequest::NotRequested,
             tree: ObservationRequest::NotRequested,
             patches: ObservationRequest::NotRequested,
+            final_invariants: FinalInvariantRequest::NotRequested,
         })
         .unwrap();
         assert_eq!(
@@ -2024,6 +2887,7 @@ mod tests {
             document_mode: ScalarObservationRequest::NotRequested,
             tree: ObservationRequest::NotRequested,
             patches: ObservationRequest::NotRequested,
+            final_invariants: FinalInvariantRequest::NotRequested,
         })
         .unwrap();
         assert_eq!(whole.transitions, chunked.transitions);
@@ -2041,6 +2905,7 @@ mod tests {
             document_mode: ScalarObservationRequest::NotRequested,
             tree: ObservationRequest::Capture { capacity: 256 },
             patches: ObservationRequest::NotRequested,
+            final_invariants: FinalInvariantRequest::NotRequested,
         })
         .unwrap();
         let unobserved_tree = execute_parser_observation(ParserObservationRequest {
@@ -2054,6 +2919,7 @@ mod tests {
             document_mode: ScalarObservationRequest::NotRequested,
             tree: ObservationRequest::Capture { capacity: 256 },
             patches: ObservationRequest::NotRequested,
+            final_invariants: FinalInvariantRequest::NotRequested,
         })
         .unwrap();
         assert_eq!(observed_tree.tree, unobserved_tree.tree);
@@ -2149,6 +3015,7 @@ mod tests {
                 true,
                 ObservationRequest::NotRequested,
                 ObservationRequest::NotRequested,
+                FinalInvariantRequest::NotRequested,
             ),
             Err(ParserObservationExecutionError::ParserInvariant)
         );
@@ -2174,6 +3041,26 @@ mod tests {
     }
 
     #[test]
+    fn final_audit_patch_application_failure_returns_no_partial_report() {
+        let mut parser = HtmlParser::new_with_conformance_observations(
+            HtmlParseOptions::default(),
+            ParserObservationConfig::default(),
+            PatchHistoryObservationConfig::capture(64),
+        )
+        .unwrap();
+        parser.push_str("<p>x</p>").unwrap();
+        parser.finish().unwrap();
+        parser.force_materialization_failure_for_test();
+        let mut reserve = |_| Ok(());
+        assert!(matches!(
+            parser.into_output_with_final_audit(&mut reserve),
+            Err(ConformanceFinalizationError::Parser(
+                crate::HtmlParseError::PatchValidation(_)
+            ))
+        ));
+    }
+
+    #[test]
     fn requested_patch_observation_without_session_capture_is_an_execution_failure() {
         let mut parser = HtmlParser::new_with_observations(
             HtmlParseOptions::default(),
@@ -2188,6 +3075,7 @@ mod tests {
                 false,
                 ObservationRequest::NotRequested,
                 ObservationRequest::Capture { capacity: 64 },
+                FinalInvariantRequest::NotRequested,
             ),
             Err(ParserObservationExecutionError::PatchHistoryCaptureMissing)
         );
@@ -2214,6 +3102,7 @@ mod tests {
                 false,
                 ObservationRequest::Capture { capacity: 16 },
                 ObservationRequest::NotRequested,
+                FinalInvariantRequest::NotRequested,
                 &mut allocations,
             ),
             Err(ParserObservationExecutionError::ResourceExhaustion(
@@ -2222,6 +3111,126 @@ mod tests {
                 )
             ))
         );
+    }
+
+    #[test]
+    fn every_final_audit_reservation_site_fails_without_a_partial_report() {
+        let sites = [
+            (
+                ObservationReservationSite::FinalAuditLiveTreeStructuralProjection,
+                ObservationAllocationStep::FinalAuditLiveTreeStructuralProjection,
+            ),
+            (
+                ObservationReservationSite::FinalAuditPatchArenaStructuralProjection,
+                ObservationAllocationStep::FinalAuditPatchArenaStructuralProjection,
+            ),
+            (
+                ObservationReservationSite::FinalAuditDomStructuralTraversal,
+                ObservationAllocationStep::FinalAuditDomStructuralTraversal,
+            ),
+            (
+                ObservationReservationSite::FinalAuditOpenElementsIndex,
+                ObservationAllocationStep::FinalAuditOpenElementsIndex,
+            ),
+            (
+                ObservationReservationSite::FinalAuditActiveFormattingIndex,
+                ObservationAllocationStep::FinalAuditActiveFormattingIndex,
+            ),
+            (
+                ObservationReservationSite::FinalAuditTemplateCoordinationIndex,
+                ObservationAllocationStep::FinalAuditTemplateCoordinationIndex,
+            ),
+            (
+                ObservationReservationSite::FinalAuditSemanticTraversal,
+                ObservationAllocationStep::FinalAuditSemanticTraversal,
+            ),
+        ];
+        for (site, step) in sites {
+            let mut parser = HtmlParser::new_with_conformance_observations(
+                HtmlParseOptions::default(),
+                ParserObservationConfig::default(),
+                PatchHistoryObservationConfig::default(),
+            )
+            .expect("parser");
+            parser.push_str("<p>x</p>").expect("input");
+            parser.finish().expect("finish");
+            let mut allocations =
+                ObservationAllocationController::with_failure(ObservationFailureInjection {
+                    step,
+                    occurrence: NonZeroU64::MIN,
+                });
+            let result = finalize_document_parser_with_allocations(
+                parser,
+                false,
+                ObservationRequest::NotRequested,
+                ObservationRequest::NotRequested,
+                FinalInvariantRequest::Capture,
+                &mut allocations,
+            );
+            assert!(matches!(
+                result,
+                Err(ParserObservationExecutionError::ResourceExhaustion(error))
+                    if error.site() == site
+            ));
+        }
+    }
+
+    #[test]
+    fn final_audit_later_real_reservations_are_injectable_without_partial_reports() {
+        let later_sites = [
+            (
+                ObservationReservationSite::FinalAuditLiveTreeStructuralProjection,
+                ObservationAllocationStep::FinalAuditLiveTreeStructuralProjection,
+            ),
+            (
+                ObservationReservationSite::FinalAuditPatchArenaStructuralProjection,
+                ObservationAllocationStep::FinalAuditPatchArenaStructuralProjection,
+            ),
+            (
+                ObservationReservationSite::FinalAuditDomStructuralTraversal,
+                ObservationAllocationStep::FinalAuditDomStructuralTraversal,
+            ),
+            (
+                ObservationReservationSite::FinalAuditOpenElementsIndex,
+                ObservationAllocationStep::FinalAuditOpenElementsIndex,
+            ),
+            (
+                ObservationReservationSite::FinalAuditTemplateCoordinationIndex,
+                ObservationAllocationStep::FinalAuditTemplateCoordinationIndex,
+            ),
+            (
+                ObservationReservationSite::FinalAuditSemanticTraversal,
+                ObservationAllocationStep::FinalAuditSemanticTraversal,
+            ),
+        ];
+        for (site, step) in later_sites {
+            let mut parser = HtmlParser::new_with_conformance_observations(
+                HtmlParseOptions::default(),
+                ParserObservationConfig::default(),
+                PatchHistoryObservationConfig::default(),
+            )
+            .expect("parser");
+            parser.push_str("<div><span>x</span></div>").expect("input");
+            parser.finish().expect("finish");
+            let mut allocations =
+                ObservationAllocationController::with_failure(ObservationFailureInjection {
+                    step,
+                    occurrence: NonZeroU64::new(2).expect("non-zero"),
+                });
+            let result = finalize_document_parser_with_allocations(
+                parser,
+                false,
+                ObservationRequest::NotRequested,
+                ObservationRequest::NotRequested,
+                FinalInvariantRequest::Capture,
+                &mut allocations,
+            );
+            assert!(matches!(
+                result,
+                Err(ParserObservationExecutionError::ResourceExhaustion(error))
+                    if error.site() == site
+            ));
+        }
     }
 
     #[test]
@@ -2576,6 +3585,7 @@ mod tests {
             document_mode: ScalarObservationRequest::NotRequested,
             tree: ObservationRequest::NotRequested,
             patches: ObservationRequest::NotRequested,
+            final_invariants: FinalInvariantRequest::NotRequested,
         })
         .unwrap();
         let ObservationState::Incomplete { partial, reason } = result.implementation_diagnostics
@@ -2986,6 +3996,7 @@ mod tests {
             document_mode: ScalarObservationRequest::NotRequested,
             tree: ObservationRequest::NotRequested,
             patches: ObservationRequest::NotRequested,
+            final_invariants: FinalInvariantRequest::NotRequested,
         })
         .expect("document parser observation");
         assert!(captured(&text_mode.parse_errors).iter().any(|event| {
@@ -4408,6 +5419,7 @@ mod tests {
             document_mode,
             tree: ObservationRequest::NotRequested,
             patches: ObservationRequest::NotRequested,
+            final_invariants: FinalInvariantRequest::NotRequested,
         })
         .expect("document observation should complete")
     }
@@ -4705,6 +5717,7 @@ mod tests {
                 document_mode: ScalarObservationRequest::Capture,
                 tree: ObservationRequest::NotRequested,
                 patches: ObservationRequest::NotRequested,
+                final_invariants: FinalInvariantRequest::NotRequested,
             })
             .expect("scalar-only production execution");
             assert_eq!(scalar_only.document_mode, result.document_mode);
@@ -4724,6 +5737,7 @@ mod tests {
             document_mode: ScalarObservationRequest::Capture,
             tree: ObservationRequest::NotRequested,
             patches: ObservationRequest::NotRequested,
+            final_invariants: FinalInvariantRequest::NotRequested,
         })
         .expect("standalone tokenizer execution");
         assert_eq!(
@@ -4752,6 +5766,7 @@ mod tests {
             document_mode: ScalarObservationRequest::NotRequested,
             tree: ObservationRequest::Capture { capacity: 256 },
             patches: ObservationRequest::Capture { capacity: 512 },
+            final_invariants: FinalInvariantRequest::NotRequested,
         })
         .expect("canonical document observation");
         assert!(matches!(result.tokens, ObservationState::NotRequested));
@@ -4963,6 +5978,7 @@ mod tests {
             document_mode: ScalarObservationRequest::NotRequested,
             tree: ObservationRequest::NotRequested,
             patches: ObservationRequest::Capture { capacity },
+            final_invariants: FinalInvariantRequest::NotRequested,
         })
         .unwrap()
         .patches
@@ -5019,6 +6035,7 @@ mod tests {
             document_mode: ScalarObservationRequest::NotRequested,
             tree: ObservationRequest::Capture { capacity: 32 },
             patches: ObservationRequest::Capture { capacity: 32 },
+            final_invariants: FinalInvariantRequest::NotRequested,
         })
         .unwrap();
         assert!(matches!(result.tokens, ObservationState::NotRequested));
@@ -5061,6 +6078,7 @@ mod tests {
                 capacity: depth + 5,
             },
             patches: ObservationRequest::NotRequested,
+            final_invariants: FinalInvariantRequest::NotRequested,
         })
         .unwrap();
         let ObservationState::Captured(tree) = result.tree else {

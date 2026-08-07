@@ -1,0 +1,28 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "table-buffering-foster-parenting"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "5eb4a0d7b2910e9179f221f8b888fb1ae999f0c4f38afd3b1e067d3fef62cc18"
+[execution]
+reference_delivery = "whole-unicode"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole-unicode"
+unit = "unicode-scalars"
+strategy = "whole"
+[[execution.deliveries]]
+name = "declared-scalar-split"
+unit = "unicode-scalars"
+strategy = "boundaries"
+boundaries = [1]
+[expectations]
+final_invariants = "final-invariants.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "Pending table text and foster-parenting recovery remain chunk-independent."

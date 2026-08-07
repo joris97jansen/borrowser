@@ -279,3 +279,48 @@ codec cannot construct a patch snapshot. Accessors derive surface and format
 exhaustively from the variant. Snapshot storage retains one UTF-8 backing
 string plus semantic locations and byte ranges for records; it does not retain
 another owned copy of every record line.
+
+## AE13c final invariants: `html5-final-invariants-v1`
+
+The header is exact:
+
+```text
+# format: html5-final-invariants-v1
+```
+
+Exactly 16 records follow. They use contiguous one-based ordinals and this
+fixed field order:
+
+```text
+INVARIANT ordinal=1 field=decoder-carry-empty outcome=<outcome>
+INVARIANT ordinal=2 field=preprocessing-flushed outcome=<outcome>
+INVARIANT ordinal=3 field=eof-emitted-once outcome=<outcome>
+INVARIANT ordinal=4 field=pending-constructs-flushed outcome=<outcome>
+INVARIANT ordinal=5 field=output-accounted-for outcome=<outcome>
+INVARIANT ordinal=6 field=pending-table-text-empty outcome=<outcome>
+INVARIANT ordinal=7 field=insertion-mode-valid outcome=<outcome>
+INVARIANT ordinal=8 field=open-elements-consistent outcome=<outcome>
+INVARIANT ordinal=9 field=active-formatting-consistent outcome=<outcome>
+INVARIANT ordinal=10 field=template-modes-consistent outcome=<outcome>
+INVARIANT ordinal=11 field=form-pointer-valid outcome=<outcome>
+INVARIANT ordinal=12 field=parent-child-links-valid outcome=<outcome>
+INVARIANT ordinal=13 field=namespaces-valid outcome=<outcome>
+INVARIANT ordinal=14 field=template-associations-valid outcome=<outcome>
+INVARIANT ordinal=15 field=all-patches-materialized outcome=<outcome>
+INVARIANT ordinal=16 field=live-tree-matches-materialized-dom outcome=<outcome>
+```
+
+Closed outcome spellings are `satisfied`, `failed`,
+`not-applicable:standalone-tokenizer-run`, `not-applicable:document-parser-run`, and
+`not-applicable:fragment-parser-run`. The reader rejects a missing, extra,
+reordered, duplicated, unknown, or noncanonical record. It validates report
+framing and stable spellings; it does not inspect parser state or infer whether
+an outcome should be satisfied.
+
+AE13c compares typed final-invariant values before writing this representation;
+the codec is an external snapshot format, not a parity-equality mechanism.
+
+The writer consumes the fixed `ParserFinalizationReport::fields()` iterator.
+Failure inspection uses the report's allocation-free ordered iterator and does
+not allocate a temporary vector of failed codes for disposition or snapshot
+selection. Rust `Debug` is never serialized.

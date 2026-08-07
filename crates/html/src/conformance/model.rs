@@ -61,7 +61,10 @@ impl CanonicalParserResult {
     }
 
     pub fn has_failed_final_invariant(&self) -> bool {
-        !self.failed_final_invariants().is_empty()
+        matches!(
+            &self.final_invariants,
+            ObservationState::Captured(report) if report.has_failure()
+        )
     }
 
     pub fn failed_final_invariants(&self) -> Vec<InvariantFailureCode> {
@@ -210,24 +213,133 @@ pub struct ParserFinalizationReport {
 
 impl ParserFinalizationReport {
     pub fn has_failure(&self) -> bool {
-        !self.failures().is_empty()
+        self.failed_fields().next().is_some()
+    }
+
+    /// Fixed canonical field order without heap allocation.
+    pub fn fields(&self) -> impl Iterator<Item = (FinalInvariantField, &InvariantOutcome)> {
+        [
+            (
+                FinalInvariantField::DecoderCarryEmpty,
+                &self.input.decoder_carry_empty,
+            ),
+            (
+                FinalInvariantField::PreprocessingFlushed,
+                &self.input.preprocessing_flushed,
+            ),
+            (
+                FinalInvariantField::EofEmittedOnce,
+                &self.tokenizer.eof_emitted_once,
+            ),
+            (
+                FinalInvariantField::PendingConstructsFlushed,
+                &self.tokenizer.pending_constructs_flushed,
+            ),
+            (
+                FinalInvariantField::OutputAccountedFor,
+                &self.tokenizer.output_accounted_for,
+            ),
+            (
+                FinalInvariantField::PendingTableTextEmpty,
+                &self.tree_builder.pending_table_text_empty,
+            ),
+            (
+                FinalInvariantField::InsertionModeValid,
+                &self.tree_builder.insertion_mode_valid,
+            ),
+            (
+                FinalInvariantField::OpenElementsConsistent,
+                &self.tree_builder.open_elements_consistent,
+            ),
+            (
+                FinalInvariantField::ActiveFormattingConsistent,
+                &self.tree_builder.active_formatting_consistent,
+            ),
+            (
+                FinalInvariantField::TemplateModesConsistent,
+                &self.tree_builder.template_modes_consistent,
+            ),
+            (
+                FinalInvariantField::FormPointerValid,
+                &self.tree_builder.form_pointer_valid,
+            ),
+            (
+                FinalInvariantField::ParentChildLinksValid,
+                &self.dom.parent_child_links_valid,
+            ),
+            (
+                FinalInvariantField::NamespacesValid,
+                &self.dom.namespaces_valid,
+            ),
+            (
+                FinalInvariantField::TemplateAssociationsValid,
+                &self.dom.template_associations_valid,
+            ),
+            (
+                FinalInvariantField::AllPatchesMaterialized,
+                &self.patches.all_patches_materialized,
+            ),
+            (
+                FinalInvariantField::LiveTreeMatchesMaterializedDom,
+                &self.patches.live_tree_matches_materialized_dom,
+            ),
+        ]
+        .into_iter()
+    }
+
+    pub fn failed_fields(
+        &self,
+    ) -> impl Iterator<Item = (FinalInvariantField, InvariantFailureCode)> + '_ {
+        self.fields().filter_map(|(field, outcome)| {
+            matches!(outcome, InvariantOutcome::Failed).then_some((field, field.failure_code()))
+        })
     }
 
     pub fn failures(&self) -> Vec<InvariantFailureCode> {
-        let Self {
-            input,
-            tokenizer,
-            tree_builder,
-            dom,
-            patches,
-        } = self;
-        let mut failures = Vec::new();
-        input.append_failures(&mut failures);
-        tokenizer.append_failures(&mut failures);
-        tree_builder.append_failures(&mut failures);
-        dom.append_failures(&mut failures);
-        patches.append_failures(&mut failures);
-        failures
+        self.failed_fields().map(|(_, code)| code).collect()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FinalInvariantField {
+    DecoderCarryEmpty,
+    PreprocessingFlushed,
+    EofEmittedOnce,
+    PendingConstructsFlushed,
+    OutputAccountedFor,
+    PendingTableTextEmpty,
+    InsertionModeValid,
+    OpenElementsConsistent,
+    ActiveFormattingConsistent,
+    TemplateModesConsistent,
+    FormPointerValid,
+    ParentChildLinksValid,
+    NamespacesValid,
+    TemplateAssociationsValid,
+    AllPatchesMaterialized,
+    LiveTreeMatchesMaterializedDom,
+}
+
+impl FinalInvariantField {
+    pub const fn failure_code(self) -> InvariantFailureCode {
+        match self {
+            Self::DecoderCarryEmpty => InvariantFailureCode::DecoderCarryNotEmpty,
+            Self::PreprocessingFlushed => InvariantFailureCode::PreprocessingNotFlushed,
+            Self::EofEmittedOnce => InvariantFailureCode::EofEmissionInvalid,
+            Self::PendingConstructsFlushed => InvariantFailureCode::PendingTokenizerConstruct,
+            Self::OutputAccountedFor => InvariantFailureCode::TokenizerOutputUnaccounted,
+            Self::PendingTableTextEmpty => InvariantFailureCode::PendingTableText,
+            Self::InsertionModeValid => InvariantFailureCode::InvalidInsertionMode,
+            Self::OpenElementsConsistent => InvariantFailureCode::OpenElementsInconsistent,
+            Self::ActiveFormattingConsistent => InvariantFailureCode::ActiveFormattingInconsistent,
+            Self::TemplateModesConsistent => InvariantFailureCode::TemplateModesInconsistent,
+            Self::FormPointerValid => InvariantFailureCode::FormPointerInvalid,
+            Self::ParentChildLinksValid => InvariantFailureCode::ParentChildRelationshipInvalid,
+            Self::NamespacesValid => InvariantFailureCode::NamespaceRelationshipInvalid,
+            Self::TemplateAssociationsValid => InvariantFailureCode::TemplateAssociationInvalid,
+            Self::AllPatchesMaterialized => InvariantFailureCode::PatchMaterializationIncomplete,
+            Self::LiveTreeMatchesMaterializedDom => InvariantFailureCode::LiveTreeMismatch,
+        }
     }
 }
 
@@ -237,55 +349,11 @@ pub struct InputFinalizationChecks {
     pub preprocessing_flushed: InvariantOutcome,
 }
 
-impl InputFinalizationChecks {
-    fn append_failures(&self, failures: &mut Vec<InvariantFailureCode>) {
-        let Self {
-            decoder_carry_empty,
-            preprocessing_flushed,
-        } = self;
-        append_invariant_failure(
-            decoder_carry_empty,
-            InvariantFailureCode::DecoderCarryNotEmpty,
-            failures,
-        );
-        append_invariant_failure(
-            preprocessing_flushed,
-            InvariantFailureCode::PreprocessingNotFlushed,
-            failures,
-        );
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TokenizerFinalizationChecks {
     pub eof_emitted_once: InvariantOutcome,
     pub pending_constructs_flushed: InvariantOutcome,
     pub output_accounted_for: InvariantOutcome,
-}
-
-impl TokenizerFinalizationChecks {
-    fn append_failures(&self, failures: &mut Vec<InvariantFailureCode>) {
-        let Self {
-            eof_emitted_once,
-            pending_constructs_flushed,
-            output_accounted_for,
-        } = self;
-        append_invariant_failure(
-            eof_emitted_once,
-            InvariantFailureCode::EofEmissionInvalid,
-            failures,
-        );
-        append_invariant_failure(
-            pending_constructs_flushed,
-            InvariantFailureCode::PendingTokenizerConstruct,
-            failures,
-        );
-        append_invariant_failure(
-            output_accounted_for,
-            InvariantFailureCode::TokenizerOutputUnaccounted,
-            failures,
-        );
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -298,49 +366,6 @@ pub struct TreeBuilderFinalizationChecks {
     pub form_pointer_valid: InvariantOutcome,
 }
 
-impl TreeBuilderFinalizationChecks {
-    fn append_failures(&self, failures: &mut Vec<InvariantFailureCode>) {
-        let Self {
-            pending_table_text_empty,
-            insertion_mode_valid,
-            open_elements_consistent,
-            active_formatting_consistent,
-            template_modes_consistent,
-            form_pointer_valid,
-        } = self;
-        append_invariant_failure(
-            pending_table_text_empty,
-            InvariantFailureCode::PendingTableText,
-            failures,
-        );
-        append_invariant_failure(
-            insertion_mode_valid,
-            InvariantFailureCode::InvalidInsertionMode,
-            failures,
-        );
-        append_invariant_failure(
-            open_elements_consistent,
-            InvariantFailureCode::OpenElementsInconsistent,
-            failures,
-        );
-        append_invariant_failure(
-            active_formatting_consistent,
-            InvariantFailureCode::ActiveFormattingInconsistent,
-            failures,
-        );
-        append_invariant_failure(
-            template_modes_consistent,
-            InvariantFailureCode::TemplateModesInconsistent,
-            failures,
-        );
-        append_invariant_failure(
-            form_pointer_valid,
-            InvariantFailureCode::FormPointerInvalid,
-            failures,
-        );
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DomFinalizationChecks {
     pub parent_child_links_valid: InvariantOutcome,
@@ -348,64 +373,10 @@ pub struct DomFinalizationChecks {
     pub template_associations_valid: InvariantOutcome,
 }
 
-impl DomFinalizationChecks {
-    fn append_failures(&self, failures: &mut Vec<InvariantFailureCode>) {
-        let Self {
-            parent_child_links_valid,
-            namespaces_valid,
-            template_associations_valid,
-        } = self;
-        append_invariant_failure(
-            parent_child_links_valid,
-            InvariantFailureCode::ParentChildRelationshipInvalid,
-            failures,
-        );
-        append_invariant_failure(
-            namespaces_valid,
-            InvariantFailureCode::NamespaceRelationshipInvalid,
-            failures,
-        );
-        append_invariant_failure(
-            template_associations_valid,
-            InvariantFailureCode::TemplateAssociationInvalid,
-            failures,
-        );
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PatchFinalizationChecks {
     pub all_patches_materialized: InvariantOutcome,
     pub live_tree_matches_materialized_dom: InvariantOutcome,
-}
-
-impl PatchFinalizationChecks {
-    fn append_failures(&self, failures: &mut Vec<InvariantFailureCode>) {
-        let Self {
-            all_patches_materialized,
-            live_tree_matches_materialized_dom,
-        } = self;
-        append_invariant_failure(
-            all_patches_materialized,
-            InvariantFailureCode::PatchMaterializationIncomplete,
-            failures,
-        );
-        append_invariant_failure(
-            live_tree_matches_materialized_dom,
-            InvariantFailureCode::LiveTreeMismatch,
-            failures,
-        );
-    }
-}
-
-fn append_invariant_failure(
-    outcome: &InvariantOutcome,
-    code: InvariantFailureCode,
-    failures: &mut Vec<InvariantFailureCode>,
-) {
-    if matches!(outcome, InvariantOutcome::Failed) {
-        failures.push(code);
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

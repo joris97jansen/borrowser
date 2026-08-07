@@ -12,7 +12,8 @@ same production recorder to tree construction and captures the scalar
 parser-owned central tree-dispatch transitions and exact observations for six
 encountered, deliberately unimplemented tree-construction behaviors. It does
 not claim completion of overarching AE13 or implementation of those six
-algorithms.
+algorithms. AE13c adds bounded semantic whole/chunk parity and mandatory
+production-owned terminal audits for every supported fixture-v2 execution.
 
 ## Ownership
 
@@ -41,6 +42,22 @@ expectation, source, and disposition state behind an opaque
 `ValidatedFixtureSpec`; public consumers receive read-only accessors. A future
 external adapter must enter through the same declaration and validation path.
 It must not construct validated values directly.
+
+AE13c parity compares borrowed typed canonical observations before any snapshot
+serialization. A serializer is invoked only for the selected parity surface
+after typed inequality, or for an expectation surface that actually applies to
+that delivery. The runner retains one owned baseline, borrows it while
+comparing candidates, and moves it into the completed report only after the
+candidate schedule succeeds; it does not deep-clone canonical baselines.
+
+Final-audit allocation injection is attached immediately before each real
+fallible reservation. A reservation site occurrence is counted only when that
+collection, projection, or traversal stack actually attempts to reserve. The
+injected and natural failures use the same observation-resource identity and
+never produce a partial report. Boundary diagnostics use the streaming,
+platform-independent `borrowser-html-delivery-boundaries-v1` SHA-256 encoding;
+the digest is lazy diagnostic metadata and never participates in strategy
+equality or scheduling.
 
 There is one canonical parser-fixture runner. Existing golden, WPT-style, and
 internal corpus infrastructure will be adapted to it in later slices rather
@@ -762,7 +779,8 @@ Final-invariant fields carry only `Satisfied`, typed `NotApplicable`, or
 `Failed`. A failed field cannot select its own error code. Exhaustive
 field-by-field collection assigns the stable `InvariantFailureCode`, so adding a
 mandatory field requires updating collection and preserves deterministic field
-order. Production execution of these checks remains AE13c work.
+order. AE13c supplies the production-owned execution and aggregation described
+below.
 
 ### Normalized parser positions
 
@@ -946,14 +964,15 @@ See `parser-fixture-format-v2.md` and
 `ae13b5-parser-snapshot-formats.md` for normative grammar, precedence, and
 diagnostics.
 
-## Later slices
+## Slice status
 
 - AE13b1: parser-owned token and tokenizer-diagnostic observation foundation.
 - AE13b2: tree-construction diagnostics and production document-mode capture.
 - AE13b3 and AE13b4: canonical tree/patch/transition/unsupported observations
   are complete. AE13b5 strict serializers and fixture diagnostics are
   implemented; issue closure remains pending formal architecture review.
-- AE13c: semantic whole/chunked parity and production final-invariant execution.
+- AE13c: semantic whole/chunked parity and production final-invariant execution
+  are implemented in the current slice.
 - AE13d: existing corpus consolidation and migration.
 - AE13e: external html5lib/WPT adapter, intentional snapshot updates, final
   documentation, and CI coverage expansion.
@@ -961,3 +980,114 @@ diagnostics.
 Fragment execution, scripting-dependent parsing, original source-byte
 provenance, Layout, Paint, JavaScript execution, navigation, and resource
 loading are not implemented by AE13b5.
+
+## AE13c whole/chunk parity and final audits
+
+AE13c keeps one parser observation boundary. `html` owns compact delivery,
+decoder/tokenizer/tree execution, terminal audits, patch draining and trusted
+application, materialization, and structural/semantic DOM comparison.
+`html-test-support` owns fixture-v2 validation policy, strategy planning,
+scheduling, canonical serialization, comparison, disposition, and diagnostics.
+Test support never reads tokenizer/tree-builder internals and never replays
+patches or reconstructs HTML scope, namespace, template, or recovery rules.
+
+Fixture-v1 and fixture-v2 select a closed validation policy once. V1 retains
+its legacy whole-tokenizer path: it generates no representative strategies,
+does not request final invariants, and performs no AE13c parity. V2 requires an
+authoritative domain baseline and requests final invariants for every supported
+execution, whether or not a `final_invariants` sidecar is declared.
+
+### Strategy semantics and order
+
+UTF-8 text uses whole Unicode input as its baseline. Unicode deliveries use
+Unicode-scalar ordinals; byte deliveries use exact UTF-8 byte offsets and may
+split a code point. Whole bytes are an additional decoder-entry candidate.
+Raw-byte input uses untouched whole bytes as its baseline and never passes
+through a test-support string decoder or sanitizer.
+
+`Whole`, `Fixed`, and `Explicit` are compact storage/execution shapes, not
+semantic identities. Equality compares transport, coordinate space, exact
+input extent, and the exact yielded interior semantic boundaries. Fixed plans
+compare arithmetically and never expand to an offset vector. Whole,
+fixed-with-no-boundary, and explicit-empty plans alias. Scalar ordinals resolve
+to execution-only UTF-8 byte offsets by one checked forward traversal; derived
+offsets do not participate in identity or diagnostics.
+
+Execution order is fixed:
+
+1. the authoritative baseline, ordinal 1;
+2. unique declared non-baseline strategies by first semantic appearance in
+   declaration order; and
+3. representative-only strategies in generator order: whole bytes where
+   applicable, then fixed-one, fixed-seven, and edge-triplet scalar/byte forms.
+
+Later aliases add ordered origins without moving a strategy. Baseline,
+declared names, and representative names are roles, not mutually exclusive
+identities. Empty and one-unit inputs produce no zero-length push; collapsed
+representatives become aliases. Completed reports retain one result per
+required semantic strategy and expose ordered declared aliases and the checked
+contiguous fixture-local ordinal.
+
+Fixture-v2 privately limits declared deliveries to 32, boundaries per declared
+delivery to 4,096, and unique planned strategies to 24. These are validation
+policy, not parser or input-size limits. Excess is rejected before execution;
+no required strategy is truncated. Runtime is
+`O(input length * bounded unique strategy count)`. Fixed delivery has `O(1)`
+strategy memory independent of chunk count. Explicit and edge strategies keep
+only bounded offsets. Peak retention is one typed baseline, one current
+candidate, bounded failure summaries, applicable expectation snapshots, and
+only the selected baseline/candidate snapshots for a parity diagnostic;
+successful parity-only candidates are dropped.
+
+### Parity surfaces and precedence
+
+Every applicable surface is compared in this order: tokens, parse errors,
+implementation diagnostics, document mode, tree, patches, transitions,
+unsupported features, and final invariants. Canonical values and codecs own
+comparison. Raw parser IDs, allocation identity, patch transport batches,
+source chunk shapes, hash iteration, and Rust `Debug` are transport or
+implementation metadata and are not semantic parity surfaces.
+
+The baseline executes first. A parser/fatal/resource/delivery failure,
+incomplete observation, or failed final invariant stops immediately, before
+sidecar content parsing or candidate execution. After a valid baseline, the
+first strategy-ordered parser execution failure returns immediately. The
+runner retains at most the first incomplete observation, first final-audit
+failure, first parity mismatch, and first expectation mismatch, then selects
+in that order. Incomplete or final-audit-failing candidates are never compared.
+No failure exposes a partial completed report.
+
+A parity diagnostic contains fixture ID, repository-relative path, strategy
+ordinal, transport, semantic coordinates, exact extent and boundaries, ordered
+origins, canonical surface, and the first meaningful record difference.
+Equality never depends on a digest. A production `InvalidDelivery` after v2
+validation maps by typed identity to
+`validated-boundary-rejected-by-executor`; messages are not classified.
+
+### Finalization lifecycle
+
+`FinalInvariantRequest` is independent of bounded collection requests.
+Standalone tokenizer runs report five input/tokenizer fields and mark eleven
+document/tree/DOM/patch fields
+`NotApplicable(StandaloneTokenizerRun)`. Document runs aggregate a
+production-owned pre-materialization session/tree audit with a post-drain,
+post-materialization parser-session audit. Parser fatal errors, audit allocation
+failure, checked overflow, patch failure, and materialization failure are
+execution failures with no partial report.
+
+The patch witness exists only for final-audit capture. It records builder
+pending patches after finish, checked counts for each exact drained batch,
+successful trusted application of that same complete batch, terminal `None`,
+builder/emitter pending counts after terminal drain, and materialization after
+that drain. Trusted application is deliberately in-place and
+non-transactional: on failure the private partially updated arena is discarded
+immediately and is never inspected, materialized, audited, or exposed.
+
+`live_tree_matches_materialized_dom` is a compound semantic end-state check. A
+fallible `LiveTree` structural projection must equal the fully applied patch
+arena projection, and a complete semantic patch-arena traversal must equal the
+materialized DOM. Semantic comparison covers document legacy doctype data,
+doctype fields, expanded element names, ordered qualified attributes, text,
+comments, processing instructions, ordinary children, and template contents.
+It is iterative with one frame per active ancestor, so temporary storage is
+`O(tree depth)`, not `O(sibling count)`.

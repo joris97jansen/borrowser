@@ -1,0 +1,28 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "template-state-eof"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "a4a1c1e7f45208cd1be92292ceb418e5a3e5d1699014931d283fc07f80959d80"
+[execution]
+reference_delivery = "whole-unicode"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole-unicode"
+unit = "unicode-scalars"
+strategy = "whole"
+[[execution.deliveries]]
+name = "declared-scalar-split"
+unit = "unicode-scalars"
+strategy = "boundaries"
+boundaries = [1]
+[expectations]
+final_invariants = "final-invariants.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "Nested template insertion modes, associations, and template EOF recovery remain chunk-independent."

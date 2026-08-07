@@ -83,9 +83,19 @@ Unused supported deliveries do not execute. Planned deliveries execute in
 validated declaration order and at most once. Each production request contains
 the union of the surfaces required from that delivery.
 
-AE13b5 supports whole Unicode-scalar delivery. Raw bytes, byte delivery,
-Unicode-scalar boundaries, fragment parsing, and scripting-enabled parsing are
-typed unsupported semantics. This is not whole/chunked parity.
+AE13c supports one authoritative whole-input baseline per exact input domain,
+compact fixed-size delivery, and validated explicit boundaries. Unicode
+boundaries are scalar ordinals; byte deliveries use byte offsets. Fixture-v2
+validation applies deterministic guardrails before planning and reports
+delivery defects through `InvalidDelivery(DeliveryValidationError)` in this
+order: declaration count; per-delivery boundary count in declaration order;
+delivery-name/declaration shape; input-domain, unit, and strategy compatibility;
+boundary presence; each boundary's start/end/range/duplicate/ordering checks
+in boundary-index order; authoritative domain-baseline existence; reference
+identifier and baseline identity; representative construction; semantic
+deduplication and the unique-strategy limit; and sealed v2 planning. The
+validated-name type is constructed only after name validation. Fixture-v1
+retains its legacy compatibility policy.
 
 ## Skipped disposition
 
@@ -129,7 +139,9 @@ For non-skipped v2 fixtures:
 8. Validate every requested `ObservationState` after every execution succeeds.
 9. Reject `Incomplete`, requested `NotRequested`, unexpected `NotApplicable`,
    and prohibited unrequested capture before serialization.
-10. Serialize all requested typed canonical surfaces.
+10. Serialize requested canonical surfaces for expectations. Whole/chunk
+    parity compares the borrowed typed canonical values first and serializes
+    only the selected unequal surface for a diagnostic difference.
 11. Compare in the order below.
 12. Return a completed report only after every delivery and expectation passes.
 
@@ -165,7 +177,14 @@ The first mismatch is returned in this exact order:
 5. canonical tree;
 6. canonical patches;
 7. transitions in transition-expectation declaration order;
-8. unsupported features.
+8. unsupported features;
+9. final invariants.
+
+Final invariants are mandatory for every supported v2 execution, independent
+of whether a final-invariant expectation sidecar is present. Their sixteen
+fields are evaluated independently in fixed order. The strict v1 codec uses
+the only accepted not-applicable spellings: `not-applicable:standalone-tokenizer-run`,
+`not-applicable:document-parser-run`, and `not-applicable:fragment-parser-run`.
 
 Transitions precede unsupported features because they describe the dispatch
 attempt leading to an unsupported-feature fallback.
@@ -282,3 +301,91 @@ snapshot, incomplete capture, or mismatch.
 Final-invariant execution, parity, fragment parsing, external adapters,
 snapshot blessing, scripting, rendering, and public parser/DOM APIs are outside
 fixture v2 AE13b5.
+
+## AE13c execution policy
+
+AE13c activates whole/chunk parity and mandatory final audits for supported v2
+fixtures. The earlier AE13b5 planned-delivery text above is historical: v2 now
+validates and schedules semantic strategies, while v1 retains the old policy.
+
+For `utf8-text`, `reference_delivery` must name a declared whole
+`unicode-scalars` delivery. Its boundary numbers are Unicode-scalar ordinals,
+not UTF-8 byte offsets. V2 may additionally declare whole or boundary `bytes`
+delivery over the exact stored UTF-8 bytes. For `raw-bytes`, the reference must
+name whole bytes and all deliveries use byte offsets. Boundaries must be
+strictly increasing interior values; start, terminal, duplicate, decreasing,
+and out-of-range values are validation errors. An empty v2 explicit-boundary
+list is valid and aliases whole delivery when it yields no interior boundary;
+fixture-v1 retains its earlier non-empty-list rule. A scalar ordinal in range
+is inherently a valid Unicode-scalar boundary and is not tested as a byte offset.
+
+Duplicate semantic declarations are aliases, not errors. Semantic equality is
+transport plus coordinate space plus exact input extent plus exact yielded
+interior coordinates. Representation (`whole`, fixed representative, or
+explicit boundaries) and any derived scalar-to-byte execution offsets do not
+affect equality. Ordered origins are baseline, declared delivery names in
+declaration order, then representative names in generator order.
+
+Private validation limits are:
+
+- 32 declared deliveries;
+- 4,096 boundaries in one declared delivery; and
+- 24 unique planned semantic strategies.
+
+Excess fails validation before execution. Values are never truncated and no
+fixture input-byte limit is introduced. Fixed representatives are compact and
+derive the next chunk incrementally; a fixed-one plan never allocates one
+boundary per input unit.
+
+The exact schedule is baseline ordinal 1, unique declared non-baselines by
+first semantic appearance, then representative-only strategies in fixed
+generator order. Aliases never move or re-execute a strategy. Strategy ordinals
+are contiguous one-based fixture-local identities used by diagnostics and
+completed reports.
+
+V2 requests all applicable canonical surfaces plus final invariants once per
+unique strategy. Final invariants are mandatory even without a sidecar. The
+baseline must successfully execute, produce complete observations, and satisfy
+all final invariants before sidecar content is parsed or candidates run. After
+that gate, parser execution failure returns immediately. The retained
+cross-candidate precedence is incomplete observation, final-invariant failure,
+parity mismatch, then expectation mismatch. Successful parity-only candidate
+results are discarded.
+
+The parity surface order is:
+
+1. tokens;
+2. parse errors;
+3. implementation diagnostics;
+4. document mode when applicable;
+5. tree when applicable;
+6. patches when applicable;
+7. transitions when applicable;
+8. unsupported features; and
+9. final invariants.
+
+Before comparison, the runner retains only one canonical baseline and one
+current candidate. Typed values are compared directly; candidate snapshots are
+serialized only for the first unequal parity surface and for expectation
+surfaces that apply to that strategy. A successful parity-only candidate is
+disposed immediately. Explicit Unicode-scalar offset resolution is a bounded,
+fallible fixture-harness allocation at
+`scalar-boundary-execution-offsets`; fixed scalar strategies never allocate an
+offset array.
+
+The boundary digest is computed only while constructing a diagnostic (or in a
+dedicated digest test). Its input is streamed into SHA-256 using the exact
+magic, transport, coordinate-space, big-endian count, and big-endian semantic
+boundaries. Fixed strategies remain compact even when their boundary count is
+large.
+
+`final-invariant` expected-failure classification matches only when the report
+has exactly one failed field and its stable `InvariantFailureCode` equals the
+declaration. Multiple failures retain canonical report order and do not match a
+singleton declaration.
+
+V2 stable post-validation runner contradictions additionally include
+`validated-boundary-rejected-by-executor` and
+`strategy-schedule-contradiction`. The former is selected directly from the
+production typed delivery-error identity. Malformed declarations remain
+fixture validation failures, never runner contradictions.

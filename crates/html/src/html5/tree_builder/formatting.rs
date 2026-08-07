@@ -158,6 +158,99 @@ impl ActiveFormattingList {
         marker.owner = owner;
     }
 
+    #[cfg(test)]
+    pub(in crate::html5::tree_builder) fn corrupt_marker_owner_for_test(
+        &mut self,
+        kind: AfeMarkerKind,
+        owner: Option<PatchKey>,
+    ) {
+        let marker = self
+            .items
+            .iter_mut()
+            .rev()
+            .find_map(|entry| match entry {
+                AfeEntry::Marker(marker) if marker.kind == kind => Some(marker),
+                _ => None,
+            })
+            .expect("requested production marker");
+        marker.owner = owner;
+    }
+
+    #[cfg(test)]
+    pub(in crate::html5::tree_builder) fn corrupt_element_for_test(
+        &mut self,
+        mutate: impl FnOnce(&mut AfeElementEntry),
+    ) {
+        let element = self
+            .items
+            .iter_mut()
+            .rev()
+            .find_map(|entry| match entry {
+                AfeEntry::Element(element) => Some(element),
+                AfeEntry::Marker(_) => None,
+            })
+            .expect("requested production AFE element");
+        mutate(element);
+    }
+
+    #[cfg(test)]
+    pub(in crate::html5::tree_builder) fn remove_template_marker_at_for_test(
+        &mut self,
+        index: usize,
+    ) {
+        let marker_index = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| match entry {
+                AfeEntry::Marker(marker) if marker.kind == AfeMarkerKind::Template => Some(index),
+                _ => None,
+            })
+            .nth(index)
+            .expect("template marker index");
+        self.items.remove(marker_index);
+    }
+
+    #[cfg(test)]
+    pub(in crate::html5::tree_builder) fn insert_template_marker_at_for_test(
+        &mut self,
+        index: usize,
+        owner: PatchKey,
+    ) {
+        let marker_index = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| match entry {
+                AfeEntry::Marker(marker) if marker.kind == AfeMarkerKind::Template => Some(index),
+                _ => None,
+            })
+            .nth(index)
+            .unwrap_or(self.items.len());
+        self.items.insert(
+            marker_index,
+            AfeEntry::Marker(AfeMarker::new(AfeMarkerKind::Template, Some(owner))),
+        );
+    }
+
+    #[cfg(test)]
+    pub(in crate::html5::tree_builder) fn swap_template_markers_for_test(
+        &mut self,
+        left: usize,
+        right: usize,
+    ) {
+        let indices = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| match entry {
+                AfeEntry::Marker(marker) if marker.kind == AfeMarkerKind::Template => Some(index),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        self.items.swap(indices[left], indices[right]);
+    }
+
     /// Pushes a formatting element entry while enforcing the HTML5 Noah's Ark
     /// duplicate bound within the suffix after the last marker.
     ///

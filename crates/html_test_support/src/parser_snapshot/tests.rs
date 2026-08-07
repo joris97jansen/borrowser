@@ -56,6 +56,62 @@ fn empty_collection_and_required_singleton_rules_are_surface_specific() {
 }
 
 #[test]
+fn final_invariants_v1_is_strict_complete_and_canonically_ordered() {
+    use html::conformance::{
+        DomFinalizationChecks, InputFinalizationChecks, InvariantOutcome, ParserFinalizationReport,
+        PatchFinalizationChecks, TokenizerFinalizationChecks, TreeBuilderFinalizationChecks,
+    };
+    let satisfied = InvariantOutcome::Satisfied;
+    let report = ParserFinalizationReport {
+        input: InputFinalizationChecks {
+            decoder_carry_empty: satisfied.clone(),
+            preprocessing_flushed: satisfied.clone(),
+        },
+        tokenizer: TokenizerFinalizationChecks {
+            eof_emitted_once: satisfied.clone(),
+            pending_constructs_flushed: satisfied.clone(),
+            output_accounted_for: satisfied.clone(),
+        },
+        tree_builder: TreeBuilderFinalizationChecks {
+            pending_table_text_empty: satisfied.clone(),
+            insertion_mode_valid: satisfied.clone(),
+            open_elements_consistent: satisfied.clone(),
+            active_formatting_consistent: satisfied.clone(),
+            template_modes_consistent: satisfied.clone(),
+            form_pointer_valid: satisfied.clone(),
+        },
+        dom: DomFinalizationChecks {
+            parent_child_links_valid: satisfied.clone(),
+            namespaces_valid: satisfied.clone(),
+            template_associations_valid: satisfied.clone(),
+        },
+        patches: PatchFinalizationChecks {
+            all_patches_materialized: satisfied.clone(),
+            live_tree_matches_materialized_dom: satisfied,
+        },
+    };
+    let written = final_invariants::write(&ObservationState::Captured(report))
+        .expect("captured final report");
+    let text = written.data().bytes();
+    assert_eq!(text.lines().count(), 17);
+    assert!(text.lines().nth(1).is_some_and(|line| {
+        line == "INVARIANT ordinal=1 field=decoder-carry-empty outcome=satisfied"
+    }));
+    assert!(text.lines().nth(16).is_some_and(|line| {
+        line == "INVARIANT ordinal=16 field=live-tree-matches-materialized-dom outcome=satisfied"
+    }));
+    final_invariants::read(text.as_bytes()).expect("writer output parses");
+
+    let reordered = text.replace(
+        "ordinal=1 field=decoder-carry-empty",
+        "ordinal=1 field=preprocessing-flushed",
+    );
+    assert!(final_invariants::read(reordered.as_bytes()).is_err());
+    let truncated = text.lines().take(16).collect::<Vec<_>>().join("\n") + "\n";
+    assert!(final_invariants::read(truncated.as_bytes()).is_err());
+}
+
+#[test]
 fn readers_validate_framing_without_reimplementing_parser_semantics() {
     let implausible_tree = b"# format: html5-dom-v3\nNODE path=/root[0] kind=element namespace=svg local-name=\"html\"\n";
     assert!(tree::read(implausible_tree).is_ok());
@@ -127,6 +183,7 @@ fn every_requested_canonical_writer_is_repeatable_and_strictly_readable() {
         document_mode: ScalarObservationRequest::Capture,
         tree: capture,
         patches: capture,
+        final_invariants: html::conformance::FinalInvariantRequest::NotRequested,
     })
     .expect("production canonical observation");
 

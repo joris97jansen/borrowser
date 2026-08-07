@@ -1,0 +1,28 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "tokenizer-eof-recovery"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "0a478015cc6f8fd7de92ddd658f5f19a4ee645e5854b2da12a5955c59c15d58b"
+[execution]
+reference_delivery = "whole-unicode"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole-unicode"
+unit = "unicode-scalars"
+strategy = "whole"
+[[execution.deliveries]]
+name = "declared-scalar-split"
+unit = "unicode-scalars"
+strategy = "boundaries"
+boundaries = [1]
+[expectations]
+final_invariants = "final-invariants.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "Tokenizer EOF recovery flushes pending comment and tag-like constructs identically."

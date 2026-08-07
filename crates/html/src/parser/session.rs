@@ -1,5 +1,9 @@
+#[cfg(feature = "parser-conformance")]
+use crate::conformance::{ObservationReservationSite, ObservationResourceExhaustion};
 use crate::dom_patch::{DomPatch, DomPatchBatch};
 use crate::html5::Html5ParseSession;
+#[cfg(feature = "parser-conformance")]
+use crate::html5::Html5SessionFinalAudit;
 use crate::html5::ParserFatalError;
 use crate::html5::shared::DocumentParseContext;
 #[cfg(all(
@@ -9,6 +13,8 @@ use crate::html5::shared::DocumentParseContext;
 use crate::html5::shared::ParserFailureInjection;
 #[cfg(feature = "parser-conformance")]
 use crate::html5::shared::{ParserObservationCapture, ParserObservationConfig};
+#[cfg(feature = "parser-conformance")]
+use crate::html5::tree_builder::TreeBuilderFinalAuditAllocation;
 #[cfg(feature = "parser-conformance")]
 use crate::html5::{PatchHistoryObservationConfig, RawPatchHistoryCapture};
 use crate::patch_validation::PatchValidationArena;
@@ -48,6 +54,36 @@ pub struct HtmlParser {
     arena: PatchValidationArena,
     patches_drained_before_output: bool,
     poisoned: bool,
+}
+
+#[cfg(feature = "parser-conformance")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct PatchMaterializationWitness {
+    pub(crate) terminal_empty_drain_observed: bool,
+    pub(crate) builder_pending_patch_count_after_finish: usize,
+    pub(crate) builder_pending_patch_count_after_terminal_drain: usize,
+    pub(crate) emitter_pending_patch_count_after_terminal_drain: usize,
+    pub(crate) drained_operation_count: u64,
+    pub(crate) applied_operation_count: u64,
+    pub(crate) materialized_after_terminal_drain: bool,
+}
+
+#[cfg(feature = "parser-conformance")]
+pub(crate) struct ConformanceFinalizedOutput {
+    pub(crate) output: ParseOutput,
+    pub(crate) observations: Option<ParserObservationCapture>,
+    pub(crate) patch_history: Option<RawPatchHistoryCapture>,
+    pub(crate) session_audit: Html5SessionFinalAudit,
+    pub(crate) patch_witness: PatchMaterializationWitness,
+    pub(crate) live_structure_matches_patch_arena: bool,
+    pub(crate) patch_arena_matches_materialized_dom: bool,
+}
+
+#[cfg(feature = "parser-conformance")]
+pub(crate) enum ConformanceFinalizationError {
+    Parser(HtmlParseError),
+    ObservationResource(ObservationResourceExhaustion),
+    PatchOperationCountOverflow,
 }
 
 impl HtmlParser {
@@ -230,7 +266,7 @@ impl HtmlParser {
         Ok(patches)
     }
 
-    /// Drain the next available atomic patch batch.
+    /// Drain the next available ordered patch batch.
     ///
     /// As with `take_patches()`, previously drained non-empty batches are not
     /// replayed by `into_output()`.
@@ -394,6 +430,121 @@ impl HtmlParser {
         Ok((output, diagnostics, patch_history))
     }
 
+    #[cfg(feature = "parser-conformance")]
+    pub(crate) fn into_output_with_final_audit(
+        mut self,
+        reserve: &mut impl FnMut(crate::conformance::ObservationReservationSite) -> Result<(), ()>,
+    ) -> Result<ConformanceFinalizedOutput, ConformanceFinalizationError> {
+        let builder_pending_patch_count_after_finish =
+            self.session.builder_pending_patch_count_for_final_audit();
+        let session_audit =
+            self.session
+                .final_audit_for_conformance(reserve)
+                .map_err(|allocation| {
+                    ConformanceFinalizationError::ObservationResource(
+                        ObservationResourceExhaustion::at(tree_audit_reservation_site(allocation)),
+                    )
+                })?;
+
+        let mut drained_operation_count = 0u64;
+        let mut applied_operation_count = 0u64;
+        let terminal_empty_drain_observed;
+        loop {
+            let batch = self
+                .session
+                .take_patch_batch()
+                .map_err(HtmlParseError::from)
+                .map_err(ConformanceFinalizationError::Parser)?;
+            let Some(batch) = batch else {
+                terminal_empty_drain_observed = true;
+                break;
+            };
+            let operation_count = u64::try_from(batch.patches.len())
+                .map_err(|_| ConformanceFinalizationError::PatchOperationCountOverflow)?;
+            drained_operation_count = drained_operation_count
+                .checked_add(operation_count)
+                .ok_or(ConformanceFinalizationError::PatchOperationCountOverflow)?;
+
+            // Trusted application is deliberately in-place. A failure returns
+            // immediately; the partially updated private arena is never
+            // inspected, materialized, audited, or exposed.
+            self.arena
+                .apply_batch_trusted(&batch.patches)
+                .map_err(|error| {
+                    ConformanceFinalizationError::Parser(HtmlParseError::PatchValidation(
+                        error.to_string(),
+                    ))
+                })?;
+            applied_operation_count = applied_operation_count
+                .checked_add(operation_count)
+                .ok_or(ConformanceFinalizationError::PatchOperationCountOverflow)?;
+        }
+
+        let builder_pending_patch_count_after_terminal_drain =
+            self.session.builder_pending_patch_count_for_final_audit();
+        let emitter_pending_patch_count_after_terminal_drain =
+            self.session.emitter_pending_patch_count_for_final_audit();
+        let patch_structure = self
+            .arena
+            .try_invariant_state_for_final_audit(reserve)
+            .map_err(|_| {
+                ConformanceFinalizationError::ObservationResource(
+                    ObservationResourceExhaustion::at(
+                        ObservationReservationSite::FinalAuditPatchArenaStructuralProjection,
+                    ),
+                )
+            })?;
+        let live_structure_matches_patch_arena =
+            session_audit.tree_builder.live_structure == patch_structure;
+        let document = self.arena.materialize().map_err(|error| {
+            ConformanceFinalizationError::Parser(HtmlParseError::PatchValidation(error.to_string()))
+        })?;
+        let patch_arena_matches_materialized_dom = self
+            .arena
+            .semantic_equals_materialized_dom_for_final_audit(&document, reserve)
+            .map_err(|_| {
+                ConformanceFinalizationError::ObservationResource(
+                    ObservationResourceExhaustion::at(
+                        ObservationReservationSite::FinalAuditSemanticTraversal,
+                    ),
+                )
+            })?;
+        let observations = self
+            .session
+            .take_observations_for_conformance()
+            .map_err(HtmlParseError::from)
+            .map_err(ConformanceFinalizationError::Parser)?;
+        let patch_history = self
+            .session
+            .take_patch_history_for_conformance()
+            .map_err(HtmlParseError::from)
+            .map_err(ConformanceFinalizationError::Parser)?;
+        let output = ParseOutput {
+            document,
+            patches: Vec::new(),
+            contains_full_patch_history: false,
+            counters: self.counters(),
+            parse_errors: self.parse_errors(),
+        };
+        Ok(ConformanceFinalizedOutput {
+            output,
+            observations,
+            patch_history,
+            session_audit,
+            patch_witness: PatchMaterializationWitness {
+                terminal_empty_drain_observed,
+                builder_pending_patch_count_after_finish,
+                builder_pending_patch_count_after_terminal_drain,
+                emitter_pending_patch_count_after_terminal_drain,
+                drained_operation_count,
+                applied_operation_count,
+                materialized_after_terminal_drain: true,
+            },
+            live_structure_matches_patch_arena,
+            patch_arena_matches_materialized_dom,
+        })
+    }
+
     fn materialize_output(&mut self) -> Result<ParseOutput, HtmlParseError> {
         let mut patches = Vec::new();
         while let Some(batch) = self.take_patch_batch_internal(false)? {
@@ -462,5 +613,28 @@ impl HtmlParser {
             return Err(HtmlParseError::Fatal(ParserFatalError::EngineInvariant));
         }
         Ok(())
+    }
+}
+
+#[cfg(feature = "parser-conformance")]
+fn tree_audit_reservation_site(
+    allocation: TreeBuilderFinalAuditAllocation,
+) -> ObservationReservationSite {
+    match allocation {
+        TreeBuilderFinalAuditAllocation::OpenElementsIndex => {
+            ObservationReservationSite::FinalAuditOpenElementsIndex
+        }
+        TreeBuilderFinalAuditAllocation::ActiveFormattingIndex => {
+            ObservationReservationSite::FinalAuditActiveFormattingIndex
+        }
+        TreeBuilderFinalAuditAllocation::TemplateCoordinationIndex => {
+            ObservationReservationSite::FinalAuditTemplateCoordinationIndex
+        }
+        TreeBuilderFinalAuditAllocation::DomStructuralTraversal => {
+            ObservationReservationSite::FinalAuditDomStructuralTraversal
+        }
+        TreeBuilderFinalAuditAllocation::LiveTreeStructuralProjection => {
+            ObservationReservationSite::FinalAuditLiveTreeStructuralProjection
+        }
     }
 }

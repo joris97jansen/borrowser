@@ -538,7 +538,7 @@ impl PatchValidationArena {
                         template_contents, ..
                     } = &mut host_node.kind
                     else {
-                        unreachable!("validated template host kind changed during atomic apply")
+                        unreachable!("validated template host kind changed during batch apply")
                     };
                     *template_contents = Some(*contents);
                 }

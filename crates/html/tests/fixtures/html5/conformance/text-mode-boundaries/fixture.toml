@@ -1,0 +1,28 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "text-mode-boundaries"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "763fa9ecce235f6b942b7f5065fd90343b4613a0045fff54be9a92577d8e1610"
+[execution]
+reference_delivery = "whole-unicode"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole-unicode"
+unit = "unicode-scalars"
+strategy = "whole"
+[[execution.deliveries]]
+name = "declared-scalar-split"
+unit = "unicode-scalars"
+strategy = "boundaries"
+boundaries = [1]
+[expectations]
+final_invariants = "final-invariants.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "RCDATA, RAWTEXT, and supported script-data termination remain chunk-independent."

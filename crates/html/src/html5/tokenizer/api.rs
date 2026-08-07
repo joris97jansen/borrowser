@@ -708,6 +708,11 @@ impl Html5Tokenizer {
     }
 
     #[cfg(test)]
+    pub(crate) fn set_active_text_mode_for_test(&mut self, mode: Option<TextModeSpec>) {
+        self.active_text_mode = mode;
+    }
+
+    #[cfg(test)]
     pub(crate) fn force_self_closing_flag_without_solidus_for_test(&mut self) {
         self.current_tag_self_closing = true;
         self.current_tag_self_closing_solidus_position = None;

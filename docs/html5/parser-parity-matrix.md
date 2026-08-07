@@ -69,6 +69,41 @@ Guarantee:
 - chunked parsing matches whole-input parsing for the supported subset
 - runtime materialization remains equivalent across delivery modes
 
+### AE13c canonical whole/chunk equivalence
+
+The fixture-v2 AE13c runner is the reusable canonical parser parity boundary.
+
+Its comparison is typed-first: whole and chunked results are compared as
+borrowed canonical values in the fixed nine-surface order, and snapshot text is
+diagnostic output only after a typed mismatch. One owned baseline is borrowed
+for all candidates, so successful candidate execution does not clone the full
+canonical observation model. Reservation-site failure injection surrounds each
+actual fallible audit allocation, including later traversal-stack growth.
+For UTF-8 text it compares whole Unicode input with declared and representative
+Unicode-scalar delivery and with applicable exact-byte decoder delivery. For
+raw-byte input it compares untouched whole bytes with byte delivery. Fixed
+strategies are incremental and generic; generation does not scan HTML syntax.
+
+The semantic comparison order is tokens, parse errors, implementation
+diagnostics, document mode, tree, patches, transitions, unsupported features,
+and final invariants. This expands the earlier DOM-only parity statement:
+same-token reprocessing, patch materialization, unsupported-feature identity,
+decoder/preprocessing terminal state, parser stacks/pointers, namespaces, and
+template associations are now part of the canonical fixture contract wherever
+the target supports them.
+
+Chunk shapes, raw parser/node allocation IDs, patch transport batch boundaries,
+and hash-map order are not parser semantics and are deliberately excluded.
+Stable canonical serializers, rather than Rust equality over internal storage
+or `Debug`, identify the first meaningful mismatch.
+
+The focused native AE13c fixtures cover decoder/preprocessing boundaries, tags
+and attributes, character references, tokenizer EOF recovery, RCDATA/RAWTEXT/
+supported script data, table buffering/foster parenting, active formatting,
+form pointers, template state/EOF, SVG/MathML integration points, and processing
+instructions. Unit coverage separately pins CRLF/lone/trailing CR and invalid or
+incomplete UTF-8 split behavior.
+
 ## May Differ (Intentional)
 
 ### Malformed markup recovery

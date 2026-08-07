@@ -10,6 +10,8 @@ mod types;
 mod tests;
 
 pub(crate) use open_elements::OpenElementsStack;
+#[cfg(feature = "parser-conformance")]
+pub(crate) use types::ExpandedNameKey;
 pub(crate) use types::{
     ExactOpenElementRemoval, InBodyEndTagScan, OpenElement, ScopeKeyMatch, ScopeKind, ScopeTagSet,
 };

@@ -1,0 +1,17 @@
+# format: html5-final-invariants-v1
+INVARIANT ordinal=1 field=decoder-carry-empty outcome=satisfied
+INVARIANT ordinal=2 field=preprocessing-flushed outcome=satisfied
+INVARIANT ordinal=3 field=eof-emitted-once outcome=satisfied
+INVARIANT ordinal=4 field=pending-constructs-flushed outcome=satisfied
+INVARIANT ordinal=5 field=output-accounted-for outcome=satisfied
+INVARIANT ordinal=6 field=pending-table-text-empty outcome=satisfied
+INVARIANT ordinal=7 field=insertion-mode-valid outcome=satisfied
+INVARIANT ordinal=8 field=open-elements-consistent outcome=satisfied
+INVARIANT ordinal=9 field=active-formatting-consistent outcome=satisfied
+INVARIANT ordinal=10 field=template-modes-consistent outcome=satisfied
+INVARIANT ordinal=11 field=form-pointer-valid outcome=satisfied
+INVARIANT ordinal=12 field=parent-child-links-valid outcome=satisfied
+INVARIANT ordinal=13 field=namespaces-valid outcome=satisfied
+INVARIANT ordinal=14 field=template-associations-valid outcome=satisfied
+INVARIANT ordinal=15 field=all-patches-materialized outcome=satisfied
+INVARIANT ordinal=16 field=live-tree-matches-materialized-dom outcome=satisfied

@@ -384,6 +384,137 @@ fn session_head_script_restores_in_head_after_matching_close() {
     );
 }
 
+#[cfg(feature = "parser-conformance")]
+#[test]
+fn terminal_final_audit_requires_both_text_modes_and_controls_to_be_clear() {
+    use crate::html5::tokenizer::TextModeSpec;
+    use crate::html5::tree_builder::modes::InsertionMode;
+
+    fn terminal_audit(
+        tokenizer_mode: Option<TextModeSpec>,
+        builder_mode: Option<TextModeSpec>,
+        original_mode: Option<InsertionMode>,
+        pending_control: Option<crate::html5::tokenizer::TokenizerControl>,
+        insertion_mode: InsertionMode,
+    ) -> bool {
+        let context = DocumentParseContext::new();
+        let mut session = Html5ParseSession::new(
+            TokenizerConfig::default(),
+            TreeBuilderConfig::default(),
+            context,
+        )
+        .expect("session init");
+        session.push_str_for_test("<html><body><p>x</p>");
+        session.pump().expect("terminal fixture pump");
+        session.finish_for_test().expect("terminal fixture finish");
+        session.set_terminal_text_state_for_test(
+            tokenizer_mode,
+            builder_mode,
+            original_mode,
+            pending_control,
+            insertion_mode,
+        );
+        let mut reserve = |_| Ok(());
+        session
+            .final_audit_for_conformance(&mut reserve)
+            .expect("terminal audit should return a report")
+            .tree_builder
+            .insertion_mode_valid
+    }
+
+    let mode = {
+        let mut names = crate::names::NameInterner::new();
+        TextModeSpec::rcdata_textarea(
+            names
+                .intern_ascii_folded("textarea")
+                .expect("textarea atom"),
+        )
+    };
+    let other_mode = {
+        let mut names = crate::names::NameInterner::new();
+        TextModeSpec::script_data(names.intern_ascii_folded("script").expect("script atom"))
+    };
+
+    for (label, tokenizer_mode, builder_mode, original_mode, pending_control, insertion_mode) in [
+        (
+            "tokenizer-only",
+            Some(mode),
+            None,
+            None,
+            None,
+            InsertionMode::InBody,
+        ),
+        (
+            "tree-builder-only",
+            None,
+            Some(mode),
+            None,
+            None,
+            InsertionMode::InBody,
+        ),
+        (
+            "both-equal",
+            Some(mode),
+            Some(mode),
+            None,
+            None,
+            InsertionMode::InBody,
+        ),
+        (
+            "both-unequal",
+            Some(mode),
+            Some(other_mode),
+            None,
+            None,
+            InsertionMode::InBody,
+        ),
+        ("terminal-text", None, None, None, None, InsertionMode::Text),
+        (
+            "terminal-table-text",
+            None,
+            None,
+            None,
+            None,
+            InsertionMode::InTableText,
+        ),
+        (
+            "original-mode",
+            None,
+            None,
+            Some(InsertionMode::InBody),
+            None,
+            InsertionMode::InBody,
+        ),
+        (
+            "pending-control",
+            None,
+            None,
+            None,
+            Some(crate::html5::tokenizer::TokenizerControl::ExitTextMode),
+            InsertionMode::InBody,
+        ),
+    ] {
+        assert!(
+            !terminal_audit(
+                tokenizer_mode,
+                builder_mode,
+                original_mode,
+                pending_control,
+                insertion_mode,
+            ),
+            "{label} must fail terminal insertion-mode validity"
+        );
+    }
+
+    assert!(terminal_audit(
+        None,
+        None,
+        None,
+        None,
+        InsertionMode::InBody
+    ));
+}
+
 #[test]
 fn session_exits_text_mode_on_eof_recovery() {
     let mut ctx = DocumentParseContext::new();
