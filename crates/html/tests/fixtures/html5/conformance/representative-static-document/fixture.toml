@@ -1,0 +1,30 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "representative-static-document"
+
+[source]
+kind = "native"
+
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "8043745fa537a402568c888ffd11a80675fc7f9218f667650383f94ac6beebba"
+
+[execution]
+reference_delivery = "whole-unicode"
+
+[execution.target]
+kind = "document"
+scripting = "disabled"
+
+[[execution.deliveries]]
+name = "whole-unicode"
+unit = "unicode-scalars"
+strategy = "whole"
+
+[expectations]
+tree = "tree.txt"
+[disposition]
+status = "active"
+
+[metadata]
+description = "A small ordinary static document composes title, heading, paragraph, and document shell behavior."

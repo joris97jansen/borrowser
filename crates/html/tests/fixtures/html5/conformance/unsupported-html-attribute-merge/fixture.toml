@@ -1,0 +1,23 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "unsupported-html-attribute-merge"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "cc5e59f3fe8f026919c0675efd4f90d439e14a52513f01561c2ffa82f88c722a"
+[execution]
+reference_delivery = "whole"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole"
+unit = "unicode-scalars"
+strategy = "whole"
+[expectations]
+unsupported_features = "unsupported-features.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "Exact AE13b4 HTML-element attribute-merge limitation; active positive parser run."

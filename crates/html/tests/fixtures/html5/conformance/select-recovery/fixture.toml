@@ -1,0 +1,29 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "select-recovery"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "fbd092118c1064293605d9a154a92f18a8e69d8973c8c9a7f8df2200540009c4"
+[execution]
+reference_delivery = "whole"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole"
+unit = "unicode-scalars"
+strategy = "whole"
+
+[[execution.deliveries]]
+name = "declared-scalar-split"
+unit = "unicode-scalars"
+strategy = "boundaries"
+boundaries = [1]
+[expectations]
+tree = "tree.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "Option start-tag recovery in select mode closes the prior option."

@@ -22,6 +22,8 @@ unit = "unicode-scalars"
 strategy = "whole"
 
 [expectations]
+tokens = "tokens.txt"
+tree = "tree.txt"
 parse_errors = "parse-errors.txt"
 implementation_diagnostics = "implementation-diagnostics.txt"
 

@@ -1,0 +1,16 @@
+# format: html5-dompatch-v3
+PATCH operation=1 kind=create-document node="node-1" legacy-doctype=null
+PATCH operation=2 kind=create-element node="node-2" namespace=html local-name="html"
+PATCH operation=3 kind=append-child parent="node-1" child="node-2"
+PATCH operation=4 kind=create-element node="node-3" namespace=html local-name="head"
+PATCH operation=5 kind=append-child parent="node-2" child="node-3"
+PATCH operation=6 kind=create-element node="node-4" namespace=html local-name="body"
+PATCH operation=7 kind=append-child parent="node-2" child="node-4"
+PATCH operation=8 kind=create-comment node="node-5" data="?xml"
+PATCH operation=9 kind=append-child parent="node-4" child="node-5"
+PATCH operation=10 kind=create-comment node="node-6" data="?bad$"
+PATCH operation=11 kind=append-child parent="node-4" child="node-6"
+PATCH operation=12 kind=create-processing-instruction node="node-7" target="Pi_Target-2" data="a\\\"b\tline"
+PATCH operation=13 kind=append-child parent="node-4" child="node-7"
+PATCH operation=14 kind=create-text node="node-8" text="\n"
+PATCH operation=15 kind=append-child parent="node-2" child="node-8"

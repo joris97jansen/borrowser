@@ -1,0 +1,37 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "select-table-interaction"
+
+[source]
+kind = "native"
+
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "7825419035f7519f6080e776fd3eb1da1300fa0ada916464c0b0842820bcf695"
+
+[execution]
+reference_delivery = "whole-unicode"
+
+[execution.target]
+kind = "document"
+scripting = "disabled"
+
+[[execution.deliveries]]
+name = "whole-unicode"
+unit = "unicode-scalars"
+strategy = "whole"
+
+[[execution.deliveries]]
+name = "declared-scalar-split"
+unit = "unicode-scalars"
+strategy = "boundaries"
+boundaries = [1]
+
+[expectations]
+tree = "tree.txt"
+patches = "patches.txt"
+[disposition]
+status = "active"
+
+[metadata]
+description = "A select encountered in table mode is foster-parented while its option remains under select."

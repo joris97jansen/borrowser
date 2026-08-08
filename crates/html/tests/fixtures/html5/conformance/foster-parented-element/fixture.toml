@@ -1,0 +1,37 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "foster-parented-element"
+
+[source]
+kind = "native"
+
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "b37c7d6d915a8c0b286501946f3ec01e7e2ce620254d3d319923005ed1ce9a96"
+
+[execution]
+reference_delivery = "whole-unicode"
+
+[execution.target]
+kind = "document"
+scripting = "disabled"
+
+[[execution.deliveries]]
+name = "whole-unicode"
+unit = "unicode-scalars"
+strategy = "whole"
+
+[[execution.deliveries]]
+name = "declared-scalar-split"
+unit = "unicode-scalars"
+strategy = "boundaries"
+boundaries = [1]
+
+[expectations]
+tree = "tree.txt"
+patches = "patches.txt"
+[disposition]
+status = "active"
+
+[metadata]
+description = "Misplaced table text and an element use ordered foster-parent InsertBefore patches."

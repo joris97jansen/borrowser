@@ -1,0 +1,8 @@
+# format: html5-token-v2
+TOKEN ordinal=1 kind=start-tag name="body" self-closing=false
+TOKEN ordinal=2 kind=comment data="?xml"
+TOKEN ordinal=3 kind=comment data="?bad$"
+TOKEN ordinal=4 kind=processing-instruction target="Pi_Target-2" data="a\\\"b\tline"
+TOKEN ordinal=5 kind=end-tag name="body"
+TOKEN ordinal=6 kind=character data="\n"
+TOKEN ordinal=7 kind=eof

@@ -1,0 +1,39 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "processing-instruction-malformed"
+
+[source]
+kind = "native"
+
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "619cbad3f8b572e9f0bb81a8cc8edfa901ae975b44450dc3a8e52017674d3eba"
+
+[execution]
+reference_delivery = "whole-unicode"
+
+[execution.target]
+kind = "document"
+scripting = "disabled"
+
+[[execution.deliveries]]
+name = "whole-unicode"
+unit = "unicode-scalars"
+strategy = "whole"
+
+[[execution.deliveries]]
+name = "declared-scalar-split"
+unit = "unicode-scalars"
+strategy = "boundaries"
+boundaries = [1]
+
+[expectations]
+tokens = "tokens.txt"
+parse_errors = "parse-errors.txt"
+tree = "tree.txt"
+patches = "patches.txt"
+[disposition]
+status = "active"
+
+[metadata]
+description = "Malformed and disallowed HTML processing-instruction targets recover as comments while valid HTML PI data remains a PI."

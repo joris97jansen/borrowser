@@ -1,0 +1,23 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "unsupported-body-attribute-merge"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "96b178cf75d170a15e5882bdeaba878c52df43cde1ed626919a7f74f3aac8304"
+[execution]
+reference_delivery = "whole"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole"
+unit = "unicode-scalars"
+strategy = "whole"
+[expectations]
+unsupported_features = "unsupported-features.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "Exact AE13b4 repeated-body frameset and body-attribute limitations."

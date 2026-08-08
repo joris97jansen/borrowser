@@ -15,6 +15,14 @@ not claim completion of overarching AE13 or implementation of those six
 algorithms. AE13c adds bounded semantic whole/chunk parity and mandatory
 production-owned terminal audits for every supported fixture-v2 execution.
 
+AE13d curates the native fixture corpus against the completed AE contracts. It
+adds no parser behavior, harness semantics, snapshot format, registration
+architecture, external adapter, or blessing workflow. Coverage, observation
+selection, and independent expected-output evidence are tracked in
+`docs/html5/ae13d-native-corpus-coverage.md`. AE13d does not claim complete
+HTML conformance; exact documented AE13b4 unsupported identities remain
+explicit until their owning parser work is completed.
+
 ## Ownership
 
 The `html` crate owns parser semantics and typed canonical observation values.

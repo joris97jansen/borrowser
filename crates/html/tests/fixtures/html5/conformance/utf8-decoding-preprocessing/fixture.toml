@@ -27,6 +27,7 @@ strategy = "boundaries"
 boundaries = [1, 2]
 
 [expectations]
+tokens = "tokens.txt"
 final_invariants = "final-invariants.txt"
 
 [disposition]

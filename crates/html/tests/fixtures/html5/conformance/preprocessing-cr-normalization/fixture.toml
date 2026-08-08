@@ -1,0 +1,37 @@
+format = "borrowser-html-parser-fixture-v2"
+
+id = "preprocessing-cr-normalization"
+
+[source]
+kind = "native"
+
+[input]
+path = "input.bin"
+kind = "raw-bytes"
+sha256 = "6cb634356354338e47d2d274c7a23e8b7d24c1eb18a859028adca2e322278ff2"
+
+[execution]
+reference_delivery = "whole-bytes"
+
+[execution.target]
+kind = "standalone-tokenizer"
+
+[[execution.deliveries]]
+name = "whole-bytes"
+unit = "bytes"
+strategy = "whole"
+
+[[execution.deliveries]]
+name = "declared-byte-splits"
+unit = "bytes"
+strategy = "boundaries"
+boundaries = [1, 4]
+
+[expectations]
+tokens = "tokens.txt"
+
+[disposition]
+status = "active"
+
+[metadata]
+description = "A lone CR in raw-byte input normalizes to LF at the completed preprocessing boundary."

@@ -1,0 +1,23 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "document-mode-quirks"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "5c891195176e751b4531afce5cc323e22a6ba0f15a0ef77032a694fb5b7eb03c"
+[execution]
+reference_delivery = "whole"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole"
+unit = "unicode-scalars"
+strategy = "whole"
+[expectations]
+document_mode = "document-mode.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "Legacy doctype selects quirks mode; mode is the only requested semantic surface."
