@@ -1,0 +1,23 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "unsupported-table-cell-end-guard"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "412abec7ce54a97435182e60568b0e06a5c710d8846141d6387bfffda854a22a"
+[execution]
+reference_delivery = "whole"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole"
+unit = "unicode-scalars"
+strategy = "whole"
+[expectations]
+unsupported_features = "unsupported-features.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "Exact AE13b4 same-named table-cell end-tag guard limitation."

@@ -1,0 +1,2 @@
+# format: html5-document-mode-v1
+MODE value=limited-quirks

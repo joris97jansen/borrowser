@@ -1,0 +1,2 @@
+# format: html5-unsupported-features-v1
+UNSUPPORTED_FEATURE occurrence=1 subsystem=tree-construction feature=merge-attributes-into-existing-html-element context-token=start-tag context-mode=in-head context-namespace=html

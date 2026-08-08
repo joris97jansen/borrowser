@@ -21,6 +21,8 @@ unit = "unicode-scalars"
 strategy = "boundaries"
 boundaries = [1]
 [expectations]
+tree = "tree.txt"
+patches = "patches.txt"
 final_invariants = "final-invariants.txt"
 [disposition]
 status = "active"

@@ -1,0 +1,23 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "body-text-recovery"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "14da7553a95c1109c379de48c176287761130743bb481c5c30272df24775213b"
+[execution]
+reference_delivery = "whole"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole"
+unit = "unicode-scalars"
+strategy = "whole"
+[expectations]
+tree = "tree.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "Text encountered before any explicit body is recovered into the implicitly constructed body before the paragraph."

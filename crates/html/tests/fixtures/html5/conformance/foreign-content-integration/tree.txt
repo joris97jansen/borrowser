@@ -1,0 +1,17 @@
+# format: html5-dom-v3
+NODE path=/root[0] kind=document
+NODE path=/root[0]/child[0] kind=document-type name="html" public-id=null system-id=null
+NODE path=/root[0]/child[1] kind=element namespace=html local-name="html"
+NODE path=/root[0]/child[1]/child[0] kind=element namespace=html local-name="head"
+NODE path=/root[0]/child[1]/child[1] kind=element namespace=html local-name="body"
+NODE path=/root[0]/child[1]/child[1]/child[0] kind=element namespace=svg local-name="svg"
+NODE path=/root[0]/child[1]/child[1]/child[0]/child[0] kind=element namespace=svg local-name="foreignObject"
+NODE path=/root[0]/child[1]/child[1]/child[0]/child[0]/child[0] kind=element namespace=html local-name="p"
+NODE path=/root[0]/child[1]/child[1]/child[0]/child[0]/child[0]/child[0] kind=text data="x"
+NODE path=/root[0]/child[1]/child[1]/child[0]/child[1] kind=element namespace=svg local-name="circle"
+NODE path=/root[0]/child[1]/child[1]/child[1] kind=element namespace=mathml local-name="math"
+NODE path=/root[0]/child[1]/child[1]/child[1]/child[0] kind=element namespace=mathml local-name="annotation-xml"
+ATTRIBUTE path=/root[0]/child[1]/child[1]/child[1]/child[0] index=0 namespace=none prefix=null local-name="encoding" value="text/html"
+NODE path=/root[0]/child[1]/child[1]/child[1]/child[0]/child[0] kind=element namespace=html local-name="p"
+NODE path=/root[0]/child[1]/child[1]/child[1]/child[0]/child[0]/child[0] kind=text data="y"
+NODE path=/root[0]/child[1]/child[1]/child[2] kind=text data="\n"

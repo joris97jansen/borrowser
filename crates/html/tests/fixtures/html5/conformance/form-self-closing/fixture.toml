@@ -1,0 +1,38 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "form-self-closing"
+
+[source]
+kind = "native"
+
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "d28458f64aeb3006c21935aa749bf74b25110f96c28303b903af63a9c435fc2d"
+
+[execution]
+reference_delivery = "whole-unicode"
+
+[execution.target]
+kind = "document"
+scripting = "disabled"
+
+[[execution.deliveries]]
+name = "whole-unicode"
+unit = "unicode-scalars"
+strategy = "whole"
+
+[[execution.deliveries]]
+name = "declared-scalar-split"
+unit = "unicode-scalars"
+strategy = "boundaries"
+boundaries = [1]
+
+[expectations]
+tree = "tree.txt"
+parse_errors = "parse-errors.txt"
+implementation_diagnostics = "implementation-diagnostics.txt"
+[disposition]
+status = "active"
+
+[metadata]
+description = "A non-void form self-closing flag is recovered without treating the form as a void element."

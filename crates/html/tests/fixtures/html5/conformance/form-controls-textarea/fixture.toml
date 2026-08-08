@@ -1,0 +1,36 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "form-controls-textarea"
+
+[source]
+kind = "native"
+
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "dadf6831a153110aa8dcaddc07e0ac7de3ff5e7d175e500c5b4288ec50420590"
+
+[execution]
+reference_delivery = "whole-unicode"
+
+[execution.target]
+kind = "document"
+scripting = "disabled"
+
+[[execution.deliveries]]
+name = "whole-unicode"
+unit = "unicode-scalars"
+strategy = "whole"
+
+[[execution.deliveries]]
+name = "declared-scalar-split"
+unit = "unicode-scalars"
+strategy = "boundaries"
+boundaries = [1]
+
+[expectations]
+tree = "tree.txt"
+[disposition]
+status = "active"
+
+[metadata]
+description = "Form-associated input and textarea construction, including textarea text-mode content."

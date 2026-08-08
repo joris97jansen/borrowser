@@ -1,0 +1,24 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "comment-and-shell"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "d00e4d92e67ade8ad96f814a5b6ee083d97f2eefc9baa6360704d56177e3bc9f"
+[execution]
+reference_delivery = "whole"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole"
+unit = "unicode-scalars"
+strategy = "whole"
+[expectations]
+tokens = "tokens.txt"
+tree = "tree.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "A minimal comment proves token recovery and parser-created document shell placement."

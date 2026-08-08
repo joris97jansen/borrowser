@@ -47,7 +47,26 @@ collections. Fixture-v1 remains an isolated compatibility format.
 See `docs/html5/parser-fixture-format-v2.md` and
 `docs/html5/ae13b5-parser-snapshot-formats.md` for the schema/codecs, and
 `docs/html5/ae13-parser-conformance-regression-harness.md` for ownership and
-slice boundaries.
+slice boundaries. The AE13d coverage matrix and native expected-output
+provenance record is `docs/html5/ae13d-native-corpus-coverage.md`.
+
+Native fixture expectations are independently justified. Generated output may
+be used as candidate serialization, but it is never sufficient provenance for
+parser-significant behavior. Before adding a token, error, mode, tree, patch,
+transition, unsupported-feature, or invariant expectation, review the
+applicable completed AE contract and trusted unit, golden, html5lib/WPT, or
+other independently reviewed evidence. Do not add every available surface by
+default: transitions prove parser-state behavior, and patches prove mutation
+ordering that a final tree cannot establish. Native provenance is documented
+in the matrix because the v2 schema intentionally does not permit a native
+`source.provenance` field.
+
+Unsupported-feature expectations are exact identities for documented current
+limitations only. They are active parser runs, not skips, xfails, wildcards,
+or permissive snapshots, and they must never hide behavior owned by a
+completed AE issue. The parser implementation and canonical whole-input
+baseline are not an oracle for semantic correctness; the baseline is used for
+delivery parity only.
 
 Run this corpus with:
 

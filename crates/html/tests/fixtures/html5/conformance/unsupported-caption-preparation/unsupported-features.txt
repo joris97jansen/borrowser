@@ -1,0 +1,2 @@
+# format: html5-unsupported-features-v1
+UNSUPPORTED_FEATURE occurrence=1 subsystem=tree-construction feature=generate-implied-end-tags-and-check-current-node-before-closing-caption context-token=end-tag context-mode=in-caption context-namespace=html

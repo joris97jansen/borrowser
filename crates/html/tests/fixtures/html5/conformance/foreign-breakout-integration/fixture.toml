@@ -1,0 +1,23 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "foreign-breakout-integration"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "05ff086fe66306396c5796b03285d224b3ebf03e07316e8b5299154949d4c5d1"
+[execution]
+reference_delivery = "whole"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole"
+unit = "unicode-scalars"
+strategy = "whole"
+[expectations]
+tree = "tree.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "A breakout HTML paragraph exits foreign content before the trailing HTML div."

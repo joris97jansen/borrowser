@@ -1,0 +1,23 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "document-mode-limited"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "b7d8c652a82df0e343c53e45fd26f45be2243017aa288cd242fd975b0bbae15e"
+[execution]
+reference_delivery = "whole"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole"
+unit = "unicode-scalars"
+strategy = "whole"
+[expectations]
+document_mode = "document-mode.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "HTML4 transitional public identifier selects limited-quirks mode."

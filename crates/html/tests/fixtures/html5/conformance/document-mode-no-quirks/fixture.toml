@@ -1,0 +1,23 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "document-mode-no-quirks"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "335fca8574f060eea24ebcdae6b78f32414f5de03da1084fd0e73d710768e3a9"
+[execution]
+reference_delivery = "whole"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole"
+unit = "unicode-scalars"
+strategy = "whole"
+[expectations]
+document_mode = "document-mode.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "HTML doctype selects no-quirks mode."

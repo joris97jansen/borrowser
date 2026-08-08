@@ -1,0 +1,6 @@
+# format: html5-token-v2
+TOKEN ordinal=1 kind=processing-instruction target="target" data="data"
+TOKEN ordinal=2 kind=doctype name="html" public-id=null system-id=null force-quirks=false
+TOKEN ordinal=3 kind=start-tag name="p" self-closing=false
+TOKEN ordinal=4 kind=character data="x\n"
+TOKEN ordinal=5 kind=eof

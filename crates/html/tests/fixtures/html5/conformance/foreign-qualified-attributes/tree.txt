@@ -1,0 +1,16 @@
+# format: html5-dom-v3
+NODE path=/root[0] kind=document
+NODE path=/root[0]/child[0] kind=element namespace=html local-name="html"
+NODE path=/root[0]/child[0]/child[0] kind=element namespace=html local-name="head"
+NODE path=/root[0]/child[0]/child[1] kind=element namespace=html local-name="body"
+NODE path=/root[0]/child[0]/child[1]/child[0] kind=element namespace=svg local-name="svg"
+ATTRIBUTE path=/root[0]/child[0]/child[1]/child[0] index=0 namespace=none prefix=null local-name="viewBox" value="0 0 1 1"
+ATTRIBUTE path=/root[0]/child[0]/child[1]/child[0] index=1 namespace=xlink prefix="xlink" local-name="href" value="outer"
+ATTRIBUTE path=/root[0]/child[0]/child[1]/child[0] index=2 namespace=xml prefix="xml" local-name="lang" value="en"
+ATTRIBUTE path=/root[0]/child[0]/child[1]/child[0] index=3 namespace=xmlns prefix=null local-name="xmlns" value="http://www.w3.org/2000/svg"
+ATTRIBUTE path=/root[0]/child[0]/child[1]/child[0] index=4 namespace=xmlns prefix="xmlns" local-name="xlink" value="http://www.w3.org/1999/xlink"
+NODE path=/root[0]/child[0]/child[1]/child[0]/child[0] kind=element namespace=svg local-name="path"
+ATTRIBUTE path=/root[0]/child[0]/child[1]/child[0]/child[0] index=0 namespace=none prefix=null local-name="attributeName" value="d"
+ATTRIBUTE path=/root[0]/child[0]/child[1]/child[0]/child[0] index=1 namespace=none prefix=null local-name="href" value="plain"
+ATTRIBUTE path=/root[0]/child[0]/child[1]/child[0]/child[0] index=2 namespace=xlink prefix="xlink" local-name="href" value="qualified"
+NODE path=/root[0]/child[0]/child[1]/child[1] kind=text data="\n"

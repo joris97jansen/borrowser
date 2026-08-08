@@ -521,6 +521,16 @@ Current supported subset:
   templates, foreign integration, and processing instructions. Fragment and
   scripting execution, external adapters, broad corpus migration, snapshot
   blessing, rendering, and public parser/DOM APIs remain outside AE13c.
+- AE13d curated native parser conformance corpus: the canonical v2 corpus now
+  contains focused, independently justified fixtures for the completed AE
+  tokenizer, preprocessing, tree-construction, DOM, recovery, namespace,
+  template, form/select, processing-instruction, and representative-document
+  contracts. The coverage/provenance inventory is
+  `docs/html5/ae13d-native-corpus-coverage.md`. AE13d does not add parser or
+  harness behavior, full encoding detection, XML processing-instruction
+  semantics, external adapters, snapshot blessing, scripting, rendering, or
+  public DOM APIs. Exact documented AE13b4 unsupported identities remain
+  explicit and are not treated as completed conformance.
 - AE1 HTML parser ownership architecture: HTML/parser owns tokenizer input
   preprocessing, tokenizer states, typed tokens, parse errors,
   tree-construction state, insertion modes, stack of open elements, active

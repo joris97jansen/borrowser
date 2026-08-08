@@ -1,0 +1,4 @@
+# format: html5-parse-errors-v1
+PARSE_ERROR occurrence=1 stage=tree-construction code=tree-construction:unacknowledged-self-closing-flag recovery=ignore-self-closing-flag position=unavailable:parser-did-not-provide-position context=present context-token=start-tag context-mode=in-body context-namespace=html
+PARSE_ERROR occurrence=2 stage=tree-construction code=tree-construction:form-start-tag-with-active-form-pointer recovery=ignore-token position=unavailable:parser-did-not-provide-position context=present context-token=start-tag context-mode=in-body context-namespace=html
+PARSE_ERROR occurrence=3 stage=tree-construction code=tree-construction:unacknowledged-self-closing-flag recovery=ignore-self-closing-flag position=unavailable:parser-did-not-provide-position context=present context-token=start-tag context-mode=in-body context-namespace=html

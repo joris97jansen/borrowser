@@ -1,0 +1,4 @@
+# format: html5-parse-errors-v1
+PARSE_ERROR occurrence=1 stage=tree-construction code=tree-construction:expected-doctype-before-non-space-token recovery=reprocess-token position=unavailable:parser-did-not-provide-position context=present context-token=start-tag context-mode=initial context-namespace=null
+PARSE_ERROR occurrence=2 stage=tokenizer code=standard:disallowed-processing-instruction-target recovery=null position=normalized-utf8:11:1:12:source-unavailable:no-input-provenance-map context=absent context-token=null context-mode=null context-namespace=null
+PARSE_ERROR occurrence=3 stage=tokenizer code=standard:invalid-processing-instruction-target recovery=null position=normalized-utf8:17:1:18:source-unavailable:no-input-provenance-map context=absent context-token=null context-mode=null context-namespace=null

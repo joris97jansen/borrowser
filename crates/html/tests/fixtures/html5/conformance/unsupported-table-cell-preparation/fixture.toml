@@ -1,0 +1,23 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "unsupported-table-cell-preparation"
+[source]
+kind = "native"
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "72b9e956cdec08640f37cf7834f5a269dc8b1618a8744e915edb438fd7edd499"
+[execution]
+reference_delivery = "whole"
+[execution.target]
+kind = "document"
+scripting = "disabled"
+[[execution.deliveries]]
+name = "whole"
+unit = "unicode-scalars"
+strategy = "whole"
+[expectations]
+unsupported_features = "unsupported-features.txt"
+[disposition]
+status = "active"
+[metadata]
+description = "Exact AE13b4 table-cell implied-end-tag preparation limitation."

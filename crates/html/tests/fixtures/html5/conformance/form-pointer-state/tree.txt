@@ -1,0 +1,11 @@
+# format: html5-dom-v3
+NODE path=/root[0] kind=document
+NODE path=/root[0]/child[0] kind=document-type name="html" public-id=null system-id=null
+NODE path=/root[0]/child[1] kind=element namespace=html local-name="html"
+NODE path=/root[0]/child[1]/child[0] kind=element namespace=html local-name="head"
+NODE path=/root[0]/child[1]/child[1] kind=element namespace=html local-name="body"
+NODE path=/root[0]/child[1]/child[1]/child[0] kind=element namespace=html local-name="form"
+ATTRIBUTE path=/root[0]/child[1]/child[1]/child[0] index=0 namespace=none prefix=null local-name="id" value="a"
+NODE path=/root[0]/child[1]/child[1]/child[0]/child[0] kind=element namespace=html local-name="div"
+NODE path=/root[0]/child[1]/child[1]/child[0]/child[0]/child[0] kind=element namespace=html local-name="input"
+NODE path=/root[0]/child[1]/child[1]/child[1] kind=text data="\n"

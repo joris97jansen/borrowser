@@ -1,0 +1,36 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "foreign-qualified-attributes"
+
+[source]
+kind = "native"
+
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "73c7bb555564d426e5bb6c7f360ccca7ca1f6aab66fe465a55d5795030c4abaf"
+
+[execution]
+reference_delivery = "whole-unicode"
+
+[execution.target]
+kind = "document"
+scripting = "disabled"
+
+[[execution.deliveries]]
+name = "whole-unicode"
+unit = "unicode-scalars"
+strategy = "whole"
+
+[[execution.deliveries]]
+name = "declared-scalar-split"
+unit = "unicode-scalars"
+strategy = "boundaries"
+boundaries = [1]
+
+[expectations]
+tree = "tree.txt"
+[disposition]
+status = "active"
+
+[metadata]
+description = "SVG adjusted local names and qualified XML/XLink/XMLNS attributes retain expanded namespace identity."
