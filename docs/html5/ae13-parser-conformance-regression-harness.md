@@ -979,12 +979,14 @@ diagnostics.
 - AE13b2: tree-construction diagnostics and production document-mode capture.
 - AE13b3 and AE13b4: canonical tree/patch/transition/unsupported observations
   are complete. AE13b5 strict serializers and fixture diagnostics are
-  implemented; issue closure remains pending formal architecture review.
+  implemented and its architecture review is complete.
 - AE13c: semantic whole/chunked parity and production final-invariant execution
   are implemented in the current slice.
 - AE13d: existing corpus consolidation and migration.
 - AE13e: external html5lib/WPT adapter, intentional snapshot updates, final
-  documentation, and CI coverage expansion.
+  documentation, and CI coverage expansion. The cumulative AE13 parent
+  architecture review is complete; `make ci` and
+  `make test-html5-external-fixtures-extended` both pass.
 
 Fragment execution, scripting-dependent parsing, original source-byte
 provenance, Layout, Paint, JavaScript execution, navigation, and resource

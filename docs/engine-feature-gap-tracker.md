@@ -487,8 +487,8 @@ Current supported subset:
   runner's ordered execution phase is the sole complete-content read boundary,
   so skipped v2 fixtures read zero sidecar bytes. Fixture-v1 retains its legacy
   validation-time full read and execution-time token-sidecar reread.
-  Implementation remains pending formal review and AE13b5 is not yet recorded
-  as closed.
+  AE13b5 implementation and architecture review are complete; it is part of
+  the completed AE13 parser conformance/regression harness foundation.
 - AE13c whole/chunk parser parity and mandatory final audits: supported
   fixture-v2 executions now use one authoritative whole-input baseline and a
   bounded deterministic schedule of declared and representative scalar/byte
@@ -688,7 +688,9 @@ Current supported subset:
   workflow. Normal CI runs the native corpus and the small external subset;
   correctness-owned extended CI additionally runs the existing whole/chunked
   token and DOM parity corpus through the same production parser and canonical
-  observation paths. This closes
+  observation paths. The cumulative AE13 parent architecture review is
+  complete, and `make ci` plus
+  `make test-html5-external-fixtures-extended` both pass. This closes
   only the scoped static tokenizer/tree-construction/parser-created-DOM
   conformance foundation. Complete html5lib, WPT, HTML, DOM API, scripting,
   event-loop, navigation, resources, and rendering conformance remain gaps.
