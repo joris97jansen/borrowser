@@ -73,3 +73,10 @@ Run this corpus with:
 ```text
 cargo test -p html --features parser-conformance --test html5_parser_conformance --locked
 ```
+
+The separate generated external proof is under
+crates/html/tests/fixtures/html5/external-wpt/. It uses fixture-v3,
+validated structured provenance, and the same canonical runner, but it is not
+part of this native root. Run it with make test-html5-external-fixtures.
+Use make update-html5-external-fixtures only as an explicit
+derived-artifact operation; ordinary tests never write generated fixtures.

@@ -379,8 +379,8 @@ fn fixture_v1_compatibility_path_has_no_representatives_or_mandatory_final_audit
     add_fixture(&repository, "legacy", "legacy", b"hello");
     let fixture = load_single_native_fixture(&repository);
     assert!(matches!(
-        fixture.policy(),
-        ValidatedFixturePolicy::V1Compatibility(_)
+        fixture.execution_plan(),
+        ValidatedExecutionPlan::SingleDelivery(_)
     ));
     let report = super::runner::run_fixture_with_executor(&fixture, &mut MustNotExecute)
         .expect("existing fixture-v1 bundle remains compatible");
@@ -451,7 +451,7 @@ fn fixture_v1_skipped_discovery_retains_legacy_sidecar_read() {
     rewrite(&bundle.join("fixture.toml"), |text| {
         text.replace(
             "[source]\nkind = \"native\"",
-            "[source]\nkind = \"external\"\nprovenance = \"upstream/case\"",
+            "[source]\nkind = \"quarantine\"\ntracking_issue = \"#ae13-test\"",
         )
         .replace(
             "kind = \"standalone-tokenizer\"",
@@ -818,7 +818,7 @@ fn fixture_v2_skipped_disposition_short_circuits_malformed_sidecars_and_executio
     malformed.push_str(&"x".repeat(256 * 1024));
     fs::write(bundle.join("tokens.txt"), malformed).expect("large malformed sidecar");
     rewrite(&bundle.join("fixture.toml"), |text| {
-        format!("{}\n[extensions.\"org.example.required-v1\"]\nrequired = true\nvalue = {{}}\n", text.replace("[source]\nkind = \"native\"", "[source]\nkind = \"external\"\nprovenance = \"upstream/case\"")
+        format!("{}\n[extensions.\"org.example.required-v1\"]\nrequired = true\nvalue = {{}}\n", text.replace("[source]\nkind = \"native\"", "[source]\nkind = \"quarantine\"\ntracking_issue = \"#ae13-test\"")
             .replace("[expectations]", "[[execution.deliveries]]\nname = \"chunked\"\nunit = \"unicode-scalars\"\nstrategy = \"boundaries\"\nboundaries = [1]\n\n[expectations]")
             .replace("status = \"active\"", "status = \"skipped\"\nreason = \"chunking deferred\"\nclassification = { kind = \"unsupported-capability\", capability = { kind = \"unicode-scalar-chunking\" } }\nreference = { kind = \"tracking-issue\", value = \"#1\" }"))
     });
@@ -872,7 +872,7 @@ fn skipped_fixture_precedes_unsupported_raw_input_without_reading_sidecars() {
     rewrite(&bundle.join("fixture.toml"), |text| {
         text.replace(
             "[source]\nkind = \"native\"",
-            "[source]\nkind = \"external\"\nprovenance = \"upstream/raw-case\"",
+            "[source]\nkind = \"quarantine\"\ntracking_issue = \"#ae13-test\"",
         )
         .replace("path = \"input.html\"", "path = \"input.bin\"")
         .replace("kind = \"utf8-text\"", "kind = \"raw-bytes\"")
@@ -962,7 +962,7 @@ fn unsupported_input_and_unknown_extension_precede_malformed_v2_sidecars() {
             .replace("unit = \"unicode-scalars\"", "unit = \"bytes\"")
             .replace(
                 "[source]\nkind = \"native\"",
-                "[source]\nkind = \"external\"\nprovenance = \"upstream/raw\"",
+                "[source]\nkind = \"quarantine\"\ntracking_issue = \"#ae13-test\"",
             )
     });
     let raw = discover_and_load(&raw_repository.adapted())
@@ -1005,7 +1005,7 @@ fn fixture_v2_semantically_aliases_duplicate_declarations_and_executes_chunking(
     });
     let fixture = load_single_native_fixture(&supported);
     assert_eq!(fixture.reference_delivery().as_str(), "unused-whole");
-    let ValidatedFixturePolicy::V2Parity(policy) = fixture.policy() else {
+    let ValidatedExecutionPlan::Parity(policy) = fixture.execution_plan() else {
         panic!("fixture-v2 policy");
     };
     assert_eq!(
@@ -1098,7 +1098,7 @@ fn empty_and_one_scalar_v2_strategies_collapse_to_semantic_aliases() {
             )
         });
         let fixture = load_single_native_fixture(&repository);
-        let ValidatedFixturePolicy::V2Parity(policy) = fixture.policy() else {
+        let ValidatedExecutionPlan::Parity(policy) = fixture.execution_plan() else {
             panic!("fixture-v2 policy");
         };
         assert_eq!(
@@ -3416,7 +3416,7 @@ fn capability_policy_registry_covers_every_fixture_v1_capability() {
 }
 
 #[test]
-fn completed_capabilities_cannot_be_hidden_by_external_dispositions() {
+fn completed_capabilities_cannot_be_hidden_by_non_active_dispositions() {
     let declarations = [
         "status = \"expected-unsupported\"\nreason = \"hidden\"\ncapability = { kind = \"tokens-expectation\" }\nreference = { kind = \"tracking-issue\", value = \"#1\" }",
         "status = \"expected-failure\"\nreason = \"hidden\"\nfailure = \"tokens-mismatch\"\nreference = { kind = \"tracking-issue\", value = \"#1\" }",
@@ -3431,11 +3431,7 @@ fn completed_capabilities_cannot_be_hidden_by_external_dispositions() {
             b"hello",
         );
         rewrite(&bundle.join("fixture.toml"), |text| {
-            text.replace(
-                "[source]\nkind = \"native\"",
-                "[source]\nkind = \"external\"\nprovenance = \"upstream/case\"",
-            )
-            .replace("status = \"active\"", disposition)
+            text.replace("status = \"active\"", disposition)
         });
         assert!(matches!(
             discover_and_load(&repository.adapted()).unwrap_err().kind,
@@ -3445,7 +3441,7 @@ fn completed_capabilities_cannot_be_hidden_by_external_dispositions() {
 }
 
 #[test]
-fn fixture_v1_rejects_broad_external_and_environment_skip_escape_hatches() {
+fn fixture_v1_rejects_broad_skip_escape_hatches() {
     for (index, classification) in ["external-fixture-exclusion", "environment-requirement"]
         .into_iter()
         .enumerate()
@@ -3459,10 +3455,6 @@ fn fixture_v1_rejects_broad_external_and_environment_skip_escape_hatches() {
         );
         rewrite(&bundle.join("fixture.toml"), |text| {
             text.replace(
-                "[source]\nkind = \"native\"",
-                "[source]\nkind = \"external\"\nprovenance = \"upstream/case\"",
-            )
-            .replace(
                 "status = \"active\"",
                 &format!(
                     "status = \"skipped\"\nreason = \"broad skip\"\nclassification = {{ kind = \"{classification}\", capability = {{ kind = \"tokens-expectation\" }} }}\nreference = {{ kind = \"tracking-issue\", value = \"#1\" }}"
@@ -3477,13 +3469,35 @@ fn fixture_v1_rejects_broad_external_and_environment_skip_escape_hatches() {
 }
 
 #[test]
+fn fixture_v1_rejects_legacy_free_form_external_provenance() {
+    let repository = TestRepository::new();
+    let bundle = add_fixture(&repository, "legacy-external", "legacy-external", b"hello");
+    rewrite(&bundle.join("fixture.toml"), |text| {
+        text.replace(
+            "[source]\nkind = \"native\"",
+            "[source]\nkind = \"external\"\nprovenance = \"upstream/case\"",
+        )
+    });
+    let error = discover_and_load(&repository.adapted()).unwrap_err();
+    assert!(matches!(
+        error.kind,
+        FixtureLoadErrorKind::InvalidCombination(_)
+    ));
+    assert!(
+        error
+            .to_string()
+            .contains("fixture-v3 structured provenance")
+    );
+}
+
+#[test]
 fn irrelevant_fragment_skip_is_rejected_before_execution() {
     let repository = TestRepository::new();
     let bundle = add_fixture(&repository, "skipped", "skipped-fragment", b"hello");
     rewrite(&bundle.join("fixture.toml"), |text| {
         text.replace(
             "[source]\nkind = \"native\"",
-            "[source]\nkind = \"external\"\nprovenance = \"upstream/case\"",
+            "[source]\nkind = \"quarantine\"\ntracking_issue = \"#ae13-test\"",
         )
         .replace(
             "status = \"active\"",
@@ -3506,7 +3520,7 @@ fn relevant_fragment_skip_retains_exact_capability_and_bypasses_execution() {
     rewrite(&bundle.join("fixture.toml"), |text| {
         text.replace(
             "[source]\nkind = \"native\"",
-            "[source]\nkind = \"external\"\nprovenance = \"upstream/case\"",
+            "[source]\nkind = \"quarantine\"\ntracking_issue = \"#ae13-test\"",
         )
         .replace(
             "kind = \"standalone-tokenizer\"",
@@ -4189,13 +4203,13 @@ fn typed_parity_comparison_precedes_snapshot_serialization() {
 }
 
 #[test]
-fn adapted_repository_accepts_external_non_active_schema_for_policy_evaluation() {
+fn adapted_repository_accepts_quarantine_non_active_schema_for_policy_evaluation() {
     let repository = TestRepository::new();
     let bundle = add_fixture(&repository, "external", "external-fragment", b"hello");
     rewrite(&bundle.join("fixture.toml"), |text| {
         text.replace(
             "[source]\nkind = \"native\"",
-            "[source]\nkind = \"external\"\nprovenance = \"upstream/case-1\"",
+            "[source]\nkind = \"quarantine\"\ntracking_issue = \"#ae13-test\"",
         )
         .replace(
             "status = \"active\"",

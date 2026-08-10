@@ -1,0 +1,27 @@
+format = "borrowser-html-parser-fixture-v3"
+id = "wpt-body-noscript-script-off"
+
+[source]
+kind = "external"
+provenance_record = "provenance.toml"
+provenance_sha256 = "74f168628c5a1d2c645e65aaf152b1c81b834645bc40183a5449cfe6ecf9cf29"
+
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "584dbd45bab5bded628a17679fd2417074e38c5787ec07c78241580b54612233"
+
+[execution]
+target = { kind = "document", scripting = "disabled" }
+reference_delivery = "whole-unicode"
+[[execution.deliveries]]
+name = "whole-unicode"
+unit = "unicode-scalars"
+strategy = "whole"
+
+[expectations]
+parse_errors = { kind = "count", count = 1 }
+tree = "tree.txt"
+
+[disposition]
+status = "active"

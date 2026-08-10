@@ -91,6 +91,9 @@ jobs:
       - name: Run canonical HTML parser conformance observations
         run: cargo test -p html --test html5_parser_conformance --features parser-conformance --locked
 
+      - name: Run pinned external HTML parser subset
+        run: make test-html5-external-fixtures
+
       - name: Run typed HTML parser fatal-failure lane
         run: make test-html5-parser-fatal-failures
 

@@ -47,9 +47,10 @@ it must not reimplement parsing algorithms.
 The serialized declaration is the only construction input. Validation seals
 fixture IDs, delivery names, snapshot paths, exact input, execution, target,
 expectation, source, and disposition state behind an opaque
-`ValidatedFixtureSpec`; public consumers receive read-only accessors. A future
-external adapter must enter through the same declaration and validation path.
-It must not construct validated values directly.
+`ValidatedFixtureSpec`; public consumers receive read-only accessors. The AE13e
+external adapter enters through the same declaration and validation path. It
+must not construct validated values directly; future external adapters follow
+the same rule.
 
 AE13c parity compares borrowed typed canonical observations before any snapshot
 serialization. A serializer is invoked only for the selected parity surface
@@ -1099,3 +1100,29 @@ doctype fields, expanded element names, ordered qualified attributes, text,
 comments, processing instructions, ordinary children, and template contents.
 It is iterative with one frame per active ancestor, so temporary storage is
 `O(tree depth)`, not `O(sibling count)`.
+
+### AE13e external adapter and closeout boundary
+
+The external proof follows the same canonical validation, normalized
+execution, and production observation path as native fixtures. The adapter
+understands only the pinned WPT .dat record format and emits fixture-v3
+declarations; it does not execute HTML, compare trees, or construct a
+ValidatedFixtureSpec directly. External provenance and licence metadata are
+validated by the fixture-v3 boundary.
+
+WPT error text remains provenance. WPT #errors and #new-errors are represented
+as an exact parse-error count where the source defines only a count. Native
+fixtures retain exact typed parse-error snapshots. Missing scripting markers,
+fragment records, and valid external expectations that the current canonical
+representation cannot express without inventing precision are classified
+explicitly and are not counted as passes. The latter uses
+unsupported-expectation-representation; it does not claim that the production
+parser lacks the corresponding behavior. Unsupported-parser-feature is reserved
+for a genuine production parser capability gap. Browser-wrapper and platform
+requirements such as `document.write`, DOM bindings, events, navigation,
+resources/networking, and rendering remain future exclusions; the raw adapter
+does not infer them from literal HTML input.
+
+AE13e closes the scoped static tokenizer/tree-construction/parser-created-DOM
+conformance harness foundation. It does not claim complete html5lib, complete
+WPT, complete HTML, DOM API, scripting, or event-loop conformance.

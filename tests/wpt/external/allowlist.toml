@@ -1,0 +1,25 @@
+format = "borrowser-wpt-external-allowlist-v1"
+upstream_project = "web-platform-tests/wpt"
+upstream_revision = "2c705104a295c48053eeddf7fe0170d790a4e853"
+source_path = "html/syntax/parsing/resources/tests1.dat"
+source_file_sha256 = "86426574ac5c936179a30d9fc4b0edf891c8be92ed8d9b24670f235044a75a8d"
+license_identifier = "BSD-3-Clause"
+license_notice = "The 3-Clause BSD License; see tests/wpt/external/LICENSE-3-Clause.txt."
+attribution = "Copyright © web-platform-tests contributors"
+
+[[cases]]
+ordinal = 2
+record_sha256 = "213694cc71bc365bf18c649403d2e56c8c952f3daa8e44e529eda72c2d2de52d"
+display_name = "paragraph-end-tag-recovery"
+
+[[cases]]
+ordinal = 30
+record_sha256 = "0d8ce6244c1b4d66ca22eb29b30dca3ae603a09a58b369dada7e1bf3450b9e23"
+display_name = "select-formatting-recovery"
+
+[[cases]]
+source_path = "html/syntax/parsing/resources/webkit02.dat"
+source_file_sha256 = "03b215350d352faf110df2cc6eac23a44a7f70945b4ea962f0b17bed103459f7"
+ordinal = 3
+record_sha256 = "451124de0b3a67a5773b7fee11e4a83716cb26a08abb965452c1232e86a56ab9"
+display_name = "body-noscript-script-off"

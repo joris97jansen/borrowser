@@ -7,12 +7,14 @@ use std::path::PathBuf;
 
 pub const FIXTURE_FORMAT_V1: &str = "borrowser-html-parser-fixture-v1";
 pub const FIXTURE_FORMAT_V2: &str = "borrowser-html-parser-fixture-v2";
+pub const FIXTURE_FORMAT_V3: &str = "borrowser-html-parser-fixture-v3";
 
 #[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum FixtureFormatVersion {
     V1,
     V2,
+    V3,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -67,8 +69,29 @@ impl FixtureBundle {
 #[derive(Clone, Debug)]
 pub(super) enum FixtureSource {
     Native,
-    External { provenance: String },
-    Quarantine { tracking_issue: String },
+    External {
+        provenance: String,
+        provenance_record: Box<ExternalProvenance>,
+    },
+    Quarantine {
+        tracking_issue: String,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct ExternalProvenance {
+    pub(super) record_path: String,
+    pub(super) provenance_sha256: String,
+    pub(super) upstream_project: String,
+    pub(super) upstream_revision: String,
+    pub(super) upstream_path: String,
+    pub(super) case_identity: String,
+    pub(super) source_record_sha256: String,
+    pub(super) source_file_sha256: String,
+    pub(super) license_identifier: String,
+    pub(super) license_notice: String,
+    pub(super) attribution: String,
+    pub(super) adaptation: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -90,7 +113,7 @@ impl FixtureSource {
     pub(super) fn reference(&self) -> Option<&str> {
         match self {
             Self::Native => None,
-            Self::External { provenance } => Some(provenance),
+            Self::External { provenance, .. } => Some(provenance),
             Self::Quarantine { tracking_issue } => Some(tracking_issue),
         }
     }
@@ -259,21 +282,21 @@ pub(super) struct ValidatedExecution {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct ValidatedV1Execution(ValidatedExecution);
+pub(super) struct ValidatedSingleExecution(ValidatedExecution);
 
 #[derive(Clone, Debug)]
-pub(super) struct ValidatedV2Execution {
+pub(super) struct ValidatedParityExecution {
     execution: ValidatedExecution,
     strategies: Vec<ScheduledDeliveryStrategy>,
 }
 
 #[derive(Clone, Debug)]
-pub(super) enum ValidatedFixturePolicy {
-    V1Compatibility(ValidatedV1Execution),
-    V2Parity(ValidatedV2Execution),
+pub(super) enum ValidatedExecutionPlan {
+    SingleDelivery(ValidatedSingleExecution),
+    Parity(ValidatedParityExecution),
 }
 
-impl ValidatedV1Execution {
+impl ValidatedSingleExecution {
     pub(super) fn validated(execution: ValidatedExecution) -> Self {
         Self(execution)
     }
@@ -283,7 +306,7 @@ impl ValidatedV1Execution {
     }
 }
 
-impl ValidatedV2Execution {
+impl ValidatedParityExecution {
     pub(super) fn validated(
         execution: ValidatedExecution,
         strategies: Vec<ScheduledDeliveryStrategy>,
@@ -403,11 +426,11 @@ pub(super) struct ScheduledDeliveryStrategy {
     pub(super) origins: Vec<DeliveryStrategyOrigin>,
 }
 
-impl ValidatedFixturePolicy {
+impl ValidatedExecutionPlan {
     pub(super) fn execution(&self) -> &ValidatedExecution {
         match self {
-            Self::V1Compatibility(execution) => execution.execution(),
-            Self::V2Parity(execution) => execution.execution(),
+            Self::SingleDelivery(execution) => execution.execution(),
+            Self::Parity(execution) => execution.execution(),
         }
     }
 }
@@ -480,7 +503,7 @@ impl TransitionSnapshotExpectation {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct EnabledExpectations {
     tokens: ExpectedSurface<SnapshotPath>,
-    parse_errors: ExpectedSurface<SnapshotPath>,
+    parse_errors: ExpectedSurface<ParseErrorExpectation>,
     implementation_diagnostics: ExpectedSurface<SnapshotPath>,
     document_mode: ExpectedSurface<SnapshotPath>,
     tree: ExpectedSurface<SnapshotPath>,
@@ -494,7 +517,7 @@ impl EnabledExpectations {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn validated(
         tokens: ExpectedSurface<SnapshotPath>,
-        parse_errors: ExpectedSurface<SnapshotPath>,
+        parse_errors: ExpectedSurface<ParseErrorExpectation>,
         implementation_diagnostics: ExpectedSurface<SnapshotPath>,
         document_mode: ExpectedSurface<SnapshotPath>,
         tree: ExpectedSurface<SnapshotPath>,
@@ -520,7 +543,7 @@ impl EnabledExpectations {
         &self.tokens
     }
 
-    pub(super) fn parse_errors(&self) -> &ExpectedSurface<SnapshotPath> {
+    pub(super) fn parse_errors(&self) -> &ExpectedSurface<ParseErrorExpectation> {
         &self.parse_errors
     }
 
@@ -577,6 +600,12 @@ impl EnabledExpectations {
             }
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum ParseErrorExpectation {
+    Exact(SnapshotPath),
+    Count(u64),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

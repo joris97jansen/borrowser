@@ -96,4 +96,6 @@ documents are additive and cannot substitute for focused rows.
   from positive conformance fixtures.
 - The canonical v2 test passes, the relevant tokenizer/tree-builder/golden
   lanes pass, the coverage matrix matches the discovered fixture tree, and
-  no Rust parser, harness, schema, API, or registration file changed.
+- AE13e adds the separate canonical external adapter/provenance/update path;
+  this native coverage document remains limited to the native corpus and does
+  not claim complete html5lib or WPT support.
