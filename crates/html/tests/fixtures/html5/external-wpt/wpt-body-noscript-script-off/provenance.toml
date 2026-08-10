@@ -1,0 +1,11 @@
+format = "borrowser-external-provenance-v1"
+upstream_project = "web-platform-tests/wpt"
+upstream_revision = "2c705104a295c48053eeddf7fe0170d790a4e853"
+upstream_path = "html/syntax/parsing/resources/webkit02.dat"
+source_record_ordinal = 3
+source_record_sha256 = "451124de0b3a67a5773b7fee11e4a83716cb26a08abb965452c1232e86a56ab9"
+source_file_sha256 = "03b215350d352faf110df2cc6eac23a44a7f70945b4ea962f0b17bed103459f7"
+license_identifier = "BSD-3-Clause"
+license_notice = "The 3-Clause BSD License; see tests/wpt/external/LICENSE-3-Clause.txt."
+attribution = "Copyright © web-platform-tests contributors"
+adaptation = "Representation-only translation of the pinned WPT #data, #errors count, and #document tree; no upstream diagnostic text is mapped to Borrowser error identities. Case identity: 2c705104a295c48053eeddf7fe0170d790a4e853:html/syntax/parsing/resources/webkit02.dat:3:451124de0b3a67a5773b7fee11e4a83716cb26a08abb965452c1232e86a56ab9."

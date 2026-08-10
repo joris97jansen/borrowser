@@ -33,6 +33,22 @@ pub struct FixtureFileV2 {
     pub extensions: BTreeMap<String, ExtensionDeclaration>,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FixtureFileV3 {
+    pub format: String,
+    pub id: String,
+    pub source: FixtureSourceDeclarationV3,
+    pub input: InputDeclaration,
+    pub execution: ExecutionDeclaration,
+    pub expectations: FixtureExpectationDeclarationsV3,
+    pub disposition: FixtureDispositionDeclarationV2,
+    #[serde(default)]
+    pub metadata: FixtureMetadataDeclaration,
+    #[serde(default)]
+    pub extensions: BTreeMap<String, ExtensionDeclaration>,
+}
+
 /// Minimal typed dispatch envelope. This selects a complete versioned schema;
 /// it is not a permissive common fixture declaration.
 #[derive(Clone, Debug, Deserialize)]
@@ -61,6 +77,15 @@ pub enum FixtureSourceKindDeclaration {
 pub struct FixtureSourceDeclaration {
     pub kind: FixtureSourceKindDeclaration,
     pub provenance: Option<String>,
+    pub tracking_issue: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FixtureSourceDeclarationV3 {
+    pub kind: FixtureSourceKindDeclaration,
+    pub provenance_record: Option<String>,
+    pub provenance_sha256: Option<String>,
     pub tracking_issue: Option<String>,
 }
 
@@ -153,6 +178,36 @@ pub struct FixtureExpectationDeclarations {
     pub transitions: Vec<TransitionExpectationDeclaration>,
     pub unsupported_features: Option<String>,
     pub final_invariants: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FixtureExpectationDeclarationsV3 {
+    pub tokens: Option<String>,
+    pub parse_errors: Option<ParseErrorExpectationDeclarationV3>,
+    pub implementation_diagnostics: Option<String>,
+    pub document_mode: Option<String>,
+    pub tree: Option<String>,
+    pub patches: Option<String>,
+    #[serde(default)]
+    pub transitions: Vec<TransitionExpectationDeclaration>,
+    pub unsupported_features: Option<String>,
+    pub final_invariants: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ParseErrorExpectationDeclarationV3 {
+    pub kind: ParseErrorExpectationKindDeclarationV3,
+    pub path: Option<String>,
+    pub count: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ParseErrorExpectationKindDeclarationV3 {
+    Exact,
+    Count,
 }
 
 #[derive(Clone, Debug, Deserialize)]

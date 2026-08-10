@@ -1,6 +1,10 @@
-use super::model::{DeliveryName, FIXTURE_FORMAT_V1, FIXTURE_FORMAT_V2, FixtureBundle, FixtureId};
-use super::schema::{FixtureFileV1, FixtureFileV2, FixtureFormatEnvelope};
-use super::validate::{ValidatedFixtureSpec, validate_fixture_v1, validate_fixture_v2};
+use super::model::{
+    DeliveryName, FIXTURE_FORMAT_V1, FIXTURE_FORMAT_V2, FIXTURE_FORMAT_V3, FixtureBundle, FixtureId,
+};
+use super::schema::{FixtureFileV1, FixtureFileV2, FixtureFileV3, FixtureFormatEnvelope};
+use super::validate::{
+    ValidatedFixtureSpec, validate_fixture_v1, validate_fixture_v2, validate_fixture_v3,
+};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -460,6 +464,9 @@ pub(super) fn discover_and_load_with_access(
             ParsedFixtureFile::V2(parsed) => {
                 validate_fixture_v2(parsed, bundle, repository.policy, file_access)?
             }
+            ParsedFixtureFile::V3(parsed) => {
+                validate_fixture_v3(parsed, bundle, repository.policy, file_access)?
+            }
         };
         if let Some(first_path) = ids.insert(
             fixture.id().clone(),
@@ -482,6 +489,7 @@ pub(super) fn discover_and_load_with_access(
 enum ParsedFixtureFile {
     V1(FixtureFileV1),
     V2(FixtureFileV2),
+    V3(FixtureFileV3),
 }
 
 impl ParsedFixtureFile {
@@ -489,6 +497,7 @@ impl ParsedFixtureFile {
         match self {
             Self::V1(value) => &value.id,
             Self::V2(value) => &value.id,
+            Self::V3(value) => &value.id,
         }
     }
 }
@@ -518,6 +527,14 @@ fn parse_versioned_fixture(
                 path,
                 kind: FixtureLoadErrorKind::InvalidFixtureToml(format!(
                     "{FIXTURE_FORMAT_V2}: {err}"
+                )),
+            }),
+        FIXTURE_FORMAT_V3 => toml::from_str(fixture_text)
+            .map(ParsedFixtureFile::V3)
+            .map_err(|err| FixtureLoadError {
+                path,
+                kind: FixtureLoadErrorKind::InvalidFixtureToml(format!(
+                    "{FIXTURE_FORMAT_V3}: {err}"
                 )),
             }),
         _ => Err(FixtureLoadError {

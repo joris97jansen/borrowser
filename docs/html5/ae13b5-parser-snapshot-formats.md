@@ -324,3 +324,8 @@ The writer consumes the fixed `ParserFinalizationReport::fields()` iterator.
 Failure inspection uses the report's allocation-free ordered iterator and does
 not allocate a temporary vector of failed codes for disposition or snapshot
 selection. Rust `Debug` is never serialized.
+
+AE13e reuses these existing snapshot codecs for external WPT-derived
+expectations, including html5-dom-v3. Fixture-v3 does not create a snapshot
+codec version. External parse-error counts are inline fixture declaration
+values rather than a parser-output snapshot format.

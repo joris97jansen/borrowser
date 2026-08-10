@@ -680,6 +680,21 @@ Current supported subset:
   fuzz/pipeline evidence cover the declared static subset. See
   `docs/html5/ae10-template-tree-construction-contract.md`.
 
+- AE13e canonical external-fixture closeout: the parser conformance harness
+  now has a version-independent normalized fixture execution model, a
+  validated fixture-v3 provenance boundary, a small exact pinned WPT .dat
+  adapter proof, explicit count-strength parse-error expectations, default-
+  deny capability classifications, and a read-only check/explicit update
+  workflow. Normal CI runs the native corpus and the small external subset;
+  correctness-owned extended CI additionally runs the existing whole/chunked
+  token and DOM parity corpus through the same production parser and canonical
+  observation paths. This closes
+  only the scoped static tokenizer/tree-construction/parser-created-DOM
+  conformance foundation. Complete html5lib, WPT, HTML, DOM API, scripting,
+  event-loop, navigation, resources, and rendering conformance remain gaps.
+  See `docs/html5/parser-fixture-format-v3.md` and
+  `docs/html5/ae13e-external-fixture-and-snapshot-workflow.md`.
+
 Missing or incomplete:
 
 - full byte-stream encoding sniffing, charset detection, BOM switching, and

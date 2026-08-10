@@ -9,6 +9,7 @@ use super::schema::*;
 use html::ElementNamespace;
 use html::conformance::InvariantFailureCode;
 use ring::digest::{SHA256, digest};
+use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 use std::fs;
@@ -24,9 +25,11 @@ use std::path::Path;
 pub struct ValidatedFixtureSpec {
     id: FixtureId,
     bundle: FixtureBundle,
+    #[cfg(test)]
+    format: FixtureFormatVersion,
     source: FixtureSource,
     input: ExactInput,
-    policy: ValidatedFixturePolicy,
+    execution_plan: ValidatedExecutionPlan,
     expectations: EnabledExpectations,
     disposition: FixtureDisposition,
     description: Option<String>,
@@ -147,10 +150,7 @@ impl ValidatedFixtureSpec {
 
     #[cfg(test)]
     pub(super) fn format(&self) -> FixtureFormatVersion {
-        match self.policy {
-            ValidatedFixturePolicy::V1Compatibility(_) => FixtureFormatVersion::V1,
-            ValidatedFixturePolicy::V2Parity(_) => FixtureFormatVersion::V2,
-        }
+        self.format
     }
 
     pub(super) fn input(&self) -> &ExactInput {
@@ -158,11 +158,11 @@ impl ValidatedFixtureSpec {
     }
 
     pub(super) fn execution(&self) -> &ValidatedExecution {
-        self.policy.execution()
+        self.execution_plan.execution()
     }
 
-    pub(super) fn policy(&self) -> &ValidatedFixturePolicy {
-        &self.policy
+    pub(super) fn execution_plan(&self) -> &ValidatedExecutionPlan {
+        &self.execution_plan
     }
 
     pub(super) fn expectations(&self) -> &EnabledExpectations {
@@ -210,7 +210,7 @@ pub(super) fn validate_fixture_v1(
     if !has_any_expectation(&expectations) {
         return invalid_combination(&bundle, "fixture must declare at least one expectation");
     }
-    validate_orphan_sidecars(&bundle, &input_path, &expectations)?;
+    validate_orphan_sidecars(&bundle, &input_path, &source, &expectations)?;
     let (optional_extensions, required_unknown_extensions) =
         validate_extensions(&bundle, declaration.extensions)?;
     let disposition = validate_disposition(
@@ -226,9 +226,13 @@ pub(super) fn validate_fixture_v1(
     Ok(ValidatedFixtureSpec {
         id,
         bundle,
+        #[cfg(test)]
+        format: FixtureFormatVersion::V1,
         source,
         input,
-        policy: ValidatedFixturePolicy::V1Compatibility(ValidatedV1Execution::validated(execution)),
+        execution_plan: ValidatedExecutionPlan::SingleDelivery(
+            ValidatedSingleExecution::validated(execution),
+        ),
         expectations,
         disposition,
         description: declaration.metadata.description,
@@ -290,7 +294,7 @@ pub(super) fn validate_fixture_v2(
     if !has_any_expectation(&expectations) {
         return invalid_combination(&bundle, "fixture must declare at least one expectation");
     }
-    validate_orphan_sidecars(&bundle, &input_path, &expectations)?;
+    validate_orphan_sidecars(&bundle, &input_path, &source, &expectations)?;
     let (optional_extensions, required_unknown_extensions) =
         validate_extensions(&bundle, declaration.extensions)?;
     let disposition = validate_disposition_v2(
@@ -307,9 +311,77 @@ pub(super) fn validate_fixture_v2(
     Ok(ValidatedFixtureSpec {
         id,
         bundle,
+        #[cfg(test)]
+        format: FixtureFormatVersion::V2,
         source,
         input,
-        policy: ValidatedFixturePolicy::V2Parity(ValidatedV2Execution::validated(
+        execution_plan: ValidatedExecutionPlan::Parity(ValidatedParityExecution::validated(
+            execution, strategies,
+        )),
+        expectations,
+        disposition,
+        description: declaration.metadata.description,
+        comments: declaration.metadata.comments,
+        optional_extensions,
+        required_unknown_extensions,
+    })
+}
+
+pub(super) fn validate_fixture_v3(
+    declaration: FixtureFileV3,
+    bundle: FixtureBundle,
+    repository_policy: FixtureRepositoryPolicy,
+    file_access: &mut impl FixtureFileAccess,
+) -> Result<ValidatedFixtureSpec, FixtureLoadError> {
+    if declaration.format != FIXTURE_FORMAT_V3 {
+        return Err(bundle_error(
+            &bundle,
+            FixtureLoadErrorKind::UnsupportedFixtureFormat(declaration.format),
+        ));
+    }
+    let id = validate_fixture_id(&bundle, declaration.id)?;
+    let source = validate_source_v3(&bundle, declaration.source, file_access)?;
+
+    let input_path = declaration.input.path.clone();
+    validate_relative_path(&input_path).map_err(|kind| bundle_error(&bundle, kind))?;
+    let input_bytes = file_access.read_regular_file(&bundle, &input_path)?;
+    validate_sha256(&bundle, &declaration.input.sha256, &input_bytes)?;
+    let input = validate_input(&bundle, declaration.input, input_bytes)?;
+
+    let execution = validate_execution_v2(&bundle, &input, declaration.execution)?;
+    let expectations = validate_expectations_v3(
+        &bundle,
+        &execution,
+        declaration.expectations,
+        SidecarValidationPolicy::MetadataOnlyV2,
+        file_access,
+    )?;
+    validate_v2_expectation_identities(&bundle, &expectations)?;
+    if !has_any_expectation(&expectations) {
+        return invalid_combination(&bundle, "fixture must declare at least one expectation");
+    }
+    validate_orphan_sidecars(&bundle, &input_path, &source, &expectations)?;
+    let (optional_extensions, required_unknown_extensions) =
+        validate_extensions(&bundle, declaration.extensions)?;
+    let disposition = validate_disposition_v2(
+        &bundle,
+        declaration.disposition,
+        &input,
+        &execution,
+        &expectations,
+        &required_unknown_extensions,
+    )?;
+    validate_source_disposition_policy(&bundle, repository_policy, &source, &disposition)?;
+
+    let strategies = plan_v2_strategies(&bundle, &input, &execution)?;
+    Ok(ValidatedFixtureSpec {
+        id,
+        bundle,
+        #[cfg(test)]
+        format: FixtureFormatVersion::V3,
+        source,
+        input,
+        execution_plan: ValidatedExecutionPlan::Parity(ValidatedParityExecution::validated(
             execution, strategies,
         )),
         expectations,
@@ -346,10 +418,10 @@ fn validate_source(
 ) -> Result<FixtureSource, FixtureLoadError> {
     match (source.kind, source.provenance, source.tracking_issue) {
         (FixtureSourceKindDeclaration::Native, None, None) => Ok(FixtureSource::Native),
-        (FixtureSourceKindDeclaration::External, Some(provenance), None) => {
-            require_non_empty(bundle, "external provenance", &provenance)?;
-            Ok(FixtureSource::External { provenance })
-        }
+        (FixtureSourceKindDeclaration::External, Some(_), None) => invalid_combination(
+            bundle,
+            "external fixtures require fixture-v3 structured provenance",
+        ),
         (FixtureSourceKindDeclaration::Quarantine, None, Some(tracking_issue)) => {
             require_non_empty(bundle, "quarantine tracking issue", &tracking_issue)?;
             Ok(FixtureSource::Quarantine { tracking_issue })
@@ -357,6 +429,118 @@ fn validate_source(
         _ => invalid_combination(
             bundle,
             "source kind must declare exactly its required provenance or tracking field",
+        ),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExternalProvenanceDeclaration {
+    format: String,
+    upstream_project: String,
+    upstream_revision: String,
+    upstream_path: String,
+    source_record_ordinal: u64,
+    source_record_sha256: String,
+    source_file_sha256: String,
+    license_identifier: String,
+    license_notice: String,
+    attribution: String,
+    adaptation: String,
+}
+
+fn validate_source_v3(
+    bundle: &FixtureBundle,
+    source: FixtureSourceDeclarationV3,
+    file_access: &mut impl FixtureFileAccess,
+) -> Result<FixtureSource, FixtureLoadError> {
+    match (
+        source.kind,
+        source.provenance_record,
+        source.provenance_sha256,
+        source.tracking_issue,
+    ) {
+        (FixtureSourceKindDeclaration::Native, None, None, None) => Ok(FixtureSource::Native),
+        (FixtureSourceKindDeclaration::Quarantine, None, None, Some(tracking_issue)) => {
+            require_non_empty(bundle, "quarantine tracking issue", &tracking_issue)?;
+            Ok(FixtureSource::Quarantine { tracking_issue })
+        }
+        (FixtureSourceKindDeclaration::External, Some(record_path), Some(record_sha256), None) => {
+            validate_relative_path(&record_path).map_err(|kind| bundle_error(bundle, kind))?;
+            let record_bytes = file_access.read_regular_file(bundle, &record_path)?;
+            validate_sha256(bundle, &record_sha256, &record_bytes)?;
+            let record_text = std::str::from_utf8(&record_bytes).map_err(|_| {
+                bundle_error(
+                    bundle,
+                    FixtureLoadErrorKind::InvalidFixtureToml(
+                        "external provenance record must be UTF-8".to_string(),
+                    ),
+                )
+            })?;
+            let declaration: ExternalProvenanceDeclaration =
+                toml::from_str(record_text).map_err(|error| {
+                    bundle_error(
+                        bundle,
+                        FixtureLoadErrorKind::InvalidFixtureToml(format!(
+                            "external provenance record: {error}"
+                        )),
+                    )
+                })?;
+            if declaration.format != "borrowser-external-provenance-v1" {
+                return invalid_combination(
+                    bundle,
+                    "external provenance record format must be borrowser-external-provenance-v1",
+                );
+            }
+            for (label, value) in [
+                ("upstream project", &declaration.upstream_project),
+                ("upstream revision", &declaration.upstream_revision),
+                ("upstream path", &declaration.upstream_path),
+                ("licence identifier", &declaration.license_identifier),
+                ("licence notice", &declaration.license_notice),
+                ("attribution", &declaration.attribution),
+                ("adaptation", &declaration.adaptation),
+            ] {
+                require_non_empty(bundle, label, value)?;
+            }
+            validate_external_revision_identifier(bundle, &declaration.upstream_revision)?;
+            validate_external_source_path(bundle, &declaration.upstream_path)?;
+            validate_hex_sha256(bundle, "source record", &declaration.source_record_sha256)?;
+            validate_hex_sha256(bundle, "source file", &declaration.source_file_sha256)?;
+            if declaration.source_record_ordinal == 0 {
+                return invalid_combination(
+                    bundle,
+                    "external provenance source record ordinal must be greater than zero",
+                );
+            }
+            let case_identity = format!(
+                "{}:{}:{}:{}",
+                declaration.upstream_revision,
+                declaration.upstream_path,
+                declaration.source_record_ordinal,
+                declaration.source_record_sha256,
+            );
+            Ok(FixtureSource::External {
+                provenance: record_path.clone(),
+                provenance_record: Box::new(ExternalProvenance {
+                    record_path,
+                    provenance_sha256: record_sha256,
+                    upstream_project: declaration.upstream_project,
+                    upstream_revision: declaration.upstream_revision,
+                    upstream_path: declaration.upstream_path,
+                    case_identity,
+                    source_file_sha256: declaration.source_file_sha256,
+                    source_record_sha256: declaration.source_record_sha256,
+                    license_identifier: declaration.license_identifier,
+                    license_notice: declaration.license_notice,
+                    attribution: declaration.attribution,
+                    adaptation: declaration.adaptation,
+                }),
+            })
+        }
+        _ => invalid_combination(
+            bundle,
+            "fixture-v3 source kind must declare exactly its required structured provenance or tracking field",
         ),
     }
 }
@@ -1344,7 +1528,7 @@ fn validate_expectations(
 
     Ok(EnabledExpectations::validated(
         snapshot_surface(bundle, declaration.tokens, sidecar_policy, file_access)?,
-        snapshot_surface(
+        parse_error_surface(
             bundle,
             declaration.parse_errors,
             sidecar_policy,
@@ -1384,6 +1568,105 @@ fn validate_expectations(
     ))
 }
 
+fn parse_error_surface(
+    bundle: &FixtureBundle,
+    path: Option<String>,
+    sidecar_policy: SidecarValidationPolicy,
+    file_access: &mut impl FixtureFileAccess,
+) -> Result<ExpectedSurface<ParseErrorExpectation>, FixtureLoadError> {
+    let Some(path) = path else {
+        return Ok(ExpectedSurface::NotDeclared);
+    };
+    validate_relative_path(&path).map_err(|kind| bundle_error(bundle, kind))?;
+    sidecar_policy.validate_declared_sidecar(bundle, &path, file_access)?;
+    Ok(ExpectedSurface::Compare(ParseErrorExpectation::Exact(
+        SnapshotPath::validated(path),
+    )))
+}
+
+fn validate_expectations_v3(
+    bundle: &FixtureBundle,
+    execution: &ValidatedExecution,
+    declaration: FixtureExpectationDeclarationsV3,
+    sidecar_policy: SidecarValidationPolicy,
+    file_access: &mut impl FixtureFileAccess,
+) -> Result<EnabledExpectations, FixtureLoadError> {
+    let FixtureExpectationDeclarationsV3 {
+        tokens,
+        parse_errors,
+        implementation_diagnostics,
+        document_mode,
+        tree,
+        patches,
+        transitions,
+        unsupported_features,
+        final_invariants,
+    } = declaration;
+    let base = validate_expectations(
+        bundle,
+        execution,
+        FixtureExpectationDeclarations {
+            tokens,
+            parse_errors: None,
+            implementation_diagnostics,
+            document_mode,
+            tree,
+            patches,
+            transitions,
+            unsupported_features,
+            final_invariants,
+        },
+        sidecar_policy,
+        file_access,
+    )?;
+    let parse_errors = match parse_errors {
+        None => ExpectedSurface::NotDeclared,
+        Some(ParseErrorExpectationDeclarationV3 { kind, path, count }) => match kind {
+            ParseErrorExpectationKindDeclarationV3::Exact => {
+                let Some(path) = path else {
+                    return invalid_combination(
+                        bundle,
+                        "exact parse-error expectation requires path and forbids count",
+                    );
+                };
+                if count.is_some() {
+                    return invalid_combination(
+                        bundle,
+                        "exact parse-error expectation requires path and forbids count",
+                    );
+                }
+                parse_error_surface(bundle, Some(path), sidecar_policy, file_access)?
+            }
+            ParseErrorExpectationKindDeclarationV3::Count => {
+                let Some(count) = count else {
+                    return invalid_combination(
+                        bundle,
+                        "count parse-error expectation requires count and forbids path",
+                    );
+                };
+                if path.is_some() {
+                    return invalid_combination(
+                        bundle,
+                        "count parse-error expectation requires count and forbids path",
+                    );
+                }
+                ExpectedSurface::Compare(ParseErrorExpectation::Count(count))
+            }
+        },
+    };
+    Ok(EnabledExpectations::validated(
+        base.tokens().clone(),
+        parse_errors,
+        base.implementation_diagnostics().clone(),
+        base.document_mode().clone(),
+        base.tree().clone(),
+        base.patches().clone(),
+        base.transitions().clone(),
+        base.unsupported_features().clone(),
+        base.final_invariants().clone(),
+    ))
+}
+
 fn snapshot_surface(
     bundle: &FixtureBundle,
     path: Option<String>,
@@ -1401,12 +1684,12 @@ fn snapshot_surface(
 fn validate_orphan_sidecars(
     bundle: &FixtureBundle,
     input_path: &str,
+    source: &FixtureSource,
     expectations: &EnabledExpectations,
 ) -> Result<(), FixtureLoadError> {
     let mut declared = BTreeSet::from(["fixture.toml".to_string(), input_path.to_string()]);
     for surface in [
         expectations.tokens(),
-        expectations.parse_errors(),
         expectations.implementation_diagnostics(),
         expectations.document_mode(),
         expectations.tree(),
@@ -1417,6 +1700,18 @@ fn validate_orphan_sidecars(
         if let ExpectedSurface::Compare(path) = surface {
             declared.insert(path.as_str().to_string());
         }
+    }
+    if let ExpectedSurface::Compare(ParseErrorExpectation::Exact(path)) =
+        expectations.parse_errors()
+    {
+        declared.insert(path.as_str().to_string());
+    }
+    if let FixtureSource::External {
+        provenance_record: record,
+        ..
+    } = source
+    {
+        declared.insert(record.record_path.clone());
     }
     if let ExpectedSurface::Compare(transitions) = expectations.transitions() {
         declared.extend(
@@ -1570,6 +1865,57 @@ fn validate_sha256(
                 actual,
             },
         ));
+    }
+    Ok(())
+}
+
+fn validate_hex_sha256(
+    bundle: &FixtureBundle,
+    label: &str,
+    value: &str,
+) -> Result<(), FixtureLoadError> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return invalid_combination(
+            bundle,
+            &format!("{label} SHA-256 must be 64 hexadecimal characters"),
+        );
+    }
+    Ok(())
+}
+
+fn validate_external_revision_identifier(
+    bundle: &FixtureBundle,
+    value: &str,
+) -> Result<(), FixtureLoadError> {
+    if value != value.trim() || value.chars().any(char::is_control) {
+        return invalid_combination(
+            bundle,
+            "external upstream revision must be a stable normalized identifier",
+        );
+    }
+    Ok(())
+}
+
+fn validate_external_source_path(
+    bundle: &FixtureBundle,
+    value: &str,
+) -> Result<(), FixtureLoadError> {
+    if value.is_empty()
+        || value.contains('\\')
+        || value.contains(':')
+        || value.starts_with('/')
+        || value
+            .split('/')
+            .any(|component| component.is_empty() || component == "." || component == "..")
+    {
+        return invalid_combination(
+            bundle,
+            "external upstream path must be a portable repository-relative path",
+        );
     }
     Ok(())
 }

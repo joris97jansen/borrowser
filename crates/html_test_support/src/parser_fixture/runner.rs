@@ -162,9 +162,9 @@ pub(super) fn run_fixture_with_executor_and_access(
             classification: classification.clone(),
         }
     } else {
-        match fixture.policy() {
-            ValidatedFixturePolicy::V1Compatibility(_) => execute_fixture_v1(fixture, file_access),
-            ValidatedFixturePolicy::V2Parity(policy) => {
+        match fixture.execution_plan() {
+            ValidatedExecutionPlan::SingleDelivery(_) => execute_fixture_v1(fixture, file_access),
+            ValidatedExecutionPlan::Parity(policy) => {
                 execute_fixture_v2_policy_with_access(fixture, policy, executor, file_access)
             }
         }
@@ -206,9 +206,9 @@ pub(super) fn run_fixture_with_executor_and_access(
 #[cfg(test)]
 pub(super) fn execute_fixture(fixture: &ValidatedFixtureSpec) -> FixtureExecutionOutcome {
     let mut file_access = ProductionFixtureFileAccess;
-    match fixture.policy() {
-        ValidatedFixturePolicy::V1Compatibility(_) => execute_fixture_v1(fixture, &mut file_access),
-        ValidatedFixturePolicy::V2Parity(policy) => execute_fixture_v2_policy_with_access(
+    match fixture.execution_plan() {
+        ValidatedExecutionPlan::SingleDelivery(_) => execute_fixture_v1(fixture, &mut file_access),
+        ValidatedExecutionPlan::Parity(policy) => execute_fixture_v2_policy_with_access(
             fixture,
             policy,
             &mut ProductionObservationExecutor,
@@ -319,11 +319,17 @@ fn execute_fixture_v1(
 }
 
 #[derive(Debug)]
-struct ParsedExpectation {
-    surface: ExpectationSurface,
-    path: SnapshotPath,
-    transition_delivery: Option<DeliveryName>,
-    snapshot: ParsedSnapshot,
+enum ParsedExpectation {
+    Snapshot {
+        surface: ExpectationSurface,
+        path: SnapshotPath,
+        transition_delivery: Option<DeliveryName>,
+        snapshot: ParsedSnapshot,
+    },
+    ParseErrorCount {
+        surface: ExpectationSurface,
+        expected: u64,
+    },
 }
 
 pub(super) trait ParserObservationExecutor {
@@ -397,7 +403,7 @@ pub(super) fn execute_fixture_v2_with(
     fixture: &ValidatedFixtureSpec,
     executor: &mut impl ParserObservationExecutor,
 ) -> FixtureExecutionOutcome {
-    let ValidatedFixturePolicy::V2Parity(policy) = fixture.policy() else {
+    let ValidatedExecutionPlan::Parity(policy) = fixture.execution_plan() else {
         return execution_failed_v2(
             ExecutionFailureClass::ValidatedFixtureInvariant(
                 ValidatedFixtureInvariantCode::StrategyScheduleContradiction,
@@ -419,7 +425,7 @@ pub(super) fn execute_fixture_v2_with_access(
     executor: &mut impl ParserObservationExecutor,
     file_access: &mut impl FixtureFileAccess,
 ) -> FixtureExecutionOutcome {
-    let ValidatedFixturePolicy::V2Parity(policy) = fixture.policy() else {
+    let ValidatedExecutionPlan::Parity(policy) = fixture.execution_plan() else {
         return runner_contradiction(ValidatedFixtureInvariantCode::StrategyScheduleContradiction);
     };
     execute_fixture_v2_policy_with_access(fixture, policy, executor, file_access)
@@ -427,7 +433,7 @@ pub(super) fn execute_fixture_v2_with_access(
 
 fn execute_fixture_v2_policy_with_access(
     fixture: &ValidatedFixtureSpec,
-    policy: &ValidatedV2Execution,
+    policy: &ValidatedParityExecution,
     executor: &mut impl ParserObservationExecutor,
     file_access: &mut impl FixtureFileAccess,
 ) -> FixtureExecutionOutcome {
@@ -446,7 +452,7 @@ pub(super) fn execute_fixture_v2_with_guardrails(
     executor: &mut impl ParserObservationExecutor,
     guardrails: FixtureObservationGuardrails,
 ) -> FixtureExecutionOutcome {
-    let ValidatedFixturePolicy::V2Parity(policy) = fixture.policy() else {
+    let ValidatedExecutionPlan::Parity(policy) = fixture.execution_plan() else {
         return execution_failed_v2(
             ExecutionFailureClass::ValidatedFixtureInvariant(
                 ValidatedFixtureInvariantCode::StrategyScheduleContradiction,
@@ -465,7 +471,7 @@ pub(super) fn execute_fixture_v2_with_guardrails(
 
 pub(super) fn execute_fixture_v2_with_guardrails_and_access(
     fixture: &ValidatedFixtureSpec,
-    policy: &ValidatedV2Execution,
+    policy: &ValidatedParityExecution,
     executor: &mut impl ParserObservationExecutor,
     guardrails: FixtureObservationGuardrails,
     file_access: &mut impl FixtureFileAccess,
@@ -935,7 +941,15 @@ fn compare_applicable_expectations(
     result: &CanonicalParserResult,
 ) -> Result<Option<FixtureExecutionOutcome>, FixtureExecutionOutcome> {
     for expected in expectations {
-        let applies = match &expected.transition_delivery {
+        let (surface, transition_delivery) = match expected {
+            ParsedExpectation::Snapshot {
+                surface,
+                transition_delivery,
+                ..
+            } => (*surface, transition_delivery.as_ref()),
+            ParsedExpectation::ParseErrorCount { surface, .. } => (*surface, None),
+        };
+        let applies = match transition_delivery {
             None => strategy
                 .origins
                 .iter()
@@ -947,23 +961,59 @@ fn compare_applicable_expectations(
         if !applies {
             continue;
         }
-        let snapshot = serialize_surface(result, expected.surface)?;
-        match compare_snapshots(
-            fixture,
-            expected.transition_delivery.as_ref(),
-            &expected.path,
-            &expected.snapshot,
-            &snapshot,
-        ) {
-            Ok(None) => {}
-            Ok(Some(diff)) => {
+        let mismatch = match expected {
+            ParsedExpectation::Snapshot {
+                path,
+                transition_delivery,
+                snapshot: expected_snapshot,
+                ..
+            } => {
+                let snapshot = serialize_surface(result, surface)?;
+                compare_snapshots(
+                    fixture,
+                    transition_delivery.as_ref(),
+                    path,
+                    expected_snapshot,
+                    &snapshot,
+                )
+                .map_err(runner_contradiction)?
+            }
+            ParsedExpectation::ParseErrorCount { expected, .. } => {
+                let actual_count = match &result.parse_errors {
+                    ObservationState::Captured(events) => {
+                        u64::try_from(events.len()).map_err(|_| {
+                            runner_contradiction(
+                                ValidatedFixtureInvariantCode::ComparisonSurfaceContradiction,
+                            )
+                        })?
+                    }
+                    ObservationState::NotRequested
+                    | ObservationState::NotApplicable { .. }
+                    | ObservationState::Incomplete { .. } => {
+                        return Err(runner_contradiction(
+                            ValidatedFixtureInvariantCode::RequestedSurfaceUnexpectedlyNotRequested,
+                        ));
+                    }
+                };
+                if actual_count == *expected {
+                    None
+                } else {
+                    Some(format!(
+                        "fixture: {}\nexpectation surface: parse-error-count\nexpected parse-error count: {expected}\nactual parse-error count: {actual_count}",
+                        fixture.id().as_str()
+                    ))
+                }
+            }
+        };
+        match mismatch {
+            None => {}
+            Some(diff) => {
                 return Ok(Some(FixtureExecutionOutcome::ExpectationMismatchV2 {
                     strategy: diagnostic_strategy_spelling(strategy),
-                    surface: expected.surface,
+                    surface,
                     diff,
                 }));
             }
-            Err(code) => return Err(runner_contradiction(code)),
         }
     }
     Ok(None)
@@ -1169,10 +1219,6 @@ fn read_expected_snapshots_v2(
     for (surface, expected) in [
         (ExpectationSurface::Tokens, fixture.expectations().tokens()),
         (
-            ExpectationSurface::ParseErrors,
-            fixture.expectations().parse_errors(),
-        ),
-        (
             ExpectationSurface::ImplementationDiagnostics,
             fixture.expectations().implementation_diagnostics(),
         ),
@@ -1194,6 +1240,23 @@ fn read_expected_snapshots_v2(
                 None,
                 file_access,
             )?);
+        }
+    }
+    if let ExpectedSurface::Compare(expectation) = fixture.expectations().parse_errors() {
+        match expectation {
+            ParseErrorExpectation::Exact(path) => parsed.push(read_one_expected(
+                fixture,
+                ExpectationSurface::ParseErrors,
+                path,
+                None,
+                file_access,
+            )?),
+            ParseErrorExpectation::Count(count) => {
+                parsed.push(ParsedExpectation::ParseErrorCount {
+                    surface: ExpectationSurface::ParseErrors,
+                    expected: *count,
+                })
+            }
         }
     }
     if let ExpectedSurface::Compare(transitions) = fixture.expectations().transitions() {
@@ -1274,7 +1337,7 @@ fn read_one_expected(
             ),
         ));
     }
-    Ok(ParsedExpectation {
+    Ok(ParsedExpectation::Snapshot {
         surface,
         path: path.clone(),
         transition_delivery,
@@ -1502,8 +1565,10 @@ fn invariant_failure_name(code: html::conformance::InvariantFailureCode) -> &'st
 }
 
 fn first_unsupported_expectation(expectations: &EnabledExpectations) -> Option<ExpectationSurface> {
+    if expectations.is_declared(ExpectationSurface::ParseErrors) {
+        return Some(ExpectationSurface::ParseErrors);
+    }
     [
-        (expectations.parse_errors(), ExpectationSurface::ParseErrors),
         (
             expectations.implementation_diagnostics(),
             ExpectationSurface::ImplementationDiagnostics,

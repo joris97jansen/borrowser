@@ -205,3 +205,16 @@ The supported full-document profile is pinned to WHATWG HTML commit
 notes live in `tests/wpt/provenance/ae12-supported-profile.provenance.txt`.
 Resource-limit recoveries are separate Borrowser hardening behavior, not
 legacy parity or standards-conformance evidence.
+
+### AE13e canonical external proof
+
+The AE13e external proof uses exact pinned WPT .dat records through the
+fixture-v3 adapter boundary. Native fixtures retain exact typed parse-error
+expectations; the external WPT records contribute parse-error counts only.
+Their diagnostic text is provenance and is not mapped to local error
+identities. The generated external bundle reuses the existing html5-dom-v3
+snapshot format and is verified against the vendored raw source and allowlist.
+
+The normal lane covers one explicit script-off full-document record and
+reports two default-scripting tests as unsupported. It is not complete
+html5lib, WPT, HTML, DOM, scripting, or event-loop conformance.

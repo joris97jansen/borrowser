@@ -1,0 +1,36 @@
+name: HTML5 Conformance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 0" # weekly correctness lane
+
+concurrency:
+  group: html5-conformance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  parser:
+    name: Extended parser conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      RUST_BACKTRACE: 1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        # With no explicit toolchain input, this action installs the complete
+        # repository-owned rust-toolchain.toml contract.
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run correctness-owned extended HTML parser lane
+        run: make test-html5-external-fixtures-extended

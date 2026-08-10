@@ -118,6 +118,35 @@ AE12 processing-instruction note:
 - PI target/data resource-limit cases are additive Borrowser hardening tests;
   they are not WPT-derived or counted as standards-conformant output.
 
+## AE13e external raw-record boundary
+
+The canonical AE13e external proof is separate from the legacy WPT manifest
+runner. Exact pinned upstream .dat files live under tests/wpt/external/raw/.
+The allowlist records the WPT revision, source path, source-file SHA-256,
+one-based record ordinal, and record SHA-256. The included 3-Clause BSD notice
+is required for the vendored WPT material.
+
+The external adapter emits fixture-v3 declarations and then canonical
+validation and execution consume them. It never runs the parser or compares a
+tree itself. WPT #errors and #new-errors are expected counts; upstream error
+strings remain provenance only.
+
+Eligibility is default-deny and capability-based. Full-document records with
+an explicit supported scripting flag may run. Missing script flags and fragments
+are requirements encoded by the `.dat` record and receive deterministic adapter
+classifications. Valid `.dat` tree expectations that cannot be represented
+without strengthening their semantics receive unsupported-expectation-
+representation; this is an adapter/expectation limitation, not a parser claim.
+Unsupported-parser-feature is reserved for a genuine production parser
+capability gap. `document.write`, DOM bindings, events, navigation,
+resources/networking, and rendering are
+browser-wrapper or platform requirements for future lanes; the raw `.dat`
+adapter does not infer them from literal HTML input. They are not silently
+skipped or counted as passes.
+
+Do not claim complete html5lib, WPT, HTML, DOM, scripting, or event-loop
+conformance from this subset.
+
 ## Notes
 
 - Manifest `status`/`reason` remains supported for compatibility, but policy for tokenizer/tree-construction slices is to keep manifest entries `active` and use `tokenizer/skips.*` or `tree_builder/skips.*` for temporary exclusions.

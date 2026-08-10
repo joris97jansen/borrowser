@@ -73,6 +73,8 @@ pub fn diff_lines(expected: &[String], actual: &[String]) -> String {
 pub mod token_snapshot;
 
 #[cfg(feature = "parser-fixtures")]
+pub mod external_wpt;
+#[cfg(feature = "parser-fixtures")]
 pub mod parser_fixture;
 
 #[cfg(feature = "parser-fixtures")]
