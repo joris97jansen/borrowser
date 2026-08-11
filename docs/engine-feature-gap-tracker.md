@@ -697,6 +697,22 @@ Current supported subset:
   See `docs/html5/parser-fixture-format-v3.md` and
   `docs/html5/ae13e-external-fixture-and-snapshot-workflow.md`.
 
+- AE14 HTML parser foundation closeout: the canonical Milestone AE inventory
+  audits AE1–AE13 plus independently scoped AE9a, AE9b, AE9c, the AE13b parent
+  and its AE13b1–AE13b5 slices, and AE13a/AE13c/AE13d/AE13e
+  slices against their actual GitHub acceptance criteria, contracts,
+  production paths, tests, snapshots, parity, invariants, and downstream
+  materialization evidence. The closeout preserves the six explicit
+  `TreeConstructionUnsupportedFeature` limitations rather than implementing
+  them, records the AE12 processing-instruction path, and documents the
+  parser/test-support/runtime/rendering ownership boundary. `make ci` and the
+  existing correctness-owned `make test-html5-external-fixtures-extended`
+  lane pass. Milestone AE is closeable with documented out-of-scope gaps as a
+  static HTML tokenizer/tree-construction/parser-created-DOM foundation, not
+  complete HTML, DOM, forms, SVG/MathML rendering, JavaScript, resources,
+  navigation, event-loop, html5lib, or WPT support. See
+  `docs/html5/ae14-html-parser-foundation-closeout.md`.
+
 Missing or incomplete:
 
 - full byte-stream encoding sniffing, charset detection, BOM switching, and
