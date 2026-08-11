@@ -20,6 +20,7 @@ Related code:
 - `crates/browser/src/page/style_phase.rs`
 - `crates/browser/src/page/restyle.rs`
 - `crates/browser/src/page/stylesheets.rs`
+- `crates/css/src/style_invalidation.rs`
 - `crates/browser/src/rendering/lifecycle.rs`
 - `crates/browser/src/rendering/work_plan.rs`
 - `crates/browser/src/rendering/tests/runtime_state.rs`
@@ -33,6 +34,7 @@ Related documents:
 - `docs/rendering/ac4-deterministic-render-work-plans.md`
 - `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
+- `docs/css/af1-selector-cascade-computed-style-architecture-contract.md`
 - `docs/css/s9-property-system-computed-style-runtime-contract.md`
 
 ## Retained Style Artifacts
@@ -113,12 +115,16 @@ with a full scope. Full document replacement also advances the retained
 identity domain so matching numeric DOM IDs cannot prove retained style
 continuity.
 
-Class, attribute, and inline style changes use the currently supported
-`AttributeSuffix` scope only when the runtime receives materialized dirty node
-IDs from the DOM mutation path. This is a conservative current-contract scope,
-not selector-aware dependency tracking. If the smaller scope is unavailable or
-proof fails, the runtime falls back to full style recompute and exposes the
-fallback in debug output.
+Class, attribute, and inline style changes may receive an opaque CSS-owned
+document-suffix invalidation plan when the CSS classifier can prove the current
+conservative case from materialized dirty node IDs. Browser/runtime retains and
+forwards that plan; it does not choose a suffix scope. If the plan cannot be
+executed because retained artifacts are missing or incompatible, CSS execution
+reports incremental-unavailable and the runtime performs a deterministic full
+recompute, exposing the actual fallback in debug output. When no previous
+cache exists, the incremental algorithm is not invoked; the result still
+records that CSS authorized incremental reuse and that runtime execution fell
+back to full computation.
 
 Text-only DOM mutation does not dirty style in the current supported selector
 and property model. It dirties layout and paint. Future text-sensitive selector
@@ -166,7 +172,7 @@ Browser/runtime owns:
 - retained style artifact lifetime;
 - retained style artifact key construction;
 - reuse/recompute/discard accounting;
-- conservative invalidation state;
+- pending CSS plan lifetime and generic scheduling state;
 - deterministic debug reporting.
 
 CSS owns:
@@ -177,7 +183,8 @@ CSS owns:
 - inheritance and defaulting;
 - computed values and property meaning;
 - style-tree construction;
-- any future selector/property/environment dependency facts.
+- style-input invalidation plans and any future selector/property/environment
+  dependency facts.
 
 Browser/runtime must not inspect selectors, infer selector dependencies,
 classify CSS properties by impact, or duplicate CSS property metadata.

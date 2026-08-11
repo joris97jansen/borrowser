@@ -285,10 +285,10 @@ Milestone U defines these trigger classes:
 
 The current parser patch path applies patch batches through `DomStore` before
 materializing the DOM. Patch batches are classified before materialization;
-empty batches are no-ops, structural mutations conservatively invalidate the
-whole style input set, and attribute mutations can produce an
-`AttributeSuffix` invalidation scope when patch identity maps to materialized
-node identity.
+empty batches are no-ops, and Browser submits typed mutation facts to the
+CSS-owned AF1 invalidation classifier. Structural mutations conservatively
+produce an opaque full plan, while materialized attribute identities can
+produce an opaque CSS-owned document-suffix plan.
 
 ### Mutation To Style Work Mapping
 
@@ -409,8 +409,9 @@ Likely extension points:
 - `DocumentStyleSet`: page-owned ordered author stylesheet collection,
   including inline style blocks and external sheets, with stable
   document-order slots whose states can be pending, loaded, failed, or aborted
-- `StyleInvalidationScope` or future `StyleInvalidationSet`: conservative
-  description of DOM/style mutations that must be restyled
+- `css::StyleInvalidationPlan`: opaque CSS-owned description of which retained
+  style results may remain valid; Browser stores and forwards it without
+  constructing or combining semantic scopes
 - `StyleResolver` or `StyleContext`: CSS-engine entry point for resolving a DOM
   plus stylesheet set with limits, diagnostics, and optional internal caches
 - `StyleGeneration`: browser-owned generation keys for DOM, stylesheets,

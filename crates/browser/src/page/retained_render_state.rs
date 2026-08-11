@@ -9,9 +9,12 @@ use crate::rendering::{
     RetainedPaintFrameAction, RetainedPaintFrameResult, RetainedRenderGenerationDebugSnapshot,
     RetainedRenderIdentityMap, RetainedRenderStateDebugSnapshot, RetainedStyleArtifactAction,
     RetainedStyleArtifactDebugSnapshot, RetainedStyleArtifactKey, RetainedStyleArtifactState,
-    RetainedStyleArtifactStats, StyleInvalidationState, dirty_request_for_entry_point,
+    RetainedStyleArtifactStats, dirty_request_for_entry_point,
 };
-use css::{ComputedDocumentStyleInvalidationImpact, ComputedStyleReuseStats};
+use css::{
+    ComputedDocumentStyleInvalidationImpact, ComputedStyleReuseStats, StyleChangeFacts,
+    StyleInvalidationPlan, classify_style_invalidation, merge_style_invalidation_plans,
+};
 use gfx::paint::PaintArtifact;
 use html::Node;
 use layout::{
@@ -19,7 +22,7 @@ use layout::{
     RetainedLayoutFrameResult, RetainedLayoutKeySeed,
 };
 
-use super::restyle::{RestyleTrigger, StyleInvalidationScope};
+use super::restyle::RestyleTrigger;
 use super::style_cache::{PageStyleCache, PageStyleGenerations, StyleRecalcKind};
 
 /// Retained rendering state owned by `PageState`.
@@ -35,7 +38,7 @@ pub(super) struct RetainedRenderState {
     pub(super) style_cache: Option<PageStyleCache>,
     pub(super) dirty_state: RenderDirtyState,
     pub(super) last_restyle_trigger: Option<RestyleTrigger>,
-    pub(super) pending_style_invalidation: Option<StyleInvalidationScope>,
+    pub(super) pending_style_invalidation: Option<StyleInvalidationPlan>,
     pub(super) last_style_recalc: Option<StyleRecalcKind>,
     pub(super) last_style_reuse: Option<ComputedStyleReuseStats>,
     pub(super) style_artifact_stats: RetainedStyleArtifactStats,
@@ -64,7 +67,10 @@ impl RetainedRenderState {
             style_cache: None,
             dirty_state: RenderDirtyState::document_initial(),
             last_restyle_trigger: None,
-            pending_style_invalidation: Some(StyleInvalidationScope::Full),
+            pending_style_invalidation: Some(
+                classify_style_invalidation(StyleChangeFacts::DocumentReplaced)
+                    .expect("document replacement must invalidate style"),
+            ),
             last_style_recalc: None,
             last_style_reuse: None,
             style_artifact_stats: RetainedStyleArtifactStats::default(),
@@ -86,7 +92,10 @@ impl RetainedRenderState {
         self.style_cache = None;
         self.dirty_state = RenderDirtyState::document_initial();
         self.last_restyle_trigger = None;
-        self.pending_style_invalidation = Some(StyleInvalidationScope::Full);
+        self.pending_style_invalidation = Some(
+            classify_style_invalidation(StyleChangeFacts::DocumentReplaced)
+                .expect("document replacement must invalidate style"),
+        );
         self.last_style_recalc = None;
         self.last_style_reuse = None;
         self.style_artifact_stats = RetainedStyleArtifactStats::default();
@@ -115,7 +124,7 @@ impl RetainedRenderState {
 
     pub(super) fn take_style_invalidation_for_recompute(
         &mut self,
-    ) -> Option<StyleInvalidationScope> {
+    ) -> Option<StyleInvalidationPlan> {
         let pending = self.pending_style_invalidation.take();
         if pending.is_some() {
             self.advance_render_epoch();
@@ -399,6 +408,11 @@ impl RetainedRenderState {
         self.dirty_state.clear();
     }
 
+    #[cfg(test)]
+    pub(super) fn clear_style_cache_for_tests(&mut self) {
+        self.style_cache = None;
+    }
+
     pub(super) fn mark_dirty_for_entry_point(&mut self, entry_point: RenderInvalidationEntryPoint) {
         if matches!(entry_point, RenderInvalidationEntryPoint::DocumentReplaced) {
             self.dirty_state.clear();
@@ -471,13 +485,10 @@ impl RetainedRenderState {
             )
         };
 
-        let style_invalidation = match self.pending_style_invalidation {
-            Some(StyleInvalidationScope::Full) => StyleInvalidationState::Full,
-            Some(StyleInvalidationScope::AttributeSuffix { .. }) => {
-                StyleInvalidationState::AttributeSuffix
-            }
-            None => StyleInvalidationState::None,
-        };
+        let style_invalidation = self
+            .pending_style_invalidation
+            .as_ref()
+            .map(StyleInvalidationPlan::to_debug_snapshot);
 
         RenderPipelineDebugSnapshot {
             has_dom,
@@ -564,13 +575,13 @@ impl RetainedRenderState {
         self.identities.reconcile_live_dom(dom);
     }
 
-    pub(super) fn mark_style_inputs_changed(&mut self, scope: StyleInvalidationScope) {
+    pub(super) fn mark_style_inputs_changed(&mut self, change: StyleChangeFacts) {
         self.generations.style_inputs = self
             .generations
             .style_inputs
             .checked_add(1)
             .expect("page style-input generation exhausted");
-        self.invalidate_style(scope);
+        self.mark_style_change(change);
     }
 
     pub(super) fn mark_stylesheets_changed(&mut self) {
@@ -580,21 +591,23 @@ impl RetainedRenderState {
             .checked_add(1)
             .expect("page stylesheet generation exhausted");
         self.advance_render_epoch();
-        self.invalidate_style(StyleInvalidationScope::Full);
+        self.mark_style_change(StyleChangeFacts::StylesheetSetChanged);
         self.mark_dirty_for_entry_point(RenderInvalidationEntryPoint::StylesheetSetChanged);
     }
 
-    pub(super) fn invalidate_style(&mut self, scope: StyleInvalidationScope) {
-        let merged = match self.pending_style_invalidation.take() {
-            Some(existing) => existing.merge(scope),
-            None => scope,
-        };
+    pub(super) fn mark_style_change(&mut self, change: StyleChangeFacts) {
+        let incoming = classify_style_invalidation(change);
+        let merged =
+            merge_style_invalidation_plans(self.pending_style_invalidation.take(), incoming);
 
-        if matches!(merged, StyleInvalidationScope::Full) {
+        if merged
+            .as_ref()
+            .is_some_and(StyleInvalidationPlan::invalidates_all_cached_style_artifacts)
+        {
             self.record_style_artifact_discard_for_full_invalidation();
             self.style_cache = None;
         }
-        self.pending_style_invalidation = Some(merged);
+        self.pending_style_invalidation = merged;
     }
 
     fn style_artifact_debug_snapshot(

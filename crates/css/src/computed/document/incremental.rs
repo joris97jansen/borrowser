@@ -1,6 +1,7 @@
 //! Incremental suffix recomputation for document-level computed styles.
 
 use crate::{
+    StyleInvalidationPlan,
     cascade::{
         ResolvedDocumentStyle, StyleResolutionLimits, StylesheetCascadeInput,
         try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_limits,
@@ -23,6 +24,66 @@ pub struct IncrementalComputedDocumentStyle {
     pub reused_prefix_len: usize,
     pub recomputed_len: usize,
     pub reuse_stats: ComputedStyleReuseStats,
+}
+
+/// Result of asking CSS to execute an opaque style invalidation plan against
+/// the retained artifacts that the caller made available.
+///
+/// This is an execution result, not a copy of the semantic invalidation plan.
+/// A suffix plan can authorize incremental reuse while still producing
+/// [`Self::IncrementalUnavailable`] when retained artifacts are missing or
+/// incremental validation cannot materialize a safe result.
+#[derive(Clone, Debug, PartialEq)]
+pub enum StylePlanExecution {
+    /// The semantic plan requires a full document computation.
+    FullRequired,
+    /// CSS permitted the incremental path, but no incremental result could be
+    /// produced from the retained artifacts supplied by the caller.
+    IncrementalUnavailable,
+    /// The permitted incremental path produced a computed document style.
+    IncrementalComputed(IncrementalComputedDocumentStyle),
+}
+
+impl StylePlanExecution {
+    /// Returns whether the semantic plan authorized an incremental fallback.
+    /// This does not claim that the incremental algorithm was invoked.
+    pub fn is_incremental_eligible(&self) -> bool {
+        matches!(
+            self,
+            Self::IncrementalUnavailable | Self::IncrementalComputed(_)
+        )
+    }
+}
+
+pub fn try_compute_document_styles_for_invalidation_plan_with_limits(
+    plan: &StyleInvalidationPlan,
+    root: &Node,
+    sheets: &[StylesheetCascadeInput<'_>],
+    previous: Option<(&ResolvedDocumentStyle, &ComputedDocumentStyle)>,
+    limits: &StyleResolutionLimits,
+) -> Result<StylePlanExecution, ComputedStyleResolutionError> {
+    let Some(dirty_node_ids) = plan.incremental_node_ids() else {
+        return Ok(StylePlanExecution::FullRequired);
+    };
+
+    let Some((previous_resolved, previous_computed)) = previous else {
+        return Ok(StylePlanExecution::IncrementalUnavailable);
+    };
+
+    let Some(incremental) =
+        compute_document_styles_incremental_suffix_from_cascade_inputs_with_limits(
+            root,
+            sheets,
+            previous_resolved,
+            previous_computed,
+            dirty_node_ids,
+            limits,
+        )?
+    else {
+        return Ok(StylePlanExecution::IncrementalUnavailable);
+    };
+
+    Ok(StylePlanExecution::IncrementalComputed(incremental))
 }
 
 pub fn compute_document_styles_incremental_suffix_with_limits(

@@ -1,23 +1,25 @@
 use super::{
     ComputedStyle, ComputedStyleBuildError, ComputedStyleBuilder, ComputedStyleResolutionError,
     ComputedStyleReuseStats, ComputedValue, ComputedValueDiscriminant,
-    ComputedValueNormalizationErrorKind, build_style_tree, build_style_tree_from_computed_styles,
-    build_style_tree_with_stylesheets, compute_document_styles,
-    compute_document_styles_from_resolved_styles,
+    ComputedValueNormalizationErrorKind, StylePlanExecution, build_style_tree,
+    build_style_tree_from_computed_styles, build_style_tree_with_stylesheets,
+    compute_document_styles, compute_document_styles_from_resolved_styles,
     compute_document_styles_from_resolved_styles_with_reuse_stats,
     compute_document_styles_with_limits, compute_style, compute_style_from_resolved_style,
     normalize_specified_value,
 };
 use crate::{
     InitialStyleValue, ParseOptions, PropertyComputedValueKind, PropertyId, Rule,
-    SpecifiedPropertyValue, SpecifiedToComputedConversionRule, parse_specified_value,
-    parse_stylesheet_with_options, property_registry, property_value_boundary,
-    resolve_cascade_style_from_rule_inputs, resolve_document_styles, resolve_initial_style,
+    SpecifiedPropertyValue, SpecifiedToComputedConversionRule, StylesheetCascadeInput,
+    parse_specified_value, parse_stylesheet_with_options, property_registry,
+    property_value_boundary, resolve_cascade_style_from_rule_inputs, resolve_document_styles,
+    resolve_initial_style, try_compute_document_styles_for_invalidation_plan_with_limits,
     values::{
         BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Overflow, Percentage,
         Position, TextDecorationLine, ZIndex,
     },
 };
+use crate::{StyleChangeFacts, classify_style_invalidation};
 use html::{Node, internal::Id};
 
 use super::value::computed_value_discriminant;

@@ -53,7 +53,6 @@ pub use lifecycle::{
     RetainedPaintFrameAction, RetainedPaintFrameResult, RetainedRenderGenerationDebugSnapshot,
     RetainedRenderStateDebugSnapshot, RetainedStyleArtifactAction,
     RetainedStyleArtifactDebugSnapshot, RetainedStyleArtifactKey, RetainedStyleArtifactStats,
-    StyleInvalidationState,
 };
 pub use types::{
     DirtyEntry, DirtyPhase, DirtyPropagationResult, DirtyReason, DirtyScope, DirtyScopeDebugLabel,

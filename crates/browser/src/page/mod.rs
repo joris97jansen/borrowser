@@ -25,7 +25,6 @@ use html::{
 };
 use layout::{RetainedLayoutArtifact, RetainedLayoutFrameResult, RetainedLayoutKeySeed};
 
-use restyle::StyleInvalidationScope;
 use retained_render_state::RetainedRenderState;
 
 pub struct PageState {
@@ -91,24 +90,21 @@ impl PageState {
 
         match trigger {
             RestyleTrigger::TextMutated => {
-                // Text node content affects layout and paint, but not selector
-                // matching or computed values in the currently supported CSS
-                // model. <style> text changes are handled by stylesheet
-                // reconciliation, which separately invalidates style. Future
-                // text-sensitive selector or generated-content support must
-                // widen this contract if text content becomes style-relevant.
+                self.rendering
+                    .mark_style_change(css::StyleChangeFacts::TextChanged);
             }
-            RestyleTrigger::DocumentReplaced | RestyleTrigger::TreeMutated => self
+            RestyleTrigger::DocumentReplaced => self
                 .rendering
-                .mark_style_inputs_changed(StyleInvalidationScope::Full),
+                .mark_style_inputs_changed(css::StyleChangeFacts::DocumentReplaced),
+            RestyleTrigger::TreeMutated => self
+                .rendering
+                .mark_style_inputs_changed(css::StyleChangeFacts::TreeStructureChanged),
             RestyleTrigger::AttributesChanged => {
-                let node_ids = hint.attribute_dirty_nodes;
-                let scope = if node_ids.is_empty() {
-                    StyleInvalidationScope::Full
-                } else {
-                    StyleInvalidationScope::AttributeSuffix { node_ids }
-                };
-                self.rendering.mark_style_inputs_changed(scope);
+                self.rendering.mark_style_inputs_changed(
+                    css::StyleChangeFacts::AttributesChanged {
+                        node_ids: hint.attribute_dirty_nodes,
+                    },
+                );
             }
         }
 

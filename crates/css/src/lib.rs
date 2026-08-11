@@ -19,6 +19,7 @@ pub mod model;
 pub mod properties;
 pub mod selectors;
 pub mod specified;
+pub mod style_invalidation;
 pub mod syntax;
 pub mod values;
 
@@ -64,13 +65,14 @@ pub use computed::{
     ComputedStyleInvalidationImpact, ComputedStyleResolutionError, ComputedStyleReuseStats,
     ComputedValue, ComputedValueDiscriminant, ComputedValueNormalizationError,
     ComputedValueNormalizationErrorKind, IncrementalComputedDocumentStyle, StylePhaseOutput,
-    build_style_tree_from_computed_styles, build_style_tree_with_stylesheets,
+    StylePlanExecution, build_style_tree_from_computed_styles, build_style_tree_with_stylesheets,
     compute_document_styles, compute_document_styles_from_resolved_styles,
     compute_document_styles_from_resolved_styles_with_reuse_stats,
     compute_document_styles_incremental_suffix_from_cascade_inputs_with_limits,
     compute_document_styles_incremental_suffix_with_limits, compute_document_styles_with_limits,
     compute_style_from_resolved_style, computed_value_debug_snapshot, normalize_specified_value,
     property_invalidation_classification_debug_snapshot,
+    try_compute_document_styles_for_invalidation_plan_with_limits,
 };
 pub use computed::{ComputedStyle, StyledNode, build_style_tree, compute_style};
 pub use model::{
@@ -118,6 +120,10 @@ pub use specified::{
     SpecifiedZIndex, SpecifiedZIndexValue, expand_shorthand_declaration,
     parse_specified_declaration_value, parse_specified_declaration_value_with_limits,
     parse_specified_value, parse_specified_value_with_limits, shorthand_expansion_debug_snapshot,
+};
+pub use style_invalidation::{
+    StyleChangeFacts, StyleInvalidationPlan, classify_style_invalidation,
+    merge_style_invalidation_plans,
 };
 
 // Explicit syntax-layer surface for parser/tokenizer work and syntax tests.

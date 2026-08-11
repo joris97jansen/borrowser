@@ -26,6 +26,9 @@ fn attribute_mutation_without_existing_style_cache_falls_back_to_full_recompute(
         patches: initial_patch_document(".hot { color: red; } p { color: black; }", Some("p")),
     });
 
+    assert_eq!(current_element_color_by_id(&mut tab, Id(7)), (0, 0, 0, 255));
+    tab.page.clear_style_cache_for_tests();
+
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 28,
@@ -46,6 +49,14 @@ fn attribute_mutation_without_existing_style_cache_falls_back_to_full_recompute(
         tab.page.last_style_recalc(),
         Some(StyleRecalcKind::Full { elements: 5 }),
         "partial suffix reuse requires a validated previous style cache"
+    );
+    assert_eq!(
+        tab.page
+            .retained_render_state_debug_snapshot()
+            .style_artifacts
+            .last_action,
+        RetainedStyleArtifactAction::FallbackFullRecompute,
+        "CSS suffix eligibility must remain distinguishable from the runtime full fallback"
     );
 }
 

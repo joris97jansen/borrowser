@@ -33,11 +33,12 @@ pub use builder::ComputedStyleBuilder;
 pub use document::{
     ComputedDocumentStyle, ComputedDocumentStyleWithStats, ComputedElementStyle,
     ComputedStyleResolutionError, ComputedStyleReuseStats, IncrementalComputedDocumentStyle,
-    compute_document_styles, compute_document_styles_from_resolved_styles,
+    StylePlanExecution, compute_document_styles, compute_document_styles_from_resolved_styles,
     compute_document_styles_from_resolved_styles_with_reuse_stats,
     compute_document_styles_incremental_suffix_from_cascade_inputs_with_limits,
     compute_document_styles_incremental_suffix_with_limits, compute_document_styles_with_limits,
     compute_style_from_resolved_style,
+    try_compute_document_styles_for_invalidation_plan_with_limits,
 };
 pub use format::computed_value_debug_snapshot;
 pub use impact::{

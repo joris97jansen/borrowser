@@ -113,6 +113,21 @@ Architecture and foundation status:
   classification, declaration parsing, unsupported behavior, and future
   extension points. AD10 does not add or imply broad CSS property coverage.
 
+Milestone AF foundation status:
+
+- AF1 defines the CSS-owned selector, cascade, computed-style, and style-input
+  invalidation architecture contract; see
+  `docs/css/af1-selector-cascade-computed-style-architecture-contract.md`.
+  The current supported path has deterministic selector/cascade/computed-style
+  ownership and an opaque CSS-owned conservative suffix/full invalidation plan
+  consumed by Browser/runtime. AF1 does not claim full selector coverage,
+  media-query evaluation, custom properties, animations, transitions, CSSOM,
+  `getComputedStyle()`, or JavaScript-facing style mutation.
+- AF1 deliberately leaves full selector dependency invalidation, dynamic
+  pseudo-classes, pseudo-elements, `:has()`, and fine-grained subtree
+  invalidation for later CSS-owned AF work. Browser/runtime must consume the
+  future richer plan without learning selector semantics.
+
 Major missing families remain:
 
 - borders:
