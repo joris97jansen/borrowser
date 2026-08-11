@@ -12,6 +12,18 @@ use layout::{
 
 use super::support::*;
 
+fn style_plan_debug(change: css::StyleChangeFacts) -> Option<String> {
+    css::classify_style_invalidation(change).map(|plan| plan.to_debug_snapshot())
+}
+
+fn full_style_plan_debug() -> Option<String> {
+    style_plan_debug(css::StyleChangeFacts::DocumentReplaced)
+}
+
+fn suffix_style_plan_debug(node_ids: Vec<Id>) -> Option<String> {
+    style_plan_debug(css::StyleChangeFacts::AttributesChanged { node_ids })
+}
+
 #[test]
 fn retained_render_state_initializes_with_epoch_zero() {
     let page = PageState::new();
@@ -47,7 +59,7 @@ fn retained_render_state_initializes_with_epoch_zero() {
             ),
         ]
     );
-    assert_eq!(snapshot.style_invalidation, StyleInvalidationState::Full);
+    assert_eq!(snapshot.style_invalidation, full_style_plan_debug());
     assert_eq!(
         snapshot.style_artifacts,
         RetainedStyleArtifactDebugSnapshot {
@@ -106,7 +118,7 @@ fn retained_render_state_debug_snapshot_is_deterministic() {
             "  style-dirty: true\n",
             "  layout-dirty: true\n",
             "  paint-dirty: true\n",
-            "  style-invalidation: full\n",
+            "  style-invalidation: scope: full-document\n",
             "generations:\n",
             "  dom-generation: 0\n",
             "  style-input-generation: 0\n",
@@ -188,7 +200,7 @@ fn retained_render_identities_allocate_deterministically_for_initial_document() 
             "  style-dirty: true\n",
             "  layout-dirty: true\n",
             "  paint-dirty: true\n",
-            "  style-invalidation: full\n",
+            "  style-invalidation: scope: full-document\n",
             "generations:\n",
             "  dom-generation: 1\n",
             "  style-input-generation: 1\n",
@@ -293,7 +305,7 @@ fn debug_snapshot_reports_retained_style_artifacts_and_ephemeral_downstream_tree
             style_dirty: false,
             layout_dirty: true,
             paint_dirty: true,
-            style_invalidation: StyleInvalidationState::None,
+            style_invalidation: None,
             generations: RetainedRenderGenerationDebugSnapshot {
                 dom_generation: 1,
                 style_input_generation: 1,
@@ -1286,7 +1298,7 @@ fn retained_render_epoch_advances_when_failed_recompute_consumes_pending_invalid
         "<!doctype html><html><head><style>div { width: 1e39px; }</style></head><body><div>bad</div></body></html>",
     );
     let before = page.retained_render_state_debug_snapshot();
-    assert_eq!(before.style_invalidation, StyleInvalidationState::Full);
+    assert_eq!(before.style_invalidation, full_style_plan_debug());
 
     let error = match page.build_style_phase_output() {
         Ok(_) => panic!("style recomputation must fail on out-of-range computed width"),
@@ -1303,7 +1315,7 @@ fn retained_render_epoch_advances_when_failed_recompute_consumes_pending_invalid
         "consuming retained style invalidation must advance the render epoch even when recomputation fails"
     );
     assert!(after.style_dirty);
-    assert_eq!(after.style_invalidation, StyleInvalidationState::None);
+    assert_eq!(after.style_invalidation, None);
 }
 
 #[test]
@@ -1367,7 +1379,7 @@ fn attribute_mutation_keeps_style_cache_but_marks_it_stale_until_restored() {
     assert_eq!(stale.computed_styles, RenderArtifactState::RetainedStale);
     assert_eq!(
         stale.style_invalidation,
-        StyleInvalidationState::AttributeSuffix
+        suffix_style_plan_debug(vec![p_id])
     );
     assert_eq!(
         stale.style_artifacts.state,
@@ -1415,7 +1427,7 @@ fn attribute_mutation_keeps_style_cache_but_marks_it_stale_until_restored() {
         refreshed.computed_styles,
         RenderArtifactState::RetainedFresh
     );
-    assert_eq!(refreshed.style_invalidation, StyleInvalidationState::None);
+    assert_eq!(refreshed.style_invalidation, None);
     assert!(!refreshed.style_dirty);
     assert_eq!(
         refreshed.style_artifacts.last_action,
@@ -1423,6 +1435,56 @@ fn attribute_mutation_keeps_style_cache_but_marks_it_stale_until_restored() {
     );
     assert_eq!(refreshed.style_artifacts.stats.recompute_count, 2);
     assert_eq!(refreshed.style_artifacts.stats.discard_count, 0);
+}
+
+#[test]
+fn text_mutation_does_not_clear_pending_css_style_invalidation_plan() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><head><style>p { color: black; }</style></head><body><p>Hello</p></body></html>",
+    );
+    let initial = style_output_for_test(&mut page);
+    drop(initial);
+
+    let p_id = set_first_element_attr(
+        page.dom
+            .as_deref_mut()
+            .expect("page DOM should exist for mutation"),
+        "p",
+        "class",
+        Some("hot".to_string()),
+    );
+    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(vec![p_id]));
+    page.mark_dom_changed_for_tests(RestyleHint::text_mutated());
+
+    assert_eq!(
+        page.render_pipeline_debug_snapshot().style_invalidation,
+        suffix_style_plan_debug(vec![p_id])
+    );
+}
+
+#[test]
+fn full_css_style_invalidation_dominates_pending_suffix_plan() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><head><style>p { color: black; }</style></head><body><p>Hello</p></body></html>",
+    );
+    let initial = style_output_for_test(&mut page);
+    drop(initial);
+
+    let p_id = set_first_element_attr(
+        page.dom
+            .as_deref_mut()
+            .expect("page DOM should exist for mutation"),
+        "p",
+        "class",
+        Some("hot".to_string()),
+    );
+    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(vec![p_id]));
+    page.mark_dom_changed_for_tests(RestyleHint::tree_mutated());
+
+    assert_eq!(
+        page.render_pipeline_debug_snapshot().style_invalidation,
+        full_style_plan_debug()
+    );
 }
 
 #[test]
@@ -1447,7 +1509,7 @@ fn inline_style_attribute_change_uses_supported_attribute_suffix_scope() {
     let stale = page.render_pipeline_debug_snapshot();
     assert_eq!(
         stale.style_invalidation,
-        StyleInvalidationState::AttributeSuffix
+        suffix_style_plan_debug(vec![p_id])
     );
     assert_eq!(
         stale.style_artifacts.state,
@@ -1488,7 +1550,7 @@ fn attribute_change_without_dirty_nodes_falls_back_to_full_style_invalidation() 
     let invalidated = page.render_pipeline_debug_snapshot();
     assert_eq!(invalidated.resolved_styles, RenderArtifactState::Absent);
     assert_eq!(invalidated.computed_styles, RenderArtifactState::Absent);
-    assert_eq!(invalidated.style_invalidation, StyleInvalidationState::Full);
+    assert_eq!(invalidated.style_invalidation, full_style_plan_debug());
     assert_eq!(invalidated.style_artifacts.key, None);
     assert_eq!(invalidated.style_artifacts.stats.discard_count, 1);
     assert_eq!(
@@ -1522,7 +1584,7 @@ fn stylesheet_update_discards_retained_style_artifacts() {
     let discarded = page.render_pipeline_debug_snapshot();
     assert_eq!(discarded.resolved_styles, RenderArtifactState::Absent);
     assert_eq!(discarded.computed_styles, RenderArtifactState::Absent);
-    assert_eq!(discarded.style_invalidation, StyleInvalidationState::Full);
+    assert_eq!(discarded.style_invalidation, full_style_plan_debug());
     assert_eq!(discarded.style_artifacts.key, None);
     assert_eq!(discarded.style_artifacts.stats.discard_count, 1);
     assert_eq!(
@@ -1566,7 +1628,7 @@ fn text_mutation_dirties_layout_without_invalidating_computed_style() {
     let snapshot = page.render_pipeline_debug_snapshot();
     assert_eq!(snapshot.resolved_styles, RenderArtifactState::RetainedFresh);
     assert_eq!(snapshot.computed_styles, RenderArtifactState::RetainedFresh);
-    assert_eq!(snapshot.style_invalidation, StyleInvalidationState::None);
+    assert_eq!(snapshot.style_invalidation, None);
     assert!(!snapshot.style_dirty);
     assert!(snapshot.layout_dirty);
     assert!(snapshot.paint_dirty);
@@ -1632,7 +1694,7 @@ fn navigation_reset_clears_page_owned_retained_render_state() {
             style_dirty: true,
             layout_dirty: true,
             paint_dirty: true,
-            style_invalidation: StyleInvalidationState::Full,
+            style_invalidation: full_style_plan_debug(),
             generations: RetainedRenderGenerationDebugSnapshot::default(),
             style_artifacts: RetainedStyleArtifactDebugSnapshot {
                 key: None,

@@ -286,6 +286,15 @@ Downstream systems consume `ComputedStyle` or `StyledNode`. They do not parse
 CSS text, inspect cascade winners, duplicate property metadata, or recover from
 invalid supported declarations after computed-style assembly.
 
+Milestone AF1 further formalizes the selector/cascade/computed-style boundary
+and the retained-style invalidation handoff in
+`docs/css/af1-selector-cascade-computed-style-architecture-contract.md`.
+Browser/runtime supplies DOM and stylesheet change facts and retains the
+opaque CSS-owned invalidation plan; CSS owns selector-semantic safety,
+canonicalization, merging, and plan-aware style execution. The runtime records
+actual reuse, incremental execution, or full fallback without defining a
+second selector-aware invalidation enum.
+
 ---
 
 # 🖌️ Style Tree
@@ -534,7 +543,7 @@ struct RetainedRenderState {
     style_cache: Option<PageStyleCache>, // owned ResolvedDocumentStyle + ComputedDocumentStyle
     style_dirty: bool,
     layout_dirty: bool,
-    pending_style_invalidation: Option<StyleInvalidationScope>,
+    pending_style_invalidation: Option<css::StyleInvalidationPlan>,
 }
 ```
 

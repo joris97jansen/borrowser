@@ -51,6 +51,7 @@ Related documents:
 - `docs/rendering/ab8-stacking-compositing-invalidation-closeout.md`
 - `docs/css/s9-property-system-computed-style-runtime-contract.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
+- `docs/css/af1-selector-cascade-computed-style-architecture-contract.md`
 - `docs/engine-feature-gap-tracker.md`
 
 ## Purpose And Scope
@@ -333,7 +334,7 @@ and crate-local rather than a broad wall-clock or global allocator shortcut.
 | partial raster invalidation | not implemented | requires backend-aware raster invalidation contract |
 | retained backend draw commands | not implemented | requires paint/backend command ownership boundary |
 | full display-list or retained scene architecture | not implemented | may extend paint-owned semantic artifacts deliberately |
-| full selector dependency invalidation | not implemented | CSS must own dependency facts before runtime can consume them |
+| full selector dependency invalidation | not implemented; AF1 supplies the minimal opaque CSS-owned plan boundary | a later AF issue should add richer CSS dependency facts without selector-specific Browser changes |
 | broad browser-owned CSS property-impact table | deliberately excluded | CSS-owned impact classification only |
 | CSS containment | not implemented | requires CSS/layout containment contracts |
 | true minimal/subtree relayout execution | not implemented | Layout needs dependency graphs and executable subtree relayout boundaries |

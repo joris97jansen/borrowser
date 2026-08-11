@@ -49,13 +49,6 @@ pub enum RenderArtifactState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StyleInvalidationState {
-    None,
-    Full,
-    AttributeSuffix,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RetainedStyleArtifactKey {
     pub identity_domain: RetainedRenderIdentityDomain,
     pub style_input_generation: u64,
@@ -210,7 +203,7 @@ pub struct RenderPipelineDebugSnapshot {
     pub style_dirty: bool,
     pub layout_dirty: bool,
     pub paint_dirty: bool,
-    pub style_invalidation: StyleInvalidationState,
+    pub style_invalidation: Option<String>,
     pub generations: RetainedRenderGenerationDebugSnapshot,
     pub style_artifacts: RetainedStyleArtifactDebugSnapshot,
     pub layout_artifacts: RetainedLayoutArtifactDebugSnapshot,
@@ -252,7 +245,7 @@ pub struct RetainedRenderStateDebugSnapshot {
     pub style_dirty: bool,
     pub layout_dirty: bool,
     pub paint_dirty: bool,
-    pub style_invalidation: StyleInvalidationState,
+    pub style_invalidation: Option<String>,
     pub generations: RetainedRenderGenerationDebugSnapshot,
     pub style_artifacts: RetainedStyleArtifactDebugSnapshot,
     pub layout_artifacts: RetainedLayoutArtifactDebugSnapshot,
@@ -315,7 +308,7 @@ impl RetainedRenderStateDebugSnapshot {
         writeln!(
             &mut out,
             "  style-invalidation: {}",
-            style_invalidation_state_debug_label(self.style_invalidation)
+            style_invalidation_debug_label(self.style_invalidation.as_deref())
         )
         .expect("write retained render state snapshot");
         append_generation_debug_snapshot(&mut out, self.generations);
@@ -593,12 +586,8 @@ fn render_artifact_state_debug_label(state: RenderArtifactState) -> &'static str
     }
 }
 
-fn style_invalidation_state_debug_label(state: StyleInvalidationState) -> &'static str {
-    match state {
-        StyleInvalidationState::None => "none",
-        StyleInvalidationState::Full => "full",
-        StyleInvalidationState::AttributeSuffix => "attribute-suffix",
-    }
+fn style_invalidation_debug_label(snapshot: Option<&str>) -> &str {
+    snapshot.unwrap_or("none")
 }
 
 fn retained_style_artifact_action_debug_label(action: RetainedStyleArtifactAction) -> &'static str {

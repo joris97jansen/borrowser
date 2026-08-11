@@ -5,6 +5,24 @@ use crate::{
     StyleResolutionLimits,
 };
 
+fn materialize_element_ids(mut dom: Node) -> Node {
+    fn assign(node: &mut Node, next_id: &mut u32) {
+        if let Node::Element { .. } = node {
+            node.set_id(html::internal::Id(*next_id));
+            *next_id += 1;
+        }
+        if let Some(children) = node.children_mut() {
+            for child in children {
+                assign(child, next_id);
+            }
+        }
+    }
+
+    let mut next_id = 1;
+    assign(&mut dom, &mut next_id);
+    dom
+}
+
 #[test]
 fn compute_style_from_resolved_style_materializes_cascade_fallbacks() {
     let stylesheets = vec![stylesheet(concat!(
@@ -73,6 +91,222 @@ fn compute_document_styles_integrates_cascade_inheritance_defaults_and_computati
     assert_eq!(span.background_color(), (0, 255, 0, 255));
     assert_eq!(span.box_metrics().padding_left, 3.0);
     assert_eq!(span.display(), Display::InlineBlock);
+}
+
+#[test]
+fn plan_execution_reports_full_required_without_incremental_state() {
+    let dom = element("div", Vec::new(), Vec::new());
+    let plan = classify_style_invalidation(StyleChangeFacts::TreeStructureChanged)
+        .expect("tree changes require style invalidation");
+
+    let execution = try_compute_document_styles_for_invalidation_plan_with_limits(
+        &plan,
+        &dom,
+        &[],
+        None,
+        &StyleResolutionLimits::default(),
+    )
+    .expect("full execution result");
+
+    assert_eq!(execution, StylePlanExecution::FullRequired);
+    assert!(!execution.is_incremental_eligible());
+}
+
+#[test]
+fn plan_execution_reports_incremental_unavailable_without_retained_artifacts() {
+    let dom = element("div", Vec::new(), Vec::new());
+    let plan = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
+        node_ids: vec![html::internal::Id(1)],
+    })
+    .expect("attribute changes require style invalidation");
+
+    let execution = try_compute_document_styles_for_invalidation_plan_with_limits(
+        &plan,
+        &dom,
+        &[],
+        None,
+        &StyleResolutionLimits::default(),
+    )
+    .expect("unavailable incremental result");
+
+    assert_eq!(execution, StylePlanExecution::IncrementalUnavailable);
+    assert!(execution.is_incremental_eligible());
+}
+
+#[test]
+fn plan_execution_reports_incremental_computed_for_a_valid_suffix() {
+    let initial_dom = materialize_element_ids(element(
+        "div",
+        Vec::new(),
+        vec![element("span", Vec::new(), Vec::new())],
+    ));
+    let changed_dom = materialize_element_ids(element(
+        "div",
+        vec![("class", Some("hot"))],
+        vec![element("span", Vec::new(), Vec::new())],
+    ));
+    let stylesheets = vec![stylesheet(".hot { color: red; }")];
+    let inputs = [StylesheetCascadeInput::author(&stylesheets[0])];
+    let resolved =
+        resolve_document_styles(&initial_dom, &stylesheets).expect("initial resolved styles");
+    let initial_computed =
+        compute_document_styles_from_resolved_styles_with_reuse_stats(&initial_dom, &resolved)
+            .expect("initial computed styles");
+    let plan = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
+        node_ids: vec![html::internal::Id(1)],
+    })
+    .expect("attribute changes require style invalidation");
+
+    let execution = try_compute_document_styles_for_invalidation_plan_with_limits(
+        &plan,
+        &changed_dom,
+        &inputs,
+        Some((&resolved, &initial_computed.computed)),
+        &StyleResolutionLimits::default(),
+    )
+    .expect("successful incremental result");
+
+    let StylePlanExecution::IncrementalComputed(incremental) = execution else {
+        panic!("expected a computed incremental result");
+    };
+    assert!(incremental.recomputed_len > 0);
+    assert_eq!(
+        incremental.computed.entries()[0].style().color(),
+        (255, 0, 0, 255)
+    );
+    assert_eq!(
+        incremental.computed.entries()[1].style().color(),
+        (255, 0, 0, 255)
+    );
+}
+
+#[test]
+fn plan_aware_suffix_recomputes_following_sibling_selector_effects() {
+    let initial_dom = materialize_element_ids(element(
+        "section",
+        Vec::new(),
+        vec![
+            element("div", Vec::new(), Vec::new()),
+            element("p", Vec::new(), Vec::new()),
+        ],
+    ));
+    let changed_dom = materialize_element_ids(element(
+        "section",
+        Vec::new(),
+        vec![
+            element("div", vec![("class", Some("on"))], Vec::new()),
+            element("p", Vec::new(), Vec::new()),
+        ],
+    ));
+    let stylesheets = vec![stylesheet(".on + p { color: red; }")];
+    let inputs = [StylesheetCascadeInput::author(&stylesheets[0])];
+    let resolved =
+        resolve_document_styles(&initial_dom, &stylesheets).expect("initial resolved styles");
+    let initial_computed =
+        compute_document_styles_from_resolved_styles_with_reuse_stats(&initial_dom, &resolved)
+            .expect("initial computed styles");
+    let plan = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
+        node_ids: vec![html::internal::Id(2)],
+    })
+    .expect("attribute changes require style invalidation");
+    let execution = try_compute_document_styles_for_invalidation_plan_with_limits(
+        &plan,
+        &changed_dom,
+        &inputs,
+        Some((&resolved, &initial_computed.computed)),
+        &StyleResolutionLimits::default(),
+    )
+    .expect("sibling incremental result");
+
+    let StylePlanExecution::IncrementalComputed(incremental) = execution else {
+        panic!("expected a computed incremental result");
+    };
+    assert_eq!(
+        incremental.computed.entries()[2].style().color(),
+        (255, 0, 0, 255)
+    );
+}
+
+#[test]
+fn plan_aware_suffix_recomputes_inherited_descendant_effects() {
+    let initial_dom = materialize_element_ids(element(
+        "div",
+        Vec::new(),
+        vec![element("span", Vec::new(), Vec::new())],
+    ));
+    let changed_dom = materialize_element_ids(element(
+        "div",
+        vec![("class", Some("on"))],
+        vec![element("span", Vec::new(), Vec::new())],
+    ));
+    let stylesheets = vec![stylesheet(".on { color: red; }")];
+    let inputs = [StylesheetCascadeInput::author(&stylesheets[0])];
+    let resolved =
+        resolve_document_styles(&initial_dom, &stylesheets).expect("initial resolved styles");
+    let initial_computed =
+        compute_document_styles_from_resolved_styles_with_reuse_stats(&initial_dom, &resolved)
+            .expect("initial computed styles");
+    let plan = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
+        node_ids: vec![html::internal::Id(1)],
+    })
+    .expect("attribute changes require style invalidation");
+    let execution = try_compute_document_styles_for_invalidation_plan_with_limits(
+        &plan,
+        &changed_dom,
+        &inputs,
+        Some((&resolved, &initial_computed.computed)),
+        &StyleResolutionLimits::default(),
+    )
+    .expect("inheritance incremental result");
+
+    let StylePlanExecution::IncrementalComputed(incremental) = execution else {
+        panic!("expected a computed incremental result");
+    };
+    assert_eq!(
+        incremental.computed.entries()[1].style().color(),
+        (255, 0, 0, 255)
+    );
+}
+
+#[test]
+fn plan_aware_suffix_recomputes_descendant_selector_effects() {
+    let initial_dom = materialize_element_ids(element(
+        "div",
+        Vec::new(),
+        vec![element("span", Vec::new(), Vec::new())],
+    ));
+    let changed_dom = materialize_element_ids(element(
+        "div",
+        vec![("class", Some("hot"))],
+        vec![element("span", Vec::new(), Vec::new())],
+    ));
+    let stylesheets = vec![stylesheet(".hot span { color: red; }")];
+    let inputs = [StylesheetCascadeInput::author(&stylesheets[0])];
+    let resolved =
+        resolve_document_styles(&initial_dom, &stylesheets).expect("initial resolved styles");
+    let initial_computed =
+        compute_document_styles_from_resolved_styles_with_reuse_stats(&initial_dom, &resolved)
+            .expect("initial computed styles");
+    let plan = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
+        node_ids: vec![html::internal::Id(1)],
+    })
+    .expect("attribute changes require style invalidation");
+    let execution = try_compute_document_styles_for_invalidation_plan_with_limits(
+        &plan,
+        &changed_dom,
+        &inputs,
+        Some((&resolved, &initial_computed.computed)),
+        &StyleResolutionLimits::default(),
+    )
+    .expect("descendant selector incremental result");
+
+    let StylePlanExecution::IncrementalComputed(incremental) = execution else {
+        panic!("expected a computed incremental result");
+    };
+    assert_eq!(
+        incremental.computed.entries()[1].style().color(),
+        (255, 0, 0, 255)
+    );
 }
 
 #[test]

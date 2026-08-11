@@ -19,6 +19,8 @@ Related code:
 - `crates/runtime_css/src/lib.rs`
 - `crates/css/src/cascade/integration.rs`
 - `crates/css/src/computed/document.rs`
+- `crates/css/src/computed/document/incremental.rs`
+- `crates/css/src/style_invalidation.rs`
 - `crates/css/src/computed/style_tree.rs`
 - `crates/css/tests/representative_pages.rs`
 - `crates/css/benches/css_bench.rs`
@@ -26,6 +28,7 @@ Related code:
 Related documents:
 
 - `docs/css/u1-runtime-integration-architecture-css-pipeline-ownership.md`
+- `docs/css/af1-selector-cascade-computed-style-architecture-contract.md`
 - `docs/css/s9-property-system-computed-style-runtime-contract.md`
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
@@ -160,7 +163,8 @@ For a navigation:
    stylesheet discovery are updated from the active DOM.
 8. `PageState::reconcile_document_stylesheets()` updates `DocumentStyleSet`.
    Any slot-set or loaded-sheet change increments the stylesheet generation and
-   marks style dirty with full invalidation.
+   submits `StylesheetSetChanged` to CSS-owned invalidation planning, which is
+   currently full invalidation.
 9. External stylesheet arrivals call `PageState::apply_css_block(...)`.
    A successful install marks the stylesheet generation dirty. The tab/event
    layer observes the changed page state and requests redraw.
@@ -199,16 +203,16 @@ Current trigger behavior:
 | --- | --- | --- | --- |
 | `DocumentReplaced` | navigation snapshot, `Clear`, `CreateDocument` | full style-input invalidation | dirty |
 | `TreeMutated` | create, append, insert, remove, reparent | full style-input invalidation | dirty |
-| `AttributesChanged` | `SetAttributes` | partial suffix invalidation when cache proof exists; full fallback | dirty |
+| `AttributesChanged` | `SetAttributes` | CSS-owned suffix eligibility for materialized identities; full fallback otherwise | dirty |
 | `TextMutated` | `SetText`, `AppendText` | no style-input invalidation by itself in the current supported selector/property model | dirty |
 | stylesheet reconciliation | `<style>` text change, `<link>` add/remove/order change | stylesheet generation invalidation, full style invalidation | dirty |
 | external stylesheet install/fail/abort/state change | `CssDecodedBlock`, load completion, error, abort | stylesheet generation invalidation, full style invalidation when the active stylesheet set/state changes | dirty |
 
-Text-only DOM changes do not invalidate computed style in the current selector
-and property model. This contract must widen if future selector or generated
-content support makes text content style-relevant, for example through `:empty`
-or `:has(...)`. If the changed text belongs to a `<style>` element, stylesheet
-reconciliation independently invalidates the stylesheet generation.
+Text-only DOM changes are classified by CSS as style-neutral under the current
+selector and property model. This contract must widen if future selector or
+generated-content support makes text content style-relevant. If the changed
+text belongs to a `<style>` element, stylesheet reconciliation independently
+detects changed stylesheet input and submits a full CSS-owned plan.
 
 Empty DOM patch batches are no-ops for DOM/style generations and dirty state.
 
@@ -273,7 +277,8 @@ borrow-backed `StyledNode` views is not retained artifact reuse.
 
 ### Incremental Suffix Restyle
 
-The only U partial restyle mechanism is `AttributeSuffix`.
+The current AF1 partial restyle mechanism is an opaque CSS-owned document-order
+suffix plan.
 
 For attribute mutations with materialized dirty node IDs and a valid previous
 cache:
@@ -284,6 +289,12 @@ recompute dirty element and document-order suffix
 fallback to full recompute if proof fails
 ```
 
+The suffix plan expresses semantic eligibility, not a guarantee that the
+incremental algorithm runs. If no compatible previous style artifacts exist,
+CSS reports incremental-unavailable and Browser performs a deterministic full
+recompute; the retained-render fallback action does not claim that an
+incremental computation was invoked.
+
 This is conservative for the current selector model because:
 
 - sibling selectors can affect following siblings
@@ -292,12 +303,13 @@ This is conservative for the current selector model because:
 - no supported selector lets a later or descendant element affect an earlier
   ancestor or sibling
 
-If support is added for selectors such as `:has()`, this proof must be widened
-to full invalidation or replaced with selector-aware invalidation dependencies.
+If support is added for selectors such as `:has()`, CSS must widen this proof
+to full invalidation or replace it with CSS-owned selector-aware invalidation
+dependencies. Browser must not gain a selector-specific branch.
 
-Pending partial invalidations merge. A pending `Full` invalidation cannot be
-narrowed by a later partial invalidation. Multiple attribute suffix scopes merge
-and recompute from the earliest dirty node.
+Pending plans merge through the CSS-owned plan API. A pending full plan cannot
+be narrowed by a later suffix plan. Multiple suffix plans are canonicalized,
+deduplicated, and recompute from the earliest dirty node.
 
 Patch-derived dirty IDs currently rely on the `DomStore` contract that
 materialized `Node::id() == Id(PatchKey.0)`. If that identity mapping changes,
@@ -449,7 +461,8 @@ Milestone U is complete only while these invariants hold:
   semantics.
 - DOM mutations map to explicit restyle triggers.
 - Text-only mutations dirty layout without invalidating computed style.
-- Attribute mutations can use conservative suffix restyle with full fallback.
+- CSS can authorize conservative suffix restyle with full fallback; Browser
+  does not decide suffix safety.
 - Stylesheet changes invalidate stylesheet generation and style cache.
 - `ComputedDocumentStyle` is cached; `StyledNode<'_>` is rebuilt as a
   borrow-backed view.

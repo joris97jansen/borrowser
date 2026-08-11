@@ -1,15 +1,13 @@
 use css::{
     ComputedDocumentStyle, ComputedStyleResolutionError, ComputedStyleReuseStats,
-    ResolvedDocumentStyle, StyleResolutionLimits, StylesheetCascadeInput,
-    compute_document_styles_from_resolved_styles_with_reuse_stats,
-    compute_document_styles_incremental_suffix_from_cascade_inputs_with_limits,
+    ResolvedDocumentStyle, StyleInvalidationPlan, StylePlanExecution, StyleResolutionLimits,
+    StylesheetCascadeInput, compute_document_styles_from_resolved_styles_with_reuse_stats,
     resolve_document_styles_from_cascade_inputs,
+    try_compute_document_styles_for_invalidation_plan_with_limits,
 };
 use html::Node;
 
 use crate::rendering::RetainedStyleArtifactKey;
-
-use super::restyle::StyleInvalidationScope;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct PageStyleGenerations {
@@ -48,6 +46,10 @@ pub(super) struct StyleRecomputeState<'a> {
     pub(super) style_dirty: &'a mut bool,
     pub(super) last_style_recalc: &'a mut Option<StyleRecalcKind>,
     pub(super) last_style_reuse: &'a mut Option<ComputedStyleReuseStats>,
+    /// CSS authorized an incremental path, but the execution result did not
+    /// necessarily invoke it. This is used only to label a later full
+    /// recomputation as fallback from incremental eligibility.
+    pub(super) last_style_incremental_eligible: &'a mut bool,
 }
 
 pub(super) fn recompute_styles(
@@ -55,37 +57,39 @@ pub(super) fn recompute_styles(
     sheets: &[StylesheetCascadeInput<'_>],
     generations: PageStyleGenerations,
     key: RetainedStyleArtifactKey,
-    pending: StyleInvalidationScope,
+    pending: Option<&StyleInvalidationPlan>,
     state: StyleRecomputeState<'_>,
 ) -> Result<(), ComputedStyleResolutionError> {
-    if let StyleInvalidationScope::AttributeSuffix { node_ids } = &pending
-        && let Some(cache) = state.style_cache.as_ref()
-        && cache.key.stylesheet_generation == generations.stylesheets
-    {
-        let limits = StyleResolutionLimits::default();
-        if let Some(incremental) =
-            compute_document_styles_incremental_suffix_from_cascade_inputs_with_limits(
-                dom,
-                sheets,
-                &cache.resolved,
-                &cache.computed,
-                node_ids,
-                &limits,
-            )?
-        {
-            *state.last_style_recalc = Some(StyleRecalcKind::IncrementalSuffix {
-                reused_prefix_len: incremental.reused_prefix_len,
-                recomputed_len: incremental.recomputed_len,
-            });
-            *state.last_style_reuse = Some(incremental.reuse_stats);
-            *state.style_cache = Some(PageStyleCache {
-                key,
-                resolved: incremental.resolved,
-                computed: incremental.computed,
-            });
-            *state.style_dirty = false;
-            return Ok(());
-        }
+    let limits = StyleResolutionLimits::default();
+    let execution = pending
+        .map(|plan| {
+            let previous = state
+                .style_cache
+                .as_ref()
+                .filter(|cache| cache.key.stylesheet_generation == generations.stylesheets)
+                .map(|cache| (&cache.resolved, &cache.computed));
+            try_compute_document_styles_for_invalidation_plan_with_limits(
+                plan, dom, sheets, previous, &limits,
+            )
+        })
+        .transpose()?;
+    *state.last_style_incremental_eligible = execution
+        .as_ref()
+        .is_some_and(StylePlanExecution::is_incremental_eligible);
+
+    if let Some(StylePlanExecution::IncrementalComputed(incremental)) = execution {
+        *state.last_style_recalc = Some(StyleRecalcKind::IncrementalSuffix {
+            reused_prefix_len: incremental.reused_prefix_len,
+            recomputed_len: incremental.recomputed_len,
+        });
+        *state.last_style_reuse = Some(incremental.reuse_stats);
+        *state.style_cache = Some(PageStyleCache {
+            key,
+            resolved: incremental.resolved,
+            computed: incremental.computed,
+        });
+        *state.style_dirty = false;
+        return Ok(());
     }
 
     let resolved = resolve_document_styles_from_cascade_inputs(dom, sheets)

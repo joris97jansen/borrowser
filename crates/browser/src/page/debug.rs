@@ -55,6 +55,11 @@ impl PageState {
     }
 
     #[cfg(test)]
+    pub(crate) fn clear_style_cache_for_tests(&mut self) {
+        self.rendering.clear_style_cache_for_tests();
+    }
+
+    #[cfg(test)]
     pub(crate) fn mark_dom_changed_for_tests(&mut self, hint: RestyleHint) {
         let _ = self.mark_dom_changed(hint);
     }
