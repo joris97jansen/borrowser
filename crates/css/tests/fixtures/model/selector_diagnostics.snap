@@ -1,0 +1,52 @@
+version: 1
+model-stylesheet
+origin: stylesheet
+span: @0..88
+rule[0] style @0..27
+  selectors
+    result: unsupported
+    span: @0..12
+    feature[0]: functional-pseudo-class
+    feature[1]: forgiving-selector-list
+  declarations @12..27
+    declaration[0] @14..25
+      name(kind=standard, text="color") @14..19
+      value @20..24
+        - whitespace @20..21
+        - ident("red") @21..24
+      important @<none>
+rule[1] style @28..52
+  selectors
+    result: invalid
+    span: @28..35
+    reason: missing-attribute-value
+  declarations @36..52
+    declaration[0] @38..50
+      name(kind=standard, text="color") @38..43
+      value @44..49
+        - whitespace @44..45
+        - ident("blue") @45..49
+      important @<none>
+rule[2] style @53..88
+  selectors
+    result: unsupported
+    span: @53..71
+    feature[0]: pseudo-class
+    feature[1]: pseudo-element
+  declarations @71..88
+    declaration[0] @73..86
+      name(kind=standard, text="color") @73..78
+      value @79..85
+        - whitespace @79..80
+        - ident("green") @80..85
+      important @<none>
+diagnostics
+  - warning unsupported-selector @0
+  - error invalid-selector @28
+  - warning unsupported-selector @53
+stats
+  input_bytes: 88
+  rules_emitted: 3
+  declarations_emitted: 3
+  diagnostics_emitted: 3
+  hit_limit: false

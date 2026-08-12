@@ -127,6 +127,14 @@ Milestone AF foundation status:
   pseudo-classes, pseudo-elements, `:has()`, and fine-grained subtree
   invalidation for later CSS-owned AF work. Browser/runtime must consume the
   future richer plan without learning selector semantics.
+- AF2 completes the existing Milestone P selector AST/parser foundation and
+  adds CSS-owned selector diagnostic normalization plus model-boundary
+  projection into the shared syntax diagnostic transport. AF2 does not claim
+  broad selector coverage, pseudo-class or pseudo-element support, namespace
+  selectors, selector matching conformance, selector dependency invalidation,
+  media queries, custom properties, animations, transitions, CSSOM,
+  `getComputedStyle()`, or JavaScript-facing style mutation; see
+  `docs/css/af2-selector-ast-and-parser.md`.
 
 Major missing families remain:
 

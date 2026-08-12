@@ -9,7 +9,8 @@ fn parse_results_expose_matchability_without_collapsing_invalidity() {
         crate::selectors::UnsupportedSelectorList::from_features(
             None,
             [UnsupportedSelectorFeature::PseudoClass],
-        ),
+        )
+        .expect("unsupported feature list must be non-empty"),
     );
     let invalid = crate::selectors::SelectorListParseResult::Invalid(
         crate::selectors::InvalidSelectorList::new(None, InvalidSelectorReason::EmptySelectorList),

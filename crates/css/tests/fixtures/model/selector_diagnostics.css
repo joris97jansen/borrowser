@@ -1,0 +1,3 @@
+a:is(.hero) { color: red; }
+[lang=] { color: blue; }
+div:hover::before { color: green; }

@@ -19,6 +19,7 @@
 
 mod attribute;
 mod complex;
+mod diagnostics;
 #[cfg(any(test, feature = "css-fuzzing"))]
 pub mod fuzz;
 pub mod matching;
@@ -33,6 +34,8 @@ mod tests;
 
 mod validation;
 mod values;
+
+pub(crate) use diagnostics::{SelectorDiagnosticClass, SelectorDiagnosticLevel};
 
 pub(crate) use self::serialize::write_selector_parse_result_snapshot_body;
 pub use self::serialize::{

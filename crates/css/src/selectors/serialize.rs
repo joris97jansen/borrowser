@@ -1,7 +1,7 @@
 use super::{
     AttributeMatcher, AttributeSelector, AttributeValue, Combinator, ComplexSelector,
-    CompoundSelector, InvalidSelectorReason, SelectorList, SelectorListParseResult, Specificity,
-    SubclassSelector, TypeSelector, UnsupportedSelectorFeature,
+    CompoundSelector, SelectorList, SelectorListParseResult, Specificity, SubclassSelector,
+    TypeSelector,
 };
 use crate::syntax::CssSpan;
 use std::fmt::Write;
@@ -54,7 +54,7 @@ pub(crate) fn write_selector_parse_result_snapshot_body(
                 writeln!(
                     out,
                     "{indent_str}feature[{feature_index}]: {}",
-                    unsupported_feature_label(*feature)
+                    feature.stable_label()
                 )
                 .expect("write unsupported feature");
             }
@@ -63,12 +63,8 @@ pub(crate) fn write_selector_parse_result_snapshot_body(
             writeln!(out, "{indent_str}result: invalid").expect("write invalid result");
             writeln!(out, "{indent_str}span: {}", span_label(list.span()))
                 .expect("write invalid span");
-            writeln!(
-                out,
-                "{indent_str}reason: {}",
-                invalid_reason_label(list.reason())
-            )
-            .expect("write invalid reason");
+            writeln!(out, "{indent_str}reason: {}", list.reason().stable_label())
+                .expect("write invalid reason");
         }
     }
 }
@@ -250,36 +246,6 @@ fn attribute_matcher_label(matcher: AttributeMatcher) -> &'static str {
         AttributeMatcher::Prefix => "prefix",
         AttributeMatcher::Suffix => "suffix",
         AttributeMatcher::Substring => "substring",
-    }
-}
-
-fn unsupported_feature_label(feature: UnsupportedSelectorFeature) -> &'static str {
-    match feature {
-        UnsupportedSelectorFeature::Namespace => "namespace",
-        UnsupportedSelectorFeature::AttributeCaseModifier => "attribute-case-modifier",
-        UnsupportedSelectorFeature::PseudoClass => "pseudo-class",
-        UnsupportedSelectorFeature::FunctionalPseudoClass => "functional-pseudo-class",
-        UnsupportedSelectorFeature::PseudoElement => "pseudo-element",
-        UnsupportedSelectorFeature::RelativeSelector => "relative-selector",
-        UnsupportedSelectorFeature::NestingSelector => "nesting-selector",
-        UnsupportedSelectorFeature::ColumnCombinator => "column-combinator",
-        UnsupportedSelectorFeature::ForgivingSelectorList => "forgiving-selector-list",
-    }
-}
-
-fn invalid_reason_label(reason: InvalidSelectorReason) -> &'static str {
-    match reason {
-        InvalidSelectorReason::EmptySelectorList => "empty-selector-list",
-        InvalidSelectorReason::EmptyCompoundSelector => "empty-compound-selector",
-        InvalidSelectorReason::LeadingCombinator => "leading-combinator",
-        InvalidSelectorReason::TrailingCombinator => "trailing-combinator",
-        InvalidSelectorReason::RepeatedCombinator => "repeated-combinator",
-        InvalidSelectorReason::MultipleTypeSelectors => "multiple-type-selectors",
-        InvalidSelectorReason::MissingAttributeName => "missing-attribute-name",
-        InvalidSelectorReason::MissingAttributeValue => "missing-attribute-value",
-        InvalidSelectorReason::UnexpectedComponentValue => "unexpected-component-value",
-        InvalidSelectorReason::InvariantViolation => "invariant-violation",
-        InvalidSelectorReason::ResourceLimitExceeded => "resource-limit-exceeded",
     }
 }
 

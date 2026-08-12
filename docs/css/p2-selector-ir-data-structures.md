@@ -1,7 +1,7 @@
 # P2: Introduce Selector IR Data Structures
 
 Last updated: 2026-04-09  
-Status: complete
+Status: complete; integrated by subsequent Milestone P work
 
 This document records the implementation of Milestone P issue P2:
 introducing the production selector intermediate representation (IR) data
@@ -74,7 +74,8 @@ Repository status:
 
 - the P2 selector IR data-structures issue is complete and may be treated as
   closed
-- the next Milestone P work should parse structured syntax-layer preludes into
-  this IR and wire `SelectorListParseResult` into the rule/model path
+- the P2 IR remains the permanent selector foundation consumed by later work
+- subsequent Milestone P issues parse structured syntax-layer preludes into this
+  IR and wire `SelectorListParseResult` into the rule/model path
 - matching and cascade winner resolution remain intentionally out of scope for
-  that next parser/model integration step
+  P2 and are separate downstream consumers

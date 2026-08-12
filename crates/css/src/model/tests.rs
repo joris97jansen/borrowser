@@ -4,7 +4,9 @@ use super::{
     serialize_value_for_snapshot,
 };
 use crate::selectors::SelectorListParseResult;
-use crate::syntax::{CssBlockKind, CssNumericKind, ParseOptions};
+use crate::syntax::{
+    CssBlockKind, CssNumericKind, DiagnosticKind, DiagnosticSeverity, ParseOptions,
+};
 
 #[test]
 fn model_stylesheet_preserves_rule_order_and_supported_rule_kinds() {
@@ -389,6 +391,96 @@ fn model_style_rules_carry_structured_selector_results() {
         invalid.selectors,
         SelectorListParseResult::Invalid(_)
     ));
+}
+
+#[test]
+fn model_projects_selector_diagnostics_in_model_traversal_order() {
+    let source = "a:is(.hero) { color: red; } div; [lang=] { color: blue; }";
+    let parse = parse_stylesheet_with_options(source, &ParseOptions::stylesheet());
+
+    assert_eq!(parse.diagnostics.len(), 3);
+    assert_eq!(parse.diagnostics[0].kind, DiagnosticKind::UnexpectedToken);
+    assert_eq!(
+        parse.diagnostics[1].kind,
+        DiagnosticKind::UnsupportedSelector
+    );
+    assert_eq!(parse.diagnostics[1].severity, DiagnosticSeverity::Warning);
+    assert_eq!(parse.diagnostics[2].kind, DiagnosticKind::InvalidSelector);
+    assert_eq!(parse.diagnostics[2].severity, DiagnosticSeverity::Error);
+
+    assert_eq!(parse.diagnostics[1].byte_offset, 0);
+    assert_eq!(
+        parse.diagnostics[1].message,
+        "unsupported selector feature(s): functional-pseudo-class, forgiving-selector-list"
+    );
+    assert_eq!(
+        parse.diagnostics[2].byte_offset,
+        source.find("[lang=]").unwrap()
+    );
+    assert_eq!(
+        parse.diagnostics[2].message,
+        "invalid selector: missing-attribute-value"
+    );
+    assert_eq!(parse.stats.diagnostics_emitted, 3);
+}
+
+#[test]
+fn model_preserves_selector_limit_accounting_and_diagnostic_caps() {
+    let mut limited = ParseOptions::stylesheet();
+    limited.limits.max_selector_segments_per_selector = 0;
+    let limit = parse_stylesheet_with_options("div { color: red; }", &limited);
+
+    assert_eq!(limit.diagnostics.len(), 1);
+    assert_eq!(limit.diagnostics[0].kind, DiagnosticKind::LimitExceeded);
+    assert_eq!(limit.diagnostics[0].severity, DiagnosticSeverity::Error);
+    assert!(limit.stats.hit_limit);
+    assert_eq!(limit.stats.diagnostics_emitted, 1);
+
+    let mut capped = ParseOptions::stylesheet();
+    capped.limits.max_diagnostics = 0;
+    let capped_parse = parse_stylesheet_with_options("a:hover { color: red; }", &capped);
+    assert!(capped_parse.diagnostics.is_empty());
+    assert_eq!(capped_parse.stats.diagnostics_emitted, 1);
+
+    let mut disabled = ParseOptions::stylesheet();
+    disabled.collect_diagnostics = false;
+    let disabled_parse = parse_stylesheet_with_options("a:hover { color: red; }", &disabled);
+    assert!(disabled_parse.diagnostics.is_empty());
+    assert_eq!(disabled_parse.stats.diagnostics_emitted, 1);
+}
+
+#[test]
+fn model_retains_invalid_and_unsupported_selector_states_and_diagnostics() {
+    let parse = parse_stylesheet_with_options(
+        "a:hover { color: red; } [lang=] { color: blue; }",
+        &ParseOptions::stylesheet(),
+    );
+    let Rule::Style(unsupported) = &parse.stylesheet.rules[0] else {
+        panic!("expected unsupported style rule");
+    };
+    let Rule::Style(invalid) = &parse.stylesheet.rules[1] else {
+        panic!("expected invalid style rule");
+    };
+
+    assert!(matches!(
+        unsupported.selectors,
+        SelectorListParseResult::Unsupported(_)
+    ));
+    assert!(matches!(
+        invalid.selectors,
+        SelectorListParseResult::Invalid(_)
+    ));
+    assert_eq!(
+        parse
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            DiagnosticKind::UnsupportedSelector,
+            DiagnosticKind::InvalidSelector
+        ]
+    );
 }
 
 fn declaration_value_contains_important(values: &[ValueComponent]) -> bool {

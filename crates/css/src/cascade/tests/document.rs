@@ -4,7 +4,8 @@ use super::super::{
 };
 use super::support::{element, namespaced_element, stylesheet};
 use crate::{
-    CascadePropertyId, CascadeSpecificity, ResolvedValueSource, StylesheetCascadeInput,
+    CascadePropertyId, CascadeRuleMatch, CascadeSpecificity, ResolvedValueSource, Rule,
+    SelectorDomIndex, SelectorMatchability, SelectorMatchingContext, StylesheetCascadeInput,
     resolve_document_styles_from_cascade_inputs,
 };
 
@@ -149,6 +150,43 @@ fn resolve_document_styles_produces_structured_output_without_mutating_dom() {
             .source(),
         &ResolvedValueSource::Initial(crate::InitialStyleValue::DisplayInline)
     );
+}
+
+#[test]
+fn parser_produced_invalid_and_unsupported_rules_are_non_applicable_to_cascade() {
+    let sheet = stylesheet("a:hover { color: red; } [lang=] { color: blue; }");
+    let dom = element("a", Vec::new(), Vec::new());
+    let index = SelectorDomIndex::from_root(&dom);
+    let context = SelectorMatchingContext::new(&index);
+    let element = index.elements().next().expect("indexed element");
+
+    let expected = [
+        SelectorMatchability::Unsupported,
+        SelectorMatchability::Invalid,
+    ];
+    let mut checked = 0;
+
+    for (rule_index, rule) in sheet.stylesheet.rules.iter().enumerate() {
+        let Rule::Style(rule) = rule else {
+            continue;
+        };
+
+        let outcome = context
+            .match_selector_list(element, &rule.selectors)
+            .expect("selector matching should not hit a limit");
+        assert_eq!(outcome.matchability(), expected[checked]);
+        assert!(!outcome.matched_any());
+
+        let rule_match = CascadeRuleMatch {
+            stylesheet_index: 0,
+            rule_index: rule_index as u32,
+            outcome,
+        };
+        assert!(!rule_match.contributes_candidates());
+        checked += 1;
+    }
+
+    assert_eq!(checked, expected.len());
 }
 
 #[test]

@@ -1,7 +1,7 @@
 # P3: Implement Selector Parser (Core Subset)
 
 Last updated: 2026-04-09  
-Status: complete
+Status: complete; integrated by subsequent Milestone P work
 
 This document records the implementation of Milestone P issue P3:
 introducing the core selector parser that converts syntax-layer selector
@@ -86,7 +86,8 @@ P3 is complete when:
 Repository status:
 
 - the P3 core selector-parser issue is complete and may be treated as closed
-- the next Milestone P work should wire `SelectorListParseResult` into the
+- the P3 parser remains the permanent selector parser consumed by later work
+- subsequent Milestone P issues wire `SelectorListParseResult` into the
   stylesheet rule/model path
 - selector matching and cascade winner resolution remain intentionally out of
-  scope for that integration step
+  scope for P3 and are separate downstream consumers

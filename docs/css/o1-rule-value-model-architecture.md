@@ -97,7 +97,8 @@ The architectural boundary is:
    - does not own selector matching, cascade winner resolution, or computed
      values
 3. Later CSS semantics
-   - selector AST refinement and selector matching
+   - selector matching and broader selector coverage over the existing
+     `css::selectors` AST
    - at-rule interpretation such as `@media` / `@supports`
    - cascade order and winner selection
    - inheritance, specified values, computed values, and layout-facing
@@ -290,7 +291,7 @@ Purely syntactic in Milestone O:
 
 Semantic interpretation deferred to later milestones:
 
-- selector AST semantics and DOM matching
+- DOM matching over the existing selector AST
 - specificity calculation as a selector-system contract
 - shorthand expansion
 - longhand alias handling beyond basic name canonicalization
