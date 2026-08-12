@@ -81,7 +81,8 @@ The authoritative details live in:
 Milestone O does not complete later CSS semantics. The following remain
 intentional follow-up work:
 
-- selector AST expansion beyond preserved selector/prelude payloads
+- broader selector coverage and matching beyond the current `css::selectors`
+  AST/parser subset
 - selector matching beyond the current compatibility-scoped subset
 - at-rule semantic interpretation
 - cascade winner resolution that natively consumes model selectors/values

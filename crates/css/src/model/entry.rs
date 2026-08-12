@@ -4,10 +4,12 @@ use super::{
     Rule, StyleRule, Stylesheet, StylesheetParse, ValueBlock, ValueComponent, ValueFunction,
     ValueSymbol, ValueText, ValueToken,
 };
-use crate::selectors::parse_selector_list_with_limits;
+use crate::selectors::{
+    SelectorDiagnosticClass, SelectorDiagnosticLevel, parse_selector_list_with_limits,
+};
 use crate::syntax::{
     self, CssComponentValue, CssInput, CssParseOrigin, CssRule, CssToken, CssTokenKind,
-    CssTokenText, ParseOptions,
+    CssTokenText, DiagnosticKind, DiagnosticSeverity, ParseOptions, ParseStats, SyntaxDiagnostic,
 };
 
 /// Parse a stylesheet directly into the engine-facing rule model using default
@@ -22,13 +24,22 @@ pub fn parse_stylesheet(input: &str) -> Stylesheet {
 /// point does not use compatibility adapters or raw-string reparsing.
 pub fn parse_stylesheet_with_options(input: &str, options: &ParseOptions) -> StylesheetParse {
     let parse = syntax::parse_stylesheet_with_options(input, options);
-    let stylesheet = build_stylesheet(&parse.input, &parse.stylesheet, options.origin, options);
+    let mut diagnostics = parse.diagnostics;
+    let mut stats = parse.stats;
+    let stylesheet = build_stylesheet(
+        &parse.input,
+        &parse.stylesheet,
+        options.origin,
+        options,
+        &mut diagnostics,
+        &mut stats,
+    );
 
     StylesheetParse {
         input: parse.input,
         stylesheet,
-        diagnostics: parse.diagnostics,
-        stats: parse.stats,
+        diagnostics,
+        stats,
     }
 }
 
@@ -60,6 +71,8 @@ fn build_stylesheet(
     stylesheet: &syntax::CssStylesheet,
     origin: CssParseOrigin,
     options: &ParseOptions,
+    diagnostics: &mut Vec<SyntaxDiagnostic>,
+    stats: &mut ParseStats,
 ) -> Stylesheet {
     Stylesheet {
         origin,
@@ -67,18 +80,29 @@ fn build_stylesheet(
         rules: stylesheet
             .rules
             .iter()
-            .map(|rule| build_rule(input, rule, options))
+            .map(|rule| build_rule(input, rule, options, diagnostics, stats))
             .collect(),
     }
 }
 
-fn build_rule(input: &CssInput, rule: &CssRule, options: &ParseOptions) -> Rule {
+fn build_rule(
+    input: &CssInput,
+    rule: &CssRule,
+    options: &ParseOptions,
+    diagnostics: &mut Vec<SyntaxDiagnostic>,
+    stats: &mut ParseStats,
+) -> Rule {
     match rule {
-        CssRule::Qualified(rule) => Rule::Style(StyleRule {
-            span: rule.span,
-            selectors: parse_selector_list_with_limits(input, &rule.prelude, &options.limits),
-            declarations: build_declaration_block(input, &rule.block),
-        }),
+        CssRule::Qualified(rule) => {
+            let selectors = parse_selector_list_with_limits(input, &rule.prelude, &options.limits);
+            append_selector_diagnostic(&selectors, rule.span, options, diagnostics, stats);
+
+            Rule::Style(StyleRule {
+                span: rule.span,
+                selectors,
+                declarations: build_declaration_block(input, &rule.block),
+            })
+        }
         CssRule::At(rule) => Rule::At(AtRule {
             span: rule.span,
             name: canonical_name(input, &rule.name),
@@ -95,6 +119,47 @@ fn build_rule(input: &CssInput, rule: &CssRule, options: &ParseOptions) -> Rule 
             }),
         }),
     }
+}
+
+fn append_selector_diagnostic(
+    selectors: &crate::selectors::SelectorListParseResult,
+    rule_span: crate::syntax::CssSpan,
+    options: &ParseOptions,
+    diagnostics: &mut Vec<SyntaxDiagnostic>,
+    stats: &mut ParseStats,
+) {
+    let Some(diagnostic) = selectors.diagnostic() else {
+        return;
+    };
+
+    stats.diagnostics_emitted = stats.diagnostics_emitted.saturating_add(1);
+    if diagnostic.class() == SelectorDiagnosticClass::LimitExceeded {
+        stats.hit_limit = true;
+    }
+
+    if !options.collect_diagnostics || diagnostics.len() >= options.limits.max_diagnostics {
+        return;
+    }
+
+    let kind = match diagnostic.class() {
+        SelectorDiagnosticClass::EmptySelectorList => DiagnosticKind::EmptySelectorList,
+        SelectorDiagnosticClass::InvalidSelector => DiagnosticKind::InvalidSelector,
+        SelectorDiagnosticClass::UnsupportedSelector => DiagnosticKind::UnsupportedSelector,
+        SelectorDiagnosticClass::InvariantViolation => DiagnosticKind::InvariantViolation,
+        SelectorDiagnosticClass::LimitExceeded => DiagnosticKind::LimitExceeded,
+    };
+    let severity = match diagnostic.level() {
+        SelectorDiagnosticLevel::Warning => DiagnosticSeverity::Warning,
+        SelectorDiagnosticLevel::Error => DiagnosticSeverity::Error,
+    };
+    let byte_offset = diagnostic.span().unwrap_or(rule_span).start;
+
+    diagnostics.push(SyntaxDiagnostic {
+        severity,
+        kind,
+        byte_offset,
+        message: diagnostic.stable_message(),
+    });
 }
 
 fn canonical_name(input: &CssInput, text: &CssTokenText) -> Option<String> {

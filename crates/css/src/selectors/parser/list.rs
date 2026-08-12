@@ -70,9 +70,13 @@ pub fn parse_selector_list_with_limits(
     }
 
     if !unsupported.is_empty() {
-        return SelectorListParseResult::Unsupported(UnsupportedSelectorList::from_features(
+        if let Some(list) = UnsupportedSelectorList::from_features(overall_span, unsupported) {
+            return SelectorListParseResult::Unsupported(list);
+        }
+
+        return SelectorListParseResult::Invalid(InvalidSelectorList::new(
             overall_span,
-            unsupported,
+            InvalidSelectorReason::InvariantViolation,
         ));
     }
 

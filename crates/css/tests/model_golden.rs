@@ -30,3 +30,15 @@ fn model_snapshot_golden_malformed_recovery() {
         include_str!("fixtures/model/malformed_recovery.snap"),
     );
 }
+
+#[test]
+fn model_snapshot_golden_selector_diagnostics() {
+    let parse = parse_stylesheet_with_options(
+        fixture_input(include_str!("fixtures/model/selector_diagnostics.css")),
+        &ParseOptions::stylesheet(),
+    );
+    assert_eq!(
+        serialize_stylesheet_parse_for_snapshot(&parse),
+        include_str!("fixtures/model/selector_diagnostics.snap"),
+    );
+}

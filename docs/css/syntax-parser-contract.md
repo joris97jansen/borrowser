@@ -71,6 +71,17 @@ Milestone N keeps the current crate and runtime topology:
    - remains the high-level integration point that merges stylesheet results
      into the page state
 
+### Current Post-N Selector Ownership
+
+The following ownership is part of the later repository architecture, not a
+Milestone N responsibility. Subsequent Milestone P work introduced
+`css::selectors` as the permanent selector-specific AST/parser owner, and AF2
+reconciles that architecture with the current Milestone AF contract.
+
+`css::selectors` consumes structured `css::syntax` output and owns the
+permanent selector AST/parser, selector support policy, and selector semantics.
+`css::syntax` intentionally does not own a second selector AST.
+
 ## Implementation Status
 
 Milestone N is complete.
@@ -269,7 +280,9 @@ Authoritative handoff rule:
 The Milestone N parser foundation is intentionally incomplete in the following
 areas:
 
-- selector syntax is not yet fully represented as a dedicated syntax-layer AST
+- broader selector grammar and matching coverage remain incomplete, but
+  selector-specific AST/parser ownership is resolved in `css::selectors`; a
+  second selector AST inside `css::syntax` is intentionally not planned
 - compatibility selector projection still exists for the current cascade layer
 - at-rule parsing is structural rather than semantics-complete
 - declaration values are preserved as generic syntax component values rather
@@ -394,32 +407,29 @@ Downstream milestones may assume:
 - malformed CSS does not crash the engine
 
 Downstream milestones must not assume:
-- selector parsing is final
+- selector matching or broad selector coverage is complete
 - at-rule parsing is complete
 - current compatibility structs are the permanent syntax AST
 - syntax parsing performs cascade or computed-style work
 
 ## Related Next Steps And References
 
-The next queued syntax-layer follow-ups after Milestone N are:
+The remaining syntax-layer follow-ups after Milestone N are:
 
-- [`docs/css/n9-selector-structure-expansion.md`](n9-selector-structure-expansion.md)
 - [`docs/css/n2b-incremental-line-record-maintenance.md`](n2b-incremental-line-record-maintenance.md)
+
+Selector AST/parser ownership has been fulfilled outside the generic syntax
+layer by Milestone P and AF2. `css::selectors` consumes structured syntax-layer
+component values and owns selector-specific AST, support policy, diagnostics,
+and snapshots. A second selector AST under `css::syntax` is not planned.
 
 Historical reference:
 
 - [`docs/css/n2a-decouple-structured-parse-results.md`](n2a-decouple-structured-parse-results.md)
   is now subsumed by `n4-structured-syntax-ast.md`
-- selector-structure expansion was initially queued in-repo under `N5` and was
-  renumbered to `N6` once deterministic parse recovery became the implemented
-  `N5`
-- selector-structure expansion was then renumbered to `N7` once stable
-  debug/serialization output became the implemented `N6`
-- selector-structure expansion was then renumbered again to `N8` once resource
-  limits and parser invariants became the implemented `N7`
-- selector-structure expansion was then renumbered again to
-  [`docs/css/n9-selector-structure-expansion.md`](n9-selector-structure-expansion.md)
-  once parser contract cutover/documentation became the implemented `N8`
+- the original N9 selector-structure proposal is retained as historical
+  context in [`docs/css/n9-selector-structure-expansion.md`](n9-selector-structure-expansion.md)
+  and is superseded by the Milestone P selector architecture
 
 Related reference for the N2 source/token layer:
 
@@ -449,7 +459,7 @@ Related reference for the N8 cutover/completion work:
 
 - [`docs/css/n8-parser-contract-cutover.md`](n8-parser-contract-cutover.md)
 
-Related reference for the next selector-structure expansion work:
+Historical reference for the proposed selector-structure expansion work:
 
 - [`docs/css/n9-selector-structure-expansion.md`](n9-selector-structure-expansion.md)
 

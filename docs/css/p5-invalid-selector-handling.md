@@ -106,7 +106,8 @@ Repository status:
 
 - the P5 invalid-selector-handling issue is complete and may be treated as
   closed
-- the next Milestone P work should wire selector parse results into the
+- subsequent Milestone P work integrated selector parse results through the
   stylesheet rule/model path
-- selector matching and cascade winner resolution remain intentionally out of
-  scope for that step
+- selector matching and cascade winner resolution remain separate downstream
+  consumers; AF2 has since reconciled selector diagnostics at the model
+  boundary

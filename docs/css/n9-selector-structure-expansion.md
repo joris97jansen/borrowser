@@ -1,7 +1,7 @@
 # N9: Expand Selector Syntax Structure Beyond Compatibility Projection
 
-Last updated: 2026-04-05  
-Status: queued after N8
+Last updated: 2026-08-12
+Status: superseded by Milestone P and AF2
 
 Tracker note:
 - this issue was originally queued in-repo under `N5`
@@ -14,9 +14,20 @@ Tracker note:
 - it was then renumbered to `N9` once parser contract cutover/documentation
   became the implemented `N8`
 
-## Issue
+## Historical status
 
-Introduce a real structured selector syntax layer so stylesheet parsing no
+This proposal is no longer an active implementation direction. Its original
+motivation—to prevent `CompatSelector` from becoming the permanent selector
+representation—was fulfilled by Milestone P and reconciled by AF2.
+
+`css::selectors` now owns the permanent selector AST/parser and
+`StyleRule::selectors` stores its structured parse result. `css::syntax` keeps
+its generic token/component-value/recovery ownership. AF2 does not introduce a
+second selector AST under `css::syntax`.
+
+## Original issue
+
+Introduce a real structured selector representation so stylesheet parsing no
 longer depends on projecting qualified-rule preludes directly into the limited
 `CompatSelector` model used by the current cascade path.
 
@@ -26,15 +37,15 @@ selector structure: qualified-rule preludes are preserved as generic component
 values, but selector syntax is not yet represented explicitly inside the
 syntax-layer AST.
 
-## Why This Exists
+## Original rationale
 
-The current parser architecture is now strong on the rule/block/value side:
+The historical parser architecture was strong on the rule/block/value side:
 
 - tokenization is real and deterministic
 - stylesheet parsing is AST-oriented
 - compatibility projection is explicit and no longer the parser contract
 
-However, selector handling still relies on a narrow compatibility adapter:
+At the time, selector handling still relied on a narrow compatibility adapter:
 
 - `CompatSelector` only models universal, type, id, and class selectors
 - selector parsing for the cascade path is projection logic, not syntax-layer
@@ -45,11 +56,11 @@ However, selector handling still relies on a narrow compatibility adapter:
 This issue exists to make selector syntax first-class in the syntax layer
 without dragging cascade semantics into the parser.
 
-## Goals
+## Original goals
 
-- introduce syntax-layer selector structures separate from `CompatSelector`
-- parse qualified-rule preludes into explicit selector syntax representations
-  where supported
+- introduce selector structures separate from `CompatSelector`
+- parse qualified-rule preludes into explicit selector representations where
+  supported
 - preserve unsupported selector syntax deterministically for recovery and later
   expansion
 - keep selector parsing lexical/syntactic rather than DOM-matching or
@@ -64,18 +75,20 @@ without dragging cascade semantics into the parser.
 - cascade or specificity redesign beyond the compatibility projection boundary
 - computed-style or value-parsing work
 
-## Preferred Direction
+## Superseded preferred direction
 
 Preferred architecture:
 
 1. qualified rules continue to own preserved prelude/component-value structure
-2. the syntax layer adds explicit selector-list and selector-node structures
-3. supported selector syntax projects into those structures during parsing
+2. `css::selectors` consumes those values and owns selector-list and selector
+   node structures
+3. supported selector syntax produces typed selector IR during model
+   integration
 4. unsupported selector syntax remains recoverable and deterministic
 5. compatibility projection into `CompatSelector` remains separate and
    migration-scoped
 
-## Exit Criteria
+## Historical exit criteria
 
 - syntax-layer selector structures exist in code
 - qualified-rule parsing exposes selector syntax more explicitly than raw

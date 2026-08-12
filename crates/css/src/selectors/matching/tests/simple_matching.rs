@@ -207,7 +207,8 @@ fn matching_context_match_selector_list_preserves_non_matchable_parse_states() {
         crate::selectors::UnsupportedSelectorList::from_features(
             None,
             [UnsupportedSelectorFeature::PseudoClass],
-        ),
+        )
+        .expect("unsupported feature list must be non-empty"),
     );
     let invalid = crate::selectors::SelectorListParseResult::Invalid(
         crate::selectors::InvalidSelectorList::new(None, InvalidSelectorReason::EmptySelectorList),

@@ -71,6 +71,14 @@ retains it directly as `Option<css::StyleInvalidationPlan>` and forwards it to
 CSS execution APIs. `None` is the sole representation of no style
 invalidation.
 
+Selector diagnostics remain CSS-owned semantic results. `css::selectors`
+normalizes invalid, unsupported, invariant, and resource-limit outcomes with
+typed details and severity. `css::model` mechanically projects those outcomes
+into the shared `SyntaxDiagnostic` transport while preserving syntax
+diagnostic encounter order and appending selector diagnostics in model
+style-rule traversal order. Browser/runtime does not interpret selector
+diagnostic classes or features.
+
 ## AD and AE integration
 
 AF consumes AD's registered property metadata, typed value model, shorthand

@@ -123,10 +123,13 @@ pub struct UnsupportedSelectorList {
 impl UnsupportedSelectorList {
     /// Construct an unsupported selector list with deduplicated feature
     /// categories preserved in first-encounter order.
+    ///
+    /// Returns `None` when no unsupported feature was supplied; an
+    /// `UnsupportedSelectorList` is never valid without at least one feature.
     pub fn from_features(
         span: Option<CssSpan>,
         features: impl IntoIterator<Item = UnsupportedSelectorFeature>,
-    ) -> Self {
+    ) -> Option<Self> {
         let mut list = Self {
             span,
             features: Vec::new(),
@@ -134,7 +137,7 @@ impl UnsupportedSelectorList {
         for feature in features {
             list.push_feature(feature);
         }
-        list
+        (!list.features.is_empty()).then_some(list)
     }
 
     pub fn span(&self) -> Option<CssSpan> {
@@ -159,9 +162,10 @@ impl UnsupportedSelectorList {
 /// Handling strategy for syntactically valid but unsupported selector input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UnsupportedSelectorHandling {
-    /// Preserve the selector list as unsupported and non-matchable, while
-    /// keeping the source eligible for future support without reparsing raw
-    /// stylesheet text.
+    /// Preserve the selector list as unsupported and non-matchable while
+    /// retaining its source span and unsupported feature categories. Future
+    /// support may require reparsing the preserved source/prelude because this
+    /// result is not a lossless unsupported-selector AST.
     PreserveAsUnsupported,
 }
 

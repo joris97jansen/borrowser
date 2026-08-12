@@ -98,10 +98,11 @@ only where the current cascade layer still requires them.
 
 Milestone N intentionally leaves these for later work:
 
-- selector syntax remains only partially structured; richer selector AST work is
-  queued separately
-- compatibility selector projection still exists because the cascade layer does
-  not yet consume selector AST nodes
+- selector matching and broader selector coverage remain later work; the
+  permanent selector AST/parser now belongs to `css::selectors` under
+  Milestone P and AF2
+- compatibility selector projection still exists only as a migration bridge
+  for consumers that have not moved to the selector model
 - declaration values are preserved as syntax-layer component values, not
   property-specific semantic value trees
 - at-rule semantics are still limited to structural parsing rather than full

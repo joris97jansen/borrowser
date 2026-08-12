@@ -30,7 +30,10 @@ Syntactically valid but unsupported selectors are:
 - treated as non-matchable for the current engine stage
 - classified by explicit `UnsupportedSelectorFeature` categories
 - normalized into stable first-encounter feature order with deduplication
-- kept eligible for future support without reparsing raw stylesheet text
+- retained with its source span and unsupported feature categories for
+  diagnostics and future tracking; because this is not a lossless unsupported
+  selector AST, future support may require reparsing the preserved
+  source/prelude
 
 The in-code handling strategy is exposed as
 `UnsupportedSelectorHandling::PreserveAsUnsupported`.
@@ -110,7 +113,7 @@ Repository status:
 
 - the P6 unsupported-selector-handling issue is complete and may be treated as
   closed
-- the next Milestone P work should wire selector parse results into the
-  stylesheet rule/model path
-- selector matching and cascade winner resolution remain intentionally out of
-  scope for that step
+- Milestone P and AF2 now provide the permanent selector/model parse-result
+  path and selector diagnostic projection
+- selector matching and cascade winner resolution remain separate downstream
+  consumers
