@@ -6,6 +6,11 @@ use std::ops::{Add, AddAssign};
 /// `b`: class selectors and attribute selectors
 /// `c`: type selectors
 ///
+/// The field declaration order is semantic: the derived `Ord` implementation
+/// compares the tuple lexicographically as A, then B, then C. Keep these
+/// fields in that order unless the comparison implementation is updated with
+/// equivalent explicit semantics.
+///
 /// Saturating arithmetic is used so hostile input cannot overflow specificity
 /// accounting.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Ord, PartialOrd)]
