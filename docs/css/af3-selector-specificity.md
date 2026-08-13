@@ -1,6 +1,6 @@
 # AF3: Selector Specificity Contract
 
-Last updated: 2026-08-12  
+Last updated: 2026-08-12
 Status: reconciled and implemented
 
 This document is the Milestone AF3 contract for selector specificity. AF3
