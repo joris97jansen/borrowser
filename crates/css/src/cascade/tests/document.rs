@@ -154,13 +154,16 @@ fn resolve_document_styles_produces_structured_output_without_mutating_dom() {
 
 #[test]
 fn parser_produced_invalid_and_unsupported_rules_are_non_applicable_to_cascade() {
-    let sheet = stylesheet("a:hover { color: red; } [lang=] { color: blue; }");
+    let sheet = stylesheet(
+        "a:hover { color: red; } div::before { color: green; } [lang=] { color: blue; }",
+    );
     let dom = element("a", Vec::new(), Vec::new());
     let index = SelectorDomIndex::from_root(&dom);
     let context = SelectorMatchingContext::new(&index);
     let element = index.elements().next().expect("indexed element");
 
     let expected = [
+        SelectorMatchability::Unsupported,
         SelectorMatchability::Unsupported,
         SelectorMatchability::Invalid,
     ];
@@ -187,6 +190,47 @@ fn parser_produced_invalid_and_unsupported_rules_are_non_applicable_to_cascade()
     }
 
     assert_eq!(checked, expected.len());
+}
+
+#[test]
+fn selector_list_effective_specificity_uses_only_actual_matches_in_cascade() {
+    let stylesheets = vec![stylesheet(
+        "#missing, div { color: red; } .target { color: blue; }",
+    )];
+    let dom = element("div", vec![("class", Some("target"))], Vec::new());
+
+    let resolved = resolve_document_styles(&dom, &stylesheets).expect("resolved document style");
+    let color = resolved.entries()[0]
+        .style()
+        .get(CascadePropertyId::Color)
+        .and_then(|entry| entry.winner())
+        .expect("color winner");
+
+    assert_eq!(color.value.to_css_text().as_deref(), Some("blue"));
+    assert_eq!(
+        color.priority.specificity,
+        CascadeSpecificity::Selector(crate::Specificity::new(0, 1, 0))
+    );
+
+    let snapshot = crate::resolve_document_styles_debug_snapshot(&dom, &stylesheets);
+    assert!(
+        snapshot.contains(
+            "rule-input[0]: source=stylesheet[0/0] origin=author specificity=selector(0,0,1)"
+        ),
+        "the unmatched #missing selector must not raise the first rule's effective specificity:\n{snapshot}"
+    );
+    assert!(
+        snapshot.contains(
+            "rule-input[1]: source=stylesheet[0/1] origin=author specificity=selector(0,1,0)"
+        ),
+        "the .target rule must carry class specificity:\n{snapshot}"
+    );
+    assert!(
+        snapshot.contains(
+            "color: winner(source=stylesheet[0/1]/declaration[0], band=author-normal, specificity=selector(0,1,0)"
+        ),
+        "the class selector must win through cascade priority:\n{snapshot}"
+    );
 }
 
 #[test]

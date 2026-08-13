@@ -89,6 +89,55 @@ fn specificity_saturates_deterministically() {
 }
 
 #[test]
+fn specificity_comparison_is_lexicographic_a_then_b_then_c() {
+    assert!(Specificity::new(1, 0, 0) > Specificity::new(0, u16::MAX, u16::MAX));
+    assert!(Specificity::new(0, 1, 0) > Specificity::new(0, 0, u16::MAX));
+    assert!(Specificity::new(0, 0, 2) > Specificity::new(0, 0, 1));
+    assert_eq!(Specificity::new(4, 7, 9), Specificity::new(4, 7, 9));
+}
+
+#[test]
+fn specificity_saturation_does_not_wrap_or_reverse_ordering() {
+    let saturated = Specificity::new(u16::MAX, u16::MAX, u16::MAX) + Specificity::TYPE;
+    assert_eq!(saturated, Specificity::new(u16::MAX, u16::MAX, u16::MAX));
+    assert!(saturated > Specificity::new(u16::MAX - 1, u16::MAX, u16::MAX));
+
+    let b_saturated = Specificity::new(0, u16::MAX, u16::MAX) + Specificity::CLASS;
+    assert_eq!(b_saturated, Specificity::new(0, u16::MAX, u16::MAX));
+    assert!(b_saturated > Specificity::new(0, u16::MAX - 1, u16::MAX));
+}
+
+#[test]
+fn combinators_are_specificity_neutral() {
+    let descendant = parsed_selector_list("div span.card");
+    let child = parsed_selector_list("div > span.card");
+    let next_sibling = parsed_selector_list("div + span.card");
+    let subsequent_sibling = parsed_selector_list("div ~ span.card");
+
+    let expected = Specificity::new(0, 1, 2);
+    assert_eq!(
+        descendant.iter().next().expect("selector").specificity(),
+        expected
+    );
+    assert_eq!(
+        child.iter().next().expect("selector").specificity(),
+        expected
+    );
+    assert_eq!(
+        next_sibling.iter().next().expect("selector").specificity(),
+        expected
+    );
+    assert_eq!(
+        subsequent_sibling
+            .iter()
+            .next()
+            .expect("selector")
+            .specificity(),
+        expected
+    );
+}
+
+#[test]
 fn parser_derives_specificity_from_selector_ir() {
     let list = parsed_selector_list("*#hero.card[data-kind] > section.notice");
     let selector = list.iter().next().expect("parsed selector");
