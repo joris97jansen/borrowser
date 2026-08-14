@@ -183,7 +183,7 @@ fn document_mode_is_parser_metadata_not_doctype_node_identity() {
         .expect("doctype should process");
     assert_eq!(
         builder.state_snapshot().quirks_mode,
-        DocumentMode::Quirks,
+        crate::DocumentModeReadiness::Selected(DocumentMode::Quirks),
         "non-html doctype should select parser-owned quirks metadata"
     );
 
@@ -258,7 +258,7 @@ fn initial_comment_before_quirks_doctype_keeps_document_mode_as_metadata() {
 
     assert_eq!(
         builder.state_snapshot().quirks_mode,
-        DocumentMode::Quirks,
+        crate::DocumentModeReadiness::Selected(DocumentMode::Quirks),
         "doctype after an Initial comment should still derive document mode"
     );
     assert_eq!(

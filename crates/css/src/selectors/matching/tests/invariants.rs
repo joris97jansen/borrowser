@@ -33,8 +33,10 @@ fn matching_context_complex_selector_matching_is_independent_of_equivalent_dom_c
 
     let flat_index = SelectorDomIndex::from_root(&flat_dom);
     let nested_index = SelectorDomIndex::from_root(&nested_dom);
-    let flat_context = SelectorMatchingContext::new(&flat_index);
-    let nested_context = SelectorMatchingContext::new(&nested_index);
+    let flat_context =
+        SelectorMatchingContext::new(&flat_index, super::support::matching_environment());
+    let nested_context =
+        SelectorMatchingContext::new(&nested_index, super::support::matching_environment());
     let flat_target = flat_index.elements().last().expect("flat target");
     let nested_target = nested_index.elements().last().expect("nested target");
     let selectors = parse_selector_result("main > p.note, span + p.note, div ~ p.note");
@@ -65,7 +67,7 @@ fn matching_context_complex_selector_matching_is_independent_of_raw_parse_format
     )]);
 
     let index = SelectorDomIndex::from_root(&dom);
-    let context = SelectorMatchingContext::new(&index);
+    let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let target = index.elements().last().expect("target element");
     let compact = parse_selector_result("main>span+p.note");
     let formatted = parse_selector_result("main /**/ > /**/ span /**/ + /**/ p.note");

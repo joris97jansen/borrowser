@@ -1,6 +1,10 @@
 use crate::{ParseOptions, parse_stylesheet_with_options};
 use html::{Node, internal::Id};
 
+pub(super) const fn matching_environment() -> crate::SelectorMatchingEnvironment {
+    crate::SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks)
+}
+
 pub(super) fn stylesheet(source: &str) -> crate::model::StylesheetParse {
     parse_stylesheet_with_options(source, &ParseOptions::stylesheet())
 }

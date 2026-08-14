@@ -96,7 +96,7 @@ pub use crate::attributes::{
     AttributeNamespace, ParserCreatedAttribute, QualifiedAttributeName,
     parser_created_attribute_lists_equal_ordered,
 };
-pub use crate::document_mode::{DocumentMode, ParseDocumentModeError};
+pub use crate::document_mode::{DocumentMode, DocumentModeReadiness, ParseDocumentModeError};
 pub use crate::dom_diff::{
     DomDiffState, diff_dom, diff_dom_stateless, diff_dom_with_state, diff_from_empty,
 };

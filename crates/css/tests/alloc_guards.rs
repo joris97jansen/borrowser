@@ -1,8 +1,8 @@
 #![cfg(feature = "count-alloc")]
 
 use css::{
-    ParseOptions, compute_document_styles, parse_stylesheet_with_options, perf_fixtures,
-    resolve_document_styles,
+    ParseOptions, SelectorMatchingEnvironment, compute_document_styles,
+    parse_stylesheet_with_options, perf_fixtures, resolve_document_styles,
 };
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::{
@@ -158,13 +158,16 @@ fn style_resolution_allocation_is_bounded_for_representative_page() {
         &ParseOptions::stylesheet(),
     )];
     let dom = perf_fixtures::representative_dom(BLOCKS);
+    let environment = SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks);
 
     let (computed, counts) = measure(
         || {
-            let _ = resolve_document_styles(&dom, &sheets).expect("warm style resolution");
-            let _ = compute_document_styles(&dom, &sheets).expect("warm computed style");
+            let _ =
+                resolve_document_styles(&dom, environment, &sheets).expect("warm style resolution");
+            let _ =
+                compute_document_styles(&dom, environment, &sheets).expect("warm computed style");
         },
-        || compute_document_styles(&dom, &sheets).expect("computed style should work"),
+        || compute_document_styles(&dom, environment, &sheets).expect("computed style should work"),
     );
 
     let entries = perf_fixtures::representative_element_count(BLOCKS);

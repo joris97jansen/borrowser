@@ -5,7 +5,7 @@ use crate::rendering::{PendingRenderWork, RenderFrameExecutionTrace, RenderInval
 use crate::resources::ResourceManager;
 use app_api::RepaintHandle;
 use bus::CoreCommand;
-use core_types::{DomHandle, NetworkResponseInfo, RequestId, StylesheetSlotId, TabId};
+use core_types::{DomHandle, DomVersion, NetworkResponseInfo, RequestId, StylesheetSlotId, TabId};
 use std::collections::HashMap;
 use std::sync::mpsc;
 
@@ -41,6 +41,7 @@ pub struct Tab {
     pub(super) document_input: DocumentInputState,
     pub(super) dom_store: DomStore,
     pub(super) dom_handle: Option<DomHandle>,
+    pub(super) dom_version: DomVersion,
     pub(super) pending_render_work: PendingRenderWork,
     pub(super) last_render_trace: Option<RenderFrameExecutionTrace>,
 }
@@ -64,6 +65,7 @@ impl Tab {
             document_input: DocumentInputState::default(),
             dom_store: DomStore::new(),
             dom_handle: None,
+            dom_version: DomVersion::INITIAL,
             pending_render_work: PendingRenderWork::default(),
             last_render_trace: None,
         }

@@ -291,7 +291,7 @@ pub(crate) struct TreeBuilderProgressWitness {
     pub(crate) current_table_key: Option<PatchKey>,
     pub(crate) pending_table_character_tokens: Vec<String>,
     pub(crate) pending_table_character_tokens_contains_non_space: bool,
-    pub(crate) quirks_mode: crate::DocumentMode,
+    pub(crate) quirks_mode: crate::DocumentModeReadiness,
     pub(crate) frameset_ok: bool,
     pub(crate) foster_parenting_enabled: bool,
 }
@@ -314,7 +314,7 @@ pub struct TreeBuilderStateSnapshot {
     pub(crate) current_table_key: Option<PatchKey>,
     pub(crate) pending_table_character_tokens: Vec<String>,
     pub(crate) pending_table_character_tokens_contains_non_space: bool,
-    pub(crate) quirks_mode: crate::DocumentMode,
+    pub(crate) quirks_mode: crate::DocumentModeReadiness,
     pub(crate) frameset_ok: bool,
 }
 
@@ -527,7 +527,7 @@ impl Html5TreeBuilder {
                 .pending_table_text
                 .as_ref()
                 .is_some_and(|state| state.tokens().contains_non_space()),
-            quirks_mode: self.document_state.quirks_mode,
+            quirks_mode: self.document_state.mode,
             frameset_ok: self.document_state.frameset_ok,
             foster_parenting_enabled: self.foster_parenting_enabled,
         }
@@ -659,7 +659,7 @@ impl Html5TreeBuilder {
                 .pending_table_text
                 .as_ref()
                 .is_some_and(|state| state.tokens().contains_non_space()),
-            quirks_mode: self.document_state.quirks_mode,
+            quirks_mode: self.document_state.mode,
             frameset_ok: self.document_state.frameset_ok,
         }
     }

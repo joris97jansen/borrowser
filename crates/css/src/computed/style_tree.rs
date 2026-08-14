@@ -1,6 +1,9 @@
 use crate::{
     model,
-    selectors::{SelectorDomElementIter, SelectorDomIndex, SelectorMatchingContext},
+    selectors::{
+        SelectorDomElementIter, SelectorDomIndex, SelectorMatchingContext,
+        SelectorMatchingEnvironment,
+    },
 };
 
 use html::{Node, internal::Id};
@@ -126,9 +129,10 @@ fn styled_node_kind_debug_label(node: &Node) -> String {
 /// cascade-to-computed pipeline without mutating `Node::style`.
 pub fn build_style_tree_with_stylesheets<'a>(
     root: &'a html::Node,
+    matching_environment: SelectorMatchingEnvironment,
     sheets: &[model::StylesheetParse],
 ) -> Result<StyledNode<'a>, ComputedStyleResolutionError> {
-    let computed_styles = compute_document_styles(root, sheets)?;
+    let computed_styles = compute_document_styles(root, matching_environment, sheets)?;
     build_style_tree_from_computed_styles(root, &computed_styles)
 }
 
@@ -138,7 +142,7 @@ pub fn build_style_tree_from_computed_styles<'a>(
     computed_styles: &ComputedDocumentStyle,
 ) -> Result<StyledNode<'a>, ComputedStyleResolutionError> {
     let index = SelectorDomIndex::from_root(root);
-    let context = SelectorMatchingContext::new(&index);
+    let context = SelectorMatchingContext::new(&index, computed_styles.matching_environment());
     let mut element_ids = index.elements();
     let mut entries = ComputedElementStyleCursor::new(computed_styles.entries());
     let styled = build_style_tree_from_computed_entries(

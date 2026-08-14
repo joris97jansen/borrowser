@@ -1,10 +1,8 @@
 use super::Tab;
 use super::state::DocumentLoadState;
 use super::status::{format_network_error, response_summary};
-use crate::page::RestyleHint;
 use bus::CoreCommand;
 use core_types::{NetworkErrorKind, NetworkResponseInfo, RequestId};
-use html::Node;
 
 impl Tab {
     pub(super) fn on_html_network_start(
@@ -14,6 +12,7 @@ impl Tab {
     ) {
         self.dom_store.clear();
         self.dom_handle = None;
+        self.dom_version = core_types::DomVersion::INITIAL;
         self.document_load = DocumentLoadState {
             response: Some(response.clone()),
             bytes_received: 0,
@@ -83,41 +82,5 @@ impl Tab {
             &error,
         ));
         self.poke_redraw();
-    }
-
-    pub(super) fn on_dom_update(&mut self, dom: Box<Node>, request_id: RequestId) {
-        self.on_dom_update_with_restyle(dom, request_id, RestyleHint::document_replaced());
-    }
-
-    pub(super) fn on_dom_update_with_restyle(
-        &mut self,
-        dom: Box<Node>,
-        request_id: RequestId,
-        restyle_hint: RestyleHint,
-    ) {
-        let render_work = self.page.replace_dom(dom, restyle_hint);
-        self.page.update_head_metadata();
-        self.page
-            .seed_input_values_from_dom(&mut self.document_input.input_values);
-        self.page.update_visible_text_cache();
-
-        self.discover_resources(request_id);
-
-        let pending = self.page.pending_count();
-        self.loading = pending > 0;
-        let response = self.document_load.response.as_ref();
-        let base = if pending > 0 {
-            format!("Document parsed • fetching {pending} stylesheet(s)")
-        } else {
-            "Document parsed".to_string()
-        };
-        self.last_status = Some(match response {
-            Some(response) => format!(
-                "{base} • {}",
-                response_summary(response, self.document_load.bytes_received)
-            ),
-            None => base,
-        });
-        self.request_render_work(render_work);
     }
 }

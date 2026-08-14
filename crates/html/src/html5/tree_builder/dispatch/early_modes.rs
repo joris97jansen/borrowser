@@ -1,4 +1,5 @@
 use super::DispatchOutcome;
+use crate::DocumentMode;
 use crate::html5::shared::{
     AtomTable, ParserRecoveryAction, Token, TreeConstructionParseErrorCode,
 };
@@ -52,10 +53,12 @@ impl Html5TreeBuilder {
                         Some(ParserRecoveryAction::ReprocessToken),
                         Some("initial-unexpected-token"),
                     );
+                    self.select_initial_quirks_mode()?;
                     Ok(DispatchOutcome::Reprocess(InsertionMode::BeforeHtml))
                 }
             }
             Token::Eof => {
+                self.select_initial_quirks_mode()?;
                 let _ = self.ensure_document_created(context)?;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::BeforeHtml))
             }
@@ -66,9 +69,14 @@ impl Html5TreeBuilder {
                     Some(ParserRecoveryAction::ReprocessToken),
                     Some("initial-unexpected-token"),
                 );
+                self.select_initial_quirks_mode()?;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::BeforeHtml))
             }
         }
+    }
+
+    fn select_initial_quirks_mode(&mut self) -> Result<(), TreeBuilderError> {
+        self.select_document_mode(DocumentMode::Quirks)
     }
 
     pub(in crate::html5::tree_builder) fn handle_before_html(

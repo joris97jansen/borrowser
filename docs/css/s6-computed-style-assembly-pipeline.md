@@ -42,6 +42,10 @@ The browser view path now builds its style tree through
 
 ## Assembly Flow
 
+AF4a refinement: computed-style entry points that initiate selector matching
+require the explicit matching environment, and computed artifacts retain that
+environment for semantic reuse validation.
+
 For each element in selector document order:
 
 1. cascade resolves a total `ResolvedStyle`

@@ -1,5 +1,9 @@
 use super::*;
 
+pub(super) const fn matching_environment() -> crate::SelectorMatchingEnvironment {
+    crate::SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks)
+}
+
 pub(super) fn builder_with_initials_except(skip: &[PropertyId]) -> ComputedStyleBuilder {
     let mut builder = ComputedStyleBuilder::new();
     for property in property_registry().ids() {

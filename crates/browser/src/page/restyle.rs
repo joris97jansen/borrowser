@@ -15,6 +15,10 @@ impl RestyleTrigger {
         for patch in patches {
             let candidate = match patch {
                 DomPatch::Clear | DomPatch::CreateDocument { .. } => Self::DocumentReplaced,
+                // Template contents are inert to selector/layout/paint matching;
+                // the DOM generation still commits, but no style invalidation is
+                // required when this is the only publication effect.
+                DomPatch::CreateTemplateContents { .. } => continue,
                 DomPatch::SetAttributes { .. } => Self::AttributesChanged,
                 DomPatch::SetText { .. } | DomPatch::AppendText { .. } => Self::TextMutated,
                 DomPatch::CreateElement { .. }
@@ -57,6 +61,7 @@ pub(crate) struct RestyleHint {
 }
 
 impl RestyleHint {
+    #[cfg(test)]
     pub(crate) fn document_replaced() -> Self {
         Self {
             trigger: RestyleTrigger::DocumentReplaced,

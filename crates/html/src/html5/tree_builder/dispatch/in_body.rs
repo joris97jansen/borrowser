@@ -328,7 +328,7 @@ impl Html5TreeBuilder {
                 attrs,
                 self_closing,
             } if *name == self.known_tags.table => {
-                if self.closes_p_before_table_in_body()
+                if self.closes_p_before_table_in_body()?
                     && self.open_elements.has_in_scope(
                         self.known_tags.p,
                         ScopeKind::Button,

@@ -3,7 +3,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use css::{ParseOptions, compute_document_styles, parse_stylesheet_with_options};
+use css::{
+    ParseOptions, SelectorMatchingEnvironment, compute_document_styles,
+    parse_stylesheet_with_options,
+};
 use html::{HtmlParseOptions, parse_document};
 
 struct PageFixture {
@@ -103,9 +106,10 @@ fn assert_fixture_matches(fixture: &PageFixture, update: bool) {
 }
 
 fn representative_computed_snapshot(fixture: &PageFixture) -> String {
-    let document = parse_document(&fixture.input_html, HtmlParseOptions::default())
-        .unwrap_or_else(|err| panic!("failed to parse HTML fixture '{}': {err}", fixture.name))
-        .document;
+    let parsed = parse_document(&fixture.input_html, HtmlParseOptions::default())
+        .unwrap_or_else(|err| panic!("failed to parse HTML fixture '{}': {err}", fixture.name));
+    let matching_environment = SelectorMatchingEnvironment::new(parsed.document_mode);
+    let document = parsed.document;
     let stylesheet =
         parse_stylesheet_with_options(&fixture.author_css, &ParseOptions::stylesheet());
     assert!(
@@ -115,7 +119,7 @@ fn representative_computed_snapshot(fixture: &PageFixture) -> String {
         stylesheet.diagnostics
     );
 
-    let computed = compute_document_styles(&document, &[stylesheet])
+    let computed = compute_document_styles(&document, matching_environment, &[stylesheet])
         .unwrap_or_else(|err| panic!("failed to compute styles for '{}': {err}", fixture.name));
 
     let mut snapshot = String::new();

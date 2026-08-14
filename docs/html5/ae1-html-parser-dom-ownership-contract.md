@@ -228,6 +228,11 @@ values without proving retained render continuity.
 
 ## Document Mode Ownership
 
+HTML tree construction owns a readiness state that transitions from
+`Unselected` to one immutable selected `DocumentMode`. Runtime and Browser
+transport that selected metadata atomically with DOM publication; CSS derives
+its own matching environment and does not reconstruct mode from `DocumentType`.
+
 Document mode selection is owned by HTML tree construction at document scope.
 The tokenizer emits DOCTYPE token fields, including `force_quirks`; the tree
 builder/document parse state chooses document mode from those fields in the

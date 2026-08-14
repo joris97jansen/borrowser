@@ -16,6 +16,209 @@ use crate::patching::{estimate_patch_bytes, estimate_patch_bytes_slice};
 use crate::policy::{MAX_PATCH_BUFFER_RETAIN, MIN_PATCH_BUFFER_RETAIN, patch_buffer_retain_target};
 use crate::runtime::start_parse_runtime_with_policy_and_clock;
 use crate::state::RuntimeState;
+use crate::state::{PRESELECTION_BYTE_LIMIT, PRESELECTION_PATCH_LIMIT};
+
+fn no_flush_policy() -> PreviewPolicy {
+    PreviewPolicy {
+        tick: Duration::from_secs(60),
+        token_threshold: None,
+        byte_threshold: None,
+        patch_threshold: None,
+        patch_byte_threshold: None,
+    }
+}
+
+#[test]
+fn preselection_patches_are_not_published_until_mode_is_selected() {
+    let now = Instant::now();
+    let mut state = RuntimeState::new(now, MIN_PATCH_BUFFER_RETAIN, DomHandle(3)).unwrap();
+    let (evt_tx, evt_rx) = mpsc::channel();
+
+    assert!(!handle_runtime_chunk(
+        &mut state,
+        b"<!--prefix-->",
+        &no_flush_policy(),
+        now,
+        &evt_tx,
+        1,
+        1,
+    ));
+    assert!(state.document_mode.is_none());
+    assert!(!state.patch_buffer.is_empty());
+    assert!(evt_rx.try_recv().is_err());
+}
+
+#[test]
+fn preselection_threshold_pressure_never_flushes_metadata_free_patches() {
+    let now = Instant::now();
+    let mut state = RuntimeState::new(now, MIN_PATCH_BUFFER_RETAIN, DomHandle(7)).unwrap();
+    let policy = PreviewPolicy {
+        tick: Duration::ZERO,
+        token_threshold: None,
+        byte_threshold: None,
+        patch_threshold: Some(1),
+        patch_byte_threshold: Some(1),
+    };
+    let (evt_tx, evt_rx) = mpsc::channel();
+    assert!(!handle_runtime_chunk(
+        &mut state,
+        b"<!--prefix-->",
+        &policy,
+        now,
+        &evt_tx,
+        1,
+        1,
+    ));
+    assert!(!state.failed);
+    assert!(state.document_mode.is_none());
+    assert!(evt_rx.try_recv().is_err());
+}
+
+#[test]
+fn selected_mode_is_observed_before_applying_preselection_patch_budget() {
+    let now = Instant::now();
+    let mut state = RuntimeState::new(now, MIN_PATCH_BUFFER_RETAIN, DomHandle(8)).unwrap();
+    let (evt_tx, evt_rx) = mpsc::channel();
+    let input = format!("<!doctype html>{}", "<div></div>".repeat(5_000));
+
+    assert!(!handle_runtime_chunk(
+        &mut state,
+        input.as_bytes(),
+        &no_flush_policy(),
+        now,
+        &evt_tx,
+        1,
+        1,
+    ));
+    assert_eq!(state.document_mode, Some(html::DocumentMode::NoQuirks));
+    assert!(state.patch_buffer.len() > PRESELECTION_PATCH_LIMIT);
+    assert!(evt_rx.try_recv().is_err());
+}
+
+#[test]
+fn no_doctype_selects_quirks_before_large_first_chunk_is_budgeted() {
+    let now = Instant::now();
+    let mut state = RuntimeState::new(now, MIN_PATCH_BUFFER_RETAIN, DomHandle(9)).unwrap();
+    let (evt_tx, evt_rx) = mpsc::channel();
+    let input = "<div></div>".repeat(5_000);
+
+    assert!(!handle_runtime_chunk(
+        &mut state,
+        input.as_bytes(),
+        &no_flush_policy(),
+        now,
+        &evt_tx,
+        1,
+        1,
+    ));
+    assert_eq!(state.document_mode, Some(html::DocumentMode::Quirks));
+    assert!(state.patch_buffer.len() > PRESELECTION_PATCH_LIMIT);
+    assert!(evt_rx.try_recv().is_err());
+}
+
+#[test]
+fn selected_mode_does_not_apply_preselection_byte_budget_to_new_patches() {
+    let now = Instant::now();
+    let mut state = RuntimeState::new(now, MIN_PATCH_BUFFER_RETAIN, DomHandle(10)).unwrap();
+    state.pending_patch_bytes = PRESELECTION_BYTE_LIMIT;
+    let (evt_tx, evt_rx) = mpsc::channel();
+
+    assert!(!handle_runtime_chunk(
+        &mut state,
+        b"<!doctype html><div>x</div>",
+        &no_flush_policy(),
+        now,
+        &evt_tx,
+        1,
+        1,
+    ));
+    assert_eq!(state.document_mode, Some(html::DocumentMode::NoQuirks));
+    assert!(!state.failed);
+    assert!(evt_rx.try_recv().is_err());
+}
+
+#[test]
+fn preselection_patch_count_budget_is_typed_and_terminal() {
+    let now = Instant::now();
+    let mut state = RuntimeState::new(now, MIN_PATCH_BUFFER_RETAIN, DomHandle(4)).unwrap();
+    state.patch_buffer = (0..PRESELECTION_PATCH_LIMIT)
+        .map(|_| DomPatch::CreateComment {
+            key: PatchKey(1),
+            text: String::new(),
+        })
+        .collect();
+    let (evt_tx, evt_rx) = mpsc::channel();
+
+    assert!(handle_runtime_chunk(
+        &mut state,
+        b"<!--prefix-->",
+        &no_flush_policy(),
+        now,
+        &evt_tx,
+        1,
+        1,
+    ));
+    assert!(state.failed);
+    assert!(matches!(
+        evt_rx.try_recv().unwrap(),
+        CoreEvent::DocumentPublicationFailed {
+            failure: bus::DocumentPublicationFailure::PreSelectionBudgetExceeded,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn preselection_byte_budget_is_typed_and_terminal() {
+    let now = Instant::now();
+    let mut state = RuntimeState::new(now, MIN_PATCH_BUFFER_RETAIN, DomHandle(5)).unwrap();
+    state.pending_patch_bytes = PRESELECTION_BYTE_LIMIT;
+    let (evt_tx, evt_rx) = mpsc::channel();
+
+    assert!(handle_runtime_chunk(
+        &mut state,
+        b"<!--prefix-->",
+        &no_flush_policy(),
+        now,
+        &evt_tx,
+        1,
+        1,
+    ));
+    assert!(state.failed);
+    assert!(matches!(
+        evt_rx.try_recv().unwrap(),
+        CoreEvent::DocumentPublicationFailed {
+            failure: bus::DocumentPublicationFailure::PreSelectionBudgetExceeded,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn runtime_latches_selected_mode_and_rejects_inconsistent_observation() {
+    let now = Instant::now();
+    let mut state = RuntimeState::new(now, MIN_PATCH_BUFFER_RETAIN, DomHandle(6)).unwrap();
+    state.document_mode = Some(html::DocumentMode::NoQuirks);
+    let (evt_tx, evt_rx) = mpsc::channel();
+
+    assert!(handle_runtime_chunk(
+        &mut state,
+        b"<div>",
+        &no_flush_policy(),
+        now,
+        &evt_tx,
+        1,
+        1,
+    ));
+    assert!(state.failed);
+    assert!(matches!(
+        evt_rx.try_recv().unwrap(),
+        CoreEvent::DocumentPublicationFailed {
+            failure: bus::DocumentPublicationFailure::DocumentModeChanged,
+            ..
+        }
+    ));
+}
 
 #[test]
 fn decode_keeps_existing_completion_policy_while_parser_fatal_discards() {
@@ -198,7 +401,8 @@ fn patch_buffer_does_not_grow_unbounded_in_streaming() {
     st.parser.finish().expect("finish html5 runtime parser");
     st.update_pending_tokens();
     st.drain_patches().expect("drain final html5 patches");
-    st.flush_patch_buffer(&evt_tx, tab_id, request_id);
+    st.flush_patch_buffer(&evt_tx, tab_id, request_id)
+        .expect("final patch flush");
 
     assert!(
         st.max_patch_buffer_len <= patch_threshold + slack_patches,
@@ -259,7 +463,8 @@ fn patch_updates_are_bounded_under_streaming_policy() {
     let mut idle_ticks = 0usize;
     while idle_ticks < 10 {
         match evt_rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(CoreEvent::DomPatchUpdate { patches, .. }) => {
+            Ok(CoreEvent::DomPatchUpdate { publication, .. }) => {
+                let bus::DocumentPublicationPayload::Patch { patches, .. } = publication.payload;
                 saw_update = true;
                 idle_ticks = 0;
                 let count = patches.len();
@@ -300,10 +505,12 @@ fn patch_buffer_retain_capacity_is_bounded_on_flush() {
         DomHandle(1),
     )
     .expect("runtime state init");
+    st.document_mode = Some(html::DocumentMode::NoQuirks);
     st.patch_buffer = Vec::with_capacity(100_000);
     st.patch_buffer.push(DomPatch::Clear);
     let (evt_tx, _evt_rx) = mpsc::channel();
-    st.flush_patch_buffer(&evt_tx, 1, 1);
+    st.flush_patch_buffer(&evt_tx, 1, 1)
+        .expect("manual patch flush");
     let cap = st.patch_buffer.capacity();
     assert!(
         cap <= MAX_PATCH_BUFFER_RETAIN,

@@ -1,6 +1,60 @@
 use super::helpers::materialized_dom_lines;
-use crate::DocumentMode;
 use crate::html5::tree_builder::modes::InsertionMode;
+use crate::{DocumentMode, ParserFatalError};
+
+#[test]
+fn mode_dependent_table_recovery_requires_selected_document_mode() {
+    use super::helpers::{EmptyResolver, enter_in_body};
+    use crate::html5::shared::Token;
+
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+    let resolver = EmptyResolver;
+    let table = ctx
+        .atoms
+        .intern_ascii_folded("table")
+        .expect("atom interning");
+    let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
+    builder.clear_document_mode_for_test();
+
+    let error = builder
+        .process(
+            &Token::StartTag {
+                name: table,
+                attrs: Vec::new(),
+                self_closing: false,
+            },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
+        .expect_err("mode-dependent in-body recovery must reject unselected mode");
+    assert_eq!(error, ParserFatalError::EngineInvariant);
+}
+
+#[test]
+fn document_mode_selection_is_immutable_after_initial_selection() {
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+
+    assert!(builder.select_document_mode(DocumentMode::NoQuirks).is_ok());
+    assert!(builder.select_document_mode(DocumentMode::NoQuirks).is_ok());
+    assert_eq!(
+        builder.select_document_mode(DocumentMode::Quirks),
+        Err(crate::ParserFatalError::EngineInvariant)
+    );
+    assert_eq!(
+        builder.state_snapshot().quirks_mode,
+        crate::DocumentModeReadiness::Selected(DocumentMode::NoQuirks)
+    );
+}
 
 #[test]
 fn doctype_tokens_drive_expected_document_mode_state_and_leave_initial_mode() {
@@ -35,7 +89,7 @@ fn doctype_tokens_drive_expected_document_mode_state_and_leave_initial_mode() {
         .expect("doctype should process");
     assert_eq!(
         builder.state_snapshot().quirks_mode,
-        DocumentMode::LimitedQuirks
+        crate::DocumentModeReadiness::Selected(DocumentMode::LimitedQuirks)
     );
     assert_eq!(
         builder.state_snapshot().insertion_mode,
@@ -79,7 +133,7 @@ fn duplicate_doctype_after_initial_handoff_does_not_mutate_document_mode() {
         .expect("first doctype should process");
     assert_eq!(
         builder.state_snapshot().quirks_mode,
-        DocumentMode::NoQuirks,
+        crate::DocumentModeReadiness::Selected(DocumentMode::NoQuirks),
         "initial html doctype should select NoQuirks"
     );
     assert_eq!(
@@ -103,7 +157,7 @@ fn duplicate_doctype_after_initial_handoff_does_not_mutate_document_mode() {
 
     assert_eq!(
         builder.state_snapshot().quirks_mode,
-        DocumentMode::NoQuirks,
+        crate::DocumentModeReadiness::Selected(DocumentMode::NoQuirks),
         "late/duplicate doctype must not mutate document mode after Initial handoff"
     );
     assert_eq!(
@@ -147,7 +201,7 @@ fn doctype_after_body_started_remains_late_and_does_not_create_node() {
 
     assert_eq!(
         builder.state_snapshot().quirks_mode,
-        DocumentMode::NoQuirks,
+        crate::DocumentModeReadiness::Selected(DocumentMode::NoQuirks),
         "late in-body doctype must not mutate document mode"
     );
     assert_eq!(

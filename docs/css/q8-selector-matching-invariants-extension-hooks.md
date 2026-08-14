@@ -103,6 +103,11 @@ or `Invalid` inputs rather than being partially reinterpreted by matching.
 
 ## Matching Invariants
 
+AF4a extension invariant: document-mode metadata is an explicit context
+dependency. A missing or changed environment is an invariant failure for
+matching/reuse, not a selector-visible NoQuirks fallback. Browser identity and
+DOM generation remain outside the CSS environment.
+
 ### Input And Matchability
 
 - selector matching consumes selector IR, not raw selector source reparsing

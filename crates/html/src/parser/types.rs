@@ -137,6 +137,8 @@ impl From<Html5Counters> for HtmlParseCounters {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HtmlParseError {
     Decode,
+    /// The parser output was requested before HTML selected document mode.
+    DocumentModeUnavailable,
     /// Fatal parser execution failure.
     Fatal(ParserFatalError),
     PatchValidation(String),
@@ -146,6 +148,9 @@ impl core::fmt::Display for HtmlParseError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             HtmlParseError::Decode => write!(f, "decode error"),
+            HtmlParseError::DocumentModeUnavailable => {
+                write!(f, "document mode is not selected")
+            }
             HtmlParseError::Fatal(error) => error.fmt(f),
             HtmlParseError::PatchValidation(detail) => {
                 write!(f, "patch validation error: {detail}")

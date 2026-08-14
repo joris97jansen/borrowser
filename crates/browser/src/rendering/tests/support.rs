@@ -24,12 +24,16 @@ impl TextMeasurer for TestMeasurer {
 
 pub(super) fn page_with_dom(input: &str) -> PageState {
     let output = parse_document(input, HtmlParseOptions::default()).expect("parse should work");
-    page_with_node(output.document)
+    let mode = output.document_mode;
+    let mut page = page_with_node(output.document);
+    page.document_mode = Some(mode);
+    page
 }
 
 pub(super) fn page_with_node(dom: Node) -> PageState {
     let mut page = PageState::new();
     page.start_nav("https://example.com/index.html");
+    page.document_mode = Some(html::DocumentMode::NoQuirks);
     let _ = page.replace_dom(Box::new(dom), RestyleHint::document_replaced());
     let _ = page.reconcile_document_stylesheets();
     page

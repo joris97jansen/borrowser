@@ -1,7 +1,8 @@
 use crate::{
     ParseOptions, Rule, SelectorDomIndex, SelectorListParseResult, SelectorMatchingContext,
-    compute_document_styles, compute_document_styles_from_resolved_styles_with_reuse_stats,
-    parse_stylesheet_with_options, perf_fixtures, resolve_document_styles,
+    SelectorMatchingEnvironment, compute_document_styles,
+    compute_document_styles_from_resolved_styles_with_reuse_stats, parse_stylesheet_with_options,
+    perf_fixtures, resolve_document_styles,
 };
 
 const SMOKE_RULES: usize = 128;
@@ -37,7 +38,10 @@ fn perf_guard_selector_matching_work_is_deterministic() {
     let dom = perf_fixtures::representative_dom(SMOKE_BLOCKS);
     let selectors = representative_selector_parse();
     let index = SelectorDomIndex::from_root(&dom);
-    let context = SelectorMatchingContext::new(&index);
+    let context = SelectorMatchingContext::new(
+        &index,
+        SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks),
+    );
 
     let first = count_matches(&context, &selectors);
     let second = count_matches(&context, &selectors);
@@ -59,10 +63,13 @@ fn perf_guard_style_resolution_counts_and_reuse_are_bounded() {
     )];
     let dom = perf_fixtures::representative_dom(SMOKE_BLOCKS);
 
-    let resolved = resolve_document_styles(&dom, &sheets).expect("style resolution should work");
+    let environment = SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks);
+    let resolved =
+        resolve_document_styles(&dom, environment, &sheets).expect("style resolution should work");
     let computed = compute_document_styles_from_resolved_styles_with_reuse_stats(&dom, &resolved)
         .expect("computed style materialization should work");
-    let integrated = compute_document_styles(&dom, &sheets).expect("integrated style pass works");
+    let integrated =
+        compute_document_styles(&dom, environment, &sheets).expect("integrated style pass works");
 
     let expected_entries = perf_fixtures::representative_element_count(SMOKE_BLOCKS);
     assert_eq!(resolved.entries().len(), expected_entries);

@@ -1,12 +1,13 @@
 use super::super::{resolve_document_styles, resolve_document_styles_debug_snapshot};
-use super::support::{element, stylesheet};
+use super::support::{element, matching_environment, stylesheet};
 
 #[test]
 fn resolved_document_style_debug_snapshot_is_stable() {
     let stylesheets = vec![stylesheet("div { color: red; }")];
     let dom = element("div", Vec::new(), Vec::new());
 
-    let resolved = resolve_document_styles(&dom, &stylesheets).expect("resolved document style");
+    let resolved = resolve_document_styles(&dom, matching_environment(), &stylesheets)
+        .expect("resolved document style");
 
     assert_eq!(
         resolved.to_debug_snapshot(),
@@ -66,10 +67,11 @@ fn document_style_resolution_debug_snapshot_covers_override_inheritance_and_defa
     );
 
     assert_eq!(
-        resolve_document_styles_debug_snapshot(&dom, &stylesheets),
+        resolve_document_styles_debug_snapshot(&dom, matching_environment(), &stylesheets),
         concat!(
-            "version: 1\n",
+            "version: 2\n",
             "document-style-resolution\n",
+            "matching-environment: document-mode=no-quirks\n",
             "element[0]: selector-id=1 namespace=html name=\"section\"\n",
             "  cascade-evaluation\n",
             "  rule-inputs: 1\n",
@@ -177,7 +179,8 @@ fn document_style_resolution_keeps_unknown_properties_with_css_wide_values_unsup
     let stylesheets = vec![stylesheet("div { zoom: initial; color: red; }")];
     let dom = element("div", Vec::new(), Vec::new());
 
-    let snapshot = resolve_document_styles_debug_snapshot(&dom, &stylesheets);
+    let snapshot =
+        resolve_document_styles_debug_snapshot(&dom, matching_environment(), &stylesheets);
 
     assert!(
         snapshot.contains(
@@ -196,7 +199,8 @@ fn document_style_resolution_debug_snapshot_shows_outline_shorthand_expansion_or
     let stylesheets = vec![stylesheet("div { outline: 2px solid red; }")];
     let dom = element("div", Vec::new(), Vec::new());
 
-    let snapshot = resolve_document_styles_debug_snapshot(&dom, &stylesheets);
+    let snapshot =
+        resolve_document_styles_debug_snapshot(&dom, matching_environment(), &stylesheets);
 
     assert!(
         snapshot.contains(

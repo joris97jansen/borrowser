@@ -1,7 +1,8 @@
 use css::{
     ComputedDocumentStyle, ComputedStyleResolutionError, ComputedStyleReuseStats,
-    ResolvedDocumentStyle, StyleInvalidationPlan, StylePlanExecution, StyleResolutionLimits,
-    StylesheetCascadeInput, compute_document_styles_from_resolved_styles_with_reuse_stats,
+    ResolvedDocumentStyle, SelectorMatchingEnvironment, StyleInvalidationPlan, StylePlanExecution,
+    StyleResolutionLimits, StylesheetCascadeInput,
+    compute_document_styles_from_resolved_styles_with_reuse_stats,
     resolve_document_styles_from_cascade_inputs,
     try_compute_document_styles_for_invalidation_plan_with_limits,
 };
@@ -54,6 +55,7 @@ pub(super) struct StyleRecomputeState<'a> {
 
 pub(super) fn recompute_styles(
     dom: &Node,
+    environment: SelectorMatchingEnvironment,
     sheets: &[StylesheetCascadeInput<'_>],
     generations: PageStyleGenerations,
     key: RetainedStyleArtifactKey,
@@ -69,7 +71,12 @@ pub(super) fn recompute_styles(
                 .filter(|cache| cache.key.stylesheet_generation == generations.stylesheets)
                 .map(|cache| (&cache.resolved, &cache.computed));
             try_compute_document_styles_for_invalidation_plan_with_limits(
-                plan, dom, sheets, previous, &limits,
+                plan,
+                dom,
+                environment,
+                sheets,
+                previous,
+                &limits,
             )
         })
         .transpose()?;
@@ -92,7 +99,7 @@ pub(super) fn recompute_styles(
         return Ok(());
     }
 
-    let resolved = resolve_document_styles_from_cascade_inputs(dom, sheets)
+    let resolved = resolve_document_styles_from_cascade_inputs(dom, environment, sheets)
         .map_err(ComputedStyleResolutionError::StyleResolution)?;
     let computed = compute_document_styles_from_resolved_styles_with_reuse_stats(dom, &resolved)?;
     let elements = computed.computed.entries().len();

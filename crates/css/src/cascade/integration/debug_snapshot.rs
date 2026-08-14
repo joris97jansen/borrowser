@@ -7,7 +7,7 @@ use super::limits::{
     validate_representation_limits,
 };
 use super::rule_inputs::rule_inputs_for_element_with_limits;
-use crate::selectors::{SelectorDomIndex, SelectorMatchingContext};
+use crate::selectors::{SelectorDomIndex, SelectorMatchingContext, SelectorMatchingEnvironment};
 use crate::{model, syntax::ParseOptions};
 use html::Node;
 use std::collections::BTreeMap;
@@ -66,13 +66,20 @@ fn append_indented_snapshot(out: &mut String, snapshot: &str, indent: usize) {
 /// and triage of cascade ordering, inheritance, and defaulting behavior.
 pub fn resolve_document_styles_debug_snapshot(
     root: &Node,
+    matching_environment: SelectorMatchingEnvironment,
     sheets: &[model::StylesheetParse],
 ) -> String {
     let limits = StyleResolutionLimits::default();
     let mut out = String::new();
 
-    writeln!(&mut out, "version: 1").expect("write snapshot");
+    writeln!(&mut out, "version: 2").expect("write snapshot");
     writeln!(&mut out, "document-style-resolution").expect("write snapshot");
+    writeln!(
+        &mut out,
+        "matching-environment: document-mode={}",
+        matching_environment.document_mode()
+    )
+    .expect("write snapshot");
 
     if let Err(error) = validate_representation_limits(&limits) {
         writeln!(&mut out, "limit-error: {error}").expect("write snapshot");
@@ -91,7 +98,11 @@ pub fn resolve_document_styles_debug_snapshot(
     }
 
     let index = SelectorDomIndex::from_root(root);
-    let context = SelectorMatchingContext::with_limits(&index, limits.selector_matching);
+    let context = SelectorMatchingContext::with_limits(
+        &index,
+        matching_environment,
+        limits.selector_matching,
+    );
     let mut styles_by_element = BTreeMap::new();
 
     for (element_index, element) in index.elements().enumerate() {

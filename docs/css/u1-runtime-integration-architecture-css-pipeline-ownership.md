@@ -274,7 +274,7 @@ Milestone U defines these trigger classes:
 
 | trigger | examples | minimum invalidation for Milestone U |
 | --- | --- | --- |
-| document replacement | navigation, full `DomUpdate` snapshot, `Clear` patch batch | whole-document style dirty |
+| document replacement | navigation, new-handle publication, `Clear` patch batch | whole-document style dirty |
 | tree structure change | node create, append, insert, remove, reparent | affected subtree dirty; ancestor/sibling selectors may escalate to whole-document |
 | element attribute change | `class`, `id`, `style`, presentation-relevant attributes, link rel/href | target element and descendants dirty; stylesheet discovery may run |
 | inline style block change | `<style>` text insertion/update/removal | stylesheet set dirty and whole-document style dirty |
@@ -343,6 +343,12 @@ browser/page concerns. Semantic style computation and pass-local memoization of
 computed style materialization are CSS-engine concerns.
 
 ## Runtime Invariants
+
+AF4a publication handoff: runtime publishes one mode-bearing document envelope
+containing parser `DomHandle`, one DOM payload, and one Browser-visible
+generation transition. Browser commits it transactionally; CSS receives only a
+`SelectorMatchingEnvironment` derived from retained parser metadata. No
+metadata-free `CoreEvent::DomUpdate` path is authoritative.
 
 The following invariants remain mandatory for Milestone U implementation:
 

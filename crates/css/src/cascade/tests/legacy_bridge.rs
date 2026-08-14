@@ -1,12 +1,12 @@
 use super::super::attach_styles;
-use super::support::{element, stylesheet};
+use super::support::{element, matching_environment, stylesheet};
 
 #[test]
 fn attach_styles_projects_structured_winners_into_legacy_dom_style_vector() {
     let stylesheets = vec![stylesheet("div { color: blue !important; color: red; }")];
     let mut dom = element("div", Vec::new(), Vec::new());
 
-    attach_styles(&mut dom, &stylesheets);
+    attach_styles(&mut dom, matching_environment(), &stylesheets);
 
     let html::Node::Element { element } = dom else {
         panic!("expected element");
@@ -29,7 +29,7 @@ fn attach_styles_clears_legacy_projection_when_style_resolution_hits_limits() {
         .style_mut()
         .push(("color".to_string(), "stale".to_string()));
 
-    attach_styles(&mut dom, &[]);
+    attach_styles(&mut dom, matching_environment(), &[]);
 
     let html::Node::Element { element } = dom else {
         panic!("expected element");

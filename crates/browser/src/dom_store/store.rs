@@ -4,6 +4,7 @@ use core_types::{DomHandle, DomVersion};
 use html::{DomPatch, Node, PatchKey, internal::Id};
 use std::collections::HashMap;
 
+#[derive(Clone)]
 pub struct DomStore {
     docs: HashMap<DomHandle, DomDoc>,
 }

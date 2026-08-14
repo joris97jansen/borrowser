@@ -237,7 +237,7 @@ pub(super) fn enter_after_head(
     );
     assert_eq!(
         snap.quirks_mode,
-        crate::DocumentMode::NoQuirks,
+        crate::DocumentModeReadiness::Selected(crate::DocumentMode::NoQuirks),
         "enter_after_head() should keep NoQuirks for a normal html doctype"
     );
     builder.drain_patches()

@@ -1,5 +1,5 @@
 use super::contract::ResolvedStyle;
-use crate::selectors::SelectorDomElementId;
+use crate::selectors::{SelectorDomElementId, SelectorMatchingEnvironment};
 use std::fmt::Write;
 
 /// Resolved cascade output for one DOM element in a document style pass.
@@ -49,15 +49,28 @@ impl ResolvedElementStyle {
 /// This is the structured cascade result for the current runtime integration
 /// path. It is independent of `html::Node::style` mutation; the legacy bridge
 /// projects from this object only after cascade has already resolved winners,
-/// inheritance, and defaults.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// inheritance, and defaults. The result remains bound to the immutable
+/// matching environment used for selector evaluation so incremental reuse
+/// cannot cross document-mode semantics.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResolvedDocumentStyle {
+    matching_environment: SelectorMatchingEnvironment,
     entries: Vec<ResolvedElementStyle>,
 }
 
 impl ResolvedDocumentStyle {
-    pub(super) fn new(entries: Vec<ResolvedElementStyle>) -> Self {
-        Self { entries }
+    pub(super) fn new(
+        matching_environment: SelectorMatchingEnvironment,
+        entries: Vec<ResolvedElementStyle>,
+    ) -> Self {
+        Self {
+            matching_environment,
+            entries,
+        }
+    }
+
+    pub fn matching_environment(&self) -> SelectorMatchingEnvironment {
+        self.matching_environment
     }
 
     pub fn entries(&self) -> &[ResolvedElementStyle] {

@@ -291,6 +291,16 @@ separate fields.
 
 ## AE13b5 canonical patch snapshots
 
+## AF4a publication metadata boundary
+
+`DomPatch` remains structural and never carries document mode. Runtime
+publication wraps the patch payload with the parser-selected mode and the
+runtime-owned `DomHandle`/`DomVersion` transition in one typed envelope.
+Parser-local `DomPatchBatch` sequencing is not the Browser-visible generation.
+Until HTML reports `Selected(DocumentMode)`, runtime retains patches in a hard
+bounded pre-selection buffer and publishes no selector-visible DOM. Budget
+exhaustion is a typed terminal failure.
+
 `html5-dompatch-v3` is the native parser-fixture patch format. Its writer
 consumes only the AE13b3 `ObservedPatchStream`, including first-appearance
 labels and canonical operation order. Runtime batch boundaries, `PatchKey`,

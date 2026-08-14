@@ -23,7 +23,12 @@ Related documents:
 
 Q7 adds an integrated selector-matching snapshot surface through:
 
-- `SelectorDomIndex::to_matching_debug_snapshot(...)`
+- `SelectorDomIndex::to_matching_debug_snapshot(matching_environment, ...)`
+
+The matching environment is an explicit input to this surface. It is the
+CSS-owned immutable `SelectorMatchingEnvironment` containing the parser-selected
+`DocumentMode`; it does not contain Browser/runtime identity or DOM generation.
+Selector semantics remain owned by CSS.
 
 This snapshot combines, in one deterministic output:
 
@@ -40,10 +45,22 @@ The snapshot format is stable and versioned.
 
 It records:
 
+- the explicit matching environment
 - selector parse state and selector IR structure
 - the normalized selector DOM used by the matcher
 - per-target match outcomes in document order
 - explicit matchability and specificity data for each target
+
+AF4a's integrated selector-matching snapshot is `version: 2` and includes the
+deterministic line:
+
+```text
+matching-environment: document-mode=<no-quirks|limited-quirks|quirks>
+```
+
+The environment line exposes only the semantic document mode. It does not
+expose Browser/runtime identity or DOM generation. Lower-level selector parse,
+DOM, and match-outcome snapshot formats retain their own existing versions.
 
 This keeps the debug surface aligned with the internal selector subsystem
 models rather than inventing a separate ad hoc representation.
@@ -56,6 +73,8 @@ Q7 snapshot output is deterministic by contract:
   snapshot body
 - DOM structure is serialized through the deterministic `SelectorDomIndex`
   projection
+- the matching environment is serialized in a fixed field and canonical mode
+  spelling
 - target elements are evaluated in document order
 - each target uses the stable `SelectorListMatchOutcome` snapshot body
 - equivalent DOM constructions that normalize to the same selector DOM produce

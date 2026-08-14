@@ -288,6 +288,13 @@ Typed APIs and Rust visibility are the primary architecture enforcement:
 
 ## Deliberate non-goals
 
+AF4a matching-environment refinement: authoritative selector matching receives
+the CSS-owned immutable `SelectorMatchingEnvironment`, currently containing
+only parser-selected HTML `DocumentMode`. It has no default or Browser
+identity. Cascade, computed style, incremental reuse, and matching debug entry
+points preserve it explicitly, and resolved/computed artifacts bind to the
+environment that produced them.
+
 AF1 does not implement:
 
 - full selector coverage, new selector functionality, `:has()`, dynamic

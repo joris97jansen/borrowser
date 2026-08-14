@@ -25,7 +25,7 @@ fn witness(
         current_table_key: None,
         pending_table_character_tokens: Vec::new(),
         pending_table_character_tokens_contains_non_space: false,
-        quirks_mode: DocumentMode::NoQuirks,
+        quirks_mode: crate::DocumentModeReadiness::Selected(DocumentMode::NoQuirks),
         frameset_ok: true,
         foster_parenting_enabled: false,
     }

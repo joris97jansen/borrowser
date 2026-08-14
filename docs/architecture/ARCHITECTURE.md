@@ -102,15 +102,14 @@ HTML is parsed incrementally:
 
 1. The tokenizer receives streamed bytes from the network.
 2. The parser builds the tree node-by-node.
-3. After incremental work, the parser emits either a legacy `DomUpdate`
-   snapshot or a patch-based `DomPatchUpdate`.
+3. After incremental work, the parser emits a mode-bearing patch-based
+   `DomPatchUpdate` publication.
 
-`DomUpdate` is the legacy snapshot path. A patch-based stream also exists:
-`DomPatchUpdate { handle, from, to, patches }` carries incremental DOM mutations
-for a specific document handle and version range. Browser tabs apply patch
-batches atomically through `DomStore`, classify non-empty batches into
-`RestyleHint`s before materialization, and treat empty batches as no-ops for
-style generations.
+`DocumentPublication` carries the parser-selected mode, one document handle,
+and one `DomVersion` transition with its patch payload. Browser tabs stage and
+apply the complete publication atomically through `DomStore`, classify patches
+into `RestyleHint`s before materialization, and treat inert publications as
+DOM commits without synthetic style invalidation.
 
 DOM nodes are simple, ergonomic Rust enums:
 
@@ -608,6 +607,11 @@ new dependencies that bypass this table.
 # 🎯 Design Philosophy
 
 Borrowser is built with four principles:
+
+AF4a publication refinement: parser-selected document metadata travels
+atomically with the runtime DOM publication envelope. Browser owns publication
+identity/version and lifecycle state, while CSS owns the immutable selector
+matching environment and all selector semantics.
 
 ### **1. Clarity over cleverness**
 

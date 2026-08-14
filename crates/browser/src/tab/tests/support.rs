@@ -1,7 +1,112 @@
 use super::super::Tab;
+use bus::{DocumentPublication, DocumentPublicationPayload};
+use core_types::{DomHandle, DomVersion};
 use css::StyledNode;
 use html::{DomPatch, Node, PatchKey, internal::Id};
 use layout::TextMeasurer;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+pub(super) fn page_matching_environment(tab: &Tab) -> css::SelectorMatchingEnvironment {
+    css::SelectorMatchingEnvironment::new(
+        tab.page
+            .document_mode
+            .expect("test document publication should retain document mode"),
+    )
+}
+
+pub(super) fn no_quirks_patch_publication_from_output(
+    output: html::ParseOutput,
+) -> DocumentPublication {
+    static TEST_HANDLE: AtomicU64 = AtomicU64::new(10_000);
+    let handle = DomHandle(TEST_HANDLE.fetch_add(1, Ordering::Relaxed));
+    DocumentPublication {
+        handle,
+        document_mode: output.document_mode,
+        payload: DocumentPublicationPayload::Patch {
+            from: DomVersion::INITIAL,
+            to: DomVersion(1),
+            patches: output.patches,
+        },
+    }
+}
+
+pub(super) fn no_quirks_patch_publication_from_dom(dom: Box<Node>) -> DocumentPublication {
+    static TEST_HANDLE: AtomicU64 = AtomicU64::new(20_000);
+    let handle = DomHandle(TEST_HANDLE.fetch_add(1, Ordering::Relaxed));
+    let mut patches = vec![html::DomPatch::Clear];
+    append_manual_dom_patches(&dom, None, &mut patches);
+    DocumentPublication {
+        handle,
+        document_mode: html::DocumentMode::NoQuirks,
+        payload: DocumentPublicationPayload::Patch {
+            from: DomVersion::INITIAL,
+            to: DomVersion(1),
+            patches,
+        },
+    }
+}
+
+fn append_manual_dom_patches(node: &Node, parent: Option<PatchKey>, patches: &mut Vec<DomPatch>) {
+    let key = PatchKey::from_id(node.id());
+    match node {
+        Node::Document {
+            doctype, children, ..
+        } => {
+            patches.push(DomPatch::CreateDocument {
+                key,
+                doctype: doctype.clone(),
+            });
+            for child in children {
+                append_manual_dom_patches(child, Some(key), patches);
+            }
+        }
+        Node::Element { element } => {
+            patches.push(DomPatch::CreateElement {
+                key,
+                name: element.expanded_name().clone(),
+                attributes: element.attributes().to_vec(),
+            });
+            if let Some(parent) = parent {
+                patches.push(DomPatch::AppendChild { parent, child: key });
+            }
+            for child in element.children() {
+                append_manual_dom_patches(child, Some(key), patches);
+            }
+        }
+        Node::Text { text, .. } => {
+            patches.push(DomPatch::CreateText {
+                key,
+                text: text.clone(),
+            });
+            let parent = parent.expect("manual text node must have a parent");
+            patches.push(DomPatch::AppendChild { parent, child: key });
+        }
+        Node::Comment { text, .. } => {
+            patches.push(DomPatch::CreateComment {
+                key,
+                text: text.clone(),
+            });
+            let parent = parent.expect("manual comment node must have a parent");
+            patches.push(DomPatch::AppendChild { parent, child: key });
+        }
+        Node::DocumentType { .. } | Node::ProcessingInstruction { .. } => {
+            panic!("manual publication helper does not support this node kind")
+        }
+    }
+}
+
+pub(super) fn no_quirks_patch_publication(
+    handle: DomHandle,
+    from: DomVersion,
+    to: DomVersion,
+    patches: Vec<DomPatch>,
+) -> DocumentPublication {
+    DocumentPublication {
+        handle,
+        document_mode: html::DocumentMode::NoQuirks,
+        payload: DocumentPublicationPayload::Patch { from, to, patches },
+    }
+}
 
 pub(super) fn find_styled_element<'a>(
     node: &'a StyledNode<'a>,

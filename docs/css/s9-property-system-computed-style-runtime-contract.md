@@ -204,6 +204,10 @@ needed for tree traversal. Element styles come from `ComputedDocumentStyle`.
 
 ## Downstream Expectations
 
+Computed-style runtime handoff is valid only with the CSS-owned matching
+environment bound to the produced document artifact; Browser cache keys do not
+replace this semantic compatibility check.
+
 Browser view construction should use `build_style_tree_with_stylesheets(...)`
 or an equivalent structured composition of `compute_document_styles(...)` and
 `build_style_tree_from_computed_styles(...)`.

@@ -176,7 +176,10 @@ fn parser_observations_do_not_change_text_mode_tokenizer_controls() {
             insertion_mode: state.insertion_mode,
             open_element_names,
             open_element_keys: state.open_element_keys,
-            document_mode: state.quirks_mode,
+            document_mode: state
+                .quirks_mode
+                .selected()
+                .expect("mode selected in text-mode test"),
             patches,
             dom_summary,
             counters,

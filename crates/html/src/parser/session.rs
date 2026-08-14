@@ -195,6 +195,15 @@ impl HtmlParser {
         Ok(self.session.document_mode_for_conformance()?)
     }
 
+    /// Returns parser document-mode readiness without manufacturing a mode.
+    pub fn document_mode_readiness(&self) -> crate::DocumentModeReadiness {
+        self.session.document_mode_readiness()
+    }
+
+    pub fn selected_document_mode(&self) -> Result<Option<crate::DocumentMode>, HtmlParseError> {
+        Ok(self.document_mode_readiness().selected())
+    }
+
     #[cfg(feature = "parser-conformance")]
     pub(crate) fn tokenizer_invariant_for_conformance(
         &self,
@@ -521,6 +530,15 @@ impl HtmlParser {
             .map_err(ConformanceFinalizationError::Parser)?;
         let output = ParseOutput {
             document,
+            document_mode: match self.selected_document_mode() {
+                Ok(Some(mode)) => mode,
+                Ok(None) => {
+                    return Err(ConformanceFinalizationError::Parser(
+                        HtmlParseError::DocumentModeUnavailable,
+                    ));
+                }
+                Err(error) => return Err(ConformanceFinalizationError::Parser(error)),
+            },
             patches: Vec::new(),
             contains_full_patch_history: false,
             counters: self.counters(),
@@ -550,12 +568,16 @@ impl HtmlParser {
         while let Some(batch) = self.take_patch_batch_internal(false)? {
             patches.extend(batch.patches);
         }
+        let document_mode = self
+            .selected_document_mode()?
+            .ok_or(HtmlParseError::DocumentModeUnavailable)?;
         let document = self
             .arena
             .materialize()
             .map_err(|err| HtmlParseError::PatchValidation(err.to_string()))?;
         Ok(ParseOutput {
             document,
+            document_mode,
             patches,
             contains_full_patch_history: !self.patches_drained_before_output,
             counters: self.counters(),

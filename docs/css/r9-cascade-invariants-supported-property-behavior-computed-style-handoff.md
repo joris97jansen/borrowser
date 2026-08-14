@@ -346,6 +346,10 @@ must be reflected in code, docs, and tests together.
 
 ## Regression And Documentation Alignment
 
+Resolved and computed document-style artifacts are bound to the immutable
+selector matching environment used during resolution. Incremental reuse must
+reject an environment mismatch before using prior entries.
+
 Milestone R now has aligned issue-level and milestone-level contract docs:
 
 - R1 defines the architecture boundary

@@ -65,6 +65,11 @@ doctype node identity.
 
 ## Document Mode
 
+The parser-selected document mode is lifecycle metadata, not a DOM node or
+patch payload. Production output exposes readiness explicitly and completed
+output cannot succeed without a selected mode; comments, processing
+instructions, and leading whitespace do not manufacture `NoQuirks`.
+
 Document mode is parser/document metadata derived from doctype handling. It is
 owned by HTML tree construction state, not by the `DocumentType` node's
 identity.

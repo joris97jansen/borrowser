@@ -10,7 +10,7 @@ use crate::fuzz_support::{
 };
 use crate::selectors::{
     SelectorDomIndex, SelectorListMatchOutcome, SelectorMatchability, SelectorMatchingContext,
-    SelectorMatchingLimits,
+    SelectorMatchingEnvironment, SelectorMatchingLimits,
 };
 use crate::syntax::SyntaxLimits;
 
@@ -172,10 +172,12 @@ fn observe_selector_matching_case(
     }
 
     let first_snapshot = index.to_matching_debug_snapshot_with_limits(
+        SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks),
         &parse_selector_source(selector_source, limits),
         matching_limits,
     );
     let second_snapshot = index.to_matching_debug_snapshot_with_limits(
+        SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks),
         &parse_selector_source(selector_source, limits),
         matching_limits,
     );
@@ -214,7 +216,11 @@ fn evaluate_selector_matching(
 ) -> Result<StructuredMatchingOutcome, SelectorFuzzError> {
     let selectors = parse_selector_source(selector_source, limits);
     let expected_matchability = selectors.matchability();
-    let context = SelectorMatchingContext::with_limits(index, matching_limits);
+    let context = SelectorMatchingContext::with_limits(
+        index,
+        SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks),
+        matching_limits,
+    );
 
     let mut outcome = StructuredMatchingOutcome {
         matched_targets: 0,

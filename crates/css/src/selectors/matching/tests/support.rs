@@ -2,10 +2,15 @@ use super::super::SelectorDomIndex;
 use crate::selectors::{
     AttributeExistsSelector, AttributeMatchSelector, AttributeMatcher, AttributeSelector,
     AttributeValue, ClassSelector, ComplexSelector, CompoundSelector, IdSelector, SelectorIdent,
-    SelectorList, SelectorListParseResult, SelectorMatchingLimits, SelectorString, TypeSelector,
+    SelectorList, SelectorListParseResult, SelectorMatchingEnvironment, SelectorMatchingLimits,
+    SelectorString, TypeSelector,
 };
 use crate::syntax::{CssInput, CssRule, CssSpan, ParseOptions, parse_stylesheet_with_options};
 use html::Node;
+
+pub(super) const fn matching_environment() -> SelectorMatchingEnvironment {
+    SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks)
+}
 
 pub(super) fn doc(children: Vec<Node>) -> Node {
     Node::Document {
@@ -85,7 +90,10 @@ pub(super) fn assert_matching_debug_snapshot(dom: Node, selector_source: &str, e
     let index = SelectorDomIndex::from_root(&dom);
     let selectors = parse_selector_result(selector_source);
 
-    assert_eq!(index.to_matching_debug_snapshot(&selectors), expected);
+    assert_eq!(
+        index.to_matching_debug_snapshot(matching_environment(), &selectors),
+        expected
+    );
 }
 
 pub(super) fn assert_matching_debug_snapshot_with_limits(
@@ -98,7 +106,7 @@ pub(super) fn assert_matching_debug_snapshot_with_limits(
     let selectors = parse_selector_result(selector_source);
 
     assert_eq!(
-        index.to_matching_debug_snapshot_with_limits(&selectors, limits),
+        index.to_matching_debug_snapshot_with_limits(matching_environment(), &selectors, limits),
         expected
     );
 }

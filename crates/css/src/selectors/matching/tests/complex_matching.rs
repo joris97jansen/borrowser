@@ -37,7 +37,7 @@ fn matching_context_matches_complex_selectors_with_supported_combinators() {
     )]);
 
     let index = SelectorDomIndex::from_root(&dom);
-    let context = SelectorMatchingContext::new(&index);
+    let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let ids = index.elements().collect::<Vec<_>>();
     let paragraph = ids[4];
     let link = ids[6];
@@ -130,7 +130,7 @@ fn ua_namespace_constraint_propagates_through_every_complex_selector_compound() 
     let html_notice = elements[2];
     let html_below_foreign_lookalike = elements[5];
     let foreign_notice = elements[6];
-    let author = SelectorMatchingContext::new(&index);
+    let author = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let ua = author
         .with_namespace_constraint(SelectorNamespaceConstraint::Exact(ElementNamespace::Html));
 
@@ -201,7 +201,8 @@ fn matching_context_complex_selector_matching_backtracks_across_structural_candi
     )]);
 
     let descendant_index = SelectorDomIndex::from_root(&descendant_dom);
-    let descendant_context = SelectorMatchingContext::new(&descendant_index);
+    let descendant_context =
+        SelectorMatchingContext::new(&descendant_index, super::support::matching_environment());
     let descendant_target = descendant_index
         .elements()
         .last()
@@ -229,7 +230,8 @@ fn matching_context_complex_selector_matching_backtracks_across_structural_candi
     )]);
 
     let sibling_index = SelectorDomIndex::from_root(&sibling_dom);
-    let sibling_context = SelectorMatchingContext::new(&sibling_index);
+    let sibling_context =
+        SelectorMatchingContext::new(&sibling_index, super::support::matching_environment());
     let sibling_target = sibling_index
         .elements()
         .last()
@@ -262,7 +264,7 @@ fn matching_context_match_selector_list_matches_complex_selectors_in_source_orde
     )]);
 
     let index = SelectorDomIndex::from_root(&dom);
-    let context = SelectorMatchingContext::new(&index);
+    let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let target = index.elements().last().expect("target element");
     let selectors = parse_selector_result(
         "footer, body > main > p.note, span + p.note, div ~ p.note, div + p.note",
@@ -297,6 +299,7 @@ fn matching_context_reports_axis_step_limit_deterministically() {
     let index = SelectorDomIndex::from_root(&dom);
     let context = SelectorMatchingContext::with_limits(
         &index,
+        super::support::matching_environment(),
         SelectorMatchingLimits {
             max_axis_steps_per_match: 0,
         },
