@@ -92,6 +92,56 @@ fn parse_document_materializes_html5_dom_and_patch_stream() {
 }
 
 #[test]
+fn no_doctype_selects_quirks_mode_in_whole_and_streaming_output() {
+    let whole = parse_document("<p>x", HtmlParseOptions::default()).expect("parse");
+    assert_eq!(whole.document_mode, crate::DocumentMode::Quirks);
+
+    let mut parser = HtmlParser::new(HtmlParseOptions::default()).expect("session");
+    parser.push_bytes(b"<p>").expect("chunk");
+    parser.pump().expect("pump");
+    assert_eq!(
+        parser.selected_document_mode().expect("readiness"),
+        Some(crate::DocumentMode::Quirks)
+    );
+    parser.finish().expect("finish");
+    let streamed = parser.into_output().expect("output");
+    assert_eq!(streamed.document_mode, crate::DocumentMode::Quirks);
+}
+
+#[test]
+fn initial_eof_selects_quirks_mode_without_a_doctype() {
+    let whole = parse_document("", HtmlParseOptions::default()).expect("empty parse");
+    assert_eq!(whole.document_mode, crate::DocumentMode::Quirks);
+
+    let mut parser = HtmlParser::new(HtmlParseOptions::default()).expect("session");
+    parser.finish().expect("finish");
+    assert_eq!(
+        parser.selected_document_mode().expect("readiness"),
+        Some(crate::DocumentMode::Quirks)
+    );
+    assert_eq!(
+        parser.into_output().expect("output").document_mode,
+        crate::DocumentMode::Quirks
+    );
+}
+
+#[test]
+fn initial_comments_processing_instructions_and_whitespace_do_not_select_mode() {
+    let mut parser = HtmlParser::new(HtmlParseOptions::default()).expect("session");
+    parser
+        .push_bytes(b" \n<!-- c --><?pi data?>")
+        .expect("chunk");
+    parser.pump().expect("pump");
+    assert_eq!(parser.selected_document_mode().expect("readiness"), None);
+    parser.push_bytes(b"<!doctype html><p>x").expect("doctype");
+    parser.pump().expect("pump");
+    assert_eq!(
+        parser.selected_document_mode().expect("readiness"),
+        Some(crate::DocumentMode::NoQuirks)
+    );
+}
+
+#[test]
 fn chunked_parser_session_matches_one_shot_output() {
     let input = "<div><span>alpha</span><span>beta</span></div>";
     let mut parser = HtmlParser::new(HtmlParseOptions::default()).expect("session init");

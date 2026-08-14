@@ -30,6 +30,7 @@ use retained_render_state::RetainedRenderState;
 pub struct PageState {
     pub base_url: Option<String>,
     pub dom: Option<Box<Node>>,
+    pub(crate) document_mode: Option<html::DocumentMode>,
     pub head: HeadMetadata,
 
     pub visible_text_cache: String,
@@ -43,6 +44,7 @@ impl PageState {
         Self {
             base_url: None,
             dom: None,
+            document_mode: None,
             head: HeadMetadata::default(),
             visible_text_cache: String::new(),
             form_controls: FormControlIndex::default(),
@@ -54,6 +56,7 @@ impl PageState {
     pub fn start_nav(&mut self, final_url: &str) {
         self.base_url = Some(final_url.to_string());
         self.dom = None;
+        self.document_mode = None;
         self.head = HeadMetadata::default();
         self.visible_text_cache.clear();
         self.form_controls = FormControlIndex::default();
@@ -68,6 +71,7 @@ impl PageState {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn replace_dom(
         &mut self,
         dom: Box<Node>,
@@ -77,6 +81,22 @@ impl PageState {
         self.rendering
             .reset_retained_identities_for_document_replacement();
         self.mark_dom_changed(hint)
+    }
+
+    pub(crate) fn commit_dom_publication(
+        &mut self,
+        dom: Box<Node>,
+        document_mode: html::DocumentMode,
+        hint: Option<RestyleHint>,
+        document_replaced: bool,
+    ) -> Option<RenderInvalidationRequest> {
+        self.document_mode = Some(document_mode);
+        self.dom = Some(dom);
+        if document_replaced {
+            self.rendering
+                .reset_retained_identities_for_document_replacement();
+        }
+        hint.map(|hint| self.mark_dom_changed(hint))
     }
 
     pub(crate) fn mark_dom_changed(&mut self, hint: RestyleHint) -> RenderInvalidationRequest {

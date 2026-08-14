@@ -1,8 +1,8 @@
 use std::fmt::Write;
 
 use css::{
-    ParseOptions, PropertyNameKind, Rule, compute_document_styles, computed_value_debug_snapshot,
-    parse_stylesheet_with_options, property_registry,
+    ParseOptions, PropertyNameKind, Rule, SelectorMatchingEnvironment, compute_document_styles,
+    computed_value_debug_snapshot, parse_stylesheet_with_options, property_registry,
 };
 use html::{Node, internal::Id};
 
@@ -75,7 +75,12 @@ fn computed_document_style_snapshot_golden_representative_flow() {
         "main",
         vec![element("span", Vec::new()), element("button", Vec::new())],
     );
-    let computed = compute_document_styles(&dom, &stylesheets).expect("computed document style");
+    let computed = compute_document_styles(
+        &dom,
+        SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks),
+        &stylesheets,
+    )
+    .expect("computed document style");
 
     assert_eq!(
         computed.to_debug_snapshot(),

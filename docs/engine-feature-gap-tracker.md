@@ -135,6 +135,11 @@ Milestone AF foundation status:
   media queries, custom properties, animations, transitions, CSSOM,
   `getComputedStyle()`, or JavaScript-facing style mutation; see
   `docs/css/af2-selector-ast-and-parser.md`.
+- AF4a propagates parser-selected document-mode readiness through atomic
+  runtime publication and Browser retention into CSS's explicit immutable
+  `SelectorMatchingEnvironment`, including environment-safe resolved/computed
+  artifact reuse. Quirks-mode ID/class comparison and complete historical
+  DOCTYPE classification remain deferred; AF4a does not claim either behavior.
 
 Major missing families remain:
 

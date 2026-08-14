@@ -5,12 +5,30 @@
 //! one semantic representation.
 
 /// The document mode selected by HTML tree construction.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DocumentMode {
-    #[default]
     NoQuirks,
     LimitedQuirks,
     Quirks,
+}
+
+/// Parser lifecycle state for document-mode selection.
+///
+/// `Unselected` is not a document mode and must never be converted to
+/// `DocumentMode::NoQuirks` as a fallback.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum DocumentModeReadiness {
+    Unselected,
+    Selected(DocumentMode),
+}
+
+impl DocumentModeReadiness {
+    pub const fn selected(self) -> Option<DocumentMode> {
+        match self {
+            Self::Unselected => None,
+            Self::Selected(mode) => Some(mode),
+        }
+    }
 }
 
 impl DocumentMode {

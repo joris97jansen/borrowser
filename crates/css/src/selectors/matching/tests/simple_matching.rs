@@ -20,7 +20,7 @@ fn matching_context_highest_specificity_comes_from_actual_matches_only() {
     )]);
 
     let index = SelectorDomIndex::from_root(&dom);
-    let context = SelectorMatchingContext::new(&index);
+    let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let element = index.elements().next().expect("indexed element");
     let selectors = parse_selector_result("#hero, div.card, div");
     let outcome = context
@@ -54,7 +54,7 @@ fn matching_context_matches_supported_simple_selector_inputs() {
     )]);
 
     let index = SelectorDomIndex::from_root(&dom);
-    let context = SelectorMatchingContext::new(&index);
+    let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let element = index.elements().next().expect("indexed element");
 
     assert!(context.matches_type_selector(element, &universal_type_selector()));
@@ -91,7 +91,7 @@ fn matching_context_matches_compound_selectors_element_locally() {
     )]);
 
     let index = SelectorDomIndex::from_root(&dom);
-    let context = SelectorMatchingContext::new(&index);
+    let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let element = index.elements().next().expect("indexed element");
 
     let selector = parsed_single_selector("div#hero.card[data-kind=\"promo\"]");
@@ -120,7 +120,7 @@ fn matching_context_attribute_match_queries_cover_supported_matchers_and_edges()
     )]);
 
     let index = SelectorDomIndex::from_root(&dom);
-    let context = SelectorMatchingContext::new(&index);
+    let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let element = index.elements().next().expect("indexed element");
 
     assert!(context.matches_attribute_selector(element, &attribute_exists_selector("data-tags")));
@@ -183,7 +183,7 @@ fn matching_context_match_selector_list_reports_not_matched_for_supported_inputs
     )]);
 
     let index = SelectorDomIndex::from_root(&dom);
-    let context = SelectorMatchingContext::new(&index);
+    let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let element = index.elements().next().expect("indexed element");
     let selectors = parse_selector_result("span, #missing, .other, body > p.note");
     let outcome = context
@@ -201,7 +201,7 @@ fn matching_context_match_selector_list_preserves_non_matchable_parse_states() {
     let dom = doc(vec![element("div", Vec::new(), Vec::new())]);
 
     let index = SelectorDomIndex::from_root(&dom);
-    let context = SelectorMatchingContext::new(&index);
+    let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let element = index.elements().next().expect("indexed element");
     let unsupported = crate::selectors::SelectorListParseResult::Unsupported(
         crate::selectors::UnsupportedSelectorList::from_features(

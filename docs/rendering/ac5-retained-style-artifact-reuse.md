@@ -95,11 +95,17 @@ Browser/runtime may reuse retained style artifacts only when:
 ```text
 style is not dirty
 and PageStyleCache.key == current RetainedStyleArtifactKey
+and CSS confirms that the retained resolved/computed artifacts were produced
+under the current SelectorMatchingEnvironment
 ```
 
 No-op updates reuse retained `ResolvedDocumentStyle` and
 `ComputedDocumentStyle`. The runtime still rebuilds the borrow-backed
 `StyledNode` view for the current frame.
+
+The Browser key is a lifecycle/cache-eligibility check. CSS remains the final
+authority on semantic compatibility of the retained artifacts, including the
+matching-environment comparison.
 
 Viewport-only updates do not dirty style by default for the currently
 supported CSS feature set. If future CSS features add viewport-dependent style
@@ -190,6 +196,10 @@ Browser/runtime must not inspect selectors, infer selector dependencies,
 classify CSS properties by impact, or duplicate CSS property metadata.
 
 ## Deliberate Exclusions
+
+AF4a adds a CSS semantic validity check in addition to Browser-owned retained
+identity/cache eligibility: a resolved or computed artifact cannot be reused
+when its bound `SelectorMatchingEnvironment` differs from the current one.
 
 AC5 deliberately excludes:
 

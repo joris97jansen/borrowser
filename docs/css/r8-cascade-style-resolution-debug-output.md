@@ -75,6 +75,13 @@ element it records:
 2. winner output
 3. final resolved style after inheritance/default fill
 
+The integrated document-style resolution snapshot receives the explicit
+`SelectorMatchingEnvironment` and records it deterministically as
+`matching-environment: document-mode=<...>`. AF4a changed this integrated
+surface to `version: 2`. The lower-level cascade evaluation, winner, resolved
+style, and other unaffected snapshot surfaces retain their existing schema
+versions.
+
 This surface is intentionally verbose because it is for debugging regressions
 in later cascade, computed-style, and runtime cutover work.
 
@@ -82,7 +89,12 @@ in later cascade, computed-style, and runtime cutover work.
 
 R8 establishes these snapshot invariants:
 
-- every snapshot starts with `version: 1`
+- every maintained snapshot surface starts with an explicit schema version;
+  the version is specific to that surface rather than a blanket value for all
+  R8 output
+- the integrated document-style resolution surface is currently `version: 2`
+  because it includes the AF4a matching-environment field; unaffected
+  lower-level surfaces remain at their existing versions
 - output order is canonical or document-order, never hash-map order
 - source identities use stable stylesheet, rule, declaration, and inline-style
   ids
@@ -93,9 +105,12 @@ R8 establishes these snapshot invariants:
   reason codes and are debug information only
 - inherited and initial/default entries are explicit in resolved-style output
 - document-level traces do not mutate the DOM
+- the integrated document-style trace records the explicit matching
+  environment without exposing Browser/runtime identity or DOM generation
 - snapshot label grammar is a maintained contract; changes to labels such as
   `supported(...)`, `author-normal`, or `rule-input[...]` must be treated as
-  contract changes and updated in docs and regression tests together
+  contract changes, with an intentional schema-version update where required,
+  and updated in docs and regression tests together
 
 ## Regression Coverage
 

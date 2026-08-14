@@ -8,6 +8,7 @@ use crate::{
         try_resolve_document_styles_incremental_suffix_with_limits,
     },
     model,
+    selectors::SelectorMatchingEnvironment,
 };
 use html::{Node, internal::Id};
 
@@ -58,6 +59,7 @@ impl StylePlanExecution {
 pub fn try_compute_document_styles_for_invalidation_plan_with_limits(
     plan: &StyleInvalidationPlan,
     root: &Node,
+    matching_environment: SelectorMatchingEnvironment,
     sheets: &[StylesheetCascadeInput<'_>],
     previous: Option<(&ResolvedDocumentStyle, &ComputedDocumentStyle)>,
     limits: &StyleResolutionLimits,
@@ -73,6 +75,7 @@ pub fn try_compute_document_styles_for_invalidation_plan_with_limits(
     let Some(incremental) =
         compute_document_styles_incremental_suffix_from_cascade_inputs_with_limits(
             root,
+            matching_environment,
             sheets,
             previous_resolved,
             previous_computed,
@@ -88,6 +91,7 @@ pub fn try_compute_document_styles_for_invalidation_plan_with_limits(
 
 pub fn compute_document_styles_incremental_suffix_with_limits(
     root: &Node,
+    matching_environment: SelectorMatchingEnvironment,
     sheets: &[model::StylesheetParse],
     previous_resolved: &ResolvedDocumentStyle,
     previous_computed: &ComputedDocumentStyle,
@@ -96,6 +100,7 @@ pub fn compute_document_styles_incremental_suffix_with_limits(
 ) -> Result<Option<IncrementalComputedDocumentStyle>, ComputedStyleResolutionError> {
     let Some(resolved) = try_resolve_document_styles_incremental_suffix_with_limits(
         root,
+        matching_environment,
         sheets,
         previous_resolved,
         dirty_node_ids,
@@ -128,6 +133,7 @@ pub fn compute_document_styles_incremental_suffix_with_limits(
 
 pub fn compute_document_styles_incremental_suffix_from_cascade_inputs_with_limits(
     root: &Node,
+    matching_environment: SelectorMatchingEnvironment,
     sheets: &[StylesheetCascadeInput<'_>],
     previous_resolved: &ResolvedDocumentStyle,
     previous_computed: &ComputedDocumentStyle,
@@ -137,6 +143,7 @@ pub fn compute_document_styles_incremental_suffix_from_cascade_inputs_with_limit
     let Some(resolved) =
         try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_limits(
             root,
+            matching_environment,
             sheets,
             previous_resolved,
             dirty_node_ids,

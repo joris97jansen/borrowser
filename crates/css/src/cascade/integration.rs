@@ -20,7 +20,7 @@ use self::rule_inputs::{
 use super::contract::resolve_cascade_style_from_rule_inputs;
 use super::document::{ResolvedDocumentStyle, ResolvedElementStyle};
 use crate::model;
-use crate::selectors::{SelectorDomIndex, SelectorMatchingContext};
+use crate::selectors::{SelectorDomIndex, SelectorMatchingContext, SelectorMatchingEnvironment};
 use html::{Node, internal::Id};
 use std::collections::BTreeMap;
 
@@ -46,17 +46,25 @@ pub struct IncrementalResolvedDocumentStyle {
 /// callers that deliberately opt into them.
 pub fn resolve_document_styles(
     root: &Node,
+    matching_environment: SelectorMatchingEnvironment,
     sheets: &[model::StylesheetParse],
 ) -> Result<ResolvedDocumentStyle, StyleResolutionError> {
-    try_resolve_document_styles_with_limits(root, sheets, &StyleResolutionLimits::default())
+    try_resolve_document_styles_with_limits(
+        root,
+        matching_environment,
+        sheets,
+        &StyleResolutionLimits::default(),
+    )
 }
 
 pub fn resolve_document_styles_from_cascade_inputs(
     root: &Node,
+    matching_environment: SelectorMatchingEnvironment,
     sheets: &[StylesheetCascadeInput<'_>],
 ) -> Result<ResolvedDocumentStyle, StyleResolutionError> {
     try_resolve_document_styles_from_cascade_inputs_with_limits(
         root,
+        matching_environment,
         sheets,
         &StyleResolutionLimits::default(),
     )
@@ -64,6 +72,7 @@ pub fn resolve_document_styles_from_cascade_inputs(
 
 pub fn try_resolve_document_styles_with_limits(
     root: &Node,
+    matching_environment: SelectorMatchingEnvironment,
     sheets: &[model::StylesheetParse],
     limits: &StyleResolutionLimits,
 ) -> Result<ResolvedDocumentStyle, StyleResolutionError> {
@@ -72,7 +81,11 @@ pub fn try_resolve_document_styles_with_limits(
     count_styled_elements_bounded(root, limits.max_styled_elements_per_document)?;
 
     let index = SelectorDomIndex::from_root(root);
-    let context = SelectorMatchingContext::with_limits(&index, limits.selector_matching);
+    let context = SelectorMatchingContext::with_limits(
+        &index,
+        matching_environment,
+        limits.selector_matching,
+    );
     let mut entries = Vec::with_capacity(index.len());
     let mut styles_by_element = BTreeMap::new();
 
@@ -93,11 +106,12 @@ pub fn try_resolve_document_styles_with_limits(
         ));
     }
 
-    Ok(ResolvedDocumentStyle::new(entries))
+    Ok(ResolvedDocumentStyle::new(matching_environment, entries))
 }
 
 pub fn try_resolve_document_styles_from_cascade_inputs_with_limits(
     root: &Node,
+    matching_environment: SelectorMatchingEnvironment,
     sheets: &[StylesheetCascadeInput<'_>],
     limits: &StyleResolutionLimits,
 ) -> Result<ResolvedDocumentStyle, StyleResolutionError> {
@@ -106,7 +120,11 @@ pub fn try_resolve_document_styles_from_cascade_inputs_with_limits(
     count_styled_elements_bounded(root, limits.max_styled_elements_per_document)?;
 
     let index = SelectorDomIndex::from_root(root);
-    let context = SelectorMatchingContext::with_limits(&index, limits.selector_matching);
+    let context = SelectorMatchingContext::with_limits(
+        &index,
+        matching_environment,
+        limits.selector_matching,
+    );
     let mut entries = Vec::with_capacity(index.len());
     let mut styles_by_element = BTreeMap::new();
 
@@ -129,11 +147,12 @@ pub fn try_resolve_document_styles_from_cascade_inputs_with_limits(
         ));
     }
 
-    Ok(ResolvedDocumentStyle::new(entries))
+    Ok(ResolvedDocumentStyle::new(matching_environment, entries))
 }
 
 pub fn try_resolve_document_styles_incremental_suffix_with_limits(
     root: &Node,
+    matching_environment: SelectorMatchingEnvironment,
     sheets: &[model::StylesheetParse],
     previous: &ResolvedDocumentStyle,
     dirty_node_ids: &[Id],
@@ -145,6 +164,7 @@ pub fn try_resolve_document_styles_incremental_suffix_with_limits(
         .collect::<Vec<_>>();
     try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_limits(
         root,
+        matching_environment,
         &inputs,
         previous,
         dirty_node_ids,
@@ -154,6 +174,7 @@ pub fn try_resolve_document_styles_incremental_suffix_with_limits(
 
 pub fn try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_limits(
     root: &Node,
+    matching_environment: SelectorMatchingEnvironment,
     sheets: &[StylesheetCascadeInput<'_>],
     previous: &ResolvedDocumentStyle,
     dirty_node_ids: &[Id],
@@ -162,6 +183,13 @@ pub fn try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_l
     validate_representation_limits(limits)?;
     enforce_stylesheet_input_limits(sheets, limits)?;
     count_styled_elements_bounded(root, limits.max_styled_elements_per_document)?;
+
+    if previous.matching_environment() != matching_environment {
+        return Err(StyleResolutionError::MatchingEnvironmentMismatch {
+            expected: matching_environment,
+            actual: previous.matching_environment(),
+        });
+    }
 
     if dirty_node_ids.is_empty() {
         return Ok(None);
@@ -176,7 +204,11 @@ pub fn try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_l
         return Ok(None);
     };
 
-    let context = SelectorMatchingContext::with_limits(&index, limits.selector_matching);
+    let context = SelectorMatchingContext::with_limits(
+        &index,
+        matching_environment,
+        limits.selector_matching,
+    );
     let mut entries = Vec::with_capacity(index.len());
     let mut styles_by_element = BTreeMap::new();
 
@@ -216,7 +248,7 @@ pub fn try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_l
     }
 
     Ok(Some(IncrementalResolvedDocumentStyle {
-        resolved: ResolvedDocumentStyle::new(entries),
+        resolved: ResolvedDocumentStyle::new(matching_environment, entries),
         stats: IncrementalStyleResolutionStats {
             reused_prefix_len,
             recomputed_len: index.len().saturating_sub(reused_prefix_len),

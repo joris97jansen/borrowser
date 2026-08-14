@@ -1,4 +1,5 @@
 use super::super::Tab;
+use super::support::no_quirks_patch_publication_from_output;
 use crate::rendering::{
     RenderInvalidationEntryPoint, RenderPhaseExecutionKind, RenderRebuildTrigger, RenderingPhase,
 };
@@ -18,10 +19,10 @@ fn ui_content_consumes_pending_render_work_through_explicit_orchestration_path()
     )
     .expect("parse should succeed");
 
-    tab.on_core_event(CoreEvent::DomUpdate {
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 31,
-        dom: Box::new(output.document),
+        publication: no_quirks_patch_publication_from_output(output),
     });
 
     assert_eq!(

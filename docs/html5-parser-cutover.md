@@ -321,6 +321,16 @@ Use these when changing:
 - text-mode handling
 - internal patch-mirror materialization
 
+### Document-mode readiness and publication
+
+Production parser sessions expose `Unselected` versus `Selected(DocumentMode)`
+readiness. Initial comments, processing instructions, and whitespace may be
+observed before selection; a non-DOCTYPE Initial fallback selects Quirks before
+reprocessing. Completed `ParseOutput` carries the selected mode and never uses
+NoQuirks as an unresolved fallback. Runtime transports that selected metadata
+atomically with the DOM publication; it is not reconstructed from a doctype or
+encoded as a `DomPatch`.
+
 ## Related Documents
 
 - [`docs/html5/parser-parity-matrix.md`](./html5/parser-parity-matrix.md)

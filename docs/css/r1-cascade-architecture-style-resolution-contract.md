@@ -155,6 +155,11 @@ other priority levels without redesigning the winner-resolution model.
 
 ## Selector Matching Handoff
 
+AF4a adds an explicit CSS-owned `SelectorMatchingEnvironment` to every
+matching-initiating cascade entry point. Rule applicability and document
+resolution must not infer document mode from the DOM or tolerate an absent
+environment.
+
 Selector matching and cascade interact through one explicit rule-level handoff:
 
 - cascade receives a `SelectorListMatchOutcome` for each style rule against one

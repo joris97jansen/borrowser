@@ -3,8 +3,8 @@ use css::syntax::{
     serialize_stylesheet_parse_for_snapshot as serialize_syntax_stylesheet_parse_for_snapshot,
 };
 use css::{
-    ParseOptions, Rule, StylesheetParse, attach_styles, parse_stylesheet_with_options,
-    serialize_stylesheet_parse_for_snapshot,
+    ParseOptions, Rule, SelectorMatchingEnvironment, StylesheetParse, attach_styles,
+    parse_stylesheet_with_options, serialize_stylesheet_parse_for_snapshot,
 };
 use html::{Node, internal::Id};
 
@@ -47,7 +47,11 @@ fn attach_styles_accepts_model_parse_results_from_root_entrypoint() {
         Vec::new(),
     );
 
-    attach_styles(&mut dom, &stylesheets);
+    attach_styles(
+        &mut dom,
+        SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks),
+        &stylesheets,
+    );
 
     let Node::Element { element } = dom else {
         panic!("expected element");

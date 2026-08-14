@@ -90,7 +90,17 @@ impl PageState {
         };
 
         let retained = &mut self.rendering;
-        let needs_recompute = retained.style_dirty() || !retained.style_cache_matches_current_key();
+        let Some(document_mode) = self.document_mode else {
+            return Err(ComputedStyleResolutionError::MissingMatchingEnvironment);
+        };
+        let environment = css::SelectorMatchingEnvironment::new(document_mode);
+        let cache_environment_matches = retained
+            .style_cache
+            .as_ref()
+            .is_some_and(|cache| cache.computed.matching_environment() == environment);
+        let needs_recompute = retained.style_dirty()
+            || !retained.style_cache_matches_current_key()
+            || !cache_environment_matches;
 
         if needs_recompute {
             let had_cache_before = retained.style_cache.is_some();
@@ -106,6 +116,7 @@ impl PageState {
             let mut incremental_eligible = false;
             recompute_styles(
                 dom,
+                environment,
                 &retained.document_styles.cascade_stylesheet_inputs(),
                 retained.generations,
                 style_key,

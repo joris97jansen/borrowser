@@ -1,5 +1,5 @@
-use crate::Node;
 use crate::dom_patch::DomPatch;
+use crate::{DocumentMode, Node};
 
 use super::types::{HtmlParseCounters, HtmlParseEvent};
 
@@ -7,6 +7,8 @@ use super::types::{HtmlParseCounters, HtmlParseEvent};
 #[derive(Debug)]
 pub struct ParseOutput {
     pub document: Node,
+    /// The immutable mode selected by HTML tree construction for this document.
+    pub document_mode: DocumentMode,
     /// Patches drained by `into_output()`.
     ///
     /// For `parse_document(...)`, this is the full emitted patch history because

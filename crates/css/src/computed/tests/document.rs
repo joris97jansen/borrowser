@@ -94,6 +94,80 @@ fn compute_document_styles_integrates_cascade_inheritance_defaults_and_computati
 }
 
 #[test]
+fn document_style_artifacts_retain_the_explicit_matching_environment() {
+    let dom = element("div", Vec::new(), Vec::new());
+    let environment = crate::SelectorMatchingEnvironment::new(html::DocumentMode::LimitedQuirks);
+    let stylesheets = vec![stylesheet("div { color: red; }")];
+
+    let resolved = resolve_document_styles_with_environment(&dom, environment, &stylesheets)
+        .expect("resolved document style");
+    let computed = compute_document_styles_with_environment(&dom, environment, &stylesheets)
+        .expect("computed document style");
+
+    assert_eq!(resolved.matching_environment(), environment);
+    assert_eq!(computed.matching_environment(), environment);
+}
+
+#[test]
+fn computed_style_invalidation_treats_a_matching_environment_change_as_unknown() {
+    let dom = element("div", Vec::new(), Vec::new());
+    let no_quirks = compute_document_styles_with_environment(
+        &dom,
+        crate::SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks),
+        &[],
+    )
+    .expect("no-quirks computed style");
+    let quirks = compute_document_styles_with_environment(
+        &dom,
+        crate::SelectorMatchingEnvironment::new(html::DocumentMode::Quirks),
+        &[],
+    )
+    .expect("quirks computed style");
+
+    assert_eq!(
+        quirks.invalidation_impact_against(&no_quirks),
+        ComputedDocumentStyleInvalidationImpact::Unknown
+    );
+}
+
+#[test]
+fn incremental_style_reuse_rejects_a_different_matching_environment() {
+    let dom = materialize_element_ids(element("div", Vec::new(), Vec::new()));
+    let no_quirks = crate::SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks);
+    let quirks = crate::SelectorMatchingEnvironment::new(html::DocumentMode::Quirks);
+    let stylesheets = vec![stylesheet("div { color: red; }")];
+    let inputs = [StylesheetCascadeInput::author(&stylesheets[0])];
+    let resolved = resolve_document_styles_with_environment(&dom, no_quirks, &stylesheets)
+        .expect("initial resolved style");
+    let computed = compute_document_styles_from_resolved_styles(&dom, &resolved)
+        .expect("initial computed style");
+    let plan = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
+        node_ids: vec![html::internal::Id(1)],
+    })
+    .expect("attribute change plan");
+
+    let error = try_compute_document_styles_for_invalidation_plan_with_limits_with_environment(
+        &plan,
+        &dom,
+        quirks,
+        &inputs,
+        Some((&resolved, &computed)),
+        &StyleResolutionLimits::default(),
+    )
+    .expect_err("a different matching environment must be an invariant failure");
+
+    assert_eq!(
+        error,
+        ComputedStyleResolutionError::StyleResolution(
+            StyleResolutionError::MatchingEnvironmentMismatch {
+                expected: quirks,
+                actual: no_quirks,
+            },
+        )
+    );
+}
+
+#[test]
 fn plan_execution_reports_full_required_without_incremental_state() {
     let dom = element("div", Vec::new(), Vec::new());
     let plan = classify_style_invalidation(StyleChangeFacts::TreeStructureChanged)

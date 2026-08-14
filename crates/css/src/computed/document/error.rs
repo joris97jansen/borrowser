@@ -1,5 +1,6 @@
 //! Error contract for document-level computed-style materialization.
 
+use crate::selectors::SelectorMatchingEnvironment;
 use crate::{
     InitialStyleValue, PropertyId, cascade::StyleResolutionError, selectors::SelectorDomElementId,
 };
@@ -10,6 +11,11 @@ use super::super::{style::ComputedStyleBuildError, value::ComputedValueNormaliza
 /// total computed style.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ComputedStyleResolutionError {
+    MissingMatchingEnvironment,
+    MatchingEnvironmentMismatch {
+        expected: SelectorMatchingEnvironment,
+        actual: SelectorMatchingEnvironment,
+    },
     MissingResolvedElement {
         element: SelectorDomElementId,
     },
@@ -78,6 +84,15 @@ pub enum ComputedStyleResolutionError {
 impl std::fmt::Display for ComputedStyleResolutionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::MissingMatchingEnvironment => {
+                write!(f, "computed style matching environment is unavailable")
+            }
+            Self::MatchingEnvironmentMismatch { expected, actual } => write!(
+                f,
+                "computed style matching environment mismatch: expected document mode {}, got {}",
+                expected.document_mode(),
+                actual.document_mode()
+            ),
             Self::MissingResolvedElement { element } => write!(
                 f,
                 "resolved document style is missing element selector-id={}",
@@ -205,7 +220,9 @@ impl std::error::Error for ComputedStyleResolutionError {
             Self::Normalization(error) => Some(error),
             Self::Build(error) => Some(error),
             Self::StyleResolution(error) => Some(error),
-            Self::MissingResolvedElement { .. }
+            Self::MissingMatchingEnvironment
+            | Self::MatchingEnvironmentMismatch { .. }
+            | Self::MissingResolvedElement { .. }
             | Self::ResolvedElementNameMismatch { .. }
             | Self::ResolvedElementNamespaceMismatch { .. }
             | Self::MissingComputedParent { .. }

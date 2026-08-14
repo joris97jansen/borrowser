@@ -250,7 +250,13 @@ impl Html5ParseSession {
         &self,
     ) -> Result<crate::DocumentMode, Html5SessionError> {
         self.ensure_usable()?;
-        Ok(self.builder.document_mode())
+        self.builder
+            .document_mode()
+            .ok_or(Html5SessionError::Fatal(ParserFatalError::EngineInvariant))
+    }
+
+    pub fn document_mode_readiness(&self) -> crate::DocumentModeReadiness {
+        self.builder.document_mode_readiness()
     }
 
     #[cfg(feature = "parser-conformance")]

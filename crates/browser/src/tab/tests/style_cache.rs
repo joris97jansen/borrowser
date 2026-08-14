@@ -1,7 +1,7 @@
 use super::super::Tab;
 use super::support::{
     current_element_color_by_id, find_styled_node_id, initial_patch_document,
-    two_paragraph_patch_document,
+    no_quirks_patch_publication, two_paragraph_patch_document,
 };
 use crate::page::StyleRecalcKind;
 use crate::rendering::RetainedStyleArtifactAction;
@@ -20,10 +20,12 @@ fn attribute_mutation_without_existing_style_cache_falls_back_to_full_recompute(
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 28,
-        handle,
-        from: DomVersion::INITIAL,
-        to: DomVersion(1),
-        patches: initial_patch_document(".hot { color: red; } p { color: black; }", Some("p")),
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document(".hot { color: red; } p { color: black; }", Some("p")),
+        ),
     });
 
     assert_eq!(current_element_color_by_id(&mut tab, Id(7)), (0, 0, 0, 255));
@@ -32,13 +34,15 @@ fn attribute_mutation_without_existing_style_cache_falls_back_to_full_recompute(
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 28,
-        handle,
-        from: DomVersion(1),
-        to: DomVersion(2),
-        patches: vec![DomPatch::SetAttributes {
-            key: PatchKey(7),
-            attributes: vec![html::internal::unqualified_attribute("class", "hot")],
-        }],
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(1),
+            DomVersion(2),
+            vec![DomPatch::SetAttributes {
+                key: PatchKey(7),
+                attributes: vec![html::internal::unqualified_attribute("class", "hot")],
+            }],
+        ),
     });
 
     assert_eq!(
@@ -70,10 +74,12 @@ fn clean_style_cache_reuses_computed_document_without_recompute() {
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 29,
-        handle,
-        from: DomVersion::INITIAL,
-        to: DomVersion(1),
-        patches: two_paragraph_patch_document("p { color: red; }"),
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            two_paragraph_patch_document("p { color: red; }"),
+        ),
     });
 
     {

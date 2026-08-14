@@ -2,6 +2,7 @@ use super::contract::ResolvedStyle;
 use super::document::ResolvedElementStyle;
 use super::integration::{StyleResolutionLimits, try_resolve_document_styles_with_limits};
 use crate::model;
+use crate::selectors::SelectorMatchingEnvironment;
 use html::Node;
 
 /// Legacy DOM-attached style bridge.
@@ -15,9 +16,14 @@ use html::Node;
 /// document style resolution hits a hardening limit, the bridge clears any
 /// legacy projected style vectors and returns without projecting a partial or
 /// fabricated resolved-style result.
-pub fn attach_styles(dom: &mut Node, sheets: &[model::StylesheetParse]) {
+pub fn attach_styles(
+    dom: &mut Node,
+    matching_environment: SelectorMatchingEnvironment,
+    sheets: &[model::StylesheetParse],
+) {
     let resolved_styles = match try_resolve_document_styles_with_limits(
         dom,
+        matching_environment,
         sheets,
         &StyleResolutionLimits::default(),
     ) {

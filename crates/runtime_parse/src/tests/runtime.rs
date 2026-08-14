@@ -44,11 +44,11 @@ fn collect_runtime_updates(chunks: &[&[u8]]) -> Vec<RuntimeUpdate> {
             Ok(CoreEvent::DomPatchUpdate {
                 tab_id: evt_tab,
                 request_id: evt_request,
-                handle,
-                from,
-                to,
-                patches,
+                publication,
             }) => {
+                let handle = publication.handle;
+                let bus::DocumentPublicationPayload::Patch { from, to, patches } =
+                    publication.payload;
                 assert_eq!(evt_tab, tab_id);
                 assert_eq!(evt_request, request_id);
                 assert_ne!(from, to, "expected version bump on patch update");

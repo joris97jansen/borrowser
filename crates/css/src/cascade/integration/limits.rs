@@ -1,7 +1,9 @@
 use super::super::contract::CascadeRuleInputBuildError;
 use super::source::StylesheetCascadeInput;
 use crate::model;
-use crate::selectors::{SelectorMatchingLimitError, SelectorMatchingLimits};
+use crate::selectors::{
+    SelectorMatchingEnvironment, SelectorMatchingLimitError, SelectorMatchingLimits,
+};
 use html::Node;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,6 +60,10 @@ impl StyleResolutionLimit {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StyleResolutionError {
+    MatchingEnvironmentMismatch {
+        expected: SelectorMatchingEnvironment,
+        actual: SelectorMatchingEnvironment,
+    },
     LimitExceeded {
         limit: StyleResolutionLimit,
         configured: usize,
@@ -92,6 +98,12 @@ impl StyleResolutionError {
 impl std::fmt::Display for StyleResolutionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::MatchingEnvironmentMismatch { expected, actual } => write!(
+                f,
+                "resolved style matching environment mismatch: expected document mode {}, got {}",
+                expected.document_mode(),
+                actual.document_mode()
+            ),
             Self::LimitExceeded { limit, configured } => write!(
                 f,
                 "style resolution exceeded {} limit {}",
@@ -120,7 +132,9 @@ impl std::error::Error for StyleResolutionError {
         match self {
             Self::SelectorMatching(error) => Some(error),
             Self::RuleInputBuild(error) => Some(error),
-            Self::LimitExceeded { .. } | Self::UnsupportedConfiguration { .. } => None,
+            Self::MatchingEnvironmentMismatch { .. }
+            | Self::LimitExceeded { .. }
+            | Self::UnsupportedConfiguration { .. } => None,
         }
     }
 }

@@ -1,6 +1,6 @@
 //! Output models for document-level computed styles.
 
-use crate::selectors::SelectorDomElementId;
+use crate::selectors::{SelectorDomElementId, SelectorMatchingEnvironment};
 
 use super::super::style::ComputedStyle;
 
@@ -47,14 +47,29 @@ impl ComputedElementStyle {
 
 /// Document-order computed-style output for the element set selector matching
 /// can address.
-#[derive(Clone, Debug, Default, PartialEq)]
+///
+/// The artifact retains the selector-matching environment inherited from its
+/// resolved-style input. Runtime retention and incremental reuse must preserve
+/// that binding.
+#[derive(Clone, Debug, PartialEq)]
 pub struct ComputedDocumentStyle {
+    pub(in crate::computed) matching_environment: SelectorMatchingEnvironment,
     pub(in crate::computed) entries: Vec<ComputedElementStyle>,
 }
 
 impl ComputedDocumentStyle {
-    pub(super) fn new(entries: Vec<ComputedElementStyle>) -> Self {
-        Self { entries }
+    pub(super) fn new(
+        matching_environment: SelectorMatchingEnvironment,
+        entries: Vec<ComputedElementStyle>,
+    ) -> Self {
+        Self {
+            matching_environment,
+            entries,
+        }
+    }
+
+    pub fn matching_environment(&self) -> SelectorMatchingEnvironment {
+        self.matching_environment
     }
 
     pub fn entries(&self) -> &[ComputedElementStyle] {

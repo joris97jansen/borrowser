@@ -1,6 +1,6 @@
 use std::sync::mpsc::Sender;
 
-use bus::CoreEvent;
+use bus::{CoreEvent, DocumentPublication, DocumentPublicationFailure, DocumentPublicationPayload};
 use core_types::{DomHandle, DomVersion, RequestId, TabId};
 use html::DomPatch;
 use log::error;
@@ -15,6 +15,7 @@ pub(crate) fn emit_patch_update(
     tab_id: TabId,
     request_id: RequestId,
     dom_handle: DomHandle,
+    document_mode: html::DocumentMode,
     version: &mut DomVersion,
     patches: Vec<DomPatch>,
 ) -> Result<(), CoreEventSendError> {
@@ -23,10 +24,11 @@ pub(crate) fn emit_patch_update(
     let send_result = evt_tx.send(CoreEvent::DomPatchUpdate {
         tab_id,
         request_id,
-        handle: dom_handle,
-        from,
-        to,
-        patches,
+        publication: DocumentPublication {
+            handle: dom_handle,
+            document_mode,
+            payload: DocumentPublicationPayload::Patch { from, to, patches },
+        },
     });
     if send_result.is_err() {
         error!(
@@ -78,6 +80,23 @@ pub(crate) fn estimate_patch_bytes_slice(patches: &[DomPatch]) -> usize {
     patches.iter().fold(0usize, |total, patch| {
         total.saturating_add(estimate_patch_bytes(patch))
     })
+}
+
+pub(crate) fn emit_publication_failure(
+    evt_tx: &Sender<CoreEvent>,
+    tab_id: TabId,
+    request_id: RequestId,
+    handle: Option<DomHandle>,
+    failure: DocumentPublicationFailure,
+) -> bool {
+    evt_tx
+        .send(CoreEvent::DocumentPublicationFailed {
+            tab_id,
+            request_id,
+            handle,
+            failure,
+        })
+        .is_ok()
 }
 
 #[cfg(feature = "patch-stats")]

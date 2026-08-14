@@ -1,4 +1,5 @@
 use super::super::Tab;
+use super::support::no_quirks_patch_publication_from_output;
 use crate::rendering::{RenderInvalidationEntryPoint, render_invalidation_request};
 use bus::CoreEvent;
 use core_types::{NetworkResponseInfo, ResourceKind};
@@ -40,10 +41,10 @@ fn redirected_document_response_updates_tab_base_url_and_status() {
         response,
         bytes_received: 63,
     });
-    tab.on_core_event(CoreEvent::DomUpdate {
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 1,
-        dom: Box::new(output.document),
+        publication: no_quirks_patch_publication_from_output(output),
     });
 
     assert_eq!(tab.page.base_url.as_deref(), Some(final_url.as_str()));
@@ -69,10 +70,10 @@ fn starting_new_navigation_clears_pending_render_work_and_last_trace() {
     )
     .expect("parse should succeed");
 
-    tab.on_core_event(CoreEvent::DomUpdate {
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 32,
-        dom: Box::new(output.document),
+        publication: no_quirks_patch_publication_from_output(output),
     });
 
     let ctx = Context::default();

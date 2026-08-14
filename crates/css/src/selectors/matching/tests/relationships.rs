@@ -23,7 +23,7 @@ fn matching_context_exposes_nearest_first_traversal_sequences() {
     )]);
 
     let index = SelectorDomIndex::from_root(&dom);
-    let context = SelectorMatchingContext::new(&index);
+    let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let ids = index.elements().collect::<Vec<_>>();
 
     assert_eq!(
@@ -57,7 +57,7 @@ fn matching_context_relationship_queries_are_centralized_and_testable() {
     )]);
 
     let index = SelectorDomIndex::from_root(&dom);
-    let context = SelectorMatchingContext::new(&index);
+    let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let ids = index.elements().collect::<Vec<_>>();
     let body = ids[0];
     let main = ids[1];

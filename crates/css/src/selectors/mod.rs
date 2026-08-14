@@ -65,8 +65,8 @@ pub use values::{SelectorIdent, SelectorString};
 pub use matching::{
     AncestorElements, MatchedSelector, PreviousSiblingElements, SelectorDomElementId,
     SelectorDomElementIter, SelectorDomIndex, SelectorListMatchBuilder, SelectorListMatchOutcome,
-    SelectorMatchDom, SelectorMatchability, SelectorMatchingContext, SelectorMatchingLimitError,
-    SelectorMatchingLimits, SelectorNamespaceConstraint,
+    SelectorMatchDom, SelectorMatchability, SelectorMatchingContext, SelectorMatchingEnvironment,
+    SelectorMatchingLimitError, SelectorMatchingLimits, SelectorNamespaceConstraint,
 };
 
 pub use parser::{parse_selector_list, parse_selector_list_with_limits};

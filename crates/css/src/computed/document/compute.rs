@@ -7,7 +7,7 @@ use crate::{
         ResolvedDocumentStyle, StyleResolutionLimits, try_resolve_document_styles_with_limits,
     },
     model,
-    selectors::{SelectorDomIndex, SelectorMatchingContext},
+    selectors::{SelectorDomIndex, SelectorMatchingContext, SelectorMatchingEnvironment},
 };
 use html::Node;
 
@@ -20,18 +20,26 @@ use super::{
 /// Resolves and computes document-level styles without mutating the DOM.
 pub fn compute_document_styles(
     root: &Node,
+    matching_environment: SelectorMatchingEnvironment,
     sheets: &[model::StylesheetParse],
 ) -> Result<ComputedDocumentStyle, ComputedStyleResolutionError> {
-    compute_document_styles_with_limits(root, sheets, &StyleResolutionLimits::default())
+    compute_document_styles_with_limits(
+        root,
+        matching_environment,
+        sheets,
+        &StyleResolutionLimits::default(),
+    )
 }
 
 pub fn compute_document_styles_with_limits(
     root: &Node,
+    matching_environment: SelectorMatchingEnvironment,
     sheets: &[model::StylesheetParse],
     limits: &StyleResolutionLimits,
 ) -> Result<ComputedDocumentStyle, ComputedStyleResolutionError> {
-    let resolved = try_resolve_document_styles_with_limits(root, sheets, limits)
-        .map_err(ComputedStyleResolutionError::StyleResolution)?;
+    let resolved =
+        try_resolve_document_styles_with_limits(root, matching_environment, sheets, limits)
+            .map_err(ComputedStyleResolutionError::StyleResolution)?;
     compute_document_styles_from_resolved_styles(root, &resolved)
 }
 
@@ -60,7 +68,17 @@ pub(super) fn compute_document_styles_from_resolved_styles_pass(
     reused_prefix_len: usize,
 ) -> Result<Option<ComputedDocumentStyleWithStats>, ComputedStyleResolutionError> {
     let index = SelectorDomIndex::from_root(root);
-    let context = SelectorMatchingContext::new(&index);
+    let matching_environment = resolved_styles.matching_environment();
+    let context = SelectorMatchingContext::new(&index, matching_environment);
+
+    if let Some(previous_computed) = previous_computed
+        && previous_computed.matching_environment() != matching_environment
+    {
+        return Err(ComputedStyleResolutionError::MatchingEnvironmentMismatch {
+            expected: matching_environment,
+            actual: previous_computed.matching_environment(),
+        });
+    }
 
     if let Some(previous_computed) = previous_computed
         && (resolved_styles.entries().len() != index.len()
@@ -134,7 +152,7 @@ pub(super) fn compute_document_styles_from_resolved_styles_pass(
     }
 
     Ok(Some(ComputedDocumentStyleWithStats {
-        computed: ComputedDocumentStyle::new(entries),
+        computed: ComputedDocumentStyle::new(matching_environment, entries),
         reuse_stats: reuse_cache.stats(),
     }))
 }

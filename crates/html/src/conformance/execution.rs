@@ -1183,7 +1183,9 @@ fn document_parser_operation_error(
             }
         }
         crate::HtmlParseError::Fatal(error) => ParserObservationExecutionError::ParserFatal(error),
-        crate::HtmlParseError::Decode | crate::HtmlParseError::PatchValidation(_) => {
+        crate::HtmlParseError::Decode
+        | crate::HtmlParseError::DocumentModeUnavailable
+        | crate::HtmlParseError::PatchValidation(_) => {
             ParserObservationExecutionError::ParserInvariant
         }
     }
@@ -1205,7 +1207,9 @@ fn parser_error_without_live_parser(
 ) -> ParserObservationExecutionError {
     match error {
         crate::HtmlParseError::Fatal(error) => ParserObservationExecutionError::ParserFatal(error),
-        crate::HtmlParseError::Decode | crate::HtmlParseError::PatchValidation(_) => {
+        crate::HtmlParseError::Decode
+        | crate::HtmlParseError::DocumentModeUnavailable
+        | crate::HtmlParseError::PatchValidation(_) => {
             ParserObservationExecutionError::ParserInvariant
         }
     }
@@ -5692,7 +5696,7 @@ mod tests {
                 "<!doctype html><p>x<!doctype nope>",
                 crate::DocumentMode::NoQuirks,
             ),
-            ("<p>x<!doctype nope>", crate::DocumentMode::NoQuirks),
+            ("<p>x<!doctype nope>", crate::DocumentMode::Quirks),
         ];
         for (source, expected) in cases {
             let result = observe_document(

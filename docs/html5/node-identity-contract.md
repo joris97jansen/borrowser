@@ -135,6 +135,11 @@ tree lookup intentionally does not cross the association.
 
 ## Integration Guarantees
 
+AF4a keeps parser-local patch-batch sequencing separate from Browser-visible
+`DomVersion`. A mode-bearing publication carries exactly one runtime generation
+transition alongside its `DomHandle`; CSS does not receive either identity as
+part of its semantic environment.
+
 For the HTML5 runtime path:
 
 - Emitted patch updates MUST satisfy handle/version continuity.

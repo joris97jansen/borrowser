@@ -1,5 +1,9 @@
 use super::super::Tab;
-use super::support::{current_element_color, find_dom_element, find_styled_element};
+use super::support::{
+    current_element_color, find_dom_element, find_styled_element,
+    no_quirks_patch_publication_from_dom, no_quirks_patch_publication_from_output,
+    page_matching_environment,
+};
 use bus::{CoreCommand, CoreEvent};
 use core_types::ResourceKind;
 use css::build_style_tree_with_stylesheets;
@@ -18,15 +22,19 @@ fn inline_styles_are_attached_and_computed_during_initial_document_load() {
     )
     .expect("parse should succeed");
 
-    tab.on_core_event(CoreEvent::DomUpdate {
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 11,
-        dom: Box::new(output.document),
+        publication: no_quirks_patch_publication_from_output(output),
     });
 
     let dom = tab.page.dom.as_deref().expect("dom installed");
-    let styled = build_style_tree_with_stylesheets(dom, tab.page.css_stylesheets())
-        .expect("structured style tree should build");
+    let styled = build_style_tree_with_stylesheets(
+        dom,
+        page_matching_environment(&tab),
+        tab.page.css_stylesheets(),
+    )
+    .expect("structured style tree should build");
     let p = find_styled_element(&styled, "p").expect("p styled node");
 
     assert_eq!(p.style.color(), (255, 0, 0, 255));
@@ -97,15 +105,19 @@ fn split_text_style_element_is_concatenated_without_synthetic_newlines() {
         )],
     });
 
-    tab.on_core_event(CoreEvent::DomUpdate {
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 15,
-        dom,
+        publication: no_quirks_patch_publication_from_dom(dom),
     });
 
     let dom = tab.page.dom.as_deref().expect("dom installed");
-    let styled = build_style_tree_with_stylesheets(dom, tab.page.css_stylesheets())
-        .expect("structured style tree should build");
+    let styled = build_style_tree_with_stylesheets(
+        dom,
+        page_matching_environment(&tab),
+        tab.page.css_stylesheets(),
+    )
+    .expect("structured style tree should build");
     let p = find_styled_element(&styled, "p").expect("p styled node");
 
     assert_eq!(
@@ -124,10 +136,10 @@ fn repeated_dom_updates_reconcile_inline_styles_without_duplicate_slots() {
 
     for _ in 0..2 {
         let output = parse_document(html, HtmlParseOptions::default()).expect("parse succeeds");
-        tab.on_core_event(CoreEvent::DomUpdate {
+        tab.on_core_event(CoreEvent::DomPatchUpdate {
             tab_id: tab.tab_id,
             request_id: 14,
-            dom: Box::new(output.document),
+            publication: no_quirks_patch_publication_from_output(output),
         });
     }
 
@@ -138,8 +150,12 @@ fn repeated_dom_updates_reconcile_inline_styles_without_duplicate_slots() {
     );
 
     let dom = tab.page.dom.as_deref().expect("dom installed");
-    let styled = build_style_tree_with_stylesheets(dom, tab.page.css_stylesheets())
-        .expect("structured style tree should build");
+    let styled = build_style_tree_with_stylesheets(
+        dom,
+        page_matching_environment(&tab),
+        tab.page.css_stylesheets(),
+    )
+    .expect("structured style tree should build");
     let p = find_styled_element(&styled, "p").expect("p styled node");
 
     assert_eq!(p.style.color(), (255, 0, 0, 255));
@@ -163,10 +179,10 @@ fn external_stylesheets_keep_document_order_when_network_arrives_out_of_order() 
     )
     .expect("parse should succeed");
 
-    tab.on_core_event(CoreEvent::DomUpdate {
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 12,
-        dom: Box::new(output.document),
+        publication: no_quirks_patch_publication_from_output(output),
     });
 
     let queued = rx.try_iter().collect::<Vec<_>>();
@@ -213,8 +229,12 @@ fn external_stylesheets_keep_document_order_when_network_arrives_out_of_order() 
     });
 
     let dom = tab.page.dom.as_deref().expect("dom installed");
-    let styled = build_style_tree_with_stylesheets(dom, tab.page.css_stylesheets())
-        .expect("structured style tree should build");
+    let styled = build_style_tree_with_stylesheets(
+        dom,
+        page_matching_environment(&tab),
+        tab.page.css_stylesheets(),
+    )
+    .expect("structured style tree should build");
     let p = find_styled_element(&styled, "p").expect("p styled node");
 
     assert_eq!(
@@ -241,10 +261,10 @@ fn duplicate_same_url_stylesheets_keep_distinct_document_slots() {
     )
     .expect("parse should succeed");
 
-    tab.on_core_event(CoreEvent::DomUpdate {
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 13,
-        dom: Box::new(output.document),
+        publication: no_quirks_patch_publication_from_output(output),
     });
 
     let slots = rx
@@ -281,10 +301,10 @@ fn duplicate_same_url_stylesheets_participate_as_separate_cascade_slots() {
     )
     .expect("parse should succeed");
 
-    tab.on_core_event(CoreEvent::DomUpdate {
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 16,
-        dom: Box::new(output.document),
+        publication: no_quirks_patch_publication_from_output(output),
     });
 
     let slots = rx
@@ -320,8 +340,12 @@ fn duplicate_same_url_stylesheets_participate_as_separate_cascade_slots() {
     });
 
     let dom = tab.page.dom.as_deref().expect("dom installed");
-    let styled = build_style_tree_with_stylesheets(dom, tab.page.css_stylesheets())
-        .expect("structured style tree should build");
+    let styled = build_style_tree_with_stylesheets(
+        dom,
+        page_matching_environment(&tab),
+        tab.page.css_stylesheets(),
+    )
+    .expect("structured style tree should build");
     let p = find_styled_element(&styled, "p").expect("p styled node");
 
     assert_eq!(
@@ -346,10 +370,10 @@ fn decoded_css_for_removed_stylesheet_slot_is_ignored() {
         HtmlParseOptions::default(),
     )
     .expect("parse should succeed");
-    tab.on_core_event(CoreEvent::DomUpdate {
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 17,
-        dom: Box::new(with_link.document),
+        publication: no_quirks_patch_publication_from_output(with_link),
     });
 
     let (removed_slot, removed_url) = rx
@@ -370,10 +394,10 @@ fn decoded_css_for_removed_stylesheet_slot_is_ignored() {
         HtmlParseOptions::default(),
     )
     .expect("parse should succeed");
-    tab.on_core_event(CoreEvent::DomUpdate {
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 17,
-        dom: Box::new(without_link.document),
+        publication: no_quirks_patch_publication_from_output(without_link),
     });
 
     tab.on_core_event(CoreEvent::CssDecodedBlock {
@@ -390,8 +414,12 @@ fn decoded_css_for_removed_stylesheet_slot_is_ignored() {
     );
 
     let dom = tab.page.dom.as_deref().expect("dom installed");
-    let styled = build_style_tree_with_stylesheets(dom, tab.page.css_stylesheets())
-        .expect("structured style tree should build");
+    let styled = build_style_tree_with_stylesheets(
+        dom,
+        page_matching_environment(&tab),
+        tab.page.css_stylesheets(),
+    )
+    .expect("structured style tree should build");
     let p = find_styled_element(&styled, "p").expect("p styled node");
 
     assert_eq!(p.style.color(), (0, 0, 0, 255));
@@ -413,10 +441,10 @@ fn external_stylesheet_arrival_invalidates_cached_computed_style() {
     )
     .expect("parse should succeed");
 
-    tab.on_core_event(CoreEvent::DomUpdate {
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 24,
-        dom: Box::new(output.document),
+        publication: no_quirks_patch_publication_from_output(output),
     });
 
     let (slot_id, url) = rx

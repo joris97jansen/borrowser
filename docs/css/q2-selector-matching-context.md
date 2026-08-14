@@ -118,7 +118,10 @@ Normative rule:
 ## Matching Context Contract
 
 `SelectorMatchingContext` is a lightweight borrowed wrapper over one
-`SelectorMatchDom` implementation.
+`SelectorMatchDom` implementation plus the explicit immutable
+`SelectorMatchingEnvironment` used for the matching operation. The environment
+currently contains only parser-selected `DocumentMode`; it has no Browser
+identity or DOM generation and has no default state.
 
 Its responsibilities are:
 
@@ -283,6 +286,11 @@ Repository status:
 - later matcher implementation should be written against
   `SelectorMatchingContext` plus `SelectorListMatchBuilder`
 ## AE11 namespace context
+
+AF4a requires every `SelectorMatchingContext` constructor to receive an
+immutable `SelectorMatchingEnvironment`. Namespace-constrained context copies
+preserve that environment; no constructor or `Default` implementation
+manufactures `DocumentMode::NoQuirks`.
 
 `SelectorMatchingContext` carries an optional typed
 `SelectorNamespaceConstraint`. Author rule inputs use `Unconstrained`; HTML UA

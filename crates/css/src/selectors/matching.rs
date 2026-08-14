@@ -21,6 +21,7 @@
 mod context;
 mod debug;
 mod dom_index;
+mod environment;
 mod result;
 
 #[cfg(test)]
@@ -31,6 +32,7 @@ pub use context::{
     SelectorMatchingLimitError, SelectorMatchingLimits, SelectorNamespaceConstraint,
 };
 pub use dom_index::{SelectorDomElementId, SelectorDomElementIter, SelectorDomIndex};
+pub use environment::SelectorMatchingEnvironment;
 pub use result::{
     MatchedSelector, SelectorListMatchBuilder, SelectorListMatchOutcome, SelectorMatchability,
 };

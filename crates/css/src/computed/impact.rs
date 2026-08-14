@@ -45,6 +45,10 @@ impl ComputedDocumentStyle {
         &self,
         previous: &Self,
     ) -> ComputedDocumentStyleInvalidationImpact {
+        if self.matching_environment() != previous.matching_environment() {
+            return ComputedDocumentStyleInvalidationImpact::Unknown;
+        }
+
         if self.entries().len() != previous.entries().len() {
             return ComputedDocumentStyleInvalidationImpact::Unknown;
         }

@@ -104,7 +104,7 @@ ownership of those artifacts into browser/runtime code.
 | --- | --- | --- | --- | --- |
 | DOM | Browser/runtime | Browser/runtime | retained across updates | DOM IDs are provenance anchors, not retained render IDs. |
 | Stylesheet set | Browser/runtime | Browser/runtime | retained across updates | Style input and stylesheet generations participate in style keys. |
-| `ResolvedDocumentStyle` | CSS | Browser/runtime | retained across updates | Reused only through the AC5 style artifact key and clean style dirtiness. |
+| `ResolvedDocumentStyle` | CSS | Browser/runtime | retained across updates | Reused only when the AC5 style artifact key and clean style dirtiness permit lifecycle reuse and CSS confirms matching-environment compatibility. |
 | `ComputedDocumentStyle` | CSS | Browser/runtime | retained across updates | CSS owns computed value meaning and style-tree construction. |
 | `StyledNode` / styled tree view | CSS | none | borrow-backed rebuilt on demand | Rebuilding this view is not retained style artifact reuse. |
 | retained render identities | Browser/runtime | Browser/runtime | retained within the active retained identity domain | Separate from DOM IDs and all frame-local IDs. |
@@ -213,7 +213,7 @@ are recorded by retained artifact lifecycle state and
 
 | case | retained style outcome | reason |
 | --- | --- | --- |
-| no-op update, clean style, matching `RetainedStyleArtifactKey` | reuse retained `ResolvedDocumentStyle` and `ComputedDocumentStyle` | style input and stylesheet generations still match |
+| no-op update, clean style, matching `RetainedStyleArtifactKey`, and matching CSS environment | reuse retained `ResolvedDocumentStyle` and `ComputedDocumentStyle` | Browser lifecycle keys and CSS semantic environment compatibility both match |
 | viewport-only update in current supported CSS model | reuse style | viewport changes do not dirty style by default |
 | stylesheet set change | discard/recompute | stylesheet generation changes and style dirtiness is document-scoped |
 | document replacement | discard/recompute in a new identity domain | retained continuity cannot cross full document replacement |

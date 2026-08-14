@@ -4,7 +4,7 @@ use std::time::Instant;
 use core_types::{DomHandle, DomVersion, RequestId, TabId};
 #[cfg(all(test, feature = "parser-failure-injection"))]
 use html::internal::{ParserFailureInjection, html_parser_with_failure_injection};
-use html::{DomPatch, HtmlParseError, HtmlParseOptions, HtmlParser};
+use html::{DocumentMode, DomPatch, HtmlParseError, HtmlParseOptions, HtmlParser};
 
 pub(crate) static HANDLE_GEN: AtomicU64 = AtomicU64::new(0);
 
@@ -26,7 +26,11 @@ pub(crate) struct RuntimeState {
     pub(crate) max_patch_buffer_bytes: usize,
     pub(crate) dom_handle: DomHandle,
     pub(crate) version: DomVersion,
+    pub(crate) document_mode: Option<DocumentMode>,
 }
+
+pub(crate) const PRESELECTION_PATCH_LIMIT: usize = 4096;
+pub(crate) const PRESELECTION_BYTE_LIMIT: usize = 4 * 1024 * 1024;
 
 impl RuntimeState {
     pub(crate) fn new(
@@ -50,6 +54,7 @@ impl RuntimeState {
             max_patch_buffer_bytes: 0,
             dom_handle,
             version: DomVersion::INITIAL,
+            document_mode: None,
         })
     }
 

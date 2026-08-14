@@ -2,8 +2,35 @@ use core_types::{
     DomHandle, DomVersion, NetworkErrorKind, NetworkResponseInfo, ResourceKind, StylesheetSlotId,
     TabId,
 };
-use html::{DomPatch, Node};
+use html::DomPatch;
 use std::sync::mpsc::{Receiver, Sender};
+
+#[derive(Debug)]
+pub struct DocumentPublication {
+    pub handle: DomHandle,
+    pub document_mode: html::DocumentMode,
+    pub payload: DocumentPublicationPayload,
+}
+
+#[derive(Debug)]
+pub enum DocumentPublicationPayload {
+    Patch {
+        from: DomVersion,
+        to: DomVersion,
+        patches: Vec<DomPatch>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DocumentPublicationFailure {
+    DocumentModeUnavailable,
+    PreSelectionBudgetExceeded,
+    DocumentModeChanged,
+    GenerationMismatch,
+    InvalidPayload,
+    MaterializationFailed,
+    InvariantViolation,
+}
 
 #[derive(Debug)]
 pub enum CoreCommand {
@@ -92,20 +119,17 @@ pub enum CoreEvent {
         error: String,
     },
 
-    // HTML Parser -> UI (legacy snapshot path)
-    DomUpdate {
-        tab_id: TabId,
-        request_id: u64,
-        dom: Box<Node>,
-    },
     // HTML Parser -> UI (patch stream)
     DomPatchUpdate {
         tab_id: TabId,
         request_id: u64,
-        handle: DomHandle,
-        from: DomVersion,
-        to: DomVersion,
-        patches: Vec<DomPatch>,
+        publication: DocumentPublication,
+    },
+    DocumentPublicationFailed {
+        tab_id: TabId,
+        request_id: u64,
+        handle: Option<DomHandle>,
+        failure: DocumentPublicationFailure,
     },
 
     // CSS stylesheet runtime -> UI

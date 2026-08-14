@@ -4,6 +4,7 @@ use crate::fuzz_support::{
     synthesize_dom_from_bytes, synthesized_supported_stylesheet_suite,
 };
 use crate::model;
+use crate::selectors::SelectorMatchingEnvironment;
 use crate::syntax::{ParseOptions, SyntaxLimits};
 
 use super::{StyleResolutionError, StyleResolutionLimits, try_resolve_document_styles_with_limits};
@@ -157,6 +158,7 @@ pub fn run_seeded_cascade_fuzz_case(
 
     let resolved = match try_resolve_document_styles_with_limits(
         &dom,
+        SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks),
         &parsed_stylesheets,
         &config.style_resolution_limits,
     ) {
@@ -187,7 +189,8 @@ pub fn run_seeded_cascade_fuzz_case(
                 digest,
             });
         }
-        Err(error @ StyleResolutionError::UnsupportedConfiguration { .. })
+        Err(error @ StyleResolutionError::MatchingEnvironmentMismatch { .. })
+        | Err(error @ StyleResolutionError::UnsupportedConfiguration { .. })
         | Err(error @ StyleResolutionError::RuleInputBuild(_)) => {
             return Err(CssCascadeFuzzError::StyleResolutionInvariant {
                 detail: error.to_string(),

@@ -262,6 +262,8 @@ and cache.key == RetainedStyleArtifactKey {
   style_input_generation,
   stylesheet_generation
 }
+and CSS confirms that the retained resolved/computed artifacts were produced
+under the current SelectorMatchingEnvironment
 ```
 
 The cache stores owned resolved/computed artifacts, not `StyledNode<'_>`.
@@ -450,6 +452,11 @@ it preserves:
 Shared cache identity must never collapse `DocumentStyleSet` slots.
 
 ## U8 Close-Out Invariants
+
+AF4a artifact validity: resolved and computed CSS artifacts retain the matching
+environment used to produce them. Incremental or prefix reuse compares that
+environment before reuse; Browser retained-style keys remain lifecycle
+eligibility checks only.
 
 Milestone U is complete only while these invariants hold:
 

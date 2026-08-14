@@ -2,7 +2,7 @@ use super::super::Tab;
 use super::support::{
     FixedTextMeasurer, current_element_color, current_element_color_by_id,
     current_element_color_optional, find_styled_element, find_styled_node_id,
-    initial_patch_document, two_paragraph_patch_document,
+    initial_patch_document, no_quirks_patch_publication, two_paragraph_patch_document,
 };
 use crate::page::{RestyleTrigger, StyleRecalcKind};
 use bus::CoreEvent;
@@ -21,10 +21,12 @@ fn dom_patch_attribute_change_triggers_restyle_through_computed_cache() {
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 19,
-        handle,
-        from: DomVersion::INITIAL,
-        to: DomVersion(1),
-        patches: initial_patch_document(".hot { color: red; } p { color: black; }", Some("p")),
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document(".hot { color: red; } p { color: black; }", Some("p")),
+        ),
     });
 
     assert_eq!(
@@ -38,13 +40,15 @@ fn dom_patch_attribute_change_triggers_restyle_through_computed_cache() {
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 19,
-        handle,
-        from: DomVersion(1),
-        to: DomVersion(2),
-        patches: vec![DomPatch::SetAttributes {
-            key: PatchKey(7),
-            attributes: vec![html::internal::unqualified_attribute("class", "hot")],
-        }],
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(1),
+            DomVersion(2),
+            vec![DomPatch::SetAttributes {
+                key: PatchKey(7),
+                attributes: vec![html::internal::unqualified_attribute("class", "hot")],
+            }],
+        ),
     });
 
     assert!(
@@ -81,10 +85,12 @@ fn dom_patch_node_insertion_triggers_restyle_for_inserted_subtree() {
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 20,
-        handle,
-        from: DomVersion::INITIAL,
-        to: DomVersion(1),
-        patches: initial_patch_document("span { color: blue; }", None),
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document("span { color: blue; }", None),
+        ),
     });
 
     assert!(
@@ -95,28 +101,30 @@ fn dom_patch_node_insertion_triggers_restyle_for_inserted_subtree() {
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 20,
-        handle,
-        from: DomVersion(1),
-        to: DomVersion(2),
-        patches: vec![
-            DomPatch::CreateElement {
-                key: PatchKey(9),
-                name: html::internal::html_name("span"),
-                attributes: Vec::new(),
-            },
-            DomPatch::CreateText {
-                key: PatchKey(10),
-                text: "Inserted".to_string(),
-            },
-            DomPatch::AppendChild {
-                parent: PatchKey(9),
-                child: PatchKey(10),
-            },
-            DomPatch::AppendChild {
-                parent: PatchKey(6),
-                child: PatchKey(9),
-            },
-        ],
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(1),
+            DomVersion(2),
+            vec![
+                DomPatch::CreateElement {
+                    key: PatchKey(9),
+                    name: html::internal::html_name("span"),
+                    attributes: Vec::new(),
+                },
+                DomPatch::CreateText {
+                    key: PatchKey(10),
+                    text: "Inserted".to_string(),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(9),
+                    child: PatchKey(10),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(6),
+                    child: PatchKey(9),
+                },
+            ],
+        ),
     });
 
     assert!(
@@ -149,10 +157,12 @@ fn dom_patch_node_removal_triggers_restyle_and_removes_styled_node() {
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 21,
-        handle,
-        from: DomVersion::INITIAL,
-        to: DomVersion(1),
-        patches: initial_patch_document("p { color: red; }", Some("p")),
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document("p { color: red; }", Some("p")),
+        ),
     });
 
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
@@ -160,10 +170,12 @@ fn dom_patch_node_removal_triggers_restyle_and_removes_styled_node() {
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 21,
-        handle,
-        from: DomVersion(1),
-        to: DomVersion(2),
-        patches: vec![DomPatch::RemoveNode { key: PatchKey(7) }],
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(1),
+            DomVersion(2),
+            vec![DomPatch::RemoveNode { key: PatchKey(7) }],
+        ),
     });
 
     assert!(
@@ -190,10 +202,12 @@ fn dom_patch_style_text_change_reconciles_stylesheet_slot_and_restyles() {
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 22,
-        handle,
-        from: DomVersion::INITIAL,
-        to: DomVersion(1),
-        patches: initial_patch_document("p { color: red; }", Some("p")),
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document("p { color: red; }", Some("p")),
+        ),
     });
 
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
@@ -202,13 +216,15 @@ fn dom_patch_style_text_change_reconciles_stylesheet_slot_and_restyles() {
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 22,
-        handle,
-        from: DomVersion(1),
-        to: DomVersion(2),
-        patches: vec![DomPatch::SetText {
-            key: PatchKey(5),
-            text: "p { color: blue; }".to_string(),
-        }],
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(1),
+            DomVersion(2),
+            vec![DomPatch::SetText {
+                key: PatchKey(5),
+                text: "p { color: blue; }".to_string(),
+            }],
+        ),
     });
 
     let after = tab.page.style_generations();
@@ -231,13 +247,15 @@ fn dom_patch_style_text_change_reconciles_stylesheet_slot_and_restyles() {
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 22,
-        handle,
-        from: DomVersion(2),
-        to: DomVersion(3),
-        patches: vec![DomPatch::SetText {
-            key: PatchKey(5),
-            text: "p { display: none; }".to_string(),
-        }],
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(2),
+            DomVersion(3),
+            vec![DomPatch::SetText {
+                key: PatchKey(5),
+                text: "p { display: none; }".to_string(),
+            }],
+        ),
     });
 
     let style_output = tab
@@ -277,10 +295,12 @@ fn dom_patch_attribute_change_incrementally_restyles_following_sibling_suffix() 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 26,
-        handle,
-        from: DomVersion::INITIAL,
-        to: DomVersion(1),
-        patches: two_paragraph_patch_document(".hot ~ p { color: blue; } p { color: black; }"),
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            two_paragraph_patch_document(".hot ~ p { color: blue; } p { color: black; }"),
+        ),
     });
 
     assert_eq!(current_element_color_by_id(&mut tab, Id(9)), (0, 0, 0, 255));
@@ -288,13 +308,15 @@ fn dom_patch_attribute_change_incrementally_restyles_following_sibling_suffix() 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 26,
-        handle,
-        from: DomVersion(1),
-        to: DomVersion(2),
-        patches: vec![DomPatch::SetAttributes {
-            key: PatchKey(7),
-            attributes: vec![html::internal::unqualified_attribute("class", "hot")],
-        }],
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(1),
+            DomVersion(2),
+            vec![DomPatch::SetAttributes {
+                key: PatchKey(7),
+                attributes: vec![html::internal::unqualified_attribute("class", "hot")],
+            }],
+        ),
     });
 
     {
@@ -339,11 +361,13 @@ fn queued_attribute_mutations_merge_to_earliest_dirty_suffix() {
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 27,
-        handle,
-        from: DomVersion::INITIAL,
-        to: DomVersion(1),
-        patches: two_paragraph_patch_document(
-            ".hot { color: red; } .cool { color: blue; } p { color: black; }",
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            two_paragraph_patch_document(
+                ".hot { color: red; } .cool { color: blue; } p { color: black; }",
+            ),
         ),
     });
 
@@ -353,24 +377,28 @@ fn queued_attribute_mutations_merge_to_earliest_dirty_suffix() {
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 27,
-        handle,
-        from: DomVersion(1),
-        to: DomVersion(2),
-        patches: vec![DomPatch::SetAttributes {
-            key: PatchKey(7),
-            attributes: vec![html::internal::unqualified_attribute("class", "hot")],
-        }],
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(1),
+            DomVersion(2),
+            vec![DomPatch::SetAttributes {
+                key: PatchKey(7),
+                attributes: vec![html::internal::unqualified_attribute("class", "hot")],
+            }],
+        ),
     });
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 27,
-        handle,
-        from: DomVersion(2),
-        to: DomVersion(3),
-        patches: vec![DomPatch::SetAttributes {
-            key: PatchKey(9),
-            attributes: vec![html::internal::unqualified_attribute("class", "cool")],
-        }],
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(2),
+            DomVersion(3),
+            vec![DomPatch::SetAttributes {
+                key: PatchKey(9),
+                attributes: vec![html::internal::unqualified_attribute("class", "cool")],
+            }],
+        ),
     });
 
     {
@@ -416,10 +444,12 @@ fn dom_patch_normal_text_change_dirties_layout_but_reuses_computed_style() {
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 23,
-        handle,
-        from: DomVersion::INITIAL,
-        to: DomVersion(1),
-        patches: initial_patch_document("p { color: red; }", Some("p")),
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document("p { color: red; }", Some("p")),
+        ),
     });
 
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
@@ -430,13 +460,15 @@ fn dom_patch_normal_text_change_dirties_layout_but_reuses_computed_style() {
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 23,
-        handle,
-        from: DomVersion(1),
-        to: DomVersion(2),
-        patches: vec![DomPatch::SetText {
-            key: PatchKey(8),
-            text: "Goodbye".to_string(),
-        }],
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(1),
+            DomVersion(2),
+            vec![DomPatch::SetText {
+                key: PatchKey(8),
+                text: "Goodbye".to_string(),
+            }],
+        ),
     });
 
     let after = tab.page.style_generations();
@@ -474,10 +506,12 @@ fn empty_dom_patch_batch_does_not_trigger_restyle() {
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 25,
-        handle,
-        from: DomVersion::INITIAL,
-        to: DomVersion(1),
-        patches: initial_patch_document("p { color: red; }", Some("p")),
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document("p { color: red; }", Some("p")),
+        ),
     });
 
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
@@ -488,10 +522,7 @@ fn empty_dom_patch_batch_does_not_trigger_restyle() {
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 25,
-        handle,
-        from: DomVersion(1),
-        to: DomVersion(1),
-        patches: Vec::new(),
+        publication: no_quirks_patch_publication(handle, DomVersion(1), DomVersion(1), Vec::new()),
     });
 
     assert_eq!(
@@ -509,4 +540,151 @@ fn empty_dom_patch_batch_does_not_trigger_restyle() {
         "empty patch batches must not invalidate cached computed style"
     );
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
+}
+
+#[test]
+fn invalid_publication_preserves_committed_browser_state_and_reason() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 27;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(270);
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 27,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document("p { color: red; }", Some("p")),
+        ),
+    });
+    let before_dom = tab.page.dom.as_ref().map(|dom| format!("{dom:?}"));
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 27,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(1),
+            DomVersion(2),
+            vec![DomPatch::SetAttributes {
+                key: PatchKey(9999),
+                attributes: Vec::new(),
+            }],
+        ),
+    });
+    assert_eq!(tab.dom_handle, Some(handle));
+    assert_eq!(tab.dom_version, DomVersion(1));
+    assert_eq!(
+        tab.page.dom.as_ref().map(|dom| format!("{dom:?}")),
+        before_dom
+    );
+    assert!(
+        tab.last_status
+            .as_deref()
+            .unwrap_or_default()
+            .contains("InvalidPayload")
+    );
+}
+
+#[test]
+fn same_handle_mode_mismatch_preserves_committed_state() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 28;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(280);
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 28,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document("p { color: red; }", Some("p")),
+        ),
+    });
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 28,
+        publication: bus::DocumentPublication {
+            handle,
+            document_mode: html::DocumentMode::Quirks,
+            payload: bus::DocumentPublicationPayload::Patch {
+                from: DomVersion(1),
+                to: DomVersion(2),
+                patches: vec![DomPatch::SetText {
+                    key: PatchKey(9),
+                    text: "changed".to_string(),
+                }],
+            },
+        },
+    });
+    assert_eq!(tab.dom_version, DomVersion(1));
+    assert_eq!(tab.page.document_mode, Some(html::DocumentMode::NoQuirks));
+    assert!(
+        tab.last_status
+            .as_deref()
+            .unwrap_or_default()
+            .contains("DocumentModeChanged")
+    );
+}
+
+#[test]
+fn inert_template_contents_publication_commits_without_restyle() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 26;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(260);
+    let initial = vec![
+        DomPatch::Clear,
+        DomPatch::CreateDocument {
+            key: PatchKey(1),
+            doctype: None,
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(2),
+            name: html::internal::html_name("html"),
+            attributes: Vec::new(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(1),
+            child: PatchKey(2),
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(3),
+            name: html::internal::html_name("template"),
+            attributes: Vec::new(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(2),
+            child: PatchKey(3),
+        },
+    ];
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 26,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial,
+        ),
+    });
+    let before = tab.page.style_generations();
+    let before_dirty = tab.page.style_dirty();
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 26,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(1),
+            DomVersion(2),
+            vec![DomPatch::CreateTemplateContents {
+                host: PatchKey(3),
+                contents: PatchKey(4),
+            }],
+        ),
+    });
+    assert_eq!(tab.dom_version, DomVersion(2));
+    assert_eq!(tab.page.style_generations(), before);
+    assert_eq!(tab.page.style_dirty(), before_dirty);
 }

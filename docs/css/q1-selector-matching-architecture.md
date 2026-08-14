@@ -99,10 +99,19 @@ The selector matching boundary is now:
 
 Normative rule:
 
-- selector evaluation consumes selector IR plus a `SelectorMatchDom`
-  implementation
+- selector evaluation consumes selector IR / parsed selector structures,
+  `SelectorMatchDom` facts through the `SelectorMatchingContext` query
+  abstraction, and an explicit CSS-owned immutable
+  `SelectorMatchingEnvironment`
+- the current matching environment contains the parser-selected HTML
+  `DocumentMode`; CSS owns the interpretation of that semantic input
+- Browser/runtime identity and DOM generation are not members of the matching
+  environment
 - selector evaluation must not depend on parser-internal state, raw selector
-  source reparsing, or one specific DOM storage layout
+  source reparsing, one specific DOM storage layout, or reconstruction of
+  document mode from the DOM or parser internals
+- an unavailable environment is an explicit failure condition and must never
+  imply `DocumentMode::NoQuirks`
 
 ## DOM Contract
 
@@ -428,6 +437,11 @@ Q1 does not:
 Those belong to later Milestone Q issues.
 
 ## Exit Criteria
+
+AF4a refines the normative matcher input to selector IR plus
+`SelectorMatchDom` plus an explicit CSS-owned `SelectorMatchingEnvironment`.
+The environment is transported from parser metadata while selector semantics
+remain entirely in CSS.
 
 Q1 is complete when:
 

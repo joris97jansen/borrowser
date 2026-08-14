@@ -28,22 +28,29 @@ pub enum SelectorNamespaceConstraint {
 #[derive(Clone, Copy, Debug)]
 pub struct SelectorMatchingContext<'a, D: SelectorMatchDom> {
     dom: &'a D,
+    environment: super::SelectorMatchingEnvironment,
     limits: SelectorMatchingLimits,
     namespace_constraint: SelectorNamespaceConstraint,
 }
 
 impl<'a, D: SelectorMatchDom> SelectorMatchingContext<'a, D> {
-    pub fn new(dom: &'a D) -> Self {
+    pub fn new(dom: &'a D, environment: super::SelectorMatchingEnvironment) -> Self {
         Self {
             dom,
+            environment,
             limits: SelectorMatchingLimits::default(),
             namespace_constraint: SelectorNamespaceConstraint::Unconstrained,
         }
     }
 
-    pub fn with_limits(dom: &'a D, limits: SelectorMatchingLimits) -> Self {
+    pub fn with_limits(
+        dom: &'a D,
+        environment: super::SelectorMatchingEnvironment,
+        limits: SelectorMatchingLimits,
+    ) -> Self {
         Self {
             dom,
+            environment,
             limits,
             namespace_constraint: SelectorNamespaceConstraint::Unconstrained,
         }
@@ -55,6 +62,7 @@ impl<'a, D: SelectorMatchDom> SelectorMatchingContext<'a, D> {
     ) -> Self {
         Self {
             dom: self.dom,
+            environment: self.environment,
             limits: self.limits,
             namespace_constraint,
         }
@@ -62,6 +70,10 @@ impl<'a, D: SelectorMatchDom> SelectorMatchingContext<'a, D> {
 
     pub fn dom(&self) -> &'a D {
         self.dom
+    }
+
+    pub fn environment(&self) -> super::SelectorMatchingEnvironment {
+        self.environment
     }
 
     pub fn limits(&self) -> SelectorMatchingLimits {

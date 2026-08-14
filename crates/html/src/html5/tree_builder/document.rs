@@ -1,20 +1,20 @@
-use crate::DocumentMode;
 use crate::dom_patch::{DomPatch, PatchKey};
 use crate::html5::shared::{AtomId, AtomTable};
 use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::resolve::resolve_atom;
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
+use crate::{DocumentMode, DocumentModeReadiness};
 
 #[derive(Clone, Debug)]
 pub(crate) struct DocumentState {
-    pub(crate) quirks_mode: DocumentMode,
+    pub(crate) mode: DocumentModeReadiness,
     pub(crate) frameset_ok: bool,
 }
 
 impl Default for DocumentState {
     fn default() -> Self {
         Self {
-            quirks_mode: DocumentMode::NoQuirks,
+            mode: DocumentModeReadiness::Unselected,
             frameset_ok: true,
         }
     }
@@ -28,9 +28,13 @@ pub(in crate::html5::tree_builder) struct PendingDoctype {
 }
 
 impl Html5TreeBuilder {
+    pub(crate) fn document_mode_readiness(&self) -> DocumentModeReadiness {
+        self.document_state.mode
+    }
+
     #[cfg(feature = "parser-conformance")]
-    pub(crate) fn document_mode(&self) -> DocumentMode {
-        self.document_state.quirks_mode
+    pub(crate) fn document_mode(&self) -> Option<DocumentMode> {
+        self.document_state.mode.selected()
     }
 
     fn classify_doctype_quirks_mode(
@@ -74,8 +78,35 @@ impl Html5TreeBuilder {
         DocumentMode::NoQuirks
     }
 
-    pub(in crate::html5::tree_builder) fn closes_p_before_table_in_body(&self) -> bool {
-        self.document_state.quirks_mode != DocumentMode::Quirks
+    pub(in crate::html5::tree_builder) fn closes_p_before_table_in_body(
+        &self,
+    ) -> Result<bool, TreeBuilderError> {
+        self.document_state
+            .mode
+            .selected()
+            .map(|mode| mode != DocumentMode::Quirks)
+            .ok_or(crate::html5::shared::EngineInvariantError.into())
+    }
+
+    pub(in crate::html5::tree_builder) fn select_document_mode(
+        &mut self,
+        mode: DocumentMode,
+    ) -> Result<(), TreeBuilderError> {
+        match self.document_state.mode {
+            DocumentModeReadiness::Unselected => {
+                self.document_state.mode = DocumentModeReadiness::Selected(mode);
+                Ok(())
+            }
+            DocumentModeReadiness::Selected(existing) if existing == mode => Ok(()),
+            DocumentModeReadiness::Selected(_) => {
+                Err(crate::html5::shared::EngineInvariantError.into())
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(in crate::html5::tree_builder) fn clear_document_mode_for_test(&mut self) {
+        self.document_state.mode = DocumentModeReadiness::Unselected;
     }
 
     pub(in crate::html5::tree_builder) fn ensure_document_created(
@@ -144,9 +175,12 @@ impl Html5TreeBuilder {
             })?;
         }
 
-        self.document_state.quirks_mode =
-            Self::classify_doctype_quirks_mode(resolved_name, public_id, system_id, force_quirks);
-        Ok(())
+        self.select_document_mode(Self::classify_doctype_quirks_mode(
+            resolved_name,
+            public_id,
+            system_id,
+            force_quirks,
+        ))
     }
 
     fn create_document_node(&mut self) -> Result<PatchKey, TreeBuilderError> {

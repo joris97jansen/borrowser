@@ -130,7 +130,8 @@ fn run_runtime_parse_stream(
     let mut last_event = std::time::Instant::now();
     loop {
         match evt_rx.recv_timeout(Duration::from_millis(50)) {
-            Ok(CoreEvent::DomPatchUpdate { patches, .. }) => {
+            Ok(CoreEvent::DomPatchUpdate { publication, .. }) => {
+                let bus::DocumentPublicationPayload::Patch { patches, .. } = publication.payload;
                 metrics.patch_batches += 1;
                 metrics.patches_emitted += patches.len();
                 metrics.peak_batch = metrics.peak_batch.max(patches.len());

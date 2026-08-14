@@ -1,7 +1,7 @@
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use css::{
     ParseOptions, Rule, SelectorDomIndex, SelectorListParseResult, SelectorMatchingContext,
-    compute_document_styles, parse_stylesheet_with_options,
+    SelectorMatchingEnvironment, compute_document_styles, parse_stylesheet_with_options,
 };
 
 #[path = "../src/perf_fixtures.rs"]
@@ -45,7 +45,10 @@ fn bench_selector_matching_representative_dom(c: &mut Criterion) {
         ));
         group.bench_with_input(BenchmarkId::from_parameter(blocks), &dom, |b, dom| {
             let index = SelectorDomIndex::from_root(dom);
-            let context = SelectorMatchingContext::new(&index);
+            let context = SelectorMatchingContext::new(
+                &index,
+                SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks),
+            );
 
             b.iter(|| {
                 let matches = context
@@ -76,8 +79,12 @@ fn bench_style_resolution_representative_page(c: &mut Criterion) {
 
     c.bench_function("css_style_resolution_representative_page", |b| {
         b.iter(|| {
-            let computed = compute_document_styles(black_box(&dom), black_box(&sheets))
-                .expect("style resolution should succeed");
+            let computed = compute_document_styles(
+                black_box(&dom),
+                SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks),
+                black_box(&sheets),
+            )
+            .expect("style resolution should succeed");
             black_box(computed.entries().len());
         });
     });

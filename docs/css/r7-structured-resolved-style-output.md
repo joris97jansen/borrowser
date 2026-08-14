@@ -26,13 +26,18 @@ R7 introduces the document-level structured cascade output:
 
 - `ResolvedElementStyle`
 - `ResolvedDocumentStyle`
-- `resolve_document_styles(...)`
-- `try_resolve_document_styles_with_limits(...)`
+- `resolve_document_styles(root, matching_environment, ...)`
+- `try_resolve_document_styles_with_limits(root, matching_environment, ...)`
 
 `resolve_document_styles(...)` is now the core cascade integration path for a
-DOM root and an ordered stylesheet list. It returns
+DOM root, an explicit CSS-owned `SelectorMatchingEnvironment`, and an ordered
+stylesheet list. It returns
 `Result<ResolvedDocumentStyle, StyleResolutionError>`, preserves hardening
 failures explicitly, and does not mutate `html::Node`.
+
+All cascade entry points that initiate selector matching require the matching
+environment explicitly. There is no environment-less or default semantic
+state, and missing document metadata must not imply `NoQuirks`.
 
 The old `attach_styles(...)` function still exists, but it is now explicitly a
 legacy projection and compatibility downgrade path:
@@ -50,8 +55,9 @@ mutation path.
 
 ## Structured Output Shape
 
-`ResolvedDocumentStyle` contains one `ResolvedElementStyle` per selector-DOM
-element.
+`ResolvedDocumentStyle` contains the immutable
+`SelectorMatchingEnvironment` under which selector resolution occurred and one
+ordered `ResolvedElementStyle` per selector-DOM element.
 
 Each element entry records:
 
@@ -76,7 +82,7 @@ The per-element `ResolvedStyle` remains the R1-R6 contract object:
 For each element in selector-DOM document order, R7 performs:
 
 1. match each model stylesheet style rule against the element through
-   `SelectorMatchingContext`
+   `SelectorMatchingContext` carrying the explicit matching environment
 2. materialize matched stylesheet declarations as `CascadeRuleInput`
 3. materialize the element's inline `style` attribute as an inline
    `CascadeRuleInput`
@@ -87,6 +93,12 @@ For each element in selector-DOM document order, R7 performs:
 Parent resolved styles are available before child resolution because selector
 DOM element ids are assigned in document order and parent elements precede
 children.
+
+The retained environment is part of CSS-owned semantic reuse validity. An
+incremental or prefix resolved-style reuse attempt must reject an environment
+mismatch before reusing any prior entries. Browser retained-style keys remain
+lifecycle/cache eligibility checks and do not substitute for this CSS semantic
+compatibility check.
 
 ## Legacy Projection Boundary
 
