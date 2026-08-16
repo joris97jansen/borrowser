@@ -1,11 +1,11 @@
+use super::super::comparison::matches_attribute_value;
+use super::super::host_language::{attribute_selector_value_case, matches_type_selector_name};
 use super::SelectorMatchingContext;
-use super::attributes::{
-    attribute_value_text, contains_selector_whitespace, split_selector_whitespace_separated_tokens,
-};
+use super::attributes::attribute_value_text;
 use super::dom::SelectorMatchDom;
 use crate::selectors::{
-    AttributeMatchSelector, AttributeMatcher, AttributeSelector, ClassSelector, CompoundSelector,
-    IdSelector, SubclassSelector, TypeSelector,
+    AttributeMatchSelector, AttributeSelector, ClassSelector, CompoundSelector, IdSelector,
+    SubclassSelector, TypeSelector,
 };
 
 impl<D: SelectorMatchDom> SelectorMatchingContext<'_, D> {
@@ -37,11 +37,11 @@ impl<D: SelectorMatchDom> SelectorMatchingContext<'_, D> {
             TypeSelector::Universal(_) => true,
             TypeSelector::Named(selector) => {
                 let actual = self.element_local_name(element);
-                if self.element_namespace(element) == html::ElementNamespace::Html {
-                    actual.eq_ignore_ascii_case(selector.name().text())
-                } else {
-                    actual == selector.name().text()
-                }
+                matches_type_selector_name(
+                    self.element_namespace(element),
+                    actual,
+                    selector.name().text(),
+                )
             }
         }
     }
@@ -88,29 +88,13 @@ impl<D: SelectorMatchDom> SelectorMatchingContext<'_, D> {
         element: D::ElementId,
         selector: &AttributeMatchSelector,
     ) -> bool {
-        let Some(actual) = self.attribute_value(element, selector.name().text()) else {
+        let Some(attribute) = self.effective_unqualified_attribute(element, selector.name().text())
+        else {
             return false;
         };
 
         let expected = attribute_value_text(selector.value());
-
-        match selector.matcher() {
-            AttributeMatcher::Exact => actual == expected,
-            AttributeMatcher::Includes => {
-                !expected.is_empty()
-                    && !contains_selector_whitespace(expected)
-                    && split_selector_whitespace_separated_tokens(actual)
-                        .any(|token| token == expected)
-            }
-            AttributeMatcher::DashMatch => {
-                actual == expected
-                    || actual
-                        .strip_prefix(expected)
-                        .is_some_and(|rest| rest.starts_with('-'))
-            }
-            AttributeMatcher::Prefix => !expected.is_empty() && actual.starts_with(expected),
-            AttributeMatcher::Suffix => !expected.is_empty() && actual.ends_with(expected),
-            AttributeMatcher::Substring => !expected.is_empty() && actual.contains(expected),
-        }
+        let sensitivity = attribute_selector_value_case(self.element_namespace(element), attribute);
+        matches_attribute_value(selector.matcher(), attribute.value(), expected, sensitivity)
     }
 }

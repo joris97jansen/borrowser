@@ -1,6 +1,6 @@
 # AF2: Selector AST, Parser, And Selector Diagnostics
 
-Last updated: 2026-08-12
+Last updated: 2026-08-16
 Status: implemented
 
 AF2 completes the Milestone AF selector-parser boundary by reconciling the
@@ -103,6 +103,26 @@ selector labels are defined once on selector reason/feature types and are
 shared by selector snapshots and diagnostic messages. Derived Rust `Debug` is
 not a diagnostic or snapshot contract.
 
+## Selector Semantic Escape Limitation
+
+The current tokenizer/parser path does not yet consistently expose fully
+escape-decoded semantic selector names and values in selector IR. Token text
+storage resolution is not itself standards-conformant CSS identifier/string
+escape decoding.
+
+Later matching work, including AF4c host-language comparison, must consume the
+selector IR as it exists. It must not:
+
+- decode escapes ad hoc inside matching;
+- key semantic policy from raw authored escape spelling as a workaround;
+- normalize DOM facts to compensate for missing selector decoding;
+- claim that the current raw-spelling behavior is the eventual standards
+  contract.
+
+Standards-conformant escape decoding belongs to a separate CSS Syntax/selector-
+parser issue with parser, serialization, diagnostic, and matching regression
+coverage. AF4c deliberately does not expand into that work.
+
 ## Applicability And Non-Goals
 
 Invalid and unsupported selector lists remain explicitly non-matchable and do
@@ -116,6 +136,7 @@ AF2 does not implement:
 - namespace selectors;
 - cascade or computed-style changes;
 - selector dependency invalidation;
+- standards-conformant selector semantic escape decoding;
 - a lossless unsupported-selector AST;
 - CSSOM, JavaScript style APIs, media queries, custom properties, animations,
   or transitions.

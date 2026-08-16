@@ -19,10 +19,12 @@
 //! the matcher has been split along the stable seams established earlier:
 //! result surface, matcher context/evaluator, and owned-tree DOM adapter.
 
+mod comparison;
 mod context;
 mod debug;
 mod dom_index;
 mod environment;
+mod host_language;
 mod result;
 
 #[cfg(test)]
@@ -39,6 +41,7 @@ pub use dom_index::{
     SelectorDomIndex, SelectorDomNodeKind,
 };
 pub use environment::SelectorMatchingEnvironment;
+pub(crate) use host_language::matches_unqualified_attribute_name;
 pub use result::{
     MatchedSelector, SelectorListMatchBuilder, SelectorListMatchOutcome, SelectorMatchability,
 };

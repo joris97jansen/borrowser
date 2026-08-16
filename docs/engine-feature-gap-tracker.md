@@ -138,8 +138,9 @@ Milestone AF foundation status:
 - AF4a propagates parser-selected document-mode readiness through atomic
   runtime publication and Browser retention into CSS's explicit immutable
   `SelectorMatchingEnvironment`, including environment-safe resolved/computed
-  artifact reuse. Quirks-mode ID/class comparison and complete historical
-  DOCTYPE classification remain deferred; AF4a does not claim either behavior.
+  artifact reuse. AF4a itself did not implement quirks-mode ID/class
+  comparison; AF4c now consumes the environment for that behavior. Complete
+  historical DOCTYPE classification remains deferred.
 - AF4b hardens CSS's selector-DOM query boundary over parser-created DOM; see
   `docs/css/af4b-selector-dom-query-contract.md`. Authoritative document
   construction is explicit and fallible, actual document-element identity is
@@ -155,6 +156,20 @@ Milestone AF foundation status:
   invalidation expansion, Layout/Paint behavior, JavaScript DOM mutation,
   caches, or broad HTML validation. Milestone AF and broad selector conformance
   are not complete.
+- AF4c implements CSS-owned HTML host-language comparison for the already
+  supported selector subset; see
+  `docs/css/af4c-html-host-language-selector-comparison.md`. HTML type and
+  unqualified attribute names use asymmetric selector-side ASCII lowercasing,
+  foreign names remain exact, Quirks-only ID/class value comparison is
+  document-wide, and HTML's exact 46-name default insensitive attribute-value
+  inventory applies across all six supported value operators. Policy is keyed
+  from effective semantic attribute identity and ordinary matching remains
+  borrowed and allocation-free.
+- AF4c does not add attribute-selector `i`/`s` modifiers, namespace selector
+  syntax, selector semantic escape decoding, XML-document matching, DOM
+  mutation/scripting semantics, broader DOCTYPE classification, new
+  invalidation behavior, or broad selector coverage. Existing selector
+  specificity, serialization, and debug schema remain unchanged.
 
 Major missing families remain:
 
@@ -200,7 +215,9 @@ Major missing families remain:
 - overflow: scrollbars, scroll containers, scroll offsets, overflow-x/y split
   behavior, viewport/body overflow propagation
 - selectors and media: broad selector coverage, pseudo-classes,
-  pseudo-elements, selector invalidation, media queries, and container queries
+  pseudo-elements, attribute-selector `i`/`s` modifiers, namespace selectors,
+  standards-conformant selector escape decoding, XML-document matching,
+  selector invalidation, media queries, and container queries
 - custom properties and variables
 - animations and transitions
 - CSS Values and Units beyond the current narrow subset

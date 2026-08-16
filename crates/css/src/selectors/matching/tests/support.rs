@@ -87,11 +87,25 @@ pub(super) fn parse_selector_result(source: &str) -> SelectorListParseResult {
 }
 
 pub(super) fn assert_matching_debug_snapshot(dom: Node, selector_source: &str, expected: &str) {
+    assert_matching_debug_snapshot_with_environment(
+        dom,
+        selector_source,
+        matching_environment(),
+        expected,
+    );
+}
+
+pub(super) fn assert_matching_debug_snapshot_with_environment(
+    dom: Node,
+    selector_source: &str,
+    environment: SelectorMatchingEnvironment,
+    expected: &str,
+) {
     let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
     let selectors = parse_selector_result(selector_source);
 
     assert_eq!(
-        index.to_matching_debug_snapshot(matching_environment(), &selectors),
+        index.to_matching_debug_snapshot(environment, &selectors),
         expected
     );
 }

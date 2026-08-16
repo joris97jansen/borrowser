@@ -160,6 +160,7 @@ fn matching_context_attribute_match_queries_cover_supported_matchers_and_edges()
             ("data-suffix", Some("foobar")),
             ("data-sub", Some("xxfooyy")),
             ("data-empty", Some("")),
+            ("data-dash-empty", Some("-x")),
         ],
         Vec::new(),
     )]);
@@ -195,6 +196,18 @@ fn matching_context_attribute_match_queries_cover_supported_matchers_and_edges()
     ));
     assert!(context.matches_attribute_selector(
         element,
+        &attribute_match_selector("data-empty", AttributeMatcher::DashMatch, string_value("")),
+    ));
+    assert!(context.matches_attribute_selector(
+        element,
+        &attribute_match_selector(
+            "data-dash-empty",
+            AttributeMatcher::DashMatch,
+            string_value(""),
+        ),
+    ));
+    assert!(context.matches_attribute_selector(
+        element,
         &attribute_match_selector("data-prefix", AttributeMatcher::Prefix, ident_value("foo")),
     ));
     assert!(!context.matches_attribute_selector(
@@ -204,6 +217,10 @@ fn matching_context_attribute_match_queries_cover_supported_matchers_and_edges()
     assert!(context.matches_attribute_selector(
         element,
         &attribute_match_selector("data-suffix", AttributeMatcher::Suffix, ident_value("bar")),
+    ));
+    assert!(!context.matches_attribute_selector(
+        element,
+        &attribute_match_selector("data-empty", AttributeMatcher::Suffix, string_value("")),
     ));
     assert!(context.matches_attribute_selector(
         element,

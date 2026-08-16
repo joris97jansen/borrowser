@@ -15,13 +15,11 @@ pub(crate) fn first_effective_unqualified_attribute<'a>(
 ) -> Option<SelectorDomAttribute<'a>> {
     attributes.into_iter().find(|attribute| {
         attribute.namespace() == AttributeNamespace::None
-            && if element_namespace == ElementNamespace::Html {
-                attribute
-                    .local_name()
-                    .eq_ignore_ascii_case(requested_local_name)
-            } else {
-                attribute.local_name() == requested_local_name
-            }
+            && crate::selectors::matching::matches_unqualified_attribute_name(
+                element_namespace,
+                attribute.local_name(),
+                requested_local_name,
+            )
     })
 }
 
@@ -64,6 +62,51 @@ mod tests {
             first_effective_unqualified_attribute(ElementNamespace::Svg, attributes, "href")
                 .map(SelectorDomAttribute::value),
             Some("ordinary")
+        );
+    }
+
+    #[test]
+    fn effective_lookup_ascii_lowercases_only_the_html_request_side() {
+        let attributes = [
+            SelectorDomAttribute::new(AttributeNamespace::None, "TYPE", "noncanonical"),
+            SelectorDomAttribute::new(AttributeNamespace::None, "type", "canonical"),
+        ];
+
+        assert_eq!(
+            first_effective_unqualified_attribute(ElementNamespace::Html, attributes, "TYPE")
+                .map(SelectorDomAttribute::value),
+            Some("canonical"),
+            "a noncanonical actual HTML name must not match or shadow the canonical name"
+        );
+        assert_eq!(
+            first_effective_unqualified_attribute(
+                ElementNamespace::Html,
+                [SelectorDomAttribute::new(
+                    AttributeNamespace::None,
+                    "TYPE",
+                    "noncanonical",
+                )],
+                "TYPE",
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn effective_lookup_keeps_foreign_attribute_names_exact() {
+        let attributes = [SelectorDomAttribute::new(
+            AttributeNamespace::None,
+            "viewBox",
+            "0 0 10 10",
+        )];
+
+        assert!(
+            first_effective_unqualified_attribute(ElementNamespace::Svg, attributes, "viewBox")
+                .is_some()
+        );
+        assert_eq!(
+            first_effective_unqualified_attribute(ElementNamespace::Svg, attributes, "VIEWBOX"),
+            None
         );
     }
 }

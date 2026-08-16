@@ -1,7 +1,7 @@
 # CSS Hardening
 
-Last updated: 2026-08-15
-Status: implemented through Milestone T with AF4b selector-DOM hardening
+Last updated: 2026-08-16
+Status: implemented through Milestone T with AF4c selector comparison hardening
 
 This document defines Borrowser's implemented CSS hardening posture for
 untrusted input, the limits currently enforced across the CSS pipeline, and the
@@ -31,6 +31,7 @@ Related CSS contracts:
 - [`docs/css/n7-resource-limits-parser-invariants.md`](../css/n7-resource-limits-parser-invariants.md)
 - [`docs/css/q8-selector-matching-invariants-extension-hooks.md`](../css/q8-selector-matching-invariants-extension-hooks.md)
 - [`docs/css/af4b-selector-dom-query-contract.md`](../css/af4b-selector-dom-query-contract.md)
+- [`docs/css/af4c-html-host-language-selector-comparison.md`](../css/af4c-html-host-language-selector-comparison.md)
 - [`docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`](../css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md)
 - [`docs/css/s9-property-system-computed-style-runtime-contract.md`](../css/s9-property-system-computed-style-runtime-contract.md)
 
@@ -234,6 +235,32 @@ property-local parsing from assuming unbounded top-level value fanout.
   element children, and exact ordinary direct text facts only
 - selector-DOM construction rejects invalid structure and representation
   exhaustion through typed errors rather than normalization or no-match
+- policy selection is centralized and remains separate from attribute operator
+  execution
+- HTML element/attribute name matching uses borrowed selector/request-side
+  ASCII lowercasing; it does not allocate normalized names or symmetrically
+  fold exact actual DOM names
+- ID, class, and attribute value comparison uses borrowed sensitive or ASCII-
+  insensitive primitives and never Unicode case folding
+- matching does not mutate or normalize stored selector/DOM values
+- the HTML insensitive-value inventory is a fixed static table with no heap or
+  lazy-initialization path
+- CSS token matching uses only TAB, LF, FF, CR, and SPACE as separators
+
+### Selector Comparison Allocation Guard
+
+AF4c adds a focused exact-zero allocation guard around repeated
+`SelectorMatchingContext::matches_compound_selector(...)` calls. Selector
+parsing, DOM construction, selector-DOM projection, context construction, and
+result-vector construction occur outside the measured region. The measured
+match result is observably consumed so compiler elimination cannot produce a
+false zero.
+
+The guard requires zero allocation events, allocation bytes, and reallocation
+events for the covered type, ID, class, presence, and six-operator comparison
+path. It complements the broader style-resolution allocation thresholds and
+Criterion timing benchmark; neither of those substitutes for this deterministic
+comparison-path invariant.
 
 ### Cascade
 

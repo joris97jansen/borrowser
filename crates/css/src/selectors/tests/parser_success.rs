@@ -43,3 +43,20 @@ fn parser_distinguishes_comments_from_descendant_whitespace() {
         Combinator::Descendant
     );
 }
+
+#[test]
+fn parser_accepts_quoted_empty_values_for_every_supported_attribute_operator() {
+    for source in [
+        r#"[data-x=""]"#,
+        r#"[data-x~=""]"#,
+        r#"[data-x|=""]"#,
+        r#"[data-x^=""]"#,
+        r#"[data-x$=""]"#,
+        r#"[data-x*=""]"#,
+    ] {
+        assert!(
+            parse_selector_result(source).parsed().is_some(),
+            "expected {source:?} to remain syntactically valid",
+        );
+    }
+}

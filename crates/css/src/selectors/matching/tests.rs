@@ -3,6 +3,7 @@ mod support;
 mod complex_matching;
 mod dom_index;
 mod environment;
+mod host_language;
 mod invariants;
 mod matchability;
 mod outcome;

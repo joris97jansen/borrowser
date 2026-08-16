@@ -1,6 +1,6 @@
 # AF4b: Selector DOM Query Contract For Parser-Created DOM
 
-Last updated: 2026-08-15
+Last updated: 2026-08-16
 Status: implemented
 
 AF4b defines the production selector-DOM projection used by CSS matching,
@@ -19,6 +19,8 @@ Related implementation:
 - `crates/css/src/selectors/matching/context/queries.rs`
 - `crates/css/src/selectors/matching/context/attributes.rs`
 - `crates/css/src/selectors/matching/context/compound.rs`
+- `crates/css/src/selectors/matching/comparison.rs`
+- `crates/css/src/selectors/matching/host_language.rs`
 - `crates/css/src/dom_attributes.rs`
 - `crates/css/src/cascade/integration.rs`
 - `crates/css/src/cascade/integration/limits.rs`
@@ -33,6 +35,7 @@ Related contracts:
 - `docs/css/q8-selector-matching-invariants-extension-hooks.md`
 - `docs/css/af1-selector-cascade-computed-style-architecture-contract.md`
 - `docs/css/af4a-document-matching-environment.md`
+- `docs/css/af4c-html-host-language-selector-comparison.md`
 - `docs/html5/ae1-html-parser-dom-ownership-contract.md`
 - `docs/html5/ae2-parser-created-dom-node-model.md`
 - `docs/html5/ae10-template-tree-construction-contract.md`
@@ -285,9 +288,15 @@ The private CSS-wide helper in `crates/css/src/dom_attributes.rs` may find the
 first effective unqualified attribute from neutral facts. It owns only:
 
 - the requirement that the attribute namespace be `None`
-- HTML-element ASCII-insensitive versus foreign-element exact local-name
-  comparison
+- HTML-element selector/request-side ASCII-lowercased versus foreign-element
+  exact local-name comparison
 - first-provider-order selection
+
+For HTML elements, this name rule lowercases ASCII on the selector/request side
+only and then compares identically to the exact actual local name. It is not
+symmetric ASCII-insensitive equality. The distinction preserves the
+parser-created canonical-name contract without defining future noncanonical
+DOM-mutation behavior accidentally.
 
 Selector matching consumes that helper for `[attr]`, `#id`, `.class`, and
 attribute operators, then applies selector-owned value/operator or token
@@ -295,6 +304,15 @@ semantics. Cascade integration consumes the same helper independently to find
 the inline `style` attribute; it does not call selector-matching-specific query
 methods. The shared helper does not implement attribute operators, ID equality,
 class tokenization, or pseudo semantics.
+
+AF4c retains the complete effective `SelectorDomAttribute` after name
+resolution so CSS can select attribute-value policy from semantic identity:
+candidate element namespace, effective attribute namespace, effective actual
+local name, and exact borrowed value. Raw authored selector spelling is not a
+value-policy key. The normative HTML insensitive-value inventory is consulted
+only for an HTML element and an unqualified effective attribute, using exact
+lookup of its canonical actual local name. None of that value/operator policy
+is added to the shared helper used for inline `style` discovery.
 
 The DOM adapter does not expose or implement `has_attribute`,
 `attribute_value(name)`, `element_has_id`, or `element_has_class`.

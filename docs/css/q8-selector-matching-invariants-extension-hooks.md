@@ -1,6 +1,6 @@
 # Q8: Document Selector Matching Invariants And Future Extension Hooks
 
-Last updated: 2026-08-15
+Last updated: 2026-08-16
 Status: implemented
 
 This document is the Milestone Q closeout contract for Borrowser's selector
@@ -18,6 +18,8 @@ It records:
 Related code:
 - `crates/css/src/selectors/matching.rs`
 - `crates/css/src/selectors/matching/context.rs`
+- `crates/css/src/selectors/matching/comparison.rs`
+- `crates/css/src/selectors/matching/host_language.rs`
 - `crates/css/src/selectors/matching/result.rs`
 - `crates/css/src/selectors/matching/dom_index.rs`
 - `crates/css/src/selectors/matching/debug.rs`
@@ -32,6 +34,7 @@ Related documents:
 - `docs/css/q6-validity-specificity-match-results.md`
 - `docs/css/q7-selector-matching-debug-output.md`
 - `docs/css/af4b-selector-dom-query-contract.md`
+- `docs/css/af4c-html-host-language-selector-comparison.md`
 - `docs/css/p1-selector-architecture.md`
 - `docs/css/p4-specificity-calculation.md`
 - `docs/css/p5-invalid-selector-handling.md`
@@ -117,6 +120,36 @@ dependency. A missing or changed environment is an invariant failure for
 matching/reuse, not a selector-visible NoQuirks fallback. Browser identity and
 DOM generation remain outside the CSS environment.
 
+AF4c comparison invariants:
+
+- CSS selects comparison policy centrally and executes operators only after a
+  typed policy has been selected
+- HTML type-selector and unqualified attribute-selector names lowercase ASCII
+  on the selector/request side only and then compare identically to the exact
+  actual name; foreign names compare exactly
+- host-language name matching is not modeled as symmetric ASCII-insensitive
+  value equality
+- ID/class values are ASCII-insensitive only in `DocumentMode::Quirks`;
+  `NoQuirks` and `LimitedQuirks` remain sensitive
+- Quirks ID/class policy is document-wide and is not namespace-gated
+- attribute selectors named `id` or `class` never inherit ID/class selector
+  quirks behavior
+- attribute-value policy is selected from candidate element namespace plus the
+  complete effective attribute namespace and exact actual local name, never
+  raw selector spelling
+- the canonical 46-name HTML insensitive-value inventory is an exact, static,
+  allocation-free lookup and applies only to unqualified attributes on HTML
+  elements
+- operator execution preserves the independent empty-value semantics of `=`,
+  `~=`, `|=`, `^=`, `$=`, and `*=`
+- CSS whitespace remains exactly TAB, LF, FF, CR, and SPACE
+- ASCII-insensitive value comparison folds ASCII only, preserves identical
+  non-ASCII code points, and does not perform Unicode case folding
+- ordinary matching neither normalizes stored values nor allocates lowercase
+  copies, comparison strategies, or a heap-backed attribute-name set
+- AF4c covers parser-created HTML documents; XML-document semantics and DOM
+  mutation remain outside the contract
+
 ### Input And Matchability
 
 - selector matching consumes selector IR, not raw selector source reparsing
@@ -160,6 +193,8 @@ DOM generation remain outside the CSS environment.
   and neutral attribute/name facts must produce the same results
 - equivalent raw selector formatting must produce the same results once parsed
   into the same selector IR
+- policy must not be reconstructed from raw authored selector spelling after
+  effective attribute lookup
 - selector DOM ids used by the owned adapter are document-order ids derived
   from the selector-facing projection, not borrowed from incidental source node
   ids
@@ -308,6 +343,9 @@ Milestone Q does not implement:
 - relative selectors
 - nesting selector semantics
 - shadow-DOM or scoped-tree selector behavior
+- attribute selector `i` and `s` modifiers
+- standards-conformant CSS escape decoding for selector semantic names/values
+- XML-document selector matching
 
 These remain later work and must build on the stable contracts above rather
 than weakening them.

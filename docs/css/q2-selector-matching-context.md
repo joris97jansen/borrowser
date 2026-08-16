@@ -1,6 +1,6 @@
 # Q2: Introduce Selector Matching Context And DOM Query Abstraction
 
-Last updated: 2026-08-15
+Last updated: 2026-08-16
 Status: implemented
 
 This document is the source-of-truth contract for Milestone Q issue 2:
@@ -29,6 +29,8 @@ Related code:
 - `crates/css/src/selectors/matching/context.rs`
 - `crates/css/src/selectors/matching/result.rs`
 - `crates/css/src/selectors/matching/dom_index.rs`
+- `crates/css/src/selectors/matching/comparison.rs`
+- `crates/css/src/selectors/matching/host_language.rs`
 - `crates/css/src/dom_attributes.rs`
 - `crates/css/src/selectors/mod.rs`
 - `crates/css/src/lib.rs`
@@ -36,6 +38,7 @@ Related code:
 Related documents:
 
 - `docs/css/af4b-selector-dom-query-contract.md`
+- `docs/css/af4c-html-host-language-selector-comparison.md`
 - `docs/css/q1-selector-matching-architecture.md`
 - `docs/css/p1-selector-architecture.md`
 - `docs/css/p2-selector-ir-data-structures.md`
@@ -206,19 +209,25 @@ re-encode them inline.
 For Borrowser's current HTML path:
 
 - universal selectors always match
-- named type selectors use ASCII case-insensitive comparison against the
-  canonical element name surface
+- on an HTML element, a named type selector ASCII-lowercases only the selector-
+  side name and then compares identically to the canonical actual local name
+- on an SVG or MathML element, a named type selector compares the selector and
+  actual local name exactly
 
-This keeps type matching aligned with the current HTML-oriented engine
-behavior.
+The HTML rule is deliberately asymmetric. It is not generic symmetric ASCII-
+insensitive equality, even though canonical parser-created HTML names make the
+results coincide for ordinary parser input.
 
 ### ID And Class Selectors
 
 For the current supported subset:
 
-- id selector value matching is exact and case-sensitive
-- class selector token matching is exact and case-sensitive
-- class tokenization uses selector/HTML whitespace splitting rules
+- `#id` and `.class` values are ASCII-insensitive only in full Quirks mode
+- `NoQuirks` and `LimitedQuirks` ID/class values are sensitive
+- the Quirks rule is document-wide and is not gated by element namespace
+- class tokenization uses exactly TAB, LF, FF, CR, and SPACE; NBSP is not a
+  separator
+- attribute selectors named `id` or `class` do not inherit this Quirks policy
 
 ### Attribute Selectors
 
@@ -234,16 +243,26 @@ The context implements the current supported attribute selector subset:
 
 Current behavior:
 
-- CSS applies attribute-name policy over the provider's ordered neutral
-  namespace/local-name/value facts, using the shared CSS-side effective-
-  attribute helper where first-survivor lookup is required
-- exact matching compares the full effective attribute value
+- CSS resolves the first effective unqualified attribute using selector/
+  request-side ASCII-lowercased name matching on HTML elements and exact name
+  matching on foreign elements
+- CSS retains the complete effective attribute so value policy is selected
+  from the candidate element namespace plus effective attribute namespace and
+  exact actual local name, never raw authored selector spelling
+- HTML default ASCII-insensitive value policy applies only to an HTML element
+  and an unqualified effective attribute in AF4c's exact normative inventory;
+  foreign elements, qualified attributes, and ordinary values remain sensitive
+- presence matching is value-independent
+- exact matching compares the full effective attribute value with the selected
+  value policy and permits an empty value to match an empty actual value
 - includes matching treats the attribute value as a whitespace-separated token
   list
 - includes matching fails for an empty selector value or a selector value that
   contains selector whitespace
 - prefix/suffix/substring matching fail for an empty selector value
-- dash-match follows the exact-or-hyphen-prefix rule
+- dash-match follows the exact-or-hyphen-prefix rule, including matching an
+  empty actual value or a value beginning with `-` when its selector value is
+  empty
 
 These semantics are centralized in the context so the later matcher can depend
 on one implementation path.
@@ -314,9 +333,10 @@ rule groups use `Exact(ElementNamespace::Html)`. The constraint is evaluated
 at every compound reached during right-to-left combinator traversal, not only
 for the original candidate. Consequently foreign lookalikes cannot satisfy
 HTML-only UA compounds in selectors such as `html body`, `html .notice`,
-`body > *`, or `.notice`. Type matching remains ASCII-insensitive for HTML and
-case-sensitive for canonical foreign local names. Unprefixed attribute queries
-remain limited to `AttributeNamespace::None`.
+`body > *`, or `.notice`. HTML type matching lowercases ASCII on the selector
+side only before identical comparison; canonical foreign local names remain
+case-sensitive. Unprefixed attribute queries remain limited to
+`AttributeNamespace::None`.
 
 AF4b replaces semantic provider-side attribute lookup with an allocation-free
 ordered iterator of neutral namespace/local-name/value facts. The CSS-owned
