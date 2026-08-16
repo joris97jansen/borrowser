@@ -19,7 +19,7 @@ fn matching_context_highest_specificity_comes_from_actual_matches_only() {
         Vec::new(),
     )]);
 
-    let index = SelectorDomIndex::from_root(&dom);
+    let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
     let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let element = index.elements().next().expect("indexed element");
     let selectors = parse_selector_result("#hero, div.card, div");
@@ -53,7 +53,7 @@ fn matching_context_matches_supported_simple_selector_inputs() {
         Vec::new(),
     )]);
 
-    let index = SelectorDomIndex::from_root(&dom);
+    let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
     let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let element = index.elements().next().expect("indexed element");
 
@@ -76,6 +76,51 @@ fn matching_context_matches_supported_simple_selector_inputs() {
         element,
         &SubclassSelector::Attribute(attribute_exists_selector("data-kind")),
     ));
+    assert!(context.matches_attribute_selector(element, &attribute_exists_selector("DATA-KIND")));
+}
+
+#[test]
+fn class_matching_uses_css_whitespace_without_treating_nbsp_as_a_separator() {
+    let dom = doc(vec![element(
+        "div",
+        vec![("class", Some("alpha\tbravo\u{00a0}charlie\nfoxtrot"))],
+        Vec::new(),
+    )]);
+
+    let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
+    let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
+    let element = index.elements().next().expect("indexed element");
+
+    assert!(context.matches_class_selector(element, &class_selector("alpha")));
+    assert!(context.matches_class_selector(element, &class_selector("bravo\u{00a0}charlie")));
+    assert!(context.matches_class_selector(element, &class_selector("foxtrot")));
+    assert!(!context.matches_class_selector(element, &class_selector("bravo")));
+    assert!(!context.matches_class_selector(element, &class_selector("charlie")));
+}
+
+#[test]
+fn foreign_attribute_name_matching_is_exact_and_ignores_qualified_lookalikes() {
+    let parsed = html::parse_document(
+        "<svg><a xlink:href='qualified'></a><a data-kind='ordinary'></a></svg>",
+        html::HtmlParseOptions::default(),
+    )
+    .expect("foreign attribute parse");
+    let index = SelectorDomIndex::try_from_document(&parsed.document)
+        .expect("valid parser-created selector document");
+    let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
+    let anchors = index
+        .elements()
+        .filter(|element| context.element_local_name(*element) == "a")
+        .collect::<Vec<_>>();
+
+    assert_eq!(anchors.len(), 2);
+    assert!(!context.matches_attribute_selector(anchors[0], &attribute_exists_selector("href")));
+    assert!(
+        context.matches_attribute_selector(anchors[1], &attribute_exists_selector("data-kind"))
+    );
+    assert!(
+        !context.matches_attribute_selector(anchors[1], &attribute_exists_selector("DATA-KIND"))
+    );
 }
 
 #[test]
@@ -90,7 +135,7 @@ fn matching_context_matches_compound_selectors_element_locally() {
         Vec::new(),
     )]);
 
-    let index = SelectorDomIndex::from_root(&dom);
+    let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
     let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let element = index.elements().next().expect("indexed element");
 
@@ -119,7 +164,7 @@ fn matching_context_attribute_match_queries_cover_supported_matchers_and_edges()
         Vec::new(),
     )]);
 
-    let index = SelectorDomIndex::from_root(&dom);
+    let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
     let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let element = index.elements().next().expect("indexed element");
 
@@ -182,7 +227,7 @@ fn matching_context_match_selector_list_reports_not_matched_for_supported_inputs
         Vec::new(),
     )]);
 
-    let index = SelectorDomIndex::from_root(&dom);
+    let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
     let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let element = index.elements().next().expect("indexed element");
     let selectors = parse_selector_result("span, #missing, .other, body > p.note");
@@ -200,7 +245,7 @@ fn matching_context_match_selector_list_reports_not_matched_for_supported_inputs
 fn matching_context_match_selector_list_preserves_non_matchable_parse_states() {
     let dom = doc(vec![element("div", Vec::new(), Vec::new())]);
 
-    let index = SelectorDomIndex::from_root(&dom);
+    let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
     let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let element = index.elements().next().expect("indexed element");
     let unsupported = crate::selectors::SelectorListParseResult::Unsupported(

@@ -1,5 +1,6 @@
 //! Error contract for document-level computed-style materialization.
 
+use crate::selectors::SelectorDomBuildError;
 use crate::selectors::SelectorMatchingEnvironment;
 use crate::{
     InitialStyleValue, PropertyId, cascade::StyleResolutionError, selectors::SelectorDomElementId,
@@ -11,6 +12,7 @@ use super::super::{style::ComputedStyleBuildError, value::ComputedValueNormaliza
 /// total computed style.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ComputedStyleResolutionError {
+    SelectorDomBuild(SelectorDomBuildError),
     MissingMatchingEnvironment,
     MatchingEnvironmentMismatch {
         expected: SelectorMatchingEnvironment,
@@ -84,6 +86,7 @@ pub enum ComputedStyleResolutionError {
 impl std::fmt::Display for ComputedStyleResolutionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::SelectorDomBuild(error) => write!(f, "{error}"),
             Self::MissingMatchingEnvironment => {
                 write!(f, "computed style matching environment is unavailable")
             }
@@ -217,6 +220,7 @@ impl std::fmt::Display for ComputedStyleResolutionError {
 impl std::error::Error for ComputedStyleResolutionError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::SelectorDomBuild(error) => Some(error),
             Self::Normalization(error) => Some(error),
             Self::Build(error) => Some(error),
             Self::StyleResolution(error) => Some(error),

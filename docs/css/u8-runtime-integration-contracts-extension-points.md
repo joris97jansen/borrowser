@@ -1,6 +1,6 @@
 # U8: Runtime Integration Contracts And Future Extension Points
 
-Last updated: 2026-05-02
+Last updated: 2026-08-15
 Status: Milestone U close-out contract
 
 This document records the implemented runtime integration contract for the
@@ -29,6 +29,7 @@ Related documents:
 
 - `docs/css/u1-runtime-integration-architecture-css-pipeline-ownership.md`
 - `docs/css/af1-selector-cascade-computed-style-architecture-contract.md`
+- `docs/css/af4b-selector-dom-query-contract.md`
 - `docs/css/s9-property-system-computed-style-runtime-contract.md`
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
@@ -69,6 +70,10 @@ Ownership is split as follows:
   stylesheet text exposed by the active DOM. It must not depend on HTML
   tokenizer states, tree-builder insertion modes, parse errors, or
   malformed-markup recovery internals.
+- `crates/css` owns the fallible selector-DOM projection and its CSS-local
+  element IDs. Browser/runtime transports source DOM IDs only for explicit
+  mapping and does not reuse patch or retained-render identity as selector
+  identity.
 - `layout`, `gfx`, and `view` consume `StyledNode` or `ComputedStyle`; they do
   not parse CSS, inspect cascade winners, or recover from invalid declarations.
 
@@ -188,6 +193,16 @@ DOM + DocumentStyleSet::stylesheets()
 
 Compatibility APIs such as `attach_styles(...)`, `compute_style(...)`, and
 legacy `build_style_tree(...)` are not the browser runtime path.
+
+The runtime path constructs only an explicit document projection. Nested
+documents, ambiguous direct document elements, canonical-name violations,
+selector-ID exhaustion, and reported projection capacity/reservation failures
+remain typed CSS errors through page style/cache/frame/debug callers. A cache
+or incremental resolver may report genuine unavailability only after bounded
+selector-DOM preflight has validated the projection input; it must not
+translate a projection build error into that state. The no-retained-artifact
+incremental branch performs preflight only and does not materialize and discard
+a complete selector index before Browser's deterministic full fallback.
 
 ## Restyle Trigger Contract
 

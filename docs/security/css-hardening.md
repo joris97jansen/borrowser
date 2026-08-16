@@ -1,7 +1,7 @@
 # CSS Hardening
 
-Last updated: 2026-04-27  
-Status: implemented through Milestone T
+Last updated: 2026-08-15
+Status: implemented through Milestone T with AF4b selector-DOM hardening
 
 This document defines Borrowser's implemented CSS hardening posture for
 untrusted input, the limits currently enforced across the CSS pipeline, and the
@@ -30,6 +30,7 @@ Related CSS contracts:
 
 - [`docs/css/n7-resource-limits-parser-invariants.md`](../css/n7-resource-limits-parser-invariants.md)
 - [`docs/css/q8-selector-matching-invariants-extension-hooks.md`](../css/q8-selector-matching-invariants-extension-hooks.md)
+- [`docs/css/af4b-selector-dom-query-contract.md`](../css/af4b-selector-dom-query-contract.md)
 - [`docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`](../css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md)
 - [`docs/css/s9-property-system-computed-style-runtime-contract.md`](../css/s9-property-system-computed-style-runtime-contract.md)
 
@@ -100,6 +101,8 @@ The current CSS hardening staircase is:
 3. `css::selectors`
    - selector parsing under syntax-owned ceilings
    - selector matching with explicit axis-step budgets
+   - explicit fallible document/subtree projection construction with typed
+     structural, representation, capacity, and reported reservation failures
 4. `css::cascade`
    - bounded per-style-pass rule/declaration/element accounting
    - typed style-resolution limit and invariant failures
@@ -168,11 +171,31 @@ Owned by `StyleResolutionLimits` in
 | `max_declaration_inputs_per_element` | `65_536` | Style resolution returns `StyleResolutionError::LimitExceeded` |
 | `max_inline_style_bytes` | `64 * 1024` | Inline style parsing is rejected on the authoritative path |
 | `max_inline_declarations_per_element` | `1_024` | Style resolution returns `StyleResolutionError::LimitExceeded` |
-| `max_styled_elements_per_document` | `1_000_000` | Style resolution rejects oversized documents before building selector index |
+| `max_styled_elements_per_document` | `1_000_000` | Bounded selector-projection preflight returns the style-resolution element limit without reclassifying the DOM as structurally invalid |
 | `selector_matching` | `SelectorMatchingLimits::default()` | Selector traversal budget is enforced during style resolution |
 
 `StyleResolutionError::UnsupportedConfiguration` rejects unrepresentable limit
 settings early instead of saturating internal ordering identities.
+
+Selector projection build failures are separate from style policy limits:
+
+```text
+SelectorDomBuildError
+  -> StyleResolutionError::SelectorDomBuild
+
+styled-element budget exhaustion
+  -> StyleResolutionError::LimitExceeded(
+       StyledElementsPerDocument
+     )
+```
+
+Construction remains iterative and uses checked arithmetic plus fallible stack
+and destination reservations from its first heap-backed traversal structure.
+This contract covers failures reported by Rust's fallible reservation APIs; it
+does not claim recovery from allocator abort or general process OOM. Nested
+documents are rejected rather than flattened, and build failures cannot become
+selector no-match, incremental unavailability, a default environment, an empty
+projection, or a successful debug error string.
 
 ### Specified Value Limits
 
@@ -206,7 +229,11 @@ property-local parsing from assuming unbounded top-level value fanout.
 - authoritative selector matching preserves `Result`-based limit failures
 - complex selector evaluation remains observationally equivalent to the current
   right-to-left semantics
-- DOM adapters expose deterministic parent/sibling/name/attribute facts only
+- DOM adapters expose actual document-element identity, deterministic element
+  axes, canonical names/namespaces, ordered neutral attributes, ordinary direct
+  element children, and exact ordinary direct text facts only
+- selector-DOM construction rejects invalid structure and representation
+  exhaustion through typed errors rather than normalization or no-match
 
 ### Cascade
 

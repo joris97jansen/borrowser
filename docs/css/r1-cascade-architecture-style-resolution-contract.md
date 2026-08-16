@@ -1,6 +1,6 @@
 # R1: Define Cascade Architecture And Style Resolution Contract
 
-Last updated: 2026-04-14  
+Last updated: 2026-08-15
 Status: architecture contract implemented
 
 This document is the source-of-truth contract for Milestone R issue 1: the
@@ -25,6 +25,7 @@ Related documents:
 - `docs/css/o1-rule-value-model-architecture.md`
 - `docs/css/q6-validity-specificity-match-results.md`
 - `docs/css/q8-selector-matching-invariants-extension-hooks.md`
+- `docs/css/af4b-selector-dom-query-contract.md`
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
 - `docs/css/r5-inheritance-behavior-supported-properties.md`
 - `docs/css/r6-initial-default-value-handling.md`
@@ -51,6 +52,13 @@ Follow-up implementation work must conform to this contract. It must not invent
 new ad hoc declaration maps, attach new style state directly to DOM nodes, or
 re-derive selector semantics inside cascade code.
 
+AF4b further requires every authoritative document-level cascade entry point
+to construct the selector projection through the explicit fallible document
+path. Structural, representation, and reservation failures become
+`StyleResolutionError::SelectorDomBuild`; the styled-element resource budget
+remains the distinct existing `LimitExceeded(StyledElementsPerDocument)`
+policy. Neither failure is an ordinary selector no-match.
+
 ## Why This Exists
 
 The repository has already done the hard work to establish clean upstream CSS
@@ -62,7 +70,7 @@ contracts:
 3. `SelectorListMatchOutcome` already gives cascade a deterministic handoff
    surface.
 
-The remaining gap is style resolution itself. Today the shipped browser path:
+At R1's original starting point, the shipped browser path:
 
 - walks the DOM directly in `attach_styles`
 - flattens matched declarations into raw `(String, String)` pairs
@@ -70,8 +78,9 @@ The remaining gap is style resolution itself. Today the shipped browser path:
 - relies on later computed-style code to perform inheritance/defaulting from
   that compatibility vector
 
-That is acceptable as a temporary bridge. It is not an acceptable long-term
-engine architecture.
+That history explains the bridge boundary. The current authoritative path is
+the structured, fallible document resolution contract described below; only
+the explicitly named compatibility bridge retains deliberate degradation.
 
 ## Subsystem Boundary
 
@@ -342,6 +351,13 @@ document-level resolved styles into:
 This bridge is not the normative architecture for style resolution anymore;
 `ResolvedDocumentStyle` is the structured cascade output for DOM-level style
 resolution.
+
+AF4b deliberately preserves the bridge's compatibility downgrade and unit
+return type. It explicitly selects document construction for a document root
+and element-subtree construction for the historically accepted element root.
+Any build/resolution/projection failure clears stale legacy vectors and returns.
+This exception does not apply to authoritative cascade, computed-style, or
+Browser APIs and does not give the bridge selector ownership.
 
 ## Deferred Work And Non-Goals
 

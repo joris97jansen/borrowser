@@ -36,7 +36,7 @@ impl<D: SelectorMatchDom> SelectorMatchingContext<'_, D> {
         match selector {
             TypeSelector::Universal(_) => true,
             TypeSelector::Named(selector) => {
-                let actual = self.element_name(element);
+                let actual = self.element_local_name(element);
                 if self.element_namespace(element) == html::ElementNamespace::Html {
                     actual.eq_ignore_ascii_case(selector.name().text())
                 } else {

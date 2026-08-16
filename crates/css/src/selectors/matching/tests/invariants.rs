@@ -1,22 +1,8 @@
-use super::super::{SelectorDomIndex, SelectorMatchingContext};
+use super::super::{SelectorDomBuildError, SelectorDomIndex, SelectorMatchingContext};
 use super::support::{doc, element, parse_selector_result};
 
 #[test]
-fn matching_context_complex_selector_matching_is_independent_of_equivalent_dom_construction_paths()
-{
-    let flat_dom = doc(vec![element(
-        "body",
-        Vec::new(),
-        vec![element(
-            "main",
-            Vec::new(),
-            vec![
-                element("div", Vec::new(), Vec::new()),
-                element("span", Vec::new(), Vec::new()),
-                element("p", vec![("class", Some("note"))], Vec::new()),
-            ],
-        )],
-    )]);
+fn matching_context_rejects_nested_documents_instead_of_normalizing_them() {
     let nested_dom = doc(vec![element(
         "body",
         Vec::new(),
@@ -31,28 +17,13 @@ fn matching_context_complex_selector_matching_is_independent_of_equivalent_dom_c
         )],
     )]);
 
-    let flat_index = SelectorDomIndex::from_root(&flat_dom);
-    let nested_index = SelectorDomIndex::from_root(&nested_dom);
-    let flat_context =
-        SelectorMatchingContext::new(&flat_index, super::support::matching_environment());
-    let nested_context =
-        SelectorMatchingContext::new(&nested_index, super::support::matching_environment());
-    let flat_target = flat_index.elements().last().expect("flat target");
-    let nested_target = nested_index.elements().last().expect("nested target");
-    let selectors = parse_selector_result("main > p.note, span + p.note, div ~ p.note");
+    let error = SelectorDomIndex::try_from_document(&nested_dom)
+        .expect_err("nested document must be a selector projection invariant failure");
 
-    let flat_outcome = flat_context
-        .match_selector_list(flat_target, &selectors)
-        .expect("flat selector match outcome");
-    let nested_outcome = nested_context
-        .match_selector_list(nested_target, &selectors)
-        .expect("nested selector match outcome");
-
-    assert_eq!(flat_outcome, nested_outcome);
-    assert_eq!(
-        flat_outcome.to_debug_snapshot(),
-        nested_outcome.to_debug_snapshot()
-    );
+    assert!(matches!(
+        error,
+        SelectorDomBuildError::NestedDocument { .. }
+    ));
 }
 
 #[test]
@@ -66,7 +37,7 @@ fn matching_context_complex_selector_matching_is_independent_of_raw_parse_format
         ],
     )]);
 
-    let index = SelectorDomIndex::from_root(&dom);
+    let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
     let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let target = index.elements().last().expect("target element");
     let compact = parse_selector_result("main>span+p.note");

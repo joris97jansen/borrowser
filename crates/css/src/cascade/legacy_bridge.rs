@@ -1,6 +1,9 @@
 use super::contract::ResolvedStyle;
 use super::document::ResolvedElementStyle;
-use super::integration::{StyleResolutionLimits, try_resolve_document_styles_with_limits};
+use super::integration::{
+    StyleResolutionLimits, try_resolve_document_styles_with_limits,
+    try_resolve_element_subtree_styles_with_limits,
+};
 use crate::model;
 use crate::selectors::SelectorMatchingEnvironment;
 use html::Node;
@@ -12,25 +15,40 @@ use html::Node;
 /// values back into `Node::Element::style` for the pre-computed-values runtime
 /// path that still consumes string declarations.
 ///
-/// This is a compatibility path, not the authoritative resolved-style API. If
-/// document style resolution hits a hardening limit, the bridge clears any
-/// legacy projected style vectors and returns without projecting a partial or
+/// This is a compatibility path, not the authoritative resolved-style API. It
+/// deliberately preserves the historical element-rooted bridge by using the
+/// explicit selector element-subtree projection; that root is never treated as
+/// a document element. If style resolution fails, the bridge clears any legacy
+/// projected style vectors and returns without projecting a partial or
 /// fabricated resolved-style result.
 pub fn attach_styles(
     dom: &mut Node,
     matching_environment: SelectorMatchingEnvironment,
     sheets: &[model::StylesheetParse],
 ) {
-    let resolved_styles = match try_resolve_document_styles_with_limits(
-        dom,
-        matching_environment,
-        sheets,
-        &StyleResolutionLimits::default(),
-    ) {
-        Ok(resolved_styles) => resolved_styles,
-        Err(error) => {
+    let limits = StyleResolutionLimits::default();
+    let resolution = match &*dom {
+        Node::Document { .. } => {
+            try_resolve_document_styles_with_limits(dom, matching_environment, sheets, &limits)
+        }
+        Node::Element { element } => try_resolve_element_subtree_styles_with_limits(
+            element,
+            matching_environment,
+            sheets,
+            &limits,
+        ),
+        _ => {
             #[cfg(debug_assertions)]
-            eprintln!("legacy attach_styles degraded style resolution failure: {error}");
+            eprintln!("legacy attach_styles received a non-document, non-element root");
+            clear_legacy_styles(dom);
+            return;
+        }
+    };
+    let resolved_styles = match resolution {
+        Ok(resolved_styles) => resolved_styles,
+        Err(_error) => {
+            #[cfg(debug_assertions)]
+            eprintln!("legacy attach_styles degraded style resolution failure: {_error}");
             clear_legacy_styles(dom);
             return;
         }

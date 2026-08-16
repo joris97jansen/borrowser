@@ -40,7 +40,11 @@ pub fn representative_stylesheet(rule_count: usize) -> String {
 
 pub fn representative_dom(block_count: usize) -> Node {
     let children = (0..block_count).map(representative_section).collect();
-    element("div", &[("class", "perf-root")], children)
+    Node::Document {
+        id: Id::INVALID,
+        doctype: None,
+        children: vec![element("div", &[("class", "perf-root")], children)],
+    }
 }
 
 pub fn representative_selector() -> &'static str {

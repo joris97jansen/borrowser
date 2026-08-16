@@ -60,7 +60,8 @@ pub fn run_seeded_selector_matching_fuzz_case(
     }
 
     let (dom, dom_summary) = synthesize_dom_from_bytes(bytes, &config.dom_limits);
-    let index = SelectorDomIndex::from_root(&dom);
+    let index = SelectorDomIndex::try_from_document(&dom)
+        .map_err(|error| SelectorFuzzError::SelectorDomBuild { error })?;
 
     if index.len() > config.max_elements_observed {
         return Ok(SelectorMatchingFuzzSummary {

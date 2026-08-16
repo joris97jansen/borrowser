@@ -1,6 +1,6 @@
 # Q7: Add Deterministic Selector Matching Debug Output And Regression Coverage
 
-Last updated: 2026-04-14  
+Last updated: 2026-08-15
 Status: implemented
 
 This document is the source-of-truth contract for Milestone Q issue 7:
@@ -18,6 +18,7 @@ Related documents:
 - `docs/css/q1-selector-matching-architecture.md`
 - `docs/css/q5-combinator-complex-selector-matching.md`
 - `docs/css/q6-validity-specificity-match-results.md`
+- `docs/css/af4b-selector-dom-query-contract.md`
 
 ## Implemented Result
 
@@ -30,10 +31,11 @@ CSS-owned immutable `SelectorMatchingEnvironment` containing the parser-selected
 `DocumentMode`; it does not contain Browser/runtime identity or DOM generation.
 Selector semantics remain owned by CSS.
 
-This snapshot combines, in one deterministic output:
+After successful selector-DOM construction, this snapshot combines, in one
+deterministic output:
 
 - the selector parse-result snapshot body
-- the normalized selector DOM snapshot body
+- the validated selector DOM projection snapshot body
 - one selector-match outcome per indexed element in document order
 
 That makes it possible to inspect not just whether a selector matched, but how
@@ -47,7 +49,9 @@ It records:
 
 - the explicit matching environment
 - selector parse state and selector IR structure
-- the normalized selector DOM used by the matcher
+- explicit document or element-subtree projection provenance
+- actual document-element identity, independently from parentlessness
+- the validated selector DOM facts used by the matcher
 - per-target match outcomes in document order
 - explicit matchability and specificity data for each target
 
@@ -61,6 +65,11 @@ matching-environment: document-mode=<no-quirks|limited-quirks|quirks>
 The environment line exposes only the semantic document mode. It does not
 expose Browser/runtime identity or DOM generation. Lower-level selector parse,
 DOM, and match-outcome snapshot formats retain their own existing versions.
+
+AF4b advances the integrated selector-matching snapshot to `version: 3`
+because its embedded DOM body now records projection provenance, actual
+document-element identity, forward sibling/direct-child links, neutral ordered
+attributes, and exact owner-grouped direct text.
 
 This keeps the debug surface aligned with the internal selector subsystem
 models rather than inventing a separate ad hoc representation.
@@ -77,8 +86,15 @@ Q7 snapshot output is deterministic by contract:
   spelling
 - target elements are evaluated in document order
 - each target uses the stable `SelectorListMatchOutcome` snapshot body
-- equivalent DOM constructions that normalize to the same selector DOM produce
-  the same integrated snapshot
+- equivalent valid DOM constructions that project to the same selector DOM
+  produce the same integrated snapshot
+
+AF4b adds parent, previous/next element sibling, direct element-child, ordered
+neutral attribute, and exact owner-grouped direct-text facts. Source DOM IDs and
+the global direct-text arena layout are not snapshot identities or whole-DOM
+text order. Debug convenience APIs that construct an index return `Result`;
+invalid structure is a typed build error, never a successful string containing
+an error line or an empty projection.
 
 ## Regression Coverage
 

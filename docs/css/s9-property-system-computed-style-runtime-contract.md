@@ -1,6 +1,6 @@
 # S9: Property System, Computed-Style Contract, And Runtime Handoff
 
-Last updated: 2026-04-22  
+Last updated: 2026-08-15
 Status: implemented
 
 This document closes Milestone S. It is the downstream-facing contract for
@@ -56,6 +56,14 @@ DOM + StylesheetParse[]
 ```
 
 Compatibility APIs still exist, but they are not the primary runtime contract.
+
+AF4b requires the production input to be an explicit `Node::Document` and the
+selector-DOM projection to build successfully. Cascade-originated projection
+failures remain in the `StyleResolutionError::SelectorDomBuild` source chain;
+computed/style-tree paths that construct a projection independently expose the
+corresponding typed `ComputedStyleResolutionError`. No such failure becomes an
+empty computed document, selector no-match, default document mode, or
+incremental-unavailable result.
 
 ## Ownership Boundaries
 
@@ -288,6 +296,12 @@ They exist for older tests and callers that still use DOM-attached declaration
 vectors. Supported declarations crossing those bridges still go through
 property lookup, specified-value parsing, computed normalization, and
 `ComputedStyle` invariant checks.
+
+`attach_styles(...)` is the deliberate compatibility downgrade exception. It
+keeps its unit return type, selects explicit document or historically accepted
+element-subtree projection construction, and clears stale DOM-attached vectors
+on build/resolution/projection failure. Authoritative structured APIs do not
+inherit that degradation behavior.
 
 Bridge-era HTML/UA behavior, such as element default display mapping and
 button/link defaults, is not the CSS initial-value contract. New runtime code

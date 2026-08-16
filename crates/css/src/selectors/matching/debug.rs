@@ -8,12 +8,12 @@ use std::fmt::Write;
 
 impl SelectorDomIndex<'_> {
     /// Returns a deterministic selector-matching debug snapshot for one
-    /// selector parse result evaluated against this normalized selector DOM.
+    /// selector parse result evaluated against this validated selector DOM.
     ///
-    /// This surface is intentionally tied to the owned-tree DOM adapter used by
-    /// regression tests. It combines:
+    /// This surface is intentionally tied to a successfully built selector DOM
+    /// projection. It combines:
     /// - the selector parse result snapshot body
-    /// - the normalized selector DOM snapshot body
+    /// - the validated selector DOM snapshot body
     /// - one selector-match outcome per indexed element in document order
     pub fn to_matching_debug_snapshot(
         &self,
@@ -28,7 +28,7 @@ impl SelectorDomIndex<'_> {
     }
 
     /// Returns a deterministic selector-matching debug snapshot for one
-    /// selector parse result evaluated against this normalized selector DOM
+    /// selector parse result evaluated against this validated selector DOM
     /// using explicit selector-matching limits.
     pub fn to_matching_debug_snapshot_with_limits(
         &self,
@@ -37,7 +37,7 @@ impl SelectorDomIndex<'_> {
         limits: SelectorMatchingLimits,
     ) -> String {
         let mut out = String::new();
-        writeln!(&mut out, "version: 2").expect("write snapshot");
+        writeln!(&mut out, "version: 3").expect("write snapshot");
         writeln!(&mut out, "selector-matching").expect("write snapshot");
         writeln!(
             &mut out,
@@ -59,7 +59,7 @@ impl SelectorDomIndex<'_> {
                 &mut out,
                 "  target[{target_index}]: element={} name=\"{}\"",
                 element_id.get(),
-                context.element_name(element_id)
+                context.element_local_name(element_id)
             )
             .expect("write snapshot");
             match context.match_selector_list(element_id, selectors) {

@@ -7,7 +7,7 @@ use super::support::{doc, element, parse_selector_result};
 #[test]
 fn matching_context_retains_explicit_environment_across_derived_contexts() {
     let dom = doc(vec![element("div", Vec::new(), Vec::new())]);
-    let index = SelectorDomIndex::from_root(&dom);
+    let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
     let environment = SelectorMatchingEnvironment::new(html::DocumentMode::LimitedQuirks);
     let context = SelectorMatchingContext::new(&index, environment);
 
@@ -39,7 +39,7 @@ fn matching_environment_preserves_parser_selected_document_mode() {
 #[test]
 fn matching_debug_snapshot_exposes_the_explicit_environment() {
     let dom = doc(vec![element("div", Vec::new(), Vec::new())]);
-    let index = SelectorDomIndex::from_root(&dom);
+    let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
     let environment = SelectorMatchingEnvironment::new(html::DocumentMode::Quirks);
     let selectors = parse_selector_result("div");
 

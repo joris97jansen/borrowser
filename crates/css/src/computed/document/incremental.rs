@@ -4,6 +4,7 @@ use crate::{
     StyleInvalidationPlan,
     cascade::{
         ResolvedDocumentStyle, StyleResolutionLimits, StylesheetCascadeInput,
+        preflight_document_selector_dom_with_limits,
         try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_limits,
         try_resolve_document_styles_incremental_suffix_with_limits,
     },
@@ -69,6 +70,8 @@ pub fn try_compute_document_styles_for_invalidation_plan_with_limits(
     };
 
     let Some((previous_resolved, previous_computed)) = previous else {
+        preflight_document_selector_dom_with_limits(root, limits)
+            .map_err(ComputedStyleResolutionError::StyleResolution)?;
         return Ok(StylePlanExecution::IncrementalUnavailable);
     };
 

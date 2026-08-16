@@ -4,6 +4,8 @@
 
 Implemented.
 
+Last updated: 2026-08-15.
+
 ## Debug Surfaces
 
 S8 defines stable, versioned debug output for the property/value and
@@ -21,6 +23,13 @@ styles rather than authored CSS formatting.
 Because these helpers are exported from the CSS crate, they are public debug
 contracts for engine tests and tools. Changes to their labels, ordering, or
 field set must be reviewed as intentional contract changes.
+
+AF4b adds a typed prerequisite to document-level computed snapshots: selector-
+DOM construction must first succeed. Convenience APIs that construct the
+projection return their `ComputedStyleResolutionError`; they do not serialize a
+build error as a successful snapshot, construct an empty projection, or use a
+default matching environment. Snapshots on already validated computed
+artifacts retain their documented stable return shape.
 
 ## Determinism Rules
 
@@ -53,6 +62,9 @@ The package-level computed golden tests cover:
   non-negative sizing/padding properties
 - final document computed-style assembly, including inheritance, defaults,
   invalid fallback, and deterministic document order
+- selector-DOM build-error propagation through document computation and style-
+  tree reconstruction, including incremental paths that must not return
+  incremental-unavailable state
 
 ## Fixtures
 

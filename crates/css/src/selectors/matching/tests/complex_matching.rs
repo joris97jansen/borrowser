@@ -36,7 +36,7 @@ fn matching_context_matches_complex_selectors_with_supported_combinators() {
         ],
     )]);
 
-    let index = SelectorDomIndex::from_root(&dom);
+    let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
     let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let ids = index.elements().collect::<Vec<_>>();
     let paragraph = ids[4];
@@ -125,7 +125,7 @@ fn ua_namespace_constraint_propagates_through_every_complex_selector_compound() 
             ],
         )],
     )]);
-    let index = SelectorDomIndex::from_root(&dom);
+    let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
     let elements = index.elements().collect::<Vec<_>>();
     let html_notice = elements[2];
     let html_below_foreign_lookalike = elements[5];
@@ -200,7 +200,8 @@ fn matching_context_complex_selector_matching_backtracks_across_structural_candi
         )],
     )]);
 
-    let descendant_index = SelectorDomIndex::from_root(&descendant_dom);
+    let descendant_index = SelectorDomIndex::try_from_document(&descendant_dom)
+        .expect("valid descendant selector test document");
     let descendant_context =
         SelectorMatchingContext::new(&descendant_index, super::support::matching_environment());
     let descendant_target = descendant_index
@@ -229,7 +230,8 @@ fn matching_context_complex_selector_matching_backtracks_across_structural_candi
         ],
     )]);
 
-    let sibling_index = SelectorDomIndex::from_root(&sibling_dom);
+    let sibling_index = SelectorDomIndex::try_from_document(&sibling_dom)
+        .expect("valid sibling selector test document");
     let sibling_context =
         SelectorMatchingContext::new(&sibling_index, super::support::matching_environment());
     let sibling_target = sibling_index
@@ -263,7 +265,7 @@ fn matching_context_match_selector_list_matches_complex_selectors_in_source_orde
         )],
     )]);
 
-    let index = SelectorDomIndex::from_root(&dom);
+    let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
     let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let target = index.elements().last().expect("target element");
     let selectors = parse_selector_result(
@@ -296,7 +298,7 @@ fn matching_context_reports_axis_step_limit_deterministically() {
         vec![element("span", vec![("class", Some("target"))], Vec::new())],
     )]);
 
-    let index = SelectorDomIndex::from_root(&dom);
+    let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
     let context = SelectorMatchingContext::with_limits(
         &index,
         super::support::matching_environment(),

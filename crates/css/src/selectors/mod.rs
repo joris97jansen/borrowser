@@ -36,6 +36,7 @@ mod validation;
 mod values;
 
 pub(crate) use diagnostics::{SelectorDiagnosticClass, SelectorDiagnosticLevel};
+pub(crate) use matching::BoundedSelectorDomConstructionError;
 
 pub(crate) use self::serialize::write_selector_parse_result_snapshot_body;
 pub use self::serialize::{
@@ -63,10 +64,12 @@ pub use values::{SelectorIdent, SelectorString};
 
 // Matching contract
 pub use matching::{
-    AncestorElements, MatchedSelector, PreviousSiblingElements, SelectorDomElementId,
-    SelectorDomElementIter, SelectorDomIndex, SelectorListMatchBuilder, SelectorListMatchOutcome,
-    SelectorMatchDom, SelectorMatchability, SelectorMatchingContext, SelectorMatchingEnvironment,
-    SelectorMatchingLimitError, SelectorMatchingLimits, SelectorNamespaceConstraint,
+    AncestorElements, ElementChildren, MatchedSelector, NextSiblingElements,
+    PreviousSiblingElements, SelectorDomAttribute, SelectorDomBuildError, SelectorDomBuildStorage,
+    SelectorDomElementId, SelectorDomElementIter, SelectorDomIndex, SelectorDomNodeKind,
+    SelectorListMatchBuilder, SelectorListMatchOutcome, SelectorMatchDom, SelectorMatchability,
+    SelectorMatchingContext, SelectorMatchingEnvironment, SelectorMatchingLimitError,
+    SelectorMatchingLimits, SelectorNamespaceConstraint,
 };
 
 pub use parser::{parse_selector_list, parse_selector_list_with_limits};

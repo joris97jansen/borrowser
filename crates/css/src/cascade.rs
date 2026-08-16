@@ -63,6 +63,7 @@ pub use contract::{
 pub use document::{ResolvedDocumentStyle, ResolvedElementStyle};
 
 // Document-resolution integration path
+pub(crate) use integration::preflight_document_selector_dom_with_limits;
 pub use integration::{
     IncrementalResolvedDocumentStyle, IncrementalStyleResolutionStats, StyleResolutionError,
     StyleResolutionLimit, StyleResolutionLimits, StylesheetCascadeInput,

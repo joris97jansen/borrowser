@@ -1,6 +1,6 @@
-use crate::selectors::SelectorNamespaceConstraint;
+use crate::selectors::{SelectorDomAttribute, SelectorNamespaceConstraint};
 use crate::{cascade::CascadeOrigin, model};
-use html::{AttributeNamespace, ElementNamespace, ParserCreatedAttribute};
+use html::ElementNamespace;
 
 /// One stylesheet entering document-level cascade resolution with its explicit
 /// cascade origin.
@@ -62,13 +62,18 @@ pub fn is_css(ct: &Option<String>) -> bool {
         .unwrap_or(false)
 }
 
-/// If the element has an inline style attribute, return its value.
-pub fn get_inline_style(attributes: &[ParserCreatedAttribute]) -> Option<&str> {
-    attributes
-        .iter()
-        .find(|attribute| {
-            attribute.namespace() == AttributeNamespace::None
-                && attribute.local_name().eq_ignore_ascii_case("style")
-        })
-        .map(ParserCreatedAttribute::value)
+/// Returns the CSS inline-style attribute from ordered neutral DOM facts.
+///
+/// Attribute local-name policy is CSS-owned and shared with selector
+/// matching; value parsing and cascade ordering remain separate concerns.
+pub fn get_inline_style<'a>(
+    element_namespace: ElementNamespace,
+    attributes: impl IntoIterator<Item = SelectorDomAttribute<'a>>,
+) -> Option<&'a str> {
+    crate::dom_attributes::first_effective_unqualified_attribute(
+        element_namespace,
+        attributes,
+        "style",
+    )
+    .map(SelectorDomAttribute::value)
 }

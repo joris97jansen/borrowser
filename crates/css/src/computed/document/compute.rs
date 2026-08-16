@@ -67,7 +67,8 @@ pub(super) fn compute_document_styles_from_resolved_styles_pass(
     previous_computed: Option<&ComputedDocumentStyle>,
     reused_prefix_len: usize,
 ) -> Result<Option<ComputedDocumentStyleWithStats>, ComputedStyleResolutionError> {
-    let index = SelectorDomIndex::from_root(root);
+    let index = SelectorDomIndex::try_from_document(root)
+        .map_err(ComputedStyleResolutionError::SelectorDomBuild)?;
     let matching_environment = resolved_styles.matching_environment();
     let context = SelectorMatchingContext::new(&index, matching_environment);
 
@@ -97,7 +98,7 @@ pub(super) fn compute_document_styles_from_resolved_styles_pass(
             .get(element)
             .ok_or(ComputedStyleResolutionError::MissingResolvedElement { element })?;
         let expected_namespace = context.element_namespace(element);
-        let expected_name = context.element_name(element);
+        let expected_name = context.element_local_name(element);
         if resolved.element_namespace() != expected_namespace {
             return Err(
                 ComputedStyleResolutionError::ResolvedElementNamespaceMismatch {

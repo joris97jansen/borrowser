@@ -1,6 +1,6 @@
 # R8: Cascade And Style-Resolution Debug Output
 
-Last updated: 2026-04-17  
+Last updated: 2026-08-15
 Status: contract and code implemented
 
 This document is the source-of-truth contract for Milestone R issue 8: stable
@@ -68,7 +68,9 @@ source explicit:
 `ResolvedDocumentStyle::to_debug_snapshot()` records the final resolved style
 for each element in selector-DOM document order.
 
-`resolve_document_styles_debug_snapshot(...)` is the integrated trace. For each
+`resolve_document_styles_debug_snapshot(...)` is the integrated trace. Because
+it constructs an AF4b selector projection, it returns
+`Result<String, StyleResolutionError>`. After successful construction, for each
 element it records:
 
 1. cascade candidate evaluation
@@ -84,6 +86,11 @@ versions.
 
 This surface is intentionally verbose because it is for debugging regressions
 in later cascade, computed-style, and runtime cutover work.
+
+Selector-DOM build failure is a typed error and has no successful cascade debug
+snapshot. It must not be represented as an error-only string, an empty
+projection, selector no-match, unsupported selector state, or default matching
+environment.
 
 ## Determinism Requirements
 

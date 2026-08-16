@@ -1,6 +1,6 @@
 # Q5: Implement Combinator And Complex Selector Matching
 
-Last updated: 2026-04-14  
+Last updated: 2026-08-15
 Status: implemented
 
 This document is the source-of-truth contract for Milestone Q issue 5:
@@ -19,6 +19,7 @@ Related documents:
 - `docs/css/q2-selector-matching-context.md`
 - `docs/css/q3-simple-selector-matching.md`
 - `docs/css/q4-compound-selector-matching.md`
+- `docs/css/af4b-selector-dom-query-contract.md`
 
 ## Implemented Result
 
@@ -115,15 +116,23 @@ yet evaluable” origin for the current supported selector subset.
 
 The current matcher assumes selector evaluation runs over an acyclic DOM tree.
 
-That is an acceptable engine contract for Milestone Q because:
+That is an acceptable engine contract because:
 
-- `SelectorMatchDom` exposes only parent and previous-element-sibling axes
+- `SelectorMatchDom` exposes typed element parent and previous/next element-
+  sibling axes; the existing right-to-left matcher consumes the parent and
+  previous axes
 - Borrowser's owned `SelectorDomIndex` adapter projects `html::Node` into a
-  deterministic tree-shaped selector view
+  deterministic, fallibly constructed tree-shaped selector view
 - complex matching therefore does not need separate cycle detection or depth
   guards for the current DOM providers
 
 Future DOM providers must preserve those selector-facing tree invariants.
+
+Text, comments, processing instructions, and doctypes never enter element
+sibling axes. AF4b adds forward links and direct child facts for later selector
+features without rewriting the established right-to-left combinator matcher.
+Nested `Node::Document` values are typed construction failures, not flattened
+tree input.
 
 ## Determinism Requirements
 
@@ -174,7 +183,9 @@ Q5 adds regression coverage for:
 - representative multi-combinator selectors
 - right-to-left structural backtracking across ancestors and siblings
 - selector-list matching with complex selectors and stable source-order results
-- equivalent DOM-construction paths
+- element sibling axes across equivalent text, comment, and processing-
+  instruction boundaries
+- explicit rejection of structurally impossible nested documents
 - equivalent raw parse formatting
 
 ## Non-Goals

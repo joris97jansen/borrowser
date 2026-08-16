@@ -1,6 +1,6 @@
 # Q8: Document Selector Matching Invariants And Future Extension Hooks
 
-Last updated: 2026-04-14  
+Last updated: 2026-08-15
 Status: implemented
 
 This document is the Milestone Q closeout contract for Borrowser's selector
@@ -31,6 +31,7 @@ Related documents:
 - `docs/css/q5-combinator-complex-selector-matching.md`
 - `docs/css/q6-validity-specificity-match-results.md`
 - `docs/css/q7-selector-matching-debug-output.md`
+- `docs/css/af4b-selector-dom-query-contract.md`
 - `docs/css/p1-selector-architecture.md`
 - `docs/css/p4-specificity-calculation.md`
 - `docs/css/p5-invalid-selector-handling.md`
@@ -61,11 +62,14 @@ Selector matching is defined over an element-only, acyclic DOM view.
 
 The matcher is allowed to depend on exactly these DOM-facing facts:
 
+- actual document-element identity
 - nearest parent element
 - nearest previous element sibling
-- canonical element name
-- deterministic attribute presence lookup
-- deterministic attribute value lookup
+- nearest next element sibling
+- canonical element local name and namespace
+- ordered neutral attribute namespace/local-name/value facts
+- ordinary direct element children
+- exact ordinary direct text children
 
 Current DOM invariants:
 
@@ -73,12 +77,17 @@ Current DOM invariants:
 - descendant and child traversal operate over element ancestors only
 - adjacent and general sibling traversal operate over previous element
   siblings only
-- text, comment, and document nodes are skipped for selector axes
-- the owned `SelectorDomIndex` adapter normalizes unexpected nested document
-  nodes by splicing their children into the surrounding element traversal
-  frame
-- current HTML-backed matching relies on canonical lowercase element names and
-  deterministic, adapter-defined duplicate-attribute collapse
+- text, comment, processing-instruction, and doctype nodes are skipped for
+  element sibling axes
+- the root document is the projection container and is outside element sibling
+  axes
+- the owned `SelectorDomIndex` adapter rejects unexpected nested document nodes
+  as typed construction failures before they can be represented on any axis;
+  they are never skipped through, flattened, or normalized
+- current HTML-backed matching relies on canonical element names and ordered
+  neutral attributes; CSS owns effective lookup and selector comparison policy
+- template-associated fragment contents stay outside the host's ordinary child
+  and text axes
 
 Future DOM providers must preserve those selector-facing invariants explicitly.
 
@@ -148,12 +157,17 @@ DOM generation remain outside the CSS environment.
 ### Determinism
 
 - equivalent DOM construction paths that expose the same selector-facing axes
-  and effective attribute/name surface must produce the same results
+  and neutral attribute/name facts must produce the same results
 - equivalent raw selector formatting must produce the same results once parsed
   into the same selector IR
 - selector DOM ids used by the owned adapter are document-order ids derived
   from the selector-facing projection, not borrowed from incidental source node
   ids
+- document-element identity is explicit and is not inferred from the absence of
+  an element parent
+- a valid document may contain no document element; multiple direct document
+  elements are rejected as ambiguous
+- explicit element-subtree roots have no document-element identity
 - debug and regression surfaces are versioned and deterministic
 
 ## Debug And Regression Contract
@@ -167,7 +181,7 @@ Milestone Q now has three stable selector-matching debug surfaces:
 Q7 adds the integrated selector-matching snapshot, which combines:
 
 - selector parse result
-- normalized selector DOM
+- validated selector DOM projection facts
 - one selector-match outcome per indexed element in document order
 
 Regression coverage exists for:
@@ -177,11 +191,25 @@ Regression coverage exists for:
 - complex selector cases
 - invalid and unsupported propagation
 - specificity/result-shape invariants
-- equivalent DOM construction paths
+- neutral element-sibling facts across non-element node boundaries
+- typed nested-document rejection at projection construction
 - equivalent raw selector formatting
 
 Future matcher work should extend these deterministic surfaces rather than
 adding ad hoc, unstable diagnostics.
+
+AF4b makes index construction fallible and explicit. Authoritative document
+paths use `try_from_document`; isolated tests use the test-only unbounded
+element-subtree seam, while legacy `attach_styles` uses the crate-private
+bounded subtree path. Both subtree paths declare the same closed-subtree
+provenance. There is no generic `from_root`, nested-document normalization, or
+leaf-to-empty-projection fallback. Selector build failures remain typed through
+matching, cascade, computed style, style-tree reconstruction, and Browser
+callers; they are not selector no-match, unsupported/invalid state,
+incremental-unavailable state, or debug text.
+
+The full refined invariant and complexity contract is
+`docs/css/af4b-selector-dom-query-contract.md`.
 
 ## Extension Hooks
 
@@ -190,25 +218,37 @@ rather than modifying unrelated cascade or DOM code.
 
 ### DOM-Side Extension
 
-If a new selector class needs additional DOM facts, extend:
-
-- `SelectorMatchDom`
-- `SelectorMatchingContext`
+If a new selector class needs additional neutral facts, extend the narrowest
+CSS-facing input/query contract supplied by the subsystem that legitimately
+owns those facts. Tree-local facts may extend `SelectorMatchDom` and
+`SelectorMatchingContext`; future dynamic state is not automatically assigned
+to the parser-created selector-DOM adapter.
 
 Normative rule:
 
-- new selector dependencies must be added as explicit DOM/query contract
-  surface
-- new selector semantics must not smuggle dependencies in through layout,
-  event, or cascade state
+- selector inputs expose only the minimum neutral facts required
+- each fact comes from its legitimate tree, runtime, input, focus, navigation,
+  or document-state owner through an explicit query/input boundary
+- storage, layout, and runtime implementation details remain behind those
+  ownership boundaries
+- selector and pseudo-class interpretation remains inside CSS
+- new selector semantics must not be smuggled into HTML, Browser/runtime,
+  Layout, Paint, cascade state, or generic DOM providers
 
-Examples of later DOM-side expansion:
+Examples of legitimate neutral-fact expansion:
 
 - CSS namespace-prefix/default-namespace resolution beyond AE11's typed
   element-namespace query
-- structural pseudo-class predicates
-- stateful pseudo-class predicates
-- scoped-tree or shadow-boundary semantics if Borrowser later grows them
+- additional tree relationships, document identity/provenance, exact
+  child/content facts, or scoped-tree/shadow-boundary information
+- neutral runtime, input, focus, navigation, or document-state facts exposed
+  through a separate explicit selector-matching input/query contract where
+  appropriate
+
+Providers must not answer pseudo-specific questions such as
+`is_first_child_for_css`, `is_empty_for_css`, `matches_root`,
+`matches_nth_child`, `matches_hover`, `matches_focus`, or `is_active_for_css`.
+CSS derives structural and stateful pseudo-class meaning from neutral facts.
 
 ### Element-Local Selector Extension
 
@@ -220,6 +260,7 @@ element-local matcher surfaces:
 - compound-selector dispatch in the matcher
 - specificity accounting in the selector IR layer
 - selector parse/debug snapshots
+- selector invalidation dependency surfaces when the new semantics require it
 
 ### Structural Selector Extension
 

@@ -229,6 +229,31 @@ That layer:
 Compatibility adapters still exist for legacy callers, but they are not the
 intended permanent handoff into cascade.
 
+### 2.5. **Selector DOM Projection**
+
+Milestone AF4b defines CSS's storage-independent query boundary over the
+parser-created DOM. `SelectorDomIndex` is constructed explicitly and fallibly:
+authoritative cascade/computed/runtime paths accept `Node::Document`; the
+unbounded element-subtree constructor is a test-only seam, while legacy
+`attach_styles` uses the crate-private bounded subtree path for its declared
+element-root compatibility. Both subtree paths have explicit closed-subtree
+provenance. There is no generic `from_root`.
+
+The projection records actual document-element identity, canonical element
+namespace/local name, parent and previous/next element siblings, ordinary
+direct element children, exact ordinary direct text nodes, and ordered neutral
+attribute facts. Non-element nodes do not corrupt element sibling axes.
+Template-associated fragment contents remain outside the host's ordinary child
+axis through HTML's typed association.
+
+CSS owns attribute-name/value comparison, ID/class semantics, selector
+matching, and later pseudo-class meaning. Source DOM identity is only mapped to
+the distinct CSS-local `SelectorDomElementId`; patch and retained-render IDs are
+not reused. Nested documents, ambiguous direct document elements, canonical-
+name violations, selector-ID exhaustion, and reported capacity/reservation
+failures are typed projection errors. See
+`docs/css/af4b-selector-dom-query-contract.md`.
+
 ### 3. **Cascade**
 
 The structured cascade path produces `ResolvedDocumentStyle` without mutating
@@ -249,11 +274,17 @@ Milestone R's structured cascade path:
 
 The current structured DOM-level cascade output is `ResolvedDocumentStyle`.
 `attach_styles(dom, sheets)` remains only as a compatibility projection from
-that output into `Node::style` for legacy consumers.
+that output into `Node::style` for legacy consumers. It deliberately retains
+unit-return degradation and clears stale legacy vectors on failure, including
+selector-DOM construction failure. It may use the explicit element-subtree
+path for its historically accepted element root; authoritative document APIs
+propagate typed errors instead.
 The primary debug surfaces are `cascade_evaluation_debug_snapshot(...)`,
 `ResolvedStyle::to_debug_snapshot()`,
 `ResolvedDocumentStyle::to_debug_snapshot()`, and
-`resolve_document_styles_debug_snapshot(...)`.
+`resolve_document_styles_debug_snapshot(...)`, which returns a typed error when
+its document selector projection cannot be built rather than returning a
+successful error string.
 The current document-level integration remains function-oriented. Any future
 style-resolution session object or first-class inline declaration-list
 entrypoint must preserve the structured cascade boundary.

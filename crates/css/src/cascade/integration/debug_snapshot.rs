@@ -3,11 +3,12 @@ use super::super::contract::{
 };
 use super::declarations::inline_style_declaration_inputs_from_model;
 use super::limits::{
-    StyleResolutionLimits, count_styled_elements_bounded, enforce_stylesheet_limits,
+    StyleResolutionError, StyleResolutionLimits, enforce_stylesheet_limits,
     validate_representation_limits,
 };
 use super::rule_inputs::rule_inputs_for_element_with_limits;
-use crate::selectors::{SelectorDomIndex, SelectorMatchingContext, SelectorMatchingEnvironment};
+use super::selector_dom::build_document_selector_dom_with_element_limit;
+use crate::selectors::{SelectorMatchingContext, SelectorMatchingEnvironment};
 use crate::{model, syntax::ParseOptions};
 use html::Node;
 use std::collections::BTreeMap;
@@ -68,8 +69,14 @@ pub fn resolve_document_styles_debug_snapshot(
     root: &Node,
     matching_environment: SelectorMatchingEnvironment,
     sheets: &[model::StylesheetParse],
-) -> String {
+) -> Result<String, StyleResolutionError> {
     let limits = StyleResolutionLimits::default();
+    validate_representation_limits(&limits)?;
+    enforce_stylesheet_limits(sheets, &limits)?;
+    let index = build_document_selector_dom_with_element_limit(
+        root,
+        limits.max_styled_elements_per_document,
+    )?;
     let mut out = String::new();
 
     writeln!(&mut out, "version: 2").expect("write snapshot");
@@ -81,23 +88,6 @@ pub fn resolve_document_styles_debug_snapshot(
     )
     .expect("write snapshot");
 
-    if let Err(error) = validate_representation_limits(&limits) {
-        writeln!(&mut out, "limit-error: {error}").expect("write snapshot");
-        return out;
-    }
-
-    if let Err(error) = enforce_stylesheet_limits(sheets, &limits) {
-        writeln!(&mut out, "limit-error: {error}").expect("write snapshot");
-        return out;
-    }
-
-    if let Err(error) = count_styled_elements_bounded(root, limits.max_styled_elements_per_document)
-    {
-        writeln!(&mut out, "limit-error: {error}").expect("write snapshot");
-        return out;
-    }
-
-    let index = SelectorDomIndex::from_root(root);
     let context = SelectorMatchingContext::with_limits(
         &index,
         matching_environment,
@@ -110,14 +100,8 @@ pub fn resolve_document_styles_debug_snapshot(
             .parent_element(element)
             .and_then(|parent| styles_by_element.get(&parent));
 
-        let rule_inputs = rule_inputs_for_element_with_limits(&context, element, sheets, &limits);
-        let rule_inputs = match rule_inputs {
-            Ok(rule_inputs) => rule_inputs,
-            Err(error) => {
-                writeln!(&mut out, "limit-error: {error}").expect("write snapshot");
-                return out;
-            }
-        };
+        let rule_inputs =
+            rule_inputs_for_element_with_limits(&index, &context, element, sheets, &limits)?;
 
         let mut cascade_debug = String::new();
         let winners =
@@ -129,7 +113,7 @@ pub fn resolve_document_styles_debug_snapshot(
             "element[{element_index}]: selector-id={} namespace={} name=\"{}\"",
             element.get(),
             context.element_namespace(element).snapshot_name(),
-            context.element_name(element)
+            context.element_local_name(element)
         )
         .expect("write snapshot");
 
@@ -144,5 +128,5 @@ pub fn resolve_document_styles_debug_snapshot(
         styles_by_element.insert(element, style);
     }
 
-    out
+    Ok(out)
 }

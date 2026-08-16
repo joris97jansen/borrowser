@@ -5,8 +5,9 @@
 //! - the deterministic match-result surface later cascade work will consume
 //! - the DOM-facing contract the selector engine is allowed to depend on
 //! - the matcher-facing context and selector evaluator
-//! - an owned-tree DOM adapter built from `html::Node` for regression tests and
-//!   the legacy snapshot integration path
+//! - a fallible selector projection over parser-created `html::Node` documents
+//!   plus explicit element-subtree provenance shared by a test-only unbounded
+//!   seam and the bounded legacy compatibility path
 //!
 //! Q1 through Q8 establish the selector matching architecture, context/query
 //! contract, element-local and structural evaluation, validity/specificity
@@ -28,10 +29,15 @@ mod result;
 mod tests;
 
 pub use context::{
-    AncestorElements, PreviousSiblingElements, SelectorMatchDom, SelectorMatchingContext,
-    SelectorMatchingLimitError, SelectorMatchingLimits, SelectorNamespaceConstraint,
+    AncestorElements, ElementChildren, NextSiblingElements, PreviousSiblingElements,
+    SelectorDomAttribute, SelectorMatchDom, SelectorMatchingContext, SelectorMatchingLimitError,
+    SelectorMatchingLimits, SelectorNamespaceConstraint,
 };
-pub use dom_index::{SelectorDomElementId, SelectorDomElementIter, SelectorDomIndex};
+pub(crate) use dom_index::BoundedSelectorDomConstructionError;
+pub use dom_index::{
+    SelectorDomBuildError, SelectorDomBuildStorage, SelectorDomElementId, SelectorDomElementIter,
+    SelectorDomIndex, SelectorDomNodeKind,
+};
 pub use environment::SelectorMatchingEnvironment;
 pub use result::{
     MatchedSelector, SelectorListMatchBuilder, SelectorListMatchOutcome, SelectorMatchability,

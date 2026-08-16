@@ -8,9 +8,11 @@ mod list;
 mod queries;
 mod traversal;
 
-pub use self::dom::SelectorMatchDom;
+pub use self::dom::{SelectorDomAttribute, SelectorMatchDom};
 pub use self::limits::{SelectorMatchingLimitError, SelectorMatchingLimits};
-pub use self::traversal::{AncestorElements, PreviousSiblingElements};
+pub use self::traversal::{
+    AncestorElements, ElementChildren, NextSiblingElements, PreviousSiblingElements,
+};
 use html::ElementNamespace;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
