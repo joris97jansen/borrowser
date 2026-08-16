@@ -9,6 +9,31 @@ pub(super) fn stylesheet(source: &str) -> crate::model::StylesheetParse {
     parse_stylesheet_with_options(source, &ParseOptions::stylesheet())
 }
 
+pub(super) fn document(root_element: Node) -> Node {
+    Node::Document {
+        id: Id::INVALID,
+        doctype: None,
+        children: vec![root_element],
+    }
+}
+
+pub(super) fn document_element(
+    name: &str,
+    attributes: Vec<(&str, Option<&str>)>,
+    children: Vec<Node>,
+) -> Node {
+    document(element(name, attributes, children))
+}
+
+pub(super) fn namespaced_document_element(
+    namespace: html::ElementNamespace,
+    name: &str,
+    attributes: Vec<(&str, Option<&str>)>,
+    children: Vec<Node>,
+) -> Node {
+    document(namespaced_element(namespace, name, attributes, children))
+}
+
 pub(super) fn element(
     name: &str,
     attributes: Vec<(&str, Option<&str>)>,

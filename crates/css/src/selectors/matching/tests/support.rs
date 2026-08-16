@@ -87,7 +87,7 @@ pub(super) fn parse_selector_result(source: &str) -> SelectorListParseResult {
 }
 
 pub(super) fn assert_matching_debug_snapshot(dom: Node, selector_source: &str, expected: &str) {
-    let index = SelectorDomIndex::from_root(&dom);
+    let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
     let selectors = parse_selector_result(selector_source);
 
     assert_eq!(
@@ -102,7 +102,7 @@ pub(super) fn assert_matching_debug_snapshot_with_limits(
     limits: SelectorMatchingLimits,
     expected: &str,
 ) {
-    let index = SelectorDomIndex::from_root(&dom);
+    let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
     let selectors = parse_selector_result(selector_source);
 
     assert_eq!(

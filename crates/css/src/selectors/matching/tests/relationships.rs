@@ -22,7 +22,7 @@ fn matching_context_exposes_nearest_first_traversal_sequences() {
         ],
     )]);
 
-    let index = SelectorDomIndex::from_root(&dom);
+    let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
     let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let ids = index.elements().collect::<Vec<_>>();
 
@@ -56,7 +56,7 @@ fn matching_context_relationship_queries_are_centralized_and_testable() {
         )],
     )]);
 
-    let index = SelectorDomIndex::from_root(&dom);
+    let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
     let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
     let ids = index.elements().collect::<Vec<_>>();
     let body = ids[0];
@@ -74,4 +74,43 @@ fn matching_context_relationship_queries_are_centralized_and_testable() {
     assert!(!context.is_next_sibling_of(paragraph, div));
     assert!(context.is_subsequent_sibling_of(paragraph, div));
     assert!(!context.is_subsequent_sibling_of(div, paragraph));
+
+    assert_eq!(context.document_element(), Some(body));
+    assert_eq!(context.next_sibling_element(div), Some(span));
+    assert_eq!(context.next_sibling_element(span), Some(paragraph));
+    assert_eq!(context.next_sibling_element(paragraph), None);
+    assert_eq!(
+        context.next_sibling_elements(div).collect::<Vec<_>>(),
+        vec![span, paragraph]
+    );
+    assert_eq!(
+        context.element_children(main).collect::<Vec<_>>(),
+        vec![div, span, paragraph]
+    );
+}
+
+#[test]
+fn matching_context_preserves_interleaved_direct_text_per_owner() {
+    let dom = doc(vec![element(
+        "div",
+        Vec::new(),
+        vec![
+            text("before"),
+            element("span", Vec::new(), vec![text("descendant")]),
+            text("after"),
+        ],
+    )]);
+
+    let index = SelectorDomIndex::try_from_document(&dom).expect("valid selector test document");
+    let context = SelectorMatchingContext::new(&index, super::support::matching_environment());
+    let ids = index.elements().collect::<Vec<_>>();
+
+    assert_eq!(
+        context.direct_text_children(ids[0]).collect::<Vec<_>>(),
+        vec!["before", "after"]
+    );
+    assert_eq!(
+        context.direct_text_children(ids[1]).collect::<Vec<_>>(),
+        vec!["descendant"]
+    );
 }

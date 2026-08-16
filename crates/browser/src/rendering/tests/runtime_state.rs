@@ -1319,6 +1319,39 @@ fn retained_render_epoch_advances_when_failed_recompute_consumes_pending_invalid
 }
 
 #[test]
+fn selector_dom_build_failure_propagates_through_browser_style_phase() {
+    let nested = html::Node::Document {
+        id: Id(2),
+        doctype: None,
+        children: Vec::new(),
+    };
+    let invalid_dom = html::Node::Document {
+        id: Id(1),
+        doctype: None,
+        children: vec![nested],
+    };
+    let mut page = page_with_node(invalid_dom);
+
+    let error = match page.build_style_phase_output() {
+        Ok(_) => panic!("nested document must fail selector DOM construction"),
+        Err(error) => error,
+    };
+
+    assert_eq!(
+        error,
+        css::ComputedStyleResolutionError::StyleResolution(
+            css::StyleResolutionError::SelectorDomBuild(
+                css::SelectorDomBuildError::NestedDocument { depth: 1 },
+            ),
+        )
+    );
+    let after = page.retained_render_state_debug_snapshot();
+    assert_eq!(after.resolved_styles, RenderArtifactState::Absent);
+    assert_eq!(after.computed_styles, RenderArtifactState::Absent);
+    assert!(after.style_dirty);
+}
+
+#[test]
 fn retained_render_state_debug_snapshot_does_not_expose_frame_local_ids() {
     let mut page = page_with_node(doc_with_explicit_ids());
     let style_output = style_output_for_test(&mut page);

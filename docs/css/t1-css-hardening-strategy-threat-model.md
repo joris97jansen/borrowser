@@ -1,6 +1,6 @@
 # T1: CSS Hardening Strategy, Invariants, And Threat Model
 
-Last updated: 2026-04-23  
+Last updated: 2026-08-15
 Status: hardening strategy contract implemented
 
 This document is the source-of-truth contract for Milestone T issue 1. It
@@ -35,6 +35,7 @@ Related documents:
 - `docs/css/o1-rule-value-model-architecture.md`
 - `docs/css/p1-selector-architecture.md`
 - `docs/css/q8-selector-matching-invariants-extension-hooks.md`
+- `docs/css/af4b-selector-dom-query-contract.md`
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
 - `docs/css/s9-property-system-computed-style-runtime-contract.md`
 - `docs/security/css-hardening.md`
@@ -280,8 +281,16 @@ Required matching invariants:
 
 - matching consumes parsed selector IR, never raw selector text
 - non-element nodes are not selector subjects
-- traversal uses element-only parent and previous-sibling axes exposed through
-  `SelectorMatchDom`
+- traversal uses indexed element-only parent and previous/next sibling axes
+  exposed through `SelectorMatchDom`
+- selector-DOM construction is explicit and fallible; nested documents and
+  ambiguous document-element identity are typed failures, not normalization
+- iterative projection preflight uses checked arithmetic and fallible traversal
+  stack growth from its first allocation; recursive fallback is not permitted
+- direct ordinary text is preserved exactly and owner-grouped without
+  whitespace classification or pseudo-specific facts
+- DOM providers expose neutral ordered attributes; CSS owns selector name,
+  value/operator, ID, and class semantics
 - unsupported and invalid selector results produce unsupported/invalid match
   outcomes, not parsed no-match outcomes
 - selector lists are evaluated in source order
@@ -294,6 +303,10 @@ Hardening must account for both the cost of one selector match attempt and the
 aggregate repeated work of many selectors over many elements in one style pass.
 Limits, fuzz harness budgets, and CI smoke budgets must account for both
 dimensions.
+
+AF4b does not promise recovery from allocator abort or general process OOM. Its
+typed construction contract covers checked representation/capacity arithmetic
+and failures reported by Rust's fallible reservation APIs.
 
 Milestone T follow-up work must make selector parser and matcher resource
 ceilings explicit. The expected limit families are:
@@ -325,6 +338,9 @@ Required invariants:
 - `ResolvedStyle` is total over the supported property subset
 - structured document-level style resolution does not mutate DOM-attached
   compatibility style vectors
+- selector projection failures remain
+  `StyleResolutionError::SelectorDomBuild`, while the styled-element budget
+  remains `LimitExceeded(StyledElementsPerDocument)`
 - legacy `attach_styles(...)` remains a compatibility projection and must not
   regain ownership of cascade semantics
 
@@ -430,6 +446,10 @@ The following must be deterministic for fixed inputs:
   snapshots
 - fuzz harness seed derivation, chunk plans, failure artifacts, and replay
   commands once CSS fuzz targets are added
+
+Selector-DOM and integrated style snapshots exist only for successful
+construction. A build failure is a typed result, not a successful debug string
+or empty projection.
 
 The CSS pipeline must not depend on:
 

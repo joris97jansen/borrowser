@@ -1,6 +1,6 @@
 # Q3: Implement Simple Selector Matching
 
-Last updated: 2026-04-14  
+Last updated: 2026-08-15
 Status: implemented
 
 This document is the source-of-truth contract for Milestone Q issue 3:
@@ -19,6 +19,7 @@ Related code:
 Related documents:
 - `docs/css/q1-selector-matching-architecture.md`
 - `docs/css/q2-selector-matching-context.md`
+- `docs/css/af4b-selector-dom-query-contract.md`
 - `docs/css/p2-selector-ir-data-structures.md`
 
 ## Implemented Result
@@ -80,6 +81,14 @@ Historical staging note:
 - with short-circuit failure on the first non-match
 
 This keeps compound matching deterministic and aligned with the selector IR.
+
+AF4b refines where those semantics live. `SelectorMatchDom` now exposes only
+ordered neutral attribute namespace/local-name/value facts. CSS-owned matching
+code selects the effective unqualified attribute and implements attribute-name
+policy, ID equality, CSS-whitespace class tokenization, and every supported
+attribute operator. A DOM provider does not implement `matches_id_selector`,
+`matches_class_selector`, `has_attribute`, or selector-keyed
+`attribute_value` behavior.
 
 `match_selector_list(...)` evaluates one selector list against one target
 element and returns an explicit result or selector-matching limit error:

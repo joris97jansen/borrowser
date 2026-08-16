@@ -140,6 +140,21 @@ Milestone AF foundation status:
   `SelectorMatchingEnvironment`, including environment-safe resolved/computed
   artifact reuse. Quirks-mode ID/class comparison and complete historical
   DOCTYPE classification remain deferred; AF4a does not claim either behavior.
+- AF4b hardens CSS's selector-DOM query boundary over parser-created DOM; see
+  `docs/css/af4b-selector-dom-query-contract.md`. Authoritative document
+  construction is explicit and fallible, actual document-element identity is
+  stored, nested and ambiguous-document structures are typed failures,
+  previous/next element siblings skip non-elements, ordinary direct element
+  and exact text facts are available, template-associated fragments remain
+  outside host children, and attributes are exposed as ordered neutral facts
+  interpreted by CSS. Selector IDs remain distinct from DOM/patch/retained
+  identities, and build errors propagate through cascade, computed style, and
+  Browser/runtime debug paths.
+- AF4b is foundation work only. It does not implement `:root`, `:empty`, child-
+  position pseudo-classes, new selector parsing/specificity, selector
+  invalidation expansion, Layout/Paint behavior, JavaScript DOM mutation,
+  caches, or broad HTML validation. Milestone AF and broad selector conformance
+  are not complete.
 
 Major missing families remain:
 

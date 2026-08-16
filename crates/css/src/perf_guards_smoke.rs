@@ -37,7 +37,8 @@ fn perf_guard_css_parse_counts_are_bounded() {
 fn perf_guard_selector_matching_work_is_deterministic() {
     let dom = perf_fixtures::representative_dom(SMOKE_BLOCKS);
     let selectors = representative_selector_parse();
-    let index = SelectorDomIndex::from_root(&dom);
+    let index =
+        SelectorDomIndex::try_from_document(&dom).expect("valid representative selector DOM");
     let context = SelectorMatchingContext::new(
         &index,
         SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks),

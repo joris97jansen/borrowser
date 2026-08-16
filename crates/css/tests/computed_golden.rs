@@ -22,6 +22,14 @@ fn element(name: &str, children: Vec<Node>) -> Node {
     )
 }
 
+fn document(root_element: Node) -> Node {
+    Node::Document {
+        id: Id::INVALID,
+        doctype: None,
+        children: vec![root_element],
+    }
+}
+
 fn property_values_snapshot(source: &str) -> String {
     let parse = parse_stylesheet_with_options(source, &ParseOptions::stylesheet());
     let mut out = String::from("version: 1\ncomputed-property-values\n");
@@ -71,10 +79,10 @@ fn computed_document_style_snapshot_golden_representative_flow() {
         fixture_input(include_str!("fixtures/computed/document_style.css")),
         &ParseOptions::stylesheet(),
     )];
-    let dom = element(
+    let dom = document(element(
         "main",
         vec![element("span", Vec::new()), element("button", Vec::new())],
-    );
+    ));
     let computed = compute_document_styles(
         &dom,
         SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks),

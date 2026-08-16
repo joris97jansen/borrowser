@@ -1,6 +1,6 @@
 # S6: Computed-Style Assembly Pipeline
 
-Last updated: 2026-04-21  
+Last updated: 2026-08-15
 Status: implemented
 
 This document is the contract for Milestone S issue 6: deterministic assembly
@@ -35,6 +35,9 @@ The core entrypoints are:
 - `compute_document_styles_from_resolved_styles(...)`
 - `build_style_tree_with_stylesheets(...)`
 - `build_style_tree_from_computed_styles(...)`
+
+These document-level entrypoints require `Node::Document`. AF4b removes generic
+root inference and makes every selector-DOM projection construction fallible.
 
 The browser view path now builds its style tree through
 `build_style_tree_with_stylesheets(...)` instead of relying on
@@ -75,6 +78,8 @@ style result and the DOM tree in lockstep. It:
   against a fresh selector index for the target DOM
 - rejects mismatched DOM/style inputs instead of silently pairing styles with
   the wrong element
+- independently propagates a typed selector-DOM build failure if its fresh
+  document projection cannot be constructed
 - does not read from or write to `Node::Element::style`
 
 `build_style_tree_with_stylesheets(...)` composes document style resolution and
@@ -89,6 +94,11 @@ S6 preserves these invariants:
 - all computed styles are total over the supported property set
 - computed document snapshots are stable
 - malformed handoffs return `ComputedStyleResolutionError`
+- cascade construction failures remain wrapped through
+  `StyleResolutionError::SelectorDomBuild`, while computed/style-tree paths
+  that construct independently use the corresponding typed computed error
+- incremental computation never turns a selector-DOM build failure into
+  `Ok(None)` or incremental-unavailable state
 - styled-tree construction validates numeric selector identity and expanded
   element-name identity
 - browser rendering no longer depends on DOM-attached style mutation
@@ -98,6 +108,11 @@ S6 preserves these invariants:
 `attach_styles(...)`, `compute_style(...)`, and `build_style_tree(...)` still
 exist as compatibility APIs for older tests and consumers. They are no longer
 the primary runtime path for browser view construction.
+
+`attach_styles(...)` deliberately retains its unit-return compatibility
+degradation: explicit document or historically accepted element-subtree input
+is attempted, and any build/resolution/projection failure clears stale legacy
+styles. This exception does not apply to the authoritative entrypoints above.
 
 Future cleanup should retire those compatibility APIs once all remaining
 callers use the structured pipeline.

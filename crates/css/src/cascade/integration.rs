@@ -2,6 +2,7 @@ mod debug_snapshot;
 mod declarations;
 mod limits;
 mod rule_inputs;
+mod selector_dom;
 mod source;
 
 pub use self::debug_snapshot::{
@@ -11,17 +12,21 @@ pub use self::limits::{StyleResolutionError, StyleResolutionLimit, StyleResoluti
 pub use self::source::{StylesheetCascadeInput, get_inline_style, is_css};
 
 use self::limits::{
-    count_styled_elements_bounded, enforce_stylesheet_input_limits, enforce_stylesheet_limits,
-    validate_representation_limits,
+    enforce_stylesheet_input_limits, enforce_stylesheet_limits, validate_representation_limits,
 };
 use self::rule_inputs::{
     rule_inputs_for_element_from_cascade_inputs_with_limits, rule_inputs_for_element_with_limits,
+};
+use self::selector_dom::{
+    build_document_selector_dom_with_element_limit,
+    build_element_subtree_selector_dom_with_element_limit,
+    preflight_document_selector_dom_with_element_limit,
 };
 use super::contract::resolve_cascade_style_from_rule_inputs;
 use super::document::{ResolvedDocumentStyle, ResolvedElementStyle};
 use crate::model;
 use crate::selectors::{SelectorDomIndex, SelectorMatchingContext, SelectorMatchingEnvironment};
-use html::{Node, internal::Id};
+use html::{ElementNode, Node, internal::Id};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,6 +39,21 @@ pub struct IncrementalStyleResolutionStats {
 pub struct IncrementalResolvedDocumentStyle {
     pub resolved: ResolvedDocumentStyle,
     pub stats: IncrementalStyleResolutionStats,
+}
+
+/// Applies the authoritative style-resolution representation limits and the
+/// exact bounded selector-DOM construction preflight without materializing a
+/// projection. This is used when an incremental-eligible plan has no retained
+/// artifacts but invalid document structure must still remain a typed error.
+pub(crate) fn preflight_document_selector_dom_with_limits(
+    root: &Node,
+    limits: &StyleResolutionLimits,
+) -> Result<(), StyleResolutionError> {
+    validate_representation_limits(limits)?;
+    preflight_document_selector_dom_with_element_limit(
+        root,
+        limits.max_styled_elements_per_document,
+    )
 }
 
 /// Resolves structured cascade output for every element in `root`.
@@ -78,14 +98,21 @@ pub fn try_resolve_document_styles_with_limits(
 ) -> Result<ResolvedDocumentStyle, StyleResolutionError> {
     validate_representation_limits(limits)?;
     enforce_stylesheet_limits(sheets, limits)?;
-    count_styled_elements_bounded(root, limits.max_styled_elements_per_document)?;
+    let index = build_document_selector_dom_with_element_limit(
+        root,
+        limits.max_styled_elements_per_document,
+    )?;
+    resolve_document_styles_with_index(&index, matching_environment, sheets, limits)
+}
 
-    let index = SelectorDomIndex::from_root(root);
-    let context = SelectorMatchingContext::with_limits(
-        &index,
-        matching_environment,
-        limits.selector_matching,
-    );
+fn resolve_document_styles_with_index(
+    index: &SelectorDomIndex<'_>,
+    matching_environment: SelectorMatchingEnvironment,
+    sheets: &[model::StylesheetParse],
+    limits: &StyleResolutionLimits,
+) -> Result<ResolvedDocumentStyle, StyleResolutionError> {
+    let context =
+        SelectorMatchingContext::with_limits(index, matching_environment, limits.selector_matching);
     let mut entries = Vec::with_capacity(index.len());
     let mut styles_by_element = BTreeMap::new();
 
@@ -94,14 +121,15 @@ pub fn try_resolve_document_styles_with_limits(
             .parent_element(element)
             .and_then(|parent| styles_by_element.get(&parent));
 
-        let rule_inputs = rule_inputs_for_element_with_limits(&context, element, sheets, limits)?;
+        let rule_inputs =
+            rule_inputs_for_element_with_limits(index, &context, element, sheets, limits)?;
         let style = resolve_cascade_style_from_rule_inputs(&rule_inputs, parent_style);
 
         styles_by_element.insert(element, style.clone());
         entries.push(ResolvedElementStyle::new(
             element,
             context.element_namespace(element),
-            context.element_name(element).to_string(),
+            context.element_local_name(element).to_string(),
             style,
         ));
     }
@@ -117,14 +145,26 @@ pub fn try_resolve_document_styles_from_cascade_inputs_with_limits(
 ) -> Result<ResolvedDocumentStyle, StyleResolutionError> {
     validate_representation_limits(limits)?;
     enforce_stylesheet_input_limits(sheets, limits)?;
-    count_styled_elements_bounded(root, limits.max_styled_elements_per_document)?;
-
-    let index = SelectorDomIndex::from_root(root);
-    let context = SelectorMatchingContext::with_limits(
+    let index = build_document_selector_dom_with_element_limit(
+        root,
+        limits.max_styled_elements_per_document,
+    )?;
+    resolve_document_styles_from_cascade_inputs_with_index(
         &index,
         matching_environment,
-        limits.selector_matching,
-    );
+        sheets,
+        limits,
+    )
+}
+
+fn resolve_document_styles_from_cascade_inputs_with_index(
+    index: &SelectorDomIndex<'_>,
+    matching_environment: SelectorMatchingEnvironment,
+    sheets: &[StylesheetCascadeInput<'_>],
+    limits: &StyleResolutionLimits,
+) -> Result<ResolvedDocumentStyle, StyleResolutionError> {
+    let context =
+        SelectorMatchingContext::with_limits(index, matching_environment, limits.selector_matching);
     let mut entries = Vec::with_capacity(index.len());
     let mut styles_by_element = BTreeMap::new();
 
@@ -134,7 +174,7 @@ pub fn try_resolve_document_styles_from_cascade_inputs_with_limits(
             .and_then(|parent| styles_by_element.get(&parent));
 
         let rule_inputs = rule_inputs_for_element_from_cascade_inputs_with_limits(
-            &context, element, sheets, limits,
+            index, &context, element, sheets, limits,
         )?;
         let style = resolve_cascade_style_from_rule_inputs(&rule_inputs, parent_style);
 
@@ -142,7 +182,7 @@ pub fn try_resolve_document_styles_from_cascade_inputs_with_limits(
         entries.push(ResolvedElementStyle::new(
             element,
             context.element_namespace(element),
-            context.element_name(element).to_string(),
+            context.element_local_name(element).to_string(),
             style,
         ));
     }
@@ -182,7 +222,10 @@ pub fn try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_l
 ) -> Result<Option<IncrementalResolvedDocumentStyle>, StyleResolutionError> {
     validate_representation_limits(limits)?;
     enforce_stylesheet_input_limits(sheets, limits)?;
-    count_styled_elements_bounded(root, limits.max_styled_elements_per_document)?;
+    let index = build_document_selector_dom_with_element_limit(
+        root,
+        limits.max_styled_elements_per_document,
+    )?;
 
     if previous.matching_environment() != matching_environment {
         return Err(StyleResolutionError::MatchingEnvironmentMismatch {
@@ -195,7 +238,6 @@ pub fn try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_l
         return Ok(None);
     }
 
-    let index = SelectorDomIndex::from_root(root);
     if previous.entries().len() != index.len() {
         return Ok(None);
     }
@@ -219,7 +261,7 @@ pub fn try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_l
             };
             if previous_entry.selector_element_id() != element
                 || previous_entry.element_namespace() != context.element_namespace(element)
-                || previous_entry.element_name() != context.element_name(element)
+                || previous_entry.element_name() != context.element_local_name(element)
             {
                 return Ok(None);
             }
@@ -234,7 +276,7 @@ pub fn try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_l
             .and_then(|parent| styles_by_element.get(&parent));
 
         let rule_inputs = rule_inputs_for_element_from_cascade_inputs_with_limits(
-            &context, element, sheets, limits,
+            &index, &context, element, sheets, limits,
         )?;
         let style = resolve_cascade_style_from_rule_inputs(&rule_inputs, parent_style);
 
@@ -242,7 +284,7 @@ pub fn try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_l
         entries.push(ResolvedElementStyle::new(
             element,
             context.element_namespace(element),
-            context.element_name(element).to_string(),
+            context.element_local_name(element).to_string(),
             style,
         ));
     }
@@ -251,9 +293,24 @@ pub fn try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_l
         resolved: ResolvedDocumentStyle::new(matching_environment, entries),
         stats: IncrementalStyleResolutionStats {
             reused_prefix_len,
-            recomputed_len: index.len().saturating_sub(reused_prefix_len),
+            recomputed_len: index.len() - reused_prefix_len,
         },
     }))
+}
+
+pub(crate) fn try_resolve_element_subtree_styles_with_limits(
+    root: &ElementNode,
+    matching_environment: SelectorMatchingEnvironment,
+    sheets: &[model::StylesheetParse],
+    limits: &StyleResolutionLimits,
+) -> Result<ResolvedDocumentStyle, StyleResolutionError> {
+    validate_representation_limits(limits)?;
+    enforce_stylesheet_limits(sheets, limits)?;
+    let index = build_element_subtree_selector_dom_with_element_limit(
+        root,
+        limits.max_styled_elements_per_document,
+    )?;
+    resolve_document_styles_with_index(&index, matching_environment, sheets, limits)
 }
 
 fn earliest_dirty_element_index(
@@ -263,6 +320,6 @@ fn earliest_dirty_element_index(
     dirty_node_ids
         .iter()
         .filter_map(|node_id| index.element_for_node_id(*node_id))
-        .map(|element| element.get().saturating_sub(1) as usize)
+        .map(|element| (element.get() - 1) as usize)
         .min()
 }

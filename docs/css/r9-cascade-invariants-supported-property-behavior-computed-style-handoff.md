@@ -1,6 +1,6 @@
 # R9: Cascade Invariants, Supported Property Behavior, And Computed-Style Handoff
 
-Last updated: 2026-04-17  
+Last updated: 2026-08-15
 Status: milestone close-out contract implemented
 
 This document is the source-of-truth contract for Milestone R issue 9 and the
@@ -23,6 +23,7 @@ Related documents:
 - `docs/css/r6-initial-default-value-handling.md`
 - `docs/css/r7-structured-resolved-style-output.md`
 - `docs/css/r8-cascade-style-resolution-debug-output.md`
+- `docs/css/af4b-selector-dom-query-contract.md`
 - `docs/architecture/ARCHITECTURE.md`
 
 ## Implemented Result
@@ -63,6 +64,13 @@ selector-DOM document order, stores one total `ResolvedStyle` per element in
 `ResolvedDocumentStyle`, and preserves hardening failures as explicit
 `StyleResolutionError` results rather than degrading them into an empty style
 tree.
+
+AF4b requires the DOM tree here to be an explicit document-rooted projection.
+Selector-DOM structural, representation, and reported reservation failures are
+`StyleResolutionError::SelectorDomBuild`; the configured styled-element budget
+remains `LimitExceeded(StyledElementsPerDocument)`. Construction finishes
+before any selector no-match or incremental-reuse decision can consume the
+projection.
 
 ## Supported Property Subset
 
@@ -193,6 +201,9 @@ The following invariants are part of the Milestone R contract:
 - structured document style resolution does not mutate the DOM
 - legacy `attach_styles(...)` behavior is projection only; it must not become
   the owner of cascade semantics again
+- authoritative cascade entry points propagate selector-DOM build errors and
+  never convert them to selector no-match, unsupported/invalid selector state,
+  empty resolved output, or a successful debug error string
 - snapshot label grammar and ordering are maintained contract surfaces once
   covered by exact regression tests
 
@@ -268,11 +279,22 @@ consumption, caches, invalidation hooks, or richer debug tooling, a dedicated
 internal style-resolution session object may become the cleaner runtime-owned
 shape.
 
+AF4b does not introduce that session object. It centralizes fallible explicit
+document construction and permits internal resolution from an already built
+projection so the legacy bridge can preserve its declared element-subtree
+compatibility without reopening a generic root API.
+
 ### 2. Inline style parsing is still integration-localized wrapper parsing
 
 Inline style attributes currently enter the structured cascade pipeline through
 localized wrapper parsing rather than through a first-class declaration-list API
 owned by the syntax/model layers.
+
+Locating that attribute is not selector-matcher policy. Cascade independently
+consumes the CSS-wide neutral/effective attribute helper over ordered selector-
+DOM facts. The helper resolves only namespace/local-name identity and provider
+order; declaration parsing and cascade remain integration/cascade work, while
+ID/class/operator semantics remain selector matching work.
 
 That is acceptable for Milestone R because the workaround is localized and the
 structured cascade contract does not depend on synthetic selector semantics.

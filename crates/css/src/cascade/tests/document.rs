@@ -1,12 +1,17 @@
 use super::super::{
     StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits, resolve_document_styles,
+    resolve_document_styles_debug_snapshot,
+    try_resolve_document_styles_incremental_suffix_with_limits,
     try_resolve_document_styles_with_limits,
 };
-use super::support::{element, matching_environment, namespaced_element, stylesheet};
+use super::support::{
+    document, document_element, element, matching_environment, namespaced_document_element,
+    namespaced_element, stylesheet,
+};
 use crate::{
     CascadePropertyId, CascadeRuleMatch, CascadeSpecificity, ResolvedValueSource, Rule,
-    SelectorDomIndex, SelectorMatchability, SelectorMatchingContext, StylesheetCascadeInput,
-    resolve_document_styles_from_cascade_inputs,
+    SelectorDomBuildError, SelectorDomIndex, SelectorMatchability, SelectorMatchingContext,
+    StylesheetCascadeInput, resolve_document_styles_from_cascade_inputs,
 };
 
 #[test]
@@ -17,7 +22,7 @@ fn ua_namespace_groups_constrain_every_compound_without_constraining_author_rule
         "* { padding-left: 13px; }",
     ));
     let author = stylesheet("html > .notice { margin-left: 14px; } .notice { color: green; }");
-    let dom = namespaced_element(
+    let dom = namespaced_document_element(
         html::ElementNamespace::Svg,
         "html",
         Vec::new(),
@@ -110,7 +115,7 @@ fn resolve_document_styles_produces_structured_output_without_mutating_dom() {
     let stylesheets = vec![stylesheet(
         "main .hero { color: blue; } div { color: red; }",
     )];
-    let dom = element(
+    let dom = document_element(
         "main",
         Vec::new(),
         vec![element("div", vec![("class", Some("hero"))], Vec::new())],
@@ -119,8 +124,11 @@ fn resolve_document_styles_produces_structured_output_without_mutating_dom() {
     let resolved = resolve_document_styles(&dom, matching_environment(), &stylesheets)
         .expect("resolved document style");
 
-    let html::Node::Element { element } = &dom else {
-        panic!("expected element");
+    let html::Node::Document { children, .. } = &dom else {
+        panic!("expected document");
+    };
+    let html::Node::Element { element } = &children[0] else {
+        panic!("expected document element");
     };
     assert!(element.style().is_empty());
     let html::Node::Element { element: child } = &element.children()[0] else {
@@ -160,7 +168,11 @@ fn parser_produced_invalid_and_unsupported_rules_are_non_applicable_to_cascade()
         "a:hover { color: red; } div::before { color: green; } [lang=] { color: blue; }",
     );
     let dom = element("a", Vec::new(), Vec::new());
-    let index = SelectorDomIndex::from_root(&dom);
+    let html::Node::Element { element } = &dom else {
+        panic!("expected element subtree root");
+    };
+    let index = SelectorDomIndex::try_from_element_subtree(element)
+        .expect("valid explicit element subtree");
     let context = SelectorMatchingContext::new(&index, matching_environment());
     let element = index.elements().next().expect("indexed element");
 
@@ -199,7 +211,7 @@ fn selector_list_effective_specificity_uses_only_actual_matches_in_cascade() {
     let stylesheets = vec![stylesheet(
         "#missing, div { color: red; } .target { color: blue; }",
     )];
-    let dom = element("div", vec![("class", Some("target"))], Vec::new());
+    let dom = document_element("div", vec![("class", Some("target"))], Vec::new());
 
     let resolved = resolve_document_styles(&dom, matching_environment(), &stylesheets)
         .expect("resolved document style");
@@ -216,7 +228,8 @@ fn selector_list_effective_specificity_uses_only_actual_matches_in_cascade() {
     );
 
     let snapshot =
-        crate::resolve_document_styles_debug_snapshot(&dom, matching_environment(), &stylesheets);
+        crate::resolve_document_styles_debug_snapshot(&dom, matching_environment(), &stylesheets)
+            .expect("document style debug snapshot");
     assert!(
         snapshot.contains(
             "rule-input[0]: source=stylesheet[0/0] origin=author specificity=selector(0,0,1)"
@@ -240,7 +253,7 @@ fn selector_list_effective_specificity_uses_only_actual_matches_in_cascade() {
 #[test]
 fn resolve_document_styles_threads_parent_style_for_inheritance() {
     let stylesheets = vec![stylesheet("section { color: red; }")];
-    let dom = element(
+    let dom = document_element(
         "section",
         Vec::new(),
         vec![element("span", Vec::new(), Vec::new())],
@@ -279,7 +292,7 @@ fn resolve_document_styles_threads_parent_style_for_inheritance() {
 #[test]
 fn resolve_document_styles_integrates_inline_style_as_structured_author_output() {
     let stylesheets = vec![stylesheet(".hero { color: red; width: 10px; }")];
-    let dom = element(
+    let dom = document_element(
         "div",
         vec![
             ("class", Some("hero")),
@@ -324,7 +337,7 @@ fn resolve_document_styles_rejects_invalid_supported_values_before_winner_resolu
     let stylesheets = vec![stylesheet(
         "div { color: red; color: nonsense; display: block; display: grid; }",
     )];
-    let dom = element("div", Vec::new(), Vec::new());
+    let dom = document_element("div", Vec::new(), Vec::new());
 
     let resolved = resolve_document_styles(&dom, matching_environment(), &stylesheets)
         .expect("resolved document style");
@@ -351,7 +364,7 @@ fn resolve_document_styles_rejects_invalid_supported_values_before_winner_resolu
 #[test]
 fn resolve_document_styles_recovers_malformed_inline_declaration_list() {
     let stylesheets = Vec::new();
-    let dom = element(
+    let dom = document_element(
         "div",
         vec![("style", Some("color red width: 10px; color: blue;"))],
         Vec::new(),
@@ -384,7 +397,7 @@ fn resolve_document_styles_rejects_invalid_outline_shorthand_atomically() {
     let stylesheets = vec![stylesheet(
         "div { outline-color: red; outline-style: solid; outline: 1px 2px; }",
     )];
-    let dom = element("div", Vec::new(), Vec::new());
+    let dom = document_element("div", Vec::new(), Vec::new());
 
     let resolved = resolve_document_styles(&dom, matching_environment(), &stylesheets)
         .expect("resolved document style");
@@ -419,7 +432,7 @@ fn resolve_document_styles_rejects_invalid_outline_shorthand_atomically() {
 #[test]
 fn resolve_document_styles_keeps_border_shorthand_unsupported() {
     let stylesheets = vec![stylesheet("div { border: 1px solid red; }")];
-    let dom = element("div", Vec::new(), Vec::new());
+    let dom = document_element("div", Vec::new(), Vec::new());
 
     let resolved = resolve_document_styles(&dom, matching_environment(), &stylesheets)
         .expect("resolved document style");
@@ -454,7 +467,7 @@ fn resolve_document_styles_falls_back_after_invalid_supported_values() {
         "section { color: red; }",
         "span { color: nonsense; width: -1px; padding-left: -2px; }",
     ))];
-    let dom = element(
+    let dom = document_element(
         "section",
         Vec::new(),
         vec![element("span", Vec::new(), Vec::new())],
@@ -490,7 +503,7 @@ fn resolve_document_styles_falls_back_after_invalid_supported_values() {
 #[test]
 fn try_resolve_document_styles_reports_style_pass_limits() {
     let stylesheets = vec![stylesheet("div { color: red; }")];
-    let dom = element("div", Vec::new(), Vec::new());
+    let dom = document_element("div", Vec::new(), Vec::new());
     let limits = StyleResolutionLimits {
         max_style_rules_per_document: 0,
         ..StyleResolutionLimits::default()
@@ -519,7 +532,7 @@ fn try_resolve_document_styles_reports_style_pass_limits() {
 
 #[test]
 fn try_resolve_document_styles_reports_styled_element_limits_before_work() {
-    let dom = element("main", Vec::new(), Vec::new());
+    let dom = document_element("main", Vec::new(), Vec::new());
     let limits = StyleResolutionLimits {
         max_styled_elements_per_document: 0,
         ..StyleResolutionLimits::default()
@@ -535,11 +548,69 @@ fn try_resolve_document_styles_reports_styled_element_limits_before_work() {
             configured: 0,
         }
     );
+    assert!(
+        SelectorDomIndex::try_from_document(&dom).is_ok(),
+        "a caller's lower style budget must not invalidate the selector projection"
+    );
+}
+
+#[test]
+fn selector_dom_build_failure_propagates_through_cascade_and_debug_apis() {
+    let invalid = document(element(
+        "html",
+        Vec::new(),
+        vec![document(element("span", Vec::new(), Vec::new()))],
+    ));
+    let expected =
+        StyleResolutionError::SelectorDomBuild(SelectorDomBuildError::NestedDocument { depth: 2 });
+
+    assert_eq!(
+        resolve_document_styles(&invalid, matching_environment(), &[])
+            .expect_err("cascade must propagate selector projection failure"),
+        expected
+    );
+    assert_eq!(
+        resolve_document_styles_from_cascade_inputs(&invalid, matching_environment(), &[])
+            .expect_err("cascade-input path must propagate selector projection failure"),
+        expected
+    );
+    assert_eq!(
+        resolve_document_styles_debug_snapshot(&invalid, matching_environment(), &[])
+            .expect_err("debug API must propagate selector projection failure"),
+        expected
+    );
+}
+
+#[test]
+fn incremental_resolution_does_not_convert_selector_dom_build_failure_to_unavailable() {
+    let valid = document_element("html", Vec::new(), Vec::new());
+    let previous = resolve_document_styles(&valid, matching_environment(), &[])
+        .expect("valid previous style result");
+    let invalid = document(element(
+        "html",
+        Vec::new(),
+        vec![document(element("span", Vec::new(), Vec::new()))],
+    ));
+
+    let error = try_resolve_document_styles_incremental_suffix_with_limits(
+        &invalid,
+        matching_environment(),
+        &[],
+        &previous,
+        &[],
+        &StyleResolutionLimits::default(),
+    )
+    .expect_err("build failure must precede the ordinary incremental-unavailable fallback");
+
+    assert_eq!(
+        error,
+        StyleResolutionError::SelectorDomBuild(SelectorDomBuildError::NestedDocument { depth: 2 })
+    );
 }
 
 #[test]
 fn try_resolve_document_styles_reports_inline_style_byte_limits_before_parsing() {
-    let dom = element(
+    let dom = document_element(
         "div",
         vec![("style", Some("color: red; width: 10px;"))],
         Vec::new(),
@@ -567,7 +638,7 @@ fn try_resolve_document_styles_rejects_unrepresentable_limit_configuration() {
         return;
     }
 
-    let dom = element("div", Vec::new(), Vec::new());
+    let dom = document_element("div", Vec::new(), Vec::new());
     let configured = (u32::MAX as usize).saturating_add(1);
     let limits = StyleResolutionLimits {
         max_style_rules_per_document: configured,

@@ -1,6 +1,6 @@
 # U1: Runtime Integration Architecture And CSS Pipeline Ownership
 
-Last updated: 2026-04-30
+Last updated: 2026-08-15
 Status: architecture contract implemented; final Milestone U close-out lives in U8
 
 This document is the source-of-truth contract for Milestone U issue 1. It
@@ -31,6 +31,7 @@ Related documents:
 - `docs/css/o1-rule-value-model-architecture.md`
 - `docs/css/r1-cascade-architecture-style-resolution-contract.md`
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
+- `docs/css/af4b-selector-dom-query-contract.md`
 - `docs/css/s9-property-system-computed-style-runtime-contract.md`
 - `docs/security/css-hardening.md`
 
@@ -56,6 +57,12 @@ The browser runtime owns scheduling and invalidation. The CSS engine owns CSS
 semantics. No runtime, layout, or paint layer may reimplement CSS parsing,
 selector specificity, cascade priority, inheritance/default policy, computed
 normalization, or supported-property metadata.
+
+AF4b also keeps selector projection inside CSS. Browser supplies the active
+parser-created `Node::Document` and transports typed CSS failures; it does not
+construct a Browser-owned selector provider, infer document-element identity,
+flatten nested documents, or substitute retained/patch identity for
+`SelectorDomElementId`.
 
 ## Runtime Entry Points
 
@@ -235,6 +242,12 @@ DOM + StylesheetParse[]
 Legacy APIs such as `attach_styles(...)`, `compute_style(...)`, and
 `build_style_tree(...)` are compatibility surfaces only. They must not become
 the browser runtime's normative style path again.
+
+Every projection construction on the normative path is document-rooted and
+fallible. A selector-DOM build failure propagates through style resolution,
+computed style, cache rebuild, frame preparation, and render-debug callers. It
+is not eligible for cache reuse, incremental-unavailable fallback, empty style,
+default document mode, or ordinary no-match handling.
 
 ## Implemented Baseline After Milestone U
 

@@ -141,7 +141,8 @@ pub fn build_style_tree_from_computed_styles<'a>(
     root: &'a html::Node,
     computed_styles: &ComputedDocumentStyle,
 ) -> Result<StyledNode<'a>, ComputedStyleResolutionError> {
-    let index = SelectorDomIndex::from_root(root);
+    let index = SelectorDomIndex::try_from_document(root)
+        .map_err(ComputedStyleResolutionError::SelectorDomBuild)?;
     let context = SelectorMatchingContext::new(&index, computed_styles.matching_environment());
     let mut element_ids = index.elements();
     let mut entries = ComputedElementStyleCursor::new(computed_styles.entries());
@@ -155,7 +156,7 @@ pub fn build_style_tree_from_computed_styles<'a>(
     if let Some(missing_element) = element_ids.next() {
         return Err(ComputedStyleResolutionError::MissingComputedElementStyle {
             element_index: entries.next_index(),
-            element_name: context.element_name(missing_element).to_string(),
+            element_name: context.element_local_name(missing_element).to_string(),
         });
     }
     if let Some(extra) = entries.next_entry() {
@@ -225,7 +226,7 @@ fn build_style_tree_from_computed_entries<'a, 'b>(
                 );
             }
 
-            let expected_name = context.element_name(expected_selector_id);
+            let expected_name = context.element_local_name(expected_selector_id);
             let expected_namespace = context.element_namespace(expected_selector_id);
             if entry.element_namespace() != expected_namespace {
                 return Err(

@@ -1,8 +1,8 @@
 use super::support::*;
 use super::*;
 use crate::{
-    ComputedDocumentStyleInvalidationImpact, StyleResolutionError, StyleResolutionLimit,
-    StyleResolutionLimits,
+    ComputedDocumentStyleInvalidationImpact, SelectorDomBuildError, StyleResolutionError,
+    StyleResolutionLimit, StyleResolutionLimits,
 };
 
 fn materialize_element_ids(mut dom: Node) -> Node {
@@ -29,7 +29,7 @@ fn compute_style_from_resolved_style_materializes_cascade_fallbacks() {
         "section { color: #0f0; width: 40px; }",
         "span { color: nonsense; width: -1px; display: block; }",
     ))];
-    let dom = element(
+    let dom = document_element(
         "section",
         Vec::new(),
         vec![element("span", Vec::new(), Vec::new())],
@@ -58,7 +58,7 @@ fn compute_document_styles_integrates_cascade_inheritance_defaults_and_computati
         "section { color: red; font-size: 20px; width: 40px; }",
         "span { color: nonsense; background-color: #0f0; padding-left: 3px; display: inline-block; }",
     ))];
-    let dom = element(
+    let dom = document_element(
         "section",
         Vec::new(),
         vec![element("span", Vec::new(), Vec::new())],
@@ -95,7 +95,7 @@ fn compute_document_styles_integrates_cascade_inheritance_defaults_and_computati
 
 #[test]
 fn document_style_artifacts_retain_the_explicit_matching_environment() {
-    let dom = element("div", Vec::new(), Vec::new());
+    let dom = document_element("div", Vec::new(), Vec::new());
     let environment = crate::SelectorMatchingEnvironment::new(html::DocumentMode::LimitedQuirks);
     let stylesheets = vec![stylesheet("div { color: red; }")];
 
@@ -110,7 +110,7 @@ fn document_style_artifacts_retain_the_explicit_matching_environment() {
 
 #[test]
 fn computed_style_invalidation_treats_a_matching_environment_change_as_unknown() {
-    let dom = element("div", Vec::new(), Vec::new());
+    let dom = document_element("div", Vec::new(), Vec::new());
     let no_quirks = compute_document_styles_with_environment(
         &dom,
         crate::SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks),
@@ -132,7 +132,7 @@ fn computed_style_invalidation_treats_a_matching_environment_change_as_unknown()
 
 #[test]
 fn incremental_style_reuse_rejects_a_different_matching_environment() {
-    let dom = materialize_element_ids(element("div", Vec::new(), Vec::new()));
+    let dom = materialize_element_ids(document_element("div", Vec::new(), Vec::new()));
     let no_quirks = crate::SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks);
     let quirks = crate::SelectorMatchingEnvironment::new(html::DocumentMode::Quirks);
     let stylesheets = vec![stylesheet("div { color: red; }")];
@@ -169,7 +169,7 @@ fn incremental_style_reuse_rejects_a_different_matching_environment() {
 
 #[test]
 fn plan_execution_reports_full_required_without_incremental_state() {
-    let dom = element("div", Vec::new(), Vec::new());
+    let dom = document_element("div", Vec::new(), Vec::new());
     let plan = classify_style_invalidation(StyleChangeFacts::TreeStructureChanged)
         .expect("tree changes require style invalidation");
 
@@ -188,7 +188,7 @@ fn plan_execution_reports_full_required_without_incremental_state() {
 
 #[test]
 fn plan_execution_reports_incremental_unavailable_without_retained_artifacts() {
-    let dom = element("div", Vec::new(), Vec::new());
+    let dom = document_element("div", Vec::new(), Vec::new());
     let plan = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
         node_ids: vec![html::internal::Id(1)],
     })
@@ -208,13 +208,72 @@ fn plan_execution_reports_incremental_unavailable_without_retained_artifacts() {
 }
 
 #[test]
+fn plan_execution_propagates_selector_dom_build_failure_without_retained_artifacts() {
+    let invalid = document(element(
+        "html",
+        Vec::new(),
+        vec![document(element("span", Vec::new(), Vec::new()))],
+    ));
+    let plan = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
+        node_ids: vec![html::internal::Id(1)],
+    })
+    .expect("attribute changes require style invalidation");
+
+    let error = try_compute_document_styles_for_invalidation_plan_with_limits(
+        &plan,
+        &invalid,
+        &[],
+        None,
+        &StyleResolutionLimits::default(),
+    )
+    .expect_err("selector-DOM build failure must precede incremental unavailability");
+
+    assert_eq!(
+        error,
+        ComputedStyleResolutionError::StyleResolution(StyleResolutionError::SelectorDomBuild(
+            SelectorDomBuildError::NestedDocument { depth: 2 }
+        ),)
+    );
+}
+
+#[test]
+fn plan_execution_preserves_styled_element_limit_without_retained_artifacts() {
+    let dom = document_element("div", Vec::new(), Vec::new());
+    let plan = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
+        node_ids: vec![html::internal::Id(1)],
+    })
+    .expect("attribute changes require style invalidation");
+    let limits = StyleResolutionLimits {
+        max_styled_elements_per_document: 0,
+        ..StyleResolutionLimits::default()
+    };
+
+    let error = try_compute_document_styles_for_invalidation_plan_with_limits(
+        &plan,
+        &dom,
+        &[],
+        None,
+        &limits,
+    )
+    .expect_err("style element budget failure must remain a style-resolution error");
+
+    assert_eq!(
+        error,
+        ComputedStyleResolutionError::StyleResolution(StyleResolutionError::LimitExceeded {
+            limit: StyleResolutionLimit::StyledElementsPerDocument,
+            configured: 0,
+        })
+    );
+}
+
+#[test]
 fn plan_execution_reports_incremental_computed_for_a_valid_suffix() {
-    let initial_dom = materialize_element_ids(element(
+    let initial_dom = materialize_element_ids(document_element(
         "div",
         Vec::new(),
         vec![element("span", Vec::new(), Vec::new())],
     ));
-    let changed_dom = materialize_element_ids(element(
+    let changed_dom = materialize_element_ids(document_element(
         "div",
         vec![("class", Some("hot"))],
         vec![element("span", Vec::new(), Vec::new())],
@@ -256,7 +315,7 @@ fn plan_execution_reports_incremental_computed_for_a_valid_suffix() {
 
 #[test]
 fn plan_aware_suffix_recomputes_following_sibling_selector_effects() {
-    let initial_dom = materialize_element_ids(element(
+    let initial_dom = materialize_element_ids(document_element(
         "section",
         Vec::new(),
         vec![
@@ -264,7 +323,7 @@ fn plan_aware_suffix_recomputes_following_sibling_selector_effects() {
             element("p", Vec::new(), Vec::new()),
         ],
     ));
-    let changed_dom = materialize_element_ids(element(
+    let changed_dom = materialize_element_ids(document_element(
         "section",
         Vec::new(),
         vec![
@@ -303,12 +362,12 @@ fn plan_aware_suffix_recomputes_following_sibling_selector_effects() {
 
 #[test]
 fn plan_aware_suffix_recomputes_inherited_descendant_effects() {
-    let initial_dom = materialize_element_ids(element(
+    let initial_dom = materialize_element_ids(document_element(
         "div",
         Vec::new(),
         vec![element("span", Vec::new(), Vec::new())],
     ));
-    let changed_dom = materialize_element_ids(element(
+    let changed_dom = materialize_element_ids(document_element(
         "div",
         vec![("class", Some("on"))],
         vec![element("span", Vec::new(), Vec::new())],
@@ -344,12 +403,12 @@ fn plan_aware_suffix_recomputes_inherited_descendant_effects() {
 
 #[test]
 fn plan_aware_suffix_recomputes_descendant_selector_effects() {
-    let initial_dom = materialize_element_ids(element(
+    let initial_dom = materialize_element_ids(document_element(
         "div",
         Vec::new(),
         vec![element("span", Vec::new(), Vec::new())],
     ));
-    let changed_dom = materialize_element_ids(element(
+    let changed_dom = materialize_element_ids(document_element(
         "div",
         vec![("class", Some("hot"))],
         vec![element("span", Vec::new(), Vec::new())],
@@ -389,7 +448,7 @@ fn compute_document_styles_materializes_ad5_initial_and_inherited_boundaries() {
         "section { color: #0f0; font-size: 20px; width: 40px; background-color: red; display: block; }",
         "span { background-color: #00f; }",
     ))];
-    let dom = element(
+    let dom = document_element(
         "section",
         Vec::new(),
         vec![element("span", Vec::new(), Vec::new())],
@@ -440,7 +499,7 @@ fn compute_document_styles_materializes_resolved_css_wide_keywords() {
         "section { color: red; font-size: 20px; width: 40px; display: block; }",
         "span { color: unset; font-size: inherit; width: inherit; display: initial; }",
     ))];
-    let dom = element(
+    let dom = document_element(
         "section",
         Vec::new(),
         vec![element("span", Vec::new(), Vec::new())],
@@ -467,7 +526,7 @@ fn compute_document_styles_materializes_resolved_css_wide_keywords() {
 #[test]
 fn compute_document_styles_materializes_outline_shorthand_through_longhand_pipeline() {
     let stylesheets = vec![stylesheet("div { outline: 2px solid red; }")];
-    let dom = element("div", Vec::new(), Vec::new());
+    let dom = document_element("div", Vec::new(), Vec::new());
 
     let computed = compute_document_styles(&dom, &stylesheets).expect("computed document");
     let outline = computed.entries()[0].style().outline();
@@ -479,7 +538,7 @@ fn compute_document_styles_materializes_outline_shorthand_through_longhand_pipel
 
 #[test]
 fn compute_document_styles_preserves_authored_order_around_outline_shorthand_resets() {
-    let dom = element("div", Vec::new(), Vec::new());
+    let dom = document_element("div", Vec::new(), Vec::new());
     let longhand_then_shorthand = compute_document_styles(
         &dom,
         &[stylesheet("div { outline-width: 4px; outline: solid; }")],
@@ -511,7 +570,7 @@ fn compute_document_styles_materializes_root_css_wide_fallbacks_to_initial() {
     let stylesheets = vec![stylesheet(
         "div { color: inherit; font-size: unset; width: inherit; display: unset; }",
     )];
-    let dom = element("div", Vec::new(), Vec::new());
+    let dom = document_element("div", Vec::new(), Vec::new());
 
     let computed = compute_document_styles(&dom, &stylesheets).expect("computed document");
     let style = computed.entries()[0].style();
@@ -524,7 +583,7 @@ fn compute_document_styles_materializes_root_css_wide_fallbacks_to_initial() {
 
 #[test]
 fn computed_document_style_invalidation_impact_distinguishes_paint_layout_and_unknown() {
-    let dom = element(
+    let dom = document_element(
         "section",
         Vec::new(),
         vec![element("p", Vec::new(), Vec::new())],
@@ -536,12 +595,12 @@ fn computed_document_style_invalidation_impact_distinguishes_paint_layout_and_un
     let layout_affecting = compute_document_styles(&dom, &[stylesheet("p { width: 20px; }")])
         .expect("layout-affecting computed document");
     let different_shape = compute_document_styles(
-        &element("section", Vec::new(), Vec::new()),
+        &document_element("section", Vec::new(), Vec::new()),
         &[stylesheet("section { color: red; }")],
     )
     .expect("different shape computed document");
     let different_namespace = compute_document_styles(
-        &namespaced_element(
+        &namespaced_document_element(
             html::ElementNamespace::Svg,
             "section",
             Vec::new(),
@@ -577,7 +636,7 @@ fn computed_document_style_invalidation_impact_distinguishes_paint_layout_and_un
 #[test]
 fn compute_document_styles_propagates_style_resolution_limits() {
     let stylesheets = vec![stylesheet("div { color: red; }")];
-    let dom = element("div", Vec::new(), Vec::new());
+    let dom = document_element("div", Vec::new(), Vec::new());
     let limits = StyleResolutionLimits {
         max_style_rules_per_document: 0,
         ..StyleResolutionLimits::default()
@@ -596,11 +655,56 @@ fn compute_document_styles_propagates_style_resolution_limits() {
 }
 
 #[test]
+fn computed_style_apis_propagate_selector_dom_build_failures() {
+    let valid = document_element("html", Vec::new(), Vec::new());
+    let resolved = resolve_document_styles(&valid, &[]).expect("valid resolved styles");
+    let computed = compute_document_styles_from_resolved_styles(&valid, &resolved)
+        .expect("valid computed styles");
+    let invalid = document(element(
+        "html",
+        Vec::new(),
+        vec![document(element("span", Vec::new(), Vec::new()))],
+    ));
+    let build_error = SelectorDomBuildError::NestedDocument { depth: 2 };
+
+    assert_eq!(
+        compute_document_styles(&invalid, &[])
+            .expect_err("integrated computed styles must propagate cascade projection failure"),
+        ComputedStyleResolutionError::StyleResolution(StyleResolutionError::SelectorDomBuild(
+            build_error
+        ),)
+    );
+    assert_eq!(
+        compute_document_styles_from_resolved_styles(&invalid, &resolved)
+            .expect_err("computed reconstruction must rebuild the projection fallibly"),
+        ComputedStyleResolutionError::SelectorDomBuild(build_error)
+    );
+    let style_tree_error = match build_style_tree_from_computed_styles(&invalid, &computed) {
+        Ok(_) => panic!("style-tree reconstruction must propagate projection failure"),
+        Err(error) => error,
+    };
+    assert_eq!(
+        style_tree_error,
+        ComputedStyleResolutionError::SelectorDomBuild(build_error)
+    );
+    let integrated_style_tree_error = match build_style_tree_with_stylesheets(&invalid, &[]) {
+        Ok(_) => panic!("integrated style-tree construction must propagate projection failure"),
+        Err(error) => error,
+    };
+    assert_eq!(
+        integrated_style_tree_error,
+        ComputedStyleResolutionError::StyleResolution(StyleResolutionError::SelectorDomBuild(
+            build_error
+        ),)
+    );
+}
+
+#[test]
 fn computed_document_style_snapshot_is_deterministic() {
     let stylesheets = vec![stylesheet(
         "div { color: blue; width: 12px; } span { margin-left: -2px; }",
     )];
-    let dom = element(
+    let dom = document_element(
         "div",
         Vec::new(),
         vec![element("span", Vec::new(), Vec::new())],
@@ -692,7 +796,7 @@ fn computed_document_style_snapshot_is_deterministic() {
 #[test]
 fn compute_document_styles_from_resolved_styles_uses_existing_cascade_output() {
     let stylesheets = vec![stylesheet("main { color: teal; } p { font-size: 18px; }")];
-    let dom = element(
+    let dom = document_element(
         "main",
         Vec::new(),
         vec![element("p", Vec::new(), Vec::new())],
@@ -709,7 +813,7 @@ fn compute_document_styles_from_resolved_styles_uses_existing_cascade_output() {
 #[test]
 fn compute_document_styles_reuses_identical_resolved_styles_with_same_parent() {
     let stylesheets = vec![stylesheet("p { color: red; }")];
-    let dom = element(
+    let dom = document_element(
         "div",
         Vec::new(),
         vec![
@@ -745,7 +849,7 @@ fn computed_style_reuse_does_not_cross_different_parent_computed_styles() {
         ".red { color: red; }",
         ".blue { color: blue; }",
     ))];
-    let dom = element(
+    let dom = document_element(
         "div",
         Vec::new(),
         vec![
@@ -782,7 +886,7 @@ fn computed_style_reuse_does_not_cross_different_parent_computed_styles() {
 #[test]
 fn compute_style_from_resolved_style_rejects_normalization_failures() {
     let stylesheets = vec![stylesheet("div { width: 1e39px; }")];
-    let dom = element("div", Vec::new(), Vec::new());
+    let dom = document_element("div", Vec::new(), Vec::new());
     let resolved = resolve_document_styles(&dom, &stylesheets).expect("resolved document style");
 
     let error = compute_style_from_resolved_style(resolved.entries()[0].style(), None)

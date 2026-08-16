@@ -2,6 +2,8 @@
 
 Status: implemented architecture and ownership contract for Milestone AF issue 1
 
+Last updated: 2026-08-15
+
 AF1 establishes the CSS-owned boundary for selector parsing and matching,
 specificity, cascade, inheritance, computed-style construction, and style-input
 invalidation planning. It connects the AD value/property foundations and the AE
@@ -42,6 +44,7 @@ Selector, cascade, and computed-style foundations:
 
 - Q1/Q8: `docs/css/q1-selector-matching-architecture.md`,
   `docs/css/q8-selector-matching-invariants-extension-hooks.md`
+- AF4b: `docs/css/af4b-selector-dom-query-contract.md`
 - R1-R9: the structured cascade and resolved-style contracts under
   `docs/css/r*.md`
 - S1/S6/S9: the computed-style property, assembly, and runtime contracts
@@ -91,6 +94,20 @@ identities, names, attributes, parent/child relationships, and sibling
 relationships through the DOM-facing selector index. CSS does not consume
 tokenizer state, tree-builder insertion modes, parser recovery diagnostics, or
 HTML parsing internals.
+
+AF4b makes that handoff a fallible, neutral query projection. HTML supplies
+canonical namespace/local-name, ordered qualified attributes, exact ordinary
+text, ordinary child storage, source identity, and typed template-fragment
+association. CSS constructs explicit document or declared element-subtree
+projections, records actual document-element identity, indexes previous and next
+element siblings, and rejects nested documents or ambiguous direct document
+elements. CSS owns attribute-name/value selector policy, ID/class semantics,
+and every future structural pseudo meaning. Browser/runtime does not construct
+a competing selector provider.
+
+`SelectorDomElementId` remains a CSS-local projection identity. Source DOM IDs
+are used only through an explicit integration mapping and never become patch,
+retained-render, or selector identity by reuse.
 
 ## Selector and declaration terminology
 

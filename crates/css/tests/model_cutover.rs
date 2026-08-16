@@ -39,13 +39,17 @@ fn attach_styles_accepts_model_parse_results_from_root_entrypoint() {
         parse_stylesheet_with_options("div { color: red; }", &ParseOptions::stylesheet()),
         parse_stylesheet_with_options(".hero { color: blue; }", &ParseOptions::stylesheet()),
     ];
-    let mut dom = html::internal::node_element_from_parts(
-        Id::INVALID,
-        html::internal::html_name("div"),
-        vec![html::internal::unqualified_attribute("class", "hero")],
-        Vec::new(),
-        Vec::new(),
-    );
+    let mut dom = Node::Document {
+        id: Id::INVALID,
+        doctype: None,
+        children: vec![html::internal::node_element_from_parts(
+            Id::INVALID,
+            html::internal::html_name("div"),
+            vec![html::internal::unqualified_attribute("class", "hero")],
+            Vec::new(),
+            Vec::new(),
+        )],
+    };
 
     attach_styles(
         &mut dom,
@@ -53,8 +57,11 @@ fn attach_styles_accepts_model_parse_results_from_root_entrypoint() {
         &stylesheets,
     );
 
-    let Node::Element { element } = dom else {
-        panic!("expected element");
+    let Node::Document { children, .. } = dom else {
+        panic!("expected document");
+    };
+    let [Node::Element { element }] = children.as_slice() else {
+        panic!("expected document element");
     };
     assert_eq!(element.style(), [("color".to_string(), "blue".to_string())]);
 }

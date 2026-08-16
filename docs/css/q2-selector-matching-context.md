@@ -1,6 +1,6 @@
 # Q2: Introduce Selector Matching Context And DOM Query Abstraction
 
-Last updated: 2026-04-14  
+Last updated: 2026-08-15
 Status: implemented
 
 This document is the source-of-truth contract for Milestone Q issue 2:
@@ -13,7 +13,7 @@ Historical scope note:
   context/query layer
 - later Q issues extended the matcher built on top of that boundary
 - current matcher behavior is therefore broader than the original Q2 landing
-  scope, but the context contract documented here remains the same
+  scope, and AF4b refines the neutral fact contract as documented below
 
 Milestone Q issue 1 established the DOM-facing selector matching contract in
 `SelectorMatchDom`, explicit matchability handling, deterministic match-result
@@ -29,10 +29,13 @@ Related code:
 - `crates/css/src/selectors/matching/context.rs`
 - `crates/css/src/selectors/matching/result.rs`
 - `crates/css/src/selectors/matching/dom_index.rs`
+- `crates/css/src/dom_attributes.rs`
 - `crates/css/src/selectors/mod.rs`
 - `crates/css/src/lib.rs`
 
 Related documents:
+
+- `docs/css/af4b-selector-dom-query-contract.md`
 - `docs/css/q1-selector-matching-architecture.md`
 - `docs/css/p1-selector-architecture.md`
 - `docs/css/p2-selector-ir-data-structures.md`
@@ -47,12 +50,13 @@ Milestone Q issue 2 now has an explicit matcher-facing query layer:
 
 The context centralizes:
 
-- parent and previous-sibling access
+- actual document-element, parent, previous/next sibling, and ordinary direct-
+  child access
 - nearest-first ancestor traversal
 - nearest-first previous-sibling traversal
 - child/descendant/sibling relationship queries
-- element name lookup
-- id/class/attribute lookup
+- canonical element name/namespace and ordered neutral attribute access
+- exact ordinary direct-text access
 - supported simple-selector query helpers for:
   - type selectors
   - id selectors
@@ -140,10 +144,14 @@ It does not:
 ### Relationship Queries
 
 The context provides explicit helpers for the relationships needed by the
-current supported selector subset:
+current supported selector subset and neutral AF4b extension surface:
 
+- `document_element()`
 - `parent_element(element)`
 - `previous_sibling_element(element)`
+- `next_sibling_element(element)`
+- `first_element_child(element)` plus `next_sibling_element(...)` iteration
+- `direct_text_children(element)`
 - `ancestor_elements(element)`
 - `previous_sibling_elements(element)`
 - `is_child_of(element, parent)`
@@ -158,6 +166,8 @@ Traversal guarantees:
 - the subject element itself is excluded from both iterators
 - traversal is element-only because the underlying DOM contract is
   element-only
+- direct text iteration preserves each ordinary direct text node exactly and
+  does not interpret `:empty`
 
 These guarantees are normative because later combinator matching depends on
 them.
@@ -170,6 +180,10 @@ comparison helper for matcher code.
 The identity source remains `SelectorMatchDom::ElementId`. The matcher should
 not infer identity from debug strings, storage slots, or any incidental DOM
 representation detail.
+
+`SelectorDomElementId` is CSS-local. Source DOM IDs may be mapped to it for
+incremental integration, but DOM, patch, retained-render, and selector
+identities remain distinct domains.
 
 ### Simple-Selector Query Helpers
 
@@ -220,7 +234,9 @@ The context implements the current supported attribute selector subset:
 
 Current behavior:
 
-- attribute-name lookup is delegated through the DOM provider contract
+- CSS applies attribute-name policy over the provider's ordered neutral
+  namespace/local-name/value facts, using the shared CSS-side effective-
+  attribute helper where first-survivor lookup is required
 - exact matching compares the full effective attribute value
 - includes matching treats the attribute value as a whitespace-separated token
   list
@@ -302,12 +318,21 @@ HTML-only UA compounds in selectors such as `html body`, `html .notice`,
 case-sensitive for canonical foreign local names. Unprefixed attribute queries
 remain limited to `AttributeNamespace::None`.
 
+AF4b replaces semantic provider-side attribute lookup with an allocation-free
+ordered iterator of neutral namespace/local-name/value facts. The CSS-owned
+attribute helper applies HTML-versus-foreign local-name policy and deterministic
+first-match selection. Compound matching still owns ID equality, class
+tokenization, and attribute operators; cascade consumes the same neutral helper
+independently for inline `style` lookup.
+
 This internal context does not implement CSS `@namespace`, prefixed selectors,
 or a public namespace-aware selector API.
 
-The deterministic selector-DOM debug surface is `version: 2`. Each indexed
-element records its selector identity as `namespace=<html|svg|mathml>` plus the
-exact canonical `local` name, followed by its existing index, parent, and
-previous-element-sibling fields. This prevents HTML, SVG, and MathML
-lookalikes from becoming indistinguishable in matching diagnostics; adjusted
-SVG case such as `foreignObject` is preserved exactly.
+AF4b advances the deterministic selector-DOM debug surface. It identifies
+document versus explicit element-subtree provenance, records actual document-
+element identity independently from parentlessness, and includes parent,
+previous/next element sibling, direct element-child, ordered neutral attribute,
+and exact direct-text facts. This prevents HTML, SVG, and MathML lookalikes
+from becoming indistinguishable; adjusted SVG case such as `foreignObject` is
+preserved exactly. A build failure is returned as a typed error and has no
+successful snapshot.

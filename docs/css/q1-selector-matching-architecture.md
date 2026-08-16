@@ -1,6 +1,6 @@
 # Q1: Define Selector Matching Architecture And DOM Contract
 
-Last updated: 2026-04-11  
+Last updated: 2026-08-15
 Status: architecture contract implemented
 
 This document is the source-of-truth contract for Milestone Q issue 1:
@@ -19,6 +19,7 @@ and code contract the later matching implementation must obey.
 Related code:
 - `crates/css/src/selectors/mod.rs`
 - `crates/css/src/selectors/matching.rs`
+- `crates/css/src/dom_attributes.rs`
 - `crates/css/src/lib.rs`
 - `crates/browser/src/dom_store/arena.rs`
 - `crates/html/src/types.rs`
@@ -30,6 +31,7 @@ Related documents:
 - `docs/css/p5-invalid-selector-handling.md`
 - `docs/css/p6-unsupported-selector-handling.md`
 - `docs/css/p8-selector-model-integration.md`
+- `docs/css/af4b-selector-dom-query-contract.md`
 - `docs/html5/node-identity-contract.md`
 
 ## Implemented Result
@@ -89,8 +91,8 @@ The selector matching boundary is now:
    - owns the DOM-facing selector matching contract
    - does not own cascade winner resolution or computed style generation
 3. DOM providers
-   - expose the minimal element relationships and attribute/name lookups
-     required by matching through `SelectorMatchDom`
+   - expose the minimal element relationships, canonical name/namespace, and
+     ordered neutral attribute facts required through `SelectorMatchDom`
    - may store the DOM however they want as long as they honor the contract
 4. later cascade work
    - consumes selector match results plus selector specificity
@@ -119,28 +121,36 @@ Selector matching is defined over elements only.
 
 The engine is allowed to depend on exactly these DOM-facing facts:
 
+- actual document-element identity
 - nearest parent element
 - nearest previous element sibling
-- canonical element name
-- deterministic attribute presence lookup
-- deterministic attribute value lookup
+- nearest next element sibling
+- canonical element local name and namespace
+- ordered neutral attribute namespace/local-name/value facts
+- ordinary direct element children
+- exact ordinary direct text children
 
 The current code contract is the `SelectorMatchDom` trait:
 
 - `parent_element(element)`
 - `previous_sibling_element(element)`
-- `element_name(element)`
-- `has_attribute(element, name)`
-- `attribute_value(element, name)`
+- `next_sibling_element(element)`
+- `document_element()`
+- `element_local_name(element)`
+- `element_namespace(element)`
+- `attributes(element)`
+- `first_element_child(element)` plus `next_sibling_element(...)` iteration
+- `direct_text_children(element)`
 
-Everything else is intentionally out of contract for Q1.
+AF4b is the normative refinement of this Q1 fact surface. It deliberately does
+not expose selector- or pseudo-specific predicates.
 
 Selector matching is not allowed to depend on:
 
 - raw parser insertion-mode state
 - DOM builder open-element stacks
 - node allocation order outside the adapter contract
-- text/comment/document nodes as match subjects
+- text/comment/processing-instruction/doctype/document nodes as match subjects
 - style data already attached to the DOM
 - computed values
 - layout state
@@ -152,10 +162,13 @@ For the matching contract:
 
 - selectors match elements only
 - document nodes never match selectors
-- text/comment nodes never match selectors
+- text/comment/processing-instruction nodes never match selectors
 - child and descendant traversal use element ancestors only
 - adjacent and general sibling traversal use previous element siblings only
-- non-element siblings are skipped for sibling combinators
+- text, comment, processing-instruction, and doctype siblings are skipped for
+  sibling combinators; the root document is outside the axes and nested
+  documents are rejected during projection construction
+- forward element-sibling queries use the same element-only axis
 
 This is the required invariant that keeps matching stable across the owned
 tree path and the runtime arena path even though the underlying node storage
@@ -163,34 +176,37 @@ differs.
 
 ### Name And Attribute Semantics
 
-For Borrowser's current HTML DOM:
+For Borrowser's current parser-created DOM:
 
-- element names are canonical lowercase ASCII tag names
-- attribute-name lookup is ASCII case-insensitive
+- HTML element names have ASCII uppercase folded while non-ASCII is preserved
+- foreign element local names retain their canonical namespace-specific case
+- attributes are exposed as ordered namespace/local-name/value facts
+- CSS applies HTML ASCII-insensitive versus foreign exact selector attribute-
+  name policy
 - attribute-value comparison for the Milestone Q supported selector subset is
   exact and case-sensitive unless a later selector feature explicitly changes
   that rule
-- duplicate stored attributes must resolve deterministically through the DOM
-  adapter; the owned `html::Node` adapter uses the first matching attribute in
-  storage order
+- CSS selects the first matching unqualified attribute in provider order for
+  the currently supported selector subset
 
-This is important for determinism: selector matching depends on the adapter's
-effective name/value surface, not on incidental parser recovery history.
+This is important for determinism: selector matching depends on neutral ordered
+facts plus CSS-owned comparison policy, not on incidental parser recovery
+history.
 
 The canonical-name assumption is explicit, not incidental. The current owned
 HTML path relies on the HTML layer's atom/canonicalization guarantees:
 
-- `crates/html/src/types.rs` documents canonical lowercase tag/attribute name
-  storage for the current `AtomTable`
+- `crates/html/src/types.rs` documents canonical tag/attribute storage with no
+  ASCII uppercase for the current `AtomTable`
 - `crates/html/src/html5/shared/atom.rs` documents ASCII-lowercasing for the
   HTML atomization path
 
 The selector adapter therefore treats non-canonical HTML element names as an
 upstream invariant violation rather than silently normalizing them.
 
-Duplicate-attribute resolution is adapter policy, not a universal raw-storage
-rule. The trait requires deterministic effective attribute lookup. Each DOM
-provider defines how ambiguous storage is collapsed into that effective view.
+The provider does not collapse attributes or decide whether a selector-provided
+name matches a stored name. ID equality, class tokenization, attribute
+operators, and selector name comparison remain CSS semantics.
 
 ## Matching Contract
 
@@ -322,19 +338,20 @@ The selector engine must behave identically when:
 
 - the same selector IR is provided through different parse-call paths
 - the DOM was built through different construction paths but exposes the same
-  element relationships and effective attribute/name surface through
-  `SelectorMatchDom`
+  document identity, element relationships, and neutral attribute/name facts
+  through `SelectorMatchDom`
 
 Required invariants:
 
 - selector list order is source order
 - matched selector indices are reported in source order
 - specificity values come from the selector IR and are stable
-- element axes are defined only in terms of parent element and previous
-  element sibling
+- element axes are defined only in terms of parent, previous/next element
+  siblings, and ordinary direct element children
 - matching never depends on raw node ids assigned by one DOM builder path
-- matching never depends on text/comment node placement except insofar as
-  sibling traversal skips them deterministically
+- current matching never depends on text/comment/processing-instruction node
+  placement except insofar as sibling traversal skips them deterministically;
+  exact direct text remains a neutral fact for later pseudo work
 - unsupported and invalid selector states remain distinguishable from ordinary
   no-match results
 
@@ -344,20 +361,33 @@ Q1 intentionally leaves explicit places for later selector-class expansion.
 
 ### DOM Surface Extension
 
-The core `SelectorMatchDom` trait is minimal because the supported subset only
-needs parent/sibling traversal and attribute/name queries.
+The core `SelectorMatchDom` trait is minimal because the supported subset needs
+only neutral document identity, tree relationships, canonical name/namespace,
+ordered attribute, and exact child/content facts.
 
-Later selector classes may extend matching through additional DOM-side
-contracts, for example:
+Later selector classes may require additional neutral facts. Each fact must
+enter selector matching through the narrowest explicit input/query contract
+supplied by the subsystem that legitimately owns it. Tree-local facts may
+extend `SelectorMatchDom` and `SelectorMatchingContext`; future dynamic state
+is not automatically owned by the parser-created selector-DOM adapter.
 
-- CSS namespace-prefix/default-namespace resolution beyond AE11's typed DOM
-  namespace query
-- structural pseudo-class predicates
-- stateful pseudo-classes
-- shadow-DOM or scoped-tree boundaries later if Borrowser grows them
+Legitimate extensions may include:
 
-Those additions must extend the DOM contract explicitly. They must not smuggle
-new dependencies in through unrelated cascade or layout APIs.
+- CSS namespace-prefix/default-namespace resolution beyond AE11's typed
+  element-namespace query
+- additional tree relationships, document identity/provenance, exact
+  child/content facts, or tree-boundary/scoping information
+- neutral runtime, input, focus, navigation, or document-state facts exposed
+  through an explicit selector-matching input/query contract by their owning
+  subsystem
+
+Providers expose facts only. CSS selector matching interprets those facts as
+selector and pseudo-class semantics. Extensions must not add pseudo-specific
+provider methods such as `is_first_child_for_css`, `is_empty_for_css`,
+`matches_root`, `matches_nth_child`, `matches_hover`, `matches_focus`, or
+`is_active_for_css`. They must keep storage, layout, and runtime implementation
+details behind their owning boundaries and must not smuggle selector meaning
+through HTML, Browser/runtime, Layout, Paint, or generic DOM providers.
 
 ### AE11 namespace refinement
 
@@ -385,6 +415,15 @@ The matching architecture is explicitly split into:
 Future selector classes should attach to one of those surfaces rather than
 rewriting the whole engine contract.
 
+Structural pseudo-classes added later must derive their meaning from AF4b's
+neutral document-element, sibling, direct-element-child, and exact direct-text
+facts. They must not add pseudo-specific provider methods.
+
+Stateful or dynamic pseudo-classes must likewise consume neutral state from the
+subsystem that owns it and leave interpretation in CSS. New pseudo-class work
+must extend CSS-owned selector IR/evaluation, specificity, debug, and
+invalidation surfaces as appropriate.
+
 ### Regression Surface Extension
 
 Q1 introduces deterministic snapshots for:
@@ -399,7 +438,7 @@ contract.
 ## Owned Tree Adapter
 
 `SelectorDomIndex` is the Q1 adapter for the existing owned `html::Node`
-surface.
+surface, hardened by AF4b's normative construction contract.
 
 It exists for two reasons:
 
@@ -409,18 +448,31 @@ It exists for two reasons:
 `SelectorDomIndex` therefore:
 
 - walks the owned tree iteratively
+- is fallible from its first traversal allocation
 - indexes elements in document order
-- stores only selector-relevant data
+- stores only neutral selector-query facts
 - assigns its own deterministic element ids independent from DOM node ids
-- skips non-element nodes for match subjects and sibling axes
-- treats canonical lowercase HTML element names as an adapter invariant
-- normalizes unexpected nested `Node::Document` values by splicing their
-  children into the surrounding traversal frame while preserving the current
-  element-axis context
+- does not represent non-element nodes as match subjects
+- skips text, comment, processing-instruction, and doctype nodes for sibling
+  axes; the root document is outside those axes and nested documents are
+  rejected during projection construction
+- treats HTML element names without ASCII uppercase as an adapter invariant;
+  non-ASCII remains preserved
+- records actual document-element identity rather than inferring it from a
+  parentless element
+- rejects unexpected nested `Node::Document` values with a typed build error
+- uses authoritative `try_from_document`, a test-only unbounded element-
+  subtree seam, and a bounded legacy compatibility path with the same explicit
+  subtree provenance; there is no generic `from_root`
+- excludes template-associated fragment contents by traversing only ordinary
+  element children
 
 This is intentionally a clean adapter layer, not the permanent proof that all
 matching must use an indexed tree. Later DOM providers may implement
 `SelectorMatchDom` differently as long as the observable contract is the same.
+
+The complete construction, text-storage, identity, error, and complexity
+contract is `docs/css/af4b-selector-dom-query-contract.md`.
 
 ## Non-Goals
 

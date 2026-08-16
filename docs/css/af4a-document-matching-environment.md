@@ -1,5 +1,7 @@
 # AF4a document matching environment contract
 
+Last updated: 2026-08-15
+
 AF4a propagates the HTML parser's selected `DocumentMode` to CSS selector
 evaluation. HTML owns mode selection; runtime and Browser transport and retain
 the selected value without interpreting selector semantics. CSS owns the
@@ -46,3 +48,17 @@ CSS semantic validity check.
 
 AF4a does not implement quirks-mode ID/class comparison or complete historical
 DOCTYPE classification.
+
+## AF4b projection relationship
+
+Document mode and selector projection provenance are independent facts.
+`SelectorMatchingEnvironment` does not identify the document element, validate
+a selector-DOM root, or distinguish a document from an isolated element
+subtree. AF4b document construction records actual document-element identity;
+AF4b subtree construction always reports no document element even though its
+root has no in-projection parent.
+
+A selector-DOM build error is not repaired by selecting a default mode and is
+not a matching-environment mismatch. Cascade, computed style, debug, and
+Browser callers preserve the typed construction error separately. AF4a still
+does not implement `:root` or any structural pseudo-class.

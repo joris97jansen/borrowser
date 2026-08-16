@@ -2,9 +2,9 @@ use super::super::contract::CascadeRuleInputBuildError;
 use super::source::StylesheetCascadeInput;
 use crate::model;
 use crate::selectors::{
-    SelectorMatchingEnvironment, SelectorMatchingLimitError, SelectorMatchingLimits,
+    SelectorDomBuildError, SelectorMatchingEnvironment, SelectorMatchingLimitError,
+    SelectorMatchingLimits,
 };
-use html::Node;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StyleResolutionLimits {
@@ -60,6 +60,7 @@ impl StyleResolutionLimit {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StyleResolutionError {
+    SelectorDomBuild(SelectorDomBuildError),
     MatchingEnvironmentMismatch {
         expected: SelectorMatchingEnvironment,
         actual: SelectorMatchingEnvironment,
@@ -98,6 +99,7 @@ impl StyleResolutionError {
 impl std::fmt::Display for StyleResolutionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::SelectorDomBuild(error) => write!(f, "{error}"),
             Self::MatchingEnvironmentMismatch { expected, actual } => write!(
                 f,
                 "resolved style matching environment mismatch: expected document mode {}, got {}",
@@ -130,6 +132,7 @@ impl std::fmt::Display for StyleResolutionError {
 impl std::error::Error for StyleResolutionError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::SelectorDomBuild(error) => Some(error),
             Self::SelectorMatching(error) => Some(error),
             Self::RuleInputBuild(error) => Some(error),
             Self::MatchingEnvironmentMismatch { .. }
@@ -229,37 +232,4 @@ fn validate_u32_backed_limit(
     }
 
     Ok(())
-}
-
-pub(super) fn count_styled_elements_bounded(
-    root: &Node,
-    max_styled_elements: usize,
-) -> Result<usize, StyleResolutionError> {
-    let mut count = 0usize;
-    let mut stack = vec![root];
-
-    while let Some(node) = stack.pop() {
-        match node {
-            Node::Document { children, .. } => {
-                stack.extend(children.iter());
-            }
-            Node::Element { element } => {
-                if count >= max_styled_elements {
-                    return Err(StyleResolutionError::limit(
-                        StyleResolutionLimit::StyledElementsPerDocument,
-                        max_styled_elements,
-                    ));
-                }
-
-                count += 1;
-                stack.extend(element.children().iter());
-            }
-            Node::Text { .. }
-            | Node::Comment { .. }
-            | Node::ProcessingInstruction { .. }
-            | Node::DocumentType { .. } => {}
-        }
-    }
-
-    Ok(count)
 }

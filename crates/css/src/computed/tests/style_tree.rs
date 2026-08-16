@@ -5,22 +5,26 @@ use crate::StylePhaseOutput;
 #[test]
 fn build_style_tree_with_stylesheets_uses_structured_pipeline_without_mutating_dom() {
     let stylesheets = vec![stylesheet("div { color: blue; } span { width: 5px; }")];
-    let dom = element(
+    let dom = document(element(
         "div",
         Vec::new(),
         vec![element("span", Vec::new(), Vec::new())],
-    );
+    ));
 
     let styled = build_style_tree_with_stylesheets(&dom, &stylesheets).expect("styled document");
+    let styled_element = &styled.children[0];
 
-    assert_eq!(styled.style.color(), (0, 0, 255, 255));
-    assert_eq!(styled.children[0].style.color(), (0, 0, 255, 255));
+    assert_eq!(styled_element.style.color(), (0, 0, 255, 255));
+    assert_eq!(styled_element.children[0].style.color(), (0, 0, 255, 255));
     assert_eq!(
-        styled.children[0].style.width(),
+        styled_element.children[0].style.width(),
         Some(LengthPercentage::Length(Length::Px(5.0)))
     );
-    let Node::Element { element } = &dom else {
-        panic!("expected element");
+    let Node::Document { children, .. } = &dom else {
+        panic!("expected document");
+    };
+    let [Node::Element { element }] = children.as_slice() else {
+        panic!("expected document element");
     };
     assert!(element.style().is_empty());
     let Node::Element { element: child } = &element.children()[0] else {
@@ -48,8 +52,8 @@ fn style_tree_preserves_processing_instruction_as_a_non_element_leaf() {
 
 #[test]
 fn build_style_tree_from_computed_styles_rejects_mismatched_document_style() {
-    let source_dom = element("main", Vec::new(), Vec::new());
-    let target_dom = element("section", Vec::new(), Vec::new());
+    let source_dom = document(element("main", Vec::new(), Vec::new()));
+    let target_dom = document(element("section", Vec::new(), Vec::new()));
     let computed = compute_document_styles(&source_dom, &[]).expect("computed document");
 
     let error = match build_style_tree_from_computed_styles(&target_dom, &computed) {
@@ -69,11 +73,11 @@ fn build_style_tree_from_computed_styles_rejects_mismatched_document_style() {
 
 #[test]
 fn build_style_tree_from_computed_styles_rejects_selector_identity_mismatch() {
-    let dom = element(
+    let dom = document(element(
         "div",
         Vec::new(),
         vec![element("span", Vec::new(), Vec::new())],
-    );
+    ));
     let mut computed = compute_document_styles(&dom, &[]).expect("computed document");
     let expected = computed.entries[1].selector_element_id;
     let actual = computed.entries[0].selector_element_id;
@@ -96,8 +100,13 @@ fn build_style_tree_from_computed_styles_rejects_selector_identity_mismatch() {
 
 #[test]
 fn build_style_tree_from_computed_styles_rejects_namespace_mismatch() {
-    let source_dom = element("div", Vec::new(), Vec::new());
-    let target_dom = namespaced_element(html::ElementNamespace::Svg, "div", Vec::new(), Vec::new());
+    let source_dom = document(element("div", Vec::new(), Vec::new()));
+    let target_dom = document(namespaced_element(
+        html::ElementNamespace::Svg,
+        "div",
+        Vec::new(),
+        Vec::new(),
+    ));
     let computed = compute_document_styles(&source_dom, &[]).expect("computed document");
 
     let error = match build_style_tree_from_computed_styles(&target_dom, &computed) {
@@ -118,7 +127,7 @@ fn build_style_tree_from_computed_styles_rejects_namespace_mismatch() {
 #[test]
 fn template_host_is_styled_while_template_contents_are_excluded() {
     let inert_span = element("span", vec![("class", Some("inert"))], Vec::new());
-    let dom = html::internal::template_element_from_parts(
+    let dom = document(html::internal::template_element_from_parts(
         Id(1),
         html::internal::html_name("template"),
         Vec::new(),
@@ -126,7 +135,7 @@ fn template_host_is_styled_while_template_contents_are_excluded() {
         Id(2),
         vec![inert_span],
         Vec::new(),
-    );
+    ));
     let stylesheets = vec![stylesheet(
         "template { color: blue; } span.inert { width: 99px; }",
     )];
@@ -138,9 +147,10 @@ fn template_host_is_styled_while_template_contents_are_excluded() {
         "selector indexing must not cross the template-contents association"
     );
     let styled = build_style_tree_with_stylesheets(&dom, &stylesheets).expect("styled template");
-    assert_eq!(styled.style.color(), (0, 0, 255, 255));
+    let styled_template = &styled.children[0];
+    assert_eq!(styled_template.style.color(), (0, 0, 255, 255));
     assert!(
-        styled.children.is_empty(),
+        styled_template.children.is_empty(),
         "active style-tree construction must exclude fragment descendants"
     );
 }

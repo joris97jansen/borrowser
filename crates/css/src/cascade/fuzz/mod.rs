@@ -189,7 +189,8 @@ pub fn run_seeded_cascade_fuzz_case(
                 digest,
             });
         }
-        Err(error @ StyleResolutionError::MatchingEnvironmentMismatch { .. })
+        Err(error @ StyleResolutionError::SelectorDomBuild(_))
+        | Err(error @ StyleResolutionError::MatchingEnvironmentMismatch { .. })
         | Err(error @ StyleResolutionError::UnsupportedConfiguration { .. })
         | Err(error @ StyleResolutionError::RuleInputBuild(_)) => {
             return Err(CssCascadeFuzzError::StyleResolutionInvariant {

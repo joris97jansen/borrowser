@@ -3,12 +3,15 @@ use super::declarations::{
     inline_style_declaration_inputs_from_model, stylesheet_declaration_inputs, u32_index,
 };
 use super::limits::{StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits};
-use super::source::StylesheetCascadeInput;
+use super::source::{StylesheetCascadeInput, get_inline_style};
 use crate::model;
-use crate::selectors::{SelectorDomElementId, SelectorDomIndex, SelectorMatchingContext};
+use crate::selectors::{
+    SelectorDomElementId, SelectorDomIndex, SelectorMatchDom, SelectorMatchingContext,
+};
 use crate::syntax::ParseOptions;
 
 pub(super) fn rule_inputs_for_element_with_limits(
+    dom: &SelectorDomIndex<'_>,
     context: &SelectorMatchingContext<'_, SelectorDomIndex<'_>>,
     element: SelectorDomElementId,
     sheets: &[model::StylesheetParse],
@@ -18,10 +21,11 @@ pub(super) fn rule_inputs_for_element_with_limits(
         .iter()
         .map(StylesheetCascadeInput::author)
         .collect::<Vec<_>>();
-    rule_inputs_for_element_from_cascade_inputs_with_limits(context, element, &inputs, limits)
+    rule_inputs_for_element_from_cascade_inputs_with_limits(dom, context, element, &inputs, limits)
 }
 
 pub(super) fn rule_inputs_for_element_from_cascade_inputs_with_limits(
+    dom: &SelectorDomIndex<'_>,
     context: &SelectorMatchingContext<'_, SelectorDomIndex<'_>>,
     element: SelectorDomElementId,
     sheets: &[StylesheetCascadeInput<'_>],
@@ -101,7 +105,8 @@ pub(super) fn rule_inputs_for_element_from_cascade_inputs_with_limits(
 
     let inline_rule_order = rule_order;
 
-    if let Some(inline_style) = context.attribute_value(element, "style")
+    if let Some(inline_style) =
+        get_inline_style(dom.element_namespace(element), dom.attributes(element))
         && let Some(rule_input) =
             inline_style_rule_input(element, inline_rule_order, inline_style, limits)?
     {

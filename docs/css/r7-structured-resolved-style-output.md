@@ -1,6 +1,6 @@
 # R7: Structured Resolved-Style Output
 
-Last updated: 2026-04-17  
+Last updated: 2026-08-15
 Status: contract and code implemented
 
 This document is the source-of-truth contract for Milestone R issue 7:
@@ -30,10 +30,17 @@ R7 introduces the document-level structured cascade output:
 - `try_resolve_document_styles_with_limits(root, matching_environment, ...)`
 
 `resolve_document_styles(...)` is now the core cascade integration path for a
-DOM root, an explicit CSS-owned `SelectorMatchingEnvironment`, and an ordered
-stylesheet list. It returns
+`Node::Document`, an explicit CSS-owned `SelectorMatchingEnvironment`, and an
+ordered stylesheet list. It returns
 `Result<ResolvedDocumentStyle, StyleResolutionError>`, preserves hardening
 failures explicitly, and does not mutate `html::Node`.
+
+AF4b removes generic root inference. These authoritative entry points use
+fallible document projection construction. Invalid root kind, nested document,
+ambiguous document-element identity, selector-ID exhaustion, and reported
+projection capacity/reservation failures propagate through
+`StyleResolutionError::SelectorDomBuild`. The styled-element limit retains its
+separate `LimitExceeded(StyledElementsPerDocument)` meaning.
 
 All cascade entry points that initiate selector matching require the matching
 environment explicitly. There is no environment-less or default semantic
@@ -49,6 +56,12 @@ legacy projection and compatibility downgrade path:
    behavior
 4. clear legacy projected style vectors instead of fabricating a resolved-style
    result when document style resolution fails
+
+The bridge keeps its unit return type. For historical compatibility it chooses
+the explicit document constructor for document input and explicit element-
+subtree construction for element input. Leaf roots and any build, resolution,
+or projection failure clear stale vectors. This is a deliberate compatibility
+exception; authoritative R7 APIs always expose typed failures.
 
 Cascade winner selection, inheritance, and defaulting no longer depend on that
 mutation path.
@@ -84,7 +97,9 @@ For each element in selector-DOM document order, R7 performs:
 1. match each model stylesheet style rule against the element through
    `SelectorMatchingContext` carrying the explicit matching environment
 2. materialize matched stylesheet declarations as `CascadeRuleInput`
-3. materialize the element's inline `style` attribute as an inline
+3. independently consume ordered neutral selector-DOM attribute facts through
+   the CSS-wide effective-attribute helper and materialize the element's inline
+   `style` attribute as an inline
    `CascadeRuleInput`
 4. resolve authored winners into `CascadeWinnerSet`
 5. resolve inheritance/default fill into `ResolvedStyle`

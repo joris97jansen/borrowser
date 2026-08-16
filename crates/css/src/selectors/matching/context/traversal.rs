@@ -39,3 +39,43 @@ impl<D: SelectorMatchDom> Iterator for PreviousSiblingElements<'_, D> {
         (0, None)
     }
 }
+
+/// Nearest-first following-sibling iterator for selector DOM queries.
+pub struct NextSiblingElements<'a, D: SelectorMatchDom> {
+    pub(super) dom: &'a D,
+    pub(super) next: Option<D::ElementId>,
+}
+
+impl<D: SelectorMatchDom> Iterator for NextSiblingElements<'_, D> {
+    type Item = D::ElementId;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let current = self.next?;
+        self.next = self.dom.next_sibling_element(current);
+        Some(current)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, None)
+    }
+}
+
+/// Ordinary direct element children in forward sibling order.
+pub struct ElementChildren<'a, D: SelectorMatchDom> {
+    pub(super) dom: &'a D,
+    pub(super) next: Option<D::ElementId>,
+}
+
+impl<D: SelectorMatchDom> Iterator for ElementChildren<'_, D> {
+    type Item = D::ElementId;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let current = self.next?;
+        self.next = self.dom.next_sibling_element(current);
+        Some(current)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, None)
+    }
+}

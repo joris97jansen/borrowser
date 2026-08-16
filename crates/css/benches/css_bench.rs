@@ -44,7 +44,8 @@ fn bench_selector_matching_representative_dom(c: &mut Criterion) {
             perf_fixtures::representative_element_count(blocks) as u64,
         ));
         group.bench_with_input(BenchmarkId::from_parameter(blocks), &dom, |b, dom| {
-            let index = SelectorDomIndex::from_root(dom);
+            let index = SelectorDomIndex::try_from_document(dom)
+                .expect("valid representative selector DOM");
             let context = SelectorMatchingContext::new(
                 &index,
                 SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks),
