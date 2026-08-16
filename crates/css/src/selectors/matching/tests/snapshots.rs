@@ -1,7 +1,113 @@
 use super::support::{
-    assert_matching_debug_snapshot, assert_matching_debug_snapshot_with_limits, doc, element,
+    assert_matching_debug_snapshot, assert_matching_debug_snapshot_with_environment,
+    assert_matching_debug_snapshot_with_limits, doc, element,
 };
-use crate::selectors::SelectorMatchingLimits;
+use crate::selectors::{SelectorMatchingEnvironment, SelectorMatchingLimits};
+use html::DocumentMode;
+
+#[test]
+fn selector_matching_debug_snapshot_records_host_language_mode_results_without_schema_drift() {
+    let selector_source = "#hero, .card, [id=\"hero\"], [class~=\"card\"], [type=\"button\"]";
+    let dom = || {
+        doc(vec![element(
+            "div",
+            vec![
+                ("id", Some("Hero")),
+                ("class", Some("Card")),
+                ("type", Some("BUTTON")),
+            ],
+            Vec::new(),
+        )])
+    };
+
+    assert_matching_debug_snapshot_with_environment(
+        dom(),
+        selector_source,
+        SelectorMatchingEnvironment::new(DocumentMode::NoQuirks),
+        concat!(
+            "version: 3\n",
+            "selector-matching\n",
+            "matching-environment: document-mode=no-quirks\n",
+            "selectors:\n",
+            "  result: parsed\n",
+            "  span: @0..60\n",
+            "  selector[0] @0..5 specificity=(1,0,0)\n",
+            "    compound[0] @0..5 specificity=(1,0,0)\n",
+            "      - id(\"hero\") node=@0..5 name=@1..5\n",
+            "  selector[1] @7..12 specificity=(0,1,0)\n",
+            "    compound[0] @7..12 specificity=(0,1,0)\n",
+            "      - class(\"card\") node=@7..12 name=@8..12\n",
+            "  selector[2] @14..25 specificity=(0,1,0)\n",
+            "    compound[0] @14..25 specificity=(0,1,0)\n",
+            "      - attribute-match(name=\"id\", name_span=@15..17, matcher=exact, value=string(\"hero\", span=@19..23)) node=@14..25\n",
+            "  selector[3] @27..42 specificity=(0,1,0)\n",
+            "    compound[0] @27..42 specificity=(0,1,0)\n",
+            "      - attribute-match(name=\"class\", name_span=@28..33, matcher=includes, value=string(\"card\", span=@36..40)) node=@27..42\n",
+            "  selector[4] @44..59 specificity=(0,1,0)\n",
+            "    compound[0] @44..59 specificity=(0,1,0)\n",
+            "      - attribute-match(name=\"type\", name_span=@45..49, matcher=exact, value=string(\"button\", span=@51..57)) node=@44..59\n",
+            "dom:\n",
+            "  projection: document\n",
+            "  document-element: 1\n",
+            "  elements: 1\n",
+            "  element[0]: id=1 namespace=html local=\"div\" parent=none prev-sibling=none next-sibling=none first-child=none\n",
+            "    attribute[0]: namespace=none local=\"id\" value=\"Hero\"\n",
+            "    attribute[1]: namespace=none local=\"class\" value=\"Card\"\n",
+            "    attribute[2]: namespace=none local=\"type\" value=\"BUTTON\"\n",
+            "matches:\n",
+            "  target[0]: element=1 name=\"div\"\n",
+            "    matchability: parsed\n",
+            "    matched: yes\n",
+            "    highest-specificity: (0,1,0)\n",
+            "    match[0]: selector=4 specificity=(0,1,0)\n",
+        ),
+    );
+
+    assert_matching_debug_snapshot_with_environment(
+        dom(),
+        selector_source,
+        SelectorMatchingEnvironment::new(DocumentMode::Quirks),
+        concat!(
+            "version: 3\n",
+            "selector-matching\n",
+            "matching-environment: document-mode=quirks\n",
+            "selectors:\n",
+            "  result: parsed\n",
+            "  span: @0..60\n",
+            "  selector[0] @0..5 specificity=(1,0,0)\n",
+            "    compound[0] @0..5 specificity=(1,0,0)\n",
+            "      - id(\"hero\") node=@0..5 name=@1..5\n",
+            "  selector[1] @7..12 specificity=(0,1,0)\n",
+            "    compound[0] @7..12 specificity=(0,1,0)\n",
+            "      - class(\"card\") node=@7..12 name=@8..12\n",
+            "  selector[2] @14..25 specificity=(0,1,0)\n",
+            "    compound[0] @14..25 specificity=(0,1,0)\n",
+            "      - attribute-match(name=\"id\", name_span=@15..17, matcher=exact, value=string(\"hero\", span=@19..23)) node=@14..25\n",
+            "  selector[3] @27..42 specificity=(0,1,0)\n",
+            "    compound[0] @27..42 specificity=(0,1,0)\n",
+            "      - attribute-match(name=\"class\", name_span=@28..33, matcher=includes, value=string(\"card\", span=@36..40)) node=@27..42\n",
+            "  selector[4] @44..59 specificity=(0,1,0)\n",
+            "    compound[0] @44..59 specificity=(0,1,0)\n",
+            "      - attribute-match(name=\"type\", name_span=@45..49, matcher=exact, value=string(\"button\", span=@51..57)) node=@44..59\n",
+            "dom:\n",
+            "  projection: document\n",
+            "  document-element: 1\n",
+            "  elements: 1\n",
+            "  element[0]: id=1 namespace=html local=\"div\" parent=none prev-sibling=none next-sibling=none first-child=none\n",
+            "    attribute[0]: namespace=none local=\"id\" value=\"Hero\"\n",
+            "    attribute[1]: namespace=none local=\"class\" value=\"Card\"\n",
+            "    attribute[2]: namespace=none local=\"type\" value=\"BUTTON\"\n",
+            "matches:\n",
+            "  target[0]: element=1 name=\"div\"\n",
+            "    matchability: parsed\n",
+            "    matched: yes\n",
+            "    highest-specificity: (1,0,0)\n",
+            "    match[0]: selector=0 specificity=(1,0,0)\n",
+            "    match[1]: selector=1 specificity=(0,1,0)\n",
+            "    match[2]: selector=4 specificity=(0,1,0)\n",
+        ),
+    );
+}
 
 #[test]
 fn selector_matching_debug_snapshot_is_stable_for_simple_selector_cases() {

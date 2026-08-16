@@ -1,6 +1,6 @@
 # Q1: Define Selector Matching Architecture And DOM Contract
 
-Last updated: 2026-08-15
+Last updated: 2026-08-16
 Status: architecture contract implemented
 
 This document is the source-of-truth contract for Milestone Q issue 1:
@@ -32,6 +32,7 @@ Related documents:
 - `docs/css/p6-unsupported-selector-handling.md`
 - `docs/css/p8-selector-model-integration.md`
 - `docs/css/af4b-selector-dom-query-contract.md`
+- `docs/css/af4c-html-host-language-selector-comparison.md`
 - `docs/html5/node-identity-contract.md`
 
 ## Implemented Result
@@ -181,11 +182,11 @@ For Borrowser's current parser-created DOM:
 - HTML element names have ASCII uppercase folded while non-ASCII is preserved
 - foreign element local names retain their canonical namespace-specific case
 - attributes are exposed as ordered namespace/local-name/value facts
-- CSS applies HTML ASCII-insensitive versus foreign exact selector attribute-
-  name policy
-- attribute-value comparison for the Milestone Q supported selector subset is
-  exact and case-sensitive unless a later selector feature explicitly changes
-  that rule
+- for HTML type and unqualified attribute names, CSS ASCII-lowercases only the
+  selector/request-side name and then compares identically to the exact actual
+  name; foreign names compare exactly
+- CSS applies document-mode-aware ID/class value comparison and HTML default
+  attribute-value comparison as refined by AF4c
 - CSS selects the first matching unqualified attribute in provider order for
   the currently supported selector subset
 
@@ -207,6 +208,14 @@ upstream invariant violation rather than silently normalizing them.
 The provider does not collapse attributes or decide whether a selector-provided
 name matches a stored name. ID equality, class tokenization, attribute
 operators, and selector name comparison remain CSS semantics.
+
+AF4c further requires CSS to keep asymmetric document-name matching distinct
+from symmetric sensitive/ASCII-insensitive value comparison. Attribute-value
+policy is selected from the complete effective attribute's semantic identity,
+not from raw authored selector spelling, and operator execution receives an
+already selected value policy. See
+`docs/css/af4c-html-host-language-selector-comparison.md` for the current
+parser-created HTML-document contract and its XML/escape exclusions.
 
 ## Matching Contract
 
@@ -392,9 +401,10 @@ through HTML, Browser/runtime, Layout, Paint, or generic DOM providers.
 ### AE11 namespace refinement
 
 AE11 adds `element_namespace` to `SelectorMatchDom` and carries the canonical
-HTML/SVG/MathML namespace through `SelectorDomIndex`. HTML type names retain
-ASCII-insensitive matching; foreign canonical names are case-sensitive.
-Unprefixed attribute selectors query only no-namespace attributes.
+HTML/SVG/MathML namespace through `SelectorDomIndex`. For HTML type names, CSS
+ASCII-lowercases the selector side and compares identically to the exact actual
+name; foreign canonical names are case-sensitive. Unprefixed attribute
+selectors query only no-namespace attributes.
 
 Author selectors remain unconstrained under the currently supported
 no-default-namespace semantics. Internal UA rule groups may provide

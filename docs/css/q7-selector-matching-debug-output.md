@@ -1,6 +1,6 @@
 # Q7: Add Deterministic Selector Matching Debug Output And Regression Coverage
 
-Last updated: 2026-08-15
+Last updated: 2026-08-16
 Status: implemented
 
 This document is the source-of-truth contract for Milestone Q issue 7:
@@ -19,6 +19,7 @@ Related documents:
 - `docs/css/q5-combinator-complex-selector-matching.md`
 - `docs/css/q6-validity-specificity-match-results.md`
 - `docs/css/af4b-selector-dom-query-contract.md`
+- `docs/css/af4c-html-host-language-selector-comparison.md`
 
 ## Implemented Result
 
@@ -74,6 +75,14 @@ attributes, and exact owner-grouped direct text.
 This keeps the debug surface aligned with the internal selector subsystem
 models rather than inventing a separate ad hoc representation.
 
+AF4c changes environment-dependent match outcomes without changing the
+snapshot schema. In particular, otherwise equivalent NoQuirks/LimitedQuirks
+and Quirks cases may differ for `#id` and `.class`, while `[id...]` and
+`[class...]` continue to follow attribute-selector value policy. HTML default
+attribute-value policy may likewise change a match outcome. These are semantic
+changes represented by existing outcome fields, so the integrated snapshot
+remains `version: 3`.
+
 ## Determinism Requirements
 
 Q7 snapshot output is deterministic by contract:
@@ -105,6 +114,8 @@ Q7 adds exact-snapshot regression tests for representative cases:
 - complex selector matching with combinator traversal
 - invalid selector input propagated through the integrated debug surface
 - unsupported selector input propagated through the integrated debug surface
+- representative AF4c NoQuirks-versus-Quirks outcomes that demonstrate ID/
+  class behavior without attribute-selector leakage
 
 These tests are intentionally exact string snapshots so future matcher work
 cannot silently change debug behavior or output ordering.

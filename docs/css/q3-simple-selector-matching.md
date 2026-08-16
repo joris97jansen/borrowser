@@ -1,6 +1,6 @@
 # Q3: Implement Simple Selector Matching
 
-Last updated: 2026-08-15
+Last updated: 2026-08-16
 Status: implemented
 
 This document is the source-of-truth contract for Milestone Q issue 3:
@@ -12,6 +12,8 @@ Historical note:
 - this document records the Q3 landing scope
 - Q5 later extended the same matcher entrypoint to full complex-selector
   traversal for the supported selector IR
+- AF4c later refined comparison policy for the same supported syntax without
+  changing the selector IR, specificity, or serialization
 
 Related code:
 - `crates/css/src/selectors/matching.rs`
@@ -20,6 +22,7 @@ Related documents:
 - `docs/css/q1-selector-matching-architecture.md`
 - `docs/css/q2-selector-matching-context.md`
 - `docs/css/af4b-selector-dom-query-contract.md`
+- `docs/css/af4c-html-host-language-selector-comparison.md`
 - `docs/css/p2-selector-ir-data-structures.md`
 
 ## Implemented Result
@@ -89,6 +92,13 @@ policy, ID equality, CSS-whitespace class tokenization, and every supported
 attribute operator. A DOM provider does not implement `matches_id_selector`,
 `matches_class_selector`, `has_attribute`, or selector-keyed
 `attribute_value` behavior.
+
+AF4c refines how those existing selector classes compare parser-created HTML
+facts. CSS separates asymmetric selector-side name normalization from symmetric
+value comparison, selects Quirks-only ID/class value policy from the matching
+environment, and selects HTML attribute-value policy from the complete
+effective attribute identity before executing an operator. These refinements
+add no selector grammar and do not change match-result or specificity shape.
 
 `match_selector_list(...)` evaluates one selector list against one target
 element and returns an explicit result or selector-matching limit error:

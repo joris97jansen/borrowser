@@ -39,6 +39,15 @@ The allocation guards are opt-in because they install a test-local global
 allocator. They measure allocation events, allocation growth bytes, and realloc
 events for representative parse and style-resolution workloads.
 
+AF4c also includes a focused selector-comparison guard. Parsing, DOM and
+selector construction, selector-DOM projection, context construction, and any
+match-result vectors occur before measurement. The measured region repeatedly
+calls `matches_compound_selector(...)`, observably consumes the successful
+match count, and requires exactly zero allocation events, allocated bytes, and
+reallocation events. This directly protects the borrowed host-language name,
+ID/class value, and attribute-operator hot path rather than relying on the
+broader whole-style-resolution thresholds.
+
 Current U6 scope:
 
 - Benchmarks cover CSS parsing, selector matching, and integrated style
@@ -46,6 +55,8 @@ Current U6 scope:
 - Smoke perf guards are deterministic and run under normal `cargo test -p css`.
 - Heavy guards are deterministic and feature-gated behind `perf-tests`.
 - Allocation guards are feature-gated behind `count-alloc`.
+- Host-language selector comparison has an exact-zero focused allocation guard;
+  broader parse/style guards retain conservative workload-relative thresholds.
 - Thresholds are intentionally conservative bounds, not browser-grade
   optimization targets.
 

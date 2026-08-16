@@ -1,6 +1,6 @@
 # AF4a document matching environment contract
 
-Last updated: 2026-08-15
+Last updated: 2026-08-16
 
 AF4a propagates the HTML parser's selected `DocumentMode` to CSS selector
 evaluation. HTML owns mode selection; runtime and Browser transport and retain
@@ -46,8 +46,17 @@ to produce them. Incremental reuse rejects an environment mismatch before
 reusing prior CSS results. Browser cache eligibility remains separate from this
 CSS semantic validity check.
 
-AF4a does not implement quirks-mode ID/class comparison or complete historical
-DOCTYPE classification.
+AF4a itself did not implement quirks-mode ID/class comparison. AF4c now
+consumes this environment inside CSS and selects ASCII-insensitive ID/class
+value comparison only for `DocumentMode::Quirks`; `NoQuirks` and
+`LimitedQuirks` remain sensitive. Complete historical DOCTYPE classification
+remains deferred.
+
+AF4c does not broaden the environment. Host-language name and attribute-value
+policy is selected from exact selector-DOM namespace/attribute facts, while
+ID/class policy consumes the existing mode. Browser/runtime still transports
+and retains mode without learning selector comparison semantics. See
+`docs/css/af4c-html-host-language-selector-comparison.md`.
 
 ## AF4b projection relationship
 
