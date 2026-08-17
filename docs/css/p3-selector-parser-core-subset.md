@@ -29,6 +29,8 @@ The implemented parser supports:
 - id selectors
 - universal selectors
 - attribute selectors for the supported subset
+- AF4d tree-structural pseudos: `:root`, `:empty`, `:first-child`,
+  `:last-child`, and `:only-child`
 - compound selectors
 - selector lists
 - descendant, child, next-sibling, and subsequent-sibling combinators
@@ -36,7 +38,7 @@ The implemented parser supports:
 The parser also classifies unsupported features explicitly, including:
 
 - namespaces
-- pseudo-classes
+- pseudo-classes outside the AF4d tree-structural subset
 - functional pseudo-classes
 - pseudo-elements
 - nesting selector `&`

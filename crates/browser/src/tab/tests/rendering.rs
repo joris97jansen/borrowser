@@ -29,7 +29,7 @@ fn ui_content_consumes_pending_render_work_through_explicit_orchestration_path()
         tab.pending_render_work
             .requests()
             .iter()
-            .map(|request| request.entry_point)
+            .map(|request| request.entry_point())
             .collect::<Vec<_>>(),
         vec![
             RenderInvalidationEntryPoint::StylesheetSetChanged,

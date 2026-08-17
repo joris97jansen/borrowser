@@ -130,7 +130,7 @@ Milestone AF foundation status:
 - AF2 completes the existing Milestone P selector AST/parser foundation and
   adds CSS-owned selector diagnostic normalization plus model-boundary
   projection into the shared syntax diagnostic transport. AF2 does not claim
-  broad selector coverage, pseudo-class or pseudo-element support, namespace
+  broad selector coverage, tree-structural pseudo-class or pseudo-element support, namespace
   selectors, selector matching conformance, selector dependency invalidation,
   media queries, custom properties, animations, transitions, CSSOM,
   `getComputedStyle()`, or JavaScript-facing style mutation; see
@@ -156,6 +156,16 @@ Milestone AF foundation status:
   invalidation expansion, Layout/Paint behavior, JavaScript DOM mutation,
   caches, or broad HTML validation. Milestone AF and broad selector conformance
   are not complete.
+- AF4d implements the typed Selectors Level 4 tree-structural subset `:root`,
+  `:empty`, `:first-child`, `:last-child`, and `:only-child`; see
+  `docs/css/af4d-tree-structural-pseudo-class-matching.md`. It includes
+  ASCII-case-insensitive keyword classification, legacy single-colon
+  pseudo-element diagnostics, truthful A/B/C specificity, parser-backed
+  matching, and conservative full-document text invalidation. Browser advances
+  its retained style-input generation only when CSS returns `Some(plan)`, while
+  text remains independent direct Layout input. Dynamic/functional pseudos,
+  pseudo-elements, selector escape decoding, dependency indexing, and
+  fine-grained text invalidation remain gaps.
 - AF4c implements CSS-owned HTML host-language comparison for the already
   supported selector subset; see
   `docs/css/af4c-html-host-language-selector-comparison.md`. HTML type and

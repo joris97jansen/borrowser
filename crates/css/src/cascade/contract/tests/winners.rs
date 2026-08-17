@@ -14,7 +14,7 @@ use crate::selectors::Specificity;
 fn cascade_candidate_sort_key_is_property_first_then_priority() {
     let author_rule = CascadeRuleContext::new(
         CascadeOrigin::Author,
-        CascadeSpecificity::Selector(Specificity::TYPE),
+        CascadeSpecificity::Selector(Specificity::C),
         4,
     );
     let inline_style = InlineStyleRuleRef::new(3);
@@ -77,7 +77,7 @@ fn cascade_candidate_sort_key_is_property_first_then_priority() {
 fn cascade_candidate_sorting_preserves_incoming_order_for_equal_keys() {
     let context = CascadeRuleContext::new(
         CascadeOrigin::Author,
-        CascadeSpecificity::Selector(Specificity::CLASS),
+        CascadeSpecificity::Selector(Specificity::B),
         4,
     );
     let mut candidates = vec![
@@ -118,7 +118,7 @@ fn cascade_winner_resolution_prefers_higher_specificity_over_later_rule_order() 
     )
     .candidate(CascadeRuleContext::new(
         CascadeOrigin::Author,
-        CascadeSpecificity::Selector(Specificity::CLASS),
+        CascadeSpecificity::Selector(Specificity::B),
         0,
     ))
     .expect("supported candidate");
@@ -131,7 +131,7 @@ fn cascade_winner_resolution_prefers_higher_specificity_over_later_rule_order() 
     )
     .candidate(CascadeRuleContext::new(
         CascadeOrigin::Author,
-        CascadeSpecificity::Selector(Specificity::TYPE),
+        CascadeSpecificity::Selector(Specificity::C),
         10,
     ))
     .expect("supported candidate");
@@ -142,7 +142,7 @@ fn cascade_winner_resolution_prefers_higher_specificity_over_later_rule_order() 
     assert_eq!(winner.value.to_css_text().as_deref(), Some("red"));
     assert_eq!(
         winner.priority.specificity,
-        CascadeSpecificity::Selector(Specificity::CLASS)
+        CascadeSpecificity::Selector(Specificity::B)
     );
     assert_eq!(winner.priority.rule_order, 0);
 }
@@ -158,7 +158,7 @@ fn cascade_winner_resolution_prefers_author_over_user_over_user_agent_in_current
     )
     .candidate(CascadeRuleContext::new(
         CascadeOrigin::UserAgent,
-        CascadeSpecificity::Selector(Specificity::TYPE),
+        CascadeSpecificity::Selector(Specificity::C),
         0,
     ))
     .expect("supported candidate");
@@ -171,7 +171,7 @@ fn cascade_winner_resolution_prefers_author_over_user_over_user_agent_in_current
     )
     .candidate(CascadeRuleContext::new(
         CascadeOrigin::User,
-        CascadeSpecificity::Selector(Specificity::TYPE),
+        CascadeSpecificity::Selector(Specificity::C),
         0,
     ))
     .expect("supported candidate");
@@ -184,7 +184,7 @@ fn cascade_winner_resolution_prefers_author_over_user_over_user_agent_in_current
     )
     .candidate(CascadeRuleContext::new(
         CascadeOrigin::Author,
-        CascadeSpecificity::Selector(Specificity::TYPE),
+        CascadeSpecificity::Selector(Specificity::C),
         0,
     ))
     .expect("supported candidate");
@@ -223,7 +223,7 @@ fn cascade_winner_resolution_prefers_important_band_over_higher_specificity_norm
     )
     .candidate(CascadeRuleContext::new(
         CascadeOrigin::Author,
-        CascadeSpecificity::Selector(Specificity::TYPE),
+        CascadeSpecificity::Selector(Specificity::C),
         0,
     ))
     .expect("supported candidate");
@@ -262,7 +262,7 @@ fn cascade_winner_resolution_prefers_user_important_over_author_important_in_cur
     )
     .candidate(CascadeRuleContext::new(
         CascadeOrigin::User,
-        CascadeSpecificity::Selector(Specificity::TYPE),
+        CascadeSpecificity::Selector(Specificity::C),
         0,
     ))
     .expect("supported candidate");
@@ -280,7 +280,7 @@ fn cascade_winner_resolution_prefers_user_important_over_author_important_in_cur
 #[test]
 fn cascade_winner_resolution_prefers_later_rule_order_when_specificity_ties() {
     let earlier_rule = CascadeRuleInput::from_stylesheet_match(
-        &matched_rule(0, 0, &[Specificity::CLASS]),
+        &matched_rule(0, 0, &[Specificity::B]),
         CascadeOrigin::Author,
         0,
         vec![CascadeDeclarationInput::supported(
@@ -294,7 +294,7 @@ fn cascade_winner_resolution_prefers_later_rule_order_when_specificity_ties() {
     .expect("valid rule")
     .expect("matching rule");
     let later_rule = CascadeRuleInput::from_stylesheet_match(
-        &matched_rule(0, 1, &[Specificity::CLASS]),
+        &matched_rule(0, 1, &[Specificity::B]),
         CascadeOrigin::Author,
         1,
         vec![CascadeDeclarationInput::supported(
@@ -318,7 +318,7 @@ fn cascade_winner_resolution_prefers_later_rule_order_when_specificity_ties() {
 #[test]
 fn cascade_winner_resolution_prefers_later_declaration_order_within_one_rule() {
     let rule = CascadeRuleInput::from_stylesheet_match(
-        &matched_rule(0, 0, &[Specificity::TYPE]),
+        &matched_rule(0, 0, &[Specificity::C]),
         CascadeOrigin::Author,
         0,
         vec![
@@ -351,7 +351,7 @@ fn cascade_winner_resolution_prefers_later_declaration_order_within_one_rule() {
 #[test]
 fn cascade_winner_resolution_orders_css_wide_keywords_like_other_supported_values() {
     let rule = CascadeRuleInput::from_stylesheet_match(
-        &matched_rule(0, 0, &[Specificity::TYPE]),
+        &matched_rule(0, 0, &[Specificity::C]),
         CascadeOrigin::Author,
         0,
         vec![
@@ -450,7 +450,7 @@ fn cascade_winner_resolution_ignores_unsupported_custom_and_invalid_declarations
 fn cascade_winner_resolution_uses_later_input_for_equal_candidate_keys() {
     let context = CascadeRuleContext::new(
         CascadeOrigin::Author,
-        CascadeSpecificity::Selector(Specificity::CLASS),
+        CascadeSpecificity::Selector(Specificity::B),
         4,
     );
     let first = CascadeDeclarationInput::supported(
@@ -494,7 +494,7 @@ fn cascade_winner_set_is_property_sorted_and_snapshot_stable() {
         )
         .candidate(CascadeRuleContext::new(
             CascadeOrigin::Author,
-            CascadeSpecificity::Selector(Specificity::TYPE),
+            CascadeSpecificity::Selector(Specificity::C),
             0,
         ))
         .expect("supported candidate"),

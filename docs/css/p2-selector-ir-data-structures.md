@@ -79,3 +79,8 @@ Repository status:
   IR and wire `SelectorListParseResult` into the rule/model path
 - matching and cascade winner resolution remain intentionally out of scope for
   P2 and are separate downstream consumers
+
+AF4d extends this permanent IR rather than creating a parallel pseudo tree:
+`SubclassSelector` now includes a span-bearing
+`TreeStructuralPseudoClassSelector` whose semantic enum covers the five
+supported tree-structural pseudos.

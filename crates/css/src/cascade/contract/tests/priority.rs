@@ -85,13 +85,13 @@ fn current_scope_priority_bands_map_origin_and_importance_explicitly() {
 fn cascade_priority_current_scope_band_is_an_inspection_helper_for_future_bands() {
     let current_scope_priority = CascadePriority::new(
         CascadeOriginBand::AuthorNormal,
-        CascadeSpecificity::Selector(Specificity::TYPE),
+        CascadeSpecificity::Selector(Specificity::C),
         0,
         0,
     );
     let animation_priority = CascadePriority::new(
         CascadeOriginBand::Animation,
-        CascadeSpecificity::Selector(Specificity::TYPE),
+        CascadeSpecificity::Selector(Specificity::C),
         0,
         0,
     );

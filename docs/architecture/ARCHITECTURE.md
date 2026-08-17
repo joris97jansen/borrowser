@@ -247,12 +247,17 @@ Template-associated fragment contents remain outside the host's ordinary child
 axis through HTML's typed association.
 
 CSS owns attribute-name/value comparison, ID/class semantics, selector
-matching, and later pseudo-class meaning. Source DOM identity is only mapped to
+matching, and typed tree-structural pseudo-class meaning. Source DOM identity is only mapped to
 the distinct CSS-local `SelectorDomElementId`; patch and retained-render IDs are
 not reused. Nested documents, ambiguous direct document elements, canonical-
 name violations, selector-ID exhaustion, and reported capacity/reservation
 failures are typed projection errors. See
 `docs/css/af4b-selector-dom-query-contract.md`.
+
+AF4d adds `:root`, `:empty`, `:first-child`, `:last-child`, and `:only-child`
+through that boundary. Text mutations are neutral Browser facts classified by
+CSS; only `Some(StyleInvalidationPlan)` advances the retained style-input
+generation. The direct text-to-Layout path remains independent.
 
 ### 3. **Cascade**
 

@@ -1,7 +1,8 @@
 use crate::page::{PageState, RestyleHint};
 use crate::rendering::{
-    PendingRenderWork, RenderArtifact, RenderArtifactOwnershipContract,
-    RenderInvalidationEntryPoint, render_invalidation_request,
+    CssStyleInvalidationSource, PendingRenderWork, RenderArtifact, RenderArtifactOwnershipContract,
+    RenderInvalidationEntryPoint, render_css_style_invalidation_request,
+    render_invalidation_request,
 };
 use css::Display;
 use html::{HtmlParseOptions, Node, parse_document};
@@ -430,11 +431,13 @@ impl TextMeasurer for FixedTextMeasurer {
 
 pub(super) fn pending_for_simple_text_flow() -> PendingRenderWork {
     let mut pending = PendingRenderWork::default();
-    pending.push(render_invalidation_request(
-        RenderInvalidationEntryPoint::DocumentReplaced,
+    pending.push(render_css_style_invalidation_request(
+        CssStyleInvalidationSource::DocumentReplaced,
+        true,
     ));
-    pending.push(render_invalidation_request(
-        RenderInvalidationEntryPoint::StylesheetSetChanged,
+    pending.push(render_css_style_invalidation_request(
+        CssStyleInvalidationSource::StylesheetSetChanged,
+        true,
     ));
     pending
 }

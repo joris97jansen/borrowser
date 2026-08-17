@@ -5,6 +5,7 @@ mod compound;
 mod dom;
 mod limits;
 mod list;
+mod pseudo;
 mod queries;
 mod traversal;
 

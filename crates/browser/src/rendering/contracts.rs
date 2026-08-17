@@ -1,8 +1,8 @@
 //! Stable rendering phase, artifact, and extension contracts.
 
 use super::invalidation::{
-    ALL_INVALIDATION_ENTRY_POINTS, LAYOUT_PAINT_INVALIDATION_ENTRY_POINTS,
-    STYLE_LAYOUT_INVALIDATION_ENTRY_POINTS,
+    ALL_INVALIDATION_ENTRY_POINTS, CSS_STYLE_REBUILD_TRIGGERS,
+    LAYOUT_PAINT_INVALIDATION_ENTRY_POINTS, STYLE_LAYOUT_INVALIDATION_ENTRY_POINTS,
 };
 use super::types::{
     RenderArtifact, RenderInvalidationEntryPoint, RenderRebuildTrigger, RenderingPhase,
@@ -77,6 +77,8 @@ const FRAME_ORCHESTRATION_PRODUCES: &[RenderArtifact] =
 const FRAME_ORCHESTRATION_REBUILDS: &[RenderArtifact] = &[RenderArtifact::PaintCommands];
 const FRAME_ORCHESTRATION_TRIGGERS: &[RenderRebuildTrigger] = &[
     RenderRebuildTrigger::StyleOutputsChanged,
+    RenderRebuildTrigger::DomReplaced,
+    RenderRebuildTrigger::DomStructureChanged,
     RenderRebuildTrigger::DomTextChanged,
     RenderRebuildTrigger::ViewportChanged,
     RenderRebuildTrigger::ResourceStateChanged,
@@ -94,12 +96,7 @@ const STYLE_RETAINED: &[RenderArtifact] = &[
     RenderArtifact::ComputedDocumentStyle,
 ];
 const STYLE_REBUILDS: &[RenderArtifact] = &[RenderArtifact::StyledTree];
-const STYLE_TRIGGERS: &[RenderRebuildTrigger] = &[
-    RenderRebuildTrigger::DomReplaced,
-    RenderRebuildTrigger::DomStructureChanged,
-    RenderRebuildTrigger::DomAttributesChanged,
-    RenderRebuildTrigger::StylesheetSetChanged,
-];
+const STYLE_TRIGGERS: &[RenderRebuildTrigger] = &CSS_STYLE_REBUILD_TRIGGERS;
 
 const LAYOUT_CONSUMES: &[RenderArtifact] = &[
     RenderArtifact::StyledTree,
@@ -111,6 +108,8 @@ const LAYOUT_PRODUCES: &[RenderArtifact] = &[RenderArtifact::LayoutTree];
 const LAYOUT_RETAINED: &[RenderArtifact] = &[RenderArtifact::LayoutTree];
 const LAYOUT_TRIGGERS: &[RenderRebuildTrigger] = &[
     RenderRebuildTrigger::StyleOutputsChanged,
+    RenderRebuildTrigger::DomReplaced,
+    RenderRebuildTrigger::DomStructureChanged,
     RenderRebuildTrigger::DomTextChanged,
     RenderRebuildTrigger::ViewportChanged,
     RenderRebuildTrigger::ResourceStateChanged,

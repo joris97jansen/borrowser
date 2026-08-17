@@ -219,15 +219,16 @@ Current trigger behavior:
 | `DocumentReplaced` | navigation snapshot, `Clear`, `CreateDocument` | full style-input invalidation | dirty |
 | `TreeMutated` | create, append, insert, remove, reparent | full style-input invalidation | dirty |
 | `AttributesChanged` | `SetAttributes` | CSS-owned suffix eligibility for materialized identities; full fallback otherwise | dirty |
-| `TextMutated` | `SetText`, `AppendText` | no style-input invalidation by itself in the current supported selector/property model | dirty |
+| `TextMutated` | `SetText`, `AppendText` | CSS classifies `TextChanged`; AF4d currently returns a full-document plan because `:empty` is text-sensitive | dirty independently as direct Layout input |
 | stylesheet reconciliation | `<style>` text change, `<link>` add/remove/order change | stylesheet generation invalidation, full style invalidation | dirty |
 | external stylesheet install/fail/abort/state change | `CssDecodedBlock`, load completion, error, abort | stylesheet generation invalidation, full style invalidation when the active stylesheet set/state changes | dirty |
 
-Text-only DOM changes are classified by CSS as style-neutral under the current
-selector and property model. This contract must widen if future selector or
-generated-content support makes text content style-relevant. If the changed
-text belongs to a `<style>` element, stylesheet reconciliation independently
-detects changed stylesheet input and submits a full CSS-owned plan.
+Text-only DOM changes are conservatively full-restyled under AF4d. A future
+selector dependency index may prove a particular fact style-neutral by
+returning `None`; Browser must then preserve style generation and cache-key
+eligibility. If the changed text belongs to a `<style>` element, stylesheet
+reconciliation independently detects changed stylesheet input and submits a
+full CSS-owned plan.
 
 Empty DOM patch batches are no-ops for DOM/style generations and dirty state.
 
@@ -445,6 +446,16 @@ stable node IDs directly in restyle hints and reconcile stylesheet slots by
 DOM/style-node identity first, with URL/text fallback only for snapshot mode.
 
 ### Selector-Aware Invalidation
+
+AF4d refinement: exact text participates in `:empty`, so `TextChanged`
+currently receives a CSS-owned full-document plan. A neutral mutation fact
+does not advance the Browser style-input generation by itself; only CSS
+returning `Some(plan)` authorizes that transition and generic Style dirtiness.
+`None` preserves cache-key eligibility and any pending plan through CSS-owned
+merge. Browser composes this result once with intrinsic entry-point effects;
+the resulting request is the sole projection source for phase work, dirty
+state, paint invalidation, and redraw scheduling. `DomTextChanged` separately
+remains direct Layout input.
 
 Future selector invalidation should be introduced only with:
 

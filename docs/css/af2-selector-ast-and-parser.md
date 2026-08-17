@@ -132,7 +132,7 @@ AF2 does not implement:
 
 - selector matching changes;
 - specificity changes;
-- pseudo-classes or pseudo-elements;
+- pseudo-classes or pseudo-elements in AF2's original scope;
 - namespace selectors;
 - cascade or computed-style changes;
 - selector dependency invalidation;
@@ -144,6 +144,12 @@ AF2 does not implement:
 `UnsupportedSelectorList` currently retains its source span and normalized
 unsupported feature categories, not a lossless unsupported selector tree.
 Future support may therefore require reparsing the preserved source/prelude.
+
+AF4d reconciliation: the current parser now supports the five typed
+tree-structural pseudo-classes while retaining AF2's whole-list invalid and
+unsupported policy. Broad pseudo classes and all pseudo-elements remain
+unsupported; legacy single-colon pseudo-element spellings are classified as
+pseudo-elements. Selector-wide semantic escape decoding remains deferred.
 
 ## Contract Reconciliation
 

@@ -329,7 +329,7 @@ In scope:
 
 Out of scope for Q1 and still deferred beyond this issue:
 
-- pseudo-classes
+- pseudo-classes beyond AF4d's typed tree-structural subset
 - functional pseudo-classes
 - pseudo-elements
 - CSS `@namespace` and namespace-selector syntax

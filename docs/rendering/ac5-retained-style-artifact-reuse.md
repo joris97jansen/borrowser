@@ -79,8 +79,9 @@ The key represents the current conservative validity boundary:
 
 - `identity_domain` prevents reuse across full document replacement, even when
   the new document contains matching numeric DOM IDs;
-- `style_input_generation` changes when DOM/style inputs can affect selector
-  matching, inline style attributes, inheritance, or element order;
+- `style_input_generation` changes only when CSS classifies a neutral
+  DOM/style-input fact as `Some(StyleInvalidationPlan)`; observation of the
+  fact alone does not invalidate cache-key eligibility;
 - `stylesheet_generation` changes when the active stylesheet set or loaded
   stylesheet contribution changes.
 

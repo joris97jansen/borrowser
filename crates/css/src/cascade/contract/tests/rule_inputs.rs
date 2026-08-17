@@ -13,8 +13,8 @@ use crate::{CssWideKeyword, SpecifiedValueParseErrorKind};
 #[test]
 fn cascade_rule_match_uses_highest_selector_specificity() {
     let mut builder = crate::selectors::SelectorListMatchOutcome::builder();
-    builder.record_match(0, Specificity::TYPE);
-    builder.record_match(2, Specificity::CLASS);
+    builder.record_match(0, Specificity::C);
+    builder.record_match(2, Specificity::B);
 
     let rule_match = super::super::CascadeRuleMatch {
         stylesheet_index: 0,
@@ -23,12 +23,12 @@ fn cascade_rule_match_uses_highest_selector_specificity() {
     };
 
     assert!(rule_match.contributes_candidates());
-    assert_eq!(rule_match.effective_specificity(), Some(Specificity::CLASS));
+    assert_eq!(rule_match.effective_specificity(), Some(Specificity::B));
 }
 
 #[test]
 fn cascade_rule_input_materializes_supported_candidates_with_explicit_priority() {
-    let rule_match = matched_rule(2, 5, &[Specificity::TYPE, Specificity::CLASS]);
+    let rule_match = matched_rule(2, 5, &[Specificity::C, Specificity::B]);
     let source = CascadeRuleSource::Stylesheet(StylesheetRuleRef::from_rule_match(&rule_match));
     let rule = CascadeRuleInput::from_stylesheet_match(
         &rule_match,

@@ -20,7 +20,7 @@ fn resolve_cascade_style_marks_inherited_properties_only_when_parent_is_present(
             source: stylesheet_declaration_source(0, 0, 0),
             priority: CascadePriority::new(
                 CascadeOriginBand::AuthorNormal,
-                CascadeSpecificity::Selector(Specificity::TYPE),
+                CascadeSpecificity::Selector(Specificity::C),
                 0,
                 0,
             ),
@@ -182,7 +182,7 @@ fn resolve_cascade_style_defaults_missing_properties_to_the_initial_contract() {
     )
     .candidate(CascadeRuleContext::new(
         CascadeOrigin::Author,
-        CascadeSpecificity::Selector(Specificity::TYPE),
+        CascadeSpecificity::Selector(Specificity::C),
         0,
     ))
     .expect("supported candidate")]);
@@ -227,7 +227,7 @@ fn resolve_cascade_style_resolves_explicit_css_wide_keywords_after_winner_select
             source: stylesheet_declaration_source(0, 0, 0),
             priority: CascadePriority::new(
                 CascadeOriginBand::AuthorNormal,
-                CascadeSpecificity::Selector(Specificity::TYPE),
+                CascadeSpecificity::Selector(Specificity::C),
                 0,
                 0,
             ),
@@ -240,7 +240,7 @@ fn resolve_cascade_style_resolves_explicit_css_wide_keywords_after_winner_select
             source: stylesheet_declaration_source(0, 0, 1),
             priority: CascadePriority::new(
                 CascadeOriginBand::AuthorNormal,
-                CascadeSpecificity::Selector(Specificity::TYPE),
+                CascadeSpecificity::Selector(Specificity::C),
                 0,
                 1,
             ),
@@ -258,7 +258,7 @@ fn resolve_cascade_style_resolves_explicit_css_wide_keywords_after_winner_select
         )
         .candidate(CascadeRuleContext::new(
             CascadeOrigin::Author,
-            CascadeSpecificity::Selector(Specificity::TYPE),
+            CascadeSpecificity::Selector(Specificity::C),
             1,
         ))
         .expect("color unset candidate"),
@@ -271,7 +271,7 @@ fn resolve_cascade_style_resolves_explicit_css_wide_keywords_after_winner_select
         )
         .candidate(CascadeRuleContext::new(
             CascadeOrigin::Author,
-            CascadeSpecificity::Selector(Specificity::TYPE),
+            CascadeSpecificity::Selector(Specificity::C),
             1,
         ))
         .expect("display inherit candidate"),
@@ -284,7 +284,7 @@ fn resolve_cascade_style_resolves_explicit_css_wide_keywords_after_winner_select
         )
         .candidate(CascadeRuleContext::new(
             CascadeOrigin::Author,
-            CascadeSpecificity::Selector(Specificity::TYPE),
+            CascadeSpecificity::Selector(Specificity::C),
             1,
         ))
         .expect("width unset candidate"),
@@ -350,7 +350,7 @@ fn resolve_cascade_style_resolves_root_css_wide_inherit_and_unset_to_initial() {
         )
         .candidate(CascadeRuleContext::new(
             CascadeOrigin::Author,
-            CascadeSpecificity::Selector(Specificity::TYPE),
+            CascadeSpecificity::Selector(Specificity::C),
             0,
         ))
         .expect("color inherit candidate"),
@@ -363,7 +363,7 @@ fn resolve_cascade_style_resolves_root_css_wide_inherit_and_unset_to_initial() {
         )
         .candidate(CascadeRuleContext::new(
             CascadeOrigin::Author,
-            CascadeSpecificity::Selector(Specificity::TYPE),
+            CascadeSpecificity::Selector(Specificity::C),
             0,
         ))
         .expect("font-size unset candidate"),
@@ -407,7 +407,7 @@ fn resolve_cascade_style_explicit_winner_overrides_parent_inheritance_and_defaul
             source: stylesheet_declaration_source(0, 0, 0),
             priority: CascadePriority::new(
                 CascadeOriginBand::AuthorNormal,
-                CascadeSpecificity::Selector(Specificity::TYPE),
+                CascadeSpecificity::Selector(Specificity::C),
                 0,
                 0,
             ),
@@ -420,7 +420,7 @@ fn resolve_cascade_style_explicit_winner_overrides_parent_inheritance_and_defaul
             source: stylesheet_declaration_source(0, 0, 1),
             priority: CascadePriority::new(
                 CascadeOriginBand::AuthorNormal,
-                CascadeSpecificity::Selector(Specificity::TYPE),
+                CascadeSpecificity::Selector(Specificity::C),
                 0,
                 1,
             ),
@@ -438,7 +438,7 @@ fn resolve_cascade_style_explicit_winner_overrides_parent_inheritance_and_defaul
     )
     .candidate(CascadeRuleContext::new(
         CascadeOrigin::Author,
-        CascadeSpecificity::Selector(Specificity::CLASS),
+        CascadeSpecificity::Selector(Specificity::B),
         1,
     ))
     .expect("supported candidate")]);
@@ -473,7 +473,7 @@ fn resolve_cascade_style_explicit_winner_overrides_parent_inheritance_and_defaul
 fn resolve_cascade_style_from_rule_inputs_applies_inheritance_without_rederiving_priority() {
     let parent_style = resolve_cascade_style(&CascadeWinnerSet::default(), None);
     let child_rule = CascadeRuleInput::from_stylesheet_match(
-        &matched_rule(0, 0, &[Specificity::CLASS]),
+        &matched_rule(0, 0, &[Specificity::B]),
         CascadeOrigin::Author,
         0,
         vec![CascadeDeclarationInput::supported(
@@ -575,7 +575,7 @@ fn resolved_style_builder_is_deterministic_and_property_sorted() {
             }),
             priority: CascadePriority::new(
                 CascadeOriginBand::AuthorNormal,
-                CascadeSpecificity::Selector(Specificity::TYPE),
+                CascadeSpecificity::Selector(Specificity::C),
                 0,
                 1,
             ),

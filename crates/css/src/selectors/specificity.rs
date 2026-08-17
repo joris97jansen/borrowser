@@ -3,8 +3,8 @@ use std::ops::{Add, AddAssign};
 /// CSS selector specificity tuple `(a, b, c)`.
 ///
 /// `a`: id selectors
-/// `b`: class selectors and attribute selectors
-/// `c`: type selectors
+/// `b`: class selectors, attribute selectors, and pseudo-classes
+/// `c`: type selectors and pseudo-elements
 ///
 /// The field declaration order is semantic: the derived `Ord` implementation
 /// compares the tuple lexicographically as A, then B, then C. Keep these
@@ -15,58 +15,38 @@ use std::ops::{Add, AddAssign};
 /// accounting.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Ord, PartialOrd)]
 pub struct Specificity {
-    ids: u16,
-    classes: u16,
-    types: u16,
+    a: u16,
+    b: u16,
+    c: u16,
 }
 
 impl Specificity {
-    pub const ZERO: Self = Self {
-        ids: 0,
-        classes: 0,
-        types: 0,
-    };
-    pub const ID: Self = Self {
-        ids: 1,
-        classes: 0,
-        types: 0,
-    };
-    pub const CLASS: Self = Self {
-        ids: 0,
-        classes: 1,
-        types: 0,
-    };
-    pub const TYPE: Self = Self {
-        ids: 0,
-        classes: 0,
-        types: 1,
-    };
+    pub const ZERO: Self = Self { a: 0, b: 0, c: 0 };
+    pub const A: Self = Self { a: 1, b: 0, c: 0 };
+    pub const B: Self = Self { a: 0, b: 1, c: 0 };
+    pub const C: Self = Self { a: 0, b: 0, c: 1 };
 
-    pub const fn new(ids: u16, classes: u16, types: u16) -> Self {
-        Self {
-            ids,
-            classes,
-            types,
-        }
+    pub const fn new(a: u16, b: u16, c: u16) -> Self {
+        Self { a, b, c }
     }
 
-    pub fn ids(self) -> u16 {
-        self.ids
+    pub const fn a(self) -> u16 {
+        self.a
     }
 
-    pub fn classes(self) -> u16 {
-        self.classes
+    pub const fn b(self) -> u16 {
+        self.b
     }
 
-    pub fn types(self) -> u16 {
-        self.types
+    pub const fn c(self) -> u16 {
+        self.c
     }
 
     pub fn saturating_add(self, other: Self) -> Self {
         Self {
-            ids: self.ids.saturating_add(other.ids),
-            classes: self.classes.saturating_add(other.classes),
-            types: self.types.saturating_add(other.types),
+            a: self.a.saturating_add(other.a),
+            b: self.b.saturating_add(other.b),
+            c: self.c.saturating_add(other.c),
         }
     }
 }

@@ -95,28 +95,19 @@ impl Tab {
         }
     }
 
-    pub(super) fn request_render_work(&mut self, request: RenderInvalidationRequest) {
-        debug_assert!(
-            request.requested_work.requests_redraw(),
-            "render invalidation request must request a frame: {:?}",
-            request
-        );
-        self.pending_render_work.push(request);
-        if request.requested_work.requests_redraw() {
+    pub(super) fn request_render_work(&mut self, request: RenderInvalidationRequest) -> bool {
+        let requests_render_work = self.pending_render_work.push(request);
+        if requests_render_work {
             self.poke_redraw();
         }
+        requests_render_work
     }
 
     pub(super) fn request_optional_render_work(
         &mut self,
         request: Option<RenderInvalidationRequest>,
     ) -> bool {
-        if let Some(request) = request {
-            self.request_render_work(request);
-            true
-        } else {
-            false
-        }
+        request.is_some_and(|request| self.request_render_work(request))
     }
 
     pub(super) fn clear_render_orchestration_state(&mut self) {

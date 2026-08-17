@@ -138,9 +138,16 @@ them.
   only after successful paint.
 - `ViewportChanged` remains an explicit in-frame trigger synthesized by runtime
   orchestration.
-- Text mutation currently invalidates layout without invalidating computed style
-  unless stylesheet reconciliation or future selector/property features make
-  text content style-relevant.
+- Text mutation remains direct Layout input. AF4d also makes `:empty`
+  text-sensitive and uses the documented CSS-owned conservative full-plan
+  fallback; dependency-aware Style narrowing remains future work.
+- Intrinsic entry-point effects and CSS-authorized Style work are composed once
+  into one request; phase work, dirty state, paint invalidation, and redraw
+  scheduling derive from that request rather than parallel flags or dirty
+  mutations.
+- Render invalidation requests and work plans are sealed, read-only values.
+  Intrinsic factories and the typed CSS Style composition path own production
+  construction; consumers cannot assemble arbitrary phase combinations.
 
 ### Phase Handoff Invariants
 

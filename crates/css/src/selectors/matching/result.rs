@@ -289,9 +289,9 @@ pub(crate) fn write_selector_match_outcome_snapshot_body(
             writeln!(
                 out,
                 "{indent_str}highest-specificity: ({},{},{})",
-                specificity.ids(),
-                specificity.classes(),
-                specificity.types()
+                specificity.a(),
+                specificity.b(),
+                specificity.c()
             )
             .expect("write snapshot");
         }
@@ -303,9 +303,9 @@ pub(crate) fn write_selector_match_outcome_snapshot_body(
             out,
             "{indent_str}match[{index}]: selector={} specificity=({},{},{})",
             matched.selector_index(),
-            matched.specificity().ids(),
-            matched.specificity().classes(),
-            matched.specificity().types()
+            matched.specificity().a(),
+            matched.specificity().b(),
+            matched.specificity().c()
         )
         .expect("write snapshot");
     }

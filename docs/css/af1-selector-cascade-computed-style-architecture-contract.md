@@ -228,12 +228,14 @@ The current conservative outcomes are:
 - an opaque document-order suffix plan for non-empty, materialized attribute
   identities;
 - an opaque full-document plan for document replacement, tree changes,
-  stylesheet-set changes, and unprovable attribute changes.
+  stylesheet-set changes, text changes under AF4d, and unprovable attribute
+  changes.
 
-Ordinary text changes are currently style-neutral under the supported selector
-model. Text inside `<style>` is different: DOM text observation may first be
-style-neutral, then stylesheet reconciliation detects changed stylesheet input
-and submits `StylesheetSetChanged`, which CSS classifies as full invalidation.
+Ordinary text changes currently receive full invalidation because exact text
+can change `:empty` matching and no dependency index can prove a narrower
+scope. Text inside `<style>` additionally participates in stylesheet
+reconciliation, which submits `StylesheetSetChanged` when active CSS input
+changes.
 
 `merge_style_invalidation_plans(existing, incoming)` is CSS-owned. It preserves
 an existing plan when the incoming result is `None`, canonicalizes and
@@ -298,6 +300,8 @@ Typed APIs and Rust visibility are the primary architecture enforcement:
 - `StyleInvalidationPlan` has private representation and no public semantic
   constructors;
 - `None` is the only no-invalidation state;
+- only `Some(plan)` authorizes Browser to advance the retained style-input
+  generation and schedule new Style work for that fact;
 - CSS owns plan merging and canonicalization;
 - CSS execution returns an invariant-safe result distinguishing
   full-required, incremental-unavailable, and incremental-computed outcomes;
@@ -325,3 +329,10 @@ AF1 does not implement:
 - CSSOM, `getComputedStyle()`, or JavaScript-facing style mutation;
 - broad property expansion;
 - unrelated Layout or Paint algorithms.
+
+AF4d refinement: AF1's original broad pseudo-class non-goal is narrowed by the
+typed tree-structural subset documented in
+`af4d-tree-structural-pseudo-class-matching.md`. Dynamic and functional
+pseudos, pseudo-elements, dependency indexing, and fine-grained invalidation
+remain unsupported. Text changes conservatively receive a full CSS plan while
+retaining their independent direct Layout consequence.

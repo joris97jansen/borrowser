@@ -1,7 +1,7 @@
 version: 1
 model-stylesheet
 origin: stylesheet
-span: @0..88
+span: @0..120
 rule[0] style @0..27
   selectors
     result: unsupported
@@ -27,26 +27,44 @@ rule[1] style @28..52
         - whitespace @44..45
         - ident("blue") @45..49
       important @<none>
-rule[2] style @53..88
+rule[2] style @53..85
+  selectors
+    result: parsed
+    span: @53..68
+    selector[0] @53..58 specificity=(0,1,0)
+      compound[0] @53..58 specificity=(0,1,0)
+        - tree-structural-pseudo-class(root) node=@53..58
+    selector[1] @60..67 specificity=(0,1,1)
+      compound[0] @60..67 specificity=(0,1,1)
+        - type("p") node=@60..61 name=@60..61
+        - tree-structural-pseudo-class(empty) node=@61..67
+  declarations @68..85
+    declaration[0] @70..83
+      name(kind=standard, text="color") @70..75
+      value @76..82
+        - whitespace @76..77
+        - ident("black") @77..82
+      important @<none>
+rule[3] style @86..120
   selectors
     result: unsupported
-    span: @53..71
+    span: @86..103
     feature[0]: pseudo-class
     feature[1]: pseudo-element
-  declarations @71..88
-    declaration[0] @73..86
-      name(kind=standard, text="color") @73..78
-      value @79..85
-        - whitespace @79..80
-        - ident("green") @80..85
+  declarations @103..120
+    declaration[0] @105..118
+      name(kind=standard, text="color") @105..110
+      value @111..117
+        - whitespace @111..112
+        - ident("green") @112..117
       important @<none>
 diagnostics
   - warning unsupported-selector @0
   - error invalid-selector @28
-  - warning unsupported-selector @53
+  - warning unsupported-selector @86
 stats
-  input_bytes: 88
-  rules_emitted: 3
-  declarations_emitted: 3
+  input_bytes: 120
+  rules_emitted: 4
+  declarations_emitted: 4
   diagnostics_emitted: 3
   hit_limit: false

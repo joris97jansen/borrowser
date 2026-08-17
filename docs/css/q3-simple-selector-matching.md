@@ -42,6 +42,7 @@ elements:
 - id selectors
 - class selectors
 - attribute selectors in the Milestone P supported subset
+- AF4d tree-structural pseudo-class selectors
 
 Compound selectors built from those simple selector classes are also supported
 as long as matching remains element-local.
@@ -99,6 +100,10 @@ value comparison, selects Quirks-only ID/class value policy from the matching
 environment, and selects HTML attribute-value policy from the complete
 effective attribute identity before executing an operator. These refinements
 add no selector grammar and do not change match-result or specificity shape.
+
+AF4d later adds typed tree-structural pseudo matching through a focused pseudo
+matcher invoked by this same compound-selector conjunction. It derives all
+meaning from AF4b neutral facts and adds no DOM-owned pseudo predicates.
 
 `match_selector_list(...)` evaluates one selector list against one target
 element and returns an explicit result or selector-matching limit error:

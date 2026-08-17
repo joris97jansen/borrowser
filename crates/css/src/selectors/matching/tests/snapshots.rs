@@ -169,6 +169,56 @@ fn selector_matching_debug_snapshot_is_stable_for_simple_selector_cases() {
 }
 
 #[test]
+fn selector_matching_debug_snapshot_is_stable_for_tree_structural_pseudos() {
+    let dom = doc(vec![element(
+        "body",
+        Vec::new(),
+        vec![element("p", Vec::new(), Vec::new())],
+    )]);
+
+    assert_matching_debug_snapshot(
+        dom,
+        ":root, body > p:empty:first-child",
+        concat!(
+            "version: 3\n",
+            "selector-matching\n",
+            "matching-environment: document-mode=no-quirks\n",
+            "selectors:\n",
+            "  result: parsed\n",
+            "  span: @0..34\n",
+            "  selector[0] @0..5 specificity=(0,1,0)\n",
+            "    compound[0] @0..5 specificity=(0,1,0)\n",
+            "      - tree-structural-pseudo-class(root) node=@0..5\n",
+            "  selector[1] @7..33 specificity=(0,2,2)\n",
+            "    compound[0] @7..11 specificity=(0,0,1)\n",
+            "      - type(\"body\") node=@7..11 name=@7..11\n",
+            "    combined[0] child @12..33\n",
+            "      compound @14..33 specificity=(0,2,1)\n",
+            "        - type(\"p\") node=@14..15 name=@14..15\n",
+            "        - tree-structural-pseudo-class(empty) node=@15..21\n",
+            "        - tree-structural-pseudo-class(first-child) node=@21..33\n",
+            "dom:\n",
+            "  projection: document\n",
+            "  document-element: 1\n",
+            "  elements: 2\n",
+            "  element[0]: id=1 namespace=html local=\"body\" parent=none prev-sibling=none next-sibling=none first-child=2\n",
+            "  element[1]: id=2 namespace=html local=\"p\" parent=1 prev-sibling=none next-sibling=none first-child=none\n",
+            "matches:\n",
+            "  target[0]: element=1 name=\"body\"\n",
+            "    matchability: parsed\n",
+            "    matched: yes\n",
+            "    highest-specificity: (0,1,0)\n",
+            "    match[0]: selector=0 specificity=(0,1,0)\n",
+            "  target[1]: element=2 name=\"p\"\n",
+            "    matchability: parsed\n",
+            "    matched: yes\n",
+            "    highest-specificity: (0,2,2)\n",
+            "    match[0]: selector=1 specificity=(0,2,2)\n",
+        ),
+    );
+}
+
+#[test]
 fn selector_matching_debug_snapshot_is_stable_for_compound_selector_cases() {
     let dom = doc(vec![element(
         "body",

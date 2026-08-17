@@ -2,9 +2,8 @@ use super::convert::{map_structure_error, selector_ident_from_text};
 use super::segment::{ParsedSimpleSelector, SegmentParseError, SegmentParser};
 use super::spans::{component_list_span, span_from_bounds};
 use super::{
-    ClassSelector, CssBlockKind, CssComponentValue, CssHashKind, CssInput, CssToken, CssTokenKind,
-    CssTokenText, IdSelector, InvalidSelectorReason, SubclassSelector, TypeSelector,
-    UnsupportedSelectorFeature,
+    ClassSelector, CssBlockKind, CssComponentValue, CssHashKind, CssToken, CssTokenKind,
+    IdSelector, InvalidSelectorReason, SubclassSelector, TypeSelector, UnsupportedSelectorFeature,
 };
 
 impl<'a> SegmentParser<'a> {
@@ -162,67 +161,4 @@ impl<'a> SegmentParser<'a> {
             selector: SubclassSelector::Class(selector),
         })
     }
-
-    pub(super) fn parse_pseudo_selector(
-        &mut self,
-        first_colon_span: super::CssSpan,
-    ) -> Result<ParsedSimpleSelector, SegmentParseError> {
-        self.index += 1;
-        self.skip_comments();
-
-        let is_double_colon = matches!(
-            self.current_value(),
-            Some(CssComponentValue::PreservedToken(CssToken {
-                kind: CssTokenKind::Colon,
-                ..
-            }))
-        );
-
-        let mut features = Vec::new();
-        if is_double_colon {
-            self.index += 1;
-            self.skip_comments();
-            features.push(UnsupportedSelectorFeature::PseudoElement);
-        }
-
-        let end_span = match self.current_value() {
-            Some(CssComponentValue::PreservedToken(CssToken {
-                kind: CssTokenKind::Ident(_),
-                span,
-            })) => {
-                self.index += 1;
-                if !is_double_colon {
-                    features.push(UnsupportedSelectorFeature::PseudoClass);
-                }
-                *span
-            }
-            Some(CssComponentValue::Function(function)) => {
-                self.index += 1;
-                if is_double_colon {
-                    features.push(UnsupportedSelectorFeature::PseudoElement);
-                } else {
-                    features.push(UnsupportedSelectorFeature::FunctionalPseudoClass);
-                    if function_name_is_forgiving_list(self.input, &function.name) {
-                        features.push(UnsupportedSelectorFeature::ForgivingSelectorList);
-                    }
-                }
-                function.span
-            }
-            _ => {
-                return Err(SegmentParseError::Invalid {
-                    span: Some(first_colon_span),
-                    reason: InvalidSelectorReason::UnexpectedComponentValue,
-                });
-            }
-        };
-
-        Ok(ParsedSimpleSelector::Unsupported {
-            span: span_from_bounds(first_colon_span, end_span).unwrap_or(first_colon_span),
-            features,
-        })
-    }
-}
-
-fn function_name_is_forgiving_list(input: &CssInput, name: &CssTokenText) -> bool {
-    matches!(name.resolve(input).as_deref(), Some("is") | Some("where"))
 }
