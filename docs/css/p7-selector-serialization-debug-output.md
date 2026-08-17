@@ -64,6 +64,8 @@ Golden tests cover:
   output
 - representative unsupported selector output
 - representative invalid selector output
+- AF4d tree-structural pseudo lists with canonical lowercase semantic labels
+- legacy single-colon pseudo-element classification
 
 This keeps the selector snapshot surface aligned with the repository's syntax
 and model golden-test approach.

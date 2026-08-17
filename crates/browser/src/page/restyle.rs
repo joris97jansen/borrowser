@@ -1,4 +1,4 @@
-use crate::rendering::RenderInvalidationEntryPoint;
+use crate::rendering::CssStyleInvalidationSource;
 use html::{DomPatch, internal::Id};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44,12 +44,12 @@ impl RestyleTrigger {
         trigger
     }
 
-    pub(super) fn render_invalidation_entry_point(self) -> RenderInvalidationEntryPoint {
+    pub(super) fn css_style_invalidation_source(self) -> CssStyleInvalidationSource {
         match self {
-            Self::DocumentReplaced => RenderInvalidationEntryPoint::DocumentReplaced,
-            Self::TreeMutated => RenderInvalidationEntryPoint::DomStructureChanged,
-            Self::AttributesChanged => RenderInvalidationEntryPoint::DomAttributesChanged,
-            Self::TextMutated => RenderInvalidationEntryPoint::DomTextChanged,
+            Self::DocumentReplaced => CssStyleInvalidationSource::DocumentReplaced,
+            Self::TreeMutated => CssStyleInvalidationSource::DomStructureChanged,
+            Self::AttributesChanged => CssStyleInvalidationSource::DomAttributesChanged,
+            Self::TextMutated => CssStyleInvalidationSource::DomTextChanged,
         }
     }
 }

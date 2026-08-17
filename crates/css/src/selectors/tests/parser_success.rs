@@ -60,3 +60,45 @@ fn parser_accepts_quoted_empty_values_for_every_supported_attribute_operator() {
         );
     }
 }
+
+#[test]
+fn parser_supports_tree_structural_pseudos_with_ascii_case_insensitive_keywords() {
+    for source in [
+        ":root",
+        ":ROOT",
+        ":RoOt",
+        ":empty",
+        ":Empty",
+        ":FIRST-CHILD",
+        ":last-CHILD",
+        ":Only-Child",
+    ] {
+        assert!(
+            parse_selector_result(source).parsed().is_some(),
+            "expected {source:?} to parse",
+        );
+    }
+
+    let result = parse_selector_result("section:FIRST-CHILD:Empty > p:ONLY-child, :RoOt");
+    assert_eq!(
+        result.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: parsed\n",
+            "span: @0..48\n",
+            "selector[0] @0..40 specificity=(0,3,2)\n",
+            "  compound[0] @0..25 specificity=(0,2,1)\n",
+            "    - type(\"section\") node=@0..7 name=@0..7\n",
+            "    - tree-structural-pseudo-class(first-child) node=@7..19\n",
+            "    - tree-structural-pseudo-class(empty) node=@19..25\n",
+            "  combined[0] child @26..40\n",
+            "    compound @28..40 specificity=(0,1,1)\n",
+            "      - type(\"p\") node=@28..29 name=@28..29\n",
+            "      - tree-structural-pseudo-class(only-child) node=@29..40\n",
+            "selector[1] @42..47 specificity=(0,1,0)\n",
+            "  compound[0] @42..47 specificity=(0,1,0)\n",
+            "    - tree-structural-pseudo-class(root) node=@42..47\n",
+        )
+    );
+}

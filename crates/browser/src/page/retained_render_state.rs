@@ -9,7 +9,7 @@ use crate::rendering::{
     RetainedPaintFrameAction, RetainedPaintFrameResult, RetainedRenderGenerationDebugSnapshot,
     RetainedRenderIdentityMap, RetainedRenderStateDebugSnapshot, RetainedStyleArtifactAction,
     RetainedStyleArtifactDebugSnapshot, RetainedStyleArtifactKey, RetainedStyleArtifactState,
-    RetainedStyleArtifactStats, dirty_request_for_entry_point,
+    RetainedStyleArtifactStats,
 };
 use css::{
     ComputedDocumentStyleInvalidationImpact, ComputedStyleReuseStats, StyleChangeFacts,
@@ -413,7 +413,16 @@ impl RetainedRenderState {
         self.style_cache = None;
     }
 
+    #[cfg(test)]
     pub(super) fn mark_dirty_for_entry_point(&mut self, entry_point: RenderInvalidationEntryPoint) {
+        self.mark_dirty_for_request(crate::rendering::render_invalidation_request(entry_point));
+    }
+
+    pub(super) fn mark_dirty_for_request(
+        &mut self,
+        request: crate::rendering::RenderInvalidationRequest,
+    ) {
+        let entry_point = request.entry_point();
         if matches!(entry_point, RenderInvalidationEntryPoint::DocumentReplaced) {
             self.dirty_state.clear();
             self.discard_layout_for_full_invalidation();
@@ -452,8 +461,7 @@ impl RetainedRenderState {
             | RenderInvalidationEntryPoint::DomAttributesChanged
             | RenderInvalidationEntryPoint::StylesheetSetChanged => {}
         }
-        let request = dirty_request_for_entry_point(entry_point);
-        self.dirty_state.extend(request.entries);
+        self.dirty_state.extend(request.dirty_request().entries);
     }
 
     pub(super) fn debug_snapshot(&self, has_dom: bool) -> RenderPipelineDebugSnapshot {
@@ -575,28 +583,45 @@ impl RetainedRenderState {
         self.identities.reconcile_live_dom(dom);
     }
 
-    pub(super) fn mark_style_inputs_changed(&mut self, change: StyleChangeFacts) {
-        self.generations.style_inputs = self
-            .generations
-            .style_inputs
-            .checked_add(1)
-            .expect("page style-input generation exhausted");
-        self.mark_style_change(change);
+    /// Applies one neutral style-input fact through the CSS-owned invalidation
+    /// classifier. The CSS result, not observation of the fact alone,
+    /// authorizes advancing the retained style-input generation.
+    pub(super) fn apply_style_input_change(&mut self, change: StyleChangeFacts) -> bool {
+        let incoming = classify_style_invalidation(change);
+        self.apply_classified_style_input_change(incoming)
     }
 
-    pub(super) fn mark_stylesheets_changed(&mut self) {
+    pub(super) fn mark_stylesheets_changed(&mut self) -> bool {
         self.generations.stylesheets = self
             .generations
             .stylesheets
             .checked_add(1)
             .expect("page stylesheet generation exhausted");
         self.advance_render_epoch();
-        self.mark_style_change(StyleChangeFacts::StylesheetSetChanged);
-        self.mark_dirty_for_entry_point(RenderInvalidationEntryPoint::StylesheetSetChanged);
+        let incoming = classify_style_invalidation(StyleChangeFacts::StylesheetSetChanged);
+        let css_requested_style_work = incoming.is_some();
+        self.merge_classified_style_invalidation(incoming);
+        css_requested_style_work
     }
 
-    pub(super) fn mark_style_change(&mut self, change: StyleChangeFacts) {
-        let incoming = classify_style_invalidation(change);
+    fn apply_classified_style_input_change(
+        &mut self,
+        incoming: Option<StyleInvalidationPlan>,
+    ) -> bool {
+        let css_requested_style_work = incoming.is_some();
+        if css_requested_style_work {
+            self.generations.style_inputs = self
+                .generations
+                .style_inputs
+                .checked_add(1)
+                .expect("page style-input generation exhausted");
+        }
+
+        self.merge_classified_style_invalidation(incoming);
+        css_requested_style_work
+    }
+
+    fn merge_classified_style_invalidation(&mut self, incoming: Option<StyleInvalidationPlan>) {
         let merged =
             merge_style_invalidation_plans(self.pending_style_invalidation.take(), incoming);
 
@@ -665,5 +690,60 @@ impl RetainedRenderState {
 impl Default for RetainedRenderState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classified_none_preserves_style_generation_key_pending_plan_and_clean_style_state() {
+        let mut retained = RetainedRenderState::new();
+        retained.dirty_state.clear();
+        let key_before = retained.current_style_artifact_key();
+        let generation_before = retained.generations.style_inputs;
+        let stats_before = retained.style_artifact_stats;
+        let pending_before = retained
+            .pending_style_invalidation
+            .as_ref()
+            .map(StyleInvalidationPlan::to_debug_snapshot);
+
+        let requested = retained.apply_classified_style_input_change(None);
+
+        assert!(!requested);
+        assert_eq!(retained.generations.style_inputs, generation_before);
+        assert_eq!(retained.current_style_artifact_key(), key_before);
+        assert_eq!(retained.style_artifact_stats, stats_before);
+        assert!(!retained.style_dirty());
+        assert_eq!(
+            retained
+                .pending_style_invalidation
+                .as_ref()
+                .map(StyleInvalidationPlan::to_debug_snapshot),
+            pending_before
+        );
+    }
+
+    #[test]
+    fn css_some_authorizes_generation_and_plan_without_preapplying_dirty_state() {
+        let mut retained = RetainedRenderState::new();
+        retained.pending_style_invalidation = None;
+        retained.dirty_state.clear();
+
+        let requested = retained.apply_style_input_change(StyleChangeFacts::TextChanged);
+
+        assert!(requested);
+        assert_eq!(retained.generations.style_inputs, 1);
+        assert_eq!(
+            retained
+                .pending_style_invalidation
+                .as_ref()
+                .map(StyleInvalidationPlan::to_debug_snapshot)
+                .as_deref(),
+            Some("scope: full-document")
+        );
+        assert!(!retained.style_dirty());
+        assert!(retained.dirty_state.entries().is_empty());
     }
 }

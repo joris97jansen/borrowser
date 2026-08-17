@@ -53,6 +53,10 @@ fn render_phase_contracts_pin_expected_phase_boundaries() {
         ]
     );
     assert_eq!(style.rebuilt_outputs, &[RenderArtifact::StyledTree]);
+    assert_eq!(
+        style.rebuild_triggers,
+        CSS_STYLE_INVALIDATION_SOURCES.map(CssStyleInvalidationSource::rebuild_trigger)
+    );
 
     let layout = contracts
         .iter()
@@ -76,6 +80,8 @@ fn render_phase_contracts_pin_expected_phase_boundaries() {
         layout.rebuild_triggers,
         &[
             RenderRebuildTrigger::StyleOutputsChanged,
+            RenderRebuildTrigger::DomReplaced,
+            RenderRebuildTrigger::DomStructureChanged,
             RenderRebuildTrigger::DomTextChanged,
             RenderRebuildTrigger::ViewportChanged,
             RenderRebuildTrigger::ResourceStateChanged,
@@ -270,7 +276,7 @@ fn render_extension_hook_contracts_anchor_deferred_work_to_current_pipeline() {
             assert!(
                 invalidation_contracts
                     .iter()
-                    .any(|contract| contract.entry_point == *entry_point),
+                    .any(|contract| contract.entry_point() == *entry_point),
                 "extension hook references unknown invalidation entry point: {:?} -> {:?}",
                 hook.hook,
                 entry_point
@@ -314,7 +320,7 @@ fn render_extension_hook_contracts_anchor_deferred_work_to_current_pipeline() {
         .expect("incremental invalidation hook");
     let expected_entry_points = render_invalidation_request_contracts()
         .iter()
-        .map(|contract| contract.entry_point)
+        .map(|contract| contract.entry_point())
         .collect::<Vec<_>>();
     assert_eq!(
         invalidation.integration_owner,

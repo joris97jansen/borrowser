@@ -52,7 +52,7 @@ impl AttributeExistsSelector {
     }
 
     pub fn specificity(&self) -> Specificity {
-        Specificity::CLASS
+        Specificity::B
     }
 }
 
@@ -102,7 +102,7 @@ impl AttributeMatchSelector {
     }
 
     pub fn specificity(&self) -> Specificity {
-        Specificity::CLASS
+        Specificity::B
     }
 }
 

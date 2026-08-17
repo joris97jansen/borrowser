@@ -67,3 +67,32 @@ fn selector_parse_snapshot_golden_invalid_selector() {
         include_str!("fixtures/selectors/invalid_selector.parse.snap"),
     );
 }
+
+#[test]
+fn selector_snapshots_golden_tree_structural_pseudos() {
+    let result = parse_selector_fixture(fixture_input(include_str!(
+        "fixtures/selectors/tree_structural_pseudos.selector"
+    )));
+    let list = result
+        .parsed()
+        .expect("parsed tree-structural selector list");
+    assert_eq!(
+        serialize_selector_list_for_snapshot(list),
+        include_str!("fixtures/selectors/tree_structural_pseudos.list.snap"),
+    );
+    assert_eq!(
+        serialize_selector_parse_result_for_snapshot(&result),
+        include_str!("fixtures/selectors/tree_structural_pseudos.parse.snap"),
+    );
+}
+
+#[test]
+fn selector_parse_snapshot_golden_legacy_pseudo_elements() {
+    let result = parse_selector_fixture(fixture_input(include_str!(
+        "fixtures/selectors/legacy_pseudo_elements.selector"
+    )));
+    assert_eq!(
+        serialize_selector_parse_result_for_snapshot(&result),
+        include_str!("fixtures/selectors/legacy_pseudo_elements.parse.snap"),
+    );
+}

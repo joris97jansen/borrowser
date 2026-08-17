@@ -129,7 +129,7 @@ impl RenderWorkPlan {
             .pending_work
             .requests()
             .iter()
-            .map(|request| request.entry_point)
+            .map(|request| request.entry_point())
             .collect::<Vec<_>>();
 
         Self {

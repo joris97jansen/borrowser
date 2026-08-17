@@ -307,9 +307,9 @@ fn specificity_label(specificity: CascadeSpecificity) -> String {
     match specificity {
         CascadeSpecificity::Selector(specificity) => format!(
             "selector({},{},{})",
-            specificity.ids(),
-            specificity.classes(),
-            specificity.types()
+            specificity.a(),
+            specificity.b(),
+            specificity.c()
         ),
         CascadeSpecificity::InlineStyle => "inline-style".to_string(),
     }

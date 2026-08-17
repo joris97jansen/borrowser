@@ -80,6 +80,9 @@ impl<D: SelectorMatchDom> SelectorMatchingContext<'_, D> {
             SubclassSelector::Attribute(selector) => {
                 self.matches_attribute_selector(element, selector)
             }
+            SubclassSelector::TreeStructuralPseudoClass(selector) => {
+                self.matches_tree_structural_pseudo_class(element, selector)
+            }
         }
     }
 

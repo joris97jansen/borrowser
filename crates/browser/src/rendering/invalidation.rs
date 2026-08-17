@@ -15,41 +15,168 @@ pub enum PhaseRerunSource {
     CascadedFrom(RenderingPhase),
 }
 
+/// Read-only phase work produced by the rendering invalidation factories.
+///
+/// Construction stays inside this module so phase relationships cannot be
+/// assembled independently of the rendering contracts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RenderInvalidationWorkPlan {
-    pub style: PhaseRerunSource,
-    pub layout: PhaseRerunSource,
-    pub paint: PhaseRerunSource,
-    pub frame_orchestration: PhaseRerunSource,
+    style: PhaseRerunSource,
+    layout: PhaseRerunSource,
+    paint: PhaseRerunSource,
+    frame_orchestration: PhaseRerunSource,
 }
 
 impl RenderInvalidationWorkPlan {
+    pub const fn style(self) -> PhaseRerunSource {
+        self.style
+    }
+
+    pub const fn layout(self) -> PhaseRerunSource {
+        self.layout
+    }
+
+    pub const fn paint(self) -> PhaseRerunSource {
+        self.paint
+    }
+
+    pub const fn frame_orchestration(self) -> PhaseRerunSource {
+        self.frame_orchestration
+    }
+
     pub const fn requests_redraw(self) -> bool {
         !matches!(self.frame_orchestration, PhaseRerunSource::None)
     }
 }
 
+/// A validated runtime invalidation request.
+///
+/// Consumers may inspect this value, but production construction is owned by
+/// the intrinsic request and typed CSS Style composition factories below.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RenderInvalidationRequest {
-    pub entry_point: RenderInvalidationEntryPoint,
-    pub requested_by: RenderingSubsystem,
-    pub requested_work: RenderInvalidationWorkPlan,
+    entry_point: RenderInvalidationEntryPoint,
+    requested_by: RenderingSubsystem,
+    requested_work: RenderInvalidationWorkPlan,
 }
 
 impl RenderInvalidationRequest {
+    pub const fn entry_point(self) -> RenderInvalidationEntryPoint {
+        self.entry_point
+    }
+
+    pub const fn requested_by(self) -> RenderingSubsystem {
+        self.requested_by
+    }
+
+    pub const fn requested_work(self) -> RenderInvalidationWorkPlan {
+        self.requested_work
+    }
+
+    pub const fn requests_style_work(self) -> bool {
+        !matches!(self.requested_work.style, PhaseRerunSource::None)
+    }
+
     pub fn paint_invalidation(self) -> Option<PaintInvalidationRequest> {
-        match self.requested_work.paint {
-            PhaseRerunSource::None => None,
-            PhaseRerunSource::Direct(_) | PhaseRerunSource::CascadedFrom(_) => {
-                Some(paint_invalidation_request(self.entry_point))
+        let reason = match self.requested_work.paint {
+            PhaseRerunSource::None => return None,
+            PhaseRerunSource::CascadedFrom(RenderingPhase::Style) => {
+                PaintInvalidationReason::CascadedFromStyle
             }
-        }
+            PhaseRerunSource::CascadedFrom(RenderingPhase::Layout) => {
+                PaintInvalidationReason::CascadedFromLayout
+            }
+            PhaseRerunSource::CascadedFrom(RenderingPhase::Paint)
+            | PhaseRerunSource::CascadedFrom(RenderingPhase::FrameOrchestration) => {
+                PaintInvalidationReason::ConservativeUnknownImpact
+            }
+            PhaseRerunSource::Direct(_) => paint_invalidation_request(self.entry_point).reason,
+        };
+        Some(PaintInvalidationRequest {
+            reason,
+            ..paint_invalidation_request(self.entry_point)
+        })
     }
 
     pub fn dirty_request(self) -> RenderDirtyRequest {
-        dirty_request_for_entry_point(self.entry_point)
+        dirty_request_for_render_request(self)
     }
 }
+
+/// Browser-runtime sources for which CSS may authorize direct Style work.
+///
+/// Keeping this domain narrower than `RenderInvalidationEntryPoint` prevents
+/// viewport, resource, and input events from manufacturing Style-phase
+/// triggers that the rendering phase contract does not admit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CssStyleInvalidationSource {
+    DocumentReplaced,
+    DomStructureChanged,
+    DomAttributesChanged,
+    DomTextChanged,
+    StylesheetSetChanged,
+}
+
+impl CssStyleInvalidationSource {
+    #[cfg(test)]
+    pub(crate) const fn from_entry_point(
+        entry_point: RenderInvalidationEntryPoint,
+    ) -> Option<Self> {
+        match entry_point {
+            RenderInvalidationEntryPoint::DocumentReplaced => Some(Self::DocumentReplaced),
+            RenderInvalidationEntryPoint::DomStructureChanged => Some(Self::DomStructureChanged),
+            RenderInvalidationEntryPoint::DomAttributesChanged => Some(Self::DomAttributesChanged),
+            RenderInvalidationEntryPoint::DomTextChanged => Some(Self::DomTextChanged),
+            RenderInvalidationEntryPoint::StylesheetSetChanged => Some(Self::StylesheetSetChanged),
+            RenderInvalidationEntryPoint::ViewportChanged
+            | RenderInvalidationEntryPoint::ResourceStateChanged
+            | RenderInvalidationEntryPoint::InputStateChanged => None,
+        }
+    }
+
+    pub(crate) const fn entry_point(self) -> RenderInvalidationEntryPoint {
+        match self {
+            Self::DocumentReplaced => RenderInvalidationEntryPoint::DocumentReplaced,
+            Self::DomStructureChanged => RenderInvalidationEntryPoint::DomStructureChanged,
+            Self::DomAttributesChanged => RenderInvalidationEntryPoint::DomAttributesChanged,
+            Self::DomTextChanged => RenderInvalidationEntryPoint::DomTextChanged,
+            Self::StylesheetSetChanged => RenderInvalidationEntryPoint::StylesheetSetChanged,
+        }
+    }
+
+    pub(crate) const fn rebuild_trigger(self) -> RenderRebuildTrigger {
+        match self {
+            Self::DocumentReplaced => RenderRebuildTrigger::DomReplaced,
+            Self::DomStructureChanged => RenderRebuildTrigger::DomStructureChanged,
+            Self::DomAttributesChanged => RenderRebuildTrigger::DomAttributesChanged,
+            Self::DomTextChanged => RenderRebuildTrigger::DomTextChanged,
+            Self::StylesheetSetChanged => RenderRebuildTrigger::StylesheetSetChanged,
+        }
+    }
+}
+
+pub(crate) const CSS_STYLE_INVALIDATION_SOURCES: [CssStyleInvalidationSource; 5] = [
+    CssStyleInvalidationSource::DocumentReplaced,
+    CssStyleInvalidationSource::DomStructureChanged,
+    CssStyleInvalidationSource::DomAttributesChanged,
+    CssStyleInvalidationSource::DomTextChanged,
+    CssStyleInvalidationSource::StylesheetSetChanged,
+];
+
+const fn css_style_rebuild_triggers<const N: usize>(
+    sources: [CssStyleInvalidationSource; N],
+) -> [RenderRebuildTrigger; N] {
+    let mut triggers = [RenderRebuildTrigger::DomReplaced; N];
+    let mut index = 0;
+    while index < N {
+        triggers[index] = sources[index].rebuild_trigger();
+        index += 1;
+    }
+    triggers
+}
+
+pub(crate) const CSS_STYLE_REBUILD_TRIGGERS: [RenderRebuildTrigger; 5] =
+    css_style_rebuild_triggers(CSS_STYLE_INVALIDATION_SOURCES);
 
 pub(crate) const ALL_INVALIDATION_ENTRY_POINTS: &[RenderInvalidationEntryPoint] = &[
     RenderInvalidationEntryPoint::DocumentReplaced,
@@ -81,35 +208,39 @@ pub(crate) const LAYOUT_PAINT_INVALIDATION_ENTRY_POINTS: &[RenderInvalidationEnt
     RenderInvalidationEntryPoint::InputStateChanged,
 ];
 
+/// Intrinsic rendering dependencies only. CSS-authorized Style work is
+/// composed after CSS classification and is never fabricated by this table.
 static RENDER_INVALIDATION_REQUEST_CONTRACTS: [RenderInvalidationRequest; 8] = [
     RenderInvalidationRequest {
         entry_point: RenderInvalidationEntryPoint::DocumentReplaced,
         requested_by: RenderingSubsystem::BrowserRuntime,
         requested_work: RenderInvalidationWorkPlan {
-            style: PhaseRerunSource::Direct(RenderRebuildTrigger::DomReplaced),
-            layout: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
+            style: PhaseRerunSource::None,
+            layout: PhaseRerunSource::Direct(RenderRebuildTrigger::DomReplaced),
             paint: PhaseRerunSource::CascadedFrom(RenderingPhase::Layout),
-            frame_orchestration: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
+            frame_orchestration: PhaseRerunSource::Direct(RenderRebuildTrigger::DomReplaced),
         },
     },
     RenderInvalidationRequest {
         entry_point: RenderInvalidationEntryPoint::DomStructureChanged,
         requested_by: RenderingSubsystem::BrowserRuntime,
         requested_work: RenderInvalidationWorkPlan {
-            style: PhaseRerunSource::Direct(RenderRebuildTrigger::DomStructureChanged),
-            layout: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
+            style: PhaseRerunSource::None,
+            layout: PhaseRerunSource::Direct(RenderRebuildTrigger::DomStructureChanged),
             paint: PhaseRerunSource::CascadedFrom(RenderingPhase::Layout),
-            frame_orchestration: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
+            frame_orchestration: PhaseRerunSource::Direct(
+                RenderRebuildTrigger::DomStructureChanged,
+            ),
         },
     },
     RenderInvalidationRequest {
         entry_point: RenderInvalidationEntryPoint::DomAttributesChanged,
         requested_by: RenderingSubsystem::BrowserRuntime,
         requested_work: RenderInvalidationWorkPlan {
-            style: PhaseRerunSource::Direct(RenderRebuildTrigger::DomAttributesChanged),
-            layout: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
-            paint: PhaseRerunSource::CascadedFrom(RenderingPhase::Layout),
-            frame_orchestration: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
+            style: PhaseRerunSource::None,
+            layout: PhaseRerunSource::None,
+            paint: PhaseRerunSource::None,
+            frame_orchestration: PhaseRerunSource::None,
         },
     },
     RenderInvalidationRequest {
@@ -126,10 +257,10 @@ static RENDER_INVALIDATION_REQUEST_CONTRACTS: [RenderInvalidationRequest; 8] = [
         entry_point: RenderInvalidationEntryPoint::StylesheetSetChanged,
         requested_by: RenderingSubsystem::BrowserRuntime,
         requested_work: RenderInvalidationWorkPlan {
-            style: PhaseRerunSource::Direct(RenderRebuildTrigger::StylesheetSetChanged),
-            layout: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
-            paint: PhaseRerunSource::CascadedFrom(RenderingPhase::Layout),
-            frame_orchestration: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
+            style: PhaseRerunSource::None,
+            layout: PhaseRerunSource::None,
+            paint: PhaseRerunSource::None,
+            frame_orchestration: PhaseRerunSource::None,
         },
     },
     RenderInvalidationRequest {
@@ -170,19 +301,19 @@ static PAINT_INVALIDATION_REQUEST_CONTRACTS: [PaintInvalidationRequest; 8] = [
     PaintInvalidationRequest {
         entry_point: RenderInvalidationEntryPoint::DocumentReplaced,
         trigger: PaintInvalidationTrigger::DocumentReplaced,
-        reason: PaintInvalidationReason::ConservativeUnknownImpact,
+        reason: PaintInvalidationReason::CascadedFromLayout,
         scope: PaintInvalidationScope::Document,
     },
     PaintInvalidationRequest {
         entry_point: RenderInvalidationEntryPoint::DomStructureChanged,
         trigger: PaintInvalidationTrigger::DomStructureChanged,
-        reason: PaintInvalidationReason::CascadedFromStyle,
+        reason: PaintInvalidationReason::CascadedFromLayout,
         scope: PaintInvalidationScope::Document,
     },
     PaintInvalidationRequest {
         entry_point: RenderInvalidationEntryPoint::DomAttributesChanged,
         trigger: PaintInvalidationTrigger::DomAttributesChanged,
-        reason: PaintInvalidationReason::CascadedFromStyle,
+        reason: PaintInvalidationReason::CascadedFromLayout,
         scope: PaintInvalidationScope::Document,
     },
     PaintInvalidationRequest {
@@ -194,7 +325,7 @@ static PAINT_INVALIDATION_REQUEST_CONTRACTS: [PaintInvalidationRequest; 8] = [
     PaintInvalidationRequest {
         entry_point: RenderInvalidationEntryPoint::StylesheetSetChanged,
         trigger: PaintInvalidationTrigger::StylesheetSetChanged,
-        reason: PaintInvalidationReason::CascadedFromStyle,
+        reason: PaintInvalidationReason::CascadedFromLayout,
         scope: PaintInvalidationScope::Document,
     },
     PaintInvalidationRequest {
@@ -234,12 +365,41 @@ pub fn render_invalidation_request(
         .expect("render invalidation contract must exist for every entry point")
 }
 
+/// Composes CSS-authorized Style work with the intrinsic dependencies of a
+/// typed CSS style-input source. CSS plan scope remains opaque to Browser.
+pub(crate) fn render_css_style_invalidation_request(
+    source: CssStyleInvalidationSource,
+    requested: bool,
+) -> RenderInvalidationRequest {
+    let mut request = render_invalidation_request(source.entry_point());
+    if !requested {
+        return request;
+    }
+
+    request.requested_work.style = PhaseRerunSource::Direct(source.rebuild_trigger());
+    if matches!(request.requested_work.layout, PhaseRerunSource::None) {
+        request.requested_work.layout = PhaseRerunSource::CascadedFrom(RenderingPhase::Style);
+    }
+    if matches!(request.requested_work.paint, PhaseRerunSource::None) {
+        request.requested_work.paint = PhaseRerunSource::CascadedFrom(RenderingPhase::Layout);
+    }
+    if matches!(
+        request.requested_work.frame_orchestration,
+        PhaseRerunSource::None
+    ) {
+        request.requested_work.frame_orchestration =
+            PhaseRerunSource::CascadedFrom(RenderingPhase::Style);
+    }
+    request
+}
+
 /// Stable paint-invalidation contract table.
 ///
-/// Each entry explains why paint is dirty and which conservative repaint scope
-/// is affected when the corresponding runtime invalidation entry point requests
-/// a paint rerun. The scope is a scheduling/invalidation contract, not a
-/// retained scene key or backend partial-raster command.
+/// Each entry provides the stable trigger and conservative scope metadata used
+/// when a composed runtime request includes Paint work. The composed work plan,
+/// not this metadata table, determines whether Paint is actually requested.
+/// The scope is a scheduling/invalidation contract, not a retained scene key or
+/// backend partial-raster command.
 pub fn paint_invalidation_request_contracts() -> &'static [PaintInvalidationRequest] {
     &PAINT_INVALIDATION_REQUEST_CONTRACTS
 }
@@ -256,64 +416,39 @@ pub fn paint_invalidation_request(
 pub fn dirty_request_for_entry_point(
     entry_point: RenderInvalidationEntryPoint,
 ) -> RenderDirtyRequest {
+    render_invalidation_request(entry_point).dirty_request()
+}
+
+fn intrinsic_dirty_request_for_entry_point(
+    entry_point: RenderInvalidationEntryPoint,
+) -> RenderDirtyRequest {
     let (direct, propagated): (Vec<DirtyEntry>, Vec<DirtyEntry>) = match entry_point {
         RenderInvalidationEntryPoint::DocumentReplaced => (
             vec![DirtyEntry::new(
-                DirtyPhase::Style,
+                DirtyPhase::Layout,
                 DirtyReason::DocumentReplaced,
                 DirtyScope::Document,
             )],
-            vec![
-                DirtyEntry::new(
-                    DirtyPhase::Layout,
-                    DirtyReason::CascadedFromStyle,
-                    DirtyScope::Document,
-                ),
-                DirtyEntry::new(
-                    DirtyPhase::Paint,
-                    DirtyReason::CascadedFromLayout,
-                    DirtyScope::Document,
-                ),
-            ],
+            vec![DirtyEntry::new(
+                DirtyPhase::Paint,
+                DirtyReason::CascadedFromLayout,
+                DirtyScope::Document,
+            )],
         ),
         RenderInvalidationEntryPoint::DomStructureChanged => (
             vec![DirtyEntry::new(
-                DirtyPhase::Style,
+                DirtyPhase::Layout,
                 DirtyReason::DomContentChanged,
                 DirtyScope::Document,
             )],
-            vec![
-                DirtyEntry::new(
-                    DirtyPhase::Layout,
-                    DirtyReason::CascadedFromStyle,
-                    DirtyScope::Document,
-                ),
-                DirtyEntry::new(
-                    DirtyPhase::Paint,
-                    DirtyReason::CascadedFromLayout,
-                    DirtyScope::Document,
-                ),
-            ],
-        ),
-        RenderInvalidationEntryPoint::DomAttributesChanged => (
             vec![DirtyEntry::new(
-                DirtyPhase::Style,
-                DirtyReason::StyleInputChanged,
+                DirtyPhase::Paint,
+                DirtyReason::CascadedFromLayout,
                 DirtyScope::Document,
             )],
-            vec![
-                DirtyEntry::new(
-                    DirtyPhase::Layout,
-                    DirtyReason::CascadedFromStyle,
-                    DirtyScope::Document,
-                ),
-                DirtyEntry::new(
-                    DirtyPhase::Paint,
-                    DirtyReason::CascadedFromLayout,
-                    DirtyScope::Document,
-                ),
-            ],
         ),
+        RenderInvalidationEntryPoint::DomAttributesChanged
+        | RenderInvalidationEntryPoint::StylesheetSetChanged => (vec![], vec![]),
         RenderInvalidationEntryPoint::DomTextChanged => (
             vec![DirtyEntry::new(
                 DirtyPhase::Layout,
@@ -325,25 +460,6 @@ pub fn dirty_request_for_entry_point(
                 DirtyReason::CascadedFromLayout,
                 DirtyScope::Document,
             )],
-        ),
-        RenderInvalidationEntryPoint::StylesheetSetChanged => (
-            vec![DirtyEntry::new(
-                DirtyPhase::Style,
-                DirtyReason::StylesheetChanged,
-                DirtyScope::Document,
-            )],
-            vec![
-                DirtyEntry::new(
-                    DirtyPhase::Layout,
-                    DirtyReason::CascadedFromStyle,
-                    DirtyScope::Document,
-                ),
-                DirtyEntry::new(
-                    DirtyPhase::Paint,
-                    DirtyReason::CascadedFromLayout,
-                    DirtyScope::Document,
-                ),
-            ],
         ),
         RenderInvalidationEntryPoint::ViewportChanged => (
             vec![DirtyEntry::new(
@@ -394,6 +510,56 @@ pub fn dirty_request_for_entry_point(
     }
 }
 
+fn css_style_invalidation_dirty_entries(
+    entry_point: RenderInvalidationEntryPoint,
+) -> [DirtyEntry; 3] {
+    let style_reason = match entry_point {
+        RenderInvalidationEntryPoint::DocumentReplaced => DirtyReason::DocumentReplaced,
+        RenderInvalidationEntryPoint::DomStructureChanged => DirtyReason::DomContentChanged,
+        RenderInvalidationEntryPoint::StylesheetSetChanged => DirtyReason::StylesheetChanged,
+        RenderInvalidationEntryPoint::DomAttributesChanged
+        | RenderInvalidationEntryPoint::DomTextChanged
+        | RenderInvalidationEntryPoint::ViewportChanged
+        | RenderInvalidationEntryPoint::ResourceStateChanged
+        | RenderInvalidationEntryPoint::InputStateChanged => DirtyReason::StyleInputChanged,
+    };
+    [
+        DirtyEntry::new(DirtyPhase::Style, style_reason, DirtyScope::Document),
+        DirtyEntry::new(
+            DirtyPhase::Layout,
+            DirtyReason::CascadedFromStyle,
+            DirtyScope::Document,
+        ),
+        DirtyEntry::new(
+            DirtyPhase::Paint,
+            DirtyReason::CascadedFromLayout,
+            DirtyScope::Document,
+        ),
+    ]
+}
+
+fn dirty_request_for_render_request(request: RenderInvalidationRequest) -> RenderDirtyRequest {
+    let mut state = RenderDirtyState::new();
+    state.extend(intrinsic_dirty_request_for_entry_point(request.entry_point).entries);
+    if request.requests_style_work() {
+        state.extend(css_style_invalidation_dirty_entries(request.entry_point));
+        debug_assert!(!matches!(
+            request.requested_work.layout,
+            PhaseRerunSource::None
+        ));
+        debug_assert!(!matches!(
+            request.requested_work.paint,
+            PhaseRerunSource::None
+        ));
+        debug_assert!(request.requested_work.requests_redraw());
+    }
+
+    RenderDirtyRequest {
+        entry_point: request.entry_point,
+        entries: state.entries().to_vec(),
+    }
+}
+
 pub fn dirty_propagation_for_entry_point(
     entry_point: RenderInvalidationEntryPoint,
 ) -> DirtyPropagationResult {
@@ -430,10 +596,16 @@ pub struct PendingRenderWork {
 }
 
 impl PendingRenderWork {
-    pub fn push(&mut self, request: RenderInvalidationRequest) {
+    pub fn push(&mut self, request: RenderInvalidationRequest) -> bool {
+        if !request.requested_work.requests_redraw() {
+            debug_assert!(request.dirty_request().entries.is_empty());
+            debug_assert!(request.paint_invalidation().is_none());
+            return false;
+        }
         if !self.requests.contains(&request) {
             self.requests.push(request);
         }
+        true
     }
 
     pub fn is_empty(&self) -> bool {

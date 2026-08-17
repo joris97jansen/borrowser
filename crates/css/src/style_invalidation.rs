@@ -103,7 +103,11 @@ pub fn classify_style_invalidation(change: StyleChangeFacts) -> Option<StyleInva
         StyleChangeFacts::AttributesChanged { node_ids } => {
             StyleInvalidationPlan::document_suffix(node_ids)
         }
-        StyleChangeFacts::TextChanged => None,
+        // `:empty` depends on exact ordinary direct-text facts. Without a
+        // reverse selector-dependency index, CSS cannot prove which elements
+        // are unaffected by a text mutation, so the safe current policy is a
+        // full-document restyle.
+        StyleChangeFacts::TextChanged => Some(StyleInvalidationPlan::full_document()),
     }
 }
 
@@ -155,11 +159,11 @@ mod tests {
     }
 
     #[test]
-    fn no_style_change_is_none() {
-        assert_eq!(
-            classify_style_invalidation(StyleChangeFacts::TextChanged),
-            None
-        );
+    fn text_change_requires_full_document_style_invalidation() {
+        let plan = classify_style_invalidation(StyleChangeFacts::TextChanged)
+            .expect("text can change :empty matching");
+        assert!(plan.invalidates_all_cached_style_artifacts());
+        assert_eq!(plan.to_debug_snapshot(), "scope: full-document");
     }
 
     #[test]
@@ -213,15 +217,23 @@ mod tests {
     }
 
     #[test]
-    fn no_op_does_not_clear_pending_plan() {
+    fn no_incoming_plan_does_not_clear_pending_plan() {
         let suffix = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
             node_ids: vec![id(2)],
         });
-        let merged = merge_style_invalidation_plans(
-            suffix.clone(),
-            classify_style_invalidation(StyleChangeFacts::TextChanged),
-        );
+        let merged = merge_style_invalidation_plans(suffix.clone(), None);
 
         assert_eq!(merged, suffix);
+    }
+
+    #[test]
+    fn text_full_plan_dominates_pending_suffix() {
+        let suffix = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
+            node_ids: vec![id(2)],
+        });
+        let text = classify_style_invalidation(StyleChangeFacts::TextChanged);
+
+        let merged = merge_style_invalidation_plans(suffix, text).expect("merged plan");
+        assert!(merged.invalidates_all_cached_style_artifacts());
     }
 }

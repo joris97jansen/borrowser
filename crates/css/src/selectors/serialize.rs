@@ -179,6 +179,11 @@ fn subclass_selector_snapshot(selector: &SubclassSelector) -> String {
             span_label(selector.name().span()),
         ),
         SubclassSelector::Attribute(selector) => attribute_selector_snapshot(selector),
+        SubclassSelector::TreeStructuralPseudoClass(selector) => format!(
+            "tree-structural-pseudo-class({}) node={}",
+            selector.pseudo_class().css_keyword(),
+            span_label(Some(selector.span()))
+        ),
     }
 }
 
@@ -223,9 +228,9 @@ fn attribute_value_snapshot(value: &AttributeValue) -> String {
 fn specificity_label(specificity: Specificity) -> String {
     format!(
         "({},{},{})",
-        specificity.ids(),
-        specificity.classes(),
-        specificity.types()
+        specificity.a(),
+        specificity.b(),
+        specificity.c()
     )
 }
 

@@ -263,8 +263,9 @@ The contract does not expose pseudo-specific helpers such as:
 - `is_first_child_for_css`
 - `has_non_whitespace_text_for_css`
 
-Future CSS pseudo-class implementations must derive their meaning from neutral
-facts inside CSS.
+AF4d's tree-structural pseudo-class implementation derives its meaning from
+these neutral facts inside CSS. Future pseudo families must preserve the same
+boundary.
 
 ## Neutral Attribute Facts
 

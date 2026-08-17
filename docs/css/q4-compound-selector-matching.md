@@ -45,6 +45,10 @@ This method evaluates one `CompoundSelector` against one target element by:
 - requiring every subclass selector to match on the same element
 - short-circuiting deterministically on the first failing component
 
+AF4d extends the existing subclass-selector conjunction with typed
+tree-structural pseudo nodes. This is not a pseudo-specific cascade path;
+multiple pseudos in one compound remain ordinary conjunctive components.
+
 This is exactly the Q4 runtime boundary.
 
 The surrounding selector-list entrypoint is already in place through:

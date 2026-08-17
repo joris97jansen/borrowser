@@ -46,7 +46,7 @@ The shipped invalidation path is now:
 ```text
 runtime event or viewport/runtime state change
   -> explicit RenderInvalidationEntryPoint
-  -> RenderInvalidationRequest { requested_by, work }
+  -> sealed RenderInvalidationRequest (inspectable owner and phase work)
   -> PageState retained-state mutation when page-owned state is affected
   -> Tab::request_render_work(...)
   -> PendingRenderWork
@@ -72,15 +72,17 @@ Borrowser exposes the normative entry-point table through:
 - `browser::rendering::render_invalidation_request_contracts()`
 - `browser::rendering::render_invalidation_request(...)`
 
-The shipped entry points are:
+The static contract records intrinsic rendering dependencies only. CSS-owned
+Style work is composed after classification and therefore cannot be fabricated
+by this table:
 
 | entry point | requested by | style | layout | paint | frame orchestration |
 | --- | --- | --- | --- | --- | --- |
-| `DocumentReplaced` | browser runtime | direct | cascaded from style | cascaded from layout | cascaded from style |
-| `DomStructureChanged` | browser runtime | direct | cascaded from style | cascaded from layout | cascaded from style |
-| `DomAttributesChanged` | browser runtime | direct | cascaded from style | cascaded from layout | cascaded from style |
+| `DocumentReplaced` | browser runtime | none | direct | cascaded from layout | direct |
+| `DomStructureChanged` | browser runtime | none | direct | cascaded from layout | direct |
+| `DomAttributesChanged` | browser runtime | none | none | none | none |
 | `DomTextChanged` | browser runtime | none | direct | cascaded from layout | direct |
-| `StylesheetSetChanged` | browser runtime | direct | cascaded from style | cascaded from layout | cascaded from style |
+| `StylesheetSetChanged` | browser runtime | none | none | none | none |
 | `ViewportChanged` | browser view | none | direct | cascaded from layout | direct |
 | `ResourceStateChanged` | browser runtime | none | direct | direct | direct |
 | `InputStateChanged` | browser view | none | none | direct | direct |
@@ -93,6 +95,27 @@ Interpretation:
 - "cascaded from layout" means the phase reruns because layout outputs change
 - "frame orchestration" is the runtime request to execute the viewport frame
   path again
+
+AF4d asks CSS to classify the neutral fact for DOM and stylesheet style inputs.
+`Some(plan)` authorizes Style work; Browser composes it with the applicable
+intrinsic row into one `RenderInvalidationRequest`. `None` adds no Style work
+and does not advance the style-input generation. That one composed request
+drives dirty-state, paint-invalidation, and redraw projections. In particular,
+`DomTextChanged` retains direct Layout input while gaining Style work for
+AF4d's current `Some(full-document)` result. Browser does not infer `:empty` or
+inspect selector IR or CSS plan scope.
+
+The runtime represents the CSS-style-composable domain separately from the
+general invalidation-entry-point domain. Its five sources derive the Style
+phase's legal direct-trigger inventory. Viewport, resource-state, and
+input-state entry points therefore cannot be composed into CSS-authorized
+Style work.
+
+Render invalidation requests and their work plans are sealed runtime values.
+Callers inspect phase work through read-only accessors; they do not construct
+arbitrary phase combinations. `render_invalidation_request(...)` owns
+intrinsic construction, and the typed CSS Style composition factory owns the
+only production path that adds CSS-authorized Style work.
 
 ## Page-Owned Invalidation Entry Points
 

@@ -1,0 +1,19 @@
+version: 1
+selector-list
+span: @0..63
+selector[0] @0..5 specificity=(0,1,0)
+  compound[0] @0..5 specificity=(0,1,0)
+    - tree-structural-pseudo-class(root) node=@0..5
+selector[1] @7..36 specificity=(0,2,2)
+  compound[0] @7..26 specificity=(0,1,1)
+    - type("section") node=@7..14 name=@7..14
+    - tree-structural-pseudo-class(first-child) node=@14..26
+  combined[0] child @27..36
+    compound @29..36 specificity=(0,1,1)
+      - type("p") node=@29..30 name=@29..30
+      - tree-structural-pseudo-class(empty) node=@30..36
+selector[2] @38..62 specificity=(0,2,1)
+  compound[0] @38..62 specificity=(0,2,1)
+    - type("li") node=@38..40 name=@38..40
+    - tree-structural-pseudo-class(only-child) node=@40..51
+    - tree-structural-pseudo-class(last-child) node=@51..62

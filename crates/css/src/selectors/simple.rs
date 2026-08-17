@@ -1,6 +1,7 @@
 use crate::syntax::CssSpan;
 
 use super::attribute::AttributeSelector;
+use super::pseudo::TreeStructuralPseudoClassSelector;
 use super::specificity::Specificity;
 use super::validation::{SelectorStructureError, ensure_payload_span_within_node};
 use super::values::SelectorIdent;
@@ -80,7 +81,7 @@ impl NamedTypeSelector {
     }
 
     pub fn specificity(&self) -> Specificity {
-        Specificity::TYPE
+        Specificity::C
     }
 }
 
@@ -90,6 +91,7 @@ pub enum SubclassSelector {
     Id(IdSelector),
     Class(ClassSelector),
     Attribute(AttributeSelector),
+    TreeStructuralPseudoClass(TreeStructuralPseudoClassSelector),
 }
 
 impl SubclassSelector {
@@ -98,6 +100,7 @@ impl SubclassSelector {
             Self::Id(selector) => selector.span(),
             Self::Class(selector) => selector.span(),
             Self::Attribute(selector) => selector.span(),
+            Self::TreeStructuralPseudoClass(selector) => selector.span(),
         }
     }
 
@@ -106,6 +109,7 @@ impl SubclassSelector {
             Self::Id(selector) => selector.specificity(),
             Self::Class(selector) => selector.specificity(),
             Self::Attribute(selector) => selector.specificity(),
+            Self::TreeStructuralPseudoClass(selector) => selector.specificity(),
         }
     }
 }
@@ -132,7 +136,7 @@ impl IdSelector {
     }
 
     pub fn specificity(&self) -> Specificity {
-        Specificity::ID
+        Specificity::A
     }
 }
 
@@ -158,6 +162,6 @@ impl ClassSelector {
     }
 
     pub fn specificity(&self) -> Specificity {
-        Specificity::CLASS
+        Specificity::B
     }
 }

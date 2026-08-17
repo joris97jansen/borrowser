@@ -3,7 +3,8 @@ pub(super) use super::{
     AttributeValue, ClassSelector, Combinator, CombinedSelector, ComplexSelector, CompoundSelector,
     IdSelector, InvalidSelectorList, InvalidSelectorReason, SelectorIdent, SelectorList,
     SelectorListParseResult, SelectorString, SelectorStructureError, SubclassSelector,
-    TypeSelector, UnsupportedSelectorFeature, UnsupportedSelectorList,
+    TreeStructuralPseudoClass, TreeStructuralPseudoClassSelector, TypeSelector,
+    UnsupportedSelectorFeature, UnsupportedSelectorList,
 };
 pub(super) use crate::syntax::{
     CssBlockKind, CssComponentValue, CssHashKind, CssInput, CssSpan, CssToken, CssTokenKind,
@@ -13,6 +14,7 @@ pub(super) use crate::syntax::{
 mod attribute;
 mod convert;
 mod list;
+mod pseudo;
 mod segment;
 mod simple;
 mod spans;

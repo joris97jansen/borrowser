@@ -79,7 +79,7 @@ The currently classified unsupported selector features are:
 
 - namespaces
 - attribute case modifiers
-- pseudo-classes
+- pseudo-classes outside AF4d's supported tree-structural subset
 - functional pseudo-classes
 - pseudo-elements
 - relative selectors

@@ -1,7 +1,7 @@
 use super::super::{InvalidSelectorReason, parse_selector_list};
 use super::support::{invalid_selector, parse_selector_result, parse_selector_result_with_limits};
 use crate::syntax::{
-    CssComponentValue, CssInput, CssToken, CssTokenKind, CssTokenText, SyntaxLimits,
+    CssComponentValue, CssFunction, CssInput, CssToken, CssTokenKind, CssTokenText, SyntaxLimits,
 };
 
 #[test]
@@ -54,6 +54,7 @@ fn parser_rejects_representative_invalid_selector_categories() {
     let missing_attribute_value = invalid_selector("[lang=]");
     let malformed_class = invalid_selector("div.");
     let malformed_pseudo = invalid_selector(":");
+    let malformed_double_colon = invalid_selector("::");
 
     assert_eq!(empty.reason(), InvalidSelectorReason::EmptySelectorList);
     assert_eq!(
@@ -74,6 +75,10 @@ fn parser_rejects_representative_invalid_selector_categories() {
     );
     assert_eq!(
         malformed_pseudo.reason(),
+        InvalidSelectorReason::UnexpectedComponentValue
+    );
+    assert_eq!(
+        malformed_double_colon.reason(),
         InvalidSelectorReason::UnexpectedComponentValue
     );
 }
@@ -280,4 +285,112 @@ fn parser_reports_invariant_violations_for_non_monotonic_selector_spans() {
             "reason: invariant-violation\n",
         )
     );
+}
+
+#[test]
+fn pseudo_keyword_text_from_another_input_is_invalid_not_unsupported() {
+    let input = CssInput::from(":root");
+    let foreign = CssInput::from("root");
+    let values = vec![
+        CssComponentValue::PreservedToken(CssToken::new(
+            CssTokenKind::Colon,
+            input.span(0, 1).expect("colon span"),
+        )),
+        CssComponentValue::PreservedToken(CssToken::new(
+            CssTokenKind::Ident(CssTokenText::Span(
+                foreign.span(0, 4).expect("foreign ident span"),
+            )),
+            input.span(1, 5).expect("ident token span"),
+        )),
+    ];
+
+    let result = parse_selector_list(&input, &values);
+    let invalid = result
+        .invalid()
+        .expect("foreign pseudo keyword payload must be invalid");
+    assert_eq!(
+        invalid.reason(),
+        InvalidSelectorReason::UnexpectedComponentValue
+    );
+}
+
+#[test]
+fn pseudo_identifier_span_from_another_input_is_an_invariant_violation() {
+    let input = CssInput::from(":root");
+    let foreign = CssInput::from("root");
+    let values = vec![
+        CssComponentValue::PreservedToken(CssToken::new(
+            CssTokenKind::Colon,
+            input.span(0, 1).expect("colon span"),
+        )),
+        CssComponentValue::PreservedToken(CssToken::new(
+            CssTokenKind::Ident(CssTokenText::Owned("root".into())),
+            foreign.span(0, 4).expect("foreign ident span"),
+        )),
+    ];
+
+    assert_pseudo_span_invariant_violation(&input, &values);
+}
+
+#[test]
+fn non_monotonic_pseudo_identifier_span_is_an_invariant_violation() {
+    let input = CssInput::from("abc :");
+    let values = vec![
+        CssComponentValue::PreservedToken(CssToken::new(
+            CssTokenKind::Colon,
+            input.span(4, 5).expect("colon span"),
+        )),
+        CssComponentValue::PreservedToken(CssToken::new(
+            CssTokenKind::Ident(CssTokenText::Owned("root".into())),
+            input.span(0, 3).expect("ident span"),
+        )),
+    ];
+
+    assert_pseudo_span_invariant_violation(&input, &values);
+}
+
+#[test]
+fn functional_pseudo_span_from_another_input_is_an_invariant_violation() {
+    let input = CssInput::from(":is()");
+    let foreign = CssInput::from("is()");
+    let values = vec![
+        CssComponentValue::PreservedToken(CssToken::new(
+            CssTokenKind::Colon,
+            input.span(0, 1).expect("colon span"),
+        )),
+        CssComponentValue::Function(CssFunction {
+            span: foreign.span(0, 4).expect("foreign function span"),
+            name: CssTokenText::Owned("is".into()),
+            value: Vec::new(),
+        }),
+    ];
+
+    assert_pseudo_span_invariant_violation(&input, &values);
+}
+
+#[test]
+fn non_monotonic_functional_pseudo_span_is_an_invariant_violation() {
+    let input = CssInput::from("abc :");
+    let values = vec![
+        CssComponentValue::PreservedToken(CssToken::new(
+            CssTokenKind::Colon,
+            input.span(4, 5).expect("colon span"),
+        )),
+        CssComponentValue::Function(CssFunction {
+            span: input.span(0, 3).expect("function span"),
+            name: CssTokenText::Owned("is".into()),
+            value: Vec::new(),
+        }),
+    ];
+
+    assert_pseudo_span_invariant_violation(&input, &values);
+}
+
+fn assert_pseudo_span_invariant_violation(input: &CssInput, values: &[CssComponentValue]) {
+    let result = parse_selector_list(input, values);
+    let invalid = result
+        .invalid()
+        .expect("structurally impossible pseudo spans must be invalid");
+    assert_eq!(invalid.reason(), InvalidSelectorReason::InvariantViolation);
+    assert!(result.unsupported().is_none());
 }

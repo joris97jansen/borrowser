@@ -40,7 +40,8 @@ into regression guardrails. The guardrails answer whether representative
 updates:
 
 - reuse retained artifacts on no-op frames;
-- avoid style recomputation for viewport-only and text-only updates;
+- avoid style recomputation for viewport-only updates and bound AF4d's
+  conservative text-triggered full restyle to one per published text change;
 - avoid relayout for CSS-owned paint-only style changes when classification
   supports that;
 - recompute layout and paint for layout-affecting updates;
@@ -85,6 +86,11 @@ The AC9 guard tests cover:
 The representative page fixture is generated in the test module. It is not a
 live website, does not require network access, and is intended to exercise
 repeated app-like markup without becoming a benchmark suite for one page.
+
+AF4d changes the text/content guard: because text can change `:empty`, each
+published text mutation currently causes one CSS-authorized full style
+recomputation and retains its independent Layout/Paint work. Fine-grained text
+dependency proofs remain deferred.
 
 ## Resource Guardrails
 

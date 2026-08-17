@@ -89,6 +89,11 @@ The runtime owns scheduling and invalidation. Engine crates own rendering
 semantics inside their phases. No later phase may reach backward and re-own an
 earlier phase's job.
 
+AF4d applies this boundary to text-sensitive selectors: CSS classifies the
+neutral text fact and authorizes Style work, while Browser independently keeps
+text as direct Layout input. Browser does not know which pseudo caused CSS's
+decision.
+
 ## Ownership Boundaries
 
 ### Browser Runtime And Page State
@@ -362,7 +367,7 @@ Current downstream effects:
 | document replacement | browser runtime | full invalidation | dirty | dirty |
 | DOM structure mutation | browser runtime | full invalidation | dirty | dirty |
 | DOM attribute mutation | browser runtime | suffix invalidation when proven safe, else full | dirty | dirty |
-| DOM text mutation | browser runtime | no computed-style invalidation by itself in the current supported selector/property model | dirty | dirty |
+| DOM text mutation | CSS classifier via browser runtime | conservative full invalidation for AF4d `:empty` correctness | dirty independently | dirty |
 | stylesheet set/state change | browser runtime | full invalidation | dirty | dirty |
 | viewport change | viewport runtime | none | rebuild frame-local layout | repaint |
 | resource/input state change | viewport/runtime | none | maybe rebuild depending on phase input | repaint |
@@ -370,12 +375,12 @@ Current downstream effects:
 `style_dirty` and `layout_dirty` are invalidation-state signals, not proof that
 Borrowser already has a retained layout artifact to reuse.
 
-The DOM text-mutation rule is intentionally scoped. It remains valid only while
-text content is not style-relevant in the supported selector/property model.
-Today that excludes cases such as `:empty`, `:has(...)`, text-sensitive
-generated content, and similar features that would require broader style
-invalidation. `<style>` text changes are already handled separately through
-stylesheet reconciliation.
+The DOM text-mutation effects are intentionally independent. CSS currently
+returns a full-document plan because text can change `:empty` matching, while
+text remains direct Layout input regardless of selector dependencies. Browser
+advances the retained style-input generation only when CSS returns
+`Some(plan)`. `<style>` text changes additionally flow through stylesheet
+reconciliation.
 
 ## Determinism And Invariants
 

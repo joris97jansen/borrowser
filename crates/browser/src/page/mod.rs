@@ -14,7 +14,7 @@ pub(crate) use stylesheets::PageStylesheetReconcile;
 use crate::form_controls::{FormControlIndex, seed_input_state_from_dom};
 use crate::rendering::{
     PendingRenderWork, RenderInvalidationRequest, RenderWorkPlan, RenderWorkPlanInput,
-    RetainedPaintArtifactKeySeed, RetainedPaintFrameResult, render_invalidation_request,
+    RetainedPaintArtifactKeySeed, RetainedPaintFrameResult, render_css_style_invalidation_request,
 };
 use gfx::input::InputValueStore;
 use gfx::paint::PaintArtifact;
@@ -108,29 +108,30 @@ impl PageState {
             self.rendering.reconcile_retained_identities_from_dom(dom);
         }
 
-        match trigger {
-            RestyleTrigger::TextMutated => {
-                self.rendering
-                    .mark_style_change(css::StyleChangeFacts::TextChanged);
-            }
+        let css_requested_style_work = match trigger {
+            RestyleTrigger::TextMutated => self
+                .rendering
+                .apply_style_input_change(css::StyleChangeFacts::TextChanged),
             RestyleTrigger::DocumentReplaced => self
                 .rendering
-                .mark_style_inputs_changed(css::StyleChangeFacts::DocumentReplaced),
+                .apply_style_input_change(css::StyleChangeFacts::DocumentReplaced),
             RestyleTrigger::TreeMutated => self
                 .rendering
-                .mark_style_inputs_changed(css::StyleChangeFacts::TreeStructureChanged),
+                .apply_style_input_change(css::StyleChangeFacts::TreeStructureChanged),
             RestyleTrigger::AttributesChanged => {
-                self.rendering.mark_style_inputs_changed(
-                    css::StyleChangeFacts::AttributesChanged {
+                self.rendering
+                    .apply_style_input_change(css::StyleChangeFacts::AttributesChanged {
                         node_ids: hint.attribute_dirty_nodes,
-                    },
-                );
+                    })
             }
-        }
+        };
 
-        let entry_point = trigger.render_invalidation_entry_point();
-        self.rendering.mark_dirty_for_entry_point(entry_point);
-        render_invalidation_request(entry_point)
+        let request = render_css_style_invalidation_request(
+            trigger.css_style_invalidation_source(),
+            css_requested_style_work,
+        );
+        self.rendering.mark_dirty_for_request(request);
+        request
     }
 
     pub(crate) fn derive_render_work_plan(

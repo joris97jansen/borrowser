@@ -234,8 +234,9 @@ fn dom_patch_style_text_change_reconciles_stylesheet_slot_and_restyles() {
         Some(RestyleTrigger::TextMutated)
     );
     assert_eq!(
-        after.style_inputs, before.style_inputs,
-        "style text changes should invalidate through stylesheet generation"
+        after.style_inputs,
+        before.style_inputs + 1,
+        "CSS must authorize a style-input generation advance for the text mutation"
     );
     assert_eq!(
         after.stylesheets,
@@ -435,7 +436,7 @@ fn queued_attribute_mutations_merge_to_earliest_dirty_suffix() {
 }
 
 #[test]
-fn dom_patch_normal_text_change_dirties_layout_but_reuses_computed_style() {
+fn dom_patch_normal_text_change_conservatively_restyles_and_dirties_layout() {
     let mut tab = Tab::new(1);
     tab.nav_gen = 23;
     tab.page.start_nav("https://example.com/index.html");
@@ -478,16 +479,17 @@ fn dom_patch_normal_text_change_dirties_layout_but_reuses_computed_style() {
     );
     assert_eq!(after.dom, before.dom + 1);
     assert_eq!(
-        after.style_inputs, before.style_inputs,
-        "normal text changes must not invalidate selector/cascade inputs"
+        after.style_inputs,
+        before.style_inputs + 1,
+        "AF4d conservatively invalidates style because text can change :empty matching"
     );
     assert_eq!(
         after.stylesheets, before.stylesheets,
         "normal text changes must not reconcile a new stylesheet set"
     );
     assert!(
-        !tab.page.style_dirty(),
-        "normal text changes should reuse cached computed style"
+        tab.page.style_dirty(),
+        "CSS-authorized text invalidation must schedule style work"
     );
     assert!(
         tab.page.layout_dirty(),

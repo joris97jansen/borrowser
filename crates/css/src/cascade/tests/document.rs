@@ -251,6 +251,45 @@ fn selector_list_effective_specificity_uses_only_actual_matches_in_cascade() {
 }
 
 #[test]
+fn tree_structural_pseudo_enters_the_normal_cascade_with_b_specificity() {
+    let sheet = stylesheet("p { color: red; } p:empty { color: blue; }");
+    let parsed = html::parse_document(
+        "<!doctype html><html><body><p></p><p>content</p></body></html>",
+        html::HtmlParseOptions::default(),
+    )
+    .expect("document parses");
+    let resolved = resolve_document_styles(&parsed.document, matching_environment(), &[sheet])
+        .expect("resolved document style");
+    let paragraphs = resolved
+        .entries()
+        .iter()
+        .filter(|entry| entry.element_name() == "p")
+        .collect::<Vec<_>>();
+
+    let empty_winner = paragraphs[0]
+        .style()
+        .get(CascadePropertyId::Color)
+        .and_then(|entry| entry.winner())
+        .expect("empty paragraph color winner");
+    assert_eq!(empty_winner.value.to_css_text().as_deref(), Some("blue"));
+    assert_eq!(
+        empty_winner.priority.specificity,
+        CascadeSpecificity::Selector(crate::Specificity::new(0, 1, 1))
+    );
+
+    let non_empty_winner = paragraphs[1]
+        .style()
+        .get(CascadePropertyId::Color)
+        .and_then(|entry| entry.winner())
+        .expect("non-empty paragraph color winner");
+    assert_eq!(non_empty_winner.value.to_css_text().as_deref(), Some("red"));
+    assert_eq!(
+        non_empty_winner.priority.specificity,
+        CascadeSpecificity::Selector(crate::Specificity::C)
+    );
+}
+
+#[test]
 fn resolve_document_styles_threads_parent_style_for_inheritance() {
     let stylesheets = vec![stylesheet("section { color: red; }")];
     let dom = document_element(

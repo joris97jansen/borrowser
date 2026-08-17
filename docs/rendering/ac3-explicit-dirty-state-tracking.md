@@ -114,20 +114,30 @@ For current runtime entry points:
 
 | entry point | direct dirty entries | propagated entries |
 | --- | --- | --- |
-| `DocumentReplaced` | style/document, reason `DocumentReplaced` | layout/document from style, paint/document from layout |
-| `DomStructureChanged` | style/document, reason `DomContentChanged` | layout/document from style, paint/document from layout |
-| `DomAttributesChanged` | style/document, reason `StyleInputChanged` | layout/document from style, paint/document from layout |
+| `DocumentReplaced` | layout/document, reason `DocumentReplaced` | paint/document from layout |
+| `DomStructureChanged` | layout/document, reason `DomContentChanged` | paint/document from layout |
+| `DomAttributesChanged` | none | none |
 | `DomTextChanged` | layout/document, reason `TextContentChanged` | paint/document from layout |
-| `StylesheetSetChanged` | style/document, reason `StylesheetChanged` | layout/document from style, paint/document from layout |
+| `StylesheetSetChanged` | none | none |
 | `ViewportChanged` | layout/viewport, reason `ViewportChanged` | paint/viewport from layout |
 | `ResourceStateChanged` | layout/document and paint/document, reason `ResourceStateChanged` | none |
 | `InputStateChanged` | paint/viewport, reason `RuntimeInputState` | none |
 
-Pure text mutation does not restyle in the current supported CSS model. Text
-content affects layout and paint; stylesheet text changes are handled by
-stylesheet reconciliation and dirty style separately. Future generated content
-or text-sensitive selector support must widen this rule or add CSS-owned
-dependency classification.
+AF4d refinement: this table records intrinsic entry-point consequences.
+Separately, CSS classifies neutral style facts; `Some(plan)` authorizes Style
+dirtiness plus cascaded Style-to-Layout/Paint entries, while `None` adds none
+and does not advance the retained style-input generation. Browser combines the
+classification result with the intrinsic row once, and the resulting request
+is the only source projected into retained dirty state. `DomTextChanged`
+therefore keeps its direct Layout reason alongside AF4d's CSS-authorized Style
+work.
+
+AF4d conservatively restyles for every published text mutation because text can
+change `:empty` matching and no selector-dependency index exists yet. Text
+content independently affects layout and paint; stylesheet text changes also
+flow through stylesheet reconciliation. A future dependency-aware CSS
+classifier may return `None`, in which case Browser must preserve style-cache
+eligibility while retaining any intrinsic Layout consequence.
 
 Viewport changes do not imply style dirtiness by default.
 

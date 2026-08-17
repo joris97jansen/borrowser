@@ -1,0 +1,5 @@
+version: 1
+selector-parse
+result: unsupported
+span: @0..36
+feature[0]: pseudo-element

@@ -94,6 +94,26 @@ fn compute_document_styles_integrates_cascade_inheritance_defaults_and_computati
 }
 
 #[test]
+fn tree_structural_pseudo_matching_affects_parser_backed_computed_style() {
+    let parsed = html::parse_document(
+        "<!doctype html><html><body><p></p><p>content</p></body></html>",
+        html::HtmlParseOptions::default(),
+    )
+    .expect("document parses");
+    let stylesheets = vec![stylesheet("p { color: red; } p:empty { color: blue; }")];
+    let computed =
+        compute_document_styles(&parsed.document, &stylesheets).expect("computed document style");
+    let paragraphs = computed
+        .entries()
+        .iter()
+        .filter(|entry| entry.element_name() == "p")
+        .collect::<Vec<_>>();
+
+    assert_eq!(paragraphs[0].style().color(), (0, 0, 255, 255));
+    assert_eq!(paragraphs[1].style().color(), (255, 0, 0, 255));
+}
+
+#[test]
 fn document_style_artifacts_retain_the_explicit_matching_environment() {
     let dom = document_element("div", Vec::new(), Vec::new());
     let environment = crate::SelectorMatchingEnvironment::new(html::DocumentMode::LimitedQuirks);

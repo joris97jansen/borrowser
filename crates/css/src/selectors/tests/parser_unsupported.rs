@@ -83,3 +83,44 @@ fn unsupported_feature_aggregation_is_stable_across_selector_lists() {
         )
     );
 }
+
+#[test]
+fn pseudo_classification_is_ascii_case_insensitive_and_family_aware() {
+    for source in [":hover", ":HOVER"] {
+        assert_eq!(
+            unsupported_selector(source).features(),
+            &[UnsupportedSelectorFeature::PseudoClass]
+        );
+    }
+    for source in [":nth-child(2)", ":NTH-CHILD(2)"] {
+        assert_eq!(
+            unsupported_selector(source).features(),
+            &[UnsupportedSelectorFeature::FunctionalPseudoClass]
+        );
+    }
+    for source in [":is(.x)", ":IS(.x)", ":where(.x)", ":WHERE(.x)"] {
+        assert_eq!(
+            unsupported_selector(source).features(),
+            &[
+                UnsupportedSelectorFeature::FunctionalPseudoClass,
+                UnsupportedSelectorFeature::ForgivingSelectorList,
+            ]
+        );
+    }
+    for source in [
+        ":before",
+        ":BEFORE",
+        ":after",
+        ":FIRST-LINE",
+        ":First-Letter",
+        "::before",
+        "::MARKER",
+        "::part(name)",
+    ] {
+        assert_eq!(
+            unsupported_selector(source).features(),
+            &[UnsupportedSelectorFeature::PseudoElement],
+            "unexpected classification for {source:?}",
+        );
+    }
+}

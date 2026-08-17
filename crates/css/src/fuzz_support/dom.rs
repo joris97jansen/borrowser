@@ -17,6 +17,19 @@ const DATA_KIND_TOKENS: &[&str] = &["promo", "card", "note", "hero", "nav"];
 
 const DATA_STATE_TOKENS: &[&str] = &["open", "closed", "active", "idle"];
 
+const TEXT_CONTENT_TOKENS: &[&str] = &[
+    "",
+    "\t",
+    "\n",
+    "\u{000c}",
+    "\r",
+    " ",
+    " \t\n\u{000c}\r ",
+    "\u{00a0}",
+    "\u{2003}",
+    "content",
+];
+
 const INLINE_DECLARATION_CATALOG: &[&str] = &[
     "color: red",
     "color: #112233",
@@ -234,7 +247,7 @@ fn extra_element(
 
     if cursor.next_bool() {
         children.push(text_node(clamp_text(
-            cursor.choose_str(CLASS_TOKENS),
+            cursor.choose_str(TEXT_CONTENT_TOKENS),
             limits.max_text_bytes_per_node,
         )));
     }

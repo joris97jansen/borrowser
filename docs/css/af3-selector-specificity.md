@@ -40,18 +40,20 @@ selector specificity.
 The typed `Specificity` value represents the bounded selector tuple `(A, B, C)`:
 
 - A counts ID selectors;
-- B counts class selectors and supported attribute selectors;
-- C counts named type selectors.
+- B counts class selectors, supported attribute selectors, and supported
+  pseudo-classes;
+- C counts named type selectors and would count supported pseudo-elements.
 
 Universal selectors contribute zero. The supported combinators—descendant,
 child, next-sibling, and subsequent-sibling—do not directly contribute to any
 component. Specificity is additive across the compounds of one complex
 selector.
 
-Pseudo-classes and pseudo-elements currently contribute nothing because they
-are unsupported selector features in AF2. They are not supported selectors
-with zero specificity. Parser-produced unsupported pseudo-class and
-pseudo-element selector lists remain non-matchable and cannot contribute
+AF4d's five tree-structural pseudo-classes each contribute exactly one B.
+`:only-child` is one typed pseudo selector and therefore contributes one B,
+not the sum of first/last predicates. Other pseudo-classes and pseudo-elements
+remain unsupported rather than behaving like supported zero-specificity
+selectors. Their selector lists remain non-matchable and cannot contribute
 cascade candidates.
 
 ## Comparison and bounded representation

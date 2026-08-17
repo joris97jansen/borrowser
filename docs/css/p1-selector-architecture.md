@@ -248,7 +248,7 @@ The following are explicitly outside the Milestone P supported subset and must
 surface as `Unsupported`, not as ad hoc partial parses:
 
 - namespace-qualified selectors
-- pseudo-classes
+- pseudo-classes beyond AF4d's five tree-structural identifier pseudos
 - functional pseudo-classes including `:not()`, `:is()`, `:where()`, and
   `:has()`
 - pseudo-elements
@@ -262,7 +262,7 @@ surface as `Unsupported`, not as ad hoc partial parses:
 Specificity is represented as the tuple `(a, b, c)`:
 
 - `a`: id selector count
-- `b`: class selector and attribute selector count
+- `b`: class selector, attribute selector, and supported pseudo-class count
 - `c`: type selector count
 
 Specificity rules for the supported subset:

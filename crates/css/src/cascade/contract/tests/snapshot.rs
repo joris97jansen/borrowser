@@ -11,7 +11,7 @@ use crate::selectors::Specificity;
 #[test]
 fn cascade_evaluation_debug_snapshot_covers_filtering_ordering_and_winners() {
     let stylesheet_rule = CascadeRuleInput::from_stylesheet_match(
-        &matched_rule(0, 0, &[Specificity::TYPE]),
+        &matched_rule(0, 0, &[Specificity::C]),
         CascadeOrigin::Author,
         0,
         vec![

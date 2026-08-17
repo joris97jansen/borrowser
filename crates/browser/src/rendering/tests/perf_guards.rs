@@ -225,7 +225,7 @@ fn ac9_repeated_viewport_resize_does_not_restyle_or_grow_retained_state() {
 }
 
 #[test]
-fn ac9_text_content_update_reuses_style_and_recomputes_layout_paint() {
+fn af4d_text_content_update_performs_one_conservative_full_restyle_and_render_update() {
     let (mut page, mut harness, baseline) = baseline_page(
         "<!doctype html><html><head><style>p { display: block; width: 100px; color: red; }</style></head><body><p>Hello</p></body></html>",
     );
@@ -243,8 +243,9 @@ fn ac9_text_content_update_reuses_style_and_recomputes_layout_paint() {
     assert_clean_after_recorded_frame(&page);
     let after = GuardCounters::from_page(&page);
 
-    assert_eq!(after.style_recompute, baseline.style_recompute);
-    assert!(after.style_reuse > baseline.style_reuse);
+    assert_eq!(after.style_recompute, baseline.style_recompute + 1);
+    assert_eq!(after.style_discard, baseline.style_discard + 1);
+    assert_eq!(after.style_reuse, baseline.style_reuse);
     assert!(after.layout_recompute > baseline.layout_recompute);
     assert!(after.paint_recompute > baseline.paint_recompute);
     assert_eq!(after.retained_identities, baseline.retained_identities);
@@ -365,10 +366,12 @@ fn ac9_representative_page_repeated_text_updates_have_bounded_resource_growth() 
 
     let after = GuardCounters::from_page(&page);
     assert_eq!(
-        after.style_recompute, baseline.style_recompute,
-        "representative text updates should not restyle in the current CSS model"
+        after.style_recompute,
+        baseline.style_recompute + updates,
+        "each published text change should perform one conservative AF4d full restyle"
     );
-    assert!(after.style_reuse >= baseline.style_reuse + updates);
+    assert_eq!(after.style_discard, baseline.style_discard + updates);
+    assert_eq!(after.style_reuse, baseline.style_reuse);
     assert!(after.layout_recompute <= baseline.layout_recompute + updates);
     assert!(after.paint_recompute <= baseline.paint_recompute + updates);
     assert_eq!(after.retained_identities, baseline.retained_identities);

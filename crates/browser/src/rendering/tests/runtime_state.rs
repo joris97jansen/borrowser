@@ -1,5 +1,5 @@
 use crate::input_state::DocumentInputState;
-use crate::page::{PageState, RestyleHint};
+use crate::page::{PageState, RestyleHint, StyleRecalcKind};
 use crate::rendering::*;
 use crate::resources::ResourceManager;
 use egui::{CentralPanel, Context, Pos2, RawInput, Rect, Vec2};
@@ -193,10 +193,11 @@ fn retained_render_identities_allocate_deterministically_for_initial_document() 
             "  layout-tree: absent\n",
             "  paint-output: absent\n",
             "dirty-state:\n",
-            "  entries: 3\n",
+            "  entries: 4\n",
             "    entry[0]: phase=style reason=document-replaced scope=document\n",
-            "    entry[1]: phase=layout reason=cascaded-from-style scope=document\n",
-            "    entry[2]: phase=paint reason=cascaded-from-layout scope=document\n",
+            "    entry[1]: phase=layout reason=document-replaced scope=document\n",
+            "    entry[2]: phase=layout reason=cascaded-from-style scope=document\n",
+            "    entry[3]: phase=paint reason=cascaded-from-layout scope=document\n",
             "  style-dirty: true\n",
             "  layout-dirty: true\n",
             "  paint-dirty: true\n",
@@ -290,6 +291,11 @@ fn debug_snapshot_reports_retained_style_artifacts_and_ephemeral_downstream_tree
             paint_output: RenderArtifactState::Absent,
             dirty_state: DirtyStateDebugSnapshot {
                 entries: vec![
+                    DirtyEntry::new(
+                        DirtyPhase::Layout,
+                        DirtyReason::DocumentReplaced,
+                        DirtyScope::Document,
+                    ),
                     DirtyEntry::new(
                         DirtyPhase::Layout,
                         DirtyReason::CascadedFromStyle,
@@ -1436,6 +1442,11 @@ fn attribute_mutation_keeps_style_cache_but_marks_it_stale_until_restored() {
             ),
             DirtyEntry::new(
                 DirtyPhase::Layout,
+                DirtyReason::DocumentReplaced,
+                DirtyScope::Document,
+            ),
+            DirtyEntry::new(
+                DirtyPhase::Layout,
                 DirtyReason::CascadedFromStyle,
                 DirtyScope::Document,
             ),
@@ -1471,7 +1482,7 @@ fn attribute_mutation_keeps_style_cache_but_marks_it_stale_until_restored() {
 }
 
 #[test]
-fn text_mutation_does_not_clear_pending_css_style_invalidation_plan() {
+fn text_full_invalidation_dominates_a_pending_css_suffix_plan() {
     let mut page = page_with_dom(
         "<!doctype html><html><head><style>p { color: black; }</style></head><body><p>Hello</p></body></html>",
     );
@@ -1491,7 +1502,7 @@ fn text_mutation_does_not_clear_pending_css_style_invalidation_plan() {
 
     assert_eq!(
         page.render_pipeline_debug_snapshot().style_invalidation,
-        suffix_style_plan_debug(vec![p_id])
+        full_style_plan_debug()
     );
 }
 
@@ -1639,46 +1650,116 @@ fn stylesheet_update_discards_retained_style_artifacts() {
 }
 
 #[test]
-fn text_mutation_dirties_layout_without_invalidating_computed_style() {
+fn whitespace_to_meaningful_text_recomputes_empty_matching_and_preserves_direct_layout_dirtiness() {
     let mut page = page_with_dom(
-        "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
+        "<!doctype html><html><head><style>p { color: blue; } p:empty { color: red; }</style></head><body><p> \n</p></body></html>",
     );
     let initial = style_output_for_test(&mut page);
     assert_eq!(styled_element_color(initial.root(), "p"), (255, 0, 0, 255));
     drop(initial);
-    page.clear_layout_dirty_for_tests();
+    page.clear_all_dirty_for_tests();
+    let before = page.render_pipeline_debug_snapshot();
 
     replace_first_text(
         page.dom
             .as_deref_mut()
             .expect("page DOM should exist for mutation"),
-        "Hello",
-        "Goodbye",
+        " \n",
+        "content",
     );
-    let hint = RestyleHint::text_mutated();
-    page.mark_dom_changed_for_tests(hint);
+    page.mark_dom_changed_for_tests(RestyleHint::text_mutated());
 
-    let snapshot = page.render_pipeline_debug_snapshot();
-    assert_eq!(snapshot.resolved_styles, RenderArtifactState::RetainedFresh);
-    assert_eq!(snapshot.computed_styles, RenderArtifactState::RetainedFresh);
-    assert_eq!(snapshot.style_invalidation, None);
-    assert!(!snapshot.style_dirty);
-    assert!(snapshot.layout_dirty);
-    assert!(snapshot.paint_dirty);
+    let invalidated = page.render_pipeline_debug_snapshot();
     assert_eq!(
-        snapshot.dirty_state.entries,
-        vec![
-            DirtyEntry::new(
-                DirtyPhase::Layout,
-                DirtyReason::TextContentChanged,
-                DirtyScope::Document,
-            ),
-            DirtyEntry::new(
-                DirtyPhase::Paint,
-                DirtyReason::CascadedFromLayout,
-                DirtyScope::Document,
-            ),
-        ]
+        invalidated.generations.dom_generation,
+        before.generations.dom_generation + 1
+    );
+    assert_eq!(
+        invalidated.generations.style_input_generation,
+        before.generations.style_input_generation + 1
+    );
+    assert_eq!(
+        invalidated.generations.layout_input_generation,
+        before.generations.layout_input_generation + 1
+    );
+    assert_eq!(invalidated.style_invalidation, full_style_plan_debug());
+    assert_eq!(invalidated.resolved_styles, RenderArtifactState::Absent);
+    assert_eq!(invalidated.computed_styles, RenderArtifactState::Absent);
+    assert!(invalidated.style_dirty);
+    assert!(invalidated.layout_dirty);
+    assert!(invalidated.paint_dirty);
+    assert!(invalidated.dirty_state.entries.contains(&DirtyEntry::new(
+        DirtyPhase::Style,
+        DirtyReason::StyleInputChanged,
+        DirtyScope::Document,
+    )));
+    assert!(invalidated.dirty_state.entries.contains(&DirtyEntry::new(
+        DirtyPhase::Layout,
+        DirtyReason::CascadedFromStyle,
+        DirtyScope::Document,
+    )));
+    assert!(invalidated.dirty_state.entries.contains(&DirtyEntry::new(
+        DirtyPhase::Layout,
+        DirtyReason::TextContentChanged,
+        DirtyScope::Document,
+    )));
+    assert_eq!(invalidated.style_artifacts.stats.discard_count, 1);
+
+    let restyled = style_output_for_test(&mut page);
+    assert_eq!(styled_element_color(restyled.root(), "p"), (0, 0, 255, 255));
+    drop(restyled);
+
+    let refreshed = page.render_pipeline_debug_snapshot();
+    assert_eq!(
+        page.last_style_recalc(),
+        Some(StyleRecalcKind::Full { elements: 5 })
+    );
+    assert_eq!(refreshed.style_invalidation, None);
+    assert!(!refreshed.style_dirty);
+    assert!(refreshed.layout_dirty);
+    assert!(refreshed.dirty_state.entries.contains(&DirtyEntry::new(
+        DirtyPhase::Layout,
+        DirtyReason::TextContentChanged,
+        DirtyScope::Document,
+    )));
+    assert_eq!(refreshed.style_artifacts.stats.recompute_count, 2);
+    assert_eq!(refreshed.style_artifacts.stats.discard_count, 1);
+}
+
+#[test]
+fn meaningful_text_to_whitespace_recomputes_empty_matching() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><head><style>p { color: blue; } p:empty { color: red; }</style></head><body><p>content</p></body></html>",
+    );
+    let initial = style_output_for_test(&mut page);
+    assert_eq!(styled_element_color(initial.root(), "p"), (0, 0, 255, 255));
+    drop(initial);
+    page.clear_all_dirty_for_tests();
+
+    replace_first_text(
+        page.dom
+            .as_deref_mut()
+            .expect("page DOM should exist for mutation"),
+        "content",
+        "\t\n ",
+    );
+    page.mark_dom_changed_for_tests(RestyleHint::text_mutated());
+
+    let invalidated = page.render_pipeline_debug_snapshot();
+    assert_eq!(invalidated.style_invalidation, full_style_plan_debug());
+    assert!(invalidated.style_dirty);
+    assert!(invalidated.dirty_state.entries.contains(&DirtyEntry::new(
+        DirtyPhase::Layout,
+        DirtyReason::TextContentChanged,
+        DirtyScope::Document,
+    )));
+
+    let restyled = style_output_for_test(&mut page);
+    assert_eq!(styled_element_color(restyled.root(), "p"), (255, 0, 0, 255));
+    drop(restyled);
+    assert_eq!(
+        page.last_style_recalc(),
+        Some(StyleRecalcKind::Full { elements: 5 })
     );
 }
 

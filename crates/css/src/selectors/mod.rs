@@ -25,6 +25,7 @@ pub mod fuzz;
 pub mod matching;
 mod parse_result;
 mod parser;
+mod pseudo;
 mod serialize;
 mod simple;
 mod specificity;
@@ -55,6 +56,7 @@ pub use attribute::{
     AttributeValue,
 };
 pub use complex::{Combinator, CombinedSelector, ComplexSelector, CompoundSelector};
+pub use pseudo::{TreeStructuralPseudoClass, TreeStructuralPseudoClassSelector};
 pub use simple::{
     ClassSelector, IdSelector, NamedTypeSelector, SubclassSelector, TypeSelector, UniversalSelector,
 };

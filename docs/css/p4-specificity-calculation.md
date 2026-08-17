@@ -32,6 +32,7 @@ Specificity is implemented for:
 - id selectors
 - class selectors
 - supported attribute selectors
+- supported tree-structural pseudo-classes
 
 The specificity model is represented by `Specificity`, a strongly typed CSS
 tuple `(a, b, c)` with saturating arithmetic.
@@ -62,6 +63,8 @@ For the currently supported selector subset:
 - id selectors contribute `(1, 0, 0)`
 - class selectors contribute `(0, 1, 0)`
 - supported attribute selectors contribute `(0, 1, 0)`
+- each supported tree-structural pseudo-class contributes `(0, 1, 0)`;
+  `:only-child` contributes this once
 - combinators do not contribute specificity directly
 - complex-selector specificity is the sum of its compound-selector
   specificities
@@ -96,3 +99,7 @@ Repository status:
 - selector matching and cascade winner resolution remain separate downstream
   consumers; AF2 has since reconciled selector diagnostics at the model
   boundary
+
+AF4d also renamed the production `Specificity` constants/accessors to truthful
+A/B/C terminology. The tuple ordering, saturation, and existing numeric
+snapshot meaning are unchanged.

@@ -337,7 +337,7 @@ Milestone Q does not implement:
 - selector matching caches
 - traversal pruning heuristics
 - CSS `@namespace` and namespace-selector syntax
-- pseudo-classes
+- pseudo-classes beyond AF4d's typed tree-structural subset
 - functional pseudo-classes
 - pseudo-elements
 - relative selectors

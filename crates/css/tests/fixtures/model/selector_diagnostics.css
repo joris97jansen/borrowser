@@ -1,3 +1,4 @@
 a:is(.hero) { color: red; }
 [lang=] { color: blue; }
-div:hover::before { color: green; }
+:RoOt, p:EMPTY { color: black; }
+div:hover:BEFORE { color: green; }

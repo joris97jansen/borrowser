@@ -256,7 +256,7 @@ pub(crate) fn build_render_frame_execution_trace(
     let mut triggered_entry_points = pending_work
         .requests()
         .iter()
-        .map(|request| request.entry_point)
+        .map(|request| request.entry_point())
         .collect::<Vec<_>>();
     let mut style = PhaseReasonAccumulator::default();
     let mut layout = PhaseReasonAccumulator::default();
@@ -264,19 +264,21 @@ pub(crate) fn build_render_frame_execution_trace(
     let mut frame_orchestration = PhaseReasonAccumulator::default();
 
     for request in pending_work.requests() {
-        style.record(request.requested_work.style);
-        layout.record(request.requested_work.layout);
-        paint.record(request.requested_work.paint);
-        frame_orchestration.record(request.requested_work.frame_orchestration);
+        let requested_work = request.requested_work();
+        style.record(requested_work.style());
+        layout.record(requested_work.layout());
+        paint.record(requested_work.paint());
+        frame_orchestration.record(requested_work.frame_orchestration());
     }
 
     if viewport_changed {
         let request = render_invalidation_request(RenderInvalidationEntryPoint::ViewportChanged);
-        push_unique(&mut triggered_entry_points, request.entry_point);
-        style.record(request.requested_work.style);
-        layout.record(request.requested_work.layout);
-        paint.record(request.requested_work.paint);
-        frame_orchestration.record(request.requested_work.frame_orchestration);
+        push_unique(&mut triggered_entry_points, request.entry_point());
+        let requested_work = request.requested_work();
+        style.record(requested_work.style());
+        layout.record(requested_work.layout());
+        paint.record(requested_work.paint());
+        frame_orchestration.record(requested_work.frame_orchestration());
     }
 
     let style_fallback = if style_dirty_before_frame {

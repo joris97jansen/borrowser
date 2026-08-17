@@ -11,13 +11,7 @@ fn render_phase_boundary_debug_snapshot_is_stable_for_simple_text_flow() {
     let mut page = page_with_dom(
         "<!doctype html><html style=\"display: inline;\"><head style=\"display: inline;\"><style style=\"display: inline;\">html { background-color: white; } p { color: red; }</style></head><body style=\"display: inline;\"><p style=\"display: inline;\">Hello</p></body></html>",
     );
-    let mut pending = PendingRenderWork::default();
-    pending.push(render_invalidation_request(
-        RenderInvalidationEntryPoint::DocumentReplaced,
-    ));
-    pending.push(render_invalidation_request(
-        RenderInvalidationEntryPoint::StylesheetSetChanged,
-    ));
+    let pending = pending_for_simple_text_flow();
 
     let snapshot = render_phase_boundary_debug_snapshot(
         &mut page,
@@ -112,7 +106,8 @@ orchestration:
       - stylesheet-set-changed
     cascaded-from: 0
   layout: phase=layout kind=requested
-    direct-triggers: 0
+    direct-triggers: 1
+      - dom-replaced
     cascaded-from: 1
       - style
   paint: phase=paint kind=requested
@@ -120,7 +115,8 @@ orchestration:
     cascaded-from: 1
       - layout
   frame-orchestration: phase=frame-orchestration kind=requested
-    direct-triggers: 0
+    direct-triggers: 1
+      - dom-replaced
     cascaded-from: 1
       - style
   repaint-execution: scope=document
