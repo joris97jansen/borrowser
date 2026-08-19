@@ -98,16 +98,15 @@ orchestration:
   version: 1
   render-frame-execution-trace
   triggered-entry-points: 2
-    - document-replaced
+    - dom-publication-style-invalidated
     - stylesheet-set-changed
   style: phase=style kind=requested
     direct-triggers: 2
-      - dom-replaced
+      - dom-publication-style-invalidated
       - stylesheet-set-changed
     cascaded-from: 0
   layout: phase=layout kind=requested
-    direct-triggers: 1
-      - dom-replaced
+    direct-triggers: 0
     cascaded-from: 1
       - style
   paint: phase=paint kind=requested
@@ -115,8 +114,7 @@ orchestration:
     cascaded-from: 1
       - layout
   frame-orchestration: phase=frame-orchestration kind=requested
-    direct-triggers: 1
-      - dom-replaced
+    direct-triggers: 0
     cascaded-from: 1
       - style
   repaint-execution: scope=document

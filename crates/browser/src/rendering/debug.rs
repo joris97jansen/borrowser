@@ -249,6 +249,10 @@ fn entry_point_debug_label(entry_point: RenderInvalidationEntryPoint) -> &'stati
         RenderInvalidationEntryPoint::DomStructureChanged => "dom-structure-changed",
         RenderInvalidationEntryPoint::DomAttributesChanged => "dom-attributes-changed",
         RenderInvalidationEntryPoint::DomTextChanged => "dom-text-changed",
+        RenderInvalidationEntryPoint::DomPublicationStyleInvalidated => {
+            "dom-publication-style-invalidated"
+        }
+        RenderInvalidationEntryPoint::DomMutationUnclassified => "dom-mutation-unclassified",
         RenderInvalidationEntryPoint::StylesheetSetChanged => "stylesheet-set-changed",
         RenderInvalidationEntryPoint::ViewportChanged => "viewport-changed",
         RenderInvalidationEntryPoint::ResourceStateChanged => "resource-state-changed",
@@ -262,6 +266,10 @@ fn paint_invalidation_trigger_debug_label(trigger: PaintInvalidationTrigger) -> 
         PaintInvalidationTrigger::DomStructureChanged => "dom-structure-changed",
         PaintInvalidationTrigger::DomAttributesChanged => "dom-attributes-changed",
         PaintInvalidationTrigger::DomTextChanged => "dom-text-changed",
+        PaintInvalidationTrigger::DomPublicationStyleInvalidated => {
+            "dom-publication-style-invalidated"
+        }
+        PaintInvalidationTrigger::DomMutationUnclassified => "dom-mutation-unclassified",
         PaintInvalidationTrigger::StylesheetSetChanged => "stylesheet-set-changed",
         PaintInvalidationTrigger::ViewportChanged => "viewport-changed",
         PaintInvalidationTrigger::ResourceStateChanged => "resource-state-changed",
@@ -311,6 +319,8 @@ fn rebuild_trigger_debug_label(trigger: RenderRebuildTrigger) -> &'static str {
         RenderRebuildTrigger::DomStructureChanged => "dom-structure-changed",
         RenderRebuildTrigger::DomAttributesChanged => "dom-attributes-changed",
         RenderRebuildTrigger::DomTextChanged => "dom-text-changed",
+        RenderRebuildTrigger::DomPublicationStyleInvalidated => "dom-publication-style-invalidated",
+        RenderRebuildTrigger::DomMutationUnclassified => "dom-mutation-unclassified",
         RenderRebuildTrigger::StylesheetSetChanged => "stylesheet-set-changed",
         RenderRebuildTrigger::StyleOutputsChanged => "style-outputs-changed",
         RenderRebuildTrigger::ViewportChanged => "viewport-changed",

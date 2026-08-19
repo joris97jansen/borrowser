@@ -1,8 +1,37 @@
 use super::document::DomDoc;
-use super::error::DomPatchError;
+use super::error::{DomIdentityResolutionError, DomPatchError};
 use core_types::{DomHandle, DomVersion};
 use html::{DomPatch, Node, PatchKey, internal::Id};
 use std::collections::HashMap;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ResolvedMutationNodeIds {
+    live_node_ids: Vec<Id>,
+    historical_target_count: usize,
+}
+
+impl ResolvedMutationNodeIds {
+    pub(super) fn from_parts(live_node_ids: Vec<Id>, historical_target_count: usize) -> Self {
+        Self {
+            live_node_ids,
+            historical_target_count,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn live_node_ids(&self) -> &[Id] {
+        &self.live_node_ids
+    }
+
+    #[cfg(test)]
+    pub(crate) fn historical_target_count(&self) -> usize {
+        self.historical_target_count
+    }
+
+    pub(crate) fn into_parts(self) -> (Vec<Id>, usize) {
+        (self.live_node_ids, self.historical_target_count)
+    }
+}
 
 #[derive(Clone)]
 pub struct DomStore {
@@ -83,16 +112,30 @@ impl DomStore {
         doc.materialize_owned()
     }
 
-    pub fn resolve_live_node_ids(
+    pub(crate) fn resolve_mutation_node_ids(
         &self,
         handle: DomHandle,
         keys: &[PatchKey],
-    ) -> Result<Vec<Id>, DomPatchError> {
+    ) -> Result<ResolvedMutationNodeIds, DomIdentityResolutionError> {
         let doc = self
             .docs
             .get(&handle)
-            .ok_or(DomPatchError::UnknownHandle(handle))?;
-        doc.resolve_live_node_ids(keys)
+            .ok_or(DomIdentityResolutionError::UnknownHandle(handle))?;
+        doc.resolve_mutation_node_ids(keys)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn resolve_mutation_node_ids_with_unavailable_live_key(
+        &self,
+        handle: DomHandle,
+        keys: &[PatchKey],
+        unavailable: PatchKey,
+    ) -> Result<ResolvedMutationNodeIds, DomIdentityResolutionError> {
+        let doc = self
+            .docs
+            .get(&handle)
+            .ok_or(DomIdentityResolutionError::UnknownHandle(handle))?;
+        doc.resolve_mutation_node_ids_with_unavailable_live_key(keys, unavailable)
     }
 
     #[cfg(test)]

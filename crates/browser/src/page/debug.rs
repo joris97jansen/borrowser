@@ -1,14 +1,44 @@
 #[cfg(test)]
 use crate::rendering::RenderInvalidationEntryPoint;
+#[cfg(test)]
+use crate::rendering::{
+    CssStyleInvalidationSource, RenderInvalidationRequest, render_css_style_invalidation_request,
+};
 use crate::rendering::{RenderPipelineDebugSnapshot, RetainedRenderStateDebugSnapshot};
 #[cfg(test)]
 use css::ComputedStyleReuseStats;
 
-use super::PageState;
+use super::{DomMutationFacts, PageState};
 #[cfg(test)]
-use super::{PageStyleGenerations, RestyleHint, RestyleTrigger, StyleRecalcKind};
+use super::{PageStyleGenerations, StyleRecalcKind};
 
 impl PageState {
+    /// Runs the bounded CSS-owned AF4 matching diagnostic over the currently
+    /// retained document and its real cascade stylesheet inputs.
+    pub fn selector_matching_debug_snapshot(
+        &self,
+        limits: css::DocumentSelectorMatchingDiagnosticLimits,
+    ) -> Option<css::DocumentSelectorMatchingDiagnostic> {
+        let dom = self.dom.as_deref()?;
+        let document_mode = self.document_mode?;
+        let inputs = self.rendering.document_styles.cascade_stylesheet_inputs();
+        Some(css::document_selector_matching_diagnostic(
+            dom,
+            css::SelectorMatchingEnvironment::new(document_mode),
+            &inputs,
+            limits,
+        ))
+    }
+
+    /// Stable neutral publication facts retained for Browser/runtime
+    /// diagnostics. This does not expose or infer selector dependencies.
+    pub fn last_dom_mutation_debug_snapshot(&self) -> Option<String> {
+        self.rendering
+            .last_dom_mutation_facts
+            .as_ref()
+            .map(DomMutationFacts::to_debug_snapshot)
+    }
+
     /// Reports the retained/rebuilt policy for rendering artifacts owned or
     /// coordinated by the current page state.
     ///
@@ -60,8 +90,8 @@ impl PageState {
     }
 
     #[cfg(test)]
-    pub(crate) fn mark_dom_changed_for_tests(&mut self, hint: RestyleHint) {
-        let _ = self.mark_dom_changed(hint);
+    pub(crate) fn mark_dom_changed_for_tests(&mut self, facts: DomMutationFacts) {
+        let _ = self.mark_dom_changed(facts);
     }
 
     #[cfg(test)]
@@ -73,8 +103,29 @@ impl PageState {
     }
 
     #[cfg(test)]
-    pub(crate) fn last_restyle_trigger(&self) -> Option<RestyleTrigger> {
-        self.rendering.last_restyle_trigger
+    pub(crate) fn last_dom_mutation_facts(&self) -> Option<&DomMutationFacts> {
+        self.rendering.last_dom_mutation_facts.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn css_authorized_request_for_tests(
+        &mut self,
+        source: CssStyleInvalidationSource,
+    ) -> RenderInvalidationRequest {
+        match source {
+            CssStyleInvalidationSource::DomPublication => self
+                .mark_dom_changed(DomMutationFacts::text_changed_for_tests(Vec::new()))
+                .requests()
+                .find(|request| {
+                    request.entry_point()
+                        == RenderInvalidationEntryPoint::DomPublicationStyleInvalidated
+                })
+                .expect("text publication must receive CSS Style authorization"),
+            CssStyleInvalidationSource::StylesheetSetChanged => {
+                let authorization = self.rendering.mark_stylesheets_changed();
+                render_css_style_invalidation_request(source, authorization)
+            }
+        }
     }
 
     #[cfg(test)]

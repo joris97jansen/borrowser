@@ -159,11 +159,13 @@ For a navigation:
    output through the AE1 ownership boundary.
 3. `Tab::on_core_event(...)` filters every event by `(tab_id, request_id)`.
    Stale events cannot mutate active page state.
-4. DOM snapshots use `RestyleHint::document_replaced()`.
-5. DOM patch batches are applied atomically by `DomStore`; empty patch batches
-   are no-ops for restyle; non-empty batches produce a `RestyleHint`.
-6. `PageState::replace_dom(...)` installs the materialized DOM and marks DOM,
-   style-input, or layout state according to the hint.
+4. DOM snapshots produce neutral document-replacement facts.
+5. DOM patch batches are staged and applied atomically by `DomStore`; after
+   materialization, Browser resolves live versus historical mutation targets
+   and constructs one composable `DomMutationFacts` publication.
+6. `PageState::replace_dom(...)` installs the materialized DOM, classifies the
+   complete fact set once in CSS, and independently derives intrinsic runtime
+   work from the same facts.
 7. Head metadata, visible text, form-control state, image discovery, and
    stylesheet discovery are updated from the active DOM.
 8. `PageState::reconcile_document_stylesheets()` updates `DocumentStyleSet`.
@@ -204,26 +206,24 @@ translate a projection build error into that state. The no-retained-artifact
 incremental branch performs preflight only and does not materialize and discard
 a complete selector index before Browser's deterministic full fallback.
 
-## Restyle Trigger Contract
+## DOM Publication Fact Contract
 
-DOM patch batches are classified by `RestyleTrigger` with this severity order:
+DOM patch batches produce composable neutral facts; there is no winning
+trigger or severity order. Current behavior is:
 
-```text
-DocumentReplaced > TreeMutated > AttributesChanged > TextMutated
-```
-
-Current trigger behavior:
-
-| trigger | examples | style effect | layout effect |
+| fact | examples | style effect | intrinsic effect |
 | --- | --- | --- | --- |
 | `DocumentReplaced` | navigation snapshot, `Clear`, `CreateDocument` | full style-input invalidation | dirty |
-| `TreeMutated` | create, append, insert, remove, reparent | full style-input invalidation | dirty |
-| `AttributesChanged` | `SetAttributes` | CSS-owned suffix eligibility for materialized identities; full fallback otherwise | dirty |
-| `TextMutated` | `SetText`, `AppendText` | CSS classifies `TextChanged`; AF4d currently returns a full-document plan because `:empty` is text-sensitive | dirty independently as direct Layout input |
+| ordinary allocation | create document type/element/text/comment/PI | none by itself | none by itself |
+| topology/order | append, insert, remove, reparent | full style-input invalidation | Layout dirty |
+| template association | `CreateTemplateContents` | none by itself | none by itself |
+| attribute targets | `SetAttributes` | CSS-owned suffix eligibility for surviving identities; full fallback otherwise | no intrinsic work |
+| text targets | `SetText`, `AppendText` | AF4e full-document plan because `:empty` is text-sensitive | direct Layout work |
+| unclassified patch | future `DomPatch` understood by `DomStore` | conservative full-document plan | conservative direct Layout work |
 | stylesheet reconciliation | `<style>` text change, `<link>` add/remove/order change | stylesheet generation invalidation, full style invalidation | dirty |
 | external stylesheet install/fail/abort/state change | `CssDecodedBlock`, load completion, error, abort | stylesheet generation invalidation, full style invalidation when the active stylesheet set/state changes | dirty |
 
-Text-only DOM changes are conservatively full-restyled under AF4d. A future
+Text-only DOM changes are conservatively full-restyled under AF4e. A future
 selector dependency index may prove a particular fact style-neutral by
 returning `None`; Browser must then preserve style generation and cache-key
 eligibility. If the changed text belongs to a `<style>` element, stylesheet
@@ -231,6 +231,11 @@ reconciliation independently detects changed stylesheet input and submits a
 full CSS-owned plan.
 
 Empty DOM patch batches are no-ops for DOM/style generations and dirty state.
+
+Target resolution occurs against the post-application staged store. Allocated
+live keys resolve to canonical materialized IDs, allocated non-live keys are
+valid historical targets, and never-allocated keys are typed failures. Any
+genuine failure occurs before publication state or pending work is committed.
 
 ## Generation And Dirty-State Contract
 
@@ -440,22 +445,26 @@ where relevant.
 
 ### Stable DOM Identity
 
-The current partial restyle path can use patch keys for attribute suffix
-invalidation. A more complete dynamic DOM engine should pass materialized
-stable node IDs directly in restyle hints and reconcile stylesheet slots by
-DOM/style-node identity first, with URL/text fallback only for snapshot mode.
+The current partial-restyle path resolves attribute and text patch targets
+inside the staged `DomStore` and passes canonical materialized DOM IDs through
+neutral publication facts. Valid historical targets remain explicit counts;
+patch keys do not escape as selector identities. A more complete dynamic DOM
+engine may enrich CSS-owned dependencies while preserving this identity
+boundary and should reconcile stylesheet slots by DOM/style-node identity
+first, with URL/text fallback only for snapshot mode.
 
 ### Selector-Aware Invalidation
 
-AF4d refinement: exact text participates in `:empty`, so `TextChanged`
-currently receives a CSS-owned full-document plan. A neutral mutation fact
+AF4e refinement: exact text participates in `:empty`, so an aggregate DOM
+publication containing text currently receives a CSS-owned full-document plan.
+A neutral mutation fact
 does not advance the Browser style-input generation by itself; only CSS
 returning `Some(plan)` authorizes that transition and generic Style dirtiness.
 `None` preserves cache-key eligibility and any pending plan through CSS-owned
-merge. Browser composes this result once with intrinsic entry-point effects;
-the resulting request is the sole projection source for phase work, dirty
-state, paint invalidation, and redraw scheduling. `DomTextChanged` separately
-remains direct Layout input.
+merge. Browser applies this result once and emits one separate
+`DomPublicationStyleInvalidated` request. Intrinsic entry-point effects remain
+independent; `DomTextChanged` separately remains direct Layout input. CSS's
+aggregate authorization is never copied onto an intrinsic mutation request.
 
 Future selector invalidation should be introduced only with:
 

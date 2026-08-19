@@ -345,6 +345,12 @@ Paint receives no host or contents artifact and contains no template tag-name
 special case. Contents remain stored and debuggable; inertness is not achieved
 by discarding them or by adding fragments to generic `children()` traversal.
 
+AF4e parser-backed matching and direct/materialized parity confirm the same
+boundary: selectors do not traverse associated contents as ordinary host
+children, and associated text does not affect host `:empty`. The neutral
+`CreateTemplateContents` publication fact is distinct from allocation and
+topology and is style-neutral when it is the publication's only effect.
+
 ## Preserved interactions and exclusions
 
 AE10 preserves AE8 table modes and foster parenting, AE9a form-pointer

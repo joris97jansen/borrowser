@@ -1,8 +1,7 @@
-use crate::page::{PageState, RestyleHint};
+use crate::page::{DomMutationFacts, PageState};
 use crate::rendering::{
     CssStyleInvalidationSource, PendingRenderWork, RenderArtifact, RenderArtifactOwnershipContract,
-    RenderInvalidationEntryPoint, render_css_style_invalidation_request,
-    render_invalidation_request,
+    RenderInvalidationEntryPoint, RenderInvalidationRequest, render_invalidation_request,
 };
 use css::Display;
 use html::{HtmlParseOptions, Node, parse_document};
@@ -10,6 +9,12 @@ use layout::replaced::intrinsic::IntrinsicSize;
 use layout::{LayoutBox, ReplacedElementInfoProvider, TextMeasurer};
 
 pub(super) struct TestMeasurer;
+
+pub(super) fn css_authorized_request(
+    source: CssStyleInvalidationSource,
+) -> RenderInvalidationRequest {
+    PageState::new().css_authorized_request_for_tests(source)
+}
 
 impl TextMeasurer for TestMeasurer {
     fn measure(&self, text: &str, style: &css::ComputedStyle) -> f32 {
@@ -35,7 +40,10 @@ pub(super) fn page_with_node(dom: Node) -> PageState {
     let mut page = PageState::new();
     page.start_nav("https://example.com/index.html");
     page.document_mode = Some(html::DocumentMode::NoQuirks);
-    let _ = page.replace_dom(Box::new(dom), RestyleHint::document_replaced());
+    let _ = page.replace_dom(
+        Box::new(dom),
+        DomMutationFacts::document_replaced_for_tests(),
+    );
     let _ = page.reconcile_document_stylesheets();
     page
 }
@@ -431,13 +439,11 @@ impl TextMeasurer for FixedTextMeasurer {
 
 pub(super) fn pending_for_simple_text_flow() -> PendingRenderWork {
     let mut pending = PendingRenderWork::default();
-    pending.push(render_css_style_invalidation_request(
-        CssStyleInvalidationSource::DocumentReplaced,
-        true,
+    pending.push(css_authorized_request(
+        CssStyleInvalidationSource::DomPublication,
     ));
-    pending.push(render_css_style_invalidation_request(
+    pending.push(css_authorized_request(
         CssStyleInvalidationSource::StylesheetSetChanged,
-        true,
     ));
     pending
 }

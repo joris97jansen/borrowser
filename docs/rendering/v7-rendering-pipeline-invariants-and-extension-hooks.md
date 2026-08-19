@@ -138,13 +138,13 @@ them.
   only after successful paint.
 - `ViewportChanged` remains an explicit in-frame trigger synthesized by runtime
   orchestration.
-- Text mutation remains direct Layout input. AF4d also makes `:empty`
+- Text mutation remains direct Layout input. AF4e also makes `:empty`
   text-sensitive and uses the documented CSS-owned conservative full-plan
   fallback; dependency-aware Style narrowing remains future work.
-- Intrinsic entry-point effects and CSS-authorized Style work are composed once
-  into one request; phase work, dirty state, paint invalidation, and redraw
-  scheduling derive from that request rather than parallel flags or dirty
-  mutations.
+- Intrinsic entry-point effects and CSS-authorized Style work remain separate
+  requests derived from one complete neutral publication. CSS applies one plan
+  and emits at most one publication-scoped Style authorization; it is not
+  copied onto each mutation cause.
 - Render invalidation requests and work plans are sealed, read-only values.
   Intrinsic factories and the typed CSS Style composition path own production
   construction; consumers cannot assemble arbitrary phase combinations.

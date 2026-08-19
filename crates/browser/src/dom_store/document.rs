@@ -1,8 +1,8 @@
 use super::arena::{DomArena, NodeKind};
-use super::error::DomPatchError;
+use super::error::{DomIdentityResolutionError, DomPatchError};
+use super::store::ResolvedMutationNodeIds;
 use core_types::DomVersion;
 use html::{DomPatch, Node, PatchKey, internal::Id};
-use std::collections::HashSet;
 
 pub(crate) struct DomDoc {
     pub(crate) version: DomVersion,
@@ -243,19 +243,61 @@ impl DomDoc {
         self.arena.materialize(root)
     }
 
-    pub(crate) fn resolve_live_node_ids(
+    pub(crate) fn resolve_mutation_node_ids(
         &self,
         keys: &[PatchKey],
-    ) -> Result<Vec<Id>, DomPatchError> {
-        let mut seen = HashSet::new();
-        let mut node_ids = Vec::with_capacity(keys.len());
-        for key in keys {
-            let node_id = self.arena.materialized_node_id_for_key(*key)?;
-            if seen.insert(node_id) {
-                node_ids.push(node_id);
+    ) -> Result<ResolvedMutationNodeIds, DomIdentityResolutionError> {
+        self.resolve_mutation_node_ids_with(keys, |key| {
+            self.arena
+                .materialized_node_id_for_key(key)
+                .map_err(|_| DomIdentityResolutionError::LiveIdentityUnavailable(key))
+        })
+    }
+
+    fn resolve_mutation_node_ids_with(
+        &self,
+        keys: &[PatchKey],
+        mut materialize_live: impl FnMut(PatchKey) -> Result<Id, DomIdentityResolutionError>,
+    ) -> Result<ResolvedMutationNodeIds, DomIdentityResolutionError> {
+        let mut canonical_keys = keys.to_vec();
+        canonical_keys.sort_unstable();
+        canonical_keys.dedup();
+
+        let mut live_node_ids = Vec::with_capacity(canonical_keys.len());
+        let mut historical_target_count = 0;
+        for key in canonical_keys {
+            if !self.arena.is_allocated(key) {
+                return Err(DomIdentityResolutionError::NeverAllocated(key));
+            }
+            if self.arena.is_live(key) {
+                live_node_ids.push(materialize_live(key)?);
+            } else {
+                historical_target_count += 1;
             }
         }
-        Ok(node_ids)
+        live_node_ids.sort_by_key(|node_id| node_id.0);
+        live_node_ids.dedup();
+        Ok(ResolvedMutationNodeIds::from_parts(
+            live_node_ids,
+            historical_target_count,
+        ))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn resolve_mutation_node_ids_with_unavailable_live_key(
+        &self,
+        keys: &[PatchKey],
+        unavailable: PatchKey,
+    ) -> Result<ResolvedMutationNodeIds, DomIdentityResolutionError> {
+        self.resolve_mutation_node_ids_with(keys, |key| {
+            if key == unavailable {
+                Err(DomIdentityResolutionError::LiveIdentityUnavailable(key))
+            } else {
+                self.arena
+                    .materialized_node_id_for_key(key)
+                    .map_err(|_| DomIdentityResolutionError::LiveIdentityUnavailable(key))
+            }
+        })
     }
 
     #[cfg(test)]

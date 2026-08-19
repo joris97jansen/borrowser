@@ -104,6 +104,15 @@ Related contracts:
   - keys are non-reusable until `Clear`,
   - keys MAY be reused after `Clear` in a new runtime baseline.
 
+AF4e resolves selector-relevant mutation targets only inside `DomStore`, after
+candidate patch application and materialization but before publication commit.
+An allocated live key yields a surviving materialized DOM identity; an
+allocated non-live key is a valid historical/transient target; and a
+never-allocated key is a typed error. A live key without a materialized
+identity is also a typed invariant failure. Callers do not duplicate or expose
+the internal numeric `PatchKey`/`Id` bridge. Resolution failure preserves the
+entire previously committed publication and retained-render state.
+
 The production parser has a stricter, separate session-history contract:
 its allocator never reuses a `PatchKey` in the same parser session, including
 after `Clear`. AE13 retained-prefix validation enforces that parser-history

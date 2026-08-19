@@ -15,6 +15,7 @@ mod fuzz_support;
 
 pub mod cascade;
 pub mod computed;
+mod document_selector_matching;
 mod dom_attributes;
 pub mod model;
 pub mod properties;
@@ -76,6 +77,11 @@ pub use computed::{
     try_compute_document_styles_for_invalidation_plan_with_limits,
 };
 pub use computed::{ComputedStyle, StyledNode, build_style_tree, compute_style};
+pub use document_selector_matching::{
+    DocumentSelectorMatchingDiagnostic, DocumentSelectorMatchingDiagnosticFailure,
+    DocumentSelectorMatchingDiagnosticLimit, DocumentSelectorMatchingDiagnosticLimits,
+    DocumentSelectorMatchingDiagnosticStorage, document_selector_matching_diagnostic,
+};
 pub use model::{
     AtRule, AtRuleBlock, Declaration, DeclarationBlock, DeclarationValue, ImportantAnnotation,
     PreservedBlock, PreservedComponentList, PropertyName, PropertyNameKind, Rule, StyleRule,
@@ -125,8 +131,8 @@ pub use specified::{
     parse_specified_value, parse_specified_value_with_limits, shorthand_expansion_debug_snapshot,
 };
 pub use style_invalidation::{
-    StyleChangeFacts, StyleInvalidationPlan, classify_style_invalidation,
-    merge_style_invalidation_plans,
+    ChangedStyleNodeFacts, DomStyleChangeFacts, DomStyleChangeFactsBuilder, StyleChangeFacts,
+    StyleInvalidationPlan, classify_style_invalidation, merge_style_invalidation_plans,
 };
 
 // Explicit syntax-layer surface for parser/tokenizer work and syntax tests.

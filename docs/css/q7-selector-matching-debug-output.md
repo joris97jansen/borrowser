@@ -132,3 +132,18 @@ Q7 does not:
 The integrated snapshot is an additional maintenance surface for later selector
 and cascade milestones, not a replacement for the underlying model-level
 snapshots.
+
+## AF4e document/style integration diagnostic
+
+AF4e adds a separate higher-level CSS-owned diagnostic for the cross-product
+of document elements, stylesheets, rules, and selectors. It lives above the
+core matcher so `selectors::matching` does not depend on stylesheet or cascade
+integration types. It uses the authoritative matcher directly and records
+unmatched, invalid, unsupported, declaration-free, and non-contributing rules;
+it is not a cascade candidate/winner report.
+
+This production surface is explicitly bounded by stylesheet, rule, element,
+selector-evaluation, report-record, report-storage, serialized-byte, matcher-traversal, and
+selector-DOM construction limits. Failure discards partial success and emits a
+stable top-level terminal envelope. See the AF4e closeout contract for the
+field and ordering guarantees.

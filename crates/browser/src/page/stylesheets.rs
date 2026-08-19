@@ -101,10 +101,10 @@ impl PageState {
     }
 
     fn apply_stylesheet_set_change(&mut self) -> RenderInvalidationRequest {
-        let css_requested_style_work = self.rendering.mark_stylesheets_changed();
+        let authorization = self.rendering.mark_stylesheets_changed();
         let request = render_css_style_invalidation_request(
             CssStyleInvalidationSource::StylesheetSetChanged,
-            css_requested_style_work,
+            authorization,
         );
         self.rendering.mark_dirty_for_request(request);
         request

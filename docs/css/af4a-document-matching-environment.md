@@ -71,3 +71,9 @@ A selector-DOM build error is not repaired by selecting a default mode and is
 not a matching-environment mismatch. Cascade, computed style, debug, and
 Browser callers preserve the typed construction error separately. AF4a still
 does not implement `:root` or any structural pseudo-class.
+
+AF4e closes the environment integration proof by parsing real DOCTYPE inputs
+for all three modes, asserting `ParseOutput.document_mode`, constructing
+`SelectorMatchingEnvironment` from that exact value, and matching against that
+same `ParseOutput.document`. No manually injected mode substitutes for the
+parser-to-matcher conformance evidence.

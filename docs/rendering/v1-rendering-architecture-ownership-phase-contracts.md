@@ -89,10 +89,10 @@ The runtime owns scheduling and invalidation. Engine crates own rendering
 semantics inside their phases. No later phase may reach backward and re-own an
 earlier phase's job.
 
-AF4d applies this boundary to text-sensitive selectors: CSS classifies the
-neutral text fact and authorizes Style work, while Browser independently keeps
-text as direct Layout input. Browser does not know which pseudo caused CSS's
-decision.
+AF4e applies this boundary to text-sensitive selectors: CSS classifies the
+complete neutral publication once and authorizes at most one separate Style
+request, while Browser independently keeps text as direct Layout input.
+Browser does not know which selector caused CSS's decision.
 
 ## Ownership Boundaries
 
@@ -347,13 +347,16 @@ None of those exist yet, and no current API should imply that they do.
 
 ## Invalidation And Rebuild Entry Points
 
-The browser runtime owns the invalidation entry points. Current entry points
-are:
+The invalidation vocabulary accepts external/runtime sources and validated
+engine-owned sources entering rendering. Browser/runtime owns scheduling;
+current sources are:
 
 - document replacement and navigation reset
 - DOM structural mutations
 - DOM attribute mutations
 - DOM text mutations
+- one CSS-authorized DOM-publication Style invalidation
+- an unclassified future DOM mutation fallback
 - stylesheet reconciliation changes from DOM updates
 - external stylesheet install/fail/abort state changes
 - viewport width changes
@@ -367,7 +370,9 @@ Current downstream effects:
 | document replacement | browser runtime | full invalidation | dirty | dirty |
 | DOM structure mutation | browser runtime | full invalidation | dirty | dirty |
 | DOM attribute mutation | browser runtime | suffix invalidation when proven safe, else full | dirty | dirty |
-| DOM text mutation | CSS classifier via browser runtime | conservative full invalidation for AF4d `:empty` correctness | dirty independently | dirty |
+| DOM text mutation | browser runtime | none intrinsically | dirty independently | dirty |
+| CSS-authorized DOM publication | CSS engine | conservative plan selected by CSS | cascades from Style | cascades from Layout |
+| unclassified DOM mutation | browser runtime | none intrinsically | conservative document dirty | cascades from Layout |
 | stylesheet set/state change | browser runtime | full invalidation | dirty | dirty |
 | viewport change | viewport runtime | none | rebuild frame-local layout | repaint |
 | resource/input state change | viewport/runtime | none | maybe rebuild depending on phase input | repaint |
@@ -375,11 +380,12 @@ Current downstream effects:
 `style_dirty` and `layout_dirty` are invalidation-state signals, not proof that
 Borrowser already has a retained layout artifact to reuse.
 
-The DOM text-mutation effects are intentionally independent. CSS currently
-returns a full-document plan because text can change `:empty` matching, while
-text remains direct Layout input regardless of selector dependencies. Browser
-advances the retained style-input generation only when CSS returns
-`Some(plan)`. `<style>` text changes additionally flow through stylesheet
+DOM mutation effects are intentionally independent. CSS currently returns one
+full-document publication plan when text can change `:empty`, while text
+remains direct Layout input regardless of selector dependencies. Browser
+advances retained style-input generation at most once and emits one separate
+CSS-authorized entry point. The aggregate Style answer is not copied onto any
+intrinsic cause. `<style>` text changes additionally flow through stylesheet
 reconciliation.
 
 ## Determinism And Invariants

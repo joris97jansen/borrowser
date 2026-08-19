@@ -18,7 +18,7 @@ Related code:
 - `crates/browser/src/page/retained_render_state.rs`
 - `crates/browser/src/page/style_cache.rs`
 - `crates/browser/src/page/style_phase.rs`
-- `crates/browser/src/page/restyle.rs`
+- `crates/browser/src/page/dom_mutation.rs`
 - `crates/browser/src/page/stylesheets.rs`
 - `crates/css/src/style_invalidation.rs`
 - `crates/browser/src/rendering/lifecycle.rs`
@@ -133,10 +133,11 @@ cache exists, the incremental algorithm is not invoked; the result still
 records that CSS authorized incremental reuse and that runtime execution fell
 back to full computation.
 
-Text-only DOM mutation does not dirty style in the current supported selector
-and property model. It dirties layout and paint. Future text-sensitive selector
-or generated-content support must widen this rule or introduce CSS-owned
-dependency classification.
+Text-only DOM mutation receives one CSS-owned full-document invalidation in the
+current supported selector model because it can change `:empty`. It also
+independently dirties Layout and Paint. This conservative scope is an
+optimization limitation; future reverse selector-dependency indexing may
+narrow the CSS plan without changing Browser's neutral fact contract.
 
 ## Debug Surface
 

@@ -40,8 +40,13 @@ pub(crate) use identity::{
     retained_render_artifact_kind_debug_label,
 };
 #[cfg(test)]
-pub(crate) use invalidation::CSS_STYLE_INVALIDATION_SOURCES;
-pub(crate) use invalidation::{CssStyleInvalidationSource, render_css_style_invalidation_request};
+pub(crate) use invalidation::{
+    CSS_STYLE_INVALIDATION_SOURCES, INTRINSIC_RENDER_INVALIDATION_SOURCES,
+};
+pub(crate) use invalidation::{
+    CssStyleInvalidationSource, IntrinsicRenderInvalidationSource,
+    render_css_style_invalidation_request, render_intrinsic_invalidation_request,
+};
 pub use invalidation::{
     PendingPaintInvalidations, PendingRenderWork, PhaseRerunSource, RenderInvalidationRequest,
     RenderInvalidationWorkPlan, dirty_propagation_for_entry_point, dirty_request_for_entry_point,

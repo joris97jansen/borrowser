@@ -165,10 +165,11 @@ fn removing_template_host_or_ancestor_removes_associated_fragment_subgraph() {
             "owner removal should cascade through template contents",
         );
         for removed in (3..=8).map(PatchKey) {
-            let err = store
-                .resolve_live_node_ids(handle, &[removed])
-                .expect_err("associated subtree key must no longer be live");
-            assert!(matches!(err, DomPatchError::MissingKey(key) if key == removed));
+            let resolved = store
+                .resolve_mutation_node_ids(handle, &[removed])
+                .expect("removed key remains a valid historical mutation target");
+            assert!(resolved.live_node_ids().is_empty());
+            assert_eq!(resolved.historical_target_count(), 1);
         }
     }
 }
@@ -200,9 +201,12 @@ fn clear_removes_runtime_template_associations_and_nested_fragment_subgraphs() {
 
     for removed in (3..=8).map(PatchKey) {
         let err = store
-            .resolve_live_node_ids(handle, &[removed])
-            .expect_err("cleared association key must not remain live");
-        assert!(matches!(err, DomPatchError::MissingKey(key) if key == removed));
+            .resolve_mutation_node_ids(handle, &[removed])
+            .expect_err("Clear resets the current allocation domain");
+        assert!(matches!(
+            err,
+            crate::dom_store::DomIdentityResolutionError::NeverAllocated(key) if key == removed
+        ));
     }
     assert_eq!(
         materialized_dom_lines(&store, handle),

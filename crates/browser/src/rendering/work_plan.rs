@@ -686,6 +686,10 @@ fn entry_point_debug_label(entry_point: RenderInvalidationEntryPoint) -> &'stati
         RenderInvalidationEntryPoint::DomStructureChanged => "dom-structure-changed",
         RenderInvalidationEntryPoint::DomAttributesChanged => "dom-attributes-changed",
         RenderInvalidationEntryPoint::DomTextChanged => "dom-text-changed",
+        RenderInvalidationEntryPoint::DomPublicationStyleInvalidated => {
+            "dom-publication-style-invalidated"
+        }
+        RenderInvalidationEntryPoint::DomMutationUnclassified => "dom-mutation-unclassified",
         RenderInvalidationEntryPoint::StylesheetSetChanged => "stylesheet-set-changed",
         RenderInvalidationEntryPoint::ViewportChanged => "viewport-changed",
         RenderInvalidationEntryPoint::ResourceStateChanged => "resource-state-changed",

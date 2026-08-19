@@ -1,5 +1,5 @@
 use crate::input_state::DocumentInputState;
-use crate::page::{PageState, RestyleHint};
+use crate::page::{DomMutationFacts, PageState};
 use crate::rendering::*;
 use crate::resources::ResourceManager;
 use egui::{CentralPanel, Context, Pos2, RawInput, Rect, Vec2};
@@ -237,7 +237,7 @@ fn af4d_text_content_update_performs_one_conservative_full_restyle_and_render_up
         "Hello",
         "Hello with more text",
     );
-    page.mark_dom_changed_for_tests(RestyleHint::text_mutated());
+    page.mark_dom_changed_for_tests(DomMutationFacts::text_changed_for_tests(Vec::new()));
 
     harness.execute_and_record(&mut page, empty_pending_work(), DEFAULT_VIEWPORT_WIDTH);
     assert_clean_after_recorded_frame(&page);
@@ -262,7 +262,9 @@ fn ac9_paint_only_style_update_reuses_layout_and_recomputes_paint() {
         let dom = page.dom.as_deref_mut().expect("page DOM should exist");
         set_first_element_attr(dom, "p", "class", Some("paint".to_string()))
     };
-    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(vec![dirty_id]));
+    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(vec![
+        dirty_id,
+    ]));
 
     harness.execute_and_record(&mut page, empty_pending_work(), DEFAULT_VIEWPORT_WIDTH);
     assert_clean_after_recorded_frame(&page);
@@ -294,7 +296,9 @@ fn ac9_layout_affecting_style_update_recomputes_layout_and_paint() {
             Some("display: block; width: 180px;".to_string()),
         )
     };
-    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(vec![dirty_id]));
+    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(vec![
+        dirty_id,
+    ]));
 
     harness.execute_and_record(&mut page, empty_pending_work(), DEFAULT_VIEWPORT_WIDTH);
     assert_clean_after_recorded_frame(&page);
@@ -321,7 +325,7 @@ fn ac9_stylesheet_update_recomputes_style_with_bounded_downstream_work() {
         initial_css,
         "p { display: block; width: 140px; color: blue; }",
     );
-    page.mark_dom_changed_for_tests(RestyleHint::text_mutated());
+    page.mark_dom_changed_for_tests(DomMutationFacts::text_changed_for_tests(Vec::new()));
     let reconcile = page.reconcile_document_stylesheets();
     assert!(reconcile.render_invalidation.is_some());
 
@@ -358,7 +362,7 @@ fn ac9_representative_page_repeated_text_updates_have_bounded_resource_growth() 
             from,
             to,
         );
-        page.mark_dom_changed_for_tests(RestyleHint::text_mutated());
+        page.mark_dom_changed_for_tests(DomMutationFacts::text_changed_for_tests(Vec::new()));
         harness.execute_and_record(&mut page, empty_pending_work(), DEFAULT_VIEWPORT_WIDTH);
         assert_clean_after_recorded_frame(&page);
         std::mem::swap(&mut from, &mut to);

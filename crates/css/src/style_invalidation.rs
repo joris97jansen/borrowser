@@ -6,17 +6,162 @@
 //! describe the computation that will eventually execute; retained artifact
 //! availability and identity validation remain runtime concerns.
 
-use std::fmt::Write;
+use std::{fmt::Write, num::NonZeroUsize};
 
 use html::internal::Id;
 
+/// CSS-owned, invariant-safe facts for one changed-node mutation dimension.
+///
+/// `occurred` is deliberately distinct from `node_ids`: a valid mutation may
+/// target only nodes that no longer survive in the published tree.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChangedStyleNodeFacts {
+    occurred: bool,
+    node_ids: Vec<Id>,
+}
+
+impl ChangedStyleNodeFacts {
+    #[must_use]
+    pub fn unchanged() -> Self {
+        Self {
+            occurred: false,
+            node_ids: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn changed(node_ids: impl IntoIterator<Item = Id>) -> Self {
+        Self {
+            occurred: true,
+            node_ids: canonicalize_node_ids(node_ids.into_iter().collect()),
+        }
+    }
+
+    #[must_use]
+    pub fn occurred(&self) -> bool {
+        self.occurred
+    }
+
+    #[must_use]
+    pub fn node_ids(&self) -> &[Id] {
+        &self.node_ids
+    }
+}
+
+/// Complete neutral DOM facts for one publication, as accepted by CSS.
+///
+/// Fields are private so callers cannot create contradictory states. Browser
+/// supplies neutral facts through [`DomStyleChangeFactsBuilder`]; CSS alone
+/// assigns selector/style meaning to the aggregate publication.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DomStyleChangeFacts {
+    document_replaced: bool,
+    ordinary_nodes_allocated: bool,
+    tree_topology_or_order_operation: bool,
+    template_contents_associated: bool,
+    attributes: ChangedStyleNodeFacts,
+    text: ChangedStyleNodeFacts,
+    unclassified_patch_count: usize,
+}
+
+impl DomStyleChangeFacts {
+    #[must_use]
+    pub fn builder() -> DomStyleChangeFactsBuilder {
+        DomStyleChangeFactsBuilder::new()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DomStyleChangeFactsBuilder {
+    facts: DomStyleChangeFacts,
+}
+
+impl DomStyleChangeFactsBuilder {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            facts: DomStyleChangeFacts {
+                document_replaced: false,
+                ordinary_nodes_allocated: false,
+                tree_topology_or_order_operation: false,
+                template_contents_associated: false,
+                attributes: ChangedStyleNodeFacts::unchanged(),
+                text: ChangedStyleNodeFacts::unchanged(),
+                unclassified_patch_count: 0,
+            },
+        }
+    }
+
+    #[must_use]
+    pub fn document_replaced(mut self) -> Self {
+        self.facts.document_replaced = true;
+        self
+    }
+
+    #[must_use]
+    pub fn ordinary_nodes_allocated(mut self) -> Self {
+        self.facts.ordinary_nodes_allocated = true;
+        self
+    }
+
+    #[must_use]
+    pub fn tree_topology_or_order_operation(mut self) -> Self {
+        self.facts.tree_topology_or_order_operation = true;
+        self
+    }
+
+    #[must_use]
+    pub fn template_contents_associated(mut self) -> Self {
+        self.facts.template_contents_associated = true;
+        self
+    }
+
+    #[must_use]
+    pub fn attributes(mut self, attributes: ChangedStyleNodeFacts) -> Self {
+        self.facts.attributes = attributes;
+        self
+    }
+
+    #[must_use]
+    pub fn text(mut self, text: ChangedStyleNodeFacts) -> Self {
+        self.facts.text = text;
+        self
+    }
+
+    #[must_use]
+    pub fn unclassified_patches(mut self, count: NonZeroUsize) -> Self {
+        self.facts.unclassified_patch_count = count.get();
+        self
+    }
+
+    #[must_use]
+    pub fn build(self) -> DomStyleChangeFacts {
+        self.facts
+    }
+}
+
+impl Default for DomStyleChangeFactsBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StyleChangeFacts {
-    DocumentReplaced,
-    TreeStructureChanged,
-    AttributesChanged { node_ids: Vec<Id> },
-    TextChanged,
+    DomPublication(DomStyleChangeFacts),
     StylesheetSetChanged,
+}
+
+impl StyleChangeFacts {
+    #[must_use]
+    pub fn dom_publication(facts: DomStyleChangeFacts) -> Self {
+        Self::DomPublication(facts)
+    }
+
+    #[must_use]
+    pub fn stylesheet_set_changed() -> Self {
+        Self::StylesheetSetChanged
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -92,22 +237,32 @@ impl StyleInvalidationPlan {
 /// is only the mutation fact because the supported model has no reverse
 /// selector dependencies. A future selector-dependency issue can extend this
 /// CSS boundary without teaching Browser selector semantics.
-pub fn classify_style_invalidation(change: StyleChangeFacts) -> Option<StyleInvalidationPlan> {
+pub fn classify_style_invalidation(change: &StyleChangeFacts) -> Option<StyleInvalidationPlan> {
     match change {
-        StyleChangeFacts::DocumentReplaced
-        | StyleChangeFacts::TreeStructureChanged
-        | StyleChangeFacts::StylesheetSetChanged => Some(StyleInvalidationPlan::full_document()),
-        StyleChangeFacts::AttributesChanged { node_ids } if node_ids.is_empty() => {
-            Some(StyleInvalidationPlan::full_document())
+        StyleChangeFacts::StylesheetSetChanged => Some(StyleInvalidationPlan::full_document()),
+        StyleChangeFacts::DomPublication(facts) => {
+            if facts.document_replaced
+                || facts.tree_topology_or_order_operation
+                || facts.text.occurred
+                || facts.unclassified_patch_count > 0
+            {
+                // `:empty` depends on exact ordinary direct-text facts. Without
+                // reverse selector-dependency indexing, CSS cannot prove which
+                // elements are unaffected, so text is safely full-document.
+                return Some(StyleInvalidationPlan::full_document());
+            }
+            if facts.attributes.occurred {
+                return StyleInvalidationPlan::document_suffix(facts.attributes.node_ids.clone())
+                    .or_else(|| Some(StyleInvalidationPlan::full_document()));
+            }
+            // Allocation alone and template-content association alone do not
+            // alter selector-visible relationships in the published document.
+            let _ = (
+                facts.ordinary_nodes_allocated,
+                facts.template_contents_associated,
+            );
+            None
         }
-        StyleChangeFacts::AttributesChanged { node_ids } => {
-            StyleInvalidationPlan::document_suffix(node_ids)
-        }
-        // `:empty` depends on exact ordinary direct-text facts. Without a
-        // reverse selector-dependency index, CSS cannot prove which elements
-        // are unaffected by a text mutation, so the safe current policy is a
-        // full-document restyle.
-        StyleChangeFacts::TextChanged => Some(StyleInvalidationPlan::full_document()),
     }
 }
 
@@ -158,20 +313,41 @@ mod tests {
         Id(value)
     }
 
+    fn publication(builder: DomStyleChangeFactsBuilder) -> StyleChangeFacts {
+        StyleChangeFacts::dom_publication(builder.build())
+    }
+
     #[test]
     fn text_change_requires_full_document_style_invalidation() {
-        let plan = classify_style_invalidation(StyleChangeFacts::TextChanged)
-            .expect("text can change :empty matching");
+        let facts = publication(
+            DomStyleChangeFacts::builder().text(ChangedStyleNodeFacts::changed(Vec::new())),
+        );
+        let plan = classify_style_invalidation(&facts).expect("text can change :empty matching");
+        assert!(plan.invalidates_all_cached_style_artifacts());
+        assert_eq!(plan.to_debug_snapshot(), "scope: full-document");
+    }
+
+    #[test]
+    fn stylesheet_set_change_requires_full_document_style_invalidation() {
+        let plan = classify_style_invalidation(&StyleChangeFacts::stylesheet_set_changed())
+            .expect("stylesheet-set changes must authorize Style invalidation");
+
         assert!(plan.invalidates_all_cached_style_artifacts());
         assert_eq!(plan.to_debug_snapshot(), "scope: full-document");
     }
 
     #[test]
     fn attribute_suffix_ids_are_canonicalized() {
-        let plan = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
-            node_ids: vec![id(4), id(2), id(4), id(1)],
-        })
-        .expect("attribute change should invalidate style");
+        let facts = publication(
+            DomStyleChangeFacts::builder().attributes(ChangedStyleNodeFacts::changed([
+                id(4),
+                id(2),
+                id(4),
+                id(1),
+            ])),
+        );
+        let plan =
+            classify_style_invalidation(&facts).expect("attribute change should invalidate style");
 
         assert_eq!(
             plan.to_debug_snapshot(),
@@ -181,22 +357,27 @@ mod tests {
 
     #[test]
     fn empty_attribute_identity_falls_back_to_full() {
-        let plan = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
-            node_ids: Vec::new(),
-        })
-        .expect("unidentified attribute changes need a safe fallback");
+        let facts = publication(
+            DomStyleChangeFacts::builder().attributes(ChangedStyleNodeFacts::changed(Vec::new())),
+        );
+        let plan = classify_style_invalidation(&facts)
+            .expect("unidentified attribute changes need a safe fallback");
 
         assert!(plan.invalidates_all_cached_style_artifacts());
     }
 
     #[test]
     fn pending_plans_merge_in_css() {
-        let first = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
-            node_ids: vec![id(3), id(1)],
-        });
-        let second = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
-            node_ids: vec![id(2), id(1)],
-        });
+        let first_facts = publication(
+            DomStyleChangeFacts::builder()
+                .attributes(ChangedStyleNodeFacts::changed([id(3), id(1)])),
+        );
+        let second_facts = publication(
+            DomStyleChangeFacts::builder()
+                .attributes(ChangedStyleNodeFacts::changed([id(2), id(1)])),
+        );
+        let first = classify_style_invalidation(&first_facts);
+        let second = classify_style_invalidation(&second_facts);
         let merged = merge_style_invalidation_plans(first, second).expect("merged plan");
 
         assert_eq!(
@@ -207,10 +388,13 @@ mod tests {
 
     #[test]
     fn full_plan_dominates_pending_suffix() {
-        let suffix = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
-            node_ids: vec![id(2)],
-        });
-        let full = classify_style_invalidation(StyleChangeFacts::TreeStructureChanged);
+        let suffix_facts = publication(
+            DomStyleChangeFacts::builder().attributes(ChangedStyleNodeFacts::changed([id(2)])),
+        );
+        let full_facts =
+            publication(DomStyleChangeFacts::builder().tree_topology_or_order_operation());
+        let suffix = classify_style_invalidation(&suffix_facts);
+        let full = classify_style_invalidation(&full_facts);
 
         let merged = merge_style_invalidation_plans(suffix, full).expect("merged plan");
         assert!(merged.invalidates_all_cached_style_artifacts());
@@ -218,9 +402,10 @@ mod tests {
 
     #[test]
     fn no_incoming_plan_does_not_clear_pending_plan() {
-        let suffix = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
-            node_ids: vec![id(2)],
-        });
+        let facts = publication(
+            DomStyleChangeFacts::builder().attributes(ChangedStyleNodeFacts::changed([id(2)])),
+        );
+        let suffix = classify_style_invalidation(&facts);
         let merged = merge_style_invalidation_plans(suffix.clone(), None);
 
         assert_eq!(merged, suffix);
@@ -228,12 +413,47 @@ mod tests {
 
     #[test]
     fn text_full_plan_dominates_pending_suffix() {
-        let suffix = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
-            node_ids: vec![id(2)],
-        });
-        let text = classify_style_invalidation(StyleChangeFacts::TextChanged);
+        let suffix_facts = publication(
+            DomStyleChangeFacts::builder().attributes(ChangedStyleNodeFacts::changed([id(2)])),
+        );
+        let text_facts = publication(
+            DomStyleChangeFacts::builder().text(ChangedStyleNodeFacts::changed(Vec::new())),
+        );
+        let suffix = classify_style_invalidation(&suffix_facts);
+        let text = classify_style_invalidation(&text_facts);
 
         let merged = merge_style_invalidation_plans(suffix, text).expect("merged plan");
         assert!(merged.invalidates_all_cached_style_artifacts());
+    }
+
+    #[test]
+    fn mixed_attribute_and_text_facts_are_classified_as_one_publication() {
+        let facts = publication(
+            DomStyleChangeFacts::builder()
+                .attributes(ChangedStyleNodeFacts::changed([id(9), id(9)]))
+                .text(ChangedStyleNodeFacts::changed([id(4)])),
+        );
+        let plan = classify_style_invalidation(&facts).expect("text requires safe invalidation");
+        assert_eq!(plan.to_debug_snapshot(), "scope: full-document");
+    }
+
+    #[test]
+    fn allocation_and_template_association_alone_do_not_invent_style_work() {
+        let facts = publication(
+            DomStyleChangeFacts::builder()
+                .ordinary_nodes_allocated()
+                .template_contents_associated(),
+        );
+        assert_eq!(classify_style_invalidation(&facts), None);
+    }
+
+    #[test]
+    fn unclassified_patch_falls_back_to_full_document() {
+        let facts = publication(
+            DomStyleChangeFacts::builder()
+                .unclassified_patches(NonZeroUsize::new(2).expect("nonzero")),
+        );
+        let plan = classify_style_invalidation(&facts).expect("unknown patch needs safe fallback");
+        assert!(plan.invalidates_all_cached_style_artifacts());
     }
 }

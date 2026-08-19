@@ -148,6 +148,16 @@ impl DomArena {
         Ok(Id(key.0))
     }
 
+    pub(crate) fn is_allocated(&self, key: PatchKey) -> bool {
+        self.debug_check_invariants();
+        self.allocated.contains(&key)
+    }
+
+    pub(crate) fn is_live(&self, key: PatchKey) -> bool {
+        self.debug_check_invariants();
+        self.live.contains_key(&key)
+    }
+
     pub(crate) fn insert_node(
         &mut self,
         key: PatchKey,

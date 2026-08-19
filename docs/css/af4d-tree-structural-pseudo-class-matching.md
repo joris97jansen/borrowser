@@ -79,8 +79,9 @@ pseudo-specific query.
 ## Text mutation invalidation and retained runtime handoff
 
 Exact text can change `:empty` matching. Until CSS owns a reverse selector
-dependency index, `StyleChangeFacts::TextChanged` classifies to a full-document
-`StyleInvalidationPlan`. CSS continues to own plan construction,
+dependency index, an aggregate `StyleChangeFacts::DomPublication` containing a
+text dimension classifies to a full-document `StyleInvalidationPlan`. CSS
+continues to own plan construction,
 canonicalization, merging, full-over-suffix dominance, and execution scope.
 
 A Browser-observed mutation fact does not by itself authorize a retained
@@ -94,13 +95,13 @@ Some(plan) -> advance style-input generation, CSS-merge the opaque plan,
               apply retained-artifact policy, and schedule Style work
 ```
 
-Browser composes that classification result exactly once with the entry
-point's intrinsic rendering dependencies. The resulting
-`RenderInvalidationRequest` is the single authority for requested phase work,
-dirty-state projection, paint invalidation, and redraw scheduling. Retained
-state applies CSS plan/generation/artifact policy but does not separately add
-CSS dirty entries. Static entry-point contracts describe intrinsic rendering
-effects only and cannot fabricate a CSS classification result.
+Browser applies that classification result exactly once at publication scope.
+Successful application produces one `AppliedCssStyleInvalidation` capability;
+consuming it creates one separate `DomPublicationStyleInvalidated` request.
+Intrinsic text, attribute, structural, and unknown requests remain independent
+and never receive copied Style authorization. All requests are then projected
+into retained dirty state and pending frame work. Static intrinsic entry-point
+contracts cannot fabricate a CSS classification result.
 
 `RenderInvalidationRequest` and its `RenderInvalidationWorkPlan` are sealed,
 read-only runtime values. Consumers may inspect their entry point, owner, and
@@ -108,12 +109,12 @@ phase work, but cannot construct arbitrary phase combinations. The intrinsic
 request factory and typed CSS Style composition path are the production
 construction authorities.
 
-CSS-authorized Style composition accepts only the typed DOM/stylesheet input
-domain: document replacement, DOM structure, DOM attributes, DOM text, and the
-stylesheet set. Viewport, resource, and input-state entry points cannot enter
-this composition path or manufacture direct Style triggers.
+CSS-authorized Style construction accepts only a capability created after the
+typed DOM-publication or stylesheet input has been classified and applied.
+Viewport, resource, input-state, and intrinsic DOM entry points cannot enter
+this path or manufacture direct Style triggers.
 
-For AF4d, text changes return `Some(full-document)`, discard a retained style
+For AF4e, text changes return `Some(full-document)`, discard a retained style
 artifact when present, and perform a full selector/cascade/computed-style
 recomputation. Independently, `DomTextChanged` remains direct Layout input
 with `TextContentChanged`; its Layout reason must survive even when Style is
@@ -126,3 +127,7 @@ dynamic state (`:hover`, `:active`, `:focus`, `:visited`, `:target`),
 `:is()`, `:where()`, `:not()`, `:has()`, pseudo-element matching, generated
 content, CSSOM serialization, dynamic JavaScript pseudo state, selector escape
 decoding, selector dependency indexing, or fine-grained text invalidation.
+
+AF4e completes the parser-backed and retained-runtime proof for these AF4d
+semantics; see
+`docs/css/af4e-selector-invalidation-parser-conformance-closeout.md`.
