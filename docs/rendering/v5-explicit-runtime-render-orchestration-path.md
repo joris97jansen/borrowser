@@ -122,7 +122,7 @@ execution cutover. It:
   from the previous frame
 - records `RenderFrameExecutionTrace`
 - converts follow-up input repaint needs into
-  `render_invalidation_request(InputStateChanged)`
+  `render_intrinsic_invalidation_request(InputStateChanged)`
 
 This is the explicit orchestration path for visible page rendering.
 

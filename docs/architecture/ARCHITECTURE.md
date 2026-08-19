@@ -107,9 +107,11 @@ HTML is parsed incrementally:
 
 `DocumentPublication` carries the parser-selected mode, one document handle,
 and one `DomVersion` transition with its patch payload. Browser tabs stage and
-apply the complete publication atomically through `DomStore`, classify patches
-into `RestyleHint`s before materialization, and treat inert publications as
-DOM commits without synthetic style invalidation.
+apply the complete publication atomically through `DomStore`, materialize the
+candidate DOM, resolve mutation identities, and then construct composable
+neutral `DomMutationFacts` before commit. CSS classifies the complete fact set
+once; Browser independently derives intrinsic rendering consequences. Inert
+publications remain DOM commits without synthetic style invalidation.
 
 DOM nodes are simple, ergonomic Rust enums:
 

@@ -107,7 +107,7 @@ struct RetainedRenderState {
     style_cache: Option<PageStyleCache>,
     layout_cache: Option<RetainedLayoutArtifact>,
     dirty_state: RenderDirtyState,
-    last_restyle_trigger: Option<RestyleTrigger>,
+    last_dom_mutation_facts: Option<DomMutationFacts>,
     pending_style_invalidation: Option<css::StyleInvalidationPlan>,
     last_style_recalc: Option<StyleRecalcKind>,
     last_style_reuse: Option<ComputedStyleReuseStats>,

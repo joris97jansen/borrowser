@@ -118,21 +118,22 @@ For current runtime entry points:
 | `DomStructureChanged` | layout/document, reason `DomContentChanged` | paint/document from layout |
 | `DomAttributesChanged` | none | none |
 | `DomTextChanged` | layout/document, reason `TextContentChanged` | paint/document from layout |
+| `DomPublicationStyleInvalidated` | style/document, reason `StyleInputChanged` | layout from style; paint from layout |
+| `DomMutationUnclassified` | layout/document, reason `ConservativeUnknownImpact` | paint/document from layout |
 | `StylesheetSetChanged` | none | none |
 | `ViewportChanged` | layout/viewport, reason `ViewportChanged` | paint/viewport from layout |
 | `ResourceStateChanged` | layout/document and paint/document, reason `ResourceStateChanged` | none |
 | `InputStateChanged` | paint/viewport, reason `RuntimeInputState` | none |
 
-AF4d refinement: this table records intrinsic entry-point consequences.
-Separately, CSS classifies neutral style facts; `Some(plan)` authorizes Style
-dirtiness plus cascaded Style-to-Layout/Paint entries, while `None` adds none
-and does not advance the retained style-input generation. Browser combines the
-classification result with the intrinsic row once, and the resulting request
-is the only source projected into retained dirty state. `DomTextChanged`
-therefore keeps its direct Layout reason alongside AF4d's CSS-authorized Style
-work.
+AF4e refinement: the ordinary DOM rows record intrinsic consequences only.
+Separately, CSS classifies the complete neutral publication once. `Some(plan)`
+is applied once, advances style-input generation at most once, and authorizes
+one separate `DomPublicationStyleInvalidated` request. `None` adds no Style
+work. CSS authorization is not copied onto the attribute, text, structure, or
+unknown request. `DomTextChanged` therefore keeps its direct Layout reason
+alongside, but distinct from, publication-scoped CSS Style work.
 
-AF4d conservatively restyles for every published text mutation because text can
+AF4e conservatively restyles for every published text mutation because text can
 change `:empty` matching and no selector-dependency index exists yet. Text
 content independently affects layout and paint; stylesheet text changes also
 flow through stylesheet reconciliation. A future dependency-aware CSS
@@ -144,8 +145,10 @@ Viewport changes do not imply style dirtiness by default.
 Input-state changes are currently a safely representable paint-only runtime
 invalidation. AC3 does not classify arbitrary CSS style changes as paint-only.
 
-Unknown impact falls back to document-scoped style, layout, and paint
-dirtiness with `ConservativeUnknownImpact`.
+An unclassified future DOM patch independently produces document-scoped Layout
+dirtiness with `ConservativeUnknownImpact`; Paint cascades from Layout. CSS's
+separate aggregate fallback authorizes publication-scoped Style work. Neither
+path claims the patch was structural.
 
 ## Merge And Ordering
 
@@ -206,7 +209,9 @@ For a fixed sequence of runtime invalidations:
 - layout dirtiness propagates to paint when geometry or visual output may
   change;
 - viewport changes do not imply restyle by default;
-- pure text mutations dirty layout and paint, not style, in the current model;
+- text mutations always retain direct layout and paint consequences, and CSS
+  currently also authorizes one conservative publication-scoped Style
+  invalidation because text can change `:empty` matching;
 - paint-only runtime invalidation can avoid layout only when safely
   classifiable from existing runtime state;
 - conservative full-document fallback is explicit and visible;

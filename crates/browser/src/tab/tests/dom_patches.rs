@@ -4,7 +4,7 @@ use super::support::{
     current_element_color_optional, find_styled_element, find_styled_node_id,
     initial_patch_document, no_quirks_patch_publication, two_paragraph_patch_document,
 };
-use crate::page::{RestyleTrigger, StyleRecalcKind};
+use crate::page::StyleRecalcKind;
 use bus::CoreEvent;
 use core_types::{DomHandle, DomVersion};
 use css::Display;
@@ -29,9 +29,10 @@ fn dom_patch_attribute_change_triggers_restyle_through_computed_cache() {
         ),
     });
 
-    assert_eq!(
-        tab.page.last_restyle_trigger(),
-        Some(RestyleTrigger::DocumentReplaced)
+    assert!(
+        tab.page
+            .last_dom_mutation_facts()
+            .is_some_and(|facts| facts.document_replaced())
     );
     assert_eq!(current_element_color(&mut tab, "p"), (0, 0, 0, 255));
     let after_initial = tab.page.style_generations();
@@ -55,9 +56,10 @@ fn dom_patch_attribute_change_triggers_restyle_through_computed_cache() {
         tab.page.style_dirty(),
         "attribute mutation must mark style dirty before restyle"
     );
-    assert_eq!(
-        tab.page.last_restyle_trigger(),
-        Some(RestyleTrigger::AttributesChanged)
+    assert!(
+        tab.page
+            .last_dom_mutation_facts()
+            .is_some_and(|facts| facts.attributes().changed())
     );
     assert_eq!(tab.page.style_generations().dom, after_initial.dom + 1);
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
@@ -72,6 +74,119 @@ fn dom_patch_attribute_change_triggers_restyle_through_computed_cache() {
     assert!(
         !tab.page.style_dirty(),
         "style cache should be clean after recomputation"
+    );
+}
+
+#[test]
+fn same_handle_clear_uses_neutral_replacement_fact_for_retained_identity_boundary() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 1901;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(1901);
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 1901,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document("p { color: red; }", Some("p")),
+        ),
+    });
+
+    assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
+    let retained_before = tab.page.retained_render_state_debug_snapshot();
+    let identity_before = retained_before
+        .retained_identities
+        .iter()
+        .copied()
+        .find(|identity| identity.anchor == crate::rendering::RetainedRenderAnchor::DomNode(Id(7)))
+        .expect("initial paragraph retained identity");
+    assert_eq!(
+        retained_before
+            .style_artifacts
+            .key
+            .expect("initial retained style artifact")
+            .identity_domain,
+        retained_before.retained_identity_domain
+    );
+    let generations_before = tab.page.style_generations();
+    tab.clear_render_orchestration_state();
+    tab.page.clear_all_dirty_for_tests();
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 1901,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(1),
+            DomVersion(2),
+            initial_patch_document("p { color: blue; }", Some("p")),
+        ),
+    });
+
+    let facts = tab
+        .page
+        .last_dom_mutation_facts()
+        .expect("same-handle Clear publication facts");
+    assert!(facts.document_replaced());
+    let retained_after_publication = tab.page.retained_render_state_debug_snapshot();
+    let identity_after = retained_after_publication
+        .retained_identities
+        .iter()
+        .copied()
+        .find(|identity| identity.anchor == crate::rendering::RetainedRenderAnchor::DomNode(Id(7)))
+        .expect("replacement paragraph retained identity");
+    assert_eq!(identity_after.anchor, identity_before.anchor);
+    assert_eq!(identity_after.id, identity_before.id);
+    assert_ne!(
+        retained_after_publication.retained_identity_domain,
+        retained_before.retained_identity_domain,
+        "equal local DOM and retained-render numbers must not imply continuity across Clear"
+    );
+    assert_eq!(retained_after_publication.style_artifacts.key, None);
+    assert_eq!(
+        tab.page.style_generations().style_inputs,
+        generations_before.style_inputs + 1,
+        "the replacement publication must be classified and applied once by CSS"
+    );
+
+    let entry_points = tab
+        .pending_render_work
+        .requests()
+        .iter()
+        .map(|request| request.entry_point())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        entry_points
+            .iter()
+            .filter(|entry_point| {
+                **entry_point == crate::rendering::RenderInvalidationEntryPoint::DocumentReplaced
+            })
+            .count(),
+        1
+    );
+    assert_eq!(
+        entry_points
+            .iter()
+            .filter(|entry_point| {
+                **entry_point
+                    == crate::rendering::RenderInvalidationEntryPoint::DomPublicationStyleInvalidated
+            })
+            .count(),
+        1
+    );
+
+    assert_eq!(current_element_color(&mut tab, "p"), (0, 0, 255, 255));
+    let retained_after_recompute = tab.page.retained_render_state_debug_snapshot();
+    assert_eq!(
+        retained_after_recompute
+            .style_artifacts
+            .key
+            .expect("replacement retained style artifact")
+            .identity_domain,
+        retained_after_recompute.retained_identity_domain
     );
 }
 
@@ -131,9 +246,10 @@ fn dom_patch_node_insertion_triggers_restyle_for_inserted_subtree() {
         tab.page.style_dirty(),
         "node insertion must mark style dirty before restyle"
     );
-    assert_eq!(
-        tab.page.last_restyle_trigger(),
-        Some(RestyleTrigger::TreeMutated)
+    assert!(
+        tab.page
+            .last_dom_mutation_facts()
+            .is_some_and(|facts| facts.tree_topology_or_order_operation())
     );
     assert_eq!(
         current_element_color(&mut tab, "span"),
@@ -182,9 +298,10 @@ fn dom_patch_node_removal_triggers_restyle_and_removes_styled_node() {
         tab.page.style_dirty(),
         "node removal must mark style dirty before restyle"
     );
-    assert_eq!(
-        tab.page.last_restyle_trigger(),
-        Some(RestyleTrigger::TreeMutated)
+    assert!(
+        tab.page
+            .last_dom_mutation_facts()
+            .is_some_and(|facts| facts.tree_topology_or_order_operation())
     );
     assert!(
         current_element_color_optional(&mut tab, "p").is_none(),
@@ -229,9 +346,10 @@ fn dom_patch_style_text_change_reconciles_stylesheet_slot_and_restyles() {
 
     let after = tab.page.style_generations();
     assert_eq!(after.dom, before.dom + 1);
-    assert_eq!(
-        tab.page.last_restyle_trigger(),
-        Some(RestyleTrigger::TextMutated)
+    assert!(
+        tab.page
+            .last_dom_mutation_facts()
+            .is_some_and(|facts| facts.text().changed())
     );
     assert_eq!(
         after.style_inputs,
@@ -473,9 +591,10 @@ fn dom_patch_normal_text_change_conservatively_restyles_and_dirties_layout() {
     });
 
     let after = tab.page.style_generations();
-    assert_eq!(
-        tab.page.last_restyle_trigger(),
-        Some(RestyleTrigger::TextMutated)
+    assert!(
+        tab.page
+            .last_dom_mutation_facts()
+            .is_some_and(|facts| facts.text().changed())
     );
     assert_eq!(after.dom, before.dom + 1);
     assert_eq!(
@@ -499,6 +618,200 @@ fn dom_patch_normal_text_change_conservatively_restyles_and_dirties_layout() {
 }
 
 #[test]
+fn published_text_mutation_restyles_retained_empty_selector_without_losing_layout_cause() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 230;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(2300);
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 230,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document("p { color: black; } p:empty { color: red; }", Some("p")),
+        ),
+    });
+
+    assert_eq!(current_element_color(&mut tab, "p"), (0, 0, 0, 255));
+    let retained_before = tab.page.retained_render_state_debug_snapshot();
+    assert_eq!(
+        retained_before.computed_styles,
+        crate::rendering::RenderArtifactState::RetainedFresh
+    );
+    tab.page.clear_layout_dirty_for_tests();
+    let before = tab.page.style_generations();
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 230,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(1),
+            DomVersion(2),
+            vec![DomPatch::SetText {
+                key: PatchKey(8),
+                text: String::new(),
+            }],
+        ),
+    });
+
+    let after = tab.page.style_generations();
+    assert_eq!(after.style_inputs, before.style_inputs + 1);
+    assert!(tab.page.style_dirty());
+    assert!(tab.page.layout_dirty());
+    let entry_points = tab
+        .pending_render_work
+        .requests()
+        .iter()
+        .map(|request| request.entry_point())
+        .collect::<Vec<_>>();
+    assert!(entry_points.contains(&crate::rendering::RenderInvalidationEntryPoint::DomTextChanged));
+    assert_eq!(
+        entry_points
+            .iter()
+            .filter(|entry| {
+                **entry
+                    == crate::rendering::RenderInvalidationEntryPoint::DomPublicationStyleInvalidated
+            })
+            .count(),
+        1
+    );
+    assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
+    assert_eq!(
+        tab.page.last_style_recalc(),
+        Some(StyleRecalcKind::Full { elements: 5 })
+    );
+}
+
+#[test]
+fn browser_selector_debug_uses_the_bounded_authoritative_css_surface() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 232;
+    tab.page.start_nav("https://example.com/index.html");
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 232,
+        publication: no_quirks_patch_publication(
+            DomHandle(2320),
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document("p, :hover, > p {}", Some("p")),
+        ),
+    });
+
+    let diagnostic = tab
+        .page
+        .selector_matching_debug_snapshot(css::DocumentSelectorMatchingDiagnosticLimits {
+            max_elements: 0,
+            ..Default::default()
+        })
+        .expect("published document has a selector diagnostic");
+    assert!(matches!(
+        diagnostic.failure(),
+        Some(
+            css::DocumentSelectorMatchingDiagnosticFailure::LimitExceeded {
+                limit: css::DocumentSelectorMatchingDiagnosticLimit::Elements,
+                ..
+            }
+        )
+    ));
+    assert!(
+        diagnostic
+            .to_debug_snapshot()
+            .contains("status: failed\nfailure: kind=limit-exceeded limit=elements")
+    );
+}
+
+#[test]
+fn mixed_attribute_and_text_publication_preserves_both_identities_and_one_css_authorization() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 231;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(2310);
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 231,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document(
+                "p { color: black; } p.hot:empty { color: blue; }",
+                Some("p"),
+            ),
+        ),
+    });
+    assert_eq!(current_element_color(&mut tab, "p"), (0, 0, 0, 255));
+    tab.page.clear_layout_dirty_for_tests();
+    let before = tab.page.style_generations();
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 231,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(1),
+            DomVersion(2),
+            vec![
+                DomPatch::SetAttributes {
+                    key: PatchKey(7),
+                    attributes: vec![html::internal::unqualified_attribute("class", "hot")],
+                },
+                DomPatch::SetText {
+                    key: PatchKey(8),
+                    text: String::new(),
+                },
+            ],
+        ),
+    });
+
+    let facts = tab
+        .page
+        .last_dom_mutation_facts()
+        .expect("mixed neutral publication facts");
+    assert!(facts.attributes().changed());
+    assert_eq!(facts.attributes().live_node_ids(), [Id(7)]);
+    assert_eq!(facts.attributes().historical_target_count(), 0);
+    assert!(facts.text().changed());
+    assert_eq!(facts.text().live_node_ids(), [Id(8)]);
+    assert_eq!(facts.text().historical_target_count(), 0);
+    assert_eq!(
+        tab.page.style_generations().style_inputs,
+        before.style_inputs + 1
+    );
+    let requests = tab.pending_render_work.requests();
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| {
+                request.entry_point()
+                    == crate::rendering::RenderInvalidationEntryPoint::DomPublicationStyleInvalidated
+            })
+            .count(),
+        1
+    );
+    let text = requests
+        .iter()
+        .find(|request| {
+            request.entry_point() == crate::rendering::RenderInvalidationEntryPoint::DomTextChanged
+        })
+        .expect("text intrinsic request survives mixed publication");
+    assert_eq!(
+        text.requested_work().style(),
+        crate::rendering::PhaseRerunSource::None
+    );
+    assert_eq!(
+        text.requested_work().layout(),
+        crate::rendering::PhaseRerunSource::Direct(
+            crate::rendering::RenderRebuildTrigger::DomTextChanged
+        )
+    );
+    assert_eq!(current_element_color(&mut tab, "p"), (0, 0, 255, 255));
+}
+
+#[test]
 fn empty_dom_patch_batch_does_not_trigger_restyle() {
     let mut tab = Tab::new(1);
     tab.nav_gen = 25;
@@ -519,7 +832,7 @@ fn empty_dom_patch_batch_does_not_trigger_restyle() {
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
     assert!(!tab.page.style_dirty());
     let before = tab.page.style_generations();
-    let previous_trigger = tab.page.last_restyle_trigger();
+    let previous_facts = tab.page.last_dom_mutation_facts().cloned();
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
@@ -533,8 +846,8 @@ fn empty_dom_patch_batch_does_not_trigger_restyle() {
         "empty patch batches must not advance DOM or style generations"
     );
     assert_eq!(
-        tab.page.last_restyle_trigger(),
-        previous_trigger,
+        tab.page.last_dom_mutation_facts(),
+        previous_facts.as_ref(),
         "empty patch batches must not record a synthetic restyle trigger"
     );
     assert!(
@@ -586,6 +899,59 @@ fn invalid_publication_preserves_committed_browser_state_and_reason() {
             .unwrap_or_default()
             .contains("InvalidPayload")
     );
+}
+
+#[test]
+fn staged_identity_resolution_failure_rolls_back_the_complete_publication() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 271;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(2710);
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 271,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document("p { color: red; }", Some("p")),
+        ),
+    });
+    assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
+    let version_before = tab.dom_version;
+    let handle_before = tab.dom_handle;
+    let outline_before = tab.page.outline(100);
+    let pipeline_before = tab.page.render_pipeline_debug_snapshot();
+    let retained_before = tab.page.retained_render_state_debug_snapshot();
+    let facts_before = tab.page.last_dom_mutation_facts().cloned();
+    let pending_before = tab.pending_render_work.clone();
+
+    let failure = tab
+        .commit_document_publication_with_forced_identity_failure_for_tests(
+            no_quirks_patch_publication(
+                handle,
+                DomVersion(1),
+                DomVersion(2),
+                vec![DomPatch::SetText {
+                    key: PatchKey(8),
+                    text: "must not publish".into(),
+                }],
+            ),
+            271,
+            PatchKey(8),
+        )
+        .expect_err("forced staged identity failure");
+    assert_eq!(failure, bus::DocumentPublicationFailure::InvariantViolation);
+    assert_eq!(tab.dom_version, version_before);
+    assert_eq!(tab.dom_handle, handle_before);
+    assert_eq!(tab.page.outline(100), outline_before);
+    assert_eq!(tab.page.render_pipeline_debug_snapshot(), pipeline_before);
+    assert_eq!(
+        tab.page.retained_render_state_debug_snapshot(),
+        retained_before
+    );
+    assert_eq!(tab.page.last_dom_mutation_facts(), facts_before.as_ref());
+    assert_eq!(tab.pending_render_work, pending_before);
 }
 
 #[test]
@@ -687,6 +1053,9 @@ fn inert_template_contents_publication_commits_without_restyle() {
         ),
     });
     assert_eq!(tab.dom_version, DomVersion(2));
-    assert_eq!(tab.page.style_generations(), before);
+    let after = tab.page.style_generations();
+    assert_eq!(after.dom, before.dom + 1);
+    assert_eq!(after.style_inputs, before.style_inputs);
+    assert_eq!(after.stylesheets, before.stylesheets);
     assert_eq!(tab.page.style_dirty(), before_dirty);
 }

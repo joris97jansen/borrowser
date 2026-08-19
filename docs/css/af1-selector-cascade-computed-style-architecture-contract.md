@@ -2,7 +2,7 @@
 
 Status: implemented architecture and ownership contract for Milestone AF issue 1
 
-Last updated: 2026-08-15
+Last updated: 2026-08-17
 
 AF1 establishes the CSS-owned boundary for selector parsing and matching,
 specificity, cascade, inheritance, computed-style construction, and style-input
@@ -21,7 +21,7 @@ coverage or implement the future selector dependency graph.
 - `crates/css/src/selectors`
 - `crates/css/src/specified`
 - `crates/css/src/computed`
-- `crates/browser/src/page/restyle.rs`
+- `crates/browser/src/page/dom_mutation.rs`
 - `crates/browser/src/page/stylesheets.rs`
 - `crates/browser/src/page/retained_render_state.rs`
 - `crates/browser/src/page/style_cache.rs`
@@ -45,6 +45,7 @@ Selector, cascade, and computed-style foundations:
 - Q1/Q8: `docs/css/q1-selector-matching-architecture.md`,
   `docs/css/q8-selector-matching-invariants-extension-hooks.md`
 - AF4b: `docs/css/af4b-selector-dom-query-contract.md`
+- AF4e: `docs/css/af4e-selector-invalidation-parser-conformance-closeout.md`
 - R1-R9: the structured cascade and resolved-style contracts under
   `docs/css/r*.md`
 - S1/S6/S9: the computed-style property, assembly, and runtime contracts
@@ -210,17 +211,24 @@ AF1 separates three decisions:
 
 ### A. Mutation facts — HTML / Browser
 
-Browser reports facts such as document replacement, tree-structure change,
-attribute change with materialized DOM identities, text change, and effective
-stylesheet-set change. Browser owns the observation and identity mapping; it
-does not decide what those facts mean for selector matching.
+Browser reports one composable neutral fact set per DOM publication. It can
+simultaneously preserve document replacement, allocation, topology/order,
+template association, attribute targets, text targets, and an unclassified
+future-patch count. Attribute and text targets retain canonical surviving DOM
+identities plus valid historical-target counts. Browser owns observation and
+identity mapping; it does not decide what those facts mean for selectors.
 
 ### B. Semantic style invalidation plan — CSS
 
-`classify_style_invalidation(StyleChangeFacts)` returns
+`classify_style_invalidation(&StyleChangeFacts)` returns
 `Option<StyleInvalidationPlan>`. The plan is opaque outside CSS and has no
 public constructors or public variants. CSS owns canonicalization, semantic
 combination, and future extension of its representation.
+
+Callers cannot mutate fact fields directly. They use CSS-owned
+`ChangedStyleNodeFacts` constructors, `DomStyleChangeFactsBuilder`, and
+`StyleChangeFacts::dom_publication`, which prevent contradictory occurrence
+and identity state and canonicalize identities deterministically.
 
 The current conservative outcomes are:
 
@@ -228,8 +236,8 @@ The current conservative outcomes are:
 - an opaque document-order suffix plan for non-empty, materialized attribute
   identities;
 - an opaque full-document plan for document replacement, tree changes,
-  stylesheet-set changes, text changes under AF4d, and unprovable attribute
-  changes.
+  stylesheet-set changes, text changes under AF4e, unclassified patches, and
+  unprovable attribute changes.
 
 Ordinary text changes currently receive full invalidation because exact text
 can change `:empty` matching and no dependency index can prove a narrower
@@ -244,17 +252,27 @@ stores the returned option but never reconstructs these rules.
 
 ### C. Actual recomputation execution — Browser lifecycle plus CSS execution
 
-The execution path is:
+The DOM execution path is:
 
 ```text
-DomPatch / stylesheet observation
-  -> StyleChangeFacts
-  -> Option<StyleInvalidationPlan>
-  -> Browser pending-plan lifetime and merge delegation
-  -> retained cache/key/identity feasibility
-  -> CSS plan-aware execution adapter
-  -> StyleRecalcKind and retained artifact action
+DomMutationFacts
+  +-> one aggregate StyleChangeFacts::DomPublication classification
+  |     -> apply at most one StyleInvalidationPlan
+  |     -> at most one AppliedCssStyleInvalidation capability
+  |     -> one DomPublicationStyleInvalidated request
+  +-> independent Browser intrinsic mutation requests
 ```
+
+`AppliedCssStyleInvalidation` is non-`Copy`, non-`Clone`, non-`Default`, and
+not publicly constructible. It proves CSS classification and retained-plan
+application have occurred. The rendering factory consumes it to authorize one
+direct Style request. Intrinsic attribute, text, structure, and unknown
+requests never acquire CSS Style work, so a mixed publication preserves every
+cause without attributing one aggregate CSS decision to each dimension.
+
+The retained execution path then applies the pending CSS plan through cache,
+key, and identity feasibility checks and records `StyleRecalcKind` plus the
+retained artifact action.
 
 A suffix plan means CSS permits a suffix reuse attempt; it does not promise
 that the runtime has a usable previous cache. Missing cache, incompatible
@@ -289,10 +307,13 @@ Neither downstream subsystem consumes raw declarations or cascade winners.
 
 Selector parse/match, specificity, cascade, inheritance, computed style,
 unsupported selector behavior, CSS plan classification/merge, and actual
-retained execution are deterministic internal regression surfaces. CSS owns
-the stable plan debug projection. Browser embeds that projection in its wider
-retained-render snapshot and does not define a second Full/Suffix semantic
-enum.
+retained execution are deterministic internal regression surfaces. AF4e adds
+a bounded, versioned CSS-owned integrated matching report above the core
+matcher. It covers unmatched, invalid, unsupported, and declaration-free rules
+without depending on cascade winners, and serializes typed terminal setup or
+limit failures. Browser exposes that bounded authoritative surface without
+interpreting it. CSS also owns the stable plan debug projection; Browser does
+not define a second Full/Suffix semantic enum.
 
 Typed APIs and Rust visibility are the primary architecture enforcement:
 
@@ -330,7 +351,7 @@ AF1 does not implement:
 - broad property expansion;
 - unrelated Layout or Paint algorithms.
 
-AF4d refinement: AF1's original broad pseudo-class non-goal is narrowed by the
+AF4e refinement: AF1's original broad pseudo-class non-goal is narrowed by the
 typed tree-structural subset documented in
 `af4d-tree-structural-pseudo-class-matching.md`. Dynamic and functional
 pseudos, pseudo-elements, dependency indexing, and fine-grained invalidation

@@ -510,3 +510,10 @@ AF4b does not implement:
 
 These remain later work. AF4b supplies the neutral, invariant-safe, fallible
 query foundation without claiming broader selector or Milestone AF completion.
+
+AF4e consumes this foundation through a bounded integrated matcher report and
+a direct/materialized parity fixture. One `ParseOutput` supplies both its
+direct document and its asserted-complete patch history; the latter is applied
+through Browser `DomStore` and materialized before CSS compares the same stable
+selector-visible report under the same parser-selected mode. Typed projection
+construction failures remain terminal failures, never ordinary no-match.

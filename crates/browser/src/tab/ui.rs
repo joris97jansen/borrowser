@@ -1,5 +1,5 @@
 use super::Tab;
-use crate::rendering::{RenderInvalidationEntryPoint, render_invalidation_request};
+use crate::rendering::{IntrinsicRenderInvalidationSource, render_intrinsic_invalidation_request};
 use crate::view::content;
 use egui::Context;
 
@@ -7,8 +7,8 @@ impl Tab {
     pub fn ui_content(&mut self, ctx: &Context) {
         // Drain completed decode jobs and upload textures before painting.
         if self.resources.pump(ctx) {
-            self.request_render_work(render_invalidation_request(
-                RenderInvalidationEntryPoint::ResourceStateChanged,
+            self.request_render_work(render_intrinsic_invalidation_request(
+                IntrinsicRenderInvalidationSource::ResourceStateChanged,
             ));
         }
 

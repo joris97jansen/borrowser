@@ -1,6 +1,6 @@
 # V4: Invalidation And Rebuild Entry Points
 
-Last updated: 2026-05-02  
+Last updated: 2026-08-17
 Status: implemented invalidation-entry-point contract for Milestone V issue 4
 
 This document is the source-of-truth contract for Milestone V4. It defines the
@@ -67,10 +67,16 @@ This is the contract:
 
 ## Entry-Point Contract Table
 
-Borrowser exposes the normative entry-point table through:
+Borrowser exposes the normative entry-point table through the public read-only
+contract/debug surfaces:
 
 - `browser::rendering::render_invalidation_request_contracts()`
 - `browser::rendering::render_invalidation_request(...)`
+
+Production Browser code constructs intrinsic requests through the
+crate-internal `render_intrinsic_invalidation_request(...)` path. That helper
+is not an external Browser API and its closed source domain cannot express CSS
+authorization.
 
 The static contract records intrinsic rendering dependencies only. CSS-owned
 Style work is composed after classification and therefore cannot be fabricated
@@ -82,6 +88,8 @@ by this table:
 | `DomStructureChanged` | browser runtime | none | direct | cascaded from layout | direct |
 | `DomAttributesChanged` | browser runtime | none | none | none | none |
 | `DomTextChanged` | browser runtime | none | direct | cascaded from layout | direct |
+| `DomPublicationStyleInvalidated` | CSS engine | direct only after capability consumption | cascaded from style | cascaded from layout | cascaded from style |
+| `DomMutationUnclassified` | browser runtime | none | direct conservative document fallback | cascaded from layout | direct |
 | `StylesheetSetChanged` | browser runtime | none | none | none | none |
 | `ViewportChanged` | browser view | none | direct | cascaded from layout | direct |
 | `ResourceStateChanged` | browser runtime | none | direct | direct | direct |
@@ -96,26 +104,32 @@ Interpretation:
 - "frame orchestration" is the runtime request to execute the viewport frame
   path again
 
-AF4d asks CSS to classify the neutral fact for DOM and stylesheet style inputs.
-`Some(plan)` authorizes Style work; Browser composes it with the applicable
-intrinsic row into one `RenderInvalidationRequest`. `None` adds no Style work
-and does not advance the style-input generation. That one composed request
-drives dirty-state, paint-invalidation, and redraw projections. In particular,
-`DomTextChanged` retains direct Layout input while gaining Style work for
-AF4d's current `Some(full-document)` result. Browser does not infer `:empty` or
-inspect selector IR or CSS plan scope.
+AF4e asks CSS to classify one complete neutral DOM publication. `Some(plan)` is
+applied once and produces an invariant-carrying
+`AppliedCssStyleInvalidation`; only the factory consuming that capability may
+turn the otherwise empty `DomPublicationStyleInvalidated` base contract into
+direct Style work. `None` adds no Style work and does not advance style-input
+generation. Intrinsic mutation requests remain separate. Thus
+`DomTextChanged` retains direct Layout input without acquiring or being named
+as the cause of CSS's aggregate Style authorization.
 
-The runtime represents the CSS-style-composable domain separately from the
-general invalidation-entry-point domain. Its five sources derive the Style
-phase's legal direct-trigger inventory. Viewport, resource-state, and
-input-state entry points therefore cannot be composed into CSS-authorized
-Style work.
+`RenderInvalidationEntryPoint` may name an external/runtime source or a
+validated engine-owned source entering the rendering pipeline.
+`DomPublicationStyleInvalidated` is the latter: it is requested by
+`CssEngine`, means CSS has already classified and applied one publication
+plan, and deliberately does not name the responsible mutation dimension.
+Viewport, resource-state, input-state, and intrinsic DOM entry points cannot
+be composed into CSS-authorized Style work.
 
 Render invalidation requests and their work plans are sealed runtime values.
 Callers inspect phase work through read-only accessors; they do not construct
-arbitrary phase combinations. `render_invalidation_request(...)` owns
-intrinsic construction, and the typed CSS Style composition factory owns the
-only production path that adds CSS-authorized Style work.
+arbitrary phase combinations. The general `render_invalidation_request(...)`
+lookup remains a read-only contract/debug surface. Production Browser
+intrinsic construction uses the closed `IntrinsicRenderInvalidationSource`
+domain and `render_intrinsic_invalidation_request(...)`; that source domain
+cannot express either CSS-authorized entry point. The typed CSS Style
+composition factory owns the only production path that adds CSS-authorized
+Style work.
 
 ## Page-Owned Invalidation Entry Points
 
@@ -123,8 +137,8 @@ Page-owned retained state is invalidated through explicit `PageState` methods:
 
 ### DOM Replacement And Mutation
 
-- `PageState::replace_dom(...) -> RenderInvalidationRequest`
-- `PageState::mark_dom_changed(...) -> RenderInvalidationRequest`
+- `PageState::replace_dom(...) -> DomPublicationRenderInvalidation`
+- `PageState::mark_dom_changed(...) -> DomPublicationRenderInvalidation`
 
 These are the normative style/layout invalidation entry points for:
 
@@ -133,8 +147,15 @@ These are the normative style/layout invalidation entry points for:
 - DOM attribute mutation
 - DOM text mutation
 
-`RestyleTrigger` still classifies DOM mutations, but V4 now turns that
-classification into an explicit render invalidation request.
+`DomMutationFacts` preserves all simultaneous neutral mutation dimensions.
+Page publication classifies that aggregate once in CSS and derives independent
+intrinsic requests from the same facts; no dominant trigger or precedence
+ordering exists.
+
+`DomPublicationRenderInvalidation` stores the intrinsic collection separately
+from one optional CSS Style request. This makes the zero-or-one publication
+authorization invariant structural rather than something recovered by
+scanning general entry-point values.
 
 ### Stylesheet-Set Changes
 
@@ -161,8 +182,8 @@ Not all invalidation comes from page-owned retained state.
 
 Resource invalidation is runtime-owned:
 
-- `Tab::ui_content(...)` converts `ResourceManager::pump(...)` changes into
-  `render_invalidation_request(ResourceStateChanged)`
+- `Tab::ui_content(...)` converts `ResourceManager::pump(...)` changes through
+  `render_intrinsic_invalidation_request(ResourceStateChanged)`
 - `Tab::on_image_network_error(...)` requests the same resource-state
   invalidation explicitly
 
@@ -179,7 +200,7 @@ that distinction is intentionally out of scope for this milestone.
 
 `InputStateChanged` is part of the shipped runtime path. Viewport/input routing
 now returns explicit follow-up render intent, and the browser runtime converts
-that into `render_invalidation_request(InputStateChanged)` through
+that into `render_intrinsic_invalidation_request(InputStateChanged)` through
 `Tab::request_render_work(...)`.
 
 The contract is:

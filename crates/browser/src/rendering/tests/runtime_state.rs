@@ -1,5 +1,5 @@
 use crate::input_state::DocumentInputState;
-use crate::page::{PageState, RestyleHint, StyleRecalcKind};
+use crate::page::{DomMutationFacts, PageState, StyleRecalcKind};
 use crate::rendering::*;
 use crate::resources::ResourceManager;
 use egui::{CentralPanel, Context, Pos2, RawInput, Rect, Vec2};
@@ -13,15 +13,23 @@ use layout::{
 use super::support::*;
 
 fn style_plan_debug(change: css::StyleChangeFacts) -> Option<String> {
-    css::classify_style_invalidation(change).map(|plan| plan.to_debug_snapshot())
+    css::classify_style_invalidation(&change).map(|plan| plan.to_debug_snapshot())
 }
 
 fn full_style_plan_debug() -> Option<String> {
-    style_plan_debug(css::StyleChangeFacts::DocumentReplaced)
+    style_plan_debug(css::StyleChangeFacts::dom_publication(
+        css::DomStyleChangeFacts::builder()
+            .document_replaced()
+            .build(),
+    ))
 }
 
 fn suffix_style_plan_debug(node_ids: Vec<Id>) -> Option<String> {
-    style_plan_debug(css::StyleChangeFacts::AttributesChanged { node_ids })
+    style_plan_debug(css::StyleChangeFacts::dom_publication(
+        css::DomStyleChangeFacts::builder()
+            .attributes(css::ChangedStyleNodeFacts::changed(node_ids))
+            .build(),
+    ))
 }
 
 #[test]
@@ -194,7 +202,7 @@ fn retained_render_identities_allocate_deterministically_for_initial_document() 
             "  paint-output: absent\n",
             "dirty-state:\n",
             "  entries: 4\n",
-            "    entry[0]: phase=style reason=document-replaced scope=document\n",
+            "    entry[0]: phase=style reason=style-input-changed scope=document\n",
             "    entry[1]: phase=layout reason=document-replaced scope=document\n",
             "    entry[2]: phase=layout reason=cascaded-from-style scope=document\n",
             "    entry[3]: phase=paint reason=cascaded-from-layout scope=document\n",
@@ -472,7 +480,9 @@ fn paint_only_style_change_preserves_layout_and_plans_retained_layout_reuse() {
         let dom = page.dom.as_deref_mut().expect("dom should exist");
         set_first_element_attr(dom, "p", "class", Some("paint".to_string()))
     };
-    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(vec![dirty_id]));
+    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(vec![
+        dirty_id,
+    ]));
 
     let prepared = page
         .prepare_style_phase_for_frame(&PendingRenderWork::default())
@@ -538,7 +548,9 @@ fn layout_affecting_style_change_forces_paint_recompute_planning() {
             Some("display: block; width: 140px;".to_string()),
         )
     };
-    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(vec![dirty_id]));
+    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(vec![
+        dirty_id,
+    ]));
 
     let prepared = page
         .prepare_style_phase_for_frame(&PendingRenderWork::default())
@@ -591,7 +603,9 @@ fn stacking_order_affecting_style_change_invalidates_retained_paint() {
             Some("position: relative; z-index: 5;".to_string()),
         )
     };
-    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(vec![dirty_id]));
+    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(vec![
+        dirty_id,
+    ]));
 
     let prepared = page
         .prepare_style_phase_for_frame(&PendingRenderWork::default())
@@ -762,7 +776,9 @@ fn paint_only_style_change_preserves_existing_viewport_layout_dirty_entry() {
         let dom = page.dom.as_deref_mut().expect("dom should exist");
         set_first_element_attr(dom, "p", "class", Some("paint".to_string()))
     };
-    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(vec![dirty_id]));
+    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(vec![
+        dirty_id,
+    ]));
 
     let prepared = page
         .prepare_style_phase_for_frame(&PendingRenderWork::default())
@@ -838,7 +854,9 @@ fn layout_affecting_style_change_marks_layout_dirty() {
         let dom = page.dom.as_deref_mut().expect("dom should exist");
         set_first_element_attr(dom, "p", "class", Some("wide".to_string()))
     };
-    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(vec![dirty_id]));
+    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(vec![
+        dirty_id,
+    ]));
 
     let prepared = page
         .prepare_style_phase_for_frame(&PendingRenderWork::default())
@@ -1110,7 +1128,7 @@ fn same_document_text_update_preserves_surviving_retained_identity() {
         "Hello",
         "Goodbye",
     );
-    page.mark_dom_changed_for_tests(RestyleHint::text_mutated());
+    page.mark_dom_changed_for_tests(DomMutationFacts::text_changed_for_tests(Vec::new()));
 
     let after = page.retained_render_state_debug_snapshot();
     assert_eq!(
@@ -1134,7 +1152,9 @@ fn same_document_class_update_preserves_surviving_retained_identity() {
         "class",
         Some("hot".to_string()),
     );
-    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(vec![dirty_id]));
+    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(vec![
+        dirty_id,
+    ]));
 
     let after = page.retained_render_state_debug_snapshot();
     assert_eq!(
@@ -1157,7 +1177,7 @@ fn same_document_removal_prunes_stale_retained_identity() {
             .expect("page DOM should exist for mutation"),
         "p",
     );
-    page.mark_dom_changed_for_tests(RestyleHint::tree_mutated());
+    page.mark_dom_changed_for_tests(DomMutationFacts::tree_changed_for_tests());
 
     let after = page.retained_render_state_debug_snapshot();
     assert_eq!(
@@ -1189,7 +1209,7 @@ fn same_document_replacement_allocates_new_retained_identity_without_recycling_r
         "p",
         paragraph_node(6, 7, "Replacement"),
     );
-    page.mark_dom_changed_for_tests(RestyleHint::tree_mutated());
+    page.mark_dom_changed_for_tests(DomMutationFacts::tree_changed_for_tests());
 
     let after = page.retained_render_state_debug_snapshot();
     assert_eq!(
@@ -1210,7 +1230,7 @@ fn full_document_replacement_starts_new_identity_domain_even_when_dom_ids_match(
 
     let _ = page.replace_dom(
         Box::new(doc_with_explicit_ids()),
-        RestyleHint::document_replaced(),
+        DomMutationFacts::document_replaced_for_tests(),
     );
 
     let after = page.retained_render_state_debug_snapshot();
@@ -1242,7 +1262,7 @@ fn document_replacement_discards_style_artifacts_across_identity_domains() {
 
     let _ = page.replace_dom(
         Box::new(doc_with_explicit_ids()),
-        RestyleHint::document_replaced(),
+        DomMutationFacts::document_replaced_for_tests(),
     );
 
     let discarded = page.retained_render_state_debug_snapshot();
@@ -1278,7 +1298,7 @@ fn document_replacement_discards_style_artifacts_across_identity_domains() {
 }
 
 #[test]
-fn replace_dom_enforces_identity_boundary_even_with_non_document_replaced_hint() {
+fn replace_dom_uses_neutral_document_replacement_fact_as_identity_boundary() {
     let mut page = page_with_node(doc_with_explicit_ids());
     let before = page.retained_render_state_debug_snapshot();
     assert_eq!(before.retained_identity_domain.value(), 1);
@@ -1286,15 +1306,14 @@ fn replace_dom_enforces_identity_boundary_even_with_non_document_replaced_hint()
 
     let _ = page.replace_dom(
         Box::new(doc_with_explicit_ids()),
-        RestyleHint::text_mutated(),
+        DomMutationFacts::text_changed_for_tests(Vec::new()),
     );
 
     let after = page.retained_render_state_debug_snapshot();
-    assert_eq!(after.retained_identity_domain.value(), 2);
     assert_eq!(identity_for_dom_anchor(&after, Id(4)).id.value(), 4);
-    assert_ne!(
+    assert_eq!(
         after.retained_identity_domain, before.retained_identity_domain,
-        "replace_dom must isolate retained identities even if the caller supplies a non-boundary hint"
+        "a DOM value replacement without a neutral replacement fact is not a retained identity boundary"
     );
 }
 
@@ -1410,7 +1429,7 @@ fn attribute_mutation_keeps_style_cache_but_marks_it_stale_until_restored() {
         "class",
         Some("hot".to_string()),
     );
-    let hint = RestyleHint::attributes_changed(vec![p_id]);
+    let hint = DomMutationFacts::attributes_changed_for_tests(vec![p_id]);
     page.mark_dom_changed_for_tests(hint);
 
     let stale = page.render_pipeline_debug_snapshot();
@@ -1497,8 +1516,8 @@ fn text_full_invalidation_dominates_a_pending_css_suffix_plan() {
         "class",
         Some("hot".to_string()),
     );
-    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(vec![p_id]));
-    page.mark_dom_changed_for_tests(RestyleHint::text_mutated());
+    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(vec![p_id]));
+    page.mark_dom_changed_for_tests(DomMutationFacts::text_changed_for_tests(Vec::new()));
 
     assert_eq!(
         page.render_pipeline_debug_snapshot().style_invalidation,
@@ -1522,8 +1541,8 @@ fn full_css_style_invalidation_dominates_pending_suffix_plan() {
         "class",
         Some("hot".to_string()),
     );
-    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(vec![p_id]));
-    page.mark_dom_changed_for_tests(RestyleHint::tree_mutated());
+    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(vec![p_id]));
+    page.mark_dom_changed_for_tests(DomMutationFacts::tree_changed_for_tests());
 
     assert_eq!(
         page.render_pipeline_debug_snapshot().style_invalidation,
@@ -1548,7 +1567,7 @@ fn inline_style_attribute_change_uses_supported_attribute_suffix_scope() {
         "style",
         Some("color: red;".to_string()),
     );
-    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(vec![p_id]));
+    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(vec![p_id]));
 
     let stale = page.render_pipeline_debug_snapshot();
     assert_eq!(
@@ -1589,7 +1608,7 @@ fn attribute_change_without_dirty_nodes_falls_back_to_full_style_invalidation() 
         "class",
         Some("hot".to_string()),
     );
-    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(Vec::new()));
+    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(Vec::new()));
 
     let invalidated = page.render_pipeline_debug_snapshot();
     assert_eq!(invalidated.resolved_styles, RenderArtifactState::Absent);
@@ -1667,7 +1686,7 @@ fn whitespace_to_meaningful_text_recomputes_empty_matching_and_preserves_direct_
         " \n",
         "content",
     );
-    page.mark_dom_changed_for_tests(RestyleHint::text_mutated());
+    page.mark_dom_changed_for_tests(DomMutationFacts::text_changed_for_tests(Vec::new()));
 
     let invalidated = page.render_pipeline_debug_snapshot();
     assert_eq!(
@@ -1743,7 +1762,7 @@ fn meaningful_text_to_whitespace_recomputes_empty_matching() {
         "content",
         "\t\n ",
     );
-    page.mark_dom_changed_for_tests(RestyleHint::text_mutated());
+    page.mark_dom_changed_for_tests(DomMutationFacts::text_changed_for_tests(Vec::new()));
 
     let invalidated = page.render_pipeline_debug_snapshot();
     assert_eq!(invalidated.style_invalidation, full_style_plan_debug());

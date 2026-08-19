@@ -83,6 +83,7 @@ fn render_phase_contracts_pin_expected_phase_boundaries() {
             RenderRebuildTrigger::DomReplaced,
             RenderRebuildTrigger::DomStructureChanged,
             RenderRebuildTrigger::DomTextChanged,
+            RenderRebuildTrigger::DomMutationUnclassified,
             RenderRebuildTrigger::ViewportChanged,
             RenderRebuildTrigger::ResourceStateChanged,
         ]

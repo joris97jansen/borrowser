@@ -27,6 +27,24 @@ use html::{Node, internal::Id};
 
 use super::value::computed_value_discriminant;
 
+fn attribute_invalidation_plan(node_ids: Vec<Id>) -> crate::StyleInvalidationPlan {
+    let facts = StyleChangeFacts::dom_publication(
+        crate::DomStyleChangeFacts::builder()
+            .attributes(crate::ChangedStyleNodeFacts::changed(node_ids))
+            .build(),
+    );
+    classify_style_invalidation(&facts).expect("attribute changes require style invalidation")
+}
+
+fn tree_invalidation_plan() -> crate::StyleInvalidationPlan {
+    let facts = StyleChangeFacts::dom_publication(
+        crate::DomStyleChangeFacts::builder()
+            .tree_topology_or_order_operation()
+            .build(),
+    );
+    classify_style_invalidation(&facts).expect("tree changes require style invalidation")
+}
+
 fn compute_document_styles(
     root: &Node,
     sheets: &[crate::model::StylesheetParse],

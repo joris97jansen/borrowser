@@ -161,10 +161,7 @@ fn incremental_style_reuse_rejects_a_different_matching_environment() {
         .expect("initial resolved style");
     let computed = compute_document_styles_from_resolved_styles(&dom, &resolved)
         .expect("initial computed style");
-    let plan = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
-        node_ids: vec![html::internal::Id(1)],
-    })
-    .expect("attribute change plan");
+    let plan = attribute_invalidation_plan(vec![html::internal::Id(1)]);
 
     let error = try_compute_document_styles_for_invalidation_plan_with_limits_with_environment(
         &plan,
@@ -190,8 +187,7 @@ fn incremental_style_reuse_rejects_a_different_matching_environment() {
 #[test]
 fn plan_execution_reports_full_required_without_incremental_state() {
     let dom = document_element("div", Vec::new(), Vec::new());
-    let plan = classify_style_invalidation(StyleChangeFacts::TreeStructureChanged)
-        .expect("tree changes require style invalidation");
+    let plan = tree_invalidation_plan();
 
     let execution = try_compute_document_styles_for_invalidation_plan_with_limits(
         &plan,
@@ -209,10 +205,7 @@ fn plan_execution_reports_full_required_without_incremental_state() {
 #[test]
 fn plan_execution_reports_incremental_unavailable_without_retained_artifacts() {
     let dom = document_element("div", Vec::new(), Vec::new());
-    let plan = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
-        node_ids: vec![html::internal::Id(1)],
-    })
-    .expect("attribute changes require style invalidation");
+    let plan = attribute_invalidation_plan(vec![html::internal::Id(1)]);
 
     let execution = try_compute_document_styles_for_invalidation_plan_with_limits(
         &plan,
@@ -234,10 +227,7 @@ fn plan_execution_propagates_selector_dom_build_failure_without_retained_artifac
         Vec::new(),
         vec![document(element("span", Vec::new(), Vec::new()))],
     ));
-    let plan = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
-        node_ids: vec![html::internal::Id(1)],
-    })
-    .expect("attribute changes require style invalidation");
+    let plan = attribute_invalidation_plan(vec![html::internal::Id(1)]);
 
     let error = try_compute_document_styles_for_invalidation_plan_with_limits(
         &plan,
@@ -259,10 +249,7 @@ fn plan_execution_propagates_selector_dom_build_failure_without_retained_artifac
 #[test]
 fn plan_execution_preserves_styled_element_limit_without_retained_artifacts() {
     let dom = document_element("div", Vec::new(), Vec::new());
-    let plan = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
-        node_ids: vec![html::internal::Id(1)],
-    })
-    .expect("attribute changes require style invalidation");
+    let plan = attribute_invalidation_plan(vec![html::internal::Id(1)]);
     let limits = StyleResolutionLimits {
         max_styled_elements_per_document: 0,
         ..StyleResolutionLimits::default()
@@ -305,10 +292,7 @@ fn plan_execution_reports_incremental_computed_for_a_valid_suffix() {
     let initial_computed =
         compute_document_styles_from_resolved_styles_with_reuse_stats(&initial_dom, &resolved)
             .expect("initial computed styles");
-    let plan = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
-        node_ids: vec![html::internal::Id(1)],
-    })
-    .expect("attribute changes require style invalidation");
+    let plan = attribute_invalidation_plan(vec![html::internal::Id(1)]);
 
     let execution = try_compute_document_styles_for_invalidation_plan_with_limits(
         &plan,
@@ -358,10 +342,7 @@ fn plan_aware_suffix_recomputes_following_sibling_selector_effects() {
     let initial_computed =
         compute_document_styles_from_resolved_styles_with_reuse_stats(&initial_dom, &resolved)
             .expect("initial computed styles");
-    let plan = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
-        node_ids: vec![html::internal::Id(2)],
-    })
-    .expect("attribute changes require style invalidation");
+    let plan = attribute_invalidation_plan(vec![html::internal::Id(2)]);
     let execution = try_compute_document_styles_for_invalidation_plan_with_limits(
         &plan,
         &changed_dom,
@@ -399,10 +380,7 @@ fn plan_aware_suffix_recomputes_inherited_descendant_effects() {
     let initial_computed =
         compute_document_styles_from_resolved_styles_with_reuse_stats(&initial_dom, &resolved)
             .expect("initial computed styles");
-    let plan = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
-        node_ids: vec![html::internal::Id(1)],
-    })
-    .expect("attribute changes require style invalidation");
+    let plan = attribute_invalidation_plan(vec![html::internal::Id(1)]);
     let execution = try_compute_document_styles_for_invalidation_plan_with_limits(
         &plan,
         &changed_dom,
@@ -440,10 +418,7 @@ fn plan_aware_suffix_recomputes_descendant_selector_effects() {
     let initial_computed =
         compute_document_styles_from_resolved_styles_with_reuse_stats(&initial_dom, &resolved)
             .expect("initial computed styles");
-    let plan = classify_style_invalidation(StyleChangeFacts::AttributesChanged {
-        node_ids: vec![html::internal::Id(1)],
-    })
-    .expect("attribute changes require style invalidation");
+    let plan = attribute_invalidation_plan(vec![html::internal::Id(1)]);
     let execution = try_compute_document_styles_for_invalidation_plan_with_limits(
         &plan,
         &changed_dom,

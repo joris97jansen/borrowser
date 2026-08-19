@@ -1,5 +1,7 @@
 use crate::rendering::*;
 
+use super::support::css_authorized_request;
+
 #[test]
 fn frame_execution_trace_distinguishes_requested_work_from_frame_prerequisites() {
     let mut pending = PendingRenderWork::default();
@@ -48,16 +50,15 @@ fn frame_execution_trace_distinguishes_requested_work_from_frame_prerequisites()
 #[test]
 fn frame_execution_trace_adds_viewport_change_as_direct_runtime_trigger() {
     let mut pending = PendingRenderWork::default();
-    pending.push(render_css_style_invalidation_request(
-        CssStyleInvalidationSource::DocumentReplaced,
-        true,
+    pending.push(css_authorized_request(
+        CssStyleInvalidationSource::DomPublication,
     ));
 
     let trace = build_render_frame_execution_trace(&pending, true, true, false, false);
     assert_eq!(
         trace.triggered_entry_points,
         vec![
-            RenderInvalidationEntryPoint::DocumentReplaced,
+            RenderInvalidationEntryPoint::DomPublicationStyleInvalidated,
             RenderInvalidationEntryPoint::ViewportChanged,
         ]
     );
@@ -65,20 +66,14 @@ fn frame_execution_trace_adds_viewport_change_as_direct_runtime_trigger() {
     assert_eq!(trace.layout.kind, RenderPhaseExecutionKind::Requested);
     assert_eq!(
         trace.layout.direct_triggers,
-        vec![
-            RenderRebuildTrigger::DomReplaced,
-            RenderRebuildTrigger::ViewportChanged,
-        ]
+        vec![RenderRebuildTrigger::ViewportChanged]
     );
-    assert!(trace.layout.cascaded_from.is_empty());
+    assert_eq!(trace.layout.cascaded_from, vec![RenderingPhase::Style]);
     assert_eq!(trace.paint.kind, RenderPhaseExecutionKind::Requested);
     assert_eq!(trace.paint.cascaded_from, vec![RenderingPhase::Layout]);
     assert_eq!(
         trace.frame_orchestration.direct_triggers,
-        vec![
-            RenderRebuildTrigger::DomReplaced,
-            RenderRebuildTrigger::ViewportChanged,
-        ]
+        vec![RenderRebuildTrigger::ViewportChanged]
     );
     assert_eq!(
         trace.repaint_execution.scope,

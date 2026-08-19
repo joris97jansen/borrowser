@@ -26,7 +26,7 @@ Related code:
 - `crates/browser/src/rendering/contracts.rs`
 - `crates/browser/src/page/style_cache.rs`
 - `crates/browser/src/page/style_phase.rs`
-- `crates/browser/src/page/restyle.rs`
+- `crates/browser/src/page/dom_mutation.rs`
 - `crates/layout/src/retained.rs`
 - `crates/gfx/src/viewport.rs`
 - `crates/gfx/src/paint/mod.rs`
@@ -98,10 +98,12 @@ The browser/runtime may retain and invalidate artifacts from CSS, Layout, and
 Paint only through explicit contracts. Retention never transfers the semantic
 ownership of those artifacts into browser/runtime code.
 
-AF4d refinement: a neutral mutation fact does not itself authorize a retained
-style-input generation transition. CSS returning `Some(StyleInvalidationPlan)`
-does; `None` preserves cache-key eligibility. Browser consumes only that
-presence and the CSS-owned opaque artifact policy, never selector semantics.
+AF4e refinement: a neutral mutation fact does not itself authorize a retained
+style-input generation transition. CSS returning and applying
+`Some(StyleInvalidationPlan)` produces one non-constructible
+`AppliedCssStyleInvalidation` capability; consuming it authorizes one
+publication-level Style request. `None` preserves cache-key eligibility.
+Browser consumes only the opaque CSS result, never selector semantics.
 
 ## Retained Versus Rebuilt State
 
@@ -168,24 +170,27 @@ DirtyEntry { phase: DirtyPhase, reason: DirtyReason, scope: DirtyScope }
 | `DomStructureChanged` | layout/document, reason `DomContentChanged` | paint from layout | document |
 | `DomAttributesChanged` | none intrinsically | none intrinsically | CSS plan determines Style scope when present |
 | `DomTextChanged` | layout/document, reason `TextContentChanged` | paint from layout | document |
+| `DomPublicationStyleInvalidated` | style/document, reason `StyleInputChanged` | layout from style; paint from layout | document |
+| `DomMutationUnclassified` | layout/document, reason `ConservativeUnknownImpact` | paint from layout | document |
 | `StylesheetSetChanged` | none intrinsically | none intrinsically | CSS plan determines Style scope when present |
 | `ViewportChanged` | layout/viewport, reason `ViewportChanged` | paint from layout | viewport |
 | `ResourceStateChanged` | layout/document and paint/document, reason `ResourceStateChanged` | none | document |
 | `InputStateChanged` | paint/viewport, reason `RuntimeInputState` | none | viewport |
-| unknown impact | style, layout, and paint, reason `ConservativeUnknownImpact` | explicit full fallback | document |
+| unknown non-DOM impact | style, layout, and paint, reason `ConservativeUnknownImpact` | explicit full fallback | document |
 
 `DirtyScope` supports `None`, retained-node/artifact/subtree forms,
 `Viewport`, and `Document`. Current production dirty requests use `Document`
 and `Viewport` unless safe retained dependency data exists. Conflicting or
 unproven narrower scopes widen conservatively to `Document`.
 
-The table records intrinsic entry-point effects. Browser composes a CSS
-`Some(plan)` result once with those effects into the single runtime request
-that projects phase work, dirty state, paint invalidation, and redraw need.
-Viewport changes do not imply restyle by default. AF4d text mutation does dirty
-Style through CSS's current full-document `TextChanged` plan because text can
-change `:empty` matching. A future dependency-aware classifier may return
-`None`; Browser must then preserve style-cache eligibility. Generated content,
+The ordinary DOM rows record intrinsic effects. Browser applies a CSS
+`Some(plan)` result once and emits a separate
+`DomPublicationStyleInvalidated` request; it does not copy that aggregate
+authorization onto intrinsic causes. Viewport changes do not imply restyle by
+default. AF4e text mutation does dirty Style through CSS's current aggregate
+full-document plan because text can change `:empty` matching. A future
+dependency-aware classifier may return `None`; Browser must then preserve
+style-cache eligibility. Generated content,
 additional text-sensitive selectors, viewport-dependent style, container
 queries, or media/environment dependencies must extend CSS-owned facts rather
 than Browser-owned selector policy.
@@ -227,7 +232,7 @@ are recorded by retained artifact lifecycle state and
 | viewport-only update in current supported CSS model | reuse style | viewport changes do not dirty style by default |
 | stylesheet set change | discard/recompute | stylesheet generation changes and style dirtiness is document-scoped |
 | document replacement | discard/recompute in a new identity domain | retained continuity cannot cross full document replacement |
-| text-only mutation | CSS-authorized full discard/recompute in AF4d | exact text can change `:empty`; dependency indexing is not yet available |
+| text-only mutation | one CSS-authorized full discard/recompute in AF4e | exact text can change `:empty`; dependency indexing is not yet available |
 | unknown style impact | conservative recompute | CSS has not supplied a safe narrower fact |
 
 Browser/runtime owns retained style artifact lifetime and keys. CSS owns

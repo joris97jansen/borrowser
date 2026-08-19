@@ -293,15 +293,17 @@ Milestone U defines these trigger classes:
 | inline style block change | `<style>` text insertion/update/removal | stylesheet set dirty and whole-document style dirty |
 | external stylesheet arrival | `CssDecodedBlock` | stylesheet set dirty and whole-document style dirty |
 | stylesheet load error/abort | network error, unsupported content type | pending-load state dirty; style tree unchanged unless the failed sheet previously contributed |
-| text change | `SetText`, `AppendText` | layout dirty; style dirty only when the text belongs to a `<style>` element or future selector support depends on text state |
+| text change | `SetText`, `AppendText` | direct layout dirty; AF4e CSS classification also conservatively dirties Style because `:empty` depends on text |
 | pseudo/input state change | future hover/focus/active/visited hooks | target-dependent style dirty once pseudo-class matching is supported |
 
-The current parser patch path applies patch batches through `DomStore` before
-materializing the DOM. Patch batches are classified before materialization;
-empty batches are no-ops, and Browser submits typed mutation facts to the
-CSS-owned AF1 invalidation classifier. Structural mutations conservatively
-produce an opaque full plan, while materialized attribute identities can
-produce an opaque CSS-owned document-suffix plan.
+The current parser patch path stages patch batches through `DomStore`,
+materializes the candidate DOM, resolves mutation keys against that staged
+post-application store, and only then commits. Empty batches are no-ops.
+Browser submits one complete neutral fact set to the CSS-owned classifier;
+structural and text mutations conservatively produce an opaque full plan,
+while surviving attribute identities can produce an opaque CSS-owned
+document-suffix plan. Browser derives intrinsic Layout work independently from
+the same complete facts.
 
 ### Mutation To Style Work Mapping
 

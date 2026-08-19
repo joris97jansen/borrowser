@@ -1,6 +1,6 @@
 use crate::dom_store::DomStore;
 use crate::input_state::DocumentInputState;
-use crate::page::PageState;
+use crate::page::{DomPublicationRenderInvalidation, PageState};
 use crate::rendering::{PendingRenderWork, RenderFrameExecutionTrace, RenderInvalidationRequest};
 use crate::resources::ResourceManager;
 use app_api::RepaintHandle;
@@ -108,6 +108,20 @@ impl Tab {
         request: Option<RenderInvalidationRequest>,
     ) -> bool {
         request.is_some_and(|request| self.request_render_work(request))
+    }
+
+    pub(super) fn request_dom_publication_render_work(
+        &mut self,
+        publication: DomPublicationRenderInvalidation,
+    ) -> bool {
+        let mut requests_redraw = false;
+        for request in publication.requests() {
+            requests_redraw |= self.pending_render_work.push(request);
+        }
+        if requests_redraw {
+            self.poke_redraw();
+        }
+        requests_redraw
     }
 
     pub(super) fn clear_render_orchestration_state(&mut self) {

@@ -301,6 +301,17 @@ Until HTML reports `Selected(DocumentMode)`, runtime retains patches in a hard
 bounded pre-selection buffer and publishes no selector-visible DOM. Budget
 exhaustion is a typed terminal failure.
 
+## AF4e neutral publication classification
+
+Browser explicitly classifies every currently known `DomPatch` operation into
+neutral publication facts after staged application: reset/document,
+allocation, topology/order, template association, attribute target, or text
+target. Because `DomPatch` is non-exhaustive, the wildcard is retained only as
+an unclassified count. It must not fabricate a structural or other known fact.
+CSS assigns selector meaning to the complete aggregate; Browser independently
+assigns intrinsic rendering work. See
+`docs/css/af4e-selector-invalidation-parser-conformance-closeout.md`.
+
 `html5-dompatch-v3` is the native parser-fixture patch format. Its writer
 consumes only the AE13b3 `ObservedPatchStream`, including first-appearance
 labels and canonical operation order. Runtime batch boundaries, `PatchKey`,

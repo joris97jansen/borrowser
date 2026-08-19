@@ -319,4 +319,17 @@ fn matching_context_reports_axis_step_limit_deterministically() {
     );
     assert!(context.matches_complex_selector(target, &selector).is_err());
     assert!(!context.matches_complex_selector_conservative(target, &selector));
+
+    let selectors = parse_selector_result("body span");
+    assert_eq!(
+        context.match_selector_list(target, &selectors),
+        Err(SelectorMatchingLimitError::AxisStepLimitExceeded { limit: 0 })
+    );
+    assert_eq!(
+        context
+            .match_selector_list_conservative(target, &selectors)
+            .matchability(),
+        SelectorMatchability::Invalid,
+        "the explicit compatibility helper is the only list API that downgrades the limit"
+    );
 }

@@ -44,3 +44,11 @@ pub enum DomPatchError {
     MissingRoot,
     UnsupportedPatch(&'static str),
 }
+
+/// Failure while resolving mutation targets against a staged, post-patch DOM.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DomIdentityResolutionError {
+    UnknownHandle(DomHandle),
+    NeverAllocated(PatchKey),
+    LiveIdentityUnavailable(PatchKey),
+}

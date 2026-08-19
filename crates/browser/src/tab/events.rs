@@ -1,9 +1,8 @@
 use super::Tab;
-use crate::dom_store::DomPatchError;
-use crate::page::RestyleHint;
+use crate::dom_store::{DomIdentityResolutionError, DomPatchError};
+use crate::page::{DomMutationFacts, PendingDomMutationFacts};
 use bus::{CoreEvent, DocumentPublication, DocumentPublicationFailure, DocumentPublicationPayload};
 use core_types::ResourceKind;
-use html::{DomPatch, PatchKey};
 
 impl Tab {
     pub fn on_core_event(&mut self, evt: CoreEvent) {
@@ -182,6 +181,26 @@ impl Tab {
         publication: DocumentPublication,
         request_id: u64,
     ) -> Result<(), DocumentPublicationFailure> {
+        self.commit_document_publication_with_identity_resolver(
+            publication,
+            request_id,
+            |store, handle, keys| store.resolve_mutation_node_ids(handle, keys),
+        )
+    }
+
+    fn commit_document_publication_with_identity_resolver(
+        &mut self,
+        publication: DocumentPublication,
+        request_id: u64,
+        resolve_identities: impl Fn(
+            &crate::dom_store::DomStore,
+            core_types::DomHandle,
+            &[html::PatchKey],
+        ) -> Result<
+            crate::dom_store::ResolvedMutationNodeIds,
+            DomIdentityResolutionError,
+        >,
+    ) -> Result<(), DocumentPublicationFailure> {
         let DocumentPublication {
             handle,
             document_mode,
@@ -189,7 +208,7 @@ impl Tab {
         } = publication;
         let mut staged_store = self.dom_store.clone();
         let new_handle = self.dom_handle != Some(handle);
-        let (dom, restyle_hint, staged_version) = match payload {
+        let (dom, mutation_facts, staged_version) = match payload {
             DocumentPublicationPayload::Patch { from, to, patches } => {
                 if !new_handle && self.page.document_mode != Some(document_mode) {
                     return Err(DocumentPublicationFailure::DocumentModeChanged);
@@ -206,12 +225,19 @@ impl Tab {
                 let dom = staged_store
                     .materialize(handle)
                     .map_err(|_| DocumentPublicationFailure::MaterializationFailed)?;
-                let dirty = patch_attribute_keys(&patches);
-                let dirty_nodes = staged_store
-                    .resolve_live_node_ids(handle, &dirty)
-                    .map_err(|_| DocumentPublicationFailure::MaterializationFailed)?;
-                let hint = RestyleHint::from_dom_patch_batch(&patches, dirty_nodes);
-                (dom, hint, to)
+                let pending_facts = PendingDomMutationFacts::from_patches(&patches, new_handle);
+                let attribute_targets = resolve_identities(
+                    &staged_store,
+                    handle,
+                    pending_facts.attribute_target_keys(),
+                )
+                .map_err(map_dom_identity_resolution_error)?;
+                let text_targets =
+                    resolve_identities(&staged_store, handle, pending_facts.text_target_keys())
+                        .map_err(map_dom_identity_resolution_error)?;
+                let facts =
+                    DomMutationFacts::resolve(pending_facts, attribute_targets, text_targets);
+                (dom, facts, to)
             }
         };
 
@@ -219,9 +245,9 @@ impl Tab {
         self.dom_store = staged_store;
         self.dom_handle = Some(handle);
         self.dom_version = staged_version;
-        let render_work =
-            self.page
-                .commit_dom_publication(dom, document_mode, restyle_hint, new_handle);
+        let render_work = self
+            .page
+            .commit_dom_publication(dom, document_mode, mutation_facts);
         self.page.update_head_metadata();
         self.page
             .seed_input_values_from_dom(&mut self.document_input.input_values);
@@ -241,14 +267,48 @@ impl Tab {
             ),
             None => base,
         });
-        self.request_optional_render_work(render_work);
+        self.request_dom_publication_render_work(render_work);
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn commit_document_publication_with_forced_identity_failure_for_tests(
+        &mut self,
+        publication: DocumentPublication,
+        request_id: u64,
+        unavailable: html::PatchKey,
+    ) -> Result<(), DocumentPublicationFailure> {
+        self.commit_document_publication_with_identity_resolver(
+            publication,
+            request_id,
+            |store, handle, keys| {
+                if keys.contains(&unavailable) {
+                    Err(DomIdentityResolutionError::LiveIdentityUnavailable(
+                        unavailable,
+                    ))
+                } else {
+                    store.resolve_mutation_node_ids(handle, keys)
+                }
+            },
+        )
     }
 
     fn on_document_publication_failure(&mut self, failure: DocumentPublicationFailure) {
         self.loading = false;
         self.last_status = Some(format!("Document publication failed: {failure:?}"));
         self.poke_redraw();
+    }
+}
+
+fn map_dom_identity_resolution_error(
+    error: DomIdentityResolutionError,
+) -> DocumentPublicationFailure {
+    match error {
+        DomIdentityResolutionError::UnknownHandle(_)
+        | DomIdentityResolutionError::NeverAllocated(_)
+        | DomIdentityResolutionError::LiveIdentityUnavailable(_) => {
+            DocumentPublicationFailure::InvariantViolation
+        }
     }
 }
 
@@ -273,14 +333,4 @@ fn map_dom_patch_error(error: DomPatchError) -> DocumentPublicationFailure {
         | DomPatchError::MissingRoot
         | DomPatchError::UnsupportedPatch(_) => DocumentPublicationFailure::InvalidPayload,
     }
-}
-
-fn patch_attribute_keys(patches: &[DomPatch]) -> Vec<PatchKey> {
-    patches
-        .iter()
-        .filter_map(|patch| match patch {
-            DomPatch::SetAttributes { key, .. } => Some(*key),
-            _ => None,
-        })
-        .collect()
 }

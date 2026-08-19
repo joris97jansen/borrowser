@@ -132,12 +132,9 @@ fn viewport_dirty_state_plans_relayout_and_repaint_without_restyle() {
 fn style_dirty_state_plans_restyle_relayout_and_repaint() {
     let mut retained_dirty_state = RenderDirtyState::new();
     retained_dirty_state.extend(
-        render_css_style_invalidation_request(
-            CssStyleInvalidationSource::DomAttributesChanged,
-            true,
-        )
-        .dirty_request()
-        .entries,
+        css_authorized_request(CssStyleInvalidationSource::DomPublication)
+            .dirty_request()
+            .entries,
     );
     let pending_work = PendingRenderWork::default();
 
@@ -159,12 +156,9 @@ fn style_dirty_state_plans_restyle_relayout_and_repaint() {
 fn render_work_plan_debug_snapshot_is_exact_for_style_update() {
     let mut retained_dirty_state = RenderDirtyState::new();
     retained_dirty_state.extend(
-        render_css_style_invalidation_request(
-            CssStyleInvalidationSource::DomAttributesChanged,
-            true,
-        )
-        .dirty_request()
-        .entries,
+        css_authorized_request(CssStyleInvalidationSource::DomPublication)
+            .dirty_request()
+            .entries,
     );
     let pending_work = PendingRenderWork::default();
 

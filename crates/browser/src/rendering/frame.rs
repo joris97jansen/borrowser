@@ -17,11 +17,12 @@ use super::debug::{
     RenderFrameExecutionTrace, RenderPhaseExecutionKind, RenderPhaseExecutionTrace,
 };
 use super::invalidation::{
-    PendingRenderWork, PhaseRerunSource, RenderInvalidationRequest, render_invalidation_request,
+    IntrinsicRenderInvalidationSource, PendingRenderWork, PhaseRerunSource,
+    RenderInvalidationRequest, render_intrinsic_invalidation_request,
 };
 use super::page_background::find_page_background_color;
 use super::types::{PaintInvalidationScope, RepaintExecutionPlan, RepaintExecutionScope};
-use super::types::{RenderInvalidationEntryPoint, RenderRebuildTrigger, RenderingPhase};
+use super::types::{RenderRebuildTrigger, RenderingPhase};
 use super::work_plan::{RenderWorkPlan, RepaintExecution};
 use super::{RetainedPaintArtifactKeySeed, RetainedPaintFrameAction, RetainedPaintFrameResult};
 
@@ -219,9 +220,9 @@ pub(crate) fn execute_prepared_page_frame<R: ImageProvider>(
         trace.repaint_execution.scope,
         repaint_execution_scope_from_viewport(viewport_result.repaint_scope)
     );
-    let followup_render_request = viewport_result
-        .requested_followup_render
-        .then(|| render_invalidation_request(RenderInvalidationEntryPoint::InputStateChanged));
+    let followup_render_request = viewport_result.requested_followup_render.then(|| {
+        render_intrinsic_invalidation_request(IntrinsicRenderInvalidationSource::InputStateChanged)
+    });
 
     OrchestratedFrameOutcome {
         action: viewport_result.action,
@@ -272,7 +273,9 @@ pub(crate) fn build_render_frame_execution_trace(
     }
 
     if viewport_changed {
-        let request = render_invalidation_request(RenderInvalidationEntryPoint::ViewportChanged);
+        let request = render_intrinsic_invalidation_request(
+            IntrinsicRenderInvalidationSource::ViewportChanged,
+        );
         push_unique(&mut triggered_entry_points, request.entry_point());
         let requested_work = request.requested_work();
         style.record(requested_work.style());

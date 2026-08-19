@@ -22,8 +22,21 @@ use layout::{
     RetainedLayoutFrameResult, RetainedLayoutKeySeed,
 };
 
-use super::restyle::RestyleTrigger;
 use super::style_cache::{PageStyleCache, PageStyleGenerations, StyleRecalcKind};
+
+/// One-shot proof that CSS classified and the retained-style owner applied a
+/// non-empty invalidation plan. Only this module can construct it.
+pub(crate) struct AppliedCssStyleInvalidation {
+    _private: (),
+}
+
+fn initial_document_style_change() -> StyleChangeFacts {
+    StyleChangeFacts::dom_publication(
+        css::DomStyleChangeFacts::builder()
+            .document_replaced()
+            .build(),
+    )
+}
 
 /// Retained rendering state owned by `PageState`.
 ///
@@ -37,7 +50,7 @@ pub(super) struct RetainedRenderState {
     pub(super) generations: PageStyleGenerations,
     pub(super) style_cache: Option<PageStyleCache>,
     pub(super) dirty_state: RenderDirtyState,
-    pub(super) last_restyle_trigger: Option<RestyleTrigger>,
+    pub(super) last_dom_mutation_facts: Option<super::DomMutationFacts>,
     pub(super) pending_style_invalidation: Option<StyleInvalidationPlan>,
     pub(super) last_style_recalc: Option<StyleRecalcKind>,
     pub(super) last_style_reuse: Option<ComputedStyleReuseStats>,
@@ -66,9 +79,9 @@ impl RetainedRenderState {
             generations: PageStyleGenerations::default(),
             style_cache: None,
             dirty_state: RenderDirtyState::document_initial(),
-            last_restyle_trigger: None,
+            last_dom_mutation_facts: None,
             pending_style_invalidation: Some(
-                classify_style_invalidation(StyleChangeFacts::DocumentReplaced)
+                classify_style_invalidation(&initial_document_style_change())
                     .expect("document replacement must invalidate style"),
             ),
             last_style_recalc: None,
@@ -91,9 +104,9 @@ impl RetainedRenderState {
         self.generations = PageStyleGenerations::default();
         self.style_cache = None;
         self.dirty_state = RenderDirtyState::document_initial();
-        self.last_restyle_trigger = None;
+        self.last_dom_mutation_facts = None;
         self.pending_style_invalidation = Some(
-            classify_style_invalidation(StyleChangeFacts::DocumentReplaced)
+            classify_style_invalidation(&initial_document_style_change())
                 .expect("document replacement must invalidate style"),
         );
         self.last_style_recalc = None;
@@ -431,7 +444,8 @@ impl RetainedRenderState {
         match entry_point {
             RenderInvalidationEntryPoint::DocumentReplaced
             | RenderInvalidationEntryPoint::DomStructureChanged
-            | RenderInvalidationEntryPoint::DomTextChanged => {
+            | RenderInvalidationEntryPoint::DomTextChanged
+            | RenderInvalidationEntryPoint::DomMutationUnclassified => {
                 self.generations.layout_inputs = self
                     .generations
                     .layout_inputs
@@ -459,6 +473,7 @@ impl RetainedRenderState {
             }
             RenderInvalidationEntryPoint::ViewportChanged
             | RenderInvalidationEntryPoint::DomAttributesChanged
+            | RenderInvalidationEntryPoint::DomPublicationStyleInvalidated
             | RenderInvalidationEntryPoint::StylesheetSetChanged => {}
         }
         self.dirty_state.extend(request.dirty_request().entries);
@@ -586,39 +601,45 @@ impl RetainedRenderState {
     /// Applies one neutral style-input fact through the CSS-owned invalidation
     /// classifier. The CSS result, not observation of the fact alone,
     /// authorizes advancing the retained style-input generation.
-    pub(super) fn apply_style_input_change(&mut self, change: StyleChangeFacts) -> bool {
+    pub(super) fn apply_style_input_change(
+        &mut self,
+        change: &StyleChangeFacts,
+    ) -> Option<AppliedCssStyleInvalidation> {
         let incoming = classify_style_invalidation(change);
         self.apply_classified_style_input_change(incoming)
     }
 
-    pub(super) fn mark_stylesheets_changed(&mut self) -> bool {
+    pub(super) fn mark_stylesheets_changed(&mut self) -> AppliedCssStyleInvalidation {
+        let plan = classify_style_invalidation(&StyleChangeFacts::stylesheet_set_changed())
+            .expect("effective stylesheet-set changes must produce Style invalidation");
         self.generations.stylesheets = self
             .generations
             .stylesheets
             .checked_add(1)
             .expect("page stylesheet generation exhausted");
         self.advance_render_epoch();
-        let incoming = classify_style_invalidation(StyleChangeFacts::StylesheetSetChanged);
-        let css_requested_style_work = incoming.is_some();
-        self.merge_classified_style_invalidation(incoming);
-        css_requested_style_work
+        self.apply_nonempty_style_invalidation(plan)
     }
 
     fn apply_classified_style_input_change(
         &mut self,
         incoming: Option<StyleInvalidationPlan>,
-    ) -> bool {
-        let css_requested_style_work = incoming.is_some();
-        if css_requested_style_work {
-            self.generations.style_inputs = self
-                .generations
-                .style_inputs
-                .checked_add(1)
-                .expect("page style-input generation exhausted");
-        }
+    ) -> Option<AppliedCssStyleInvalidation> {
+        let plan = incoming?;
+        self.generations.style_inputs = self
+            .generations
+            .style_inputs
+            .checked_add(1)
+            .expect("page style-input generation exhausted");
+        Some(self.apply_nonempty_style_invalidation(plan))
+    }
 
-        self.merge_classified_style_invalidation(incoming);
-        css_requested_style_work
+    fn apply_nonempty_style_invalidation(
+        &mut self,
+        plan: StyleInvalidationPlan,
+    ) -> AppliedCssStyleInvalidation {
+        self.merge_classified_style_invalidation(Some(plan));
+        AppliedCssStyleInvalidation { _private: () }
     }
 
     fn merge_classified_style_invalidation(&mut self, incoming: Option<StyleInvalidationPlan>) {
@@ -711,7 +732,7 @@ mod tests {
 
         let requested = retained.apply_classified_style_input_change(None);
 
-        assert!(!requested);
+        assert!(requested.is_none());
         assert_eq!(retained.generations.style_inputs, generation_before);
         assert_eq!(retained.current_style_artifact_key(), key_before);
         assert_eq!(retained.style_artifact_stats, stats_before);
@@ -731,9 +752,14 @@ mod tests {
         retained.pending_style_invalidation = None;
         retained.dirty_state.clear();
 
-        let requested = retained.apply_style_input_change(StyleChangeFacts::TextChanged);
+        let facts = StyleChangeFacts::dom_publication(
+            css::DomStyleChangeFacts::builder()
+                .text(css::ChangedStyleNodeFacts::changed(Vec::new()))
+                .build(),
+        );
+        let requested = retained.apply_style_input_change(&facts);
 
-        assert!(requested);
+        assert!(requested.is_some());
         assert_eq!(retained.generations.style_inputs, 1);
         assert_eq!(
             retained

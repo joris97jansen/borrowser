@@ -361,3 +361,9 @@ CSS tokenizer/parser paths do not yet consistently expose fully escape-decoded
 semantic selector names and values. AF4c consumes the existing selector IR and
 does not key policy from raw escape spelling as a workaround. Standards-
 conformant selector escape decoding remains separate CSS Syntax/parser work.
+
+AF4e's parser-backed matrix is the final integration proof for this comparison
+policy: it covers parser-selected NoQuirks, LimitedQuirks, and Quirks modes,
+HTML attribute-name and default-insensitive value behavior, foreign
+HTML/SVG/MathML boundaries, and adjusted SVG `foreignObject` names. See
+`docs/css/af4e-selector-invalidation-parser-conformance-closeout.md`.

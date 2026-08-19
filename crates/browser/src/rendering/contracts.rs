@@ -80,6 +80,7 @@ const FRAME_ORCHESTRATION_TRIGGERS: &[RenderRebuildTrigger] = &[
     RenderRebuildTrigger::DomReplaced,
     RenderRebuildTrigger::DomStructureChanged,
     RenderRebuildTrigger::DomTextChanged,
+    RenderRebuildTrigger::DomMutationUnclassified,
     RenderRebuildTrigger::ViewportChanged,
     RenderRebuildTrigger::ResourceStateChanged,
     RenderRebuildTrigger::InputStateChanged,
@@ -111,6 +112,7 @@ const LAYOUT_TRIGGERS: &[RenderRebuildTrigger] = &[
     RenderRebuildTrigger::DomReplaced,
     RenderRebuildTrigger::DomStructureChanged,
     RenderRebuildTrigger::DomTextChanged,
+    RenderRebuildTrigger::DomMutationUnclassified,
     RenderRebuildTrigger::ViewportChanged,
     RenderRebuildTrigger::ResourceStateChanged,
 ];

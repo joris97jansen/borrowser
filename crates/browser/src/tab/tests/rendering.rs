@@ -34,6 +34,8 @@ fn ui_content_consumes_pending_render_work_through_explicit_orchestration_path()
         vec![
             RenderInvalidationEntryPoint::StylesheetSetChanged,
             RenderInvalidationEntryPoint::DocumentReplaced,
+            RenderInvalidationEntryPoint::DomStructureChanged,
+            RenderInvalidationEntryPoint::DomPublicationStyleInvalidated,
         ]
     );
 
@@ -55,7 +57,7 @@ fn ui_content_consumes_pending_render_work_through_explicit_orchestration_path()
         trace.style.direct_triggers,
         vec![
             RenderRebuildTrigger::StylesheetSetChanged,
-            RenderRebuildTrigger::DomReplaced,
+            RenderRebuildTrigger::DomPublicationStyleInvalidated,
         ]
     );
     assert_eq!(trace.layout.kind, RenderPhaseExecutionKind::Requested);

@@ -333,7 +333,8 @@ Milestone Q does not implement:
 
 - cascade winner resolution
 - computed style generation
-- selector invalidation
+- targeted/dependency-aware selector invalidation and reverse dependency
+  indexing (AF4e supplies correct conservative publication invalidation)
 - selector matching caches
 - traversal pruning heuristics
 - CSS `@namespace` and namespace-selector syntax
@@ -380,3 +381,9 @@ subsystem with:
 - explicit extension hooks
 - explicit deferred work
 - explicit cascade handoff semantics
+
+AF4e further proves this contract against real parser output and Browser
+materialization. Authoritative cascade, conformance, and Browser diagnostic
+paths preserve matcher/index errors. The conservative matcher compatibility
+helper has no authoritative engine call sites and is not a valid substitute
+for checked matching on those paths.

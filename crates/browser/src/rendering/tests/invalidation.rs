@@ -1,4 +1,4 @@
-use crate::page::{PageState, RestyleHint};
+use crate::page::{DomMutationFacts, PageState};
 use crate::rendering::*;
 use html::{HtmlParseOptions, parse_document};
 
@@ -7,7 +7,7 @@ use super::support::*;
 #[test]
 fn render_invalidation_request_contracts_pin_runtime_entry_points() {
     let contracts = render_invalidation_request_contracts();
-    assert_eq!(contracts.len(), 8);
+    assert_eq!(contracts.len(), 10);
 
     let attrs = render_invalidation_request(RenderInvalidationEntryPoint::DomAttributesChanged);
     assert_eq!(attrs.requested_by(), RenderingSubsystem::BrowserRuntime);
@@ -47,6 +47,74 @@ fn render_invalidation_request_contracts_pin_runtime_entry_points() {
         resource.requested_work().paint(),
         PhaseRerunSource::Direct(RenderRebuildTrigger::ResourceStateChanged)
     );
+
+    let css_base =
+        render_invalidation_request(RenderInvalidationEntryPoint::DomPublicationStyleInvalidated);
+    assert_eq!(css_base.requested_by(), RenderingSubsystem::CssEngine);
+    assert_eq!(css_base.requested_work().style(), PhaseRerunSource::None);
+    assert!(!css_base.requested_work().requests_redraw());
+
+    let unknown =
+        render_invalidation_request(RenderInvalidationEntryPoint::DomMutationUnclassified);
+    assert_eq!(unknown.requested_by(), RenderingSubsystem::BrowserRuntime);
+    assert_eq!(unknown.requested_work().style(), PhaseRerunSource::None);
+    assert_eq!(
+        unknown.requested_work().layout(),
+        PhaseRerunSource::Direct(RenderRebuildTrigger::DomMutationUnclassified)
+    );
+    assert_eq!(
+        unknown.dirty_request().entries,
+        vec![
+            DirtyEntry::new(
+                DirtyPhase::Layout,
+                DirtyReason::ConservativeUnknownImpact,
+                DirtyScope::Document,
+            ),
+            DirtyEntry::new(
+                DirtyPhase::Paint,
+                DirtyReason::CascadedFromLayout,
+                DirtyScope::Document,
+            ),
+        ]
+    );
+    assert_eq!(
+        unknown.paint_invalidation(),
+        Some(PaintInvalidationRequest {
+            entry_point: RenderInvalidationEntryPoint::DomMutationUnclassified,
+            trigger: PaintInvalidationTrigger::DomMutationUnclassified,
+            reason: PaintInvalidationReason::CascadedFromLayout,
+            scope: PaintInvalidationScope::Document,
+        })
+    );
+}
+
+#[test]
+fn intrinsic_source_domain_maps_exhaustively_without_css_authorization_entry_points() {
+    let expected = [
+        RenderInvalidationEntryPoint::DocumentReplaced,
+        RenderInvalidationEntryPoint::DomStructureChanged,
+        RenderInvalidationEntryPoint::DomAttributesChanged,
+        RenderInvalidationEntryPoint::DomTextChanged,
+        RenderInvalidationEntryPoint::DomMutationUnclassified,
+        RenderInvalidationEntryPoint::ViewportChanged,
+        RenderInvalidationEntryPoint::ResourceStateChanged,
+        RenderInvalidationEntryPoint::InputStateChanged,
+    ];
+
+    let actual = INTRINSIC_RENDER_INVALIDATION_SOURCES.map(|source| {
+        let request = render_intrinsic_invalidation_request(source);
+        assert_ne!(
+            request.entry_point(),
+            RenderInvalidationEntryPoint::DomPublicationStyleInvalidated
+        );
+        assert_ne!(
+            request.entry_point(),
+            RenderInvalidationEntryPoint::StylesheetSetChanged
+        );
+        request.entry_point()
+    });
+
+    assert_eq!(actual, expected);
 }
 
 #[test]
@@ -73,19 +141,18 @@ fn render_invalidation_values_expose_read_only_factory_results() {
     );
     assert!(intrinsic_work.requests_redraw());
 
-    let css_authorized =
-        render_css_style_invalidation_request(CssStyleInvalidationSource::DomTextChanged, true);
+    let css_authorized = css_authorized_request(CssStyleInvalidationSource::DomPublication);
     assert_eq!(
         css_authorized.entry_point(),
-        RenderInvalidationEntryPoint::DomTextChanged
+        RenderInvalidationEntryPoint::DomPublicationStyleInvalidated
     );
     assert_eq!(
         css_authorized.requested_work().style(),
-        PhaseRerunSource::Direct(RenderRebuildTrigger::DomTextChanged)
+        PhaseRerunSource::Direct(RenderRebuildTrigger::DomPublicationStyleInvalidated)
     );
     assert_eq!(
         css_authorized.requested_work().layout(),
-        PhaseRerunSource::Direct(RenderRebuildTrigger::DomTextChanged)
+        PhaseRerunSource::CascadedFrom(RenderingPhase::Style)
     );
     assert_eq!(
         css_authorized.requested_work().paint(),
@@ -93,7 +160,7 @@ fn render_invalidation_values_expose_read_only_factory_results() {
     );
     assert_eq!(
         css_authorized.requested_work().frame_orchestration(),
-        PhaseRerunSource::Direct(RenderRebuildTrigger::DomTextChanged)
+        PhaseRerunSource::CascadedFrom(RenderingPhase::Style)
     );
     assert!(css_authorized.requested_work().requests_redraw());
 }
@@ -106,6 +173,8 @@ fn render_invalidation_request_contracts_cover_each_entry_point_once() {
         RenderInvalidationEntryPoint::DomStructureChanged,
         RenderInvalidationEntryPoint::DomAttributesChanged,
         RenderInvalidationEntryPoint::DomTextChanged,
+        RenderInvalidationEntryPoint::DomPublicationStyleInvalidated,
+        RenderInvalidationEntryPoint::DomMutationUnclassified,
         RenderInvalidationEntryPoint::StylesheetSetChanged,
         RenderInvalidationEntryPoint::ViewportChanged,
         RenderInvalidationEntryPoint::ResourceStateChanged,
@@ -150,6 +219,18 @@ fn paint_invalidation_request_contracts_pin_explicit_repaint_scope_and_reason() 
         PaintInvalidationRequest {
             entry_point: RenderInvalidationEntryPoint::DomTextChanged,
             trigger: PaintInvalidationTrigger::DomTextChanged,
+            reason: PaintInvalidationReason::CascadedFromLayout,
+            scope: PaintInvalidationScope::Document,
+        },
+        PaintInvalidationRequest {
+            entry_point: RenderInvalidationEntryPoint::DomPublicationStyleInvalidated,
+            trigger: PaintInvalidationTrigger::DomPublicationStyleInvalidated,
+            reason: PaintInvalidationReason::CascadedFromLayout,
+            scope: PaintInvalidationScope::Document,
+        },
+        PaintInvalidationRequest {
+            entry_point: RenderInvalidationEntryPoint::DomMutationUnclassified,
+            trigger: PaintInvalidationTrigger::DomMutationUnclassified,
             reason: PaintInvalidationReason::CascadedFromLayout,
             scope: PaintInvalidationScope::Document,
         },
@@ -647,17 +728,23 @@ fn document_replacement_returns_explicit_full_pipeline_work_request() {
     let mut page = PageState::new();
     page.start_nav("https://example.com/index.html");
 
-    let request = page.replace_dom(Box::new(output.document), RestyleHint::document_replaced());
+    let publication = page.replace_dom(
+        Box::new(output.document),
+        DomMutationFacts::document_replaced_for_tests(),
+    );
+    let request = publication
+        .intrinsic_requests()
+        .iter()
+        .copied()
+        .find(|request| request.entry_point() == RenderInvalidationEntryPoint::DocumentReplaced)
+        .expect("document intrinsic request");
     assert_eq!(
         request.entry_point(),
         RenderInvalidationEntryPoint::DocumentReplaced
     );
     assert_eq!(request.requested_by(), RenderingSubsystem::BrowserRuntime);
-    assert!(request.requests_style_work());
-    assert_eq!(
-        request.requested_work().style(),
-        PhaseRerunSource::Direct(RenderRebuildTrigger::DomReplaced)
-    );
+    assert!(!request.requests_style_work());
+    assert_eq!(request.requested_work().style(), PhaseRerunSource::None);
     assert_eq!(
         request.requested_work().layout(),
         PhaseRerunSource::Direct(RenderRebuildTrigger::DomReplaced)
@@ -670,10 +757,15 @@ fn document_replacement_returns_explicit_full_pipeline_work_request() {
         request.requested_work().frame_orchestration(),
         PhaseRerunSource::Direct(RenderRebuildTrigger::DomReplaced)
     );
+    let css = publication
+        .css_style_request()
+        .expect("one publication CSS authorization");
+    assert_eq!(css.requested_by(), RenderingSubsystem::CssEngine);
+    assert!(css.requests_style_work());
 }
 
 #[test]
-fn text_intrinsic_and_css_style_work_compose_into_one_coherent_request() {
+fn text_intrinsic_and_css_style_work_remain_separate_publication_requests() {
     let intrinsic = render_invalidation_request(RenderInvalidationEntryPoint::DomTextChanged);
     assert!(!intrinsic.requests_style_work());
     assert_eq!(intrinsic.requested_work().style(), PhaseRerunSource::None);
@@ -690,16 +782,15 @@ fn text_intrinsic_and_css_style_work_compose_into_one_coherent_request() {
             .any(|entry| entry.phase == DirtyPhase::Style)
     );
 
-    let css_authorized =
-        render_css_style_invalidation_request(CssStyleInvalidationSource::DomTextChanged, true);
+    let css_authorized = css_authorized_request(CssStyleInvalidationSource::DomPublication);
     assert!(css_authorized.requests_style_work());
     assert_eq!(
         css_authorized.requested_work().style(),
-        PhaseRerunSource::Direct(RenderRebuildTrigger::DomTextChanged)
+        PhaseRerunSource::Direct(RenderRebuildTrigger::DomPublicationStyleInvalidated)
     );
     assert_eq!(
         css_authorized.requested_work().layout(),
-        PhaseRerunSource::Direct(RenderRebuildTrigger::DomTextChanged)
+        PhaseRerunSource::CascadedFrom(RenderingPhase::Style)
     );
     assert_eq!(
         css_authorized.requested_work().paint(),
@@ -719,7 +810,7 @@ fn text_intrinsic_and_css_style_work_compose_into_one_coherent_request() {
         DirtyReason::CascadedFromStyle,
         DirtyScope::Document,
     )));
-    assert!(entries.contains(&DirtyEntry::new(
+    assert!(!entries.contains(&DirtyEntry::new(
         DirtyPhase::Layout,
         DirtyReason::TextContentChanged,
         DirtyScope::Document,
@@ -736,22 +827,26 @@ fn text_intrinsic_and_css_style_work_compose_into_one_coherent_request() {
     );
 
     let mut pending = PendingRenderWork::default();
+    pending.push(intrinsic);
     pending.push(css_authorized);
-    assert_eq!(pending.dirty_state(), {
-        let mut state = RenderDirtyState::new();
-        state.extend(dirty.entries.clone());
-        state
-    });
+    let mut expected = RenderDirtyState::new();
+    expected.extend(intrinsic.dirty_request().entries);
+    expected.extend(dirty.entries.clone());
+    assert_eq!(pending.dirty_state(), expected);
     assert_eq!(
         pending.paint_invalidations().requests(),
-        &[css_authorized.paint_invalidation().expect("paint work")]
+        &[
+            intrinsic
+                .paint_invalidation()
+                .expect("intrinsic paint work"),
+            css_authorized.paint_invalidation().expect("CSS paint work"),
+        ]
     );
 }
 
 #[test]
-fn classified_none_composition_never_fabricates_style_work() {
-    let text =
-        render_css_style_invalidation_request(CssStyleInvalidationSource::DomTextChanged, false);
+fn base_intrinsic_contracts_never_fabricate_style_work() {
+    let text = render_invalidation_request(RenderInvalidationEntryPoint::DomTextChanged);
     assert!(!text.requests_style_work());
     assert_eq!(text.requested_work().style(), PhaseRerunSource::None);
     assert!(text.dirty_request().entries.contains(&DirtyEntry::new(
@@ -761,10 +856,8 @@ fn classified_none_composition_never_fabricates_style_work() {
     )));
     assert!(text.paint_invalidation().is_some());
 
-    let attributes = render_css_style_invalidation_request(
-        CssStyleInvalidationSource::DomAttributesChanged,
-        false,
-    );
+    let attributes =
+        render_invalidation_request(RenderInvalidationEntryPoint::DomAttributesChanged);
     assert!(!attributes.requests_style_work());
     assert_eq!(attributes.requested_work().style(), PhaseRerunSource::None);
     assert_eq!(attributes.requested_work().layout(), PhaseRerunSource::None);
@@ -789,7 +882,7 @@ fn css_some_composition_always_materializes_style_and_downstream_work() {
 
     for source in CSS_STYLE_INVALIDATION_SOURCES {
         let entry_point = source.entry_point();
-        let request = render_css_style_invalidation_request(source, true);
+        let request = css_authorized_request(source);
         assert_eq!(
             CssStyleInvalidationSource::from_entry_point(entry_point),
             Some(source),
@@ -829,10 +922,8 @@ fn non_css_entry_points_cannot_enter_css_style_composition_domain() {
         let source = CssStyleInvalidationSource::from_entry_point(entry_point);
         assert_eq!(source, None, "{entry_point:?} is not a CSS style input");
         assert!(
-            source
-                .map(|source| render_css_style_invalidation_request(source, true))
-                .is_none(),
-            "an invalid source must not create a render request"
+            source.is_none(),
+            "an invalid source must not create a request"
         );
 
         let intrinsic = render_invalidation_request(entry_point);
@@ -855,17 +946,20 @@ fn dom_text_mutation_returns_explicit_layout_and_paint_work_request() {
     );
     page.clear_layout_dirty_for_tests();
 
-    let request = page.mark_dom_changed(RestyleHint::text_mutated());
+    let publication = page.mark_dom_changed(DomMutationFacts::text_changed_for_tests(Vec::new()));
+    let request = publication
+        .intrinsic_requests()
+        .iter()
+        .copied()
+        .find(|request| request.entry_point() == RenderInvalidationEntryPoint::DomTextChanged)
+        .expect("text intrinsic request");
     assert_eq!(
         request.entry_point(),
         RenderInvalidationEntryPoint::DomTextChanged
     );
     assert_eq!(request.requested_by(), RenderingSubsystem::BrowserRuntime);
-    assert!(request.requests_style_work());
-    assert_eq!(
-        request.requested_work().style(),
-        PhaseRerunSource::Direct(RenderRebuildTrigger::DomTextChanged)
-    );
+    assert!(!request.requests_style_work());
+    assert_eq!(request.requested_work().style(), PhaseRerunSource::None);
     assert_eq!(
         request.requested_work().layout(),
         PhaseRerunSource::Direct(RenderRebuildTrigger::DomTextChanged)
@@ -899,6 +993,127 @@ fn dom_text_mutation_returns_explicit_layout_and_paint_work_request() {
 }
 
 #[test]
+fn unclassified_dom_publication_uses_truthful_separate_css_and_intrinsic_fallbacks() {
+    let mut page = page_with_dom("<!doctype html><html><body><p></p></body></html>");
+    page.clear_all_dirty_for_tests();
+    let before = page.style_generations();
+    let publication = page.mark_dom_changed(DomMutationFacts::unclassified_for_tests(2));
+    assert_eq!(
+        page.last_dom_mutation_facts()
+            .expect("facts retained")
+            .unclassified_patch_count(),
+        2
+    );
+    assert!(
+        page.last_dom_mutation_debug_snapshot()
+            .expect("stable facts snapshot")
+            .contains("unclassified-patch-count: 2")
+    );
+    assert_eq!(
+        page.style_generations().style_inputs,
+        before.style_inputs + 1
+    );
+    assert_eq!(publication.intrinsic_requests().len(), 1);
+    assert!(publication.intrinsic_requests().iter().any(|request| {
+        request.entry_point() == RenderInvalidationEntryPoint::DomMutationUnclassified
+            && request.requested_work().style() == PhaseRerunSource::None
+            && request.requested_work().layout()
+                == PhaseRerunSource::Direct(RenderRebuildTrigger::DomMutationUnclassified)
+    }));
+    assert_eq!(
+        publication
+            .css_style_request()
+            .expect("one aggregate CSS authorization")
+            .entry_point(),
+        RenderInvalidationEntryPoint::DomPublicationStyleInvalidated
+    );
+    assert!(!publication.intrinsic_requests().iter().any(|request| {
+        request.entry_point() == RenderInvalidationEntryPoint::DomStructureChanged
+    }));
+
+    let mut pending = PendingRenderWork::default();
+    for request in publication.requests() {
+        pending.push(request);
+    }
+    assert_eq!(pending.requests().len(), 2);
+    assert!(pending.requests().iter().any(|request| {
+        request.entry_point() == RenderInvalidationEntryPoint::DomMutationUnclassified
+    }));
+    assert_eq!(
+        pending
+            .requests()
+            .iter()
+            .filter(|request| {
+                request.entry_point()
+                    == RenderInvalidationEntryPoint::DomPublicationStyleInvalidated
+            })
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn mixed_attribute_and_text_publication_structurally_separates_one_css_authorization() {
+    let mut page = page_with_dom("<!doctype html><html><body><p></p></body></html>");
+    page.clear_all_dirty_for_tests();
+    let publication =
+        page.mark_dom_changed(DomMutationFacts::attributes_and_text_changed_for_tests(
+            vec![html::internal::Id(4)],
+            vec![html::internal::Id(5)],
+        ));
+
+    assert_eq!(publication.intrinsic_requests().len(), 2);
+    let attributes = publication
+        .intrinsic_requests()
+        .iter()
+        .find(|request| request.entry_point() == RenderInvalidationEntryPoint::DomAttributesChanged)
+        .expect("attribute cause retained");
+    let text = publication
+        .intrinsic_requests()
+        .iter()
+        .find(|request| request.entry_point() == RenderInvalidationEntryPoint::DomTextChanged)
+        .expect("text cause retained");
+    assert_eq!(attributes.requested_work().style(), PhaseRerunSource::None);
+    assert_eq!(text.requested_work().style(), PhaseRerunSource::None);
+    assert_eq!(
+        text.requested_work().layout(),
+        PhaseRerunSource::Direct(RenderRebuildTrigger::DomTextChanged)
+    );
+    assert_eq!(
+        publication
+            .css_style_request()
+            .expect("aggregate CSS authorization exists")
+            .entry_point(),
+        RenderInvalidationEntryPoint::DomPublicationStyleInvalidated
+    );
+
+    let mut pending = PendingRenderWork::default();
+    for request in publication.requests() {
+        pending.push(request);
+    }
+    assert_eq!(
+        pending.requests().len(),
+        2,
+        "the no-work attribute cause remains in publication facts but does not enter pending work"
+    );
+    assert!(pending.requests().iter().any(|request| {
+        request.entry_point() == RenderInvalidationEntryPoint::DomTextChanged
+            && request.requested_work().style() == PhaseRerunSource::None
+    }));
+    assert_eq!(
+        pending
+            .requests()
+            .iter()
+            .filter(|request| {
+                request.entry_point()
+                    == RenderInvalidationEntryPoint::DomPublicationStyleInvalidated
+            })
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn stylesheet_reconcile_returns_explicit_style_invalidation_request() {
     let output = parse_document(
         "<!doctype html><html><head><link rel=\"stylesheet\" href=\"https://example.com/site.css\"></head><body><p>Hello</p></body></html>",
@@ -907,8 +1122,12 @@ fn stylesheet_reconcile_returns_explicit_style_invalidation_request() {
     .expect("parse should work");
     let mut page = PageState::new();
     page.start_nav("https://example.com/index.html");
-    let _ = page.replace_dom(Box::new(output.document), RestyleHint::document_replaced());
+    let _ = page.replace_dom(
+        Box::new(output.document),
+        DomMutationFacts::document_replaced_for_tests(),
+    );
     page.clear_all_dirty_for_tests();
+    let generations_before = page.style_generations();
 
     let outcome = page.reconcile_document_stylesheets();
     let request = outcome
@@ -932,6 +1151,16 @@ fn stylesheet_reconcile_returns_explicit_style_invalidation_request() {
         PhaseRerunSource::CascadedFrom(RenderingPhase::Layout)
     );
     assert_eq!(outcome.fetches.len(), 1);
+    let generations_after = page.style_generations();
+    assert_eq!(
+        generations_after.stylesheets,
+        generations_before.stylesheets + 1,
+        "one effective stylesheet-set change advances its generation once"
+    );
+    assert_eq!(
+        generations_after.style_inputs, generations_before.style_inputs,
+        "stylesheet generation remains distinct from DOM style-input generation"
+    );
 
     let snapshot = page.retained_render_state_debug_snapshot();
     assert_eq!(
@@ -954,4 +1183,8 @@ fn stylesheet_reconcile_returns_explicit_style_invalidation_request() {
             ),
         ]
     );
+
+    let unchanged = page.reconcile_document_stylesheets();
+    assert!(unchanged.render_invalidation.is_none());
+    assert_eq!(page.style_generations(), generations_after);
 }

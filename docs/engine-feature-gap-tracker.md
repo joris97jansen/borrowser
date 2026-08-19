@@ -123,10 +123,11 @@ Milestone AF foundation status:
   consumed by Browser/runtime. AF1 does not claim full selector coverage,
   media-query evaluation, custom properties, animations, transitions, CSSOM,
   `getComputedStyle()`, or JavaScript-facing style mutation.
-- AF1 deliberately leaves full selector dependency invalidation, dynamic
-  pseudo-classes, pseudo-elements, `:has()`, and fine-grained subtree
-  invalidation for later CSS-owned AF work. Browser/runtime must consume the
-  future richer plan without learning selector semantics.
+- AF4e now supplies correct conservative selector invalidation for the complete
+  supported AF4 subset. Reverse selector-dependency indexing and targeted or
+  fine-grained invalidation remain future CSS-owned optimization work.
+  Browser/runtime can consume a future richer plan without learning selector
+  semantics.
 - AF2 completes the existing Milestone P selector AST/parser foundation and
   adds CSS-owned selector diagnostic normalization plus model-boundary
   projection into the shared syntax diagnostic transport. AF2 does not claim
@@ -151,11 +152,12 @@ Milestone AF foundation status:
   interpreted by CSS. Selector IDs remain distinct from DOM/patch/retained
   identities, and build errors propagate through cascade, computed style, and
   Browser/runtime debug paths.
-- AF4b is foundation work only. It does not implement `:root`, `:empty`, child-
-  position pseudo-classes, new selector parsing/specificity, selector
+- AF4b was foundation work only and did not itself implement `:root`, `:empty`,
+  child-position pseudo-classes, new selector parsing/specificity, selector
   invalidation expansion, Layout/Paint behavior, JavaScript DOM mutation,
-  caches, or broad HTML validation. Milestone AF and broad selector conformance
-  are not complete.
+  caches, or broad HTML validation. AF4d and AF4e now supply the scoped pseudo,
+  invalidation, and conformance work needed to close AF4; broad selector
+  coverage remains incomplete.
 - AF4d implements the typed Selectors Level 4 tree-structural subset `:root`,
   `:empty`, `:first-child`, `:last-child`, and `:only-child`; see
   `docs/css/af4d-tree-structural-pseudo-class-matching.md`. It includes
@@ -180,6 +182,19 @@ Milestone AF foundation status:
   mutation/scripting semantics, broader DOCTYPE classification, new
   invalidation behavior, or broad selector coverage. Existing selector
   specificity, serialization, and debug schema remain unchanged.
+- AF4e completes AF4; see
+  `docs/css/af4e-selector-invalidation-parser-conformance-closeout.md`. Browser
+  now preserves composable neutral publication facts and resolves surviving
+  versus historical mutation targets transactionally. CSS classifies each
+  publication once and produces at most one capability-authorized Style
+  request, while text and unknown mutations retain independent intrinsic
+  Layout consequences. Text-sensitive `:empty` behavior therefore cannot
+  reuse stale retained style. A bounded, versioned higher-level matcher report,
+  a real-parser conformance matrix, separate synthetic selector-DOM invariant
+  fixtures, and one-source direct/materialized parity preserve unsupported,
+  invalid, parser-limit, matcher-limit, and selector-DOM errors as distinct
+  outcomes. AF4a-AF4e satisfy the AF4 parent independently of future
+  cascade-winner ordering.
 
 Major missing families remain:
 
@@ -227,7 +242,8 @@ Major missing families remain:
 - selectors and media: broad selector coverage, pseudo-classes,
   pseudo-elements, attribute-selector `i`/`s` modifiers, namespace selectors,
   standards-conformant selector escape decoding, XML-document matching,
-  selector invalidation, media queries, and container queries
+  dependency-aware/targeted selector invalidation and reverse selector
+  dependency indexing, media queries, and container queries
 - custom properties and variables
 - animations and transitions
 - CSS Values and Units beyond the current narrow subset
