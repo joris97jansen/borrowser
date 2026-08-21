@@ -14,6 +14,14 @@ AF1 is intentionally a contract issue. It formalizes the current supported
 subset and its conservative invalidation proof; it does not add selector
 coverage or implement the future selector dependency graph.
 
+AF5 now supplies the concrete pass-scoped stylesheet collection boundary
+required by this architecture. Currently supported discovered and available
+Browser stylesheet input enters CSS through opaque source identity plus sparse
+order, and declaration classification occurs once per style execution rather
+than once per matched element. Semantic cascade contracts remain below the
+opaque collection integration. See
+`docs/css/af5-stylesheet-rule-collection-source-order-contract.md`.
+
 ## Related code
 
 - `crates/css/src/style_invalidation.rs`

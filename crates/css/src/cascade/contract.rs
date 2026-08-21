@@ -1,4 +1,5 @@
 mod declarations;
+mod order;
 mod priority;
 mod properties;
 mod resolved_style;
@@ -11,6 +12,11 @@ mod winners;
 pub use declarations::{
     CascadeDeclarationApplicability, CascadeDeclarationInput, CascadeDeclarationProperty,
     CascadeSpecifiedValue,
+};
+pub use order::{
+    CascadeSourceOrder, DeclarationOrder, DeclarationSourceIndex, RawRuleIndex,
+    SourceCoordinateError, StyleRulePosition, StylesheetOrder, StylesheetRuleOrder,
+    StylesheetSourceId, StylesheetSourceIdError,
 };
 pub use priority::{
     CascadeDeclarationCandidateKey, CascadeImportance, CascadeOrigin, CascadeOriginBand,
@@ -28,7 +34,9 @@ pub use resolved_style::{
     ResolvedStyleEntry, ResolvedValueSource, resolve_cascade_style,
     resolve_cascade_style_from_rule_inputs, resolve_initial_style,
 };
-pub use rules::{CascadeRuleInput, CascadeRuleInputBuildError};
+pub use rules::{
+    CascadeRuleInput, CascadeRuleInputBuildError, InlineStyleRuleInput, MatchedStylesheetRuleInput,
+};
 pub use snapshot::cascade_evaluation_debug_snapshot;
 pub use sources::{
     CascadeDeclarationSource, CascadeRuleContext, CascadeRuleMatch, CascadeRuleSource,

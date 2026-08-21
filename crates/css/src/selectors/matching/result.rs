@@ -212,6 +212,12 @@ impl SelectorListMatchOutcome {
         &self.matches
     }
 
+    pub(crate) fn retained_match_storage_bytes(&self) -> Option<usize> {
+        self.matches
+            .capacity()
+            .checked_mul(std::mem::size_of::<MatchedSelector>())
+    }
+
     pub fn is_matchable(&self) -> bool {
         self.matchability.is_parsed()
     }

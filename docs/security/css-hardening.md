@@ -162,12 +162,13 @@ non-matchable outcomes.
 ### Style Resolution Limits
 
 Owned by `StyleResolutionLimits` in
-`crates/css/src/cascade/integration.rs`.
+`crates/css/src/cascade/integration/limits.rs`.
 
 | Limit field | Default | Recovery posture |
 | --- | ---: | --- |
 | `max_stylesheets_per_style_pass` | `4_096` | Style resolution returns `StyleResolutionError::LimitExceeded` |
-| `max_style_rules_per_document` | `262_144` | Style resolution returns `StyleResolutionError::LimitExceeded` |
+| `max_top_level_rules_per_document` | `262_144` | Collection returns a typed `RuleCollectionBuildError`; at-rules count toward the bound |
+| `max_collected_declaration_inputs_per_document` | `1_048_576` | Collection returns a typed error after shorthand expansion would exceed the bound |
 | `max_matched_rules_per_element` | `4_096` | Style resolution returns `StyleResolutionError::LimitExceeded` |
 | `max_declaration_inputs_per_element` | `65_536` | Style resolution returns `StyleResolutionError::LimitExceeded` |
 | `max_inline_style_bytes` | `64 * 1024` | Inline style parsing is rejected on the authoritative path |

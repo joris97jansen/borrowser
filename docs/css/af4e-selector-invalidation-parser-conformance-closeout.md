@@ -212,6 +212,16 @@ the full CSS matrix in Browser.
 
 ## Authoritative matching and diagnostics
 
+AF5 preserves this boundary by matching each collected active style rule once
+per target element and retaining that exact `SelectorListMatchOutcome` on the
+matched stylesheet input. AF5 collection diagnostics observe the same result
+used to construct cascade inputs, rather than invoking a diagnostic-only
+rematch. The AF4 selector diagnostic remains a specialized conformance surface;
+for condition-inactive stylesheets it reports the selector result alongside
+the CSS source/order, condition, and explicit inactive cascade state rather
+than presenting that result as active participation. This source/condition
+schema advances the selector-conformance diagnostic to version 2.
+
 Authoritative cascade integration, AF4 conformance, Browser debug, and the
 document diagnostic use the checked matcher result. Parsed-unmatched,
 unsupported, invalid/malformed, parser-limit invalidity, matcher-limit errors,

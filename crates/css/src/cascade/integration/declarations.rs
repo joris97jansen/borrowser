@@ -1,7 +1,8 @@
 use super::super::contract::{
     CascadeDeclarationInput, CascadeDeclarationSource, CascadeImportance, CascadeSpecifiedValue,
-    InlineStyleDeclarationRef, InlineStyleRuleRef, StylesheetDeclarationRef,
+    InlineStyleDeclarationRef, InlineStyleRuleRef,
 };
+use super::super::contract::{DeclarationOrder, DeclarationSourceIndex, SourceCoordinateError};
 use crate::model::{self, PropertyNameKind};
 use crate::specified::{ShorthandExpansionError, ShorthandExpansionErrorKind};
 use crate::{
@@ -9,55 +10,48 @@ use crate::{
     property_registry, shorthand_registry,
 };
 
-pub(super) fn stylesheet_declaration_inputs(
-    stylesheet_index: u32,
-    rule_index: u32,
-    declarations: &[model::Declaration],
-) -> Vec<CascadeDeclarationInput> {
-    declarations
-        .iter()
-        .enumerate()
-        .flat_map(|(declaration_index, declaration)| {
-            let declaration_index = u32_index(declaration_index);
-            declaration_inputs_from_model(
-                CascadeDeclarationSource::Stylesheet(StylesheetDeclarationRef {
-                    stylesheet_index,
-                    rule_index,
-                    declaration_index,
-                }),
-                declaration_index,
-                declaration,
-            )
-        })
-        .collect()
+#[cfg(test)]
+thread_local! {
+    static DECLARATION_CLASSIFICATION_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_declaration_classification_count() {
+    DECLARATION_CLASSIFICATION_COUNT.set(0);
+}
+
+#[cfg(test)]
+pub(crate) fn declaration_classification_count() -> usize {
+    DECLARATION_CLASSIFICATION_COUNT.get()
 }
 
 pub(super) fn inline_style_declaration_inputs_from_model(
     inline_style: InlineStyleRuleRef,
     declarations: &[model::Declaration],
-) -> Vec<CascadeDeclarationInput> {
-    declarations
-        .iter()
-        .enumerate()
-        .flat_map(|(declaration_index, declaration)| {
-            let declaration_index = u32_index(declaration_index);
-            declaration_inputs_from_model(
-                CascadeDeclarationSource::InlineStyle(InlineStyleDeclarationRef {
-                    inline_style,
-                    declaration_index,
-                }),
+) -> Result<Vec<CascadeDeclarationInput>, SourceCoordinateError> {
+    let mut inputs = Vec::new();
+    for (index, declaration) in declarations.iter().enumerate() {
+        let declaration_index = DeclarationSourceIndex::from_usize(index)?;
+        let declaration_order = DeclarationOrder::from_usize(index)?;
+        inputs.extend(declaration_inputs_from_model(
+            CascadeDeclarationSource::InlineStyle(InlineStyleDeclarationRef::new(
+                inline_style,
                 declaration_index,
-                declaration,
-            )
-        })
-        .collect()
+            )),
+            declaration_order,
+            declaration,
+        ));
+    }
+    Ok(inputs)
 }
 
 pub(super) fn declaration_inputs_from_model(
     source: CascadeDeclarationSource,
-    declaration_order: u32,
+    declaration_order: DeclarationOrder,
     declaration: &model::Declaration,
 ) -> Vec<CascadeDeclarationInput> {
+    #[cfg(test)]
+    DECLARATION_CLASSIFICATION_COUNT.with(|count| count.set(count.get() + 1));
     let importance = if declaration.important.is_some() {
         CascadeImportance::Important
     } else {
@@ -130,7 +124,7 @@ pub(super) fn declaration_inputs_from_model(
 
 fn longhand_declaration_input(
     source: CascadeDeclarationSource,
-    declaration_order: u32,
+    declaration_order: DeclarationOrder,
     importance: CascadeImportance,
     property: PropertyId,
     value: &model::DeclarationValue,
@@ -166,7 +160,7 @@ fn longhand_declaration_input(
 
 fn shorthand_declaration_inputs(
     source: CascadeDeclarationSource,
-    declaration_order: u32,
+    declaration_order: DeclarationOrder,
     importance: CascadeImportance,
     shorthand: ShorthandId,
     value: &model::DeclarationValue,
@@ -224,8 +218,4 @@ fn shorthand_declaration_inputs(
             )
         })
         .collect()
-}
-
-pub(super) fn u32_index(index: usize) -> u32 {
-    u32::try_from(index).unwrap_or(u32::MAX)
 }

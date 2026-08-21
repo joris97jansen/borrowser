@@ -31,7 +31,8 @@ fuzz_target!(|data: &[u8]| {
         },
         style_resolution_limits: StyleResolutionLimits {
             max_stylesheets_per_style_pass: 8,
-            max_style_rules_per_document: 512,
+            max_top_level_rules_per_document: 512,
+            max_collected_declaration_inputs_per_document: 2_048,
             max_matched_rules_per_element: 128,
             max_declaration_inputs_per_element: 512,
             max_inline_style_bytes: 512,

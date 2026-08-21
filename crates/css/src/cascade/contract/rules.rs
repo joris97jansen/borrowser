@@ -1,4 +1,10 @@
+use crate::selectors::SelectorListMatchOutcome;
+
 use super::declarations::CascadeDeclarationInput;
+use super::order::StylesheetRuleOrder;
+#[cfg(test)]
+use super::order::{StyleRulePosition, StylesheetOrder};
+#[cfg(test)]
 use super::priority::CascadeOrigin;
 use super::sources::{
     CascadeDeclarationSource, CascadeRuleContext, CascadeRuleMatch, CascadeRuleSource,
@@ -6,20 +12,40 @@ use super::sources::{
 };
 use super::winners::CascadeDeclarationCandidate;
 
-/// Matched rule inputs entering the cascade candidate pipeline.
-///
-/// This module owns rule-level aggregation and validation of declaration
-/// sources against rule sources. It does not own winner ordering or resolved
-/// style fill.
+/// Authoritative matched rule input. Stylesheet declarations are borrowed from
+/// the pass-scoped collection arena; inline declarations are owned by the one
+/// element whose style attribute was parsed.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CascadeRuleInput {
+pub enum CascadeRuleInput<'collection> {
+    Stylesheet(MatchedStylesheetRuleInput<'collection>),
+    Inline(InlineStyleRuleInput),
+    #[cfg(test)]
+    Compatibility(CompatibilityRuleInput),
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompatibilityRuleInput {
     source: CascadeRuleSource,
     context: CascadeRuleContext,
     declarations: Vec<CascadeDeclarationInput>,
 }
 
-/// Error returned when a rule input is built with declarations that do not
-/// belong to the claimed rule source.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MatchedStylesheetRuleInput<'collection> {
+    rule_ref: super::sources::StylesheetRuleRef,
+    rule_match: CascadeRuleMatch,
+    context: CascadeRuleContext,
+    declarations: &'collection [CascadeDeclarationInput],
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InlineStyleRuleInput {
+    source: InlineStyleRuleRef,
+    context: CascadeRuleContext,
+    declarations: Vec<CascadeDeclarationInput>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CascadeRuleInputBuildError {
     rule_source: CascadeRuleSource,
@@ -45,91 +71,170 @@ impl std::fmt::Display for CascadeRuleInputBuildError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "cascade rule input declaration at position {} does not belong to source {:?}: {:?}",
-            self.declaration_position, self.rule_source, self.declaration_source
+            "cascade rule input declaration at position {} does not belong to its rule source",
+            self.declaration_position
         )
     }
 }
 
 impl std::error::Error for CascadeRuleInputBuildError {}
 
-impl CascadeRuleInput {
+impl<'collection> CascadeRuleInput<'collection> {
+    pub(crate) fn from_stylesheet_match_collected(
+        rule_ref: super::sources::StylesheetRuleRef,
+        origin: super::priority::CascadeOrigin,
+        source_order: StylesheetRuleOrder,
+        outcome: SelectorListMatchOutcome,
+        declarations: &'collection [CascadeDeclarationInput],
+    ) -> Result<Option<Self>, CascadeRuleInputBuildError> {
+        let rule_match = CascadeRuleMatch::new(rule_ref, outcome);
+        let Some(context) =
+            CascadeRuleContext::from_stylesheet_match(origin, source_order, &rule_match)
+        else {
+            return Ok(None);
+        };
+        let source = CascadeRuleSource::Stylesheet(rule_ref);
+        validate_declaration_sources(source, declarations)?;
+        Ok(Some(Self::Stylesheet(MatchedStylesheetRuleInput {
+            rule_ref,
+            rule_match,
+            context,
+            declarations,
+        })))
+    }
+
+    pub fn from_inline_style_collected(
+        inline_style: InlineStyleRuleRef,
+        declarations: Vec<CascadeDeclarationInput>,
+    ) -> Result<Self, CascadeRuleInputBuildError> {
+        let source = CascadeRuleSource::InlineStyle(inline_style);
+        validate_declaration_sources(source, &declarations)?;
+        Ok(Self::Inline(InlineStyleRuleInput {
+            source: inline_style,
+            context: CascadeRuleContext::for_inline_style(),
+            declarations,
+        }))
+    }
+
+    #[cfg(test)]
     pub fn new(
         source: CascadeRuleSource,
         context: CascadeRuleContext,
         declarations: Vec<CascadeDeclarationInput>,
     ) -> Result<Self, CascadeRuleInputBuildError> {
-        if let Some((declaration_position, declaration)) = declarations
-            .iter()
-            .enumerate()
-            .find(|(_, declaration)| !source.owns_declaration_source(declaration.source()))
-        {
-            return Err(CascadeRuleInputBuildError {
-                rule_source: source,
-                declaration_source: declaration.source(),
-                declaration_position,
-            });
-        }
-
-        Ok(Self {
+        validate_declaration_sources(source, &declarations)?;
+        Ok(Self::Compatibility(CompatibilityRuleInput {
             source,
             context,
             declarations,
-        })
+        }))
     }
 
+    #[cfg(test)]
     pub fn from_stylesheet_match(
         rule_match: &CascadeRuleMatch,
         origin: CascadeOrigin,
         rule_order: u32,
         declarations: Vec<CascadeDeclarationInput>,
     ) -> Result<Option<Self>, CascadeRuleInputBuildError> {
-        let Some(context) =
-            CascadeRuleContext::from_stylesheet_match(origin, rule_order, rule_match)
-        else {
+        let Some(context) = CascadeRuleContext::from_stylesheet_match(
+            origin,
+            StylesheetRuleOrder::new(StylesheetOrder::new(0), StyleRulePosition::new(rule_order)),
+            rule_match,
+        ) else {
             return Ok(None);
         };
-
         Self::new(
-            CascadeRuleSource::from_rule_match(rule_match),
+            CascadeRuleSource::Stylesheet(rule_match.rule_ref()),
             context,
             declarations,
         )
         .map(Some)
     }
 
+    #[cfg(test)]
     pub fn from_inline_style(
         inline_style: InlineStyleRuleRef,
-        rule_order: u32,
+        _legacy_rule_order: u32,
         declarations: Vec<CascadeDeclarationInput>,
     ) -> Result<Self, CascadeRuleInputBuildError> {
         Self::new(
             CascadeRuleSource::InlineStyle(inline_style),
-            CascadeRuleContext::for_inline_style(rule_order),
+            CascadeRuleContext::for_inline_style(),
             declarations,
         )
     }
 
     pub fn source(&self) -> CascadeRuleSource {
-        self.source
+        match self {
+            Self::Stylesheet(input) => CascadeRuleSource::Stylesheet(input.rule_ref),
+            Self::Inline(input) => CascadeRuleSource::InlineStyle(input.source),
+            #[cfg(test)]
+            Self::Compatibility(input) => input.source,
+        }
     }
 
     pub fn context(&self) -> CascadeRuleContext {
-        self.context
+        match self {
+            Self::Stylesheet(input) => input.context,
+            Self::Inline(input) => input.context,
+            #[cfg(test)]
+            Self::Compatibility(input) => input.context,
+        }
     }
 
     pub fn declarations(&self) -> &[CascadeDeclarationInput] {
-        &self.declarations
+        match self {
+            Self::Stylesheet(input) => input.declarations,
+            Self::Inline(input) => &input.declarations,
+            #[cfg(test)]
+            Self::Compatibility(input) => &input.declarations,
+        }
     }
 
-    /// Materializes winner-resolution candidates in declaration source order.
-    ///
-    /// Unsupported, custom-property, and invalid-name declarations remain
-    /// present on the rule input but do not emit candidates.
+    pub fn stylesheet_match_outcome(&self) -> Option<&SelectorListMatchOutcome> {
+        match self {
+            Self::Stylesheet(input) => Some(input.rule_match.outcome()),
+            Self::Inline(_) => None,
+            #[cfg(test)]
+            Self::Compatibility(_) => None,
+        }
+    }
+
+    pub fn stylesheet_rule_order(&self) -> Option<StylesheetRuleOrder> {
+        match self {
+            Self::Stylesheet(input) => match input.context {
+                CascadeRuleContext::Stylesheet { source_order, .. } => Some(source_order),
+                CascadeRuleContext::InlineStyle => None,
+            },
+            Self::Inline(_) => None,
+            #[cfg(test)]
+            Self::Compatibility(_) => None,
+        }
+    }
+
     pub fn candidates(&self) -> Vec<CascadeDeclarationCandidate> {
-        self.declarations
+        self.declarations()
             .iter()
-            .filter_map(|declaration| declaration.candidate(self.context))
+            .filter_map(|declaration| declaration.candidate(self.context()))
             .collect()
     }
+}
+
+fn validate_declaration_sources(
+    rule_source: CascadeRuleSource,
+    declarations: &[CascadeDeclarationInput],
+) -> Result<(), CascadeRuleInputBuildError> {
+    if let Some((declaration_position, declaration)) = declarations
+        .iter()
+        .enumerate()
+        .find(|(_, declaration)| !rule_source.owns_declaration_source(declaration.source()))
+    {
+        return Err(CascadeRuleInputBuildError {
+            rule_source,
+            declaration_source: declaration.source(),
+            declaration_position,
+        });
+    }
+    Ok(())
 }

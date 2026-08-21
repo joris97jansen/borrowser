@@ -50,7 +50,7 @@ impl<D: SelectorMatchDom> SelectorMatchingContext<'_, D> {
         self.match_selector_list(element, selectors)
     }
 
-    fn match_parsed_selector_list_checked(
+    pub fn match_parsed_selector_list_checked(
         &self,
         element: D::ElementId,
         selectors: &SelectorList,

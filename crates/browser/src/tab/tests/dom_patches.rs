@@ -405,6 +405,46 @@ fn dom_patch_style_text_change_reconciles_stylesheet_slot_and_restyles() {
 }
 
 #[test]
+fn dom_patch_style_media_change_invalidates_stylesheet_generation() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 2201;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(2201);
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 2201,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document("p { color: red; }", Some("p")),
+        ),
+    });
+    let before = tab.page.style_generations();
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 2201,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(1),
+            DomVersion(2),
+            vec![DomPatch::SetAttributes {
+                key: PatchKey(4),
+                attributes: vec![html::internal::unqualified_attribute("media", "screen")],
+            }],
+        ),
+    });
+
+    assert_eq!(
+        tab.page.style_generations().stylesheets,
+        before.stylesheets + 1
+    );
+    assert!(tab.page.style_dirty());
+}
+
+#[test]
 fn dom_patch_attribute_change_incrementally_restyles_following_sibling_suffix() {
     let mut tab = Tab::new(1);
     tab.nav_gen = 26;
@@ -707,6 +747,7 @@ fn browser_selector_debug_uses_the_bounded_authoritative_css_surface() {
             max_elements: 0,
             ..Default::default()
         })
+        .expect("selector diagnostic input construction succeeds")
         .expect("published document has a selector diagnostic");
     assert!(matches!(
         diagnostic.failure(),
@@ -722,6 +763,59 @@ fn browser_selector_debug_uses_the_bounded_authoritative_css_surface() {
             .to_debug_snapshot()
             .contains("status: failed\nfailure: kind=limit-exceeded limit=elements")
     );
+}
+
+#[test]
+fn browser_rule_collection_debug_uses_production_handoff_and_bounded_af5_surface() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 233;
+    tab.page.start_nav("https://example.com/index.html");
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 233,
+        publication: no_quirks_patch_publication(
+            DomHandle(2330),
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document("p { color: red !important; }", Some("p")),
+        ),
+    });
+
+    let diagnostic = tab
+        .page
+        .rule_collection_debug_snapshot(
+            &css::StyleResolutionLimits::default(),
+            css::RuleCollectionDiagnosticLimits::default(),
+        )
+        .expect("AF5 diagnostic input construction succeeds")
+        .expect("published document has an AF5 diagnostic");
+    assert!(diagnostic.failure().is_none());
+    assert!(diagnostic.records().iter().any(|record| matches!(
+        record,
+        css::RuleCollectionDiagnosticRecord::Declaration {
+            importance: css::CascadeImportance::Important,
+            ..
+        }
+    )));
+
+    let bounded = tab
+        .page
+        .rule_collection_debug_snapshot(
+            &css::StyleResolutionLimits::default(),
+            css::RuleCollectionDiagnosticLimits {
+                max_records: 0,
+                ..Default::default()
+            },
+        )
+        .expect("bounded AF5 diagnostic input construction succeeds")
+        .expect("published document has a bounded AF5 diagnostic");
+    assert!(matches!(
+        bounded.failure(),
+        Some(css::RuleCollectionDiagnosticFailure::LimitExceeded {
+            limit: css::RuleCollectionDiagnosticLimit::Records,
+            ..
+        })
+    ));
 }
 
 #[test]

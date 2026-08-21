@@ -3,6 +3,33 @@
 Last updated: 2026-08-15
 Status: architecture contract implemented
 
+## AF5 collection reconciliation
+
+R1's conceptual ordered stylesheet input is now materialized as one fallible,
+immutable `RuleCollection` per style execution. `CascadeRuleInput` no longer
+owns stylesheet declaration vectors: matched stylesheet inputs retain the exact
+AF4 result and borrow preclassified declarations from the collection's flat
+arena. The final winner implementation is unchanged.
+
+Semantic source/order types and matched-rule contracts live below integration;
+the cascade contract does not import collection storage types. Integration
+validates private collected rules and constructs contract-only matched inputs.
+`RuleCollection` is opaque externally and AF5 diagnostics are its supported
+inspection projection.
+
+Rule order is now the semantic `StylesheetRuleOrder` pair of sparse
+`StylesheetOrder` and `StyleRulePosition`; raw top-level rule position remains
+separate provenance. `StylesheetSourceId` is identity only and never
+precedence. Browser input/handoff construction errors and CSS collection-arena
+build errors remain distinct and both propagate on authoritative paths.
+Compatibility author-input construction uses the same stylesheet-input error
+boundary as Browser: identity, coordinate, and input-list reservation failures
+become `StylesheetInputBuild`. `RuleCollectionBuildError` is exclusive to
+constructing the collection's own arenas; later per-element matching limits and
+inline source-coordinate preparation remain style-execution failures. Only the
+documented `attach_styles` compatibility wrapper degrades failures. See
+`docs/css/af5-stylesheet-rule-collection-source-order-contract.md`.
+
 This document is the source-of-truth contract for Milestone R issue 1: the
 architecture boundary, ownership model, and output contract for Borrowser's
 cascade and style-resolution engine.

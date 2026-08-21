@@ -1,10 +1,10 @@
 use super::super::{
     CascadeDeclarationInput, CascadeDeclarationSource, CascadeImportance, CascadeOrigin,
     CascadeOriginBand, CascadePriority, CascadePropertyId, CascadeRuleContext, CascadeRuleInput,
-    CascadeSpecificity, CascadeWinner, CascadeWinnerSet, CssWideResolvedSource, InitialStyleValue,
-    InlineStyleDeclarationRef, InlineStyleRuleRef, ResolvedStyleBuilder, ResolvedValueSource,
-    StylesheetDeclarationRef, resolve_cascade_style, resolve_cascade_style_from_rule_inputs,
-    resolve_cascade_winners, resolve_initial_style,
+    CascadeSourceOrder, CascadeSpecificity, CascadeWinner, CascadeWinnerSet, CssWideResolvedSource,
+    InitialStyleValue, InlineStyleDeclarationRef, InlineStyleRuleRef, ResolvedStyleBuilder,
+    ResolvedValueSource, StylesheetDeclarationRef, resolve_cascade_style,
+    resolve_cascade_style_from_rule_inputs, resolve_cascade_winners, resolve_initial_style,
 };
 use super::support::{
     builder_with_initials_except, matched_rule, parsed_value, stylesheet_declaration_source,
@@ -52,7 +52,7 @@ fn resolve_cascade_style_marks_inherited_properties_only_when_parent_is_present(
     assert_eq!(
         child.to_debug_snapshot(),
         concat!(
-            "version: 1\n",
+            "version: 2\n",
             "resolved-style\n",
             "  background-color: initial(transparent)\n",
             "  border-bottom-color: initial(transparent)\n",
@@ -130,7 +130,7 @@ fn resolve_initial_style_materializes_total_canonical_initial_style() {
     assert_eq!(
         initial_style.to_debug_snapshot(),
         concat!(
-            "version: 1\n",
+            "version: 2\n",
             "resolved-style\n",
             "  background-color: initial(transparent)\n",
             "  border-bottom-color: initial(transparent)\n",
@@ -568,11 +568,11 @@ fn resolved_style_builder_is_deterministic_and_property_sorted() {
     builder.record_winner(
         CascadePropertyId::Display,
         CascadeWinner {
-            source: CascadeDeclarationSource::Stylesheet(StylesheetDeclarationRef {
-                stylesheet_index: 0,
-                rule_index: 0,
-                declaration_index: 1,
-            }),
+            source: CascadeDeclarationSource::Stylesheet(StylesheetDeclarationRef::new(
+                crate::cascade::StylesheetSourceId::compatibility_generation_index(0),
+                crate::cascade::RawRuleIndex::new(0),
+                crate::cascade::DeclarationSourceIndex::new(1),
+            )),
             priority: CascadePriority::new(
                 CascadeOriginBand::AuthorNormal,
                 CascadeSpecificity::Selector(Specificity::C),
@@ -603,7 +603,7 @@ fn resolved_style_builder_is_deterministic_and_property_sorted() {
     assert_eq!(
         style.to_debug_snapshot(),
         concat!(
-            "version: 1\n",
+            "version: 2\n",
             "resolved-style\n",
             "  background-color: initial(transparent)\n",
             "  border-bottom-color: initial(transparent)\n",
@@ -619,7 +619,7 @@ fn resolved_style_builder_is_deterministic_and_property_sorted() {
             "  border-top-style: initial(none)\n",
             "  border-top-width: initial(0px)\n",
             "  color: inherited\n",
-            "  display: winner(source=stylesheet[0/0]/declaration[1], band=author-normal, specificity=selector(0,0,1), rule-order=0, declaration-order=1, value=\"block\")\n",
+            "  display: winner(source=stylesheet[2/0]/declaration[1], band=author-normal, specificity=selector(0,0,1), source-order=stylesheet[0/0], declaration-order=1, value=\"block\")\n",
             "  font-size: initial(16px)\n",
             "  height: initial(auto)\n",
             "  margin-bottom: initial(0px)\n",
@@ -650,14 +650,14 @@ fn resolved_style_snapshot_formats_inline_winners() {
     builder.record_winner(
         CascadePropertyId::Color,
         CascadeWinner {
-            source: CascadeDeclarationSource::InlineStyle(InlineStyleDeclarationRef {
-                inline_style: InlineStyleRuleRef::new(9),
-                declaration_index: 2,
-            }),
+            source: CascadeDeclarationSource::InlineStyle(InlineStyleDeclarationRef::new(
+                InlineStyleRuleRef::new(9),
+                crate::cascade::DeclarationSourceIndex::new(2),
+            )),
             priority: CascadePriority::new(
                 CascadeOriginBand::AuthorNormal,
                 CascadeSpecificity::InlineStyle,
-                0,
+                CascadeSourceOrder::InlineStyle,
                 2,
             ),
             value: parsed_value("color: red"),
@@ -666,6 +666,6 @@ fn resolved_style_snapshot_formats_inline_winners() {
 
     let snapshot = builder.build().expect("total style").to_debug_snapshot();
     assert!(snapshot.contains(
-        "winner(source=inline-style[9]/declaration[2], band=author-normal, specificity=inline-style, rule-order=0, declaration-order=2, value=\"red\")"
+        "winner(source=inline-style[compatibility=9]/declaration[2], band=author-normal, specificity=inline-style, source-order=inline-style, declaration-order=2, value=\"red\")"
     ));
 }

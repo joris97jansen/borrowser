@@ -85,7 +85,7 @@ impl ResolvedDocumentStyle {
 
     pub fn to_debug_snapshot(&self) -> String {
         let mut out = String::new();
-        writeln!(&mut out, "version: 1").expect("write snapshot");
+        writeln!(&mut out, "version: 2").expect("write snapshot");
         writeln!(&mut out, "resolved-document-style").expect("write snapshot");
         for (index, entry) in self.entries.iter().enumerate() {
             writeln!(

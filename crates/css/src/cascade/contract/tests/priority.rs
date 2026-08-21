@@ -1,20 +1,25 @@
 use super::super::{
-    CascadeImportance, CascadeOrigin, CascadeOriginBand, CascadePriority, CascadeSpecificity,
+    CascadeImportance, CascadeOrigin, CascadeOriginBand, CascadePriority, CascadeRuleContext,
     CurrentScopeCascadePriorityBand,
 };
 use crate::selectors::Specificity;
 
 #[test]
 fn cascade_priority_orders_inline_style_above_selector_specificity() {
-    let author_normal = CurrentScopeCascadePriorityBand::AuthorNormal.as_origin_band();
-    let selector_priority = CascadePriority::new(
-        author_normal,
-        CascadeSpecificity::Selector(Specificity::new(1, 0, 0)),
-        4,
+    let selector_priority = CascadePriority::from_rule_context(
+        CascadeRuleContext::for_stylesheet(
+            CascadeOrigin::Author,
+            Specificity::new(1, 0, 0),
+            4.into(),
+        ),
+        CascadeImportance::Normal,
         0,
     );
-    let inline_priority =
-        CascadePriority::new(author_normal, CascadeSpecificity::InlineStyle, 0, 0);
+    let inline_priority = CascadePriority::from_rule_context(
+        CascadeRuleContext::for_inline_style(),
+        CascadeImportance::Normal,
+        0,
+    );
 
     assert!(inline_priority > selector_priority);
 }
@@ -83,22 +88,9 @@ fn current_scope_priority_bands_map_origin_and_importance_explicitly() {
 
 #[test]
 fn cascade_priority_current_scope_band_is_an_inspection_helper_for_future_bands() {
-    let current_scope_priority = CascadePriority::new(
-        CascadeOriginBand::AuthorNormal,
-        CascadeSpecificity::Selector(Specificity::C),
-        0,
-        0,
-    );
-    let animation_priority = CascadePriority::new(
-        CascadeOriginBand::Animation,
-        CascadeSpecificity::Selector(Specificity::C),
-        0,
-        0,
-    );
-    let transition_priority = CascadePriority::new(
-        CascadeOriginBand::Transition,
-        CascadeSpecificity::InlineStyle,
-        0,
+    let current_scope_priority = CascadePriority::from_rule_context(
+        CascadeRuleContext::for_stylesheet(CascadeOrigin::Author, Specificity::C, 0.into()),
+        CascadeImportance::Normal,
         0,
     );
 
@@ -106,8 +98,6 @@ fn cascade_priority_current_scope_band_is_an_inspection_helper_for_future_bands(
         current_scope_priority.current_scope_band(),
         Some(CurrentScopeCascadePriorityBand::AuthorNormal)
     );
-    assert_eq!(animation_priority.current_scope_band(), None);
-    assert_eq!(transition_priority.current_scope_band(), None);
 }
 
 #[test]

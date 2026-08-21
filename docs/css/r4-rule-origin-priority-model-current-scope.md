@@ -3,6 +3,15 @@
 Last updated: 2026-04-16  
 Status: contract and code implemented
 
+AF5 reconciliation (2026-08-20): stylesheet collection inputs use this existing
+`CascadeOrigin`; no parse-origin or duplicate stylesheet-origin enum exists.
+`CascadePriority` now compares origin/importance, specificity, semantic source
+order, then declaration order explicitly. `CascadeRuleContext` makes invalid
+specificity/source-order pairings unrepresentable, and cross-kind source order
+is a lawful explicit total order with stylesheet before inline. Inline
+precedence continues to come from author origin, importance, and
+`CascadeSpecificity::InlineStyle`, not enum variant order or sort stability.
+
 This document is the source-of-truth contract for Milestone R issue 4: the
 explicit rule origin/priority model Borrowser uses in the current CSS scope and
 how that model feeds winner resolution.

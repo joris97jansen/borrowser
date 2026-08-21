@@ -3,9 +3,10 @@
 use crate::{
     StyleInvalidationPlan,
     cascade::{
-        ResolvedDocumentStyle, StyleResolutionLimits, StylesheetCascadeInput,
-        preflight_document_selector_dom_with_limits,
+        ResolvedDocumentStyle, RuleCollection, StyleResolutionError, StyleResolutionExecution,
+        StyleResolutionLimits, StylesheetCollectionInput,
         try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_limits,
+        try_resolve_document_styles_incremental_suffix_from_rule_collection_with_limits,
         try_resolve_document_styles_incremental_suffix_with_limits,
     },
     model,
@@ -61,35 +62,139 @@ pub fn try_compute_document_styles_for_invalidation_plan_with_limits(
     plan: &StyleInvalidationPlan,
     root: &Node,
     matching_environment: SelectorMatchingEnvironment,
-    sheets: &[StylesheetCascadeInput<'_>],
+    sheets: &[StylesheetCollectionInput<'_>],
     previous: Option<(&ResolvedDocumentStyle, &ComputedDocumentStyle)>,
     limits: &StyleResolutionLimits,
+) -> Result<StylePlanExecution, ComputedStyleResolutionError> {
+    let collection = RuleCollection::try_new(sheets, limits).map_err(|error| {
+        ComputedStyleResolutionError::StyleResolution(StyleResolutionError::RuleCollectionBuild(
+            error,
+        ))
+    })?;
+    try_compute_document_styles_for_invalidation_plan_from_rule_collection_with_limits(
+        plan,
+        root,
+        matching_environment,
+        &collection,
+        previous,
+        limits,
+    )
+}
+
+pub fn try_compute_document_styles_for_invalidation_plan_from_rule_collection_with_limits(
+    plan: &StyleInvalidationPlan,
+    root: &Node,
+    matching_environment: SelectorMatchingEnvironment,
+    collection: &RuleCollection<'_>,
+    previous: Option<(&ResolvedDocumentStyle, &ComputedDocumentStyle)>,
+    limits: &StyleResolutionLimits,
+) -> Result<StylePlanExecution, ComputedStyleResolutionError> {
+    let execution =
+        StyleResolutionExecution::try_new(root, matching_environment, collection, limits)
+            .map_err(ComputedStyleResolutionError::StyleResolution)?;
+    try_compute_document_styles_for_invalidation_plan_from_execution_with_limits(
+        plan, &execution, previous,
+    )
+}
+
+pub fn try_compute_document_styles_for_invalidation_plan_from_execution_with_limits(
+    plan: &StyleInvalidationPlan,
+    execution: &StyleResolutionExecution<'_, '_, '_>,
+    previous: Option<(&ResolvedDocumentStyle, &ComputedDocumentStyle)>,
 ) -> Result<StylePlanExecution, ComputedStyleResolutionError> {
     let Some(dirty_node_ids) = plan.incremental_node_ids() else {
         return Ok(StylePlanExecution::FullRequired);
     };
 
     let Some((previous_resolved, previous_computed)) = previous else {
-        preflight_document_selector_dom_with_limits(root, limits)
-            .map_err(ComputedStyleResolutionError::StyleResolution)?;
         return Ok(StylePlanExecution::IncrementalUnavailable);
     };
 
-    let Some(incremental) =
-        compute_document_styles_incremental_suffix_from_cascade_inputs_with_limits(
-            root,
-            matching_environment,
-            sheets,
-            previous_resolved,
-            previous_computed,
-            dirty_node_ids,
-            limits,
-        )?
+    let Some(incremental) = compute_document_styles_incremental_suffix_from_execution_with_limits(
+        execution,
+        previous_resolved,
+        previous_computed,
+        dirty_node_ids,
+    )?
     else {
         return Ok(StylePlanExecution::IncrementalUnavailable);
     };
 
     Ok(StylePlanExecution::IncrementalComputed(incremental))
+}
+
+pub fn compute_document_styles_incremental_suffix_from_execution_with_limits(
+    execution: &StyleResolutionExecution<'_, '_, '_>,
+    previous_resolved: &ResolvedDocumentStyle,
+    previous_computed: &ComputedDocumentStyle,
+    dirty_node_ids: &[Id],
+) -> Result<Option<IncrementalComputedDocumentStyle>, ComputedStyleResolutionError> {
+    let Some(resolved) = execution
+        .resolve_document_styles_incremental_suffix(previous_resolved, dirty_node_ids)
+        .map_err(ComputedStyleResolutionError::StyleResolution)?
+    else {
+        return Ok(None);
+    };
+
+    let Some(computed) = compute_document_styles_from_resolved_styles_incremental_suffix(
+        execution.root(),
+        &resolved.resolved,
+        previous_computed,
+        resolved.stats.reused_prefix_len,
+    )?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(IncrementalComputedDocumentStyle {
+        resolved: resolved.resolved,
+        computed: computed.computed,
+        reused_prefix_len: resolved.stats.reused_prefix_len,
+        recomputed_len: resolved.stats.recomputed_len,
+        reuse_stats: computed.reuse_stats,
+    }))
+}
+
+pub fn compute_document_styles_incremental_suffix_from_rule_collection_with_limits(
+    root: &Node,
+    matching_environment: SelectorMatchingEnvironment,
+    collection: &RuleCollection<'_>,
+    previous_resolved: &ResolvedDocumentStyle,
+    previous_computed: &ComputedDocumentStyle,
+    dirty_node_ids: &[Id],
+    limits: &StyleResolutionLimits,
+) -> Result<Option<IncrementalComputedDocumentStyle>, ComputedStyleResolutionError> {
+    let Some(resolved) =
+        try_resolve_document_styles_incremental_suffix_from_rule_collection_with_limits(
+            root,
+            matching_environment,
+            collection,
+            previous_resolved,
+            dirty_node_ids,
+            limits,
+        )
+        .map_err(ComputedStyleResolutionError::StyleResolution)?
+    else {
+        return Ok(None);
+    };
+
+    let Some(computed) = compute_document_styles_from_resolved_styles_incremental_suffix(
+        root,
+        &resolved.resolved,
+        previous_computed,
+        resolved.stats.reused_prefix_len,
+    )?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(IncrementalComputedDocumentStyle {
+        resolved: resolved.resolved,
+        computed: computed.computed,
+        reused_prefix_len: resolved.stats.reused_prefix_len,
+        recomputed_len: resolved.stats.recomputed_len,
+        reuse_stats: computed.reuse_stats,
+    }))
 }
 
 pub fn compute_document_styles_incremental_suffix_with_limits(
@@ -137,7 +242,7 @@ pub fn compute_document_styles_incremental_suffix_with_limits(
 pub fn compute_document_styles_incremental_suffix_from_cascade_inputs_with_limits(
     root: &Node,
     matching_environment: SelectorMatchingEnvironment,
-    sheets: &[StylesheetCascadeInput<'_>],
+    sheets: &[StylesheetCollectionInput<'_>],
     previous_resolved: &ResolvedDocumentStyle,
     previous_computed: &ComputedDocumentStyle,
     dirty_node_ids: &[Id],

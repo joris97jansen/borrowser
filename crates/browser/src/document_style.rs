@@ -1,6 +1,7 @@
 use core_types::StylesheetSlotId;
 use css::{
-    CascadeOrigin, ParseOptions, StylesheetCascadeInput, StylesheetParse,
+    ParseOptions, StylesheetCollectionInput, StylesheetCollectionInputBuildError,
+    StylesheetConditionInput, StylesheetOrder, StylesheetParse, StylesheetSourceId,
     parse_stylesheet_with_options,
 };
 use html::Node;
@@ -28,9 +29,15 @@ head, title, meta, link, style, script {
 "#;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum StylesheetSlotKey {
+enum StylesheetSlotSource {
     Inline(String),
     External(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DiscoveredStylesheet {
+    source: StylesheetSlotSource,
+    media: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -44,14 +51,9 @@ enum StylesheetSlotState {
 #[derive(Clone, Debug)]
 struct StylesheetSlot {
     id: StylesheetSlotId,
-    key: StylesheetSlotKey,
+    source: StylesheetSlotSource,
+    media: Option<String>,
     state: StylesheetSlotState,
-}
-
-#[derive(Clone, Debug)]
-struct CascadedStylesheet {
-    origin: CascadeOrigin,
-    stylesheet: StylesheetParse,
 }
 
 #[derive(Clone, Debug)]
@@ -66,12 +68,11 @@ pub(crate) struct StylesheetReconcileResult {
     pub(crate) changed: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct DocumentStyleSet {
     next_slot_id: u64,
     slots: Vec<StylesheetSlot>,
     loaded_stylesheets: Vec<StylesheetParse>,
-    cascade_stylesheets: Vec<CascadedStylesheet>,
 }
 
 impl DocumentStyleSet {
@@ -79,7 +80,6 @@ impl DocumentStyleSet {
         self.next_slot_id = 0;
         self.slots.clear();
         self.loaded_stylesheets.clear();
-        self.rebuild_cascade_stylesheets();
     }
 
     pub(crate) fn reconcile_from_dom(
@@ -92,31 +92,32 @@ impl DocumentStyleSet {
 
         let old_slots = std::mem::take(&mut self.slots);
         let changed = old_slots.len() != discovered.len()
-            || old_slots
-                .iter()
-                .zip(&discovered)
-                .any(|(slot, key)| &slot.key != key);
+            || old_slots.iter().zip(&discovered).any(|(slot, discovered)| {
+                slot.source != discovered.source || slot.media != discovered.media
+            });
         let mut used = vec![false; old_slots.len()];
         let mut fetches = Vec::new();
         let mut new_slots = Vec::with_capacity(discovered.len());
 
-        for key in discovered {
+        for discovered in discovered {
             if let Some((index, old)) = old_slots
                 .iter()
                 .enumerate()
-                .find(|(index, slot)| !used[*index] && slot.key == key)
+                .find(|(index, slot)| !used[*index] && slot.source == discovered.source)
             {
                 used[index] = true;
-                new_slots.push(old.clone());
+                let mut retained = old.clone();
+                retained.media = discovered.media;
+                new_slots.push(retained);
                 continue;
             }
 
             let id = self.allocate_slot_id();
-            let state = match &key {
-                StylesheetSlotKey::Inline(text) => StylesheetSlotState::Loaded(
+            let state = match &discovered.source {
+                StylesheetSlotSource::Inline(text) => StylesheetSlotState::Loaded(
                     parse_stylesheet_with_options(text, &ParseOptions::stylesheet()),
                 ),
-                StylesheetSlotKey::External(url) => {
+                StylesheetSlotSource::External(url) => {
                     fetches.push(StylesheetFetch {
                         slot_id: id,
                         url: url.clone(),
@@ -125,7 +126,12 @@ impl DocumentStyleSet {
                 }
             };
 
-            new_slots.push(StylesheetSlot { id, key, state });
+            new_slots.push(StylesheetSlot {
+                id,
+                source: discovered.source,
+                media: discovered.media,
+                state,
+            });
         }
 
         self.slots = new_slots;
@@ -138,7 +144,8 @@ impl DocumentStyleSet {
         let id = self.allocate_slot_id();
         self.slots.push(StylesheetSlot {
             id,
-            key: StylesheetSlotKey::External(url.to_string()),
+            source: StylesheetSlotSource::External(url.to_string()),
+            media: None,
             state: StylesheetSlotState::Pending,
         });
         id
@@ -152,7 +159,7 @@ impl DocumentStyleSet {
         let Some(slot) = self.slot_mut(slot_id) else {
             return false;
         };
-        if !matches!(slot.key, StylesheetSlotKey::External(_)) {
+        if !matches!(slot.source, StylesheetSlotSource::External(_)) {
             return false;
         }
         if !matches!(
@@ -214,23 +221,45 @@ impl DocumentStyleSet {
         &self.loaded_stylesheets
     }
 
-    pub(crate) fn cascade_stylesheet_inputs(&self) -> Vec<StylesheetCascadeInput<'_>> {
-        // Cascade source indexes are indexes into this runtime input list, not
-        // indexes into `PageState::css_stylesheets()`. The runtime list includes
-        // built-in UA stylesheets; authored stylesheet reporting intentionally
-        // does not.
-        self.cascade_stylesheets
-            .iter()
-            .map(|entry| match entry.origin {
-                CascadeOrigin::UserAgent => StylesheetCascadeInput::user_agent_for_namespace(
-                    &entry.stylesheet,
-                    html::ElementNamespace::Html,
-                ),
-                CascadeOrigin::User | CascadeOrigin::Author => {
-                    StylesheetCascadeInput::new(entry.origin, &entry.stylesheet)
-                }
-            })
-            .collect()
+    pub(crate) fn stylesheet_collection_inputs(
+        &self,
+    ) -> Result<Vec<StylesheetCollectionInput<'_>>, StylesheetCollectionInputBuildError> {
+        let mut inputs = Vec::new();
+        let input_capacity = self.slots.len().checked_add(1).ok_or(
+            css::SourceCoordinateError::CounterExhausted {
+                coordinate: "browser-stylesheet-input-count",
+            },
+        )?;
+        inputs
+            .try_reserve(input_capacity)
+            .map_err(|_| StylesheetCollectionInputBuildError::Reservation)?;
+        inputs.push(StylesheetCollectionInput::user_agent_for_namespace(
+            StylesheetSourceId::built_in_user_agent(),
+            StylesheetOrder::new(0),
+            minimal_ua_stylesheet_parse(),
+            html::ElementNamespace::Html,
+        ));
+
+        for (slot_index, slot) in self.slots.iter().enumerate() {
+            let StylesheetSlotState::Loaded(stylesheet) = &slot.state else {
+                continue;
+            };
+            let order_index =
+                slot_index
+                    .checked_add(1)
+                    .ok_or(css::SourceCoordinateError::CounterExhausted {
+                        coordinate: "browser-stylesheet-order",
+                    })?;
+            let order = StylesheetOrder::from_usize(order_index)?;
+            let source_id = StylesheetSourceId::from_browser_slot(slot.id.0)?;
+            inputs.push(StylesheetCollectionInput::author(
+                source_id,
+                order,
+                stylesheet,
+                StylesheetConditionInput::from_optional_raw_media(slot.media.as_deref()),
+            ));
+        }
+        Ok(inputs)
     }
 
     fn allocate_slot_id(&mut self) -> StylesheetSlotId {
@@ -254,55 +283,21 @@ impl DocumentStyleSet {
                 | StylesheetSlotState::Failed
                 | StylesheetSlotState::Aborted => None,
             }));
-        self.rebuild_cascade_stylesheets();
-    }
-
-    fn rebuild_cascade_stylesheets(&mut self) {
-        self.cascade_stylesheets.clear();
-        self.cascade_stylesheets.push(CascadedStylesheet {
-            origin: CascadeOrigin::UserAgent,
-            stylesheet: minimal_ua_stylesheet_parse(),
-        });
-        self.cascade_stylesheets
-            .extend(
-                self.loaded_stylesheets
-                    .iter()
-                    .cloned()
-                    .map(|stylesheet| CascadedStylesheet {
-                        origin: CascadeOrigin::Author,
-                        stylesheet,
-                    }),
-            );
     }
 }
 
-impl Default for DocumentStyleSet {
-    fn default() -> Self {
-        let mut set = Self {
-            next_slot_id: 0,
-            slots: Vec::new(),
-            loaded_stylesheets: Vec::new(),
-            cascade_stylesheets: Vec::new(),
-        };
-        set.rebuild_cascade_stylesheets();
-        set
-    }
-}
-
-fn minimal_ua_stylesheet_parse() -> StylesheetParse {
+fn minimal_ua_stylesheet_parse() -> &'static StylesheetParse {
     static MINIMAL_UA_STYLESHEET_PARSE: OnceLock<StylesheetParse> = OnceLock::new();
 
-    MINIMAL_UA_STYLESHEET_PARSE
-        .get_or_init(|| {
-            parse_stylesheet_with_options(MINIMAL_UA_STYLESHEET, &ParseOptions::stylesheet())
-        })
-        .clone()
+    MINIMAL_UA_STYLESHEET_PARSE.get_or_init(|| {
+        parse_stylesheet_with_options(MINIMAL_UA_STYLESHEET, &ParseOptions::stylesheet())
+    })
 }
 
 fn collect_stylesheet_inputs(
     node: &Node,
     base_url: Option<&str>,
-    out: &mut Vec<StylesheetSlotKey>,
+    out: &mut Vec<DiscoveredStylesheet>,
 ) {
     match node {
         Node::Document { children, .. } => {
@@ -319,7 +314,10 @@ fn collect_stylesheet_inputs(
                 && let Some(href) = node.attr("href")
                 && let Some(url) = resolve_url(base_url, href)
             {
-                out.push(StylesheetSlotKey::External(url));
+                out.push(DiscoveredStylesheet {
+                    source: StylesheetSlotSource::External(url),
+                    media: node.attr("media").map(str::to_string),
+                });
             } else if element.namespace() == html::ElementNamespace::Html && name == "style" {
                 let mut text = String::new();
                 for child in children {
@@ -330,7 +328,10 @@ fn collect_stylesheet_inputs(
                         text.push_str(child_text);
                     }
                 }
-                out.push(StylesheetSlotKey::Inline(text));
+                out.push(DiscoveredStylesheet {
+                    source: StylesheetSlotSource::Inline(text),
+                    media: node.attr("media").map(str::to_string),
+                });
             }
 
             for child in children {
@@ -351,6 +352,146 @@ fn resolve_url(base_url: Option<&str>, href: &str) -> Option<String> {
     }
     let base = Url::parse(base_url?).ok()?;
     base.join(href).ok().map(|url| url.to_string())
+}
+
+#[cfg(test)]
+mod af5_tests {
+    use super::*;
+    use html::{HtmlParseOptions, parse_document};
+
+    fn parsed(source: &str) -> html::ParseOutput {
+        parse_document(source, HtmlParseOptions::default()).expect("HTML parses")
+    }
+
+    #[test]
+    fn css_handoff_preserves_sparse_document_order_and_source_identity() {
+        let output = parsed(concat!(
+            "<!doctype html><html><head>",
+            "<link rel=stylesheet href=a.css>",
+            "<style>p { color: red; }</style>",
+            "</head><body><p></p></body></html>"
+        ));
+        let mut set = DocumentStyleSet::default();
+        let reconcile = set.reconcile_from_dom(&output.document, Some("https://example.com/"));
+        let external = reconcile.fetches[0].slot_id;
+
+        let first = set.stylesheet_collection_inputs().unwrap();
+        assert_eq!(first.len(), 2, "pending slot remains Browser-owned");
+        assert_eq!(first[0].order().get(), 0);
+        assert_eq!(
+            first[1].order().get(),
+            2,
+            "available slots are not compacted"
+        );
+        let inline_source = first[1].source_id();
+
+        let second = set.stylesheet_collection_inputs().unwrap();
+        assert_eq!(second[1].source_id(), inline_source);
+
+        assert!(set.install_external_stylesheet(external, "p { color: blue; }"));
+        let complete = set.stylesheet_collection_inputs().unwrap();
+        assert_eq!(
+            complete
+                .iter()
+                .map(|input| input.order().get())
+                .collect::<Vec<_>>(),
+            vec![0, 1, 2]
+        );
+        assert_eq!(complete[2].source_id(), inline_source);
+        assert_ne!(complete[1].source_id(), complete[2].source_id());
+    }
+
+    #[test]
+    fn exact_media_metadata_changes_reconciliation_and_is_not_parsed_by_browser() {
+        let screen = parsed(
+            "<!doctype html><html><head><style media='screen'>p { color: red; }</style></head><body></body></html>",
+        );
+        let print = parsed(
+            "<!doctype html><html><head><style media='print'>p { color: red; }</style></head><body></body></html>",
+        );
+        let mut set = DocumentStyleSet::default();
+        assert!(set.reconcile_from_dom(&screen.document, None).changed);
+        let inputs = set.stylesheet_collection_inputs().unwrap();
+        let source_id = inputs[1].source_id();
+        assert_eq!(
+            inputs[1].condition(),
+            StylesheetConditionInput::RawMedia("screen")
+        );
+        assert!(set.reconcile_from_dom(&print.document, None).changed);
+        let inputs = set.stylesheet_collection_inputs().unwrap();
+        assert_eq!(inputs[1].source_id(), source_id);
+        assert_eq!(
+            inputs[1].condition(),
+            StylesheetConditionInput::RawMedia("print")
+        );
+    }
+
+    #[test]
+    fn loaded_external_media_change_preserves_slot_parse_and_source_without_refetch() {
+        let screen = parsed(
+            "<!doctype html><html><head><link rel=stylesheet href=a.css media=screen></head><body></body></html>",
+        );
+        let print = parsed(
+            "<!doctype html><html><head><link rel=stylesheet href=a.css media=print></head><body></body></html>",
+        );
+        let mut set = DocumentStyleSet::default();
+        let first = set.reconcile_from_dom(&screen.document, Some("https://example.com/"));
+        assert_eq!(first.fetches.len(), 1);
+        let slot_id = first.fetches[0].slot_id;
+        assert!(set.install_external_stylesheet(slot_id, "p { color: red; }"));
+        let source_id = set.stylesheet_collection_inputs().unwrap()[1].source_id();
+
+        let changed = set.reconcile_from_dom(&print.document, Some("https://example.com/"));
+        assert!(changed.changed);
+        assert!(
+            changed.fetches.is_empty(),
+            "media-only change must not refetch"
+        );
+        assert_eq!(set.stylesheets().len(), 1, "loaded parse remains available");
+        let inputs = set.stylesheet_collection_inputs().unwrap();
+        assert_eq!(inputs[1].source_id(), source_id);
+        assert_eq!(
+            inputs[1].condition(),
+            StylesheetConditionInput::RawMedia("print")
+        );
+    }
+
+    #[test]
+    fn duplicate_urls_keep_distinct_source_ids_and_completion_does_not_define_order() {
+        let output = parsed(concat!(
+            "<!doctype html><html><head>",
+            "<link rel=stylesheet href=same.css>",
+            "<link rel=stylesheet href=same.css>",
+            "</head><body></body></html>",
+        ));
+        let mut set = DocumentStyleSet::default();
+        let reconcile = set.reconcile_from_dom(&output.document, Some("https://example.com/"));
+        assert_eq!(reconcile.fetches.len(), 2);
+        let first = reconcile.fetches[0].slot_id;
+        let second = reconcile.fetches[1].slot_id;
+        assert_ne!(first, second);
+
+        assert!(set.install_external_stylesheet(second, "p { color: blue; }"));
+        let one_available = set.stylesheet_collection_inputs().unwrap();
+        assert_eq!(
+            one_available
+                .iter()
+                .map(|input| input.order().get())
+                .collect::<Vec<_>>(),
+            vec![0, 2]
+        );
+
+        assert!(set.install_external_stylesheet(first, "p { color: red; }"));
+        let all_available = set.stylesheet_collection_inputs().unwrap();
+        assert_eq!(
+            all_available
+                .iter()
+                .map(|input| input.order().get())
+                .collect::<Vec<_>>(),
+            vec![0, 1, 2]
+        );
+        assert_ne!(all_available[1].source_id(), all_available[2].source_id());
+    }
 }
 
 #[cfg(test)]

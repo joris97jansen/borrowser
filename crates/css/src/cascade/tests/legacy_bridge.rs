@@ -1,4 +1,4 @@
-use super::super::attach_styles;
+use super::super::{LegacyStyleAttachmentError, attach_styles, try_attach_styles};
 use super::support::{document, element, matching_environment, stylesheet};
 
 #[test]
@@ -41,6 +41,20 @@ fn attach_styles_clears_legacy_projection_when_style_resolution_hits_limits() {
         panic!("expected document element");
     };
     assert!(element.style().is_empty());
+}
+
+#[test]
+fn try_attach_styles_preserves_typed_failure_for_authoritative_callers() {
+    let oversized_inline_style = "color:red;".repeat(8_192);
+    let mut dom = document(element(
+        "div",
+        vec![("style", Some(oversized_inline_style.as_str()))],
+        Vec::new(),
+    ));
+    assert!(matches!(
+        try_attach_styles(&mut dom, matching_environment(), &[]),
+        Err(LegacyStyleAttachmentError::StyleResolution(_))
+    ));
 }
 
 #[test]

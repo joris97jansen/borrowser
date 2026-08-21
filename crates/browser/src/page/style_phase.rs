@@ -114,10 +114,18 @@ impl PageState {
             let consumed_pending_invalidation = pending_style_invalidation.is_some();
             let mut style_dirty = true;
             let mut incremental_eligible = false;
+            let stylesheet_inputs = retained
+                .document_styles
+                .stylesheet_collection_inputs()
+                .map_err(|error| {
+                    ComputedStyleResolutionError::StyleResolution(
+                        css::StyleResolutionError::StylesheetInputBuild(error),
+                    )
+                })?;
             recompute_styles(
                 dom,
                 environment,
-                &retained.document_styles.cascade_stylesheet_inputs(),
+                &stylesheet_inputs,
                 retained.generations,
                 style_key,
                 pending_style_invalidation.as_ref(),

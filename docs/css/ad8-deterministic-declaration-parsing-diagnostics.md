@@ -1,6 +1,6 @@
 # AD8: Deterministic Declaration Parsing And Diagnostics
 
-Last updated: 2026-06-30
+Last updated: 2026-08-20
 Status: implemented contract for Milestone AD issue 8
 
 This document defines Borrowser's current declaration-list parsing,
@@ -149,6 +149,15 @@ The snapshot is not CSSOM, not presentation-facing serialization, and not a
 runtime behavior path.
 
 ## Invariants
+
+AF5 reuses this declaration classification during collection construction.
+Its source-identity grammar advances the declaration-list pipeline snapshot to
+`version: 2`.
+Only declarations present in the parser-created model are classified;
+syntax-level malformed declarations discarded by recovery are not fabricated,
+and valid neighboring model declarations remain collectable. Active stylesheet
+classification and shorthand expansion happen once per style execution, while
+inline declaration lists remain per-element inputs.
 
 - CSS owns declaration interpretation.
 - Browser/runtime, Layout, Paint, and GFX do not gain CSS property-name

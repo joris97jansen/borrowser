@@ -1,11 +1,9 @@
 use super::super::contract::{
     InlineStyleRuleRef, append_cascade_evaluation_debug_snapshot, resolve_cascade_style,
 };
+use super::collection::RuleCollection;
 use super::declarations::inline_style_declaration_inputs_from_model;
-use super::limits::{
-    StyleResolutionError, StyleResolutionLimits, enforce_stylesheet_limits,
-    validate_representation_limits,
-};
+use super::limits::{StyleResolutionError, StyleResolutionLimits, validate_representation_limits};
 use super::rule_inputs::rule_inputs_for_element_with_limits;
 use super::selector_dom::build_document_selector_dom_with_element_limit;
 use crate::selectors::{SelectorMatchingContext, SelectorMatchingEnvironment};
@@ -22,16 +20,20 @@ use std::fmt::Write;
 /// not a CSSOM serialization surface and does not affect rendering behavior.
 pub fn declaration_list_pipeline_debug_snapshot(input: &str) -> String {
     let parse = model::parse_declaration_list_with_options(input, &ParseOptions::style_attribute());
-    let inline_style = InlineStyleRuleRef::new(0);
+    let inline_style = InlineStyleRuleRef::diagnostic();
     let declarations =
-        inline_style_declaration_inputs_from_model(inline_style, &parse.declarations);
+        match inline_style_declaration_inputs_from_model(inline_style, &parse.declarations) {
+            Ok(declarations) => declarations,
+            Err(error) => {
+                return format!("version: 2\ndeclaration-list-pipeline\nfailure: {error}\n");
+            }
+        };
     let rule_inputs = if declarations.is_empty() {
         Vec::new()
     } else {
         vec![
-            super::super::contract::CascadeRuleInput::from_inline_style(
+            super::super::contract::CascadeRuleInput::from_inline_style_collected(
                 inline_style,
-                0,
                 declarations,
             )
             .expect("declaration-list debug snapshot uses one internally consistent inline source"),
@@ -39,7 +41,7 @@ pub fn declaration_list_pipeline_debug_snapshot(input: &str) -> String {
     };
 
     let mut out = String::new();
-    writeln!(&mut out, "version: 1").expect("write snapshot");
+    writeln!(&mut out, "version: 2").expect("write snapshot");
     writeln!(&mut out, "declaration-list-pipeline").expect("write snapshot");
 
     writeln!(&mut out, "model-parse").expect("write snapshot");
@@ -72,14 +74,17 @@ pub fn resolve_document_styles_debug_snapshot(
 ) -> Result<String, StyleResolutionError> {
     let limits = StyleResolutionLimits::default();
     validate_representation_limits(&limits)?;
-    enforce_stylesheet_limits(sheets, &limits)?;
+    let inputs = super::compatibility_author_inputs(sheets)
+        .map_err(StyleResolutionError::StylesheetInputBuild)?;
+    let collection = RuleCollection::try_new(&inputs, &limits)
+        .map_err(StyleResolutionError::RuleCollectionBuild)?;
     let index = build_document_selector_dom_with_element_limit(
         root,
         limits.max_styled_elements_per_document,
     )?;
     let mut out = String::new();
 
-    writeln!(&mut out, "version: 2").expect("write snapshot");
+    writeln!(&mut out, "version: 3").expect("write snapshot");
     writeln!(&mut out, "document-style-resolution").expect("write snapshot");
     writeln!(
         &mut out,
@@ -101,7 +106,7 @@ pub fn resolve_document_styles_debug_snapshot(
             .and_then(|parent| styles_by_element.get(&parent));
 
         let rule_inputs =
-            rule_inputs_for_element_with_limits(&index, &context, element, sheets, &limits)?;
+            rule_inputs_for_element_with_limits(&index, &context, element, &collection, &limits)?;
 
         let mut cascade_debug = String::new();
         let winners =

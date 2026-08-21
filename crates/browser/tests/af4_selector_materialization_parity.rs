@@ -2,7 +2,8 @@ use browser::dom_store::DomStore;
 use core_types::{DomHandle, DomVersion};
 use css::{
     DocumentSelectorMatchingDiagnosticLimits, ParseOptions, SelectorMatchingEnvironment,
-    StylesheetCascadeInput, document_selector_matching_diagnostic, parse_stylesheet_with_options,
+    StylesheetCollectionInput, StylesheetConditionInput, StylesheetOrder, StylesheetSourceId,
+    document_selector_matching_diagnostic, parse_stylesheet_with_options,
 };
 use html::{DocumentMode, HtmlParseOptions, parse_document};
 
@@ -36,7 +37,12 @@ fn parser_document_and_same_full_patch_history_have_selector_visible_parity() {
         &ParseOptions::stylesheet(),
     );
     let environment = SelectorMatchingEnvironment::new(output.document_mode);
-    let inputs = [StylesheetCascadeInput::author(&stylesheet)];
+    let inputs = [StylesheetCollectionInput::author(
+        StylesheetSourceId::in_memory_generation_index(0),
+        StylesheetOrder::new(0),
+        &stylesheet,
+        StylesheetConditionInput::None,
+    )];
     let limits = DocumentSelectorMatchingDiagnosticLimits::default();
     let direct =
         document_selector_matching_diagnostic(&output.document, environment, &inputs, limits)

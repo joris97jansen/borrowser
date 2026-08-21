@@ -17,11 +17,13 @@ pub(super) fn matched_rule(
     for (selector_index, specificity) in specificities.iter().copied().enumerate() {
         builder.record_match(selector_index, specificity);
     }
-    CascadeRuleMatch {
-        stylesheet_index,
-        rule_index,
-        outcome: builder.build(),
-    }
+    CascadeRuleMatch::new(
+        super::super::StylesheetRuleRef::new(
+            crate::cascade::StylesheetSourceId::compatibility_generation_index(stylesheet_index),
+            crate::cascade::RawRuleIndex::new(rule_index),
+        ),
+        builder.build(),
+    )
 }
 
 pub(super) fn builder_with_initials_except(skip: &[CascadePropertyId]) -> ResolvedStyleBuilder {
@@ -80,19 +82,19 @@ pub(super) fn stylesheet_declaration_source(
     rule_index: u32,
     declaration_index: u32,
 ) -> CascadeDeclarationSource {
-    CascadeDeclarationSource::Stylesheet(StylesheetDeclarationRef {
-        stylesheet_index,
-        rule_index,
-        declaration_index,
-    })
+    CascadeDeclarationSource::Stylesheet(StylesheetDeclarationRef::new(
+        crate::cascade::StylesheetSourceId::compatibility_generation_index(stylesheet_index),
+        crate::cascade::RawRuleIndex::new(rule_index),
+        crate::cascade::DeclarationSourceIndex::new(declaration_index),
+    ))
 }
 
 pub(super) fn inline_declaration_source(
     inline_style: InlineStyleRuleRef,
     declaration_index: u32,
 ) -> CascadeDeclarationSource {
-    CascadeDeclarationSource::InlineStyle(InlineStyleDeclarationRef {
+    CascadeDeclarationSource::InlineStyle(InlineStyleDeclarationRef::new(
         inline_style,
-        declaration_index,
-    })
+        crate::cascade::DeclarationSourceIndex::new(declaration_index),
+    ))
 }

@@ -1,6 +1,7 @@
 use super::super::contract::CascadeRuleInputBuildError;
-use super::source::StylesheetCascadeInput;
-use crate::model;
+use super::collection::RuleCollectionBuildError;
+use super::source::StylesheetCollectionInputBuildError;
+use crate::cascade::contract::SourceCoordinateError;
 use crate::selectors::{
     SelectorDomBuildError, SelectorMatchingEnvironment, SelectorMatchingLimitError,
     SelectorMatchingLimits,
@@ -9,7 +10,8 @@ use crate::selectors::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StyleResolutionLimits {
     pub max_stylesheets_per_style_pass: usize,
-    pub max_style_rules_per_document: usize,
+    pub max_top_level_rules_per_document: usize,
+    pub max_collected_declaration_inputs_per_document: usize,
     pub max_matched_rules_per_element: usize,
     pub max_declaration_inputs_per_element: usize,
     pub max_inline_style_bytes: usize,
@@ -22,7 +24,8 @@ impl Default for StyleResolutionLimits {
     fn default() -> Self {
         Self {
             max_stylesheets_per_style_pass: 4_096,
-            max_style_rules_per_document: 262_144,
+            max_top_level_rules_per_document: 262_144,
+            max_collected_declaration_inputs_per_document: 1_048_576,
             max_matched_rules_per_element: 4_096,
             max_declaration_inputs_per_element: 65_536,
             max_inline_style_bytes: 64 * 1024,
@@ -36,7 +39,8 @@ impl Default for StyleResolutionLimits {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StyleResolutionLimit {
     StylesheetsPerStylePass,
-    StyleRulesPerDocument,
+    TopLevelRulesPerDocument,
+    CollectedDeclarationInputsPerDocument,
     MatchedRulesPerElement,
     DeclarationInputsPerElement,
     InlineStyleBytes,
@@ -48,7 +52,10 @@ impl StyleResolutionLimit {
     pub fn stable_label(self) -> &'static str {
         match self {
             Self::StylesheetsPerStylePass => "stylesheets-per-style-pass",
-            Self::StyleRulesPerDocument => "style-rules-per-document",
+            Self::TopLevelRulesPerDocument => "top-level-rules-per-document",
+            Self::CollectedDeclarationInputsPerDocument => {
+                "collected-declaration-inputs-per-document"
+            }
             Self::MatchedRulesPerElement => "matched-rules-per-element",
             Self::DeclarationInputsPerElement => "declaration-inputs-per-element",
             Self::InlineStyleBytes => "inline-style-bytes",
@@ -76,6 +83,9 @@ pub enum StyleResolutionError {
     },
     SelectorMatching(SelectorMatchingLimitError),
     RuleInputBuild(CascadeRuleInputBuildError),
+    StylesheetInputBuild(StylesheetCollectionInputBuildError),
+    SourceCoordinate(SourceCoordinateError),
+    RuleCollectionBuild(RuleCollectionBuildError),
 }
 
 impl StyleResolutionError {
@@ -92,6 +102,20 @@ impl StyleResolutionError {
             limit,
             configured,
             max_supported,
+        }
+    }
+
+    pub const fn stable_label(&self) -> &'static str {
+        match self {
+            Self::SelectorDomBuild(_) => "selector-dom-build",
+            Self::MatchingEnvironmentMismatch { .. } => "matching-environment-mismatch",
+            Self::LimitExceeded { .. } => "limit-exceeded",
+            Self::UnsupportedConfiguration { .. } => "unsupported-configuration",
+            Self::SelectorMatching(_) => "selector-matching",
+            Self::RuleInputBuild(_) => "rule-input-build",
+            Self::StylesheetInputBuild(error) => error.stable_label(),
+            Self::SourceCoordinate(error) => error.stable_label(),
+            Self::RuleCollectionBuild(error) => error.stable_label(),
         }
     }
 }
@@ -125,6 +149,11 @@ impl std::fmt::Display for StyleResolutionError {
             ),
             Self::SelectorMatching(error) => write!(f, "{error}"),
             Self::RuleInputBuild(error) => write!(f, "{error}"),
+            Self::StylesheetInputBuild(error) => write!(f, "{error}"),
+            Self::SourceCoordinate(error) => {
+                write!(f, "style execution source coordinate: {error}")
+            }
+            Self::RuleCollectionBuild(error) => write!(f, "{error}"),
         }
     }
 }
@@ -135,63 +164,14 @@ impl std::error::Error for StyleResolutionError {
             Self::SelectorDomBuild(error) => Some(error),
             Self::SelectorMatching(error) => Some(error),
             Self::RuleInputBuild(error) => Some(error),
+            Self::StylesheetInputBuild(error) => Some(error),
+            Self::SourceCoordinate(error) => Some(error),
+            Self::RuleCollectionBuild(error) => Some(error),
             Self::MatchingEnvironmentMismatch { .. }
             | Self::LimitExceeded { .. }
             | Self::UnsupportedConfiguration { .. } => None,
         }
     }
-}
-
-pub(super) fn enforce_stylesheet_limits(
-    sheets: &[model::StylesheetParse],
-    limits: &StyleResolutionLimits,
-) -> Result<(), StyleResolutionError> {
-    let inputs = sheets
-        .iter()
-        .map(StylesheetCascadeInput::author)
-        .collect::<Vec<_>>();
-    enforce_stylesheet_input_limits(&inputs, limits)
-}
-
-pub(super) fn enforce_stylesheet_input_limits(
-    sheets: &[StylesheetCascadeInput<'_>],
-    limits: &StyleResolutionLimits,
-) -> Result<(), StyleResolutionError> {
-    if sheets.len() > limits.max_stylesheets_per_style_pass {
-        return Err(StyleResolutionError::limit(
-            StyleResolutionLimit::StylesheetsPerStylePass,
-            limits.max_stylesheets_per_style_pass,
-        ));
-    }
-
-    enforce_style_rule_count(sheets, limits.max_style_rules_per_document)
-}
-
-fn enforce_style_rule_count(
-    sheets: &[StylesheetCascadeInput<'_>],
-    max_style_rules: usize,
-) -> Result<(), StyleResolutionError> {
-    let mut style_rules_seen = 0usize;
-
-    for input in sheets {
-        let sheet = input.stylesheet();
-        for rule in &sheet.stylesheet.rules {
-            if !matches!(rule, model::Rule::Style(_)) {
-                continue;
-            }
-
-            if style_rules_seen >= max_style_rules {
-                return Err(StyleResolutionError::limit(
-                    StyleResolutionLimit::StyleRulesPerDocument,
-                    max_style_rules,
-                ));
-            }
-
-            style_rules_seen += 1;
-        }
-    }
-
-    Ok(())
 }
 
 pub(super) fn validate_representation_limits(
@@ -202,8 +182,12 @@ pub(super) fn validate_representation_limits(
         limits.max_stylesheets_per_style_pass,
     )?;
     validate_u32_backed_limit(
-        StyleResolutionLimit::StyleRulesPerDocument,
-        limits.max_style_rules_per_document,
+        StyleResolutionLimit::TopLevelRulesPerDocument,
+        limits.max_top_level_rules_per_document,
+    )?;
+    validate_u32_backed_limit(
+        StyleResolutionLimit::CollectedDeclarationInputsPerDocument,
+        limits.max_collected_declaration_inputs_per_document,
     )?;
     validate_u32_backed_limit(
         StyleResolutionLimit::InlineDeclarationsPerElement,

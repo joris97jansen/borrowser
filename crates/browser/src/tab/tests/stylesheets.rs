@@ -50,6 +50,86 @@ fn inline_styles_are_attached_and_computed_during_initial_document_load() {
 }
 
 #[test]
+fn browser_selector_debug_marks_nonempty_media_stylesheet_as_cascade_inactive() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 111;
+    tab.page.start_nav("https://example.com/");
+    let output = parse_document(
+        "<!doctype html><html><head><style media=screen>p { color: red; }</style></head><body><p>Hello</p></body></html>",
+        HtmlParseOptions::default(),
+    )
+    .expect("parse should succeed");
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 111,
+        publication: no_quirks_patch_publication_from_output(output),
+    });
+
+    let snapshot = tab
+        .page
+        .selector_matching_debug_snapshot(css::DocumentSelectorMatchingDiagnosticLimits::default())
+        .expect("Browser handoff should build")
+        .expect("published document should have a selector diagnostic")
+        .to_debug_snapshot();
+    let matching_record = snapshot
+        .lines()
+        .find(|line| {
+            line.contains("local=\"p\"")
+                && line.contains("selector-state=matched")
+                && line.contains("condition=deferred-unsupported")
+        })
+        .expect("the selector-only diagnostic still observes the p match");
+    assert!(matching_record.contains("condition=deferred-unsupported"));
+    assert!(matching_record.contains("cascade-state=inactive-condition"));
+    assert!(!matching_record.contains("cascade-state=eligible"));
+}
+
+#[test]
+fn browser_selector_failure_keeps_inactive_condition_and_sparse_source_provenance() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 112;
+    tab.page.start_nav("https://example.com/");
+    let output = parse_document(
+        "<!doctype html><html><head><style media=screen>body p { color: red; }</style></head><body><p>Hello</p></body></html>",
+        HtmlParseOptions::default(),
+    )
+    .expect("parse should succeed");
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 112,
+        publication: no_quirks_patch_publication_from_output(output),
+    });
+
+    let diagnostic = tab
+        .page
+        .selector_matching_debug_snapshot(css::DocumentSelectorMatchingDiagnosticLimits {
+            selector_matching: css::SelectorMatchingLimits {
+                max_axis_steps_per_match: 0,
+            },
+            ..Default::default()
+        })
+        .expect("Browser handoff should build")
+        .expect("published document should have a selector diagnostic");
+    assert!(matches!(
+        diagnostic.failure(),
+        Some(
+            css::DocumentSelectorMatchingDiagnosticFailure::SelectorMatching {
+                stylesheet_order,
+                condition: css::SelectorDiagnosticCondition::InactiveDeferredUnsupported,
+                error: css::SelectorMatchingLimitError::AxisStepLimitExceeded { limit: 0 },
+                ..
+            }
+        ) if stylesheet_order == css::StylesheetOrder::new(1)
+    ));
+    let snapshot = diagnostic.to_debug_snapshot();
+    assert!(snapshot.contains(
+        "stylesheet-order=1 condition=deferred-unsupported cascade-state=inactive-condition"
+    ));
+    assert!(!snapshot.contains("cascade-state=eligible"));
+    assert_eq!(snapshot, diagnostic.to_debug_snapshot());
+}
+
+#[test]
 fn split_text_style_element_is_concatenated_without_synthetic_newlines() {
     let mut tab = Tab::new(1);
     tab.nav_gen = 15;
@@ -480,4 +560,115 @@ fn external_stylesheet_arrival_invalidates_cached_computed_style() {
     );
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
     assert!(!tab.page.style_dirty());
+}
+
+#[test]
+fn loaded_external_media_only_change_preserves_source_without_refetch_and_invalidates_style() {
+    let mut tab = Tab::new(1);
+    let (tx, rx) = mpsc::channel();
+    tab.set_bus_sender(tx);
+    tab.nav_gen = 241;
+    tab.page.start_nav("https://example.com/index.html");
+
+    let screen = parse_document(
+        "<!doctype html><html><head><link rel=stylesheet href=site.css media=screen></head><body><p>Hello</p></body></html>",
+        HtmlParseOptions::default(),
+    )
+    .expect("screen document parses");
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 241,
+        publication: no_quirks_patch_publication_from_output(screen),
+    });
+    let (slot_id, url) = rx
+        .try_iter()
+        .find_map(|command| match command {
+            CoreCommand::FetchStream {
+                stylesheet_slot_id: Some(slot_id),
+                url,
+                kind: ResourceKind::Css,
+                ..
+            } => Some((slot_id, url)),
+            _ => None,
+        })
+        .expect("initial external stylesheet fetch");
+    tab.on_core_event(CoreEvent::CssDecodedBlock {
+        tab_id: tab.tab_id,
+        request_id: 241,
+        stylesheet_slot_id: slot_id,
+        url,
+        css_block: "p { color: red; }".to_string(),
+    });
+    assert_eq!(current_element_color(&mut tab, "p"), (0, 0, 0, 255));
+
+    let source_before = tab
+        .page
+        .rule_collection_debug_snapshot(
+            &css::StyleResolutionLimits::default(),
+            css::RuleCollectionDiagnosticLimits::default(),
+        )
+        .expect("AF5 input handoff builds")
+        .expect("published document has a diagnostic")
+        .records()
+        .iter()
+        .find_map(|record| match record {
+            css::RuleCollectionDiagnosticRecord::Stylesheet {
+                source_id,
+                origin: css::CascadeOrigin::Author,
+                condition: css::DiagnosticCondition::DeferredUnsupported(media),
+                ..
+            } if media.text == "screen" => Some(*source_id),
+            _ => None,
+        })
+        .expect("loaded screen stylesheet is present and inactive");
+    let before = tab.page.style_generations();
+
+    let print = parse_document(
+        "<!doctype html><html><head><link rel=stylesheet href=site.css media=print></head><body><p>Hello</p></body></html>",
+        HtmlParseOptions::default(),
+    )
+    .expect("print document parses");
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 241,
+        publication: no_quirks_patch_publication_from_output(print),
+    });
+    assert!(
+        rx.try_iter().all(|command| !matches!(
+            command,
+            CoreCommand::FetchStream {
+                kind: ResourceKind::Css,
+                ..
+            }
+        )),
+        "media-only change must not emit another external CSS fetch"
+    );
+    assert_eq!(
+        tab.page.style_generations().stylesheets,
+        before.stylesheets + 1
+    );
+    assert!(tab.page.style_dirty());
+
+    let diagnostic = tab
+        .page
+        .rule_collection_debug_snapshot(
+            &css::StyleResolutionLimits::default(),
+            css::RuleCollectionDiagnosticLimits::default(),
+        )
+        .expect("AF5 input handoff still builds")
+        .expect("replacement document has a diagnostic");
+    let source_after = diagnostic
+        .records()
+        .iter()
+        .find_map(|record| match record {
+            css::RuleCollectionDiagnosticRecord::Stylesheet {
+                source_id,
+                origin: css::CascadeOrigin::Author,
+                condition: css::DiagnosticCondition::DeferredUnsupported(media),
+                ..
+            } if media.text == "print" => Some(*source_id),
+            _ => None,
+        })
+        .expect("loaded parse remains available with updated condition");
+    assert_eq!(source_after, source_before);
 }

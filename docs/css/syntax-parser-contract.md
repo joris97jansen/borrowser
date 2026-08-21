@@ -467,6 +467,10 @@ Related reference for the selector subsystem contract introduced by Milestone P:
 
 - [`docs/css/p1-selector-architecture.md`](p1-selector-architecture.md)
 
+AF5 consumes parser-model rules and declarations without changing recovery:
+[`docs/css/af5-stylesheet-rule-collection-source-order-contract.md`](af5-stylesheet-rule-collection-source-order-contract.md).
+`CssParseOrigin` remains parser-entry metadata and is not a cascade origin.
+
 Related reference for the Milestone T CSS hardening threat model:
 
 - [`docs/css/t1-css-hardening-strategy-threat-model.md`](t1-css-hardening-strategy-threat-model.md)

@@ -171,6 +171,15 @@ in:
 
 * `docs/css/r8-cascade-style-resolution-debug-output.md`
 
+The AF5 pass-scoped stylesheet collection, source identity/order, and
+pre-winner diagnostic contract lives in:
+
+* `docs/css/af5-stylesheet-rule-collection-source-order-contract.md`
+
+The lower cascade contract owns semantic identity/order and matched-input
+types; private collection integration owns flat storage and exposes only the
+opaque collection plus bounded diagnostic projection.
+
 The Milestone R close-out and computed-style handoff contract lives in:
 
 * `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`

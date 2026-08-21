@@ -3,12 +3,19 @@
 //! This integration layer sits above the core selector matcher. It knows
 //! stylesheet/rule identity and invokes the authoritative checked matcher, but
 //! it does not collect cascade candidates or order cascade winners.
+//! It remains selector-conformance-only: selectors may still be evaluated for
+//! condition-inactive sheets, but every record carries an explicit CSS
+//! condition and cascade-eligibility state so a selector match cannot be read
+//! as active cascade participation.
 
 use std::fmt::{self, Write};
 
 use html::{AttributeNamespace, DocumentMode, Node};
 
-use crate::cascade::{CascadeOrigin, StylesheetCascadeInput};
+use crate::cascade::{
+    CascadeOrigin, StylesheetCollectionInput, StylesheetConditionStatus, StylesheetOrder,
+    StylesheetSourceId,
+};
 use crate::model::Rule;
 use crate::selectors::{
     BoundedSelectorDomConstructionError, InvalidSelectorReason, SelectorDomBuildError,
@@ -70,7 +77,9 @@ pub enum DocumentSelectorMatchingDiagnosticFailure {
     SelectorDomBuild(SelectorDomBuildError),
     SelectorMatching {
         element_index: usize,
-        stylesheet_index: usize,
+        stylesheet_source_id: StylesheetSourceId,
+        stylesheet_order: StylesheetOrder,
+        condition: SelectorDiagnosticCondition,
         rule_index: usize,
         selector_index: usize,
         error: SelectorMatchingLimitError,
@@ -105,15 +114,23 @@ struct DocumentSelectorMatchingRecord {
     namespace: html::ElementNamespace,
     local_name: String,
     id_attribute: Option<String>,
-    stylesheet_index: usize,
+    stylesheet_source_id: StylesheetSourceId,
+    stylesheet_order: StylesheetOrder,
     origin: CascadeOrigin,
     namespace_constraint: SelectorNamespaceConstraint,
+    condition: SelectorDiagnosticCondition,
     rule_index: usize,
     selector_index: Option<usize>,
     matchability: SelectorMatchability,
     matched: bool,
     specificity: Option<crate::Specificity>,
     outcome_reason: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SelectorDiagnosticCondition {
+    Active,
+    InactiveDeferredUnsupported,
 }
 
 impl DocumentSelectorMatchingDiagnostic {
@@ -138,7 +155,7 @@ impl DocumentSelectorMatchingDiagnostic {
 pub fn document_selector_matching_diagnostic(
     root: &Node,
     environment: SelectorMatchingEnvironment,
-    stylesheets: &[StylesheetCascadeInput<'_>],
+    stylesheets: &[StylesheetCollectionInput<'_>],
     limits: DocumentSelectorMatchingDiagnosticLimits,
 ) -> DocumentSelectorMatchingDiagnostic {
     if stylesheets.len() > limits.max_stylesheets {
@@ -190,7 +207,13 @@ pub fn document_selector_matching_diagnostic(
     let mut report_storage_bytes = 0usize;
     let mut selector_evaluation_count = 0usize;
     for (element_index, element) in index.elements().enumerate() {
-        for (stylesheet_index, input) in stylesheets.iter().copied().enumerate() {
+        for input in stylesheets.iter().copied() {
+            let condition = match input.condition().classify() {
+                StylesheetConditionStatus::Active => SelectorDiagnosticCondition::Active,
+                StylesheetConditionStatus::DeferredUnsupported { .. } => {
+                    SelectorDiagnosticCondition::InactiveDeferredUnsupported
+                }
+            };
             let context =
                 SelectorMatchingContext::with_limits(&index, environment, limits.selector_matching)
                     .with_namespace_constraint(input.namespace_constraint());
@@ -227,7 +250,9 @@ pub fn document_selector_matching_diagnostic(
                                     return DocumentSelectorMatchingDiagnostic::Failed(
                                         DocumentSelectorMatchingDiagnosticFailure::SelectorMatching {
                                             element_index,
-                                            stylesheet_index,
+                                            stylesheet_source_id: input.source_id(),
+                                            stylesheet_order: input.order(),
+                                            condition,
                                             rule_index,
                                             selector_index,
                                             error,
@@ -239,8 +264,8 @@ pub fn document_selector_matching_diagnostic(
                                 &index,
                                 element,
                                 input,
-                                stylesheet_index,
                                 rule_index,
+                                condition,
                                 Some(selector_index),
                                 SelectorMatchability::Parsed,
                                 matched,
@@ -274,8 +299,8 @@ pub fn document_selector_matching_diagnostic(
                             &index,
                             element,
                             input,
-                            stylesheet_index,
                             rule_index,
+                            condition,
                             None,
                             SelectorMatchability::Unsupported,
                             false,
@@ -299,8 +324,8 @@ pub fn document_selector_matching_diagnostic(
                             &index,
                             element,
                             input,
-                            stylesheet_index,
                             rule_index,
+                            condition,
                             None,
                             SelectorMatchability::Invalid,
                             false,
@@ -396,9 +421,9 @@ fn try_reserve_report_records(
 fn record_context(
     index: &crate::selectors::SelectorDomIndex<'_>,
     element: crate::selectors::SelectorDomElementId,
-    input: StylesheetCascadeInput<'_>,
-    stylesheet_index: usize,
+    input: StylesheetCollectionInput<'_>,
     rule_index: usize,
+    condition: SelectorDiagnosticCondition,
     selector_index: Option<usize>,
     matchability: SelectorMatchability,
     matched: bool,
@@ -433,9 +458,11 @@ fn record_context(
         namespace: index.element_namespace(element),
         local_name: local_name.to_string(),
         id_attribute: id_attribute.map(str::to_string),
-        stylesheet_index,
+        stylesheet_source_id: input.source_id(),
+        stylesheet_order: input.order(),
         origin: input.origin(),
         namespace_constraint: input.namespace_constraint(),
+        condition,
         rule_index,
         selector_index,
         matchability,
@@ -472,7 +499,7 @@ fn serialize_complete(
     max_serialized_bytes: usize,
 ) -> Result<String, usize> {
     let mut out = BoundedReport::new(max_serialized_bytes);
-    writeln!(&mut out, "version: 1").map_err(|_| out.observed_at_least())?;
+    writeln!(&mut out, "version: 2").map_err(|_| out.observed_at_least())?;
     writeln!(&mut out, "document-selector-matching").map_err(|_| out.observed_at_least())?;
     writeln!(&mut out, "status: complete").map_err(|_| out.observed_at_least())?;
     writeln!(
@@ -518,14 +545,17 @@ fn serialize_complete(
         }
         write!(
             &mut out,
-            " stylesheet={} origin={} namespace-constraint={} rule={} selector={} matchability={} state={} specificity={} reason=",
-            record.stylesheet_index,
+            " stylesheet-source={} stylesheet-order={} origin={} namespace-constraint={} condition={} rule={} selector={} matchability={} selector-state={} cascade-state={} specificity={} reason=",
+            record.stylesheet_source_id.get(),
+            record.stylesheet_order.get(),
             origin_label(record.origin),
             namespace_constraint_label(record.namespace_constraint),
+            selector_condition_label(record.condition),
             record.rule_index,
             optional_usize(record.selector_index),
             matchability_label(record.matchability),
             if record.matched { "matched" } else { "not-matched" },
+            selector_cascade_state_label(record.condition),
             specificity_label(record.specificity),
         )
         .map_err(|_| out.observed_at_least())?;
@@ -537,6 +567,20 @@ fn serialize_complete(
         out.write_char('\n').map_err(|_| out.observed_at_least())?;
     }
     Ok(out.finish())
+}
+
+fn selector_condition_label(condition: SelectorDiagnosticCondition) -> &'static str {
+    match condition {
+        SelectorDiagnosticCondition::Active => "active",
+        SelectorDiagnosticCondition::InactiveDeferredUnsupported => "deferred-unsupported",
+    }
+}
+
+fn selector_cascade_state_label(condition: SelectorDiagnosticCondition) -> &'static str {
+    match condition {
+        SelectorDiagnosticCondition::Active => "eligible",
+        SelectorDiagnosticCondition::InactiveDeferredUnsupported => "inactive-condition",
+    }
 }
 
 struct BoundedReport {
@@ -580,7 +624,7 @@ impl Write for BoundedReport {
 
 fn serialize_failure(failure: DocumentSelectorMatchingDiagnosticFailure) -> String {
     let mut out = String::new();
-    writeln!(&mut out, "version: 1").expect("write diagnostic");
+    writeln!(&mut out, "version: 2").expect("write diagnostic");
     writeln!(&mut out, "document-selector-matching").expect("write diagnostic");
     writeln!(&mut out, "status: failed").expect("write diagnostic");
     match failure {
@@ -604,15 +648,20 @@ fn serialize_failure(failure: DocumentSelectorMatchingDiagnosticFailure) -> Stri
         .expect("write diagnostic"),
         DocumentSelectorMatchingDiagnosticFailure::SelectorMatching {
             element_index,
-            stylesheet_index,
+            stylesheet_source_id,
+            stylesheet_order,
+            condition,
             rule_index,
             selector_index,
             error,
         } => writeln!(
             &mut out,
-            "failure: kind=selector-matching element-index={} stylesheet={} rule={} selector={} reason={}",
+            "failure: kind=selector-matching element-index={} stylesheet-source={} stylesheet-order={} condition={} cascade-state={} rule={} selector={} reason={}",
             element_index,
-            stylesheet_index,
+            stylesheet_source_id.get(),
+            stylesheet_order.get(),
+            selector_condition_label(condition),
+            selector_cascade_state_label(condition),
             rule_index,
             selector_index,
             selector_matching_error_label(error)
