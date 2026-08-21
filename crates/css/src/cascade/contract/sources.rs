@@ -1,23 +1,26 @@
-use crate::selectors::{SelectorListMatchOutcome, Specificity};
+use super::order::{
+    CascadeSourceOrder, DeclarationOrder, DeclarationSourceIndex, RawRuleIndex,
+    StylesheetRuleOrder, StylesheetSourceId,
+};
+use crate::selectors::{SelectorDomElementId, SelectorListMatchOutcome, Specificity};
 
 use super::priority::{
     CascadeImportance, CascadeOrigin, CascadeOriginBand, CascadePriority, CascadeSpecificity,
     CurrentScopeCascadePriorityBand,
 };
 
-/// Stable source identity and rule-level context for cascade inputs.
-///
-/// This module owns selector-match handoff, rule/declaration source identity,
-/// and rule-level ordering context. It does not own declaration applicability,
-/// winner resolution, or resolved-style materialization.
+/// Exact AF4 match result and self-contained rule provenance used by cascade.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CascadeRuleMatch {
-    pub stylesheet_index: u32,
-    pub rule_index: u32,
-    pub outcome: SelectorListMatchOutcome,
+    rule: StylesheetRuleRef,
+    outcome: SelectorListMatchOutcome,
 }
 
 impl CascadeRuleMatch {
+    pub fn new(rule: StylesheetRuleRef, outcome: SelectorListMatchOutcome) -> Self {
+        Self { rule, outcome }
+    }
+
     pub fn effective_specificity(&self) -> Option<Specificity> {
         self.outcome.highest_specificity()
     }
@@ -26,52 +29,79 @@ impl CascadeRuleMatch {
         self.outcome.is_matchable() && self.outcome.matched_any()
     }
 
-    pub fn rule_ref(&self) -> StylesheetRuleRef {
-        StylesheetRuleRef {
-            stylesheet_index: self.stylesheet_index,
-            rule_index: self.rule_index,
-        }
+    pub const fn rule_ref(&self) -> StylesheetRuleRef {
+        self.rule
+    }
+
+    pub fn outcome(&self) -> &SelectorListMatchOutcome {
+        &self.outcome
     }
 }
 
-/// Stable source identity for one matched stylesheet rule entering cascade.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Self-contained identity for one parsed stylesheet rule.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct StylesheetRuleRef {
-    pub stylesheet_index: u32,
-    pub rule_index: u32,
+    source_id: StylesheetSourceId,
+    raw_rule_index: RawRuleIndex,
 }
 
 impl StylesheetRuleRef {
-    pub const fn new(stylesheet_index: u32, rule_index: u32) -> Self {
+    pub const fn new(source_id: StylesheetSourceId, raw_rule_index: RawRuleIndex) -> Self {
         Self {
-            stylesheet_index,
-            rule_index,
+            source_id,
+            raw_rule_index,
         }
     }
 
-    pub fn from_rule_match(rule_match: &CascadeRuleMatch) -> Self {
+    pub const fn source_id(self) -> StylesheetSourceId {
+        self.source_id
+    }
+
+    pub const fn raw_rule_index(self) -> RawRuleIndex {
+        self.raw_rule_index
+    }
+
+    #[cfg(test)]
+    pub const fn from_rule_match(rule_match: &CascadeRuleMatch) -> Self {
         rule_match.rule_ref()
     }
 }
 
-/// Stable rule-level source identity for one inline style attribute entering
-/// cascade.
-///
-/// The caller assigns a stable per-element scope id within the current style
-/// resolution pass so inline styles remain distinguishable in debug surfaces
-/// and invariant checks.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct InlineStyleRuleRef {
-    pub scope_id: u32,
+/// Inline-style identity in one selector-DOM/style execution.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum InlineStyleRuleRef {
+    Element(SelectorDomElementId),
+    Diagnostic,
+    #[cfg(test)]
+    CompatibilityScope(u32),
 }
 
 impl InlineStyleRuleRef {
+    pub const fn from_selector_element(element: SelectorDomElementId) -> Self {
+        Self::Element(element)
+    }
+
+    pub(crate) const fn diagnostic() -> Self {
+        Self::Diagnostic
+    }
+
+    /// Compatibility-only identity for direct cascade contract callers. The
+    /// production DOM path uses `from_selector_element`.
+    #[cfg(test)]
     pub const fn new(scope_id: u32) -> Self {
-        Self { scope_id }
+        Self::CompatibilityScope(scope_id)
+    }
+
+    pub const fn element(self) -> Option<SelectorDomElementId> {
+        match self {
+            Self::Element(element) => Some(element),
+            Self::Diagnostic => None,
+            #[cfg(test)]
+            Self::CompatibilityScope(_) => None,
+        }
     }
 }
 
-/// Stable rule-level source identity for cascade inputs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CascadeRuleSource {
     Stylesheet(StylesheetRuleRef),
@@ -79,110 +109,179 @@ pub enum CascadeRuleSource {
 }
 
 impl CascadeRuleSource {
-    pub fn from_rule_match(rule_match: &CascadeRuleMatch) -> Self {
-        Self::Stylesheet(rule_match.rule_ref())
-    }
-
     pub(crate) fn owns_declaration_source(self, source: CascadeDeclarationSource) -> bool {
         match (self, source) {
-            (Self::Stylesheet(rule), CascadeDeclarationSource::Stylesheet(declaration_source)) => {
-                rule.stylesheet_index == declaration_source.stylesheet_index
-                    && rule.rule_index == declaration_source.rule_index
+            (Self::Stylesheet(rule), CascadeDeclarationSource::Stylesheet(declaration)) => {
+                rule.source_id == declaration.source_id
+                    && rule.raw_rule_index == declaration.raw_rule_index
             }
-            (
-                Self::InlineStyle(rule),
-                CascadeDeclarationSource::InlineStyle(declaration_source),
-            ) => rule == declaration_source.inline_style,
+            (Self::InlineStyle(rule), CascadeDeclarationSource::InlineStyle(declaration)) => {
+                rule == declaration.inline_style
+            }
             (Self::Stylesheet(_), CascadeDeclarationSource::InlineStyle(_))
             | (Self::InlineStyle(_), CascadeDeclarationSource::Stylesheet(_)) => false,
         }
     }
 }
 
-/// Rule-level cascade ordering metadata carried forward from selector matching
-/// into declaration-candidate generation.
-///
-/// The rule context keeps rule-level origin and specificity separate from
-/// declaration-level importance. `CascadePriority` and its final
-/// `CascadeOriginBand` are synthesized only when a declaration becomes a
-/// comparable candidate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct CascadeRuleContext {
-    pub origin: CascadeOrigin,
-    pub specificity: CascadeSpecificity,
-    pub rule_order: u32,
+pub enum CascadeRuleContext {
+    Stylesheet {
+        origin: CascadeOrigin,
+        specificity: Specificity,
+        source_order: StylesheetRuleOrder,
+    },
+    InlineStyle,
 }
 
 impl CascadeRuleContext {
-    pub const fn new(
+    #[cfg(test)]
+    pub(crate) fn new(
         origin: CascadeOrigin,
         specificity: CascadeSpecificity,
-        rule_order: u32,
+        source_order: impl Into<CascadeSourceOrder>,
     ) -> Self {
-        Self {
+        match (specificity, source_order.into()) {
+            (CascadeSpecificity::Selector(specificity), CascadeSourceOrder::Stylesheet(order)) => {
+                Self::for_stylesheet(origin, specificity, order)
+            }
+            (CascadeSpecificity::InlineStyle, CascadeSourceOrder::InlineStyle) => {
+                assert_eq!(origin, CascadeOrigin::Author);
+                Self::for_inline_style()
+            }
+            _ => panic!(
+                "test cascade rule context must pair selector specificity with stylesheet order or inline specificity with inline order"
+            ),
+        }
+    }
+
+    pub const fn for_stylesheet(
+        origin: CascadeOrigin,
+        specificity: Specificity,
+        source_order: StylesheetRuleOrder,
+    ) -> Self {
+        Self::Stylesheet {
             origin,
             specificity,
-            rule_order,
+            source_order,
         }
     }
 
     pub fn from_stylesheet_match(
         origin: CascadeOrigin,
-        rule_order: u32,
+        source_order: StylesheetRuleOrder,
         rule_match: &CascadeRuleMatch,
     ) -> Option<Self> {
         if !rule_match.contributes_candidates() {
             return None;
         }
-
-        Some(Self::new(
+        Some(Self::for_stylesheet(
             origin,
-            CascadeSpecificity::Selector(rule_match.effective_specificity()?),
-            rule_order,
+            rule_match.effective_specificity()?,
+            source_order,
         ))
     }
 
-    pub const fn for_inline_style(rule_order: u32) -> Self {
-        Self::new(
-            CascadeOrigin::Author,
-            CascadeSpecificity::InlineStyle,
-            rule_order,
-        )
+    pub const fn for_inline_style() -> Self {
+        Self::InlineStyle
+    }
+
+    pub const fn origin(self) -> CascadeOrigin {
+        match self {
+            Self::Stylesheet { origin, .. } => origin,
+            Self::InlineStyle => CascadeOrigin::Author,
+        }
+    }
+
+    pub const fn specificity(self) -> CascadeSpecificity {
+        match self {
+            Self::Stylesheet { specificity, .. } => CascadeSpecificity::Selector(specificity),
+            Self::InlineStyle => CascadeSpecificity::InlineStyle,
+        }
+    }
+
+    pub const fn source_order(self) -> CascadeSourceOrder {
+        match self {
+            Self::Stylesheet { source_order, .. } => CascadeSourceOrder::Stylesheet(source_order),
+            Self::InlineStyle => CascadeSourceOrder::InlineStyle,
+        }
     }
 
     pub fn priority_for_declaration(
         self,
         importance: CascadeImportance,
-        declaration_order: u32,
+        declaration_order: impl Into<DeclarationOrder>,
     ) -> CascadePriority {
         let current_scope_band =
-            CurrentScopeCascadePriorityBand::from_origin_and_importance(self.origin, importance);
-        CascadePriority::new(
+            CurrentScopeCascadePriorityBand::from_origin_and_importance(self.origin(), importance);
+        CascadePriority::from_validated_context(
             CascadeOriginBand::from_current_scope_band(current_scope_band),
-            self.specificity,
-            self.rule_order,
-            declaration_order,
+            self.specificity(),
+            self.source_order(),
+            declaration_order.into(),
         )
     }
 }
 
-/// Stable source identity for one stylesheet declaration.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StylesheetDeclarationRef {
-    pub stylesheet_index: u32,
-    pub rule_index: u32,
-    pub declaration_index: u32,
+    source_id: StylesheetSourceId,
+    raw_rule_index: RawRuleIndex,
+    declaration_index: DeclarationSourceIndex,
 }
 
-/// Stable source identity for one inline style declaration.
+impl StylesheetDeclarationRef {
+    pub const fn new(
+        source_id: StylesheetSourceId,
+        raw_rule_index: RawRuleIndex,
+        declaration_index: DeclarationSourceIndex,
+    ) -> Self {
+        Self {
+            source_id,
+            raw_rule_index,
+            declaration_index,
+        }
+    }
+
+    pub const fn source_id(self) -> StylesheetSourceId {
+        self.source_id
+    }
+
+    pub const fn raw_rule_index(self) -> RawRuleIndex {
+        self.raw_rule_index
+    }
+
+    pub const fn declaration_index(self) -> DeclarationSourceIndex {
+        self.declaration_index
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InlineStyleDeclarationRef {
-    pub inline_style: InlineStyleRuleRef,
-    pub declaration_index: u32,
+    inline_style: InlineStyleRuleRef,
+    declaration_index: DeclarationSourceIndex,
 }
 
-/// Source reference for a declaration that survived candidate filtering and
-/// won a property in the cascade.
+impl InlineStyleDeclarationRef {
+    pub const fn new(
+        inline_style: InlineStyleRuleRef,
+        declaration_index: DeclarationSourceIndex,
+    ) -> Self {
+        Self {
+            inline_style,
+            declaration_index,
+        }
+    }
+
+    pub const fn inline_style(self) -> InlineStyleRuleRef {
+        self.inline_style
+    }
+
+    pub const fn declaration_index(self) -> DeclarationSourceIndex {
+        self.declaration_index
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CascadeDeclarationSource {
     Stylesheet(StylesheetDeclarationRef),

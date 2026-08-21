@@ -252,16 +252,6 @@ impl<'dom> SelectorDomIndex<'dom> {
         try_build_bounded(input, u32::MAX, limit)
     }
 
-    /// Runs the exact bounded document-construction preflight without
-    /// allocating the element and direct-text projection arenas.
-    pub(crate) fn preflight_document_with_element_limit(
-        root: &'dom Node,
-        limit: usize,
-    ) -> Result<(), BoundedSelectorDomConstructionError> {
-        let input = document_input(root).map_err(BoundedSelectorDomConstructionError::Build)?;
-        try_preflight_bounded(input, u32::MAX, limit).map(|_| ())
-    }
-
     pub(crate) fn try_from_element_subtree_with_element_limit(
         root: &'dom ElementNode,
         limit: usize,

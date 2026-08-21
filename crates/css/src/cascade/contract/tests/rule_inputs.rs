@@ -7,6 +7,32 @@ use super::support::{
     inline_declaration_source, matched_rule, parse_error, parsed_value, preserved_value,
     stylesheet_declaration_source,
 };
+
+#[test]
+fn owned_inline_rule_input_infers_the_callers_collection_lifetime_without_static() {
+    fn accept_at_lifetime<'a>(
+        input: CascadeRuleInput<'a>,
+        _anchor: &'a u8,
+    ) -> CascadeRuleInput<'a> {
+        input
+    }
+
+    let inline_style = InlineStyleRuleRef::new(90);
+    let input = CascadeRuleInput::from_inline_style_collected(
+        inline_style,
+        vec![CascadeDeclarationInput::supported(
+            inline_declaration_source(inline_style, 0),
+            0,
+            CascadeImportance::Normal,
+            CascadePropertyId::Color,
+            parsed_value("color: red"),
+        )],
+    )
+    .expect("owned inline input builds");
+    let anchor = 0;
+    let input = accept_at_lifetime(input, &anchor);
+    assert!(matches!(input, CascadeRuleInput::Inline(_)));
+}
 use crate::selectors::Specificity;
 use crate::{CssWideKeyword, SpecifiedValueParseErrorKind};
 
@@ -16,11 +42,13 @@ fn cascade_rule_match_uses_highest_selector_specificity() {
     builder.record_match(0, Specificity::C);
     builder.record_match(2, Specificity::B);
 
-    let rule_match = super::super::CascadeRuleMatch {
-        stylesheet_index: 0,
-        rule_index: 1,
-        outcome: builder.build(),
-    };
+    let rule_match = super::super::CascadeRuleMatch::new(
+        StylesheetRuleRef::new(
+            crate::cascade::StylesheetSourceId::compatibility_generation_index(0),
+            crate::cascade::RawRuleIndex::new(1),
+        ),
+        builder.build(),
+    );
 
     assert!(rule_match.contributes_candidates());
     assert_eq!(rule_match.effective_specificity(), Some(Specificity::B));

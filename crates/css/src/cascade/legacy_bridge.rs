@@ -26,6 +26,48 @@ pub fn attach_styles(
     matching_environment: SelectorMatchingEnvironment,
     sheets: &[model::StylesheetParse],
 ) {
+    if let Err(_error) = try_attach_styles(dom, matching_environment, sheets) {
+        #[cfg(debug_assertions)]
+        eprintln!("legacy attach_styles degraded style attachment failure: {_error}");
+        clear_legacy_styles(dom);
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LegacyStyleAttachmentError {
+    StyleResolution(super::integration::StyleResolutionError),
+    UnsupportedRoot,
+    ProjectionInvariant,
+}
+
+impl std::fmt::Display for LegacyStyleAttachmentError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::StyleResolution(error) => write!(formatter, "{error}"),
+            Self::UnsupportedRoot => {
+                formatter.write_str("legacy style attachment requires a document or element root")
+            }
+            Self::ProjectionInvariant => {
+                formatter.write_str("legacy resolved-style projection invariant failed")
+            }
+        }
+    }
+}
+
+impl std::error::Error for LegacyStyleAttachmentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::StyleResolution(error) => Some(error),
+            Self::UnsupportedRoot | Self::ProjectionInvariant => None,
+        }
+    }
+}
+
+pub fn try_attach_styles(
+    dom: &mut Node,
+    matching_environment: SelectorMatchingEnvironment,
+    sheets: &[model::StylesheetParse],
+) -> Result<(), LegacyStyleAttachmentError> {
     let limits = StyleResolutionLimits::default();
     let resolution = match &*dom {
         Node::Document { .. } => {
@@ -37,33 +79,18 @@ pub fn attach_styles(
             sheets,
             &limits,
         ),
-        _ => {
-            #[cfg(debug_assertions)]
-            eprintln!("legacy attach_styles received a non-document, non-element root");
-            clear_legacy_styles(dom);
-            return;
-        }
+        _ => return Err(LegacyStyleAttachmentError::UnsupportedRoot),
     };
-    let resolved_styles = match resolution {
-        Ok(resolved_styles) => resolved_styles,
-        Err(_error) => {
-            #[cfg(debug_assertions)]
-            eprintln!("legacy attach_styles degraded style resolution failure: {_error}");
-            clear_legacy_styles(dom);
-            return;
-        }
-    };
+    let resolved_styles = resolution.map_err(LegacyStyleAttachmentError::StyleResolution)?;
     let mut entries = resolved_styles.entries().iter();
     if !project_resolved_styles_to_dom(dom, &mut entries) {
-        #[cfg(debug_assertions)]
-        eprintln!("legacy attach_styles degraded resolved-style projection invariant failure");
-        clear_legacy_styles(dom);
-        return;
+        return Err(LegacyStyleAttachmentError::ProjectionInvariant);
     }
     debug_assert!(
         entries.next().is_none(),
         "resolved document style must contain exactly one entry per element"
     );
+    Ok(())
 }
 
 fn project_resolved_styles_to_dom<'a>(

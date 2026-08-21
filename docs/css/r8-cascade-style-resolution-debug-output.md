@@ -1,7 +1,23 @@
 # R8: Cascade And Style-Resolution Debug Output
 
-Last updated: 2026-08-15
+Last updated: 2026-08-20
 Status: contract and code implemented
+
+AF5 reconciliation (2026-08-20): R8 source labels now expose opaque stylesheet
+source identity separately from typed stylesheet/style-rule source order. AF5's
+bounded `rule_collection_diagnostic` is the primary pre-winner evidence for
+collection, inactive/skipped rule states, declaration classification, and exact
+match results. R8 remains the downstream candidate/winner/resolved-style trace.
+AF5 declaration records expose bounded property classification and value text
+plus source, declaration, expansion, importance, applicability, and stable
+invalid-reason fields. Retained diagnostic capacities are storage-accounted,
+and build/diagnostic failures use explicit labels rather than Rust variant
+names. All stable serialization of bounded media, at-rule, property, and value
+text visibly appends the original byte count when truncation occurred; compact
+quoted output is retained only for complete text.
+Because AF5 replaces vector-index/rule-ordinal labels with opaque source IDs and
+typed source order, the lower cascade, winner, and resolved snapshots advance
+to `version: 2`; the integrated document trace advances to `version: 3`.
 
 This document is the source-of-truth contract for Milestone R issue 8: stable
 debug output and regression coverage for cascade candidate evaluation, winner
@@ -80,9 +96,10 @@ element it records:
 The integrated document-style resolution snapshot receives the explicit
 `SelectorMatchingEnvironment` and records it deterministically as
 `matching-environment: document-mode=<...>`. AF4a changed this integrated
-surface to `version: 2`. The lower-level cascade evaluation, winner, resolved
-style, and other unaffected snapshot surfaces retain their existing schema
-versions.
+surface to `version: 2`; AF5 advances it to `version: 3` for typed source
+identity and order. AF5 advances the lower-level cascade evaluation, winner,
+resolved-style, and resolved-document-style surfaces to `version: 2` for the
+same grammar change.
 
 This surface is intentionally verbose because it is for debugging regressions
 in later cascade, computed-style, and runtime cutover work.
@@ -99,9 +116,9 @@ R8 establishes these snapshot invariants:
 - every maintained snapshot surface starts with an explicit schema version;
   the version is specific to that surface rather than a blanket value for all
   R8 output
-- the integrated document-style resolution surface is currently `version: 2`
-  because it includes the AF4a matching-environment field; unaffected
-  lower-level surfaces remain at their existing versions
+- the integrated document-style resolution surface is currently `version: 3`;
+  lower cascade, winner, resolved-style, and resolved-document-style surfaces
+  are `version: 2`
 - output order is canonical or document-order, never hash-map order
 - source identities use stable stylesheet, rule, declaration, and inline-style
   ids

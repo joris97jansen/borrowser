@@ -13,21 +13,65 @@ use super::{DomMutationFacts, PageState};
 use super::{PageStyleGenerations, StyleRecalcKind};
 
 impl PageState {
+    /// Runs the bounded CSS-owned AF5 collection/match diagnostic over the
+    /// exact stylesheet handoff used by production style resolution.
+    pub fn rule_collection_debug_snapshot(
+        &self,
+        style_limits: &css::StyleResolutionLimits,
+        diagnostic_limits: css::RuleCollectionDiagnosticLimits,
+    ) -> Result<Option<css::RuleCollectionDiagnostic>, css::ComputedStyleResolutionError> {
+        let Some(dom) = self.dom.as_deref() else {
+            return Ok(None);
+        };
+        let Some(document_mode) = self.document_mode else {
+            return Ok(None);
+        };
+        let inputs = self
+            .rendering
+            .document_styles
+            .stylesheet_collection_inputs()
+            .map_err(|error| {
+                css::ComputedStyleResolutionError::StyleResolution(
+                    css::StyleResolutionError::StylesheetInputBuild(error),
+                )
+            })?;
+        Ok(Some(css::rule_collection_diagnostic(
+            dom,
+            css::SelectorMatchingEnvironment::new(document_mode),
+            &inputs,
+            style_limits,
+            diagnostic_limits,
+        )))
+    }
+
     /// Runs the bounded CSS-owned AF4 matching diagnostic over the currently
     /// retained document and its real cascade stylesheet inputs.
     pub fn selector_matching_debug_snapshot(
         &self,
         limits: css::DocumentSelectorMatchingDiagnosticLimits,
-    ) -> Option<css::DocumentSelectorMatchingDiagnostic> {
-        let dom = self.dom.as_deref()?;
-        let document_mode = self.document_mode?;
-        let inputs = self.rendering.document_styles.cascade_stylesheet_inputs();
-        Some(css::document_selector_matching_diagnostic(
+    ) -> Result<Option<css::DocumentSelectorMatchingDiagnostic>, css::ComputedStyleResolutionError>
+    {
+        let Some(dom) = self.dom.as_deref() else {
+            return Ok(None);
+        };
+        let Some(document_mode) = self.document_mode else {
+            return Ok(None);
+        };
+        let inputs = self
+            .rendering
+            .document_styles
+            .stylesheet_collection_inputs()
+            .map_err(|error| {
+                css::ComputedStyleResolutionError::StyleResolution(
+                    css::StyleResolutionError::StylesheetInputBuild(error),
+                )
+            })?;
+        Ok(Some(css::document_selector_matching_diagnostic(
             dom,
             css::SelectorMatchingEnvironment::new(document_mode),
             &inputs,
             limits,
-        ))
+        )))
     }
 
     /// Stable neutral publication facts retained for Browser/runtime

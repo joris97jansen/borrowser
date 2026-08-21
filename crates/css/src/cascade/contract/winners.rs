@@ -48,10 +48,7 @@ impl CascadeDeclarationCandidate {
     }
 
     pub fn sort_key(&self) -> CascadeDeclarationCandidateKey {
-        CascadeDeclarationCandidateKey {
-            property: self.property,
-            priority: self.priority,
-        }
+        CascadeDeclarationCandidateKey::new(self.property, self.priority)
     }
 
     pub fn to_winner(&self) -> CascadeWinner {
@@ -122,9 +119,9 @@ impl CascadeWinnerSet {
 
 /// Sorts declaration candidates into deterministic cascade order.
 ///
-/// The sort is stable by contract, so equal candidate keys preserve their
-/// incoming order. That gives later winner-resolution work an explicit,
-/// testable behavior for degenerate equal-key cases.
+/// Semantically distinct priorities never compare equal. Exact duplicate
+/// candidate keys may preserve incoming order, but cascade correctness never
+/// depends on stability to distinguish stylesheet and inline priorities.
 pub fn sort_candidates_by_cascade_order(candidates: &mut [CascadeDeclarationCandidate]) {
     sort_by_candidate_key(candidates, CascadeDeclarationCandidate::sort_key);
 }

@@ -32,8 +32,10 @@ pub use contract::{
 
 // Origin and precedence
 pub use contract::{
-    CascadeImportance, CascadeOrigin, CascadeOriginBand, CascadePriority, CascadeSpecificity,
-    CurrentScopeCascadePriorityBand,
+    CascadeImportance, CascadeOrigin, CascadeOriginBand, CascadePriority, CascadeSourceOrder,
+    CascadeSpecificity, CurrentScopeCascadePriorityBand, DeclarationOrder, DeclarationSourceIndex,
+    RawRuleIndex, SourceCoordinateError, StyleRulePosition, StylesheetOrder, StylesheetRuleOrder,
+    StylesheetSourceId, StylesheetSourceIdError,
 };
 
 // Rule and declaration inputs
@@ -41,8 +43,8 @@ pub use contract::{
     CascadeDeclarationApplicability, CascadeDeclarationCandidate, CascadeDeclarationCandidateKey,
     CascadeDeclarationInput, CascadeDeclarationProperty, CascadeDeclarationSource,
     CascadeRuleContext, CascadeRuleInput, CascadeRuleInputBuildError, CascadeRuleMatch,
-    CascadeRuleSource, CascadeSpecifiedValue, InlineStyleDeclarationRef, InlineStyleRuleRef,
-    StylesheetDeclarationRef, StylesheetRuleRef,
+    CascadeRuleSource, CascadeSpecifiedValue, InlineStyleDeclarationRef, InlineStyleRuleInput,
+    InlineStyleRuleRef, MatchedStylesheetRuleInput, StylesheetDeclarationRef, StylesheetRuleRef,
 };
 
 // Winner resolution and snapshots
@@ -63,17 +65,28 @@ pub use contract::{
 pub use document::{ResolvedDocumentStyle, ResolvedElementStyle};
 
 // Document-resolution integration path
-pub(crate) use integration::preflight_document_selector_dom_with_limits;
+pub(crate) use integration::StylesheetConditionStatus;
+#[cfg(feature = "count-alloc")]
+#[doc(hidden)]
+pub use integration::{Af5AllocationGuardError, af5_match_rule_inputs_for_allocation_guard};
 pub use integration::{
-    IncrementalResolvedDocumentStyle, IncrementalStyleResolutionStats, StyleResolutionError,
-    StyleResolutionLimit, StyleResolutionLimits, StylesheetCascadeInput,
+    AtRuleSkipReason, BoundedDiagnosticText, DiagnosticCondition, DiagnosticDeclarationProperty,
+    DiagnosticRuleState, IncrementalResolvedDocumentStyle, IncrementalStyleResolutionStats,
+    RULE_COLLECTION_DIAGNOSTIC_VERSION, RuleCollection, RuleCollectionBuildError,
+    RuleCollectionDiagnostic, RuleCollectionDiagnosticFailure, RuleCollectionDiagnosticLimit,
+    RuleCollectionDiagnosticLimits, RuleCollectionDiagnosticRecord,
+    RuleCollectionDiagnosticSnapshot, RuleCollectionDiagnosticStorage, RuleCollectionStorage,
+    StyleResolutionError, StyleResolutionExecution, StyleResolutionLimit, StyleResolutionLimits,
+    StylesheetCollectionInput, StylesheetCollectionInputBuildError, StylesheetConditionInput,
     declaration_list_pipeline_debug_snapshot, get_inline_style, is_css, resolve_document_styles,
     resolve_document_styles_debug_snapshot, resolve_document_styles_from_cascade_inputs,
-    try_resolve_document_styles_from_cascade_inputs_with_limits,
+    rule_collection_diagnostic, try_resolve_document_styles_from_cascade_inputs_with_limits,
+    try_resolve_document_styles_from_rule_collection_with_limits,
     try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_limits,
+    try_resolve_document_styles_incremental_suffix_from_rule_collection_with_limits,
     try_resolve_document_styles_incremental_suffix_with_limits,
     try_resolve_document_styles_with_limits,
 };
 
 // Legacy compatibility bridge
-pub use legacy_bridge::attach_styles;
+pub use legacy_bridge::{LegacyStyleAttachmentError, attach_styles, try_attach_styles};

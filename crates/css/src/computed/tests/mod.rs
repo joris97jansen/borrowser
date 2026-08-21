@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     InitialStyleValue, ParseOptions, PropertyComputedValueKind, PropertyId, Rule,
-    SpecifiedPropertyValue, SpecifiedToComputedConversionRule, StylesheetCascadeInput,
+    SpecifiedPropertyValue, SpecifiedToComputedConversionRule, StylesheetCollectionInput,
     parse_specified_value, parse_stylesheet_with_options, property_registry,
     property_value_boundary, resolve_cascade_style_from_rule_inputs,
     resolve_document_styles as resolve_document_styles_with_environment, resolve_initial_style,
@@ -75,7 +75,7 @@ fn resolve_document_styles(
 fn try_compute_document_styles_for_invalidation_plan_with_limits(
     plan: &crate::StyleInvalidationPlan,
     root: &Node,
-    sheets: &[StylesheetCascadeInput<'_>],
+    sheets: &[StylesheetCollectionInput<'_>],
     previous: Option<(&crate::ResolvedDocumentStyle, &ComputedDocumentStyle)>,
     limits: &crate::StyleResolutionLimits,
 ) -> Result<StylePlanExecution, ComputedStyleResolutionError> {

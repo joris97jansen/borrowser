@@ -9,9 +9,10 @@ use super::support::{
     namespaced_element, stylesheet,
 };
 use crate::{
-    CascadePropertyId, CascadeRuleMatch, CascadeSpecificity, ResolvedValueSource, Rule,
-    SelectorDomBuildError, SelectorDomIndex, SelectorMatchability, SelectorMatchingContext,
-    StylesheetCascadeInput, resolve_document_styles_from_cascade_inputs,
+    CascadePropertyId, CascadeRuleMatch, CascadeSpecificity, RawRuleIndex, ResolvedValueSource,
+    Rule, SelectorDomBuildError, SelectorDomIndex, SelectorMatchability, SelectorMatchingContext,
+    StylesheetCollectionInput, StylesheetConditionInput, StylesheetOrder, StylesheetRuleRef,
+    StylesheetSourceId, resolve_document_styles_from_cascade_inputs,
 };
 
 #[test]
@@ -37,8 +38,18 @@ fn ua_namespace_groups_constrain_every_compound_without_constraining_author_rule
         ],
     );
     let inputs = [
-        StylesheetCascadeInput::user_agent_for_namespace(&ua, html::ElementNamespace::Html),
-        StylesheetCascadeInput::author(&author),
+        StylesheetCollectionInput::user_agent_for_namespace(
+            StylesheetSourceId::built_in_user_agent(),
+            StylesheetOrder::new(0),
+            &ua,
+            html::ElementNamespace::Html,
+        ),
+        StylesheetCollectionInput::author(
+            StylesheetSourceId::compatibility_generation_index(0),
+            StylesheetOrder::new(1),
+            &author,
+            StylesheetConditionInput::None,
+        ),
     ];
     let resolved =
         resolve_document_styles_from_cascade_inputs(&dom, matching_environment(), &inputs).unwrap();
@@ -194,11 +205,13 @@ fn parser_produced_invalid_and_unsupported_rules_are_non_applicable_to_cascade()
         assert_eq!(outcome.matchability(), expected[checked]);
         assert!(!outcome.matched_any());
 
-        let rule_match = CascadeRuleMatch {
-            stylesheet_index: 0,
-            rule_index: rule_index as u32,
+        let rule_match = CascadeRuleMatch::new(
+            StylesheetRuleRef::new(
+                StylesheetSourceId::compatibility_generation_index(0),
+                RawRuleIndex::from_usize(rule_index).expect("test rule index is representable"),
+            ),
             outcome,
-        };
+        );
         assert!(!rule_match.contributes_candidates());
         checked += 1;
     }
@@ -223,7 +236,7 @@ fn selector_list_effective_specificity_uses_only_actual_matches_in_cascade() {
 
     assert_eq!(color.value.to_css_text().as_deref(), Some("blue"));
     assert_eq!(
-        color.priority.specificity,
+        color.priority.specificity(),
         CascadeSpecificity::Selector(crate::Specificity::new(0, 1, 0))
     );
 
@@ -232,19 +245,19 @@ fn selector_list_effective_specificity_uses_only_actual_matches_in_cascade() {
             .expect("document style debug snapshot");
     assert!(
         snapshot.contains(
-            "rule-input[0]: source=stylesheet[0/0] origin=author specificity=selector(0,0,1)"
+            "rule-input[0]: source=stylesheet[2/0] origin=author specificity=selector(0,0,1)"
         ),
         "the unmatched #missing selector must not raise the first rule's effective specificity:\n{snapshot}"
     );
     assert!(
         snapshot.contains(
-            "rule-input[1]: source=stylesheet[0/1] origin=author specificity=selector(0,1,0)"
+            "rule-input[1]: source=stylesheet[2/1] origin=author specificity=selector(0,1,0)"
         ),
         "the .target rule must carry class specificity:\n{snapshot}"
     );
     assert!(
         snapshot.contains(
-            "color: winner(source=stylesheet[0/1]/declaration[0], band=author-normal, specificity=selector(0,1,0)"
+            "color: winner(source=stylesheet[2/1]/declaration[0], band=author-normal, specificity=selector(0,1,0)"
         ),
         "the class selector must win through cascade priority:\n{snapshot}"
     );
@@ -273,7 +286,7 @@ fn tree_structural_pseudo_enters_the_normal_cascade_with_b_specificity() {
         .expect("empty paragraph color winner");
     assert_eq!(empty_winner.value.to_css_text().as_deref(), Some("blue"));
     assert_eq!(
-        empty_winner.priority.specificity,
+        empty_winner.priority.specificity(),
         CascadeSpecificity::Selector(crate::Specificity::new(0, 1, 1))
     );
 
@@ -284,7 +297,7 @@ fn tree_structural_pseudo_enters_the_normal_cascade_with_b_specificity() {
         .expect("non-empty paragraph color winner");
     assert_eq!(non_empty_winner.value.to_css_text().as_deref(), Some("red"));
     assert_eq!(
-        non_empty_winner.priority.specificity,
+        non_empty_winner.priority.specificity(),
         CascadeSpecificity::Selector(crate::Specificity::C)
     );
 }
@@ -365,10 +378,13 @@ fn resolve_document_styles_integrates_inline_style_as_structured_author_output()
         .and_then(|entry| entry.winner())
         .expect("inline color winner");
     assert_eq!(
-        color_winner.priority.specificity,
+        color_winner.priority.specificity(),
         CascadeSpecificity::InlineStyle
     );
-    assert_eq!(color_winner.priority.rule_order, 1);
+    assert_eq!(
+        color_winner.priority.source_order(),
+        crate::CascadeSourceOrder::InlineStyle
+    );
 }
 
 #[test]
@@ -544,7 +560,7 @@ fn try_resolve_document_styles_reports_style_pass_limits() {
     let stylesheets = vec![stylesheet("div { color: red; }")];
     let dom = document_element("div", Vec::new(), Vec::new());
     let limits = StyleResolutionLimits {
-        max_style_rules_per_document: 0,
+        max_top_level_rules_per_document: 0,
         ..StyleResolutionLimits::default()
     };
 
@@ -558,14 +574,15 @@ fn try_resolve_document_styles_reports_style_pass_limits() {
 
     assert_eq!(
         error,
-        StyleResolutionError::LimitExceeded {
-            limit: StyleResolutionLimit::StyleRulesPerDocument,
+        StyleResolutionError::RuleCollectionBuild(crate::RuleCollectionBuildError::LimitExceeded {
+            limit: StyleResolutionLimit::TopLevelRulesPerDocument,
             configured: 0,
-        }
+            observed: 1,
+        },)
     );
     assert_eq!(
         error.to_string(),
-        "style resolution exceeded style-rules-per-document limit 0"
+        "rule collection observed 1 entries above top-level-rules-per-document limit 0"
     );
 }
 
@@ -680,7 +697,7 @@ fn try_resolve_document_styles_rejects_unrepresentable_limit_configuration() {
     let dom = document_element("div", Vec::new(), Vec::new());
     let configured = (u32::MAX as usize).saturating_add(1);
     let limits = StyleResolutionLimits {
-        max_style_rules_per_document: configured,
+        max_top_level_rules_per_document: configured,
         ..StyleResolutionLimits::default()
     };
 
@@ -690,7 +707,7 @@ fn try_resolve_document_styles_rejects_unrepresentable_limit_configuration() {
     assert_eq!(
         error,
         StyleResolutionError::UnsupportedConfiguration {
-            limit: StyleResolutionLimit::StyleRulesPerDocument,
+            limit: StyleResolutionLimit::TopLevelRulesPerDocument,
             configured,
             max_supported: u32::MAX as usize,
         }

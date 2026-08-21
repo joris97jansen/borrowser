@@ -5,7 +5,9 @@ use crate::specified::{
     SpecifiedValueParseError,
 };
 use crate::values::CssWideKeywordValue;
+use std::fmt::{self, Write};
 
+use super::order::DeclarationOrder;
 use super::priority::CascadeImportance;
 use super::properties::CascadePropertyId;
 use super::serialize::serialize_declaration_value_for_css;
@@ -167,6 +169,97 @@ impl CascadeSpecifiedValue {
             CascadeSpecifiedValueRepr::Preserved(value) => value.css_text.clone(),
         }
     }
+
+    pub(crate) fn write_css_text(&self, writer: &mut impl Write) -> Result<bool, fmt::Error> {
+        match &self.value {
+            CascadeSpecifiedValueRepr::Parsed(value) => {
+                write_specified_value(writer, value.value())?;
+                Ok(true)
+            }
+            CascadeSpecifiedValueRepr::CssWideKeyword(value) => {
+                writer.write_str(value.value.to_css_text())?;
+                Ok(true)
+            }
+            CascadeSpecifiedValueRepr::Preserved(value) => match value.css_text.as_deref() {
+                Some(text) => {
+                    writer.write_str(text)?;
+                    Ok(true)
+                }
+                None => Ok(false),
+            },
+        }
+    }
+}
+
+fn write_specified_value(
+    writer: &mut impl Write,
+    value: &crate::specified::SpecifiedValue,
+) -> fmt::Result {
+    use crate::specified::{
+        SpecifiedLengthPercentageOrAuto, SpecifiedLengthPercentageOrNone, SpecifiedValue,
+        SpecifiedZIndexValue,
+    };
+    use crate::values::{CssColorSyntax, CssLengthUnit};
+
+    match value {
+        SpecifiedValue::BorderStyle(value) => writer.write_str(value.to_css_text()),
+        SpecifiedValue::OutlineStyle(value) => writer.write_str(value.to_css_text()),
+        SpecifiedValue::TextDecorationLine(value) => writer.write_str(value.to_css_text()),
+        SpecifiedValue::Color(value) => match value.syntax() {
+            CssColorSyntax::Keyword(keyword) => writer.write_str(keyword.as_css_keyword()),
+            CssColorSyntax::Hex(hex) => {
+                writer.write_char('#')?;
+                writer.write_str(hex.digits())
+            }
+        },
+        SpecifiedValue::Display(value) => writer.write_str(value.to_css_text()),
+        SpecifiedValue::Overflow(value) => writer.write_str(value.to_css_text()),
+        SpecifiedValue::Position(value) => writer.write_str(value.to_css_text()),
+        SpecifiedValue::ZIndex(value) => match value.value() {
+            SpecifiedZIndexValue::Auto { .. } => writer.write_str("auto"),
+            SpecifiedZIndexValue::Integer(value) => writer.write_str(value.to_css_text()),
+        },
+        SpecifiedValue::Length(value) => {
+            writer.write_str(value.number())?;
+            if value.unit() == CssLengthUnit::Px {
+                writer.write_str("px")?;
+            }
+            Ok(())
+        }
+        SpecifiedValue::LengthPercentageOrAuto(value) => match value {
+            SpecifiedLengthPercentageOrAuto::LengthPercentage(value) => {
+                write_length_percentage(writer, value.value())
+            }
+            SpecifiedLengthPercentageOrAuto::Auto { .. } => writer.write_str("auto"),
+        },
+        SpecifiedValue::LengthPercentageOrNone(value) => match value {
+            SpecifiedLengthPercentageOrNone::LengthPercentage(value) => {
+                write_length_percentage(writer, value.value())
+            }
+            SpecifiedLengthPercentageOrNone::None { .. } => writer.write_str("none"),
+        },
+    }
+}
+
+fn write_length_percentage(
+    writer: &mut impl Write,
+    value: &crate::values::CssLengthPercentageValue,
+) -> fmt::Result {
+    use crate::values::{CssLengthPercentageValue, CssLengthUnit};
+
+    match value {
+        CssLengthPercentageValue::Length(value) => {
+            writer.write_str(value.number())?;
+            if value.unit() == CssLengthUnit::Px {
+                writer.write_str("px")?;
+            }
+            Ok(())
+        }
+        CssLengthPercentageValue::Percentage(value) => {
+            writer.write_str(value.number())?;
+            writer.write_char('%')
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -195,7 +288,7 @@ struct PreservedCascadeSpecifiedValue {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CascadeDeclarationInput {
     source: CascadeDeclarationSource,
-    declaration_order: u32,
+    declaration_order: DeclarationOrder,
     importance: CascadeImportance,
     property: CascadeDeclarationProperty,
     value: CascadeSpecifiedValue,
@@ -207,7 +300,7 @@ pub struct CascadeDeclarationInput {
 impl CascadeDeclarationInput {
     pub fn supported(
         source: CascadeDeclarationSource,
-        declaration_order: u32,
+        declaration_order: impl Into<DeclarationOrder>,
         importance: CascadeImportance,
         property: CascadePropertyId,
         value: CascadeSpecifiedValue,
@@ -224,12 +317,13 @@ impl CascadeDeclarationInput {
 
     pub fn supported_with_expansion_order(
         source: CascadeDeclarationSource,
-        declaration_order: u32,
+        declaration_order: impl Into<DeclarationOrder>,
         expansion_order: u16,
         importance: CascadeImportance,
         property: CascadePropertyId,
         value: CascadeSpecifiedValue,
     ) -> Self {
+        let declaration_order = declaration_order.into();
         assert_eq!(
             value.property(),
             Some(property),
@@ -250,12 +344,13 @@ impl CascadeDeclarationInput {
 
     pub fn invalid_value(
         source: CascadeDeclarationSource,
-        declaration_order: u32,
+        declaration_order: impl Into<DeclarationOrder>,
         importance: CascadeImportance,
         property: CascadePropertyId,
         error: SpecifiedValueParseError,
         value: CascadeSpecifiedValue,
     ) -> Self {
+        let declaration_order = declaration_order.into();
         assert_eq!(
             error.property(),
             property,
@@ -280,12 +375,13 @@ impl CascadeDeclarationInput {
 
     pub fn invalid_shorthand_value(
         source: CascadeDeclarationSource,
-        declaration_order: u32,
+        declaration_order: impl Into<DeclarationOrder>,
         importance: CascadeImportance,
         shorthand: ShorthandId,
         error: ShorthandExpansionError,
         value: CascadeSpecifiedValue,
     ) -> Self {
+        let declaration_order = declaration_order.into();
         assert_eq!(
             error.shorthand(),
             shorthand,
@@ -310,11 +406,12 @@ impl CascadeDeclarationInput {
 
     pub fn unsupported_property(
         source: CascadeDeclarationSource,
-        declaration_order: u32,
+        declaration_order: impl Into<DeclarationOrder>,
         importance: CascadeImportance,
         property_name: impl Into<String>,
         value: CascadeSpecifiedValue,
     ) -> Self {
+        let declaration_order = declaration_order.into();
         assert_preserved_filtered_value("unsupported-property", &value);
         Self {
             source,
@@ -330,11 +427,12 @@ impl CascadeDeclarationInput {
 
     pub fn custom_property(
         source: CascadeDeclarationSource,
-        declaration_order: u32,
+        declaration_order: impl Into<DeclarationOrder>,
         importance: CascadeImportance,
         property_name: impl Into<String>,
         value: CascadeSpecifiedValue,
     ) -> Self {
+        let declaration_order = declaration_order.into();
         assert_preserved_filtered_value("custom-property", &value);
         Self {
             source,
@@ -350,10 +448,11 @@ impl CascadeDeclarationInput {
 
     pub fn invalid_property_name(
         source: CascadeDeclarationSource,
-        declaration_order: u32,
+        declaration_order: impl Into<DeclarationOrder>,
         importance: CascadeImportance,
         value: CascadeSpecifiedValue,
     ) -> Self {
+        let declaration_order = declaration_order.into();
         assert_preserved_filtered_value("invalid-property-name", &value);
         Self {
             source,
@@ -371,7 +470,7 @@ impl CascadeDeclarationInput {
         self.source
     }
 
-    pub fn declaration_order(&self) -> u32 {
+    pub fn declaration_order(&self) -> DeclarationOrder {
         self.declaration_order
     }
 

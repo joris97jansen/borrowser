@@ -12,7 +12,7 @@ fn resolved_document_style_debug_snapshot_is_stable() {
     assert_eq!(
         resolved.to_debug_snapshot(),
         concat!(
-            "version: 1\n",
+            "version: 2\n",
             "resolved-document-style\n",
             "element[0]: selector-id=1 namespace=html name=\"div\"\n",
             "  resolved-style\n",
@@ -29,7 +29,7 @@ fn resolved_document_style_debug_snapshot_is_stable() {
             "    border-top-color: initial(transparent)\n",
             "    border-top-style: initial(none)\n",
             "    border-top-width: initial(0px)\n",
-            "    color: winner(source=stylesheet[0/0]/declaration[0], band=author-normal, specificity=selector(0,0,1), rule-order=0, declaration-order=0, value=\"red\")\n",
+            "    color: winner(source=stylesheet[2/0]/declaration[0], band=author-normal, specificity=selector(0,0,1), source-order=stylesheet[0/0], declaration-order=0, value=\"red\")\n",
             "    display: initial(inline)\n",
             "    font-size: initial(16px)\n",
             "    height: initial(auto)\n",
@@ -70,20 +70,20 @@ fn document_style_resolution_debug_snapshot_covers_override_inheritance_and_defa
         resolve_document_styles_debug_snapshot(&dom, matching_environment(), &stylesheets)
             .expect("document style debug snapshot"),
         concat!(
-            "version: 2\n",
+            "version: 3\n",
             "document-style-resolution\n",
             "matching-environment: document-mode=no-quirks\n",
             "element[0]: selector-id=1 namespace=html name=\"section\"\n",
             "  cascade-evaluation\n",
             "  rule-inputs: 1\n",
-            "    rule-input[0]: source=stylesheet[0/0] origin=author specificity=selector(0,0,1) rule-order=0 declarations=1\n",
-            "      declaration[0]: source=stylesheet[0/0]/declaration[0] declaration-order=0 importance=normal property=supported(color) applicability=supported(color) value=\"red\"\n",
+            "    rule-input[0]: source=stylesheet[2/0] origin=author specificity=selector(0,0,1) source-order=stylesheet[0/0] declarations=1\n",
+            "      declaration[0]: source=stylesheet[2/0]/declaration[0] declaration-order=0 importance=normal property=supported(color) applicability=supported(color) value=\"red\"\n",
             "  candidates-source-order: 1\n",
-            "    candidate[0]: property=color source=stylesheet[0/0]/declaration[0] band=author-normal specificity=selector(0,0,1) rule-order=0 declaration-order=0 value=\"red\"\n",
+            "    candidate[0]: property=color source=stylesheet[2/0]/declaration[0] band=author-normal specificity=selector(0,0,1) source-order=stylesheet[0/0] declaration-order=0 value=\"red\"\n",
             "  candidates-cascade-order: 1\n",
-            "    candidate[0]: property=color source=stylesheet[0/0]/declaration[0] band=author-normal specificity=selector(0,0,1) rule-order=0 declaration-order=0 value=\"red\"\n",
+            "    candidate[0]: property=color source=stylesheet[2/0]/declaration[0] band=author-normal specificity=selector(0,0,1) source-order=stylesheet[0/0] declaration-order=0 value=\"red\"\n",
             "  winners: 1\n",
-            "    color: winner(source=stylesheet[0/0]/declaration[0], band=author-normal, specificity=selector(0,0,1), rule-order=0, declaration-order=0, value=\"red\")\n",
+            "    color: winner(source=stylesheet[2/0]/declaration[0], band=author-normal, specificity=selector(0,0,1), source-order=stylesheet[0/0], declaration-order=0, value=\"red\")\n",
             "  resolved-style\n",
             "    background-color: initial(transparent)\n",
             "    border-bottom-color: initial(transparent)\n",
@@ -98,7 +98,7 @@ fn document_style_resolution_debug_snapshot_covers_override_inheritance_and_defa
             "    border-top-color: initial(transparent)\n",
             "    border-top-style: initial(none)\n",
             "    border-top-width: initial(0px)\n",
-            "    color: winner(source=stylesheet[0/0]/declaration[0], band=author-normal, specificity=selector(0,0,1), rule-order=0, declaration-order=0, value=\"red\")\n",
+            "    color: winner(source=stylesheet[2/0]/declaration[0], band=author-normal, specificity=selector(0,0,1), source-order=stylesheet[0/0], declaration-order=0, value=\"red\")\n",
             "    display: initial(inline)\n",
             "    font-size: initial(16px)\n",
             "    height: initial(auto)\n",
@@ -123,18 +123,18 @@ fn document_style_resolution_debug_snapshot_covers_override_inheritance_and_defa
             "element[1]: selector-id=2 namespace=html name=\"div\"\n",
             "  cascade-evaluation\n",
             "  rule-inputs: 2\n",
-            "    rule-input[0]: source=stylesheet[0/1] origin=author specificity=selector(0,0,1) rule-order=1 declarations=1\n",
-            "      declaration[0]: source=stylesheet[0/1]/declaration[0] declaration-order=0 importance=normal property=supported(color) applicability=supported(color) value=\"green\"\n",
-            "    rule-input[1]: source=stylesheet[0/2] origin=author specificity=selector(0,1,0) rule-order=2 declarations=1\n",
-            "      declaration[0]: source=stylesheet[0/2]/declaration[0] declaration-order=0 importance=important property=supported(color) applicability=supported(color) value=\"blue\"\n",
+            "    rule-input[0]: source=stylesheet[2/1] origin=author specificity=selector(0,0,1) source-order=stylesheet[0/1] declarations=1\n",
+            "      declaration[0]: source=stylesheet[2/1]/declaration[0] declaration-order=0 importance=normal property=supported(color) applicability=supported(color) value=\"green\"\n",
+            "    rule-input[1]: source=stylesheet[2/2] origin=author specificity=selector(0,1,0) source-order=stylesheet[0/2] declarations=1\n",
+            "      declaration[0]: source=stylesheet[2/2]/declaration[0] declaration-order=0 importance=important property=supported(color) applicability=supported(color) value=\"blue\"\n",
             "  candidates-source-order: 2\n",
-            "    candidate[0]: property=color source=stylesheet[0/1]/declaration[0] band=author-normal specificity=selector(0,0,1) rule-order=1 declaration-order=0 value=\"green\"\n",
-            "    candidate[1]: property=color source=stylesheet[0/2]/declaration[0] band=author-important specificity=selector(0,1,0) rule-order=2 declaration-order=0 value=\"blue\"\n",
+            "    candidate[0]: property=color source=stylesheet[2/1]/declaration[0] band=author-normal specificity=selector(0,0,1) source-order=stylesheet[0/1] declaration-order=0 value=\"green\"\n",
+            "    candidate[1]: property=color source=stylesheet[2/2]/declaration[0] band=author-important specificity=selector(0,1,0) source-order=stylesheet[0/2] declaration-order=0 value=\"blue\"\n",
             "  candidates-cascade-order: 2\n",
-            "    candidate[0]: property=color source=stylesheet[0/1]/declaration[0] band=author-normal specificity=selector(0,0,1) rule-order=1 declaration-order=0 value=\"green\"\n",
-            "    candidate[1]: property=color source=stylesheet[0/2]/declaration[0] band=author-important specificity=selector(0,1,0) rule-order=2 declaration-order=0 value=\"blue\"\n",
+            "    candidate[0]: property=color source=stylesheet[2/1]/declaration[0] band=author-normal specificity=selector(0,0,1) source-order=stylesheet[0/1] declaration-order=0 value=\"green\"\n",
+            "    candidate[1]: property=color source=stylesheet[2/2]/declaration[0] band=author-important specificity=selector(0,1,0) source-order=stylesheet[0/2] declaration-order=0 value=\"blue\"\n",
             "  winners: 1\n",
-            "    color: winner(source=stylesheet[0/2]/declaration[0], band=author-important, specificity=selector(0,1,0), rule-order=2, declaration-order=0, value=\"blue\")\n",
+            "    color: winner(source=stylesheet[2/2]/declaration[0], band=author-important, specificity=selector(0,1,0), source-order=stylesheet[0/2], declaration-order=0, value=\"blue\")\n",
             "  resolved-style\n",
             "    background-color: initial(transparent)\n",
             "    border-bottom-color: initial(transparent)\n",
@@ -149,7 +149,7 @@ fn document_style_resolution_debug_snapshot_covers_override_inheritance_and_defa
             "    border-top-color: initial(transparent)\n",
             "    border-top-style: initial(none)\n",
             "    border-top-width: initial(0px)\n",
-            "    color: winner(source=stylesheet[0/2]/declaration[0], band=author-important, specificity=selector(0,1,0), rule-order=2, declaration-order=0, value=\"blue\")\n",
+            "    color: winner(source=stylesheet[2/2]/declaration[0], band=author-important, specificity=selector(0,1,0), source-order=stylesheet[0/2], declaration-order=0, value=\"blue\")\n",
             "    display: initial(inline)\n",
             "    font-size: inherited\n",
             "    height: initial(auto)\n",
@@ -207,25 +207,25 @@ fn document_style_resolution_debug_snapshot_shows_outline_shorthand_expansion_or
 
     assert!(
         snapshot.contains(
-            "rule-input[0]: source=stylesheet[0/0] origin=author specificity=selector(0,0,1) rule-order=0 declarations=3"
+            "rule-input[0]: source=stylesheet[2/0] origin=author specificity=selector(0,0,1) source-order=stylesheet[0/0] declarations=3"
         ),
         "{snapshot}"
     );
     assert!(
         snapshot.contains(
-            "declaration[0]: source=stylesheet[0/0]/declaration[0] declaration-order=0 importance=normal property=supported(outline-color) applicability=supported(outline-color) value=\"red\""
+            "declaration[0]: source=stylesheet[2/0]/declaration[0] declaration-order=0 importance=normal property=supported(outline-color) applicability=supported(outline-color) value=\"red\""
         ),
         "{snapshot}"
     );
     assert!(
         snapshot.contains(
-            "declaration[1]: source=stylesheet[0/0]/declaration[0] declaration-order=0 expansion-order=1 importance=normal property=supported(outline-style) applicability=supported(outline-style) value=\"solid\""
+            "declaration[1]: source=stylesheet[2/0]/declaration[0] declaration-order=0 expansion-order=1 importance=normal property=supported(outline-style) applicability=supported(outline-style) value=\"solid\""
         ),
         "{snapshot}"
     );
     assert!(
         snapshot.contains(
-            "declaration[2]: source=stylesheet[0/0]/declaration[0] declaration-order=0 expansion-order=2 importance=normal property=supported(outline-width) applicability=supported(outline-width) value=\"2px\""
+            "declaration[2]: source=stylesheet[2/0]/declaration[0] declaration-order=0 expansion-order=2 importance=normal property=supported(outline-width) applicability=supported(outline-width) value=\"2px\""
         ),
         "{snapshot}"
     );

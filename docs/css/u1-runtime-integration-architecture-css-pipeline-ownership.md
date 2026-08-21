@@ -94,6 +94,19 @@ browser/page state owns stylesheet attachment order and lifetime.
 
 ## Stylesheet Ordering Contract
 
+AF5 narrows the runtime handoff to currently supported discovered and available
+parsed stylesheet input.
+Browser supplies an opaque CSS `StylesheetSourceId`, sparse `StylesheetOrder`,
+origin/namespace facts, the borrowed parse, and optional exact raw media text.
+Pending, failed, and aborted slots remain Browser-owned and create holes rather
+than compacting active inputs. The built-in UA parse and loaded slot parses are
+borrowed directly; Browser no longer clones a compact cascade stylesheet list.
+Browser and compatibility stylesheet-input-list identity, coordinate, and
+reservation failures use `StylesheetCollectionInputBuildError`. CSS
+`RuleCollectionBuildError` begins only after that handoff, while constructing
+the collection's own stylesheet/rule/declaration arenas; per-element matching
+and inline preparation remain later style-execution boundaries.
+
 Stylesheet cascade order is document/source order, not network completion order
 or decoded-block arrival order.
 

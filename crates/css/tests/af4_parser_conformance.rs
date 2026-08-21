@@ -3,7 +3,8 @@ use css::{
     DocumentSelectorMatchingDiagnosticLimits, InvalidSelectorReason, ParseOptions, Rule,
     SelectorDomElementId, SelectorDomIndex, SelectorListMatchOutcome, SelectorMatchDom,
     SelectorMatchability, SelectorMatchingContext, SelectorMatchingEnvironment,
-    SelectorMatchingLimitError, SelectorMatchingLimits, StylesheetCascadeInput,
+    SelectorMatchingLimitError, SelectorMatchingLimits, StylesheetCollectionInput,
+    StylesheetConditionInput, StylesheetOrder, StylesheetSourceId,
     document_selector_matching_diagnostic, parse_stylesheet_with_options,
 };
 use html::{
@@ -339,7 +340,12 @@ fn unsupported_malformed_parser_limit_and_matcher_limit_remain_distinct() {
     let diagnostic = document_selector_matching_diagnostic(
         &parsed.document,
         environment,
-        &[StylesheetCascadeInput::author(&stylesheet)],
+        &[StylesheetCollectionInput::author(
+            StylesheetSourceId::compatibility_generation_index(0),
+            StylesheetOrder::new(0),
+            &stylesheet,
+            StylesheetConditionInput::None,
+        )],
         DocumentSelectorMatchingDiagnosticLimits {
             selector_matching: SelectorMatchingLimits {
                 max_axis_steps_per_match: 0,

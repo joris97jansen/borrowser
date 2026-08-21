@@ -3,7 +3,10 @@ use super::support::{
     current_element_color_by_id, find_styled_node_id, initial_patch_document,
     no_quirks_patch_publication, two_paragraph_patch_document,
 };
-use crate::page::StyleRecalcKind;
+use crate::page::{
+    StyleRecalcKind, reset_rule_collection_build_count, rule_collection_build_count,
+    style_execution_build_count,
+};
 use crate::rendering::RetainedStyleArtifactAction;
 use bus::CoreEvent;
 use core_types::{DomHandle, DomVersion};
@@ -30,6 +33,7 @@ fn attribute_mutation_without_existing_style_cache_falls_back_to_full_recompute(
 
     assert_eq!(current_element_color_by_id(&mut tab, Id(7)), (0, 0, 0, 255));
     tab.page.clear_style_cache_for_tests();
+    reset_rule_collection_build_count();
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
@@ -61,6 +65,16 @@ fn attribute_mutation_without_existing_style_cache_falls_back_to_full_recompute(
             .last_action,
         RetainedStyleArtifactAction::FallbackFullRecompute,
         "CSS suffix eligibility must remain distinguishable from the runtime full fallback"
+    );
+    assert_eq!(
+        rule_collection_build_count(),
+        1,
+        "incremental-unavailable execution and full fallback share one collection"
+    );
+    assert_eq!(
+        style_execution_build_count(),
+        1,
+        "incremental-unavailable execution and full fallback share one selector DOM"
     );
 }
 

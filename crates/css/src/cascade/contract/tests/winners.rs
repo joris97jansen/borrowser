@@ -18,7 +18,7 @@ fn cascade_candidate_sort_key_is_property_first_then_priority() {
         4,
     );
     let inline_style = InlineStyleRuleRef::new(3);
-    let inline_rule = CascadeRuleContext::for_inline_style(0);
+    let inline_rule = CascadeRuleContext::for_inline_style();
 
     let mut candidates = vec![
         CascadeDeclarationInput::supported(
@@ -74,7 +74,7 @@ fn cascade_candidate_sort_key_is_property_first_then_priority() {
 }
 
 #[test]
-fn cascade_candidate_sorting_preserves_incoming_order_for_equal_keys() {
+fn cascade_candidate_sorting_only_preserves_incoming_order_for_exact_duplicate_priorities() {
     let context = CascadeRuleContext::new(
         CascadeOrigin::Author,
         CascadeSpecificity::Selector(Specificity::B),
@@ -141,10 +141,10 @@ fn cascade_winner_resolution_prefers_higher_specificity_over_later_rule_order() 
 
     assert_eq!(winner.value.to_css_text().as_deref(), Some("red"));
     assert_eq!(
-        winner.priority.specificity,
+        winner.priority.specificity(),
         CascadeSpecificity::Selector(Specificity::B)
     );
-    assert_eq!(winner.priority.rule_order, 0);
+    assert_eq!(winner.priority.source_order(), 0u32.into());
 }
 
 #[test]
@@ -312,7 +312,7 @@ fn cascade_winner_resolution_prefers_later_rule_order_when_specificity_ties() {
     let winner = winners.get(CascadePropertyId::Color).expect("color winner");
 
     assert_eq!(winner.value.to_css_text().as_deref(), Some("blue"));
-    assert_eq!(winner.priority.rule_order, 1);
+    assert_eq!(winner.priority.source_order(), 1u32.into());
 }
 
 #[test]
@@ -345,7 +345,7 @@ fn cascade_winner_resolution_prefers_later_declaration_order_within_one_rule() {
     let winner = winners.get(CascadePropertyId::Color).expect("color winner");
 
     assert_eq!(winner.value.to_css_text().as_deref(), Some("blue"));
-    assert_eq!(winner.priority.declaration_order, 1);
+    assert_eq!(winner.priority.declaration_order(), 1);
 }
 
 #[test]
@@ -387,7 +387,7 @@ fn cascade_winner_resolution_orders_css_wide_keywords_like_other_supported_value
             .as_css_keyword(),
         "initial"
     );
-    assert_eq!(winner.priority.declaration_order, 1);
+    assert_eq!(winner.priority.declaration_order(), 1);
 }
 
 #[test]
@@ -505,7 +505,7 @@ fn cascade_winner_set_is_property_sorted_and_snapshot_stable() {
             CascadePropertyId::Color,
             parsed_value("color: blue"),
         )
-        .candidate(CascadeRuleContext::for_inline_style(0))
+        .candidate(CascadeRuleContext::for_inline_style())
         .expect("supported candidate"),
     ]);
 
@@ -514,10 +514,10 @@ fn cascade_winner_set_is_property_sorted_and_snapshot_stable() {
     assert_eq!(
         winners.to_debug_snapshot(),
         concat!(
-            "version: 1\n",
+            "version: 2\n",
             "cascade-winners\n",
-            "  color: winner(source=inline-style[15]/declaration[0], band=author-normal, specificity=inline-style, rule-order=0, declaration-order=0, value=\"blue\")\n",
-            "  width: winner(source=stylesheet[0/0]/declaration[0], band=author-normal, specificity=selector(0,0,1), rule-order=0, declaration-order=0, value=\"10px\")\n",
+            "  color: winner(source=inline-style[compatibility=15]/declaration[0], band=author-normal, specificity=inline-style, source-order=inline-style, declaration-order=0, value=\"blue\")\n",
+            "  width: winner(source=stylesheet[2/0]/declaration[0], band=author-normal, specificity=selector(0,0,1), source-order=stylesheet[0/0], declaration-order=0, value=\"10px\")\n",
         )
     );
 }

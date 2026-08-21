@@ -8,6 +8,10 @@ mod stylesheets;
 pub(crate) use dom_mutation::{DomMutationFacts, PendingDomMutationFacts};
 #[cfg(test)]
 pub(crate) use style_cache::{PageStyleGenerations, StyleRecalcKind};
+#[cfg(test)]
+pub(crate) use style_cache::{
+    reset_rule_collection_build_count, rule_collection_build_count, style_execution_build_count,
+};
 #[allow(unused_imports)]
 pub(crate) use stylesheets::PageStylesheetReconcile;
 

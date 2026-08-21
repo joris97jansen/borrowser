@@ -1,9 +1,18 @@
 use super::support::*;
 use super::*;
 use crate::{
-    ComputedDocumentStyleInvalidationImpact, SelectorDomBuildError, StyleResolutionError,
-    StyleResolutionLimit, StyleResolutionLimits,
+    ComputedDocumentStyleInvalidationImpact, RuleCollectionBuildError, SelectorDomBuildError,
+    StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits,
 };
+
+fn author_input(stylesheet: &crate::StylesheetParse) -> StylesheetCollectionInput<'_> {
+    StylesheetCollectionInput::author(
+        crate::StylesheetSourceId::compatibility_generation_index(0),
+        crate::StylesheetOrder::new(0),
+        stylesheet,
+        crate::StylesheetConditionInput::None,
+    )
+}
 
 fn materialize_element_ids(mut dom: Node) -> Node {
     fn assign(node: &mut Node, next_id: &mut u32) {
@@ -156,7 +165,7 @@ fn incremental_style_reuse_rejects_a_different_matching_environment() {
     let no_quirks = crate::SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks);
     let quirks = crate::SelectorMatchingEnvironment::new(html::DocumentMode::Quirks);
     let stylesheets = vec![stylesheet("div { color: red; }")];
-    let inputs = [StylesheetCascadeInput::author(&stylesheets[0])];
+    let inputs = [author_input(&stylesheets[0])];
     let resolved = resolve_document_styles_with_environment(&dom, no_quirks, &stylesheets)
         .expect("initial resolved style");
     let computed = compute_document_styles_from_resolved_styles(&dom, &resolved)
@@ -286,7 +295,7 @@ fn plan_execution_reports_incremental_computed_for_a_valid_suffix() {
         vec![element("span", Vec::new(), Vec::new())],
     ));
     let stylesheets = vec![stylesheet(".hot { color: red; }")];
-    let inputs = [StylesheetCascadeInput::author(&stylesheets[0])];
+    let inputs = [author_input(&stylesheets[0])];
     let resolved =
         resolve_document_styles(&initial_dom, &stylesheets).expect("initial resolved styles");
     let initial_computed =
@@ -336,7 +345,7 @@ fn plan_aware_suffix_recomputes_following_sibling_selector_effects() {
         ],
     ));
     let stylesheets = vec![stylesheet(".on + p { color: red; }")];
-    let inputs = [StylesheetCascadeInput::author(&stylesheets[0])];
+    let inputs = [author_input(&stylesheets[0])];
     let resolved =
         resolve_document_styles(&initial_dom, &stylesheets).expect("initial resolved styles");
     let initial_computed =
@@ -374,7 +383,7 @@ fn plan_aware_suffix_recomputes_inherited_descendant_effects() {
         vec![element("span", Vec::new(), Vec::new())],
     ));
     let stylesheets = vec![stylesheet(".on { color: red; }")];
-    let inputs = [StylesheetCascadeInput::author(&stylesheets[0])];
+    let inputs = [author_input(&stylesheets[0])];
     let resolved =
         resolve_document_styles(&initial_dom, &stylesheets).expect("initial resolved styles");
     let initial_computed =
@@ -412,7 +421,7 @@ fn plan_aware_suffix_recomputes_descendant_selector_effects() {
         vec![element("span", Vec::new(), Vec::new())],
     ));
     let stylesheets = vec![stylesheet(".hot span { color: red; }")];
-    let inputs = [StylesheetCascadeInput::author(&stylesheets[0])];
+    let inputs = [author_input(&stylesheets[0])];
     let resolved =
         resolve_document_styles(&initial_dom, &stylesheets).expect("initial resolved styles");
     let initial_computed =
@@ -633,7 +642,7 @@ fn compute_document_styles_propagates_style_resolution_limits() {
     let stylesheets = vec![stylesheet("div { color: red; }")];
     let dom = document_element("div", Vec::new(), Vec::new());
     let limits = StyleResolutionLimits {
-        max_style_rules_per_document: 0,
+        max_top_level_rules_per_document: 0,
         ..StyleResolutionLimits::default()
     };
 
@@ -642,10 +651,13 @@ fn compute_document_styles_propagates_style_resolution_limits() {
 
     assert_eq!(
         error,
-        ComputedStyleResolutionError::StyleResolution(StyleResolutionError::LimitExceeded {
-            limit: StyleResolutionLimit::StyleRulesPerDocument,
-            configured: 0,
-        })
+        ComputedStyleResolutionError::StyleResolution(StyleResolutionError::RuleCollectionBuild(
+            RuleCollectionBuildError::LimitExceeded {
+                limit: StyleResolutionLimit::TopLevelRulesPerDocument,
+                configured: 0,
+                observed: 1,
+            }
+        ))
     );
 }
 

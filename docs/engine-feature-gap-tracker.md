@@ -115,6 +115,23 @@ Architecture and foundation status:
 
 Milestone AF foundation status:
 
+- AF5 implements one fallible immutable CSS-owned rule collection per style
+  execution; see
+  `docs/css/af5-stylesheet-rule-collection-source-order-contract.md`.
+  Browser now supplies currently supported discovered and available parsed
+  stylesheet input with opaque source IDs and sparse document order, while CSS
+  preclassifies active stylesheet
+  declarations once, retains typed inactive/skipped rules, borrows declarations
+  for matched elements, and preserves the exact AF4 match outcome. The opaque
+  pre-winner diagnostic includes bounded declaration property/value state and
+  stable error labels. Media is metadata rather than slot identity, so a
+  media-only change preserves the current loaded source while invalidating
+  style. Non-empty
+  stylesheet `media` attributes and internal conditional at-rules currently
+  fail closed. Real media queries remain AQ work; complete HTML stylesheet-set
+  processing remains AJ work; final AF cascade/computed-style closure remains
+  subsequent AF scope.
+
 - AF1 defines the CSS-owned selector, cascade, computed-style, and style-input
   invalidation architecture contract; see
   `docs/css/af1-selector-cascade-computed-style-architecture-contract.md`.

@@ -82,6 +82,17 @@ layout, or paint behavior must use `ComputedStyle` or `StyledNode`.
 
 ## Stylesheet Attachment Contract
 
+AF5 adds a distinct CSS-facing identity/order handoff. `StylesheetSlotId`
+remains Browser attachment identity; `StylesheetSourceId` is CSS provenance;
+neither is cascade order. Raw `media` attribute text is slot metadata rather
+than slot identity. A media-only change preserves the current slot/source ID
+and loaded parse, changes stylesheet-set state without refetching, and Browser
+does not parse it. CSS currently fails closed for every non-whitespace media
+value. The ID stability claim is limited to current source-key reconciliation
+within one Browser stylesheet generation; AJ owns source-node and broader
+attachment identity. Broader HTML stylesheet-set
+eligibility remains AJ work and real media evaluation remains AQ work.
+
 Stylesheets are attached through `DocumentStyleSet`.
 
 The active document owns an ordered list of stylesheet slots:
@@ -89,7 +100,8 @@ The active document owns an ordered list of stylesheet slots:
 ```text
 StylesheetSlot {
   id: StylesheetSlotId,
-  key: Inline(text) | External(resolved_url),
+  source: Inline(text) | External(resolved_url),
+  media: optional exact raw attribute text,
   state: Pending | Loaded(StylesheetParse) | Failed | Aborted,
 }
 ```

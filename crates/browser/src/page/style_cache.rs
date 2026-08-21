@@ -1,14 +1,60 @@
 use css::{
     ComputedDocumentStyle, ComputedStyleResolutionError, ComputedStyleReuseStats,
-    ResolvedDocumentStyle, SelectorMatchingEnvironment, StyleInvalidationPlan, StylePlanExecution,
-    StyleResolutionLimits, StylesheetCascadeInput,
-    compute_document_styles_from_resolved_styles_with_reuse_stats,
-    resolve_document_styles_from_cascade_inputs,
-    try_compute_document_styles_for_invalidation_plan_with_limits,
+    ResolvedDocumentStyle, RuleCollection, SelectorMatchingEnvironment, StyleInvalidationPlan,
+    StylePlanExecution, StyleResolutionError, StyleResolutionExecution, StyleResolutionLimits,
+    StylesheetCollectionInput, compute_document_styles_from_resolved_styles_with_reuse_stats,
+    try_compute_document_styles_for_invalidation_plan_from_execution_with_limits,
 };
 use html::Node;
 
 use crate::rendering::RetainedStyleArtifactKey;
+
+#[cfg(test)]
+thread_local! {
+    static RULE_COLLECTION_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static STYLE_EXECUTION_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_rule_collection_build_count() {
+    RULE_COLLECTION_BUILDS.set(0);
+    STYLE_EXECUTION_BUILDS.set(0);
+}
+
+#[cfg(test)]
+pub(crate) fn rule_collection_build_count() -> usize {
+    RULE_COLLECTION_BUILDS.get()
+}
+
+#[cfg(test)]
+pub(crate) fn style_execution_build_count() -> usize {
+    STYLE_EXECUTION_BUILDS.get()
+}
+
+fn build_rule_collection<'source>(
+    sheets: &[StylesheetCollectionInput<'source>],
+    limits: &StyleResolutionLimits,
+) -> Result<RuleCollection<'source>, ComputedStyleResolutionError> {
+    #[cfg(test)]
+    RULE_COLLECTION_BUILDS.with(|count| count.set(count.get() + 1));
+    RuleCollection::try_new(sheets, limits).map_err(|error| {
+        ComputedStyleResolutionError::StyleResolution(StyleResolutionError::RuleCollectionBuild(
+            error,
+        ))
+    })
+}
+
+fn build_style_execution<'dom, 'collection, 'source>(
+    dom: &'dom Node,
+    environment: SelectorMatchingEnvironment,
+    collection: &'collection RuleCollection<'source>,
+    limits: &StyleResolutionLimits,
+) -> Result<StyleResolutionExecution<'dom, 'collection, 'source>, ComputedStyleResolutionError> {
+    #[cfg(test)]
+    STYLE_EXECUTION_BUILDS.with(|count| count.set(count.get() + 1));
+    StyleResolutionExecution::try_new(dom, environment, collection, limits)
+        .map_err(ComputedStyleResolutionError::StyleResolution)
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct PageStyleGenerations {
@@ -56,13 +102,15 @@ pub(super) struct StyleRecomputeState<'a> {
 pub(super) fn recompute_styles(
     dom: &Node,
     environment: SelectorMatchingEnvironment,
-    sheets: &[StylesheetCascadeInput<'_>],
+    sheets: &[StylesheetCollectionInput<'_>],
     generations: PageStyleGenerations,
     key: RetainedStyleArtifactKey,
     pending: Option<&StyleInvalidationPlan>,
     state: StyleRecomputeState<'_>,
 ) -> Result<(), ComputedStyleResolutionError> {
     let limits = StyleResolutionLimits::default();
+    let collection = build_rule_collection(sheets, &limits)?;
+    let style_execution = build_style_execution(dom, environment, &collection, &limits)?;
     let execution = pending
         .map(|plan| {
             let previous = state
@@ -70,13 +118,10 @@ pub(super) fn recompute_styles(
                 .as_ref()
                 .filter(|cache| cache.key.stylesheet_generation == generations.stylesheets)
                 .map(|cache| (&cache.resolved, &cache.computed));
-            try_compute_document_styles_for_invalidation_plan_with_limits(
+            try_compute_document_styles_for_invalidation_plan_from_execution_with_limits(
                 plan,
-                dom,
-                environment,
-                sheets,
+                &style_execution,
                 previous,
-                &limits,
             )
         })
         .transpose()?;
@@ -99,7 +144,8 @@ pub(super) fn recompute_styles(
         return Ok(());
     }
 
-    let resolved = resolve_document_styles_from_cascade_inputs(dom, environment, sheets)
+    let resolved = style_execution
+        .resolve_document_styles()
         .map_err(ComputedStyleResolutionError::StyleResolution)?;
     let computed = compute_document_styles_from_resolved_styles_with_reuse_stats(dom, &resolved)?;
     let elements = computed.computed.entries().len();

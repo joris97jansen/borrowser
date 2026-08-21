@@ -189,10 +189,32 @@ pub fn run_seeded_cascade_fuzz_case(
                 digest,
             });
         }
+        Err(StyleResolutionError::RuleCollectionBuild(
+            crate::cascade::RuleCollectionBuildError::LimitExceeded { configured, .. },
+        )) => {
+            digest = mix_usize(digest, configured);
+            return Ok(CssCascadeFuzzSummary {
+                seed: config.seed,
+                termination: CssCascadeFuzzTermination::StyleResolutionLimitExceeded,
+                input_bytes: bytes.len(),
+                decoded_bytes: decoded.len(),
+                stylesheet_cases_observed: observed_stylesheets,
+                resolved_elements_observed: 0,
+                computed_elements_observed: 0,
+                digest,
+            });
+        }
         Err(error @ StyleResolutionError::SelectorDomBuild(_))
         | Err(error @ StyleResolutionError::MatchingEnvironmentMismatch { .. })
         | Err(error @ StyleResolutionError::UnsupportedConfiguration { .. })
-        | Err(error @ StyleResolutionError::RuleInputBuild(_)) => {
+        | Err(error @ StyleResolutionError::RuleInputBuild(_))
+        | Err(error @ StyleResolutionError::StylesheetInputBuild(_))
+        | Err(error @ StyleResolutionError::SourceCoordinate(_)) => {
+            return Err(CssCascadeFuzzError::StyleResolutionInvariant {
+                detail: error.to_string(),
+            });
+        }
+        Err(error @ StyleResolutionError::RuleCollectionBuild(_)) => {
             return Err(CssCascadeFuzzError::StyleResolutionInvariant {
                 detail: error.to_string(),
             });

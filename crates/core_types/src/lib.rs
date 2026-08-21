@@ -1,10 +1,13 @@
 pub type TabId = u64;
 pub type RequestId = u64;
 
-/// Page-owned identity for a stylesheet's position in the document style set.
+/// Browser-owned identity for one currently tracked stylesheet slot.
 ///
-/// This is deliberately distinct from URL or cache identity: two stylesheet
-/// links with the same URL still occupy two cascade-order slots.
+/// This is distinct from URL, resource-cache identity, and CSS cascade order.
+/// Two discovered stylesheets with the same URL occupy distinct slots. The
+/// current Browser reconciliation keeps an ID while the same supported source
+/// remains in its reconciled slot, including media-only metadata changes; AJ
+/// owns broader DOM source-node and attachment-lifetime identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct StylesheetSlotId(pub u64);
 

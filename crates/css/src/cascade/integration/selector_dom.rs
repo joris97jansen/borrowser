@@ -10,14 +10,6 @@ pub(super) fn build_document_selector_dom_with_element_limit<'dom>(
         .map_err(map_bounded_construction_error)
 }
 
-pub(super) fn preflight_document_selector_dom_with_element_limit(
-    root: &Node,
-    maximum_elements: usize,
-) -> Result<(), StyleResolutionError> {
-    SelectorDomIndex::preflight_document_with_element_limit(root, maximum_elements)
-        .map_err(map_bounded_construction_error)
-}
-
 pub(super) fn build_element_subtree_selector_dom_with_element_limit<'dom>(
     root: &'dom ElementNode,
     maximum_elements: usize,

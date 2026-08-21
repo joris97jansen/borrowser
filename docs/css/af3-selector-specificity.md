@@ -30,6 +30,11 @@ selector parse
   -> cascade winner resolution
 ```
 
+AF5 retains the exact `SelectorListMatchOutcome` on the borrowed matched-rule
+input. The collection/cascade handoff derives effective specificity from that
+same outcome; diagnostics do not rematch and cascade does not reconstruct
+specificity from selector text.
+
 Cascade consumes selector-produced specificity. It does not reconstruct
 specificity from selector structure, source text, declaration order, or parser
 vector ordering. Browser/runtime, Layout, and Paint do not own or fabricate
