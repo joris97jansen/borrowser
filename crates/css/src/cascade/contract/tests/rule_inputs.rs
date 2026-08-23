@@ -5,7 +5,7 @@ use super::super::{
 };
 use super::support::{
     inline_declaration_source, matched_rule, parse_error, parsed_value, preserved_value,
-    stylesheet_declaration_source,
+    resolve_rule_inputs, stylesheet_declaration_source,
 };
 
 #[test]
@@ -82,28 +82,12 @@ fn cascade_rule_input_materializes_supported_candidates_with_explicit_priority()
     .expect("valid matched stylesheet rule")
     .expect("matched rule contributes");
 
-    let candidates = rule.candidates();
     let context = rule.context();
     assert_eq!(rule.source(), source);
     assert_eq!(rule.context(), context);
     assert_eq!(rule.declarations().len(), 2);
-    assert_eq!(candidates.len(), 2);
-    assert_eq!(candidates[0].property(), CascadePropertyId::Color);
-    assert_eq!(
-        candidates[0].source(),
-        stylesheet_declaration_source(2, 5, 0)
-    );
-    assert_eq!(
-        candidates[0].priority(),
-        context.priority_for_declaration(CascadeImportance::Normal, 0)
-    );
-    assert_eq!(
-        candidates[1].priority(),
-        context.priority_for_declaration(CascadeImportance::Important, 1)
-    );
-    assert_eq!(candidates[1].value().to_css_text().as_deref(), Some("blue"));
-
-    let winner = candidates[1].to_winner();
+    let winners = resolve_rule_inputs(vec![rule]).expect("valid candidates resolve");
+    let winner = winners.get(CascadePropertyId::Color).expect("color winner");
     assert_eq!(winner.source, stylesheet_declaration_source(2, 5, 1));
     assert_eq!(
         winner.priority,
@@ -211,14 +195,14 @@ fn cascade_rule_input_keeps_declaration_filter_state_explicit() {
         SpecifiedValueParseErrorKind::UnsupportedDisplayKeyword
     );
 
-    let candidates = rule.candidates();
-    assert_eq!(candidates.len(), 1);
+    let winner = resolve_rule_inputs(vec![rule])
+        .expect("filtered declarations resolve")
+        .get(CascadePropertyId::Color)
+        .expect("color winner")
+        .clone();
+    assert_eq!(winner.source, inline_declaration_source(inline_style, 0));
     assert_eq!(
-        candidates[0].source(),
-        inline_declaration_source(inline_style, 0)
-    );
-    assert_eq!(
-        candidates[0].priority(),
+        winner.priority,
         context.priority_for_declaration(CascadeImportance::Normal, 0)
     );
 }
@@ -269,11 +253,10 @@ fn cascade_rule_input_keeps_supported_css_wide_keywords_as_candidates() {
         SpecifiedValueParseErrorKind::UnsupportedCssWideKeyword
     );
 
-    let candidates = rule.candidates();
-    assert_eq!(candidates.len(), 1);
-    assert_eq!(candidates[0].property(), CascadePropertyId::Color);
+    let winners = resolve_rule_inputs(vec![rule]).expect("CSS-wide candidate resolves");
+    assert_eq!(winners.entries().len(), 1);
     assert_eq!(
-        candidates[0].value().to_css_text().as_deref(),
+        winners.entries()[0].winner().value.to_css_text().as_deref(),
         Some("initial")
     );
 }

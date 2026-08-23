@@ -1,5 +1,7 @@
+mod cascade_diagnostic;
 mod collection;
 mod collection_diagnostic;
+#[cfg(test)]
 mod debug_snapshot;
 mod declarations;
 mod limits;
@@ -7,6 +9,13 @@ mod rule_inputs;
 mod selector_dom;
 mod source;
 
+pub use self::cascade_diagnostic::{
+    CASCADE_EVALUATION_DIAGNOSTIC_VERSION, CascadeDiagnosticCandidateId, CascadeDiagnosticText,
+    CascadeEvaluationCandidateRecord, CascadeEvaluationDiagnostic,
+    CascadeEvaluationDiagnosticFailure, CascadeEvaluationDiagnosticLimit,
+    CascadeEvaluationDiagnosticLimits, CascadeEvaluationDiagnosticSnapshot,
+    CascadeEvaluationWinnerRecord, cascade_evaluation_diagnostic,
+};
 #[cfg(test)]
 pub(crate) use self::collection::{
     ActiveCollectedStyleRule, CollectedRule, InactiveStyleRuleReason,
@@ -20,9 +29,8 @@ pub use self::collection_diagnostic::{
     RuleCollectionDiagnosticLimit, RuleCollectionDiagnosticLimits, RuleCollectionDiagnosticRecord,
     RuleCollectionDiagnosticSnapshot, RuleCollectionDiagnosticStorage, rule_collection_diagnostic,
 };
-pub use self::debug_snapshot::{
-    declaration_list_pipeline_debug_snapshot, resolve_document_styles_debug_snapshot,
-};
+#[cfg(test)]
+pub(crate) use self::debug_snapshot::resolve_document_styles_debug_snapshot;
 pub use self::limits::{StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits};
 pub(crate) use self::source::StylesheetConditionStatus;
 pub use self::source::{
@@ -42,7 +50,8 @@ use self::selector_dom::{
     build_element_subtree_selector_dom_with_element_limit,
 };
 use super::contract::{
-    StylesheetOrder, StylesheetSourceId, resolve_cascade_style_from_rule_inputs,
+    CascadeResolutionBudget, CascadeResolutionWorkspace, StylesheetOrder, StylesheetSourceId,
+    resolve_cascade_style_owned, resolve_cascade_winners,
 };
 use super::document::{ResolvedDocumentStyle, ResolvedElementStyle};
 use crate::model;
@@ -70,6 +79,7 @@ pub struct StyleResolutionExecution<'dom, 'collection, 'source> {
     matching_environment: SelectorMatchingEnvironment,
     collection: &'collection RuleCollection<'source>,
     limits: StyleResolutionLimits,
+    cascade_budget: CascadeResolutionBudget,
 }
 
 impl<'dom, 'collection, 'source> StyleResolutionExecution<'dom, 'collection, 'source> {
@@ -84,12 +94,19 @@ impl<'dom, 'collection, 'source> StyleResolutionExecution<'dom, 'collection, 'so
             root,
             limits.max_styled_elements_per_document,
         )?;
+        let cascade_budget = CascadeResolutionBudget::try_new(
+            limits.max_declaration_inputs_per_element,
+            limits.max_inline_declarations_per_element,
+            limits.max_matched_rules_per_element,
+        )
+        .map_err(StyleResolutionError::CascadeResolution)?;
         Ok(Self {
             root,
             index,
             matching_environment,
             collection,
             limits: *limits,
+            cascade_budget,
         })
     }
 
@@ -103,6 +120,7 @@ impl<'dom, 'collection, 'source> StyleResolutionExecution<'dom, 'collection, 'so
             self.matching_environment,
             self.collection,
             &self.limits,
+            self.cascade_budget,
         )
     }
 
@@ -118,6 +136,7 @@ impl<'dom, 'collection, 'source> StyleResolutionExecution<'dom, 'collection, 'so
             previous,
             dirty_node_ids,
             &self.limits,
+            self.cascade_budget,
         )
     }
 }
@@ -257,12 +276,19 @@ pub fn af5_match_rule_inputs_for_allocation_guard(
         matching_environment,
         limits.selector_matching,
     );
+    let budget = CascadeResolutionBudget::try_new(
+        limits.max_declaration_inputs_per_element,
+        limits.max_inline_declarations_per_element,
+        limits.max_matched_rules_per_element,
+    )
+    .map_err(StyleResolutionError::CascadeResolution)?;
     let mut matched_rules = 0usize;
     let mut borrowed_declarations = 0usize;
     for element in index.elements() {
-        let inputs =
-            rule_inputs_for_element_with_limits(&index, &context, element, collection, limits)?;
-        for input in inputs {
+        let inputs = rule_inputs_for_element_with_limits(
+            &index, &context, element, collection, limits, budget,
+        )?;
+        for input in inputs.inputs() {
             if matches!(input, super::contract::CascadeRuleInput::Stylesheet(_)) {
                 matched_rules = matched_rules.checked_add(1).ok_or(
                     Af5AllocationGuardError::CounterExhausted {
@@ -280,24 +306,95 @@ pub fn af5_match_rule_inputs_for_allocation_guard(
     Ok((matched_rules, borrowed_declarations))
 }
 
+/// Allocation-regression evidence for AF6's reusable transient workspace.
+/// Retained winner/style output is deliberately excluded; this seam exercises
+/// the production matched-input builder and winner evaluator while dropping
+/// each sparse winner set after observation.
+#[cfg(feature = "count-alloc")]
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Af6CascadeWorkspaceStats {
+    pub elements: usize,
+    pub initial_capacity: usize,
+    pub high_water_capacity: usize,
+    pub capacity_growths: usize,
+}
+
+#[cfg(feature = "count-alloc")]
+#[doc(hidden)]
+pub fn af6_resolve_winners_for_allocation_guard(
+    root: &Node,
+    matching_environment: SelectorMatchingEnvironment,
+    collection: &RuleCollection<'_>,
+    limits: &StyleResolutionLimits,
+) -> Result<Af6CascadeWorkspaceStats, StyleResolutionError> {
+    validate_representation_limits(limits)?;
+    let index = build_document_selector_dom_with_element_limit(
+        root,
+        limits.max_styled_elements_per_document,
+    )?;
+    let context = SelectorMatchingContext::with_limits(
+        &index,
+        matching_environment,
+        limits.selector_matching,
+    );
+    let budget = CascadeResolutionBudget::try_new(
+        limits.max_declaration_inputs_per_element,
+        limits.max_inline_declarations_per_element,
+        limits.max_matched_rules_per_element,
+    )
+    .map_err(StyleResolutionError::CascadeResolution)?;
+    let mut workspace = CascadeResolutionWorkspace::try_new(budget)
+        .map_err(StyleResolutionError::CascadeResolution)?;
+    let initial_capacity = workspace.capacity();
+    let mut high_water_capacity = initial_capacity;
+    let mut capacity_growths = 0usize;
+    let mut elements = 0usize;
+    for element in index.elements() {
+        let inputs = rule_inputs_for_element_with_limits(
+            &index, &context, element, collection, limits, budget,
+        )?;
+        let _winners = resolve_cascade_winners(&inputs, budget, &mut workspace)
+            .map_err(StyleResolutionError::CascadeResolution)?;
+        let capacity = workspace.capacity();
+        if capacity > high_water_capacity {
+            high_water_capacity = capacity;
+            capacity_growths = capacity_growths.saturating_add(1);
+        }
+        elements = elements.saturating_add(1);
+    }
+    Ok(Af6CascadeWorkspaceStats {
+        elements,
+        initial_capacity,
+        high_water_capacity,
+        capacity_growths,
+    })
+}
+
 fn resolve_document_styles_with_index(
     index: &SelectorDomIndex<'_>,
     matching_environment: SelectorMatchingEnvironment,
     collection: &RuleCollection<'_>,
     limits: &StyleResolutionLimits,
+    budget: CascadeResolutionBudget,
 ) -> Result<ResolvedDocumentStyle, StyleResolutionError> {
     let context =
         SelectorMatchingContext::with_limits(index, matching_environment, limits.selector_matching);
     let mut entries = Vec::with_capacity(index.len());
     let mut styles_by_element = BTreeMap::new();
+    let mut workspace = CascadeResolutionWorkspace::try_new(budget)
+        .map_err(StyleResolutionError::CascadeResolution)?;
 
     for element in index.elements() {
         let parent_style = context
             .parent_element(element)
             .and_then(|parent| styles_by_element.get(&parent));
-        let rule_inputs =
-            rule_inputs_for_element_with_limits(index, &context, element, collection, limits)?;
-        let style = resolve_cascade_style_from_rule_inputs(&rule_inputs, parent_style);
+        let rule_inputs = rule_inputs_for_element_with_limits(
+            index, &context, element, collection, limits, budget,
+        )?;
+        let winners = resolve_cascade_winners(&rule_inputs, budget, &mut workspace)
+            .map_err(StyleResolutionError::CascadeResolution)?;
+        let style = resolve_cascade_style_owned(winners, parent_style);
         styles_by_element.insert(element, style.clone());
         entries.push(ResolvedElementStyle::new(
             element,
@@ -373,6 +470,7 @@ fn resolve_document_styles_incremental_suffix_with_index(
     previous: &ResolvedDocumentStyle,
     dirty_node_ids: &[Id],
     limits: &StyleResolutionLimits,
+    budget: CascadeResolutionBudget,
 ) -> Result<Option<IncrementalResolvedDocumentStyle>, StyleResolutionError> {
     if previous.matching_environment() != matching_environment {
         return Err(StyleResolutionError::MatchingEnvironmentMismatch {
@@ -391,6 +489,8 @@ fn resolve_document_styles_incremental_suffix_with_index(
         SelectorMatchingContext::with_limits(index, matching_environment, limits.selector_matching);
     let mut entries = Vec::with_capacity(index.len());
     let mut styles_by_element = BTreeMap::new();
+    let mut workspace = CascadeResolutionWorkspace::try_new(budget)
+        .map_err(StyleResolutionError::CascadeResolution)?;
 
     for (element_index, element) in index.elements().enumerate() {
         if element_index < reused_prefix_len {
@@ -411,9 +511,12 @@ fn resolve_document_styles_incremental_suffix_with_index(
         let parent_style = context
             .parent_element(element)
             .and_then(|parent| styles_by_element.get(&parent));
-        let rule_inputs =
-            rule_inputs_for_element_with_limits(index, &context, element, collection, limits)?;
-        let style = resolve_cascade_style_from_rule_inputs(&rule_inputs, parent_style);
+        let rule_inputs = rule_inputs_for_element_with_limits(
+            index, &context, element, collection, limits, budget,
+        )?;
+        let winners = resolve_cascade_winners(&rule_inputs, budget, &mut workspace)
+            .map_err(StyleResolutionError::CascadeResolution)?;
+        let style = resolve_cascade_style_owned(winners, parent_style);
         styles_by_element.insert(element, style.clone());
         entries.push(ResolvedElementStyle::new(
             element,
@@ -447,7 +550,13 @@ pub(crate) fn try_resolve_element_subtree_styles_with_limits(
         root,
         limits.max_styled_elements_per_document,
     )?;
-    resolve_document_styles_with_index(&index, matching_environment, &collection, limits)
+    let budget = CascadeResolutionBudget::try_new(
+        limits.max_declaration_inputs_per_element,
+        limits.max_inline_declarations_per_element,
+        limits.max_matched_rules_per_element,
+    )
+    .map_err(StyleResolutionError::CascadeResolution)?;
+    resolve_document_styles_with_index(&index, matching_environment, &collection, limits, budget)
 }
 
 fn compatibility_author_inputs<'source>(

@@ -13,6 +13,7 @@ use std::fmt::Write;
 
 const SNAPSHOT_VERSION: u32 = 1;
 const SNAPSHOT_KIND_STYLESHEET: &str = "model-stylesheet";
+#[cfg(test)]
 const SNAPSHOT_KIND_DECLARATION_LIST: &str = "model-declaration-list";
 
 pub fn serialize_stylesheet_for_snapshot(input: &CssInput, sheet: &Stylesheet) -> String {
@@ -44,6 +45,7 @@ pub fn serialize_declaration_for_snapshot(input: &CssInput, declaration: &Declar
 }
 
 /// Serialize engine-facing declarations using the stable model snapshot grammar.
+#[cfg(test)]
 pub fn serialize_declaration_list_for_snapshot(
     input: &CssInput,
     declarations: &[Declaration],

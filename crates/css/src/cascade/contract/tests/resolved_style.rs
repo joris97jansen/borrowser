@@ -1,15 +1,46 @@
 use super::super::{
     CascadeDeclarationInput, CascadeDeclarationSource, CascadeImportance, CascadeOrigin,
-    CascadeOriginBand, CascadePriority, CascadePropertyId, CascadeRuleContext, CascadeRuleInput,
-    CascadeSourceOrder, CascadeSpecificity, CascadeWinner, CascadeWinnerSet, CssWideResolvedSource,
-    InitialStyleValue, InlineStyleDeclarationRef, InlineStyleRuleRef, ResolvedStyleBuilder,
-    ResolvedValueSource, StylesheetDeclarationRef, resolve_cascade_style,
-    resolve_cascade_style_from_rule_inputs, resolve_cascade_winners, resolve_initial_style,
+    CascadePriority, CascadePropertyId, CascadeRuleContext, CascadeRuleInput, CascadeRuleSource,
+    CascadeWinner, CascadeWinnerSet, CssWideResolvedSource, InitialStyleValue,
+    InlineStyleDeclarationRef, InlineStyleRuleRef, ResolvedStyleBuilder, ResolvedValueSource,
+    StylesheetDeclarationRef, resolve_cascade_style, resolve_cascade_style_from_rule_inputs,
+    resolve_initial_style,
 };
 use super::support::{
-    builder_with_initials_except, matched_rule, parsed_value, stylesheet_declaration_source,
+    builder_with_initials_except, matched_rule, parsed_value, resolve_rule_inputs,
+    stylesheet_declaration_source,
 };
 use crate::selectors::Specificity;
+
+fn style_priority(rule_order: u32, declaration_order: u32) -> CascadePriority {
+    CascadePriority::from_rule_context(
+        CascadeRuleContext::for_stylesheet(
+            CascadeOrigin::Author,
+            Specificity::C,
+            rule_order.into(),
+        ),
+        CascadeImportance::Normal,
+        declaration_order,
+    )
+}
+
+fn winners_for_rule(
+    rule_index: u32,
+    specificity: Specificity,
+    declarations: Vec<CascadeDeclarationInput>,
+) -> CascadeWinnerSet {
+    let rule_ref = super::super::StylesheetRuleRef::new(
+        crate::cascade::StylesheetSourceId::compatibility_generation_index(0),
+        crate::cascade::RawRuleIndex::new(rule_index),
+    );
+    let rule = CascadeRuleInput::new(
+        CascadeRuleSource::Stylesheet(rule_ref),
+        CascadeRuleContext::for_stylesheet(CascadeOrigin::Author, specificity, rule_index.into()),
+        declarations,
+    )
+    .expect("test rule source owns declarations");
+    resolve_rule_inputs(vec![rule]).expect("test winners resolve")
+}
 
 #[test]
 fn resolve_cascade_style_marks_inherited_properties_only_when_parent_is_present() {
@@ -18,12 +49,7 @@ fn resolve_cascade_style_marks_inherited_properties_only_when_parent_is_present(
         CascadePropertyId::Color,
         CascadeWinner {
             source: stylesheet_declaration_source(0, 0, 0),
-            priority: CascadePriority::new(
-                CascadeOriginBand::AuthorNormal,
-                CascadeSpecificity::Selector(Specificity::C),
-                0,
-                0,
-            ),
+            priority: style_priority(0, 0),
             value: parsed_value("color: red"),
         },
     );
@@ -52,7 +78,7 @@ fn resolve_cascade_style_marks_inherited_properties_only_when_parent_is_present(
     assert_eq!(
         child.to_debug_snapshot(),
         concat!(
-            "version: 2\n",
+            "version: 3\n",
             "resolved-style\n",
             "  background-color: initial(transparent)\n",
             "  border-bottom-color: initial(transparent)\n",
@@ -130,7 +156,7 @@ fn resolve_initial_style_materializes_total_canonical_initial_style() {
     assert_eq!(
         initial_style.to_debug_snapshot(),
         concat!(
-            "version: 2\n",
+            "version: 3\n",
             "resolved-style\n",
             "  background-color: initial(transparent)\n",
             "  border-bottom-color: initial(transparent)\n",
@@ -173,19 +199,17 @@ fn resolve_initial_style_materializes_total_canonical_initial_style() {
 
 #[test]
 fn resolve_cascade_style_defaults_missing_properties_to_the_initial_contract() {
-    let winners = resolve_cascade_winners(&[CascadeDeclarationInput::supported(
-        stylesheet_declaration_source(0, 0, 0),
+    let winners = winners_for_rule(
         0,
-        CascadeImportance::Normal,
-        CascadePropertyId::Width,
-        parsed_value("width: 40px"),
-    )
-    .candidate(CascadeRuleContext::new(
-        CascadeOrigin::Author,
-        CascadeSpecificity::Selector(Specificity::C),
-        0,
-    ))
-    .expect("supported candidate")]);
+        Specificity::C,
+        vec![CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 0, 0),
+            0,
+            CascadeImportance::Normal,
+            CascadePropertyId::Width,
+            parsed_value("width: 40px"),
+        )],
+    );
 
     let style = resolve_cascade_style(&winners, None);
 
@@ -225,12 +249,7 @@ fn resolve_cascade_style_resolves_explicit_css_wide_keywords_after_winner_select
         CascadePropertyId::Color,
         CascadeWinner {
             source: stylesheet_declaration_source(0, 0, 0),
-            priority: CascadePriority::new(
-                CascadeOriginBand::AuthorNormal,
-                CascadeSpecificity::Selector(Specificity::C),
-                0,
-                0,
-            ),
+            priority: style_priority(0, 0),
             value: parsed_value("color: red"),
         },
     );
@@ -238,57 +257,38 @@ fn resolve_cascade_style_resolves_explicit_css_wide_keywords_after_winner_select
         CascadePropertyId::Display,
         CascadeWinner {
             source: stylesheet_declaration_source(0, 0, 1),
-            priority: CascadePriority::new(
-                CascadeOriginBand::AuthorNormal,
-                CascadeSpecificity::Selector(Specificity::C),
-                0,
-                1,
-            ),
+            priority: style_priority(0, 1),
             value: parsed_value("display: block"),
         },
     );
     let parent_style = parent_builder.build().expect("total parent style");
-    let child_winners = resolve_cascade_winners(&[
-        CascadeDeclarationInput::supported(
-            stylesheet_declaration_source(0, 1, 0),
-            0,
-            CascadeImportance::Normal,
-            CascadePropertyId::Color,
-            parsed_value("color: unset"),
-        )
-        .candidate(CascadeRuleContext::new(
-            CascadeOrigin::Author,
-            CascadeSpecificity::Selector(Specificity::C),
-            1,
-        ))
-        .expect("color unset candidate"),
-        CascadeDeclarationInput::supported(
-            stylesheet_declaration_source(0, 1, 1),
-            1,
-            CascadeImportance::Normal,
-            CascadePropertyId::Display,
-            parsed_value("display: inherit"),
-        )
-        .candidate(CascadeRuleContext::new(
-            CascadeOrigin::Author,
-            CascadeSpecificity::Selector(Specificity::C),
-            1,
-        ))
-        .expect("display inherit candidate"),
-        CascadeDeclarationInput::supported(
-            stylesheet_declaration_source(0, 1, 2),
-            2,
-            CascadeImportance::Normal,
-            CascadePropertyId::Width,
-            parsed_value("width: unset"),
-        )
-        .candidate(CascadeRuleContext::new(
-            CascadeOrigin::Author,
-            CascadeSpecificity::Selector(Specificity::C),
-            1,
-        ))
-        .expect("width unset candidate"),
-    ]);
+    let child_winners = winners_for_rule(
+        1,
+        Specificity::C,
+        vec![
+            CascadeDeclarationInput::supported(
+                stylesheet_declaration_source(0, 1, 0),
+                0,
+                CascadeImportance::Normal,
+                CascadePropertyId::Color,
+                parsed_value("color: unset"),
+            ),
+            CascadeDeclarationInput::supported(
+                stylesheet_declaration_source(0, 1, 1),
+                1,
+                CascadeImportance::Normal,
+                CascadePropertyId::Display,
+                parsed_value("display: inherit"),
+            ),
+            CascadeDeclarationInput::supported(
+                stylesheet_declaration_source(0, 1, 2),
+                2,
+                CascadeImportance::Normal,
+                CascadePropertyId::Width,
+                parsed_value("width: unset"),
+            ),
+        ],
+    );
 
     let child = resolve_cascade_style(&child_winners, Some(&parent_style));
 
@@ -340,34 +340,26 @@ fn resolve_cascade_style_resolves_explicit_css_wide_keywords_after_winner_select
 
 #[test]
 fn resolve_cascade_style_resolves_root_css_wide_inherit_and_unset_to_initial() {
-    let root_winners = resolve_cascade_winners(&[
-        CascadeDeclarationInput::supported(
-            stylesheet_declaration_source(0, 0, 0),
-            0,
-            CascadeImportance::Normal,
-            CascadePropertyId::Color,
-            parsed_value("color: inherit"),
-        )
-        .candidate(CascadeRuleContext::new(
-            CascadeOrigin::Author,
-            CascadeSpecificity::Selector(Specificity::C),
-            0,
-        ))
-        .expect("color inherit candidate"),
-        CascadeDeclarationInput::supported(
-            stylesheet_declaration_source(0, 0, 1),
-            1,
-            CascadeImportance::Normal,
-            CascadePropertyId::FontSize,
-            parsed_value("font-size: unset"),
-        )
-        .candidate(CascadeRuleContext::new(
-            CascadeOrigin::Author,
-            CascadeSpecificity::Selector(Specificity::C),
-            0,
-        ))
-        .expect("font-size unset candidate"),
-    ]);
+    let root_winners = winners_for_rule(
+        0,
+        Specificity::C,
+        vec![
+            CascadeDeclarationInput::supported(
+                stylesheet_declaration_source(0, 0, 0),
+                0,
+                CascadeImportance::Normal,
+                CascadePropertyId::Color,
+                parsed_value("color: inherit"),
+            ),
+            CascadeDeclarationInput::supported(
+                stylesheet_declaration_source(0, 0, 1),
+                1,
+                CascadeImportance::Normal,
+                CascadePropertyId::FontSize,
+                parsed_value("font-size: unset"),
+            ),
+        ],
+    );
 
     let root = resolve_cascade_style(&root_winners, None);
 
@@ -405,12 +397,7 @@ fn resolve_cascade_style_explicit_winner_overrides_parent_inheritance_and_defaul
         CascadePropertyId::Color,
         CascadeWinner {
             source: stylesheet_declaration_source(0, 0, 0),
-            priority: CascadePriority::new(
-                CascadeOriginBand::AuthorNormal,
-                CascadeSpecificity::Selector(Specificity::C),
-                0,
-                0,
-            ),
+            priority: style_priority(0, 0),
             value: parsed_value("color: red"),
         },
     );
@@ -418,30 +405,23 @@ fn resolve_cascade_style_explicit_winner_overrides_parent_inheritance_and_defaul
         CascadePropertyId::Display,
         CascadeWinner {
             source: stylesheet_declaration_source(0, 0, 1),
-            priority: CascadePriority::new(
-                CascadeOriginBand::AuthorNormal,
-                CascadeSpecificity::Selector(Specificity::C),
-                0,
-                1,
-            ),
+            priority: style_priority(0, 1),
             value: parsed_value("display: block"),
         },
     );
     let parent_style = parent_builder.build().expect("total parent style");
 
-    let child_winners = resolve_cascade_winners(&[CascadeDeclarationInput::supported(
-        stylesheet_declaration_source(0, 1, 0),
-        0,
-        CascadeImportance::Normal,
-        CascadePropertyId::Color,
-        parsed_value("color: blue"),
-    )
-    .candidate(CascadeRuleContext::new(
-        CascadeOrigin::Author,
-        CascadeSpecificity::Selector(Specificity::B),
+    let child_winners = winners_for_rule(
         1,
-    ))
-    .expect("supported candidate")]);
+        Specificity::B,
+        vec![CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 1, 0),
+            0,
+            CascadeImportance::Normal,
+            CascadePropertyId::Color,
+            parsed_value("color: blue"),
+        )],
+    );
 
     let child = resolve_cascade_style(&child_winners, Some(&parent_style));
 
@@ -573,12 +553,7 @@ fn resolved_style_builder_is_deterministic_and_property_sorted() {
                 crate::cascade::RawRuleIndex::new(0),
                 crate::cascade::DeclarationSourceIndex::new(1),
             )),
-            priority: CascadePriority::new(
-                CascadeOriginBand::AuthorNormal,
-                CascadeSpecificity::Selector(Specificity::C),
-                0,
-                1,
-            ),
+            priority: style_priority(0, 1),
             value: parsed_value("display: block"),
         },
     );
@@ -603,7 +578,7 @@ fn resolved_style_builder_is_deterministic_and_property_sorted() {
     assert_eq!(
         style.to_debug_snapshot(),
         concat!(
-            "version: 2\n",
+            "version: 3\n",
             "resolved-style\n",
             "  background-color: initial(transparent)\n",
             "  border-bottom-color: initial(transparent)\n",
@@ -619,7 +594,7 @@ fn resolved_style_builder_is_deterministic_and_property_sorted() {
             "  border-top-style: initial(none)\n",
             "  border-top-width: initial(0px)\n",
             "  color: inherited\n",
-            "  display: winner(source=stylesheet[2/0]/declaration[1], band=author-normal, specificity=selector(0,0,1), source-order=stylesheet[0/0], declaration-order=1, value=\"block\")\n",
+            "  display: winner(source=stylesheet[2/0]/declaration[1], band=author-normal, attachment=style-rule, specificity=selector(0,0,1), source-order=stylesheet[0/0], declaration-order=1, value=\"block\")\n",
             "  font-size: initial(16px)\n",
             "  height: initial(auto)\n",
             "  margin-bottom: initial(0px)\n",
@@ -654,10 +629,9 @@ fn resolved_style_snapshot_formats_inline_winners() {
                 InlineStyleRuleRef::new(9),
                 crate::cascade::DeclarationSourceIndex::new(2),
             )),
-            priority: CascadePriority::new(
-                CascadeOriginBand::AuthorNormal,
-                CascadeSpecificity::InlineStyle,
-                CascadeSourceOrder::InlineStyle,
+            priority: CascadePriority::from_rule_context(
+                CascadeRuleContext::for_inline_style(),
+                CascadeImportance::Normal,
                 2,
             ),
             value: parsed_value("color: red"),
@@ -666,6 +640,6 @@ fn resolved_style_snapshot_formats_inline_winners() {
 
     let snapshot = builder.build().expect("total style").to_debug_snapshot();
     assert!(snapshot.contains(
-        "winner(source=inline-style[compatibility=9]/declaration[2], band=author-normal, specificity=inline-style, source-order=inline-style, declaration-order=2, value=\"red\")"
+        "winner(source=inline-style[compatibility=9]/declaration[2], band=author-normal, attachment=element-attached, specificity=not-applicable, source-order=not-applicable, declaration-order=2, value=\"red\")"
     ));
 }

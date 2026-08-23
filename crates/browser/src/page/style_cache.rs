@@ -159,3 +159,40 @@ pub(super) fn recompute_styles(
     *state.style_dirty = false;
     Ok(())
 }
+
+#[cfg(test)]
+mod af6_tests {
+    use super::*;
+
+    #[test]
+    fn browser_style_execution_preserves_css_owned_cascade_failure() {
+        let dom = html::parse_document(
+            "<!doctype html><html></html>",
+            html::HtmlParseOptions::default(),
+        )
+        .unwrap()
+        .document;
+        let limits = StyleResolutionLimits {
+            max_declaration_inputs_per_element: usize::MAX,
+            max_inline_declarations_per_element: 1,
+            ..StyleResolutionLimits::default()
+        };
+        let collection = RuleCollection::try_new(&[], &limits).unwrap();
+        assert_eq!(
+            build_style_execution(
+                &dom,
+                SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks),
+                &collection,
+                &limits,
+            )
+            .err()
+            .expect("browser helper must propagate cascade budget failure"),
+            ComputedStyleResolutionError::StyleResolution(StyleResolutionError::CascadeResolution(
+                css::CascadeResolutionError::CandidateCeilingOverflow {
+                    stylesheet_limit: usize::MAX,
+                    inline_limit: 1,
+                }
+            ))
+        );
+    }
+}

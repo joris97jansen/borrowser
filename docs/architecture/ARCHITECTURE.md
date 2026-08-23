@@ -176,6 +176,12 @@ pre-winner diagnostic contract lives in:
 
 * `docs/css/af5-stylesheet-rule-collection-source-order-contract.md`
 
+The AF6 CSS Cascade Level 5 supported priority, validated input, reusable
+winner workspace, sparse winner, error, and bounded candidate/winner
+diagnostic contract lives in:
+
+* `docs/css/af6-cascade-ordering-winner-selection-contract.md`
+
 The lower cascade contract owns semantic identity/order and matched-input
 types; private collection integration owns flat storage and exposes only the
 opaque collection plus bounded diagnostic projection.
@@ -288,6 +294,23 @@ Milestone R's structured cascade path:
 * produces deterministic style-resolution outputs independent of DOM mutation
 * exposes stable cascade and resolved-style snapshots for regression triage
 
+AF6 refines the winner portion of that historical path. Inline declarations
+are typed element-attached author declarations rather than synthetic
+high-specificity rules. Production performs one admission/count pass and one
+borrowed-candidate evaluation pass, using a reusable property-registry-sized
+workspace with no candidate-wide hash table. Winner and budget failures remain
+CSS-owned and propagate through computed style and Browser orchestration.
+`cascade_evaluation_diagnostic(...)` is the bounded production-triage surface;
+it retains one authoritative bounded serialization and accounts all
+diagnostic-owned live heap capacity, including indexed finalization scratch.
+Its candidate and winner record vectors follow CSS-owned minimum-eight checked
+geometric growth, bounded by record and live-byte limits and verified again
+against actual allocator capacity. Exact-sized diagnostic text, remap, marking,
+and serialized storage remain exact-reserved.
+The production resolution budget is crate-private. R8 strings remain internal
+regression fixtures and consume validated inputs without independently
+revalidating or resolving winners.
+
 The current structured DOM-level cascade output is `ResolvedDocumentStyle`.
 `attach_styles(dom, sheets)` remains only as a compatibility projection from
 that output into `Node::style` for legacy consumers. It deliberately retains
@@ -295,8 +318,9 @@ unit-return degradation and clears stale legacy vectors on failure, including
 selector-DOM construction failure. It may use the explicit element-subtree
 path for its historically accepted element root; authoritative document APIs
 propagate typed errors instead.
-The primary debug surfaces are `cascade_evaluation_debug_snapshot(...)`,
-`ResolvedStyle::to_debug_snapshot()`,
+The bounded production-triage surface is
+`cascade_evaluation_diagnostic(...)`. Internal exact-string fixtures include
+`cascade_evaluation_debug_snapshot(...)`, `ResolvedStyle::to_debug_snapshot()`,
 `ResolvedDocumentStyle::to_debug_snapshot()`, and
 `resolve_document_styles_debug_snapshot(...)`, which returns a typed error when
 its document selector projection cannot be built rather than returning a

@@ -4,8 +4,9 @@ use css::{
     ParseOptions, Rule, RuleCollection, SelectorDomIndex, SelectorMatchingContext,
     SelectorMatchingEnvironment, StyleResolutionLimits, StylesheetCollectionInput,
     StylesheetConditionInput, StylesheetOrder, StylesheetSourceId,
-    af5_match_rule_inputs_for_allocation_guard, compute_document_styles,
-    parse_stylesheet_with_options, perf_fixtures, resolve_document_styles,
+    af5_match_rule_inputs_for_allocation_guard, af6_resolve_winners_for_allocation_guard,
+    compute_document_styles, parse_stylesheet_with_options, perf_fixtures, property_registry,
+    resolve_document_styles,
 };
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
@@ -373,6 +374,60 @@ fn af5_rule_collection_arena_is_built_once_independent_of_element_count() {
     .expect("many-element matching succeeds");
     assert_eq!(one_counts, 1);
     assert_eq!(many_counts, 128);
+}
+
+#[test]
+fn af6_transient_workspace_is_registry_sized_and_reused_across_elements() {
+    let sheet = parse_stylesheet_with_options(
+        "div { color: red; width: 10px; } .skip { display: grid; future: value; --x: y; }",
+        &ParseOptions::stylesheet(),
+    );
+    let input = StylesheetCollectionInput::author(
+        StylesheetSourceId::in_memory_generation_index(0),
+        StylesheetOrder::new(0),
+        &sheet,
+        StylesheetConditionInput::None,
+    );
+    let limits = StyleResolutionLimits::default();
+    let collection = RuleCollection::try_new(&[input], &limits).unwrap();
+    let body = (0..256)
+        .map(|index| {
+            format!(
+                "<div class='{}'></div>",
+                if index % 2 == 0 { "skip" } else { "" }
+            )
+        })
+        .collect::<String>();
+    let dom = html::parse_document(
+        &format!("<!doctype html><html><body>{body}</body></html>"),
+        html::HtmlParseOptions::default(),
+    )
+    .unwrap()
+    .document;
+    let environment = SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks);
+
+    let (stats, counts) = measure(
+        || {
+            af6_resolve_winners_for_allocation_guard(&dom, environment, &collection, &limits)
+                .unwrap();
+        },
+        || {
+            af6_resolve_winners_for_allocation_guard(&dom, environment, &collection, &limits)
+                .unwrap()
+        },
+    );
+    assert!(stats.elements >= 256);
+    assert_eq!(stats.initial_capacity, property_registry().entries().len());
+    assert_eq!(stats.high_water_capacity, stats.initial_capacity);
+    assert_eq!(stats.capacity_growths, 0);
+    eprintln!(
+        "AF6 transient cascade: bytes={} allocs={} reallocs={} elements={} workspace-capacity={}",
+        counts.bytes, counts.allocs, counts.reallocs, stats.elements, stats.initial_capacity
+    );
+    assert!(
+        counts.reallocs <= stats.elements.saturating_mul(8),
+        "AF6 transient winner evaluation reallocated excessively: {counts:?}"
+    );
 }
 
 #[test]

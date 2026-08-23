@@ -1,7 +1,16 @@
 # R1: Define Cascade Architecture And Style Resolution Contract
 
-Last updated: 2026-08-15
-Status: architecture contract implemented
+Last updated: 2026-08-22
+Status: living architecture contract; winner details reconciled by AF6
+
+## AF6 reconciliation
+
+R1's CSS ownership and sparse-winner/downstream-resolution architecture remains
+current. AF6 supersedes the historical priority, arbitrary candidate resolver,
+allocation, and exact-tie details in R2-R4 and adds fallible cascade-resolution
+propagation plus bounded production diagnostics. The authoritative winner
+contract is
+`docs/css/af6-cascade-ordering-winner-selection-contract.md`.
 
 ## AF5 collection reconciliation
 
@@ -9,7 +18,8 @@ R1's conceptual ordered stylesheet input is now materialized as one fallible,
 immutable `RuleCollection` per style execution. `CascadeRuleInput` no longer
 owns stylesheet declaration vectors: matched stylesheet inputs retain the exact
 AF4 result and borrow preclassified declarations from the collection's flat
-arena. The final winner implementation is unchanged.
+arena. The statement that winner implementation was unchanged described the
+AF5 landing only; AF6 has now replaced that implementation.
 
 Semantic source/order types and matched-rule contracts live below integration;
 the cascade contract does not import collection storage types. Integration
@@ -180,14 +190,16 @@ Current property subset in scope:
 
 Current origin/priority scope:
 
-- author stylesheet declarations
-- author inline style declarations
-- declaration-level normal and `!important` ordering within the current
-  structured author-origin model
+- user-agent, user, and author style-rule declarations supplied through the
+  current CSS stylesheet input boundary
+- element-attached inline declarations at author origin only
+- declaration-level normal and `!important` ordering in the supported origin
+  bands
 
-The contract already reserves explicit origin and importance slots so later
-issues can add user-agent, user, animation, transition, cascade layers, and
-other priority levels without redesigning the winner-resolution model.
+The contract reserves animation and transition origin-band positions without
+exposing current candidate constructors for them. Cascade layers, scope
+proximity, and encapsulation contexts require later typed insertion points and
+are not represented by inert AF6 fields.
 
 ## Selector Matching Handoff
 
@@ -233,17 +245,18 @@ Each candidate is conceptually:
 The precedence key is lexicographic:
 
 1. origin/importance band
-2. selector specificity or inline-style specificity slot
-3. rule order in stylesheet insertion/source order
-4. declaration order within the rule or inline style attribute
+2. element-attached versus style-rule declaration precedence
+3. selector specificity for style rules
+4. order of appearance: semantic stylesheet rule order plus declaration order
+   for style rules, or declaration order for one element-attached list
 
 Normative rules:
 
 - rule order is stable and deterministic for equivalent stylesheet insertion and
   parse order
 - declaration order is preserved exactly from source
-- inline style declarations participate as author-origin declarations with their
-  own top specificity slot inside the current scope
+- inline style declarations participate as typed element-attached author-origin
+  declarations, not as synthetic high-specificity style rules
 - winner selection groups candidates by canonical property id
 - each property resolves to at most one winning authored declaration
 
@@ -252,7 +265,7 @@ Borrowser's code-level contract for this model now lives in
 
 - `CascadeRuleMatch`
 - `CascadePriority`
-- `CascadeSpecificity`
+- `CascadeDeclarationPrecedence`
 - `CascadeDeclarationSource`
 
 ## Inheritance And Defaulting Responsibilities

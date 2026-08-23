@@ -171,6 +171,8 @@ pub enum AtRuleSkipReason {
     MediaDeferred,
     SupportsDeferred,
     ImportDeferred,
+    LayerDeferred,
+    ScopeDeferred,
     Unknown,
     UnresolvedName,
 }
@@ -582,6 +584,10 @@ fn at_rule_skip_reason(name: Option<&str>) -> AtRuleSkipReason {
         AtRuleSkipReason::SupportsDeferred
     } else if name.eq_ignore_ascii_case("import") {
         AtRuleSkipReason::ImportDeferred
+    } else if name.eq_ignore_ascii_case("layer") {
+        AtRuleSkipReason::LayerDeferred
+    } else if name.eq_ignore_ascii_case("scope") {
+        AtRuleSkipReason::ScopeDeferred
     } else {
         AtRuleSkipReason::Unknown
     }

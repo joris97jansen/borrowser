@@ -790,6 +790,12 @@ fn browser_rule_collection_debug_uses_production_handoff_and_bounded_af5_surface
         .expect("AF5 diagnostic input construction succeeds")
         .expect("published document has an AF5 diagnostic");
     assert!(diagnostic.failure().is_none());
+    assert_eq!(css::RULE_COLLECTION_DIAGNOSTIC_VERSION, 2);
+    assert!(
+        diagnostic
+            .to_debug_snapshot()
+            .starts_with("version: 2\naf5-rule-collection\n")
+    );
     assert!(diagnostic.records().iter().any(|record| matches!(
         record,
         css::RuleCollectionDiagnosticRecord::Declaration {
@@ -815,6 +821,81 @@ fn browser_rule_collection_debug_uses_production_handoff_and_bounded_af5_surface
             limit: css::RuleCollectionDiagnosticLimit::Records,
             ..
         })
+    ));
+}
+
+#[test]
+fn browser_cascade_debug_uses_the_bounded_css_owned_af6_surface() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 234;
+    tab.page.start_nav("https://example.com/index.html");
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 234,
+        publication: no_quirks_patch_publication(
+            DomHandle(2340),
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document("p { color: red; }", Some("p")),
+        ),
+    });
+
+    let diagnostic = tab
+        .page
+        .cascade_evaluation_debug_snapshot(
+            &css::StyleResolutionLimits::default(),
+            css::CascadeEvaluationDiagnosticLimits::default(),
+        )
+        .expect("AF6 diagnostic input construction succeeds")
+        .expect("published document has an AF6 diagnostic");
+    assert!(matches!(
+        diagnostic,
+        css::CascadeEvaluationDiagnostic::Complete(ref snapshot)
+            if !snapshot.candidates().is_empty() && !snapshot.winners().is_empty()
+    ));
+
+    let bounded = tab
+        .page
+        .cascade_evaluation_debug_snapshot(
+            &css::StyleResolutionLimits::default(),
+            css::CascadeEvaluationDiagnosticLimits {
+                max_candidate_records: 0,
+                ..Default::default()
+            },
+        )
+        .expect("bounded AF6 diagnostic input construction succeeds")
+        .expect("published document has a bounded AF6 diagnostic");
+    assert!(matches!(
+        bounded,
+        css::CascadeEvaluationDiagnostic::Failed(
+            css::CascadeEvaluationDiagnosticFailure::LimitExceeded {
+                limit: css::CascadeEvaluationDiagnosticLimit::CandidateRecords,
+                ..
+            }
+        )
+    ));
+
+    let cascade_failure = tab
+        .page
+        .cascade_evaluation_debug_snapshot(
+            &css::StyleResolutionLimits {
+                max_declaration_inputs_per_element: usize::MAX,
+                max_inline_declarations_per_element: 1,
+                ..Default::default()
+            },
+            css::CascadeEvaluationDiagnosticLimits::default(),
+        )
+        .expect("cascade failure remains inside the canonical AF6 diagnostic")
+        .expect("published document has a failed AF6 diagnostic");
+    assert!(matches!(
+        cascade_failure,
+        css::CascadeEvaluationDiagnostic::Failed(
+            css::CascadeEvaluationDiagnosticFailure::StyleExecution(
+                css::StyleResolutionError::CascadeResolution(
+                    css::CascadeResolutionError::CandidateCeilingOverflow { .. }
+                )
+            )
+        )
     ));
 }
 

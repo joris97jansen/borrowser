@@ -2,11 +2,17 @@
 
 Status: implemented
 
-Last updated: 2026-08-20
+Last updated: 2026-08-22
 
 AF5 introduces the immutable CSS-owned boundary between available stylesheet
 attachments and per-element cascade matching. It closes issue #1082 without
 redesigning final winner selection.
+
+AF6 now owns and implements the candidate/winner resource handoff that AF5
+deliberately deferred. AF5's accepted collection arena and borrowed matched-rule
+storage remain unchanged; AF6 adds an opaque validated per-element view and the
+property-indexed evaluator below it. See
+`docs/css/af6-cascade-ordering-winner-selection-contract.md`.
 
 ## Ownership and lifecycle
 
@@ -150,24 +156,20 @@ matched selector indexes and AF3 highest actual-match specificity feed the
 matched declaration input, AF5 diagnostics, and existing candidate pipeline.
 There is no diagnostic rematch and no specificity reconstruction from text.
 
-`CascadePriority` compares semantic dimensions explicitly:
+AF6's `CascadePriority` compares semantic dimensions explicitly:
 
 1. origin/importance band;
-2. selector or inline specificity;
-3. semantic `CascadeSourceOrder`;
-4. declaration order.
+2. typed element-attached versus style-rule precedence;
+3. selector specificity for style rules;
+4. semantic `StylesheetRuleOrder` and declaration order for style rules, or
+   declaration order for element-attached declarations.
 
-`CascadeRuleContext` makes selector/stylesheet-order and
-inline-specificity/inline-order pairings unrepresentable. Cross-kind source
-order is a lawful total order: stylesheet orders compare semantically with one
-another and sort before inline style; equal comparison therefore implies
-structural equality. Enum declaration order and stable sorting are not
-precedence. Inline normal beats author normal
-through `CascadeSpecificity::InlineStyle`; author important beats inline normal
-through the origin/importance band; inline important beats author important
-through inline specificity after equal important bands. Inline declaration
-ties use declaration order. `CascadeSourceOrder::InlineStyle` is provenance,
-not the reason inline wins.
+`CascadeRuleContext` makes style-rule specificity/order and element-attached
+declaration shapes distinct. Inline declarations are author-origin,
+element-attached declarations. `CascadeSpecificity::InlineStyle` and
+`CascadeSourceOrder::InlineStyle` no longer exist; source identity remains
+provenance only. Enum declaration order, vector order, and stable sorting are
+not precedence.
 
 ## Conditions and at-rules
 
@@ -179,8 +181,10 @@ it. CSS's current fail-closed subset is deliberately narrow:
 
 AF5 does not recognize `all`, `screen`, `print`, negation, lists, or media
 features. AQ3/AQ4 own real media parsing and evaluation. Internal `@media`,
-`@supports`, `@import`, and unknown at-rules are separate typed skipped records;
-preserved blocks are never flattened or recursively parsed by AF5.
+`@supports`, `@import`, `@layer`, CSS `@scope`, and unknown at-rules are
+separate typed skipped records; preserved blocks are never flattened or
+recursively parsed by AF5. `@layer` and `@scope` use explicit deferred labels.
+CSS `@scope` is distinct from the historical HTML `<style scoped>` attribute.
 
 ## Diagnostics and compatibility
 
@@ -203,7 +207,9 @@ unsupported/custom property names, and declaration values. Untruncated text
 keeps the compact quoted form, so shortened text can never be mistaken for a
 complete source name or value.
 
-R8 winner/resolved snapshots remain downstream specialized surfaces. AF4's
+R8 winner/resolved snapshots remain downstream test fixtures. AF6's bounded
+candidate/winner diagnostic is the production-triage post-match surface and
+shares the production evaluator. AF4's
 selector-conformance diagnostic also remains separate. It may evaluate a
 selector in a condition-inactive sheet, but serializes CSS source ID, sparse
 order, condition status, selector result, and `cascade-state=inactive-condition`
@@ -211,13 +217,21 @@ so the match cannot be mistaken for cascade participation. It does not rematch
 inside the AF5 production path. Neither selector nor winner diagnostics
 substitute for AF5 collection evidence.
 
+The maintained AF5 collection grammar is `version: 2`. AF6 added the explicit
+`skipped-at-layer` and `skipped-at-scope` record labels, so the grammar version
+advanced together with the exact-string CSS and Browser regression fixtures.
+Those labels describe CSS grouping at-rules; they do not describe the
+historical HTML `<style scoped>` attribute.
+
 Allocation guards measured the accepted AF5 boundary and the corrected review
 pass at 28,095,354 allocated bytes for the 1,025-entry representative style
 fixture. Focused measurements record 45,334 bytes/387 allocations/5
 reallocations to build a 64-rule/128-declaration arena and identical matched
 input allocation (84,368 bytes/387 allocations) for one versus 64 borrowed
-declarations per matched rule across 128 elements. Candidate/winner allocation
-remains the existing AF6/R concern.
+declarations per matched rule across 128 elements. AF6 closes the explicit
+candidate/winner handoff with borrowed candidates, one reusable
+registry-derived winner workspace, fallible sparse winner output, and separate
+bounded diagnostic storage.
 
 `try_attach_styles` is the typed fallible legacy projection. `attach_styles`
 remains the documented non-authoritative degrading wrapper and clears stale
@@ -229,5 +243,6 @@ degrading behavior nor the legacy projection.
 AF5 does not add selector indexes, compiled selectors, bloom filters, fast
 rejection, style sharing, cross-pass collection caching, networking/loading,
 `@import` loading, media parsing/evaluation, AJ stylesheet-set algorithms,
-cascade layers, runtime user stylesheets, animations, transitions, CSSOM, new
-selector/property coverage, or an AF6 winner/computed-style redesign.
+cascade layers, runtime user stylesheets, animations, transitions, CSSOM, or
+new selector/property coverage. AF6 winner selection is documented separately;
+inheritance/defaulting and computed-style construction remain downstream.

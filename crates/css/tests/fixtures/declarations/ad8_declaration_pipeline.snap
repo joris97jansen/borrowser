@@ -1,4 +1,4 @@
-version: 2
+version: 3
 declaration-list-pipeline
 model-parse
   version: 1
@@ -90,7 +90,7 @@ model-parse
 cascade
   cascade-evaluation
   rule-inputs: 1
-    rule-input[0]: source=inline-style[diagnostic] origin=author specificity=inline-style source-order=inline-style declarations=13
+    rule-input[0]: source=inline-style[diagnostic] origin=author attachment=element-attached specificity=not-applicable source-order=not-applicable declarations=13
       declaration[0]: source=inline-style[diagnostic]/declaration[0] declaration-order=0 importance=normal property=supported(width) applicability=supported(width) value="10px"
       declaration[1]: source=inline-style[diagnostic]/declaration[1] declaration-order=1 importance=normal property=unsupported("zoom") applicability=unsupported-property value="2"
       declaration[2]: source=inline-style[diagnostic]/declaration[2] declaration-order=2 importance=normal property=unsupported("border") applicability=unsupported-property value="1px solid red"
@@ -105,24 +105,24 @@ cascade
       declaration[11]: source=inline-style[diagnostic]/declaration[9] declaration-order=9 importance=normal property=invalid-shorthand-value(outline) applicability=invalid-shorthand-value(outline) value="1px 2px" invalid-reason=duplicate-component
       declaration[12]: source=inline-style[diagnostic]/declaration[10] declaration-order=10 importance=normal property=supported(width) applicability=supported(width) value="5px"
   candidates-source-order: 7
-    candidate[0]: property=width source=inline-style[diagnostic]/declaration[0] band=author-normal specificity=inline-style source-order=inline-style declaration-order=0 value="10px"
-    candidate[1]: property=color source=inline-style[diagnostic]/declaration[4] band=author-normal specificity=inline-style source-order=inline-style declaration-order=4 value="red"
-    candidate[2]: property=color source=inline-style[diagnostic]/declaration[6] band=author-normal specificity=inline-style source-order=inline-style declaration-order=6 value="blue"
-    candidate[3]: property=outline-color source=inline-style[diagnostic]/declaration[8] band=author-normal specificity=inline-style source-order=inline-style declaration-order=8 value="red"
-    candidate[4]: property=outline-style source=inline-style[diagnostic]/declaration[8] band=author-normal specificity=inline-style source-order=inline-style declaration-order=8 value="solid"
-    candidate[5]: property=outline-width source=inline-style[diagnostic]/declaration[8] band=author-normal specificity=inline-style source-order=inline-style declaration-order=8 value="2px"
-    candidate[6]: property=width source=inline-style[diagnostic]/declaration[10] band=author-normal specificity=inline-style source-order=inline-style declaration-order=10 value="5px"
+    candidate[0]: property=width source=inline-style[diagnostic]/declaration[0] band=author-normal attachment=element-attached specificity=not-applicable source-order=not-applicable declaration-order=0 value="10px"
+    candidate[1]: property=color source=inline-style[diagnostic]/declaration[4] band=author-normal attachment=element-attached specificity=not-applicable source-order=not-applicable declaration-order=4 value="red"
+    candidate[2]: property=color source=inline-style[diagnostic]/declaration[6] band=author-normal attachment=element-attached specificity=not-applicable source-order=not-applicable declaration-order=6 value="blue"
+    candidate[3]: property=outline-color source=inline-style[diagnostic]/declaration[8] band=author-normal attachment=element-attached specificity=not-applicable source-order=not-applicable declaration-order=8 value="red"
+    candidate[4]: property=outline-style source=inline-style[diagnostic]/declaration[8] band=author-normal attachment=element-attached specificity=not-applicable source-order=not-applicable declaration-order=8 value="solid"
+    candidate[5]: property=outline-width source=inline-style[diagnostic]/declaration[8] band=author-normal attachment=element-attached specificity=not-applicable source-order=not-applicable declaration-order=8 value="2px"
+    candidate[6]: property=width source=inline-style[diagnostic]/declaration[10] band=author-normal attachment=element-attached specificity=not-applicable source-order=not-applicable declaration-order=10 value="5px"
   candidates-cascade-order: 7
-    candidate[0]: property=color source=inline-style[diagnostic]/declaration[4] band=author-normal specificity=inline-style source-order=inline-style declaration-order=4 value="red"
-    candidate[1]: property=color source=inline-style[diagnostic]/declaration[6] band=author-normal specificity=inline-style source-order=inline-style declaration-order=6 value="blue"
-    candidate[2]: property=outline-color source=inline-style[diagnostic]/declaration[8] band=author-normal specificity=inline-style source-order=inline-style declaration-order=8 value="red"
-    candidate[3]: property=outline-style source=inline-style[diagnostic]/declaration[8] band=author-normal specificity=inline-style source-order=inline-style declaration-order=8 value="solid"
-    candidate[4]: property=outline-width source=inline-style[diagnostic]/declaration[8] band=author-normal specificity=inline-style source-order=inline-style declaration-order=8 value="2px"
-    candidate[5]: property=width source=inline-style[diagnostic]/declaration[0] band=author-normal specificity=inline-style source-order=inline-style declaration-order=0 value="10px"
-    candidate[6]: property=width source=inline-style[diagnostic]/declaration[10] band=author-normal specificity=inline-style source-order=inline-style declaration-order=10 value="5px"
+    candidate[0]: property=color source=inline-style[diagnostic]/declaration[4] band=author-normal attachment=element-attached specificity=not-applicable source-order=not-applicable declaration-order=4 value="red"
+    candidate[1]: property=color source=inline-style[diagnostic]/declaration[6] band=author-normal attachment=element-attached specificity=not-applicable source-order=not-applicable declaration-order=6 value="blue"
+    candidate[2]: property=outline-color source=inline-style[diagnostic]/declaration[8] band=author-normal attachment=element-attached specificity=not-applicable source-order=not-applicable declaration-order=8 value="red"
+    candidate[3]: property=outline-style source=inline-style[diagnostic]/declaration[8] band=author-normal attachment=element-attached specificity=not-applicable source-order=not-applicable declaration-order=8 value="solid"
+    candidate[4]: property=outline-width source=inline-style[diagnostic]/declaration[8] band=author-normal attachment=element-attached specificity=not-applicable source-order=not-applicable declaration-order=8 value="2px"
+    candidate[5]: property=width source=inline-style[diagnostic]/declaration[0] band=author-normal attachment=element-attached specificity=not-applicable source-order=not-applicable declaration-order=0 value="10px"
+    candidate[6]: property=width source=inline-style[diagnostic]/declaration[10] band=author-normal attachment=element-attached specificity=not-applicable source-order=not-applicable declaration-order=10 value="5px"
   winners: 5
-    color: winner(source=inline-style[diagnostic]/declaration[6], band=author-normal, specificity=inline-style, source-order=inline-style, declaration-order=6, value="blue")
-    outline-color: winner(source=inline-style[diagnostic]/declaration[8], band=author-normal, specificity=inline-style, source-order=inline-style, declaration-order=8, value="red")
-    outline-style: winner(source=inline-style[diagnostic]/declaration[8], band=author-normal, specificity=inline-style, source-order=inline-style, declaration-order=8, value="solid")
-    outline-width: winner(source=inline-style[diagnostic]/declaration[8], band=author-normal, specificity=inline-style, source-order=inline-style, declaration-order=8, value="2px")
-    width: winner(source=inline-style[diagnostic]/declaration[10], band=author-normal, specificity=inline-style, source-order=inline-style, declaration-order=10, value="5px")
+    color: winner(source=inline-style[diagnostic]/declaration[6], band=author-normal, attachment=element-attached, specificity=not-applicable, source-order=not-applicable, declaration-order=6, value="blue")
+    outline-color: winner(source=inline-style[diagnostic]/declaration[8], band=author-normal, attachment=element-attached, specificity=not-applicable, source-order=not-applicable, declaration-order=8, value="red")
+    outline-style: winner(source=inline-style[diagnostic]/declaration[8], band=author-normal, attachment=element-attached, specificity=not-applicable, source-order=not-applicable, declaration-order=8, value="solid")
+    outline-width: winner(source=inline-style[diagnostic]/declaration[8], band=author-normal, attachment=element-attached, specificity=not-applicable, source-order=not-applicable, declaration-order=8, value="2px")
+    width: winner(source=inline-style[diagnostic]/declaration[10], band=author-normal, attachment=element-attached, specificity=not-applicable, source-order=not-applicable, declaration-order=10, value="5px")

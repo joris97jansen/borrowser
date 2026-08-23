@@ -1,6 +1,6 @@
 # AD4: CSS Property Registry And Longhand Metadata
 
-Last updated: 2026-06-27
+Last updated: 2026-08-22
 Status: implemented contract for Milestone AD issue 4
 
 This document defines Borrowser's CSS-owned supported-longhand property
@@ -36,6 +36,7 @@ Related documents:
 - `docs/rendering/ac3-explicit-dirty-state-tracking.md`
 - `docs/rendering/ac10-retained-rendering-runtime-closeout.md`
 - `docs/engine-feature-gap-tracker.md`
+- `docs/css/af6-cascade-ordering-winner-selection-contract.md`
 
 ## Purpose
 
@@ -70,6 +71,12 @@ The registry lives in `css::properties` and is exposed through:
 supported longhand order. Debug output, total style assembly, cascade default
 fill, and computed-style iteration must use this canonical order rather than
 map insertion order.
+
+AF6 also derives reusable winner-slot capacity from the registry and emits
+sparse winners by registry order. The current number of registered properties
+is never a cascade constant. Adding a longhand automatically changes the
+checked winner capacity and canonical sparse-output scan through this AD4
+boundary.
 
 `PropertyMetadata` is the normative metadata surface for one supported
 longhand. It records inheritance, initial value, parser/value-kind contracts,

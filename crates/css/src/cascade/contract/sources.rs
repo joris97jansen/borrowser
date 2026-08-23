@@ -1,12 +1,10 @@
 use super::order::{
-    CascadeSourceOrder, DeclarationOrder, DeclarationSourceIndex, RawRuleIndex,
-    StylesheetRuleOrder, StylesheetSourceId,
+    DeclarationOrder, DeclarationSourceIndex, RawRuleIndex, StylesheetRuleOrder, StylesheetSourceId,
 };
 use crate::selectors::{SelectorDomElementId, SelectorListMatchOutcome, Specificity};
 
 use super::priority::{
-    CascadeImportance, CascadeOrigin, CascadeOriginBand, CascadePriority, CascadeSpecificity,
-    CurrentScopeCascadePriorityBand,
+    CascadeImportance, CascadeOrigin, CascadePriority, CurrentScopeCascadePriorityBand,
 };
 
 /// Exact AF4 match result and self-contained rule provenance used by cascade.
@@ -81,6 +79,7 @@ impl InlineStyleRuleRef {
         Self::Element(element)
     }
 
+    #[cfg(test)]
     pub(crate) const fn diagnostic() -> Self {
         Self::Diagnostic
     }
@@ -135,26 +134,6 @@ pub enum CascadeRuleContext {
 }
 
 impl CascadeRuleContext {
-    #[cfg(test)]
-    pub(crate) fn new(
-        origin: CascadeOrigin,
-        specificity: CascadeSpecificity,
-        source_order: impl Into<CascadeSourceOrder>,
-    ) -> Self {
-        match (specificity, source_order.into()) {
-            (CascadeSpecificity::Selector(specificity), CascadeSourceOrder::Stylesheet(order)) => {
-                Self::for_stylesheet(origin, specificity, order)
-            }
-            (CascadeSpecificity::InlineStyle, CascadeSourceOrder::InlineStyle) => {
-                assert_eq!(origin, CascadeOrigin::Author);
-                Self::for_inline_style()
-            }
-            _ => panic!(
-                "test cascade rule context must pair selector specificity with stylesheet order or inline specificity with inline order"
-            ),
-        }
-    }
-
     pub const fn for_stylesheet(
         origin: CascadeOrigin,
         specificity: Specificity,
@@ -193,17 +172,17 @@ impl CascadeRuleContext {
         }
     }
 
-    pub const fn specificity(self) -> CascadeSpecificity {
+    pub const fn specificity(self) -> Option<Specificity> {
         match self {
-            Self::Stylesheet { specificity, .. } => CascadeSpecificity::Selector(specificity),
-            Self::InlineStyle => CascadeSpecificity::InlineStyle,
+            Self::Stylesheet { specificity, .. } => Some(specificity),
+            Self::InlineStyle => None,
         }
     }
 
-    pub const fn source_order(self) -> CascadeSourceOrder {
+    pub const fn source_order(self) -> Option<StylesheetRuleOrder> {
         match self {
-            Self::Stylesheet { source_order, .. } => CascadeSourceOrder::Stylesheet(source_order),
-            Self::InlineStyle => CascadeSourceOrder::InlineStyle,
+            Self::Stylesheet { source_order, .. } => Some(source_order),
+            Self::InlineStyle => None,
         }
     }
 
@@ -212,14 +191,21 @@ impl CascadeRuleContext {
         importance: CascadeImportance,
         declaration_order: impl Into<DeclarationOrder>,
     ) -> CascadePriority {
-        let current_scope_band =
-            CurrentScopeCascadePriorityBand::from_origin_and_importance(self.origin(), importance);
-        CascadePriority::from_validated_context(
-            CascadeOriginBand::from_current_scope_band(current_scope_band),
-            self.specificity(),
-            self.source_order(),
-            declaration_order.into(),
-        )
+        match self {
+            Self::Stylesheet {
+                origin,
+                specificity,
+                source_order,
+            } => CascadePriority::for_style_rule(
+                CurrentScopeCascadePriorityBand::from_origin_and_importance(origin, importance),
+                specificity,
+                source_order,
+                declaration_order.into(),
+            ),
+            Self::InlineStyle => {
+                CascadePriority::for_element_attached(importance, declaration_order.into())
+            }
+        }
     }
 }
 

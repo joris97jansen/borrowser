@@ -13,6 +13,37 @@ use super::{DomMutationFacts, PageState};
 use super::{PageStyleGenerations, StyleRecalcKind};
 
 impl PageState {
+    /// Runs the bounded CSS-owned AF6 candidate/winner diagnostic through the
+    /// same evaluator used by production style resolution.
+    pub fn cascade_evaluation_debug_snapshot(
+        &self,
+        style_limits: &css::StyleResolutionLimits,
+        diagnostic_limits: css::CascadeEvaluationDiagnosticLimits,
+    ) -> Result<Option<css::CascadeEvaluationDiagnostic>, css::ComputedStyleResolutionError> {
+        let Some(dom) = self.dom.as_deref() else {
+            return Ok(None);
+        };
+        let Some(document_mode) = self.document_mode else {
+            return Ok(None);
+        };
+        let inputs = self
+            .rendering
+            .document_styles
+            .stylesheet_collection_inputs()
+            .map_err(|error| {
+                css::ComputedStyleResolutionError::StyleResolution(
+                    css::StyleResolutionError::StylesheetInputBuild(error),
+                )
+            })?;
+        Ok(Some(css::cascade_evaluation_diagnostic(
+            dom,
+            css::SelectorMatchingEnvironment::new(document_mode),
+            &inputs,
+            style_limits,
+            diagnostic_limits,
+        )))
+    }
+
     /// Runs the bounded CSS-owned AF5 collection/match diagnostic over the
     /// exact stylesheet handoff used by production style resolution.
     pub fn rule_collection_debug_snapshot(

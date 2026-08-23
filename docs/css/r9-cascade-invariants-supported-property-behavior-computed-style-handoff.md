@@ -1,7 +1,13 @@
 # R9: Cascade Invariants, Supported Property Behavior, And Computed-Style Handoff
 
-Last updated: 2026-08-15
-Status: milestone close-out contract implemented
+Last updated: 2026-08-22
+Status: historical Milestone R close-out; AF6 supersedes winner invariants and resource model
+
+R9's resolved-style and computed-style handoff remains the downstream
+architecture. AF6 supersedes its candidate materialization, priority, tie,
+allocation, and failure details while leaving inheritance/default fill and
+computed construction outside AF6. See
+`docs/css/af6-cascade-ordering-winner-selection-contract.md`.
 
 This document is the source-of-truth contract for Milestone R issue 9 and the
 Milestone R close-out boundary overall: the implemented cascade invariants,

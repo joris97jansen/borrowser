@@ -1,6 +1,6 @@
 # U8: Runtime Integration Contracts And Future Extension Points
 
-Last updated: 2026-08-15
+Last updated: 2026-08-22
 Status: Milestone U close-out contract
 
 This document records the implemented runtime integration contract for the
@@ -79,6 +79,12 @@ Ownership is split as follows:
 
 `Node::style` remains a legacy compatibility projection only. New runtime,
 layout, or paint behavior must use `ComputedStyle` or `StyledNode`.
+
+AF6 refines the CSS execution inside this pipeline. One checked cascade budget
+is bound to a style execution; full and incremental element loops each reuse a
+local property-indexed workspace. Browser propagates CSS-owned cascade errors
+and may expose the bounded CSS candidate/winner diagnostic, but does not
+inspect candidates, priorities, winner provenance, or diagnostic limits.
 
 ## Stylesheet Attachment Contract
 

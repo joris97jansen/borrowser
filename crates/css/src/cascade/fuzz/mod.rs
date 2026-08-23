@@ -209,7 +209,8 @@ pub fn run_seeded_cascade_fuzz_case(
         | Err(error @ StyleResolutionError::UnsupportedConfiguration { .. })
         | Err(error @ StyleResolutionError::RuleInputBuild(_))
         | Err(error @ StyleResolutionError::StylesheetInputBuild(_))
-        | Err(error @ StyleResolutionError::SourceCoordinate(_)) => {
+        | Err(error @ StyleResolutionError::SourceCoordinate(_))
+        | Err(error @ StyleResolutionError::CascadeResolution(_)) => {
             return Err(CssCascadeFuzzError::StyleResolutionInvariant {
                 detail: error.to_string(),
             });

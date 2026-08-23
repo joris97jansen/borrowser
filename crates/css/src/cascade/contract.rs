@@ -14,13 +14,13 @@ pub use declarations::{
     CascadeSpecifiedValue,
 };
 pub use order::{
-    CascadeSourceOrder, DeclarationOrder, DeclarationSourceIndex, RawRuleIndex,
-    SourceCoordinateError, StyleRulePosition, StylesheetOrder, StylesheetRuleOrder,
-    StylesheetSourceId, StylesheetSourceIdError,
+    DeclarationOrder, DeclarationSourceIndex, RawRuleIndex, SourceCoordinateError,
+    StyleRulePosition, StylesheetOrder, StylesheetRuleOrder, StylesheetSourceId,
+    StylesheetSourceIdError,
 };
 pub use priority::{
-    CascadeDeclarationCandidateKey, CascadeImportance, CascadeOrigin, CascadeOriginBand,
-    CascadePriority, CascadeSpecificity, CurrentScopeCascadePriorityBand,
+    CascadeDeclarationPrecedence, CascadeImportance, CascadeOrigin, CascadeOriginBand,
+    CascadePriority, CurrentScopeCascadePriorityBand,
 };
 pub use properties::{
     CascadeInheritance, CascadePropertyId, CascadePropertyInvalidationImpact,
@@ -29,26 +29,35 @@ pub use properties::{
     CascadeShorthandRegistry, InitialStyleValue, cascade_property_registry,
     cascade_property_registry_metadata_debug_snapshot, cascade_shorthand_registry,
 };
+#[cfg(test)]
+pub use resolved_style::resolve_cascade_style_from_rule_inputs;
 pub use resolved_style::{
     CssWideResolvedSource, ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder,
-    ResolvedStyleEntry, ResolvedValueSource, resolve_cascade_style,
-    resolve_cascade_style_from_rule_inputs, resolve_initial_style,
+    ResolvedStyleEntry, ResolvedValueSource, resolve_cascade_style, resolve_initial_style,
 };
 pub use rules::{
     CascadeRuleInput, CascadeRuleInputBuildError, InlineStyleRuleInput, MatchedStylesheetRuleInput,
 };
-pub use snapshot::cascade_evaluation_debug_snapshot;
+#[cfg(test)]
+pub(crate) use snapshot::cascade_evaluation_debug_snapshot;
 pub use sources::{
     CascadeDeclarationSource, CascadeRuleContext, CascadeRuleMatch, CascadeRuleSource,
     InlineStyleDeclarationRef, InlineStyleRuleRef, StylesheetDeclarationRef, StylesheetRuleRef,
 };
 pub use winners::{
-    CascadeDeclarationCandidate, CascadeWinner, CascadeWinnerEntry, CascadeWinnerSet,
-    resolve_cascade_winners, resolve_cascade_winners_from_rule_inputs,
-    sort_candidates_by_cascade_order,
+    CandidateDataMismatch, CascadeResolutionError, CascadeWinner, CascadeWinnerEntry,
+    CascadeWinnerSet, RuleInputSequenceViolation,
 };
 
+pub(crate) use resolved_style::resolve_cascade_style_owned;
+pub(crate) use rules::{ValidatedCascadeRuleInputBuilder, ValidatedCascadeRuleInputs};
+#[cfg(test)]
 pub(crate) use snapshot::append_cascade_evaluation_debug_snapshot;
+pub(crate) use winners::{
+    CascadeCandidateObservationIndex, CascadeDeclarationCandidate, CascadeEvaluationFailure,
+    CascadeEvaluationObserver, CascadeResolutionBudget, CascadeResolutionWorkspace,
+    resolve_cascade_winners, resolve_cascade_winners_from_validated_inputs,
+};
 
 #[cfg(test)]
 mod tests;

@@ -9,9 +9,9 @@ use super::selector_dom::build_document_selector_dom_with_element_limit;
 use super::source::{StylesheetCollectionInput, StylesheetConditionStatus};
 use crate::cascade::contract::{
     CascadeDeclarationApplicability, CascadeDeclarationInput, CascadeDeclarationProperty,
-    CascadeDeclarationSource, CascadeImportance, CascadeOrigin, CascadeRuleInput, DeclarationOrder,
-    DeclarationSourceIndex, RawRuleIndex, StyleRulePosition, StylesheetOrder, StylesheetRuleOrder,
-    StylesheetSourceId,
+    CascadeDeclarationSource, CascadeImportance, CascadeOrigin, CascadeResolutionBudget,
+    CascadeRuleInput, DeclarationOrder, DeclarationSourceIndex, RawRuleIndex, StyleRulePosition,
+    StylesheetOrder, StylesheetRuleOrder, StylesheetSourceId,
 };
 use crate::selectors::{
     InvalidSelectorReason, SelectorListMatchOutcome, SelectorMatchingContext,
@@ -20,7 +20,7 @@ use crate::selectors::{
 };
 use html::Node;
 
-pub const RULE_COLLECTION_DIAGNOSTIC_VERSION: u16 = 1;
+pub const RULE_COLLECTION_DIAGNOSTIC_VERSION: u16 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RuleCollectionDiagnosticLimits {
@@ -347,6 +347,18 @@ pub fn rule_collection_diagnostic(
 
     let context =
         SelectorMatchingContext::with_limits(&index, environment, style_limits.selector_matching);
+    let cascade_budget = match CascadeResolutionBudget::try_new(
+        style_limits.max_declaration_inputs_per_element,
+        style_limits.max_inline_declarations_per_element,
+        style_limits.max_matched_rules_per_element,
+    ) {
+        Ok(budget) => budget,
+        Err(error) => {
+            return RuleCollectionDiagnostic::Failed(RuleCollectionDiagnosticFailure::Resolution(
+                StyleResolutionError::CascadeResolution(error),
+            ));
+        }
+    };
     for element in index.elements() {
         let mut observer_failure = None;
         let result = rule_inputs_for_element_with_observer(
@@ -355,6 +367,7 @@ pub fn rule_collection_diagnostic(
             element,
             &collection,
             style_limits,
+            cascade_budget,
             |rule, outcome| {
                 if observer_failure.is_none() {
                     observer_failure = records
@@ -380,7 +393,7 @@ pub fn rule_collection_diagnostic(
         if let Some(failure) = observer_failure {
             return RuleCollectionDiagnostic::Failed(failure);
         }
-        for input in &rule_inputs {
+        for input in rule_inputs.inputs() {
             let CascadeRuleInput::Inline(_) = input else {
                 continue;
             };
@@ -984,6 +997,8 @@ fn at_rule_reason_label(reason: super::collection::AtRuleSkipReason) -> &'static
         super::collection::AtRuleSkipReason::MediaDeferred => "skipped-at-media",
         super::collection::AtRuleSkipReason::SupportsDeferred => "skipped-at-supports",
         super::collection::AtRuleSkipReason::ImportDeferred => "skipped-at-import",
+        super::collection::AtRuleSkipReason::LayerDeferred => "skipped-at-layer",
+        super::collection::AtRuleSkipReason::ScopeDeferred => "skipped-at-scope",
         super::collection::AtRuleSkipReason::Unknown => "skipped-at-unknown",
         super::collection::AtRuleSkipReason::UnresolvedName => "skipped-at-unresolved",
     }
@@ -1244,17 +1259,17 @@ mod tests {
         assert_eq!(
             snapshots,
             vec![
-                "version: 1\naf5-rule-collection\nstatus: failed\nfailure: collection kind=unsupported-configuration detail=rule collection configured top-level-rules-per-document limit 9 above representable maximum 8\n",
-                "version: 1\naf5-rule-collection\nstatus: failed\nfailure: collection kind=limit-exceeded detail=rule collection observed 2 entries above top-level-rules-per-document limit 1\n",
-                "version: 1\naf5-rule-collection\nstatus: failed\nfailure: collection kind=duplicate-source-id detail=duplicate stylesheet source id 31\n",
-                "version: 1\naf5-rule-collection\nstatus: failed\nfailure: collection kind=duplicate-stylesheet-order detail=duplicate stylesheet order 4\n",
-                "version: 1\naf5-rule-collection\nstatus: failed\nfailure: collection kind=non-monotonic-stylesheet-order detail=stylesheet order 2 follows non-earlier order 4\n",
-                "version: 1\naf5-rule-collection\nstatus: failed\nfailure: collection kind=selector-state-invariant detail=stylesheet source 31 raw rule 3 has no classified selector state\n",
-                "version: 1\naf5-rule-collection\nstatus: failed\nfailure: collection kind=unrepresentable detail=raw-rule-index value 9 exceeds representable maximum 8\n",
-                "version: 1\naf5-rule-collection\nstatus: failed\nfailure: collection kind=counter-exhausted detail=style-rule-position counter exhausted\n",
-                "version: 1\naf5-rule-collection\nstatus: failed\nfailure: collection kind=reservation detail=failed to reserve rule collection stylesheets storage\n",
-                "version: 1\naf5-rule-collection\nstatus: failed\nfailure: collection kind=reservation detail=failed to reserve rule collection rules storage\n",
-                "version: 1\naf5-rule-collection\nstatus: failed\nfailure: collection kind=reservation detail=failed to reserve rule collection declarations storage\n",
+                "version: 2\naf5-rule-collection\nstatus: failed\nfailure: collection kind=unsupported-configuration detail=rule collection configured top-level-rules-per-document limit 9 above representable maximum 8\n",
+                "version: 2\naf5-rule-collection\nstatus: failed\nfailure: collection kind=limit-exceeded detail=rule collection observed 2 entries above top-level-rules-per-document limit 1\n",
+                "version: 2\naf5-rule-collection\nstatus: failed\nfailure: collection kind=duplicate-source-id detail=duplicate stylesheet source id 31\n",
+                "version: 2\naf5-rule-collection\nstatus: failed\nfailure: collection kind=duplicate-stylesheet-order detail=duplicate stylesheet order 4\n",
+                "version: 2\naf5-rule-collection\nstatus: failed\nfailure: collection kind=non-monotonic-stylesheet-order detail=stylesheet order 2 follows non-earlier order 4\n",
+                "version: 2\naf5-rule-collection\nstatus: failed\nfailure: collection kind=selector-state-invariant detail=stylesheet source 31 raw rule 3 has no classified selector state\n",
+                "version: 2\naf5-rule-collection\nstatus: failed\nfailure: collection kind=unrepresentable detail=raw-rule-index value 9 exceeds representable maximum 8\n",
+                "version: 2\naf5-rule-collection\nstatus: failed\nfailure: collection kind=counter-exhausted detail=style-rule-position counter exhausted\n",
+                "version: 2\naf5-rule-collection\nstatus: failed\nfailure: collection kind=reservation detail=failed to reserve rule collection stylesheets storage\n",
+                "version: 2\naf5-rule-collection\nstatus: failed\nfailure: collection kind=reservation detail=failed to reserve rule collection rules storage\n",
+                "version: 2\naf5-rule-collection\nstatus: failed\nfailure: collection kind=reservation detail=failed to reserve rule collection declarations storage\n",
             ]
         );
     }
@@ -1302,14 +1317,14 @@ mod tests {
         assert_eq!(
             snapshots,
             vec![
-                "version: 1\naf5-rule-collection\nstatus: failed\nfailure: collection kind=duplicate-stylesheet-order detail=duplicate stylesheet order 2\n",
-                "version: 1\naf5-rule-collection\nstatus: failed\nfailure: resolution kind=limit-exceeded detail=style resolution exceeded matched-rules-per-element limit 4\n",
-                "version: 1\naf5-rule-collection\nstatus: failed\nfailure: resolution kind=counter-exhausted detail=style execution source coordinate: inline-declaration-order counter exhausted\n",
-                "version: 1\naf5-rule-collection\nstatus: failed\nfailure: limit-exceeded limit=records configured=1 observed-at-least=2\n",
-                "version: 1\naf5-rule-collection\nstatus: failed\nfailure: limit-exceeded limit=storage-bytes configured=3 observed-at-least=4\n",
-                "version: 1\naf5-rule-collection\nstatus: failed\nfailure: limit-exceeded limit=serialized-bytes configured=5 observed-at-least=6\n",
-                "version: 1\naf5-rule-collection\nstatus: failed\nfailure: reservation storage=records\n",
-                "version: 1\naf5-rule-collection\nstatus: failed\nfailure: reservation storage=serialized-output\n",
+                "version: 2\naf5-rule-collection\nstatus: failed\nfailure: collection kind=duplicate-stylesheet-order detail=duplicate stylesheet order 2\n",
+                "version: 2\naf5-rule-collection\nstatus: failed\nfailure: resolution kind=limit-exceeded detail=style resolution exceeded matched-rules-per-element limit 4\n",
+                "version: 2\naf5-rule-collection\nstatus: failed\nfailure: resolution kind=counter-exhausted detail=style execution source coordinate: inline-declaration-order counter exhausted\n",
+                "version: 2\naf5-rule-collection\nstatus: failed\nfailure: limit-exceeded limit=records configured=1 observed-at-least=2\n",
+                "version: 2\naf5-rule-collection\nstatus: failed\nfailure: limit-exceeded limit=storage-bytes configured=3 observed-at-least=4\n",
+                "version: 2\naf5-rule-collection\nstatus: failed\nfailure: limit-exceeded limit=serialized-bytes configured=5 observed-at-least=6\n",
+                "version: 2\naf5-rule-collection\nstatus: failed\nfailure: reservation storage=records\n",
+                "version: 2\naf5-rule-collection\nstatus: failed\nfailure: reservation storage=serialized-output\n",
             ]
         );
     }

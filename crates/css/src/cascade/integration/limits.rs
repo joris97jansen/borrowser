@@ -1,3 +1,4 @@
+use super::super::contract::CascadeResolutionError;
 use super::super::contract::CascadeRuleInputBuildError;
 use super::collection::RuleCollectionBuildError;
 use super::source::StylesheetCollectionInputBuildError;
@@ -7,6 +8,12 @@ use crate::selectors::{
     SelectorMatchingLimits,
 };
 
+/// Public style-execution limits. The derived AF6 cascade budget is an
+/// internal CSS execution detail rather than a caller-constructed API.
+///
+/// ```compile_fail
+/// use css::CascadeResolutionBudget;
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StyleResolutionLimits {
     pub max_stylesheets_per_style_pass: usize,
@@ -86,6 +93,7 @@ pub enum StyleResolutionError {
     StylesheetInputBuild(StylesheetCollectionInputBuildError),
     SourceCoordinate(SourceCoordinateError),
     RuleCollectionBuild(RuleCollectionBuildError),
+    CascadeResolution(CascadeResolutionError),
 }
 
 impl StyleResolutionError {
@@ -116,6 +124,7 @@ impl StyleResolutionError {
             Self::StylesheetInputBuild(error) => error.stable_label(),
             Self::SourceCoordinate(error) => error.stable_label(),
             Self::RuleCollectionBuild(error) => error.stable_label(),
+            Self::CascadeResolution(error) => error.stable_label(),
         }
     }
 }
@@ -154,6 +163,7 @@ impl std::fmt::Display for StyleResolutionError {
                 write!(f, "style execution source coordinate: {error}")
             }
             Self::RuleCollectionBuild(error) => write!(f, "{error}"),
+            Self::CascadeResolution(error) => write!(f, "{error}"),
         }
     }
 }
@@ -167,6 +177,7 @@ impl std::error::Error for StyleResolutionError {
             Self::StylesheetInputBuild(error) => Some(error),
             Self::SourceCoordinate(error) => Some(error),
             Self::RuleCollectionBuild(error) => Some(error),
+            Self::CascadeResolution(error) => Some(error),
             Self::MatchingEnvironmentMismatch { .. }
             | Self::LimitExceeded { .. }
             | Self::UnsupportedConfiguration { .. } => None,

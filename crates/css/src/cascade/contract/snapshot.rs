@@ -1,54 +1,107 @@
 use std::fmt::Write;
 
+#[cfg(test)]
+use super::DeclarationOrder;
+use super::StylesheetRuleOrder;
+use super::declarations::CascadeSpecifiedValue;
+#[cfg(test)]
 use super::declarations::{
     CascadeDeclarationApplicability, CascadeDeclarationInput, CascadeDeclarationProperty,
-    CascadeSpecifiedValue,
 };
-use super::priority::{CascadeImportance, CascadeOrigin, CascadeSpecificity};
+use super::priority::CascadePriority;
+#[cfg(test)]
+use super::priority::{CascadeImportance, CascadeOrigin};
 use super::resolved_style::{CssWideResolvedSource, ResolvedStyle, ResolvedValueSource};
-use super::rules::CascadeRuleInput;
-use super::sources::{CascadeDeclarationSource, CascadeRuleSource};
+#[cfg(test)]
+use super::rules::{CascadeRuleInput, ValidatedCascadeRuleInputs};
+use super::sources::CascadeDeclarationSource;
+#[cfg(test)]
+use super::sources::CascadeRuleSource;
+#[cfg(test)]
 use super::winners::{
-    CascadeDeclarationCandidate, CascadeWinner, CascadeWinnerSet, resolve_cascade_winners,
-    sort_candidates_by_cascade_order,
+    CascadeCandidateObservationIndex, CascadeDeclarationCandidate, CascadeEvaluationFailure,
+    CascadeEvaluationObserver, CascadeResolutionBudget, CascadeResolutionError,
+    CascadeResolutionWorkspace, resolve_cascade_winners_from_validated_inputs,
 };
-use super::{CascadeSourceOrder, DeclarationOrder};
+use super::winners::{CascadeWinner, CascadeWinnerSet};
 
 /// Maintenance-facing debug snapshots for the cascade contract.
 ///
 /// This module owns debug formatting for rule inputs, winner sets, and
 /// resolved-style output. It does not own CSS value serialization.
-pub fn cascade_evaluation_debug_snapshot(rule_inputs: &[CascadeRuleInput<'_>]) -> String {
+#[cfg(test)]
+pub(crate) fn cascade_evaluation_debug_snapshot(
+    rule_inputs: &[CascadeRuleInput<'_>],
+) -> Result<String, CascadeResolutionError> {
     let mut out = String::new();
-    append_cascade_evaluation_debug_snapshot(&mut out, rule_inputs, true);
-    out
+    let (maximum_stylesheet_declarations, maximum_inline_declarations) = rule_inputs
+        .iter()
+        .try_fold(
+            (0usize, 0usize),
+            |(stylesheet, inline), input| match input.context() {
+                super::sources::CascadeRuleContext::Stylesheet { .. } => stylesheet
+                    .checked_add(input.declarations().len())
+                    .map(|stylesheet| (stylesheet, inline)),
+                super::sources::CascadeRuleContext::InlineStyle => inline
+                    .checked_add(input.declarations().len())
+                    .map(|inline| (stylesheet, inline)),
+            },
+        )
+        .ok_or(CascadeResolutionError::CandidateCeilingOverflow {
+            stylesheet_limit: usize::MAX,
+            inline_limit: usize::MAX,
+        })?;
+    let budget = CascadeResolutionBudget::try_new(
+        maximum_stylesheet_declarations,
+        maximum_inline_declarations,
+        rule_inputs.len(),
+    )?;
+    let validated =
+        ValidatedCascadeRuleInputs::try_from_checked_inputs(rule_inputs.to_vec(), budget)?;
+    let mut workspace = CascadeResolutionWorkspace::try_new(budget)?;
+    append_cascade_evaluation_debug_snapshot(&mut out, &validated, budget, &mut workspace, true)?;
+    Ok(out)
 }
 
+#[cfg(test)]
 pub(crate) fn append_cascade_evaluation_debug_snapshot(
     out: &mut String,
-    rule_inputs: &[CascadeRuleInput<'_>],
+    rule_inputs: &ValidatedCascadeRuleInputs<'_>,
+    budget: CascadeResolutionBudget,
+    workspace: &mut CascadeResolutionWorkspace,
     include_version: bool,
-) -> CascadeWinnerSet {
-    let candidates = rule_inputs
-        .iter()
-        .flat_map(|rule_input| rule_input.candidates())
-        .collect::<Vec<_>>();
-    let mut ordered_candidates = candidates.clone();
-    sort_candidates_by_cascade_order(&mut ordered_candidates);
-    let winners = resolve_cascade_winners(&candidates);
+) -> Result<CascadeWinnerSet, CascadeResolutionError> {
+    let mut observer = SnapshotObserver::default();
+    let winners = match resolve_cascade_winners_from_validated_inputs(
+        rule_inputs,
+        budget,
+        workspace,
+        &mut observer,
+    ) {
+        Ok(winners) => winners,
+        Err(CascadeEvaluationFailure::Cascade(error)) => return Err(error),
+        Err(CascadeEvaluationFailure::Observer(error)) => match error {},
+    };
+    let mut ordered_candidates = observer.candidates.iter().collect::<Vec<_>>();
+    ordered_candidates.sort_by_key(|candidate| (candidate.property, candidate.priority));
 
     if include_version {
-        writeln!(out, "version: 2").expect("write snapshot");
+        writeln!(out, "version: 3").expect("write snapshot");
     }
     writeln!(out, "cascade-evaluation").expect("write snapshot");
-    writeln!(out, "rule-inputs: {}", rule_inputs.len()).expect("write snapshot");
-    for (rule_index, rule_input) in rule_inputs.iter().enumerate() {
+    writeln!(out, "rule-inputs: {}", rule_inputs.inputs().len()).expect("write snapshot");
+    for (rule_index, rule_input) in rule_inputs.inputs().iter().enumerate() {
         let context = rule_input.context();
         writeln!(
             out,
-            "  rule-input[{rule_index}]: source={} origin={} specificity={} source-order={} declarations={}",
+            "  rule-input[{rule_index}]: source={} origin={} attachment={} specificity={} source-order={} declarations={}",
             rule_source_label(rule_input.source()),
             origin_label(context.origin()),
+            if matches!(context, super::sources::CascadeRuleContext::InlineStyle) {
+                "element-attached"
+            } else {
+                "style-rule"
+            },
             specificity_label(context.specificity()),
             source_order_label(context.source_order()),
             rule_input.declarations().len(),
@@ -70,14 +123,15 @@ pub(crate) fn append_cascade_evaluation_debug_snapshot(
         }
     }
 
-    writeln!(out, "candidates-source-order: {}", candidates.len()).expect("write snapshot");
-    for (candidate_index, candidate) in candidates.iter().enumerate() {
-        writeln!(
-            out,
-            "  candidate[{candidate_index}]: {}",
-            candidate_snapshot_label(candidate),
-        )
-        .expect("write snapshot");
+    writeln!(
+        out,
+        "candidates-source-order: {}",
+        observer.candidates.len()
+    )
+    .expect("write snapshot");
+    for (candidate_index, candidate) in observer.candidates.iter().enumerate() {
+        writeln!(out, "  candidate[{candidate_index}]: {}", candidate.label,)
+            .expect("write snapshot");
     }
 
     writeln!(
@@ -87,12 +141,8 @@ pub(crate) fn append_cascade_evaluation_debug_snapshot(
     )
     .expect("write snapshot");
     for (candidate_index, candidate) in ordered_candidates.iter().enumerate() {
-        writeln!(
-            out,
-            "  candidate[{candidate_index}]: {}",
-            candidate_snapshot_label(candidate),
-        )
-        .expect("write snapshot");
+        writeln!(out, "  candidate[{candidate_index}]: {}", candidate.label,)
+            .expect("write snapshot");
     }
 
     writeln!(out, "winners: {}", winners.entries().len()).expect("write snapshot");
@@ -106,13 +156,45 @@ pub(crate) fn append_cascade_evaluation_debug_snapshot(
         .expect("write snapshot");
     }
 
-    winners
+    Ok(winners)
+}
+
+#[derive(Clone, Debug)]
+#[cfg(test)]
+struct CandidateSnapshotRecord {
+    property: super::properties::CascadePropertyId,
+    priority: CascadePriority,
+    label: String,
+}
+
+#[cfg(test)]
+#[derive(Default)]
+struct SnapshotObserver {
+    candidates: Vec<CandidateSnapshotRecord>,
+}
+
+#[cfg(test)]
+impl CascadeEvaluationObserver for SnapshotObserver {
+    type Error = std::convert::Infallible;
+
+    fn candidate(
+        &mut self,
+        _observation_index: CascadeCandidateObservationIndex,
+        candidate: CascadeDeclarationCandidate<'_>,
+    ) -> Result<(), Self::Error> {
+        self.candidates.push(CandidateSnapshotRecord {
+            property: candidate.property(),
+            priority: candidate.priority(),
+            label: candidate_snapshot_label(candidate),
+        });
+        Ok(())
+    }
 }
 
 impl CascadeWinnerSet {
     pub fn to_debug_snapshot(&self) -> String {
         let mut out = String::new();
-        writeln!(&mut out, "version: 2").expect("write snapshot");
+        writeln!(&mut out, "version: 3").expect("write snapshot");
         writeln!(&mut out, "cascade-winners").expect("write snapshot");
         for entry in self.entries() {
             writeln!(
@@ -130,7 +212,7 @@ impl CascadeWinnerSet {
 impl ResolvedStyle {
     pub fn to_debug_snapshot(&self) -> String {
         let mut out = String::new();
-        writeln!(&mut out, "version: 2").expect("write snapshot");
+        writeln!(&mut out, "version: 3").expect("write snapshot");
         writeln!(&mut out, "resolved-style").expect("write snapshot");
         for entry in self.entries() {
             writeln!(
@@ -176,6 +258,7 @@ fn css_wide_source_snapshot_label(source: &CssWideResolvedSource) -> String {
     }
 }
 
+#[cfg(test)]
 fn rule_source_label(source: CascadeRuleSource) -> String {
     match source {
         CascadeRuleSource::Stylesheet(source) => {
@@ -189,6 +272,7 @@ fn rule_source_label(source: CascadeRuleSource) -> String {
     }
 }
 
+#[cfg(test)]
 fn origin_label(origin: CascadeOrigin) -> &'static str {
     match origin {
         CascadeOrigin::UserAgent => "user-agent",
@@ -197,6 +281,7 @@ fn origin_label(origin: CascadeOrigin) -> &'static str {
     }
 }
 
+#[cfg(test)]
 fn importance_label(importance: CascadeImportance) -> &'static str {
     match importance {
         CascadeImportance::Normal => "normal",
@@ -204,6 +289,7 @@ fn importance_label(importance: CascadeImportance) -> &'static str {
     }
 }
 
+#[cfg(test)]
 fn declaration_property_label(property: &CascadeDeclarationProperty) -> String {
     match property {
         CascadeDeclarationProperty::Supported(property) => {
@@ -225,6 +311,7 @@ fn declaration_property_label(property: &CascadeDeclarationProperty) -> String {
     }
 }
 
+#[cfg(test)]
 fn applicability_label(applicability: CascadeDeclarationApplicability) -> String {
     match applicability {
         CascadeDeclarationApplicability::Supported(property) => {
@@ -242,6 +329,7 @@ fn applicability_label(applicability: CascadeDeclarationApplicability) -> String
     }
 }
 
+#[cfg(test)]
 fn declaration_order_label(declaration_order: DeclarationOrder, expansion_order: u16) -> String {
     if expansion_order == 0 {
         declaration_order.get().to_string()
@@ -253,12 +341,14 @@ fn declaration_order_label(declaration_order: DeclarationOrder, expansion_order:
     }
 }
 
-fn candidate_snapshot_label(candidate: &CascadeDeclarationCandidate) -> String {
+#[cfg(test)]
+fn candidate_snapshot_label(candidate: CascadeDeclarationCandidate<'_>) -> String {
     format!(
-        "property={} source={} band={} specificity={} source-order={} declaration-order={} value={}",
+        "property={} source={} band={} attachment={} specificity={} source-order={} declaration-order={} value={}",
         candidate.property().name(),
         declaration_source_label(candidate.source()),
         candidate.priority().band().as_debug_label(),
+        declaration_precedence_label(candidate.priority()),
         specificity_label(candidate.priority().specificity()),
         source_order_label(candidate.priority().source_order()),
         candidate.priority().declaration_order().get(),
@@ -268,9 +358,10 @@ fn candidate_snapshot_label(candidate: &CascadeDeclarationCandidate) -> String {
 
 fn winner_snapshot_label(winner: &CascadeWinner) -> String {
     format!(
-        "winner(source={}, band={}, specificity={}, source-order={}, declaration-order={}, value={})",
+        "winner(source={}, band={}, attachment={}, specificity={}, source-order={}, declaration-order={}, value={})",
         declaration_source_label(winner.source),
         winner.priority.band().as_debug_label(),
+        declaration_precedence_label(winner.priority),
         specificity_label(winner.priority.specificity()),
         source_order_label(winner.priority.source_order()),
         winner.priority.declaration_order().get(),
@@ -305,14 +396,22 @@ fn inline_rule_source_label(source: super::sources::InlineStyleRuleRef) -> Strin
     }
 }
 
-fn source_order_label(order: CascadeSourceOrder) -> String {
+fn source_order_label(order: Option<StylesheetRuleOrder>) -> String {
     match order {
-        CascadeSourceOrder::Stylesheet(order) => format!(
+        Some(order) => format!(
             "stylesheet[{}/{}]",
             order.stylesheet().get(),
             order.rule().get()
         ),
-        CascadeSourceOrder::InlineStyle => "inline-style".to_string(),
+        None => "not-applicable".to_string(),
+    }
+}
+
+fn declaration_precedence_label(priority: CascadePriority) -> &'static str {
+    if priority.declaration_precedence().is_element_attached() {
+        "element-attached"
+    } else {
+        "style-rule"
     }
 }
 
@@ -323,6 +422,7 @@ fn specified_value_label(value: &CascadeSpecifiedValue) -> String {
     quoted_snapshot_text(&value)
 }
 
+#[cfg(test)]
 fn declaration_error_label(declaration: &CascadeDeclarationInput) -> String {
     if let Some(error) = declaration.invalid_value_error() {
         return format!(" invalid-reason={}", error.kind().as_debug_label());
@@ -333,15 +433,15 @@ fn declaration_error_label(declaration: &CascadeDeclarationInput) -> String {
     String::new()
 }
 
-fn specificity_label(specificity: CascadeSpecificity) -> String {
+fn specificity_label(specificity: Option<crate::selectors::Specificity>) -> String {
     match specificity {
-        CascadeSpecificity::Selector(specificity) => format!(
+        Some(specificity) => format!(
             "selector({},{},{})",
             specificity.a(),
             specificity.b(),
             specificity.c()
         ),
-        CascadeSpecificity::InlineStyle => "inline-style".to_string(),
+        None => "not-applicable".to_string(),
     }
 }
 

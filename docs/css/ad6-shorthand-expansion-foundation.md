@@ -1,6 +1,6 @@
 # AD6: Shorthand Expansion Foundation
 
-Last updated: 2026-06-28
+Last updated: 2026-08-22
 Status: implemented contract for Milestone AD issue 6
 
 This document defines Borrowser's CSS-owned shorthand expansion foundation and
@@ -30,6 +30,7 @@ Related documents:
 - `docs/css/ad5-specified-computed-value-boundaries.md`
 - `docs/rendering/aa4-outline-rendering-box-decoration.md`
 - `docs/engine-feature-gap-tracker.md`
+- `docs/css/af6-cascade-ordering-winner-selection-contract.md`
 
 ## Purpose
 
@@ -127,6 +128,11 @@ All longhands emitted by one shorthand preserve the authored declaration's
 source and authored declaration order. `expansion_order` is recorded only as a
 deterministic source/debug-order fact among emitted longhands from the same
 shorthand.
+
+AF6 defines candidate identity as `(CascadeDeclarationSource, PropertyId)`.
+That identity permits one shorthand source to emit each different constituent
+longhand exactly once. Emitting the same longhand twice from one shorthand
+source is a typed engine invariant failure and is never silently deduplicated.
 
 Cascade precedence remains controlled by authored declaration order, rule
 order, specificity, origin, and importance. `expansion_order` is not a new

@@ -4,8 +4,13 @@ use crate::property_registry;
 use crate::values::CssWideKeyword;
 
 use super::properties::{CascadeInheritance, CascadePropertyId, InitialStyleValue};
-use super::rules::CascadeRuleInput;
-use super::winners::{CascadeWinner, CascadeWinnerSet, resolve_cascade_winners_from_rule_inputs};
+#[cfg(test)]
+use super::rules::{CascadeRuleInput, ValidatedCascadeRuleInputs};
+#[cfg(test)]
+use super::winners::{
+    CascadeResolutionBudget, CascadeResolutionWorkspace, resolve_cascade_winners,
+};
+use super::winners::{CascadeWinner, CascadeWinnerSet};
 
 /// Resolved-style output for the current cascade subset.
 ///
@@ -175,18 +180,72 @@ pub fn resolve_cascade_style(
         .expect("cascade style resolution must produce a total supported-property output")
 }
 
+/// Production resolved-style construction that consumes sparse winners so a
+/// winning specified value is not cloned again after AF6 materialization.
+pub(crate) fn resolve_cascade_style_owned(
+    winners: CascadeWinnerSet,
+    parent_style: Option<&ResolvedStyle>,
+) -> ResolvedStyle {
+    let mut builder = ResolvedStyleBuilder::new();
+    let mut winners = winners.into_entries().peekable();
+
+    for property in property_registry().ids() {
+        if winners
+            .peek()
+            .is_some_and(|entry| entry.property() == property)
+        {
+            let (winner_property, winner) = winners
+                .next()
+                .expect("peeked cascade winner must remain available")
+                .into_parts();
+            debug_assert_eq!(winner_property, property);
+            match winner.value.css_wide_keyword() {
+                Some(keyword) => builder.record_css_wide_keyword(
+                    property,
+                    winner,
+                    keyword.keyword(),
+                    parent_style.is_some(),
+                ),
+                None => builder.record_winner(property, winner),
+            }
+            continue;
+        }
+
+        match (property.metadata().inheritance, parent_style) {
+            (CascadeInheritance::Inherited, Some(_)) => builder.record_inherited(property),
+            (CascadeInheritance::Inherited, None)
+            | (CascadeInheritance::NotInherited, Some(_))
+            | (CascadeInheritance::NotInherited, None) => builder.record_initial(property),
+        }
+    }
+
+    debug_assert!(winners.next().is_none());
+    builder
+        .build()
+        .expect("cascade style resolution must produce a total supported-property output")
+}
+
 /// Resolves a total `ResolvedStyle` directly from matched rule inputs plus
 /// optional parent resolved style.
 ///
 /// This keeps the rule-input -> winner-set -> resolved-style staircase
 /// explicit while offering one current-scope convenience entrypoint for the
 /// full Milestone R cascade path.
+#[cfg(test)]
 pub fn resolve_cascade_style_from_rule_inputs(
     rule_inputs: &[CascadeRuleInput],
     parent_style: Option<&ResolvedStyle>,
 ) -> ResolvedStyle {
-    let winners = resolve_cascade_winners_from_rule_inputs(rule_inputs);
-    resolve_cascade_style(&winners, parent_style)
+    let budget = CascadeResolutionBudget::try_new(usize::from(u16::MAX), 1_024, 4_096)
+        .expect("test cascade budget is representable");
+    let validated =
+        ValidatedCascadeRuleInputs::try_from_checked_inputs(rule_inputs.to_vec(), budget)
+            .expect("test rule inputs satisfy AF6 invariants");
+    let mut workspace =
+        CascadeResolutionWorkspace::try_new(budget).expect("test winner workspace reserves");
+    let winners = resolve_cascade_winners(&validated, budget, &mut workspace)
+        .expect("test cascade winner resolution succeeds");
+    resolve_cascade_style_owned(winners, parent_style)
 }
 
 /// Error returned when a final `ResolvedStyle` is missing supported

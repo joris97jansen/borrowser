@@ -1,7 +1,15 @@
 # R3: Implement Core Cascade Winner Resolution
 
-Last updated: 2026-04-15  
-Status: contract and code implemented
+Last updated: 2026-08-22
+Status: historical Milestone R contract; winner algorithm superseded by AF6
+
+AF6 removes R3's sorted candidate vector and its stable incoming-order exact
+tie. Exact duplicate identities, inconsistent identity reuse, and distinct
+candidates with equal complete priority are typed invariant failures. The
+production algorithm is a reusable property-indexed accumulator over opaque
+validated AF5 inputs. See
+`docs/css/af6-cascade-ordering-winner-selection-contract.md`. The text below is
+retained as history and is not the current implementation contract.
 
 This document is the source-of-truth contract for Milestone R issue 3: the
 deterministic algorithm Borrowser uses to select the authored winning

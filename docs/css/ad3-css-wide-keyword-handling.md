@@ -1,6 +1,6 @@
 # AD3: CSS-Wide Keyword Handling
 
-Last updated: 2026-06-26
+Last updated: 2026-08-22
 Status: implemented contract for Milestone AD issue 3
 
 This document defines Borrowser's current CSS-owned handling for CSS-wide
@@ -24,6 +24,7 @@ Related documents:
 - `docs/css/r6-initial-default-value-handling.md`
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
 - `docs/engine-feature-gap-tracker.md`
+- `docs/css/af6-cascade-ordering-winner-selection-contract.md`
 
 ## Purpose
 
@@ -77,6 +78,12 @@ recognized-but-unsupported, not confused with ordinary invalid values.
 Supported CSS-wide declarations remain supported declaration values through
 normal candidate creation, ordering, and winner selection. They are not
 resolved during token parsing or property-specific parsing.
+
+AF6 does not change this ownership. Supported CSS-wide declarations are
+ordinary valid supported candidates and may win; only after winning does the
+resolved-style path interpret them. `revert` and `revert-layer` remain
+invalid-value non-candidates in the current subset rather than low-priority
+candidates. AD3 does not own registry-derived winner capacity.
 
 When a CSS-wide value wins, `resolve_cascade_style(...)` resolves it through
 property metadata:
