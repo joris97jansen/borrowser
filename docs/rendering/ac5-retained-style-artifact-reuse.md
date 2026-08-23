@@ -3,6 +3,8 @@
 Status: implemented conservative retained style artifact reuse for Milestone AC
 issue 5
 
+Last updated: 2026-08-22
+
 This document defines Borrowser's first retained style artifact reuse path.
 AC5 makes browser/runtime-owned style artifact lifetime, cache keys,
 reuse/recompute/discard accounting, and deterministic debug output explicit.
@@ -48,6 +50,12 @@ Browser/runtime stores these artifacts in `PageState` through
 `RetainedRenderState` and `PageStyleCache`. CSS remains the semantic owner of
 the artifacts. The browser/runtime owns only their retained lifetime,
 validity key, invalidation state, and debug accounting.
+
+AF6 cascade candidates, winner workspaces, and diagnostic records are
+pass-local CSS evaluation data, not retained style artifacts. A cascade
+resolution failure leaves retained resolved/computed output absent or dirty as
+the calling path specifies; Browser must not retain an empty/default style or
+reinterpret the failure as incremental unavailability.
 
 The following are deliberately not retained style artifacts:
 

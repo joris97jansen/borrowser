@@ -63,29 +63,62 @@ fn cascade_evaluation_debug_snapshot_covers_filtering_ordering_and_winners() {
     .expect("valid inline rule");
 
     assert_eq!(
-        cascade_evaluation_debug_snapshot(&[stylesheet_rule, inline_rule]),
+        cascade_evaluation_debug_snapshot(&[stylesheet_rule, inline_rule])
+            .expect("checked R8 fixture resolves"),
         concat!(
-            "version: 2\n",
+            "version: 3\n",
             "cascade-evaluation\n",
             "rule-inputs: 2\n",
-            "  rule-input[0]: source=stylesheet[2/0] origin=author specificity=selector(0,0,1) source-order=stylesheet[0/0] declarations=4\n",
+            "  rule-input[0]: source=stylesheet[2/0] origin=author attachment=style-rule specificity=selector(0,0,1) source-order=stylesheet[0/0] declarations=4\n",
             "    declaration[0]: source=stylesheet[2/0]/declaration[0] declaration-order=0 importance=normal property=supported(color) applicability=supported(color) value=\"red\"\n",
             "    declaration[1]: source=stylesheet[2/0]/declaration[1] declaration-order=1 importance=normal property=unsupported(\"zoom\") applicability=unsupported-property value=\"2\"\n",
             "    declaration[2]: source=stylesheet[2/0]/declaration[2] declaration-order=2 importance=important property=supported(color) applicability=supported(color) value=\"blue\"\n",
             "    declaration[3]: source=stylesheet[2/0]/declaration[3] declaration-order=3 importance=normal property=invalid-value(display) applicability=invalid-value(display) value=\"grid\" invalid-reason=unsupported-display-keyword\n",
-            "  rule-input[1]: source=inline-style[compatibility=3] origin=author specificity=inline-style source-order=inline-style declarations=1\n",
+            "  rule-input[1]: source=inline-style[compatibility=3] origin=author attachment=element-attached specificity=not-applicable source-order=not-applicable declarations=1\n",
             "    declaration[0]: source=inline-style[compatibility=3]/declaration[0] declaration-order=0 importance=normal property=supported(width) applicability=supported(width) value=\"20px\"\n",
             "candidates-source-order: 3\n",
-            "  candidate[0]: property=color source=stylesheet[2/0]/declaration[0] band=author-normal specificity=selector(0,0,1) source-order=stylesheet[0/0] declaration-order=0 value=\"red\"\n",
-            "  candidate[1]: property=color source=stylesheet[2/0]/declaration[2] band=author-important specificity=selector(0,0,1) source-order=stylesheet[0/0] declaration-order=2 value=\"blue\"\n",
-            "  candidate[2]: property=width source=inline-style[compatibility=3]/declaration[0] band=author-normal specificity=inline-style source-order=inline-style declaration-order=0 value=\"20px\"\n",
+            "  candidate[0]: property=color source=stylesheet[2/0]/declaration[0] band=author-normal attachment=style-rule specificity=selector(0,0,1) source-order=stylesheet[0/0] declaration-order=0 value=\"red\"\n",
+            "  candidate[1]: property=color source=stylesheet[2/0]/declaration[2] band=author-important attachment=style-rule specificity=selector(0,0,1) source-order=stylesheet[0/0] declaration-order=2 value=\"blue\"\n",
+            "  candidate[2]: property=width source=inline-style[compatibility=3]/declaration[0] band=author-normal attachment=element-attached specificity=not-applicable source-order=not-applicable declaration-order=0 value=\"20px\"\n",
             "candidates-cascade-order: 3\n",
-            "  candidate[0]: property=color source=stylesheet[2/0]/declaration[0] band=author-normal specificity=selector(0,0,1) source-order=stylesheet[0/0] declaration-order=0 value=\"red\"\n",
-            "  candidate[1]: property=color source=stylesheet[2/0]/declaration[2] band=author-important specificity=selector(0,0,1) source-order=stylesheet[0/0] declaration-order=2 value=\"blue\"\n",
-            "  candidate[2]: property=width source=inline-style[compatibility=3]/declaration[0] band=author-normal specificity=inline-style source-order=inline-style declaration-order=0 value=\"20px\"\n",
+            "  candidate[0]: property=color source=stylesheet[2/0]/declaration[0] band=author-normal attachment=style-rule specificity=selector(0,0,1) source-order=stylesheet[0/0] declaration-order=0 value=\"red\"\n",
+            "  candidate[1]: property=color source=stylesheet[2/0]/declaration[2] band=author-important attachment=style-rule specificity=selector(0,0,1) source-order=stylesheet[0/0] declaration-order=2 value=\"blue\"\n",
+            "  candidate[2]: property=width source=inline-style[compatibility=3]/declaration[0] band=author-normal attachment=element-attached specificity=not-applicable source-order=not-applicable declaration-order=0 value=\"20px\"\n",
             "winners: 2\n",
-            "  color: winner(source=stylesheet[2/0]/declaration[2], band=author-important, specificity=selector(0,0,1), source-order=stylesheet[0/0], declaration-order=2, value=\"blue\")\n",
-            "  width: winner(source=inline-style[compatibility=3]/declaration[0], band=author-normal, specificity=inline-style, source-order=inline-style, declaration-order=0, value=\"20px\")\n",
+            "  color: winner(source=stylesheet[2/0]/declaration[2], band=author-important, attachment=style-rule, specificity=selector(0,0,1), source-order=stylesheet[0/0], declaration-order=2, value=\"blue\")\n",
+            "  width: winner(source=inline-style[compatibility=3]/declaration[0], band=author-normal, attachment=element-attached, specificity=not-applicable, source-order=not-applicable, declaration-order=0, value=\"20px\")\n",
         )
     );
+}
+
+#[test]
+fn arbitrary_r8_fixture_input_returns_typed_cascade_failure_without_panicking() {
+    let inline_style = InlineStyleRuleRef::new(4);
+    let source = inline_declaration_source(inline_style, 0);
+    let malformed = CascadeRuleInput::from_inline_style(
+        inline_style,
+        0,
+        vec![
+            CascadeDeclarationInput::supported(
+                source,
+                0,
+                CascadeImportance::Normal,
+                CascadePropertyId::Color,
+                parsed_value("color: red"),
+            ),
+            CascadeDeclarationInput::supported(
+                source,
+                0,
+                CascadeImportance::Normal,
+                CascadePropertyId::Color,
+                parsed_value("color: red"),
+            ),
+        ],
+    )
+    .expect("rule ownership remains valid");
+
+    assert!(matches!(
+        cascade_evaluation_debug_snapshot(&[malformed]),
+        Err(super::super::CascadeResolutionError::DuplicateCandidateIdentity { .. })
+    ));
 }

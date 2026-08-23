@@ -9,7 +9,7 @@ use super::support::{
     namespaced_element, stylesheet,
 };
 use crate::{
-    CascadePropertyId, CascadeRuleMatch, CascadeSpecificity, RawRuleIndex, ResolvedValueSource,
+    CascadePropertyId, CascadeResolutionError, CascadeRuleMatch, RawRuleIndex, ResolvedValueSource,
     Rule, SelectorDomBuildError, SelectorDomIndex, SelectorMatchability, SelectorMatchingContext,
     StylesheetCollectionInput, StylesheetConditionInput, StylesheetOrder, StylesheetRuleRef,
     StylesheetSourceId, resolve_document_styles_from_cascade_inputs,
@@ -237,7 +237,7 @@ fn selector_list_effective_specificity_uses_only_actual_matches_in_cascade() {
     assert_eq!(color.value.to_css_text().as_deref(), Some("blue"));
     assert_eq!(
         color.priority.specificity(),
-        CascadeSpecificity::Selector(crate::Specificity::new(0, 1, 0))
+        Some(crate::Specificity::new(0, 1, 0))
     );
 
     let snapshot =
@@ -245,19 +245,19 @@ fn selector_list_effective_specificity_uses_only_actual_matches_in_cascade() {
             .expect("document style debug snapshot");
     assert!(
         snapshot.contains(
-            "rule-input[0]: source=stylesheet[2/0] origin=author specificity=selector(0,0,1)"
+            "rule-input[0]: source=stylesheet[2/0] origin=author attachment=style-rule specificity=selector(0,0,1)"
         ),
         "the unmatched #missing selector must not raise the first rule's effective specificity:\n{snapshot}"
     );
     assert!(
         snapshot.contains(
-            "rule-input[1]: source=stylesheet[2/1] origin=author specificity=selector(0,1,0)"
+            "rule-input[1]: source=stylesheet[2/1] origin=author attachment=style-rule specificity=selector(0,1,0)"
         ),
         "the .target rule must carry class specificity:\n{snapshot}"
     );
     assert!(
         snapshot.contains(
-            "color: winner(source=stylesheet[2/1]/declaration[0], band=author-normal, specificity=selector(0,1,0)"
+            "color: winner(source=stylesheet[2/1]/declaration[0], band=author-normal, attachment=style-rule, specificity=selector(0,1,0)"
         ),
         "the class selector must win through cascade priority:\n{snapshot}"
     );
@@ -287,7 +287,7 @@ fn tree_structural_pseudo_enters_the_normal_cascade_with_b_specificity() {
     assert_eq!(empty_winner.value.to_css_text().as_deref(), Some("blue"));
     assert_eq!(
         empty_winner.priority.specificity(),
-        CascadeSpecificity::Selector(crate::Specificity::new(0, 1, 1))
+        Some(crate::Specificity::new(0, 1, 1))
     );
 
     let non_empty_winner = paragraphs[1]
@@ -298,7 +298,7 @@ fn tree_structural_pseudo_enters_the_normal_cascade_with_b_specificity() {
     assert_eq!(non_empty_winner.value.to_css_text().as_deref(), Some("red"));
     assert_eq!(
         non_empty_winner.priority.specificity(),
-        CascadeSpecificity::Selector(crate::Specificity::C)
+        Some(crate::Specificity::C)
     );
 }
 
@@ -377,14 +377,8 @@ fn resolve_document_styles_integrates_inline_style_as_structured_author_output()
         .get(CascadePropertyId::Color)
         .and_then(|entry| entry.winner())
         .expect("inline color winner");
-    assert_eq!(
-        color_winner.priority.specificity(),
-        CascadeSpecificity::InlineStyle
-    );
-    assert_eq!(
-        color_winner.priority.source_order(),
-        crate::CascadeSourceOrder::InlineStyle
-    );
+    assert_eq!(color_winner.priority.specificity(), None);
+    assert_eq!(color_winner.priority.source_order(), None);
 }
 
 #[test]
@@ -482,6 +476,46 @@ fn resolve_document_styles_rejects_invalid_outline_shorthand_atomically() {
         &ResolvedValueSource::Initial(crate::InitialStyleValue::ZeroPx),
         "invalid shorthand must not partially emit an outline-width candidate"
     );
+}
+
+#[test]
+fn shorthand_and_longhand_candidates_follow_authored_order_and_importance() {
+    let cases = [
+        (
+            "div { outline: red solid 1px; outline-color: blue; }",
+            "blue",
+        ),
+        (
+            "div { outline-color: blue; outline: red solid 1px; }",
+            "red",
+        ),
+        (
+            "div { outline: red solid 1px !important; outline-color: blue; }",
+            "red",
+        ),
+        (
+            "div { outline-color: blue !important; outline: red solid 1px; }",
+            "blue",
+        ),
+    ];
+    for (css, expected) in cases {
+        let resolved = resolve_document_styles(
+            &document_element("div", Vec::new(), Vec::new()),
+            matching_environment(),
+            &[stylesheet(css)],
+        )
+        .expect("shorthand/longhand cascade resolves");
+        assert_eq!(
+            resolved.entries()[0]
+                .style()
+                .get(CascadePropertyId::OutlineColor)
+                .and_then(|entry| entry.winner())
+                .and_then(|winner| winner.value.to_css_text())
+                .as_deref(),
+            Some(expected),
+            "unexpected winner for {css}"
+        );
+    }
 }
 
 #[test]
@@ -711,5 +745,40 @@ fn try_resolve_document_styles_rejects_unrepresentable_limit_configuration() {
             configured,
             max_supported: u32::MAX as usize,
         }
+    );
+}
+
+#[test]
+fn cascade_budget_failure_propagates_through_full_and_incremental_resolution() {
+    let dom = document_element("div", Vec::new(), Vec::new());
+    let limits = StyleResolutionLimits {
+        max_declaration_inputs_per_element: usize::MAX,
+        max_inline_declarations_per_element: 1,
+        ..StyleResolutionLimits::default()
+    };
+    let expected =
+        StyleResolutionError::CascadeResolution(CascadeResolutionError::CandidateCeilingOverflow {
+            stylesheet_limit: usize::MAX,
+            inline_limit: 1,
+        });
+    assert_eq!(
+        try_resolve_document_styles_with_limits(&dom, matching_environment(), &[], &limits)
+            .expect_err("full resolution must propagate cascade budget failure"),
+        expected
+    );
+
+    let previous = resolve_document_styles(&dom, matching_environment(), &[])
+        .expect("default-budget previous style resolves");
+    assert_eq!(
+        try_resolve_document_styles_incremental_suffix_with_limits(
+            &dom,
+            matching_environment(),
+            &[],
+            &previous,
+            &[],
+            &limits,
+        )
+        .expect_err("cascade failure must not become incremental unavailability"),
+        expected
     );
 }

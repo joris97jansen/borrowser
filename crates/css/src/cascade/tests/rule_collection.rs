@@ -127,7 +127,7 @@ fn equal_specificity_uses_explicit_rule_then_sparse_stylesheet_order() {
     assert_eq!(source.source_id(), inputs[1].source_id());
     assert_eq!(
         winner.priority.source_order(),
-        crate::CascadeSourceOrder::Stylesheet(crate::StylesheetRuleOrder::new(
+        Some(crate::StylesheetRuleOrder::new(
             StylesheetOrder::new(9),
             crate::StyleRulePosition::new(0)
         ))
@@ -305,6 +305,8 @@ fn all_internal_at_rules_skip_without_flattening_and_whitespace_media_is_active(
         "@media screen { div { color: red; } }",
         "@supports (display: block) { div { color: red; } }",
         "@import url(other.css);",
+        "@layer theme { div { color: red; } }",
+        "@scope (.container) { div { color: red; } }",
         "@future token { div { color: red; } }",
         "div { color: blue; }",
     ));
@@ -319,7 +321,7 @@ fn all_internal_at_rules_skip_without_flattening_and_whitespace_media_is_active(
         collection.stylesheets()[0].condition(),
         StylesheetConditionStatus::Active
     ));
-    let reasons = collection.rules()[..4]
+    let reasons = collection.rules()[..6]
         .iter()
         .map(|rule| match rule {
             CollectedRule::SkippedAtRule(rule) => rule.reason(),
@@ -332,13 +334,28 @@ fn all_internal_at_rules_skip_without_flattening_and_whitespace_media_is_active(
             AtRuleSkipReason::MediaDeferred,
             AtRuleSkipReason::SupportsDeferred,
             AtRuleSkipReason::ImportDeferred,
+            AtRuleSkipReason::LayerDeferred,
+            AtRuleSkipReason::ScopeDeferred,
             AtRuleSkipReason::Unknown,
         ]
     );
     assert!(matches!(
-        collection.rules()[4],
+        collection.rules()[6],
         CollectedRule::ActiveStyle(_)
     ));
+
+    let diagnostic = rule_collection_diagnostic(
+        &document_element("div", Vec::new(), Vec::new()),
+        matching_environment(),
+        &[input],
+        &StyleResolutionLimits::default(),
+        RuleCollectionDiagnosticLimits::default(),
+    )
+    .to_debug_snapshot();
+    assert_eq!(crate::RULE_COLLECTION_DIAGNOSTIC_VERSION, 2);
+    assert!(diagnostic.starts_with("version: 2\naf5-rule-collection\n"));
+    assert!(diagnostic.contains("state=skipped-at-layer"));
+    assert!(diagnostic.contains("state=skipped-at-scope"));
 }
 
 #[test]
@@ -379,7 +396,7 @@ fn af5_diagnostic_uses_exact_match_outcome_and_is_bounded_before_winners() {
     assert!(
         diagnostic
             .to_debug_snapshot()
-            .starts_with("version: 1\naf5-rule-collection\nstatus: complete\n")
+            .starts_with("version: 2\naf5-rule-collection\nstatus: complete\n")
     );
     let repeated = rule_collection_diagnostic(
         &dom,
@@ -682,7 +699,7 @@ fn collected_hot_path_types_remain_compact_and_origin_is_existing_cascade_origin
     assert!(std::mem::size_of::<super::super::integration::ActiveCollectedStyleRule<'_>>() <= 48);
     assert!(std::mem::size_of::<crate::CascadePriority>() <= 32);
     assert!(std::mem::size_of::<crate::CascadeDeclarationInput>() <= 160);
-    assert!(std::mem::size_of::<crate::CascadeDeclarationCandidate>() <= 144);
+    assert!(std::mem::size_of::<crate::CascadeWinner>() <= 144);
     assert!(std::mem::size_of::<crate::CascadeWinner>() <= 144);
     assert!(std::mem::size_of::<crate::MatchedStylesheetRuleInput<'_>>() <= 96);
     let sheet = stylesheet("div { color: red; }");

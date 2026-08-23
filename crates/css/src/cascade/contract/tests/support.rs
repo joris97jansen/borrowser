@@ -1,6 +1,8 @@
 use super::super::{
-    CascadeDeclarationSource, CascadePropertyId, CascadeRuleMatch, CascadeSpecifiedValue,
-    InlineStyleDeclarationRef, InlineStyleRuleRef, ResolvedStyleBuilder, StylesheetDeclarationRef,
+    CascadeDeclarationSource, CascadePropertyId, CascadeResolutionBudget, CascadeResolutionError,
+    CascadeResolutionWorkspace, CascadeRuleInput, CascadeRuleMatch, CascadeSpecifiedValue,
+    CascadeWinnerSet, InlineStyleDeclarationRef, InlineStyleRuleRef, ResolvedStyleBuilder,
+    StylesheetDeclarationRef, ValidatedCascadeRuleInputs, resolve_cascade_winners,
 };
 use crate::selectors::{SelectorListMatchOutcome, Specificity};
 use crate::specified::SpecifiedValueParseError;
@@ -24,6 +26,20 @@ pub(super) fn matched_rule(
         ),
         builder.build(),
     )
+}
+
+pub(super) fn test_cascade_budget() -> CascadeResolutionBudget {
+    CascadeResolutionBudget::try_new(4_096, 1_024, 1_024)
+        .expect("test cascade budget is representable")
+}
+
+pub(super) fn resolve_rule_inputs(
+    inputs: Vec<CascadeRuleInput<'static>>,
+) -> Result<CascadeWinnerSet, CascadeResolutionError> {
+    let budget = test_cascade_budget();
+    let validated = ValidatedCascadeRuleInputs::try_from_checked_inputs(inputs, budget)?;
+    let mut workspace = CascadeResolutionWorkspace::try_new(budget)?;
+    resolve_cascade_winners(&validated, budget, &mut workspace)
 }
 
 pub(super) fn builder_with_initials_except(skip: &[CascadePropertyId]) -> ResolvedStyleBuilder {

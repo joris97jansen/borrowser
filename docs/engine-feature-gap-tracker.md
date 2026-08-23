@@ -115,6 +115,28 @@ Architecture and foundation status:
 
 Milestone AF foundation status:
 
+- AF6 implements the supported CSS Cascade Level 5 priority and sparse winner
+  boundary; see
+  `docs/css/af6-cascade-ordering-winner-selection-contract.md`. Inline style is
+  a typed element-attached author declaration, candidate identity and exact
+  priority collisions are checked invariants, and production uses borrowed
+  candidates plus one reusable AD4-registry-sized property accumulator. The
+  checked budget is derived once per style execution, cascade failures
+  propagate through full/incremental/computed/Browser paths, and a bounded
+  versioned candidate/winner diagnostic shares production semantics, retains
+  its authoritative bounded serialization, accounts all live diagnostic heap
+  capacity, grows candidate/winner records through explicit checked amortized
+  targets rather than per-record exact reservations, and finalizes IDs through
+  indexed remapping rather than quadratic scans. `@layer`
+  and CSS `@scope` now have explicit deferred skip states and never flatten
+  nested rules. The historical HTML `<style scoped>` attribute remains ignored
+  and its contents are ordinary global author CSS; it does not create CSS
+  `@scope`. Layers, rollback, scope proximity, Shadow DOM encapsulation,
+  animations, transitions, presentational hints, and runtime user stylesheet
+  management remain unsupported. Inheritance/default fill, CSS-wide keyword
+  interpretation after winning, and computed materialization remain separate
+  existing/downstream stages rather than AF6 winner semantics.
+
 - AF5 implements one fallible immutable CSS-owned rule collection per style
   execution; see
   `docs/css/af5-stylesheet-rule-collection-source-order-contract.md`.

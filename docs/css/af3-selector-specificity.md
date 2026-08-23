@@ -1,6 +1,6 @@
 # AF3: Selector Specificity Contract
 
-Last updated: 2026-08-12
+Last updated: 2026-08-22
 Status: reconciled and implemented
 
 This document is the Milestone AF3 contract for selector specificity. AF3
@@ -26,9 +26,14 @@ selector parse
   -> SelectorListMatchOutcome::highest_specificity()
   -> CascadeRuleMatch
   -> CascadeRuleContext
-  -> CascadeSpecificity / CascadePriority
+  -> CascadeDeclarationPrecedence::StyleRule
+  -> CascadePriority
   -> cascade winner resolution
 ```
+
+AF6 consumes that selector-produced tuple only for style-rule declarations.
+Element-attached inline declarations have no selector specificity; their
+precedence is represented by a different typed declaration-precedence variant.
 
 AF5 retains the exact `SelectorListMatchOutcome` on the borrowed matched-rule
 input. The collection/cascade handoff derives effective specificity from that

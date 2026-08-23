@@ -11,8 +11,7 @@ use super::order::DeclarationOrder;
 use super::priority::CascadeImportance;
 use super::properties::CascadePropertyId;
 use super::serialize::serialize_declaration_value_for_css;
-use super::sources::{CascadeDeclarationSource, CascadeRuleContext};
-use super::winners::CascadeDeclarationCandidate;
+use super::sources::CascadeDeclarationSource;
 
 /// Authored declaration inputs entering the cascade pipeline.
 ///
@@ -188,6 +187,14 @@ impl CascadeSpecifiedValue {
                 None => Ok(false),
             },
         }
+    }
+
+    /// Compares the semantic specified value while deliberately ignoring
+    /// parser source spans. This is used only while diagnosing a repeated
+    /// candidate identity; distinct authored occurrences normally never take
+    /// this branch.
+    pub(crate) fn semantically_eq(&self, other: &Self) -> bool {
+        self.property() == other.property() && self.to_css_text() == other.to_css_text()
     }
 }
 
@@ -508,17 +515,6 @@ impl CascadeDeclarationInput {
 
     pub fn invalid_shorthand_error(&self) -> Option<&ShorthandExpansionError> {
         self.invalid_shorthand_error.as_ref()
-    }
-
-    pub fn candidate(&self, context: CascadeRuleContext) -> Option<CascadeDeclarationCandidate> {
-        let property = self.property.supported_property()?;
-
-        Some(CascadeDeclarationCandidate::new(
-            property,
-            self.source,
-            context.priority_for_declaration(self.importance, self.declaration_order),
-            self.value.clone(),
-        ))
     }
 }
 

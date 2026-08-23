@@ -492,6 +492,57 @@ mod af5_tests {
         );
         assert_ne!(all_available[1].source_id(), all_available[2].source_id());
     }
+
+    #[test]
+    fn historical_style_scoped_attribute_is_ignored_and_contents_remain_global_author_css() {
+        let output = parsed(concat!(
+            "<!doctype html><html><body>",
+            "<section><style scoped>p { color: red; }</style><p id=inside></p></section>",
+            "<p id=outside></p>",
+            "</body></html>",
+        ));
+        let mut set = DocumentStyleSet::default();
+        assert!(set.reconcile_from_dom(&output.document, None).changed);
+        let inputs = set
+            .stylesheet_collection_inputs()
+            .expect("ordinary style input remains representable");
+        assert_eq!(inputs.len(), 2, "UA plus one ordinary author stylesheet");
+
+        let diagnostic = css::rule_collection_diagnostic(
+            &output.document,
+            css::SelectorMatchingEnvironment::new(output.document_mode),
+            &inputs,
+            &css::StyleResolutionLimits::default(),
+            css::RuleCollectionDiagnosticLimits::default(),
+        );
+        assert!(!diagnostic.to_debug_snapshot().contains("skipped-at-scope"));
+
+        let resolved = css::try_resolve_document_styles_from_cascade_inputs_with_limits(
+            &output.document,
+            css::SelectorMatchingEnvironment::new(output.document_mode),
+            &inputs,
+            &css::StyleResolutionLimits::default(),
+        )
+        .expect("ordinary global author stylesheet resolves");
+        let paragraph_colors = resolved
+            .entries()
+            .iter()
+            .filter(|entry| entry.element_name() == "p")
+            .map(|entry| {
+                entry
+                    .style()
+                    .get(css::CascadePropertyId::Color)
+                    .expect("both paragraphs receive a color")
+                    .source()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(paragraph_colors.len(), 2);
+        assert!(paragraph_colors.iter().all(|source| matches!(
+            source,
+            css::ResolvedValueSource::Winner(winner)
+                if winner.value.to_css_text().as_deref() == Some("red")
+        )));
+    }
 }
 
 #[cfg(test)]

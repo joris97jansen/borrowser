@@ -32,33 +32,33 @@ pub use contract::{
 
 // Origin and precedence
 pub use contract::{
-    CascadeImportance, CascadeOrigin, CascadeOriginBand, CascadePriority, CascadeSourceOrder,
-    CascadeSpecificity, CurrentScopeCascadePriorityBand, DeclarationOrder, DeclarationSourceIndex,
+    CascadeDeclarationPrecedence, CascadeImportance, CascadeOrigin, CascadeOriginBand,
+    CascadePriority, CurrentScopeCascadePriorityBand, DeclarationOrder, DeclarationSourceIndex,
     RawRuleIndex, SourceCoordinateError, StyleRulePosition, StylesheetOrder, StylesheetRuleOrder,
     StylesheetSourceId, StylesheetSourceIdError,
 };
 
 // Rule and declaration inputs
 pub use contract::{
-    CascadeDeclarationApplicability, CascadeDeclarationCandidate, CascadeDeclarationCandidateKey,
-    CascadeDeclarationInput, CascadeDeclarationProperty, CascadeDeclarationSource,
-    CascadeRuleContext, CascadeRuleInput, CascadeRuleInputBuildError, CascadeRuleMatch,
-    CascadeRuleSource, CascadeSpecifiedValue, InlineStyleDeclarationRef, InlineStyleRuleInput,
-    InlineStyleRuleRef, MatchedStylesheetRuleInput, StylesheetDeclarationRef, StylesheetRuleRef,
+    CascadeDeclarationApplicability, CascadeDeclarationInput, CascadeDeclarationProperty,
+    CascadeDeclarationSource, CascadeRuleContext, CascadeRuleInput, CascadeRuleInputBuildError,
+    CascadeRuleMatch, CascadeRuleSource, CascadeSpecifiedValue, InlineStyleDeclarationRef,
+    InlineStyleRuleInput, InlineStyleRuleRef, MatchedStylesheetRuleInput, StylesheetDeclarationRef,
+    StylesheetRuleRef,
 };
 
 // Winner resolution and snapshots
 pub use contract::{
-    CascadeWinner, CascadeWinnerEntry, CascadeWinnerSet, cascade_evaluation_debug_snapshot,
-    resolve_cascade_winners, resolve_cascade_winners_from_rule_inputs,
-    sort_candidates_by_cascade_order,
+    CandidateDataMismatch, CascadeResolutionError, CascadeWinner, CascadeWinnerEntry,
+    CascadeWinnerSet, RuleInputSequenceViolation,
 };
 
 // Resolved-style contract
+#[cfg(test)]
+pub use contract::resolve_cascade_style_from_rule_inputs;
 pub use contract::{
     CssWideResolvedSource, ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder,
-    ResolvedStyleEntry, ResolvedValueSource, resolve_cascade_style,
-    resolve_cascade_style_from_rule_inputs, resolve_initial_style,
+    ResolvedStyleEntry, ResolvedValueSource, resolve_cascade_style, resolve_initial_style,
 };
 
 // Document-level structured output
@@ -66,21 +66,30 @@ pub use document::{ResolvedDocumentStyle, ResolvedElementStyle};
 
 // Document-resolution integration path
 pub(crate) use integration::StylesheetConditionStatus;
+#[cfg(test)]
+pub(crate) use integration::resolve_document_styles_debug_snapshot;
 #[cfg(feature = "count-alloc")]
 #[doc(hidden)]
-pub use integration::{Af5AllocationGuardError, af5_match_rule_inputs_for_allocation_guard};
 pub use integration::{
-    AtRuleSkipReason, BoundedDiagnosticText, DiagnosticCondition, DiagnosticDeclarationProperty,
-    DiagnosticRuleState, IncrementalResolvedDocumentStyle, IncrementalStyleResolutionStats,
-    RULE_COLLECTION_DIAGNOSTIC_VERSION, RuleCollection, RuleCollectionBuildError,
-    RuleCollectionDiagnostic, RuleCollectionDiagnosticFailure, RuleCollectionDiagnosticLimit,
-    RuleCollectionDiagnosticLimits, RuleCollectionDiagnosticRecord,
+    Af5AllocationGuardError, Af6CascadeWorkspaceStats, af5_match_rule_inputs_for_allocation_guard,
+    af6_resolve_winners_for_allocation_guard,
+};
+pub use integration::{
+    AtRuleSkipReason, BoundedDiagnosticText, CASCADE_EVALUATION_DIAGNOSTIC_VERSION,
+    CascadeDiagnosticCandidateId, CascadeDiagnosticText, CascadeEvaluationCandidateRecord,
+    CascadeEvaluationDiagnostic, CascadeEvaluationDiagnosticFailure,
+    CascadeEvaluationDiagnosticLimit, CascadeEvaluationDiagnosticLimits,
+    CascadeEvaluationDiagnosticSnapshot, CascadeEvaluationWinnerRecord, DiagnosticCondition,
+    DiagnosticDeclarationProperty, DiagnosticRuleState, IncrementalResolvedDocumentStyle,
+    IncrementalStyleResolutionStats, RULE_COLLECTION_DIAGNOSTIC_VERSION, RuleCollection,
+    RuleCollectionBuildError, RuleCollectionDiagnostic, RuleCollectionDiagnosticFailure,
+    RuleCollectionDiagnosticLimit, RuleCollectionDiagnosticLimits, RuleCollectionDiagnosticRecord,
     RuleCollectionDiagnosticSnapshot, RuleCollectionDiagnosticStorage, RuleCollectionStorage,
     StyleResolutionError, StyleResolutionExecution, StyleResolutionLimit, StyleResolutionLimits,
     StylesheetCollectionInput, StylesheetCollectionInputBuildError, StylesheetConditionInput,
-    declaration_list_pipeline_debug_snapshot, get_inline_style, is_css, resolve_document_styles,
-    resolve_document_styles_debug_snapshot, resolve_document_styles_from_cascade_inputs,
-    rule_collection_diagnostic, try_resolve_document_styles_from_cascade_inputs_with_limits,
+    cascade_evaluation_diagnostic, get_inline_style, is_css, resolve_document_styles,
+    resolve_document_styles_from_cascade_inputs, rule_collection_diagnostic,
+    try_resolve_document_styles_from_cascade_inputs_with_limits,
     try_resolve_document_styles_from_rule_collection_with_limits,
     try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_limits,
     try_resolve_document_styles_incremental_suffix_from_rule_collection_with_limits,

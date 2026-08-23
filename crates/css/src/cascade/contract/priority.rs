@@ -1,7 +1,6 @@
 use crate::selectors::Specificity;
 
-use super::order::{CascadeSourceOrder, DeclarationOrder};
-use super::properties::CascadePropertyId;
+use super::order::{DeclarationOrder, StylesheetRuleOrder};
 
 /// Cascade precedence ordering for Borrowser's current cascade subset.
 ///
@@ -186,24 +185,79 @@ impl PartialOrd for CascadeOriginBand {
     }
 }
 
-/// Specificity surface consumed by cascade ordering.
+/// Declaration-kind-specific precedence inside one origin/importance band.
 ///
-/// Stylesheet rules carry selector-derived specificity. Inline style
-/// declarations occupy a dedicated top slot within the current author-origin
-/// scope.
+/// The enum shape represents CSS Cascade Level 5's element-attached step
+/// directly. Selector specificity and stylesheet order are meaningful only
+/// for style rules; inline declarations are element-attached author
+/// declarations and carry only their authored declaration order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CascadeSpecificity {
-    Selector(Specificity),
-    InlineStyle,
+pub enum CascadeDeclarationPrecedence {
+    StyleRule {
+        specificity: Specificity,
+        source_order: StylesheetRuleOrder,
+        declaration_order: DeclarationOrder,
+    },
+    ElementAttached {
+        declaration_order: DeclarationOrder,
+    },
 }
 
-impl CascadeSpecificity {
+impl CascadeDeclarationPrecedence {
+    pub const fn specificity(self) -> Option<Specificity> {
+        match self {
+            Self::StyleRule { specificity, .. } => Some(specificity),
+            Self::ElementAttached { .. } => None,
+        }
+    }
+
+    pub const fn source_order(self) -> Option<StylesheetRuleOrder> {
+        match self {
+            Self::StyleRule { source_order, .. } => Some(source_order),
+            Self::ElementAttached { .. } => None,
+        }
+    }
+
+    pub const fn declaration_order(self) -> DeclarationOrder {
+        match self {
+            Self::StyleRule {
+                declaration_order, ..
+            }
+            | Self::ElementAttached { declaration_order } => declaration_order,
+        }
+    }
+
+    pub const fn is_element_attached(self) -> bool {
+        matches!(self, Self::ElementAttached { .. })
+    }
+
     fn semantic_cmp(self, other: Self) -> std::cmp::Ordering {
         match (self, other) {
-            (Self::Selector(left), Self::Selector(right)) => left.cmp(&right),
-            (Self::Selector(_), Self::InlineStyle) => std::cmp::Ordering::Less,
-            (Self::InlineStyle, Self::Selector(_)) => std::cmp::Ordering::Greater,
-            (Self::InlineStyle, Self::InlineStyle) => std::cmp::Ordering::Equal,
+            (
+                Self::StyleRule {
+                    specificity: left_specificity,
+                    source_order: left_source_order,
+                    declaration_order: left_declaration_order,
+                },
+                Self::StyleRule {
+                    specificity: right_specificity,
+                    source_order: right_source_order,
+                    declaration_order: right_declaration_order,
+                },
+            ) => left_specificity
+                .cmp(&right_specificity)
+                .then_with(|| left_source_order.cmp(&right_source_order))
+                .then_with(|| left_declaration_order.cmp(&right_declaration_order)),
+            (Self::StyleRule { .. }, Self::ElementAttached { .. }) => std::cmp::Ordering::Less,
+            (Self::ElementAttached { .. }, Self::StyleRule { .. }) => std::cmp::Ordering::Greater,
+            (
+                Self::ElementAttached {
+                    declaration_order: left,
+                },
+                Self::ElementAttached {
+                    declaration_order: right,
+                },
+            ) => left.cmp(&right),
         }
     }
 }
@@ -212,46 +266,64 @@ impl CascadeSpecificity {
 ///
 /// Comparison is lexicographic by:
 /// 1. origin/importance band
-/// 2. selector specificity or inline-style sentinel
-/// 3. rule order in stylesheet insertion/source order
-/// 4. declaration order within the source rule or inline style attribute
+/// 2. element-attached versus style-rule declaration
+/// 3. selector specificity for style rules
+/// 4. order of appearance within the applicable declaration kind
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CascadePriority {
-    band: CascadeOriginBand,
-    specificity: CascadeSpecificity,
-    source_order: CascadeSourceOrder,
-    declaration_order: DeclarationOrder,
+    band: CurrentScopeCascadePriorityBand,
+    declaration: CascadeDeclarationPrecedence,
 }
 
 impl CascadePriority {
-    pub(super) const fn from_validated_context(
-        band: CascadeOriginBand,
-        specificity: CascadeSpecificity,
-        source_order: CascadeSourceOrder,
+    pub(super) const fn for_style_rule(
+        band: CurrentScopeCascadePriorityBand,
+        specificity: Specificity,
+        source_order: StylesheetRuleOrder,
         declaration_order: DeclarationOrder,
     ) -> Self {
         Self {
             band,
-            specificity,
-            source_order,
-            declaration_order,
+            declaration: CascadeDeclarationPrecedence::StyleRule {
+                specificity,
+                source_order,
+                declaration_order,
+            },
+        }
+    }
+
+    pub(super) const fn for_element_attached(
+        importance: CascadeImportance,
+        declaration_order: DeclarationOrder,
+    ) -> Self {
+        let band = match importance {
+            CascadeImportance::Normal => CurrentScopeCascadePriorityBand::AuthorNormal,
+            CascadeImportance::Important => CurrentScopeCascadePriorityBand::AuthorImportant,
+        };
+        Self {
+            band,
+            declaration: CascadeDeclarationPrecedence::ElementAttached { declaration_order },
         }
     }
 
     pub const fn band(self) -> CascadeOriginBand {
-        self.band
+        self.band.as_origin_band()
     }
 
-    pub const fn specificity(self) -> CascadeSpecificity {
-        self.specificity
+    pub const fn declaration_precedence(self) -> CascadeDeclarationPrecedence {
+        self.declaration
     }
 
-    pub const fn source_order(self) -> CascadeSourceOrder {
-        self.source_order
+    pub const fn specificity(self) -> Option<Specificity> {
+        self.declaration.specificity()
+    }
+
+    pub const fn source_order(self) -> Option<StylesheetRuleOrder> {
+        self.declaration.source_order()
     }
 
     pub const fn declaration_order(self) -> DeclarationOrder {
-        self.declaration_order
+        self.declaration.declaration_order()
     }
 
     #[cfg(test)]
@@ -263,34 +335,14 @@ impl CascadePriority {
         context.priority_for_declaration(importance, declaration_order)
     }
 
-    #[cfg(test)]
-    pub(crate) fn new(
-        band: CascadeOriginBand,
-        specificity: CascadeSpecificity,
-        source_order: impl Into<CascadeSourceOrder>,
-        declaration_order: impl Into<DeclarationOrder>,
-    ) -> Self {
-        let source_order = source_order.into();
-        assert!(matches!(
-            (specificity, source_order),
-            (
-                CascadeSpecificity::Selector(_),
-                CascadeSourceOrder::Stylesheet(_)
-            ) | (
-                CascadeSpecificity::InlineStyle,
-                CascadeSourceOrder::InlineStyle
-            )
-        ));
-        Self::from_validated_context(band, specificity, source_order, declaration_order.into())
-    }
-
-    /// Returns the matching current-scope band when this priority was produced
-    /// by Borrowser's current emitted origin/priority model.
+    /// Returns the current emitted origin/importance band.
     ///
-    /// This remains an inspection helper only. Priorities built from reserved
-    /// future precedence bands are expected to return `None`.
+    /// `CascadePriority` is intentionally restricted to current constructors,
+    /// so this is always `Some`. The broader `CascadeOriginBand` inspection
+    /// type is where reserved animation and transition positions return
+    /// `None` from `current_scope_band()`.
     pub const fn current_scope_band(self) -> Option<CurrentScopeCascadePriorityBand> {
-        self.band.current_scope_band()
+        Some(self.band)
     }
 }
 
@@ -298,39 +350,13 @@ impl Ord for CascadePriority {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.band
             .cmp(&other.band)
-            .then_with(|| self.specificity.semantic_cmp(other.specificity))
-            .then_with(|| self.source_order.semantic_cmp(other.source_order))
-            .then_with(|| self.declaration_order.cmp(&other.declaration_order))
+            .then_with(|| self.declaration.semantic_cmp(other.declaration))
     }
 }
 
 impl PartialOrd for CascadePriority {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
-    }
-}
-
-/// Deterministic ordering key for cascade declaration candidates.
-///
-/// Sorting by this key groups candidates by property and then orders them by
-/// the lexicographic cascade precedence defined by `CascadePriority`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
-pub struct CascadeDeclarationCandidateKey {
-    property: CascadePropertyId,
-    priority: CascadePriority,
-}
-
-impl CascadeDeclarationCandidateKey {
-    pub(crate) const fn new(property: CascadePropertyId, priority: CascadePriority) -> Self {
-        Self { property, priority }
-    }
-
-    pub const fn property(self) -> CascadePropertyId {
-        self.property
-    }
-
-    pub const fn priority(self) -> CascadePriority {
-        self.priority
     }
 }
 
@@ -350,10 +376,9 @@ mod tests {
     }
 
     #[test]
-    fn inline_precedence_comes_from_band_specificity_and_declaration_order() {
+    fn inline_precedence_comes_from_element_attachment_and_declaration_order() {
         let stylesheet_order =
             StylesheetRuleOrder::new(StylesheetOrder::new(99), StyleRulePosition::new(99));
-        let selector = CascadeSpecificity::Selector(Specificity::new(1, 0, 0));
         let stylesheet_context = CascadeRuleContext::for_stylesheet(
             CascadeOrigin::Author,
             Specificity::new(1, 0, 0),
@@ -368,7 +393,7 @@ mod tests {
         );
         assert!(
             inline_normal > author_normal,
-            "inline specificity supplies this win"
+            "element attachment supplies this win"
         );
 
         let author_important =
@@ -385,7 +410,7 @@ mod tests {
         );
         assert!(
             inline_important_first > author_important,
-            "inline specificity supplies this important-declaration win"
+            "element attachment supplies this important-declaration win"
         );
         let inline_important_later = author_priority(
             CascadeImportance::Important,
@@ -397,7 +422,10 @@ mod tests {
             "inline declaration order resolves the remaining tie"
         );
 
-        assert_eq!(selector, stylesheet_context.specificity());
+        assert_eq!(
+            stylesheet_context.specificity(),
+            Some(Specificity::new(1, 0, 0))
+        );
     }
 
     fn representative_priorities() -> Vec<CascadePriority> {

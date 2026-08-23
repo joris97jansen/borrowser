@@ -34,18 +34,29 @@ mod perf_guards_heavy;
 mod perf_guards_smoke;
 
 // Model-first crate-root surface for engine-facing stylesheet work.
+#[cfg(test)]
+pub use cascade::resolve_cascade_style_from_rule_inputs;
+#[cfg(test)]
+pub(crate) use cascade::resolve_document_styles_debug_snapshot;
 #[cfg(feature = "count-alloc")]
 #[doc(hidden)]
-pub use cascade::{Af5AllocationGuardError, af5_match_rule_inputs_for_allocation_guard};
 pub use cascade::{
-    AtRuleSkipReason, BoundedDiagnosticText, CascadeDeclarationApplicability,
-    CascadeDeclarationCandidate, CascadeDeclarationCandidateKey, CascadeDeclarationInput,
-    CascadeDeclarationProperty, CascadeDeclarationSource, CascadeImportance, CascadeInheritance,
-    CascadeOrigin, CascadeOriginBand, CascadePriority, CascadePropertyId,
+    Af5AllocationGuardError, Af6CascadeWorkspaceStats, af5_match_rule_inputs_for_allocation_guard,
+    af6_resolve_winners_for_allocation_guard,
+};
+pub use cascade::{
+    AtRuleSkipReason, BoundedDiagnosticText, CASCADE_EVALUATION_DIAGNOSTIC_VERSION,
+    CandidateDataMismatch, CascadeDeclarationApplicability, CascadeDeclarationInput,
+    CascadeDeclarationPrecedence, CascadeDeclarationProperty, CascadeDeclarationSource,
+    CascadeDiagnosticCandidateId, CascadeDiagnosticText, CascadeEvaluationCandidateRecord,
+    CascadeEvaluationDiagnostic, CascadeEvaluationDiagnosticFailure,
+    CascadeEvaluationDiagnosticLimit, CascadeEvaluationDiagnosticLimits,
+    CascadeEvaluationDiagnosticSnapshot, CascadeEvaluationWinnerRecord, CascadeImportance,
+    CascadeInheritance, CascadeOrigin, CascadeOriginBand, CascadePriority, CascadePropertyId,
     CascadePropertyInvalidationImpact, CascadePropertyLengthSignPolicy, CascadePropertyMetadata,
-    CascadePropertyRegistration, CascadePropertyRegistry, CascadeRuleContext, CascadeRuleInput,
-    CascadeRuleInputBuildError, CascadeRuleMatch, CascadeRuleSource, CascadeShorthandId,
-    CascadeShorthandRegistration, CascadeShorthandRegistry, CascadeSourceOrder, CascadeSpecificity,
+    CascadePropertyRegistration, CascadePropertyRegistry, CascadeResolutionError,
+    CascadeRuleContext, CascadeRuleInput, CascadeRuleInputBuildError, CascadeRuleMatch,
+    CascadeRuleSource, CascadeShorthandId, CascadeShorthandRegistration, CascadeShorthandRegistry,
     CascadeSpecifiedValue, CascadeWinner, CascadeWinnerEntry, CascadeWinnerSet,
     CssWideResolvedSource, CurrentScopeCascadePriorityBand, DeclarationOrder,
     DeclarationSourceIndex, DiagnosticCondition, DiagnosticDeclarationProperty,
@@ -57,19 +68,17 @@ pub use cascade::{
     RuleCollection, RuleCollectionBuildError, RuleCollectionDiagnostic,
     RuleCollectionDiagnosticFailure, RuleCollectionDiagnosticLimit, RuleCollectionDiagnosticLimits,
     RuleCollectionDiagnosticRecord, RuleCollectionDiagnosticSnapshot,
-    RuleCollectionDiagnosticStorage, RuleCollectionStorage, SourceCoordinateError,
-    StyleResolutionError, StyleResolutionExecution, StyleResolutionLimit, StyleResolutionLimits,
-    StyleRulePosition, StylesheetCollectionInput, StylesheetCollectionInputBuildError,
-    StylesheetConditionInput, StylesheetDeclarationRef, StylesheetOrder, StylesheetRuleOrder,
-    StylesheetRuleRef, StylesheetSourceId, StylesheetSourceIdError, attach_styles,
-    cascade_evaluation_debug_snapshot, cascade_property_registry,
-    cascade_property_registry_metadata_debug_snapshot, cascade_shorthand_registry,
-    declaration_list_pipeline_debug_snapshot, get_inline_style, is_css, resolve_cascade_style,
-    resolve_cascade_style_from_rule_inputs, resolve_cascade_winners,
-    resolve_cascade_winners_from_rule_inputs, resolve_document_styles,
-    resolve_document_styles_debug_snapshot, resolve_document_styles_from_cascade_inputs,
-    resolve_initial_style, rule_collection_diagnostic, sort_candidates_by_cascade_order,
-    try_attach_styles, try_resolve_document_styles_from_cascade_inputs_with_limits,
+    RuleCollectionDiagnosticStorage, RuleCollectionStorage, RuleInputSequenceViolation,
+    SourceCoordinateError, StyleResolutionError, StyleResolutionExecution, StyleResolutionLimit,
+    StyleResolutionLimits, StyleRulePosition, StylesheetCollectionInput,
+    StylesheetCollectionInputBuildError, StylesheetConditionInput, StylesheetDeclarationRef,
+    StylesheetOrder, StylesheetRuleOrder, StylesheetRuleRef, StylesheetSourceId,
+    StylesheetSourceIdError, attach_styles, cascade_evaluation_diagnostic,
+    cascade_property_registry, cascade_property_registry_metadata_debug_snapshot,
+    cascade_shorthand_registry, get_inline_style, is_css, resolve_cascade_style,
+    resolve_document_styles, resolve_document_styles_from_cascade_inputs, resolve_initial_style,
+    rule_collection_diagnostic, try_attach_styles,
+    try_resolve_document_styles_from_cascade_inputs_with_limits,
     try_resolve_document_styles_from_rule_collection_with_limits,
     try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_limits,
     try_resolve_document_styles_incremental_suffix_from_rule_collection_with_limits,

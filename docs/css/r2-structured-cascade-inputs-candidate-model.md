@@ -1,7 +1,15 @@
 # R2: Introduce Structured Cascade Inputs And Candidate Declaration Model
 
-Last updated: 2026-08-21
-Status: contract and code implemented
+Last updated: 2026-08-22
+Status: historical Milestone R contract; candidate API/allocation details superseded by AF6
+
+AF6 preserves R2's structured declaration states, source provenance, and
+matched-rule boundary, but supersedes owned/materialized candidate values,
+public arbitrary-candidate helpers, inline specificity/order modeling, and
+candidate-vector allocation. Production now uses an opaque validated AF5 input
+view, borrowed pass-two candidates, and a property-indexed accumulator. See
+`docs/css/af6-cascade-ordering-winner-selection-contract.md`. Historical text
+below describes the R2 design at the time it landed.
 
 AF5 reconciliation: a matched stylesheet `CascadeRuleInput` contains a
 self-contained `StylesheetRuleRef`, a validated `CascadeRuleContext`, the exact

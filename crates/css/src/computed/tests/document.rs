@@ -1,8 +1,8 @@
 use super::support::*;
 use super::*;
 use crate::{
-    ComputedDocumentStyleInvalidationImpact, RuleCollectionBuildError, SelectorDomBuildError,
-    StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits,
+    CascadeResolutionError, ComputedDocumentStyleInvalidationImpact, RuleCollectionBuildError,
+    SelectorDomBuildError, StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits,
 };
 
 fn author_input(stylesheet: &crate::StylesheetParse) -> StylesheetCollectionInput<'_> {
@@ -656,6 +656,26 @@ fn compute_document_styles_propagates_style_resolution_limits() {
                 limit: StyleResolutionLimit::TopLevelRulesPerDocument,
                 configured: 0,
                 observed: 1,
+            }
+        ))
+    );
+}
+
+#[test]
+fn computed_style_propagates_cascade_resolution_failure_without_defaulting() {
+    let dom = document_element("div", Vec::new(), Vec::new());
+    let limits = StyleResolutionLimits {
+        max_declaration_inputs_per_element: usize::MAX,
+        max_inline_declarations_per_element: 1,
+        ..StyleResolutionLimits::default()
+    };
+    assert_eq!(
+        compute_document_styles_with_limits(&dom, &[], &limits)
+            .expect_err("computed style must preserve cascade failure"),
+        ComputedStyleResolutionError::StyleResolution(StyleResolutionError::CascadeResolution(
+            CascadeResolutionError::CandidateCeilingOverflow {
+                stylesheet_limit: usize::MAX,
+                inline_limit: 1,
             }
         ))
     );

@@ -10,6 +10,7 @@ mod stylesheet;
 mod syntax;
 mod values;
 
+#[cfg(test)]
 pub(crate) use self::parse::serialize_declaration_list_parse_for_snapshot;
 pub use self::parse::serialize_stylesheet_parse_for_snapshot;
 pub use self::stylesheet::{

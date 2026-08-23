@@ -1,7 +1,10 @@
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use css::{
-    ParseOptions, Rule, SelectorDomIndex, SelectorListParseResult, SelectorMatchingContext,
-    SelectorMatchingEnvironment, compute_document_styles, parse_stylesheet_with_options,
+    ParseOptions, Rule, RuleCollection, SelectorDomIndex, SelectorListParseResult,
+    SelectorMatchingContext, SelectorMatchingEnvironment, StyleResolutionLimits,
+    StylesheetCollectionInput, StylesheetConditionInput, StylesheetOrder, StylesheetSourceId,
+    compute_document_styles, parse_stylesheet_with_options,
+    try_resolve_document_styles_from_rule_collection_with_limits,
 };
 
 #[path = "../src/perf_fixtures.rs"]
@@ -165,12 +168,73 @@ fn bench_style_resolution_representative_page(c: &mut Criterion) {
     });
 }
 
+fn bench_cascade_candidate_density(c: &mut Criterion) {
+    const DECLARATIONS: usize = 256;
+    let candidate_css = (0..DECLARATIONS)
+        .map(|index| format!("color: {};", if index % 2 == 0 { "red" } else { "blue" }))
+        .collect::<String>();
+    let filtered_css = (0..DECLARATIONS)
+        .map(|index| format!("future-{index}: value;"))
+        .chain(std::iter::once("color: red;".to_string()))
+        .collect::<String>();
+    let candidate_sheet = parse_stylesheet_with_options(
+        &format!("div {{ {candidate_css} }}"),
+        &ParseOptions::stylesheet(),
+    );
+    let filtered_sheet = parse_stylesheet_with_options(
+        &format!("div {{ {filtered_css} }}"),
+        &ParseOptions::stylesheet(),
+    );
+    let limits = StyleResolutionLimits::default();
+    let candidate_input = StylesheetCollectionInput::author(
+        StylesheetSourceId::in_memory_generation_index(0),
+        StylesheetOrder::new(0),
+        &candidate_sheet,
+        StylesheetConditionInput::None,
+    );
+    let filtered_input = StylesheetCollectionInput::author(
+        StylesheetSourceId::in_memory_generation_index(0),
+        StylesheetOrder::new(0),
+        &filtered_sheet,
+        StylesheetConditionInput::None,
+    );
+    let candidate_collection = RuleCollection::try_new(&[candidate_input], &limits).unwrap();
+    let filtered_collection = RuleCollection::try_new(&[filtered_input], &limits).unwrap();
+    let dom = html::parse_document(
+        "<!doctype html><html><body><div></div></body></html>",
+        html::HtmlParseOptions::default(),
+    )
+    .unwrap()
+    .document;
+    let environment = SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks);
+    let mut group = c.benchmark_group("css_cascade_candidate_density");
+    for (label, collection) in [
+        ("supported", &candidate_collection),
+        ("filtered", &filtered_collection),
+    ] {
+        group.bench_function(label, |b| {
+            b.iter(|| {
+                let resolved = try_resolve_document_styles_from_rule_collection_with_limits(
+                    black_box(&dom),
+                    environment,
+                    black_box(collection),
+                    &limits,
+                )
+                .unwrap();
+                black_box(resolved.entries().len());
+            });
+        });
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_parse_representative_stylesheet,
     bench_selector_matching_representative_dom,
     bench_selector_matching_host_language_comparisons,
-    bench_style_resolution_representative_page
+    bench_style_resolution_representative_page,
+    bench_cascade_candidate_density
 );
 criterion_main!(benches);
 

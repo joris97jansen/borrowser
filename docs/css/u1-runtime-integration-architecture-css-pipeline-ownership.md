@@ -1,6 +1,6 @@
 # U1: Runtime Integration Architecture And CSS Pipeline Ownership
 
-Last updated: 2026-08-15
+Last updated: 2026-08-22
 Status: architecture contract implemented; final Milestone U close-out lives in U8
 
 This document is the source-of-truth contract for Milestone U issue 1. It
@@ -63,6 +63,12 @@ parser-created `Node::Document` and transports typed CSS failures; it does not
 construct a Browser-owned selector provider, infer document-element identity,
 flatten nested documents, or substitute retained/patch identity for
 `SelectorDomElementId`.
+
+AF6 likewise keeps candidate admission, element-attached precedence, winner
+selection, cascade budgets/workspaces, and candidate/winner diagnostics inside
+CSS. Browser transports `ComputedStyleResolutionError::StyleResolution`
+including `StyleResolutionError::CascadeResolution`; it must not translate a
+cascade failure into cache miss, incremental unavailability, or full fallback.
 
 ## Runtime Entry Points
 

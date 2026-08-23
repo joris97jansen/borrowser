@@ -1,7 +1,23 @@
 # R8: Cascade And Style-Resolution Debug Output
 
-Last updated: 2026-08-20
-Status: contract and code implemented
+Last updated: 2026-08-22
+Status: historical exact-string fixture contract, reconciled and extended by AF6
+
+AF6 keeps R8 exact-string surfaces as test fixtures but makes them delegate
+candidate admission and winner selection to the shared production evaluator.
+They sort references only for presentation. AF6 adds the separate bounded,
+typed, versioned candidate/winner diagnostic for production triage. Cascade,
+winner, and resolved snapshots advance to version 3; declaration-pipeline
+output advances to version 3; integrated document output advances to version
+4. See `docs/css/af6-cascade-ordering-winner-selection-contract.md`.
+
+AF6's correction review narrows these unbounded exact-string surfaces to
+crate-private/test-only fixtures. The arbitrary-rule-input evaluator is
+unit-test-only and fallible. The integrated trace consumes the already
+validated per-element input view plus the execution budget and reusable winner
+workspace, avoiding input cloning, whole-input revalidation, panic-based
+cascade failure, and a third declaration traversal. Production triage uses the
+bounded AF6 diagnostic instead.
 
 AF5 reconciliation (2026-08-20): R8 source labels now expose opaque stylesheet
 source identity separately from typed stylesheet/style-rule source order. AF5's
@@ -39,7 +55,8 @@ Related documents:
 
 ## Implemented Result
 
-R8 provides stable debug surfaces for the cascade pipeline:
+R8 provides crate-private/test-oriented exact-string surfaces for the cascade
+pipeline:
 
 - `cascade_evaluation_debug_snapshot(...)`
 - `CascadeWinnerSet::to_debug_snapshot()`
@@ -53,8 +70,9 @@ derived `Debug` output.
 
 ## Cascade Evaluation Snapshot
 
-`cascade_evaluation_debug_snapshot(...)` traces the rule-input to winner
-portion of cascade.
+The unit-test-only `cascade_evaluation_debug_snapshot(...)` traces the
+arbitrary rule-input to winner portion of cascade and returns a typed
+`CascadeResolutionError` for malformed fixture inputs.
 
 It records:
 
@@ -84,7 +102,8 @@ source explicit:
 `ResolvedDocumentStyle::to_debug_snapshot()` records the final resolved style
 for each element in selector-DOM document order.
 
-`resolve_document_styles_debug_snapshot(...)` is the integrated trace. Because
+The crate-private `resolve_document_styles_debug_snapshot(...)` is the
+integrated trace. Because
 it constructs an AF4b selector projection, it returns
 `Result<String, StyleResolutionError>`. After successful construction, for each
 element it records:

@@ -75,6 +75,24 @@ fn css_cascade_fuzz_harness_reports_selector_matching_limit_exhaustion() {
 }
 
 #[test]
+fn css_cascade_fuzz_classifies_cascade_resolution_failure_deterministically() {
+    let config = CssCascadeFuzzConfig {
+        style_resolution_limits: StyleResolutionLimits {
+            max_declaration_inputs_per_element: usize::MAX,
+            max_inline_declarations_per_element: 1,
+            ..StyleResolutionLimits::default()
+        },
+        ..CssCascadeFuzzConfig::default()
+    };
+    let first = run_seeded_cascade_fuzz_case(b"div { color: red; }", config.clone())
+        .expect_err("cascade invariant failure must stay a fuzz error");
+    let second = run_seeded_cascade_fuzz_case(b"div { color: red; }", config)
+        .expect_err("cascade invariant failure must be reproducible");
+    assert_eq!(first, second);
+    assert!(first.to_string().contains("candidate-ceiling-overflow"));
+}
+
+#[test]
 fn replay_committed_css_cascade_corpus_deterministically() {
     let corpus = committed_entries(cascade_corpus_dir(), cascade_regression_dir());
     assert!(

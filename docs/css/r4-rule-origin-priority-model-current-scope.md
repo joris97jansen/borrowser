@@ -1,7 +1,15 @@
 # R4: Define Rule Origin And Priority Model For The Current CSS Scope
 
-Last updated: 2026-04-16  
-Status: contract and code implemented
+Last updated: 2026-08-22
+Status: historical Milestone R contract; inline and priority details superseded by AF6
+
+AF6 preserves R4's typed current origin/importance bands and reserved
+animation/transition positions. It supersedes inline-as-specificity and
+cross-kind source-order modeling: inline declarations are typed
+element-attached author declarations, and stylesheet order applies only to
+style rules. See
+`docs/css/af6-cascade-ordering-winner-selection-contract.md`. The AF5
+reconciliation and original text below document historical behavior.
 
 AF5 reconciliation (2026-08-20): stylesheet collection inputs use this existing
 `CascadeOrigin`; no parse-origin or duplicate stylesheet-origin enum exists.

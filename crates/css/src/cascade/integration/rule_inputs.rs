@@ -1,4 +1,7 @@
-use super::super::contract::{CascadeRuleInput, InlineStyleRuleRef};
+use super::super::contract::{
+    CascadeResolutionBudget, CascadeRuleInput, InlineStyleRuleRef,
+    ValidatedCascadeRuleInputBuilder, ValidatedCascadeRuleInputs,
+};
 use super::collection::{ActiveCollectedStyleRule, CollectedRule, RuleCollection};
 use super::declarations::inline_style_declaration_inputs_from_model;
 use super::limits::{StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits};
@@ -15,8 +18,17 @@ pub(super) fn rule_inputs_for_element_with_limits<'collection, 'source>(
     element: SelectorDomElementId,
     collection: &'collection RuleCollection<'source>,
     limits: &StyleResolutionLimits,
-) -> Result<Vec<CascadeRuleInput<'collection>>, StyleResolutionError> {
-    rule_inputs_for_element_with_observer(dom, context, element, collection, limits, |_, _| {})
+    budget: CascadeResolutionBudget,
+) -> Result<ValidatedCascadeRuleInputs<'collection>, StyleResolutionError> {
+    rule_inputs_for_element_with_observer(
+        dom,
+        context,
+        element,
+        collection,
+        limits,
+        budget,
+        |_, _| {},
+    )
 }
 
 pub(super) fn rule_inputs_for_element_with_observer<'collection, 'source>(
@@ -25,12 +37,13 @@ pub(super) fn rule_inputs_for_element_with_observer<'collection, 'source>(
     element: SelectorDomElementId,
     collection: &'collection RuleCollection<'source>,
     limits: &StyleResolutionLimits,
+    budget: CascadeResolutionBudget,
     mut observer: impl FnMut(
         &ActiveCollectedStyleRule<'source>,
         &crate::selectors::SelectorListMatchOutcome,
     ),
-) -> Result<Vec<CascadeRuleInput<'collection>>, StyleResolutionError> {
-    let mut rule_inputs = Vec::new();
+) -> Result<ValidatedCascadeRuleInputs<'collection>, StyleResolutionError> {
+    let mut rule_inputs = ValidatedCascadeRuleInputBuilder::new(budget);
     let mut matched_rules = 0usize;
     let mut declaration_inputs = 0usize;
 
@@ -73,16 +86,17 @@ pub(super) fn rule_inputs_for_element_with_observer<'collection, 'source>(
         }
         declaration_inputs += declarations.len();
 
-        if let Some(input) = CascadeRuleInput::from_stylesheet_match_collected(
+        if let Some(input) = CascadeRuleInput::from_validated_stylesheet_match(
             rule.rule_ref(),
             rule.origin(),
             rule.source_order(),
             outcome,
             declarations,
-        )
-        .map_err(StyleResolutionError::RuleInputBuild)?
-        {
-            rule_inputs.push(input);
+        ) {
+            rule_inputs
+                .try_reserve_rule_inputs(1)
+                .and_then(|()| rule_inputs.push_stylesheet(input))
+                .map_err(StyleResolutionError::CascadeResolution)?;
         }
     }
 
@@ -90,10 +104,13 @@ pub(super) fn rule_inputs_for_element_with_observer<'collection, 'source>(
         get_inline_style(dom.element_namespace(element), dom.attributes(element))
         && let Some(rule_input) = inline_style_rule_input(element, inline_style, limits)?
     {
-        rule_inputs.push(rule_input);
+        rule_inputs
+            .try_reserve_rule_inputs(1)
+            .and_then(|()| rule_inputs.push_inline(rule_input))
+            .map_err(StyleResolutionError::CascadeResolution)?;
     }
 
-    Ok(rule_inputs)
+    Ok(rule_inputs.finish())
 }
 
 fn inline_style_rule_input<'collection>(
@@ -132,7 +149,8 @@ fn inline_style_rule_input<'collection>(
         return Ok(None);
     }
 
-    CascadeRuleInput::from_inline_style_collected(inline_style, declarations)
-        .map(Some)
-        .map_err(StyleResolutionError::RuleInputBuild)
+    Ok(Some(CascadeRuleInput::from_validated_inline_style(
+        inline_style,
+        declarations,
+    )))
 }

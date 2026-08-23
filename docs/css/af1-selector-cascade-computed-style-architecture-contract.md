@@ -2,7 +2,7 @@
 
 Status: implemented architecture and ownership contract for Milestone AF issue 1
 
-Last updated: 2026-08-17
+Last updated: 2026-08-22
 
 AF1 establishes the CSS-owned boundary for selector parsing and matching,
 specificity, cascade, inheritance, computed-style construction, and style-input
@@ -21,6 +21,13 @@ order, and declaration classification occurs once per style execution rather
 than once per matched element. Semantic cascade contracts remain below the
 opaque collection integration. See
 `docs/css/af5-stylesheet-rule-collection-source-order-contract.md`.
+
+AF6 now supplies the authoritative priority, invariant-safe winner, resource,
+and candidate/winner diagnostic boundary below AF5. Element-attached inline
+declarations are typed author declarations rather than synthetic high
+specificity; sparse winners are selected by a reusable property-indexed
+workspace. See
+`docs/css/af6-cascade-ordering-winner-selection-contract.md`.
 
 ## Related code
 
@@ -135,7 +142,8 @@ These are separate events and must remain separate in APIs and diagnostics:
    candidate set. Declared values are authored, property-aware inputs; they
    are not yet cascaded or computed values.
 6. Cascade ordering compares applicable candidates by the modeled origin and
-   importance band, specificity, and deterministic source/declaration order.
+   importance band, element-attached versus style-rule precedence, selector
+   specificity where applicable, and deterministic order of appearance.
    The winning candidate produces the cascaded value for that property.
 7. The cascaded value, property metadata, and parent computed values where
    inheritance/defaulting applies determine the specified value.
@@ -191,7 +199,8 @@ The CSS type system models these origin/importance bands:
 - `CascadeOrigin::User`
 - `CascadeOrigin::Author`
 - normal and important bands for each modeled origin
-- inline author style as an author-origin inline precedence input
+- inline author style as a typed element-attached author declaration; it does
+  not use synthetic specificity or source-order provenance
 - reserved animation and transition precedence levels in the broader cascade
   model; they are not emitted by the current runtime
 
@@ -210,7 +219,7 @@ paths is not an authoritative additional structured cascade origin; the
 structured runtime UA sheet and CSS initial/default handling remain the source
 of truth for the AF path.
 
-AF1 does not add cascade layers, user stylesheets, a replacement UA stylesheet
+AF1/AF6 do not add cascade layers, user stylesheets, a replacement UA stylesheet
 system, animations, or transitions.
 
 ## Style-input invalidation boundary
@@ -322,6 +331,12 @@ without depending on cascade winners, and serializes typed terminal setup or
 limit failures. Browser exposes that bounded authoritative surface without
 interpreting it. CSS also owns the stable plan debug projection; Browser does
 not define a second Full/Suffix semantic enum.
+
+AF6 adds a separate bounded, versioned candidate/winner diagnostic that uses
+the production evaluator and typed candidate IDs. R8 exact-string output
+remains a test fixture. Cascade and diagnostic-storage failures have distinct
+typed channels, and Browser exposes the CSS result without interpreting
+priority or winner semantics.
 
 Typed APIs and Rust visibility are the primary architecture enforcement:
 
