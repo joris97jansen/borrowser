@@ -90,6 +90,10 @@ The per-element `ResolvedStyle` remains the R1-R6 contract object:
 - inherited entries are explicit
 - initial/default entries are explicit
 
+AF7 refines this as a total specified-value/defaulting source-resolution
+artifact. Inherited entries are symbolic and do not retain parent resolved or
+specified values.
+
 ## Resolution Pipeline
 
 For each element in selector-DOM document order, R7 performs:
@@ -105,9 +109,10 @@ For each element in selector-DOM document order, R7 performs:
 5. resolve inheritance/default fill into `ResolvedStyle`
 6. store the result in `ResolvedDocumentStyle`
 
-Parent resolved styles are available before child resolution because selector
-DOM element ids are assigned in document order and parent elements precede
-children.
+AF7 source resolution derives typed parent presence directly from selector-DOM
+topology and does not retain a parent `ResolvedStyle` lookup map. Document
+order still places parents before children, which is required when the later
+computed pass reads the immediate parent `ComputedStyle`.
 
 The retained environment is part of CSS-owned semantic reuse validity. An
 incremental or prefix resolved-style reuse attempt must reject an environment

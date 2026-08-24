@@ -283,14 +283,18 @@ fn rejects_invalid_outline_shorthand_atomically_before_expansion() {
 
 #[test]
 fn rejects_unsupported_css_wide_outline_shorthand_with_dedicated_error() {
-    let error =
-        expand_shorthand_declaration(ShorthandId::Outline, &declaration_value("outline: revert"))
-            .expect_err("unsupported CSS-wide shorthand must be rejected");
+    for keyword in ["revert", "revert-layer"] {
+        let error = expand_shorthand_declaration(
+            ShorthandId::Outline,
+            &declaration_value(&format!("outline: {keyword}")),
+        )
+        .expect_err("unsupported CSS-wide shorthand must be rejected");
 
-    assert_eq!(
-        error.kind(),
-        &ShorthandExpansionErrorKind::UnsupportedCssWideKeyword
-    );
+        assert_eq!(
+            error.kind(),
+            &ShorthandExpansionErrorKind::UnsupportedCssWideKeyword
+        );
+    }
 }
 
 #[test]

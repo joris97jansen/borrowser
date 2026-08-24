@@ -57,8 +57,8 @@ pub use contract::{
 #[cfg(test)]
 pub use contract::resolve_cascade_style_from_rule_inputs;
 pub use contract::{
-    CssWideResolvedSource, ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder,
-    ResolvedStyleEntry, ResolvedValueSource, resolve_cascade_style, resolve_initial_style,
+    CssWideResolvedSource, ResolvedStyle, ResolvedStyleEntry, ResolvedValueSource,
+    resolve_cascade_style, resolve_initial_style,
 };
 
 // Document-level structured output

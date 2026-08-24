@@ -9,7 +9,10 @@ They sort references only for presentation. AF6 adds the separate bounded,
 typed, versioned candidate/winner diagnostic for production triage. Cascade,
 winner, and resolved snapshots advance to version 3; declaration-pipeline
 output advances to version 3; integrated document output advances to version
-4. See `docs/css/af6-cascade-ordering-winner-selection-contract.md`.
+4. AF7 advances only the integrated document output to version 5 by adding
+selector-DOM-derived `inheritance-parent` provenance. See
+`docs/css/af6-cascade-ordering-winner-selection-contract.md` and
+`docs/css/af7-specified-value-defaulting-source-resolution.md`.
 
 AF6's correction review narrows these unbounded exact-string surfaces to
 crate-private/test-only fixtures. The arbitrary-rule-input evaluator is
@@ -98,6 +101,8 @@ source explicit:
 - `winner(...)`
 - `inherited`
 - `initial(...)`
+- `css-wide-initial(keyword=..., winner(...), initial=...)`
+- `css-wide-inherited(keyword=..., winner(...))`
 
 `ResolvedDocumentStyle::to_debug_snapshot()` records the final resolved style
 for each element in selector-DOM document order.
@@ -111,6 +116,8 @@ element it records:
 1. cascade candidate evaluation
 2. winner output
 3. final resolved style after inheritance/default fill
+4. immediate inheritance parent selector identity, derived at the document
+   diagnostic layer rather than retained per property
 
 The integrated document-style resolution snapshot receives the explicit
 `SelectorMatchingEnvironment` and records it deterministically as
@@ -135,9 +142,9 @@ R8 establishes these snapshot invariants:
 - every maintained snapshot surface starts with an explicit schema version;
   the version is specific to that surface rather than a blanket value for all
   R8 output
-- the integrated document-style resolution surface is currently `version: 3`;
+- the integrated document-style resolution surface is currently `version: 5`;
   lower cascade, winner, resolved-style, and resolved-document-style surfaces
-  are `version: 2`
+  remain `version: 3`
 - output order is canonical or document-order, never hash-map order
 - source identities use stable stylesheet, rule, declaration, and inline-style
   ids

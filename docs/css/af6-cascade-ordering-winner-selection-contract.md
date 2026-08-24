@@ -22,6 +22,8 @@ matched AF5 rule inputs and inline declarations
 
 Inheritance, initial/default fill, post-win CSS-wide keyword interpretation,
 and computed-value materialization remain downstream of AF6.
+AF7 owns the first three as total per-property source resolution; see
+`docs/css/af7-specified-value-defaulting-source-resolution.md`.
 
 ## Ownership and related contracts
 
@@ -252,6 +254,10 @@ Inheritance, initial/default fill, CSS-wide keyword interpretation after a
 winner is known, and computed style are not winner-selection semantics. The
 production resolved-style path consumes the sparse winner set so winner values
 are not cloned a second time.
+AF7 builds on AF6 and consumes this sparse winner output to perform total
+specified-value/defaulting source resolution.
+Borrowed compatibility/tests and owned production resolution share one AF7
+classifier; the owned path moves winners into the total result.
 
 ## Errors and propagation
 

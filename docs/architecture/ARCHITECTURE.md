@@ -182,6 +182,11 @@ diagnostic contract lives in:
 
 * `docs/css/af6-cascade-ordering-winner-selection-contract.md`
 
+The AF7 total specified-value/defaulting source-resolution and symbolic
+inheritance contract lives in:
+
+* `docs/css/af7-specified-value-defaulting-source-resolution.md`
+
 The lower cascade contract owns semantic identity/order and matched-input
 types; private collection integration owns flat storage and exposes only the
 opaque collection plus bounded diagnostic projection.

@@ -115,6 +115,19 @@ Architecture and foundation status:
 
 Milestone AF foundation status:
 
+- AF7 implements total specified-value/defaulting source resolution after AF6
+  sparse winner selection; see
+  `docs/css/af7-specified-value-defaulting-source-resolution.md`. Every AD4
+  longhand receives one winner, symbolic inherited source, initial fallback, or
+  supported CSS-wide resolution. The authoritative classifier receives typed
+  immediate-parent presence rather than parent resolved contents; top-down
+  computed materialization remains responsible for transferring the immediate
+  parent's computed value. Full, incremental, isolated-subtree, and diagnostic
+  paths share this contract. `revert` and `revert-layer` remain
+  recognized-but-unsupported non-candidates. AF7 does not add attached-subtree
+  recomputation, a duplicate specified-style tree, broad property coverage, or
+  later AF computed-style closure work.
+
 - AF6 implements the supported CSS Cascade Level 5 priority and sparse winner
   boundary; see
   `docs/css/af6-cascade-ordering-winner-selection-contract.md`. Inline style is
@@ -133,9 +146,9 @@ Milestone AF foundation status:
   and its contents are ordinary global author CSS; it does not create CSS
   `@scope`. Layers, rollback, scope proximity, Shadow DOM encapsulation,
   animations, transitions, presentational hints, and runtime user stylesheet
-  management remain unsupported. Inheritance/default fill, CSS-wide keyword
-  interpretation after winning, and computed materialization remain separate
-  existing/downstream stages rather than AF6 winner semantics.
+  management remain unsupported. AF7 now owns inheritance/default fill and
+  CSS-wide keyword interpretation after winning; computed materialization
+  remains a separate downstream stage rather than AF6 winner semantics.
 
 - AF5 implements one fallible immutable CSS-owned rule collection per style
   execution; see

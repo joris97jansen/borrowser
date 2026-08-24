@@ -2,7 +2,7 @@ use super::contract::ResolvedStyle;
 use crate::selectors::{SelectorDomElementId, SelectorMatchingEnvironment};
 use std::fmt::Write;
 
-/// Resolved cascade output for one DOM element in a document style pass.
+/// Total specified-value/defaulting source resolution for one DOM element.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResolvedElementStyle {
     selector_element_id: SelectorDomElementId,
@@ -46,10 +46,11 @@ impl ResolvedElementStyle {
 /// Document-order resolved-style output for the element set selector matching
 /// can address.
 ///
-/// This is the structured cascade result for the current runtime integration
-/// path. It is independent of `html::Node::style` mutation; the legacy bridge
-/// projects from this object only after cascade has already resolved winners,
-/// inheritance, and defaults. The result remains bound to the immutable
+/// This is the structured source-resolution result for the current runtime
+/// integration path. It is independent of `html::Node::style` mutation; the
+/// legacy bridge projects from this object only after cascade has already
+/// resolved winners, symbolic inheritance, and defaults. The result remains
+/// bound to the immutable
 /// matching environment used for selector evaluation so incremental reuse
 /// cannot cross document-mode semantics.
 #[derive(Clone, Debug, PartialEq, Eq)]
