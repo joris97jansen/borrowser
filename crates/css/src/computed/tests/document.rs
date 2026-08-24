@@ -45,6 +45,26 @@ fn compute_style_from_resolved_style_materializes_cascade_fallbacks() {
     );
     let resolved = resolve_document_styles(&dom, &stylesheets).expect("resolved document style");
 
+    assert_eq!(
+        resolved.entries()[0]
+            .style()
+            .get(PropertyId::Color)
+            .and_then(|entry| entry.winner())
+            .and_then(|winner| winner.value.to_css_text())
+            .as_deref(),
+        Some("#0f0"),
+        "the parent keeps its authored specified representation"
+    );
+    assert_eq!(
+        resolved.entries()[1]
+            .style()
+            .get(PropertyId::Color)
+            .expect("child color")
+            .source(),
+        &crate::ResolvedValueSource::Inherited,
+        "AF7 inheritance remains symbolic"
+    );
+
     let parent = compute_style_from_resolved_style(resolved.entries()[0].style(), None)
         .expect("parent computed style");
     let child = compute_style_from_resolved_style(resolved.entries()[1].style(), Some(&parent))
@@ -55,7 +75,11 @@ fn compute_style_from_resolved_style_materializes_cascade_fallbacks() {
         parent.width(),
         Some(LengthPercentage::Length(Length::Px(40.0)))
     );
-    assert_eq!(child.color(), parent.color());
+    assert_eq!(
+        child.color(),
+        parent.color(),
+        "the child consumes the normalized parent computed value, not '#0f0'"
+    );
     assert_eq!(child.width(), None);
     assert_eq!(child.box_metrics().padding_left, 0.0);
     assert_eq!(child.display(), Display::Block);
@@ -373,23 +397,51 @@ fn plan_aware_suffix_recomputes_following_sibling_selector_effects() {
 #[test]
 fn plan_aware_suffix_recomputes_inherited_descendant_effects() {
     let initial_dom = materialize_element_ids(document_element(
-        "div",
+        "main",
         Vec::new(),
-        vec![element("span", Vec::new(), Vec::new())],
+        vec![element(
+            "section",
+            vec![("class", Some("red"))],
+            vec![element(
+                "span",
+                Vec::new(),
+                vec![element("em", Vec::new(), Vec::new())],
+            )],
+        )],
     ));
     let changed_dom = materialize_element_ids(document_element(
-        "div",
-        vec![("class", Some("on"))],
-        vec![element("span", Vec::new(), Vec::new())],
+        "main",
+        Vec::new(),
+        vec![element(
+            "section",
+            vec![("class", Some("blue"))],
+            vec![element(
+                "span",
+                Vec::new(),
+                vec![element("em", Vec::new(), Vec::new())],
+            )],
+        )],
     ));
-    let stylesheets = vec![stylesheet(".on { color: red; }")];
+    let stylesheets = vec![stylesheet(".red { color: red; } .blue { color: blue; }")];
     let inputs = [author_input(&stylesheets[0])];
     let resolved =
         resolve_document_styles(&initial_dom, &stylesheets).expect("initial resolved styles");
     let initial_computed =
         compute_document_styles_from_resolved_styles_with_reuse_stats(&initial_dom, &resolved)
             .expect("initial computed styles");
-    let plan = attribute_invalidation_plan(vec![html::internal::Id(1)]);
+    assert_eq!(
+        initial_computed.computed.entries()[3].style().color(),
+        (255, 0, 0, 255)
+    );
+
+    let Node::Document { children, .. } = &changed_dom else {
+        panic!("expected document root");
+    };
+    let Node::Element { element: main } = &children[0] else {
+        panic!("expected main document element");
+    };
+    let dirty_ancestor = main.children()[0].id();
+    let plan = attribute_invalidation_plan(vec![dirty_ancestor]);
     let execution = try_compute_document_styles_for_invalidation_plan_with_limits(
         &plan,
         &changed_dom,
@@ -402,9 +454,55 @@ fn plan_aware_suffix_recomputes_inherited_descendant_effects() {
     let StylePlanExecution::IncrementalComputed(incremental) = execution else {
         panic!("expected a computed incremental result");
     };
+    assert_eq!(incremental.reused_prefix_len, 1);
+    assert_eq!(incremental.recomputed_len, 3);
+
+    let full_resolved =
+        resolve_document_styles(&changed_dom, &stylesheets).expect("full changed resolution");
+    let full_computed =
+        compute_document_styles_from_resolved_styles_with_reuse_stats(&changed_dom, &full_resolved)
+            .expect("full changed computation");
+
+    assert_eq!(incremental.resolved, full_resolved);
+    assert_eq!(incremental.computed, full_computed.computed);
+    let section_style = incremental.resolved.entries()[1].style();
+    assert_eq!(
+        section_style
+            .get(PropertyId::Color)
+            .and_then(|entry| entry.winner())
+            .and_then(|winner| winner.value.to_css_text())
+            .as_deref(),
+        Some("blue")
+    );
+    assert_eq!(
+        section_style
+            .get(PropertyId::FontSize)
+            .expect("section font-size")
+            .source(),
+        &crate::ResolvedValueSource::Inherited,
+        "the first recomputed element must see its parent in the reused prefix"
+    );
+    for entry in &incremental.resolved.entries()[2..] {
+        assert_eq!(
+            entry
+                .style()
+                .get(PropertyId::Color)
+                .expect("inherited color")
+                .source(),
+            &crate::ResolvedValueSource::Inherited
+        );
+    }
     assert_eq!(
         incremental.computed.entries()[1].style().color(),
-        (255, 0, 0, 255)
+        (0, 0, 255, 255)
+    );
+    assert_eq!(
+        incremental.computed.entries()[2].style().color(),
+        incremental.computed.entries()[1].style().color()
+    );
+    assert_eq!(
+        incremental.computed.entries()[3].style().color(),
+        incremental.computed.entries()[2].style().color()
     );
 }
 

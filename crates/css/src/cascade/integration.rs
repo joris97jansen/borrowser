@@ -50,14 +50,13 @@ use self::selector_dom::{
     build_element_subtree_selector_dom_with_element_limit,
 };
 use super::contract::{
-    CascadeResolutionBudget, CascadeResolutionWorkspace, StylesheetOrder, StylesheetSourceId,
-    resolve_cascade_style_owned, resolve_cascade_winners,
+    CascadeResolutionBudget, CascadeResolutionWorkspace, InheritanceParentPresence,
+    StylesheetOrder, StylesheetSourceId, resolve_cascade_style_owned, resolve_cascade_winners,
 };
 use super::document::{ResolvedDocumentStyle, ResolvedElementStyle};
 use crate::model;
 use crate::selectors::{SelectorDomIndex, SelectorMatchingContext, SelectorMatchingEnvironment};
 use html::{ElementNode, Node, internal::Id};
-use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct IncrementalStyleResolutionStats {
@@ -381,21 +380,20 @@ fn resolve_document_styles_with_index(
     let context =
         SelectorMatchingContext::with_limits(index, matching_environment, limits.selector_matching);
     let mut entries = Vec::with_capacity(index.len());
-    let mut styles_by_element = BTreeMap::new();
     let mut workspace = CascadeResolutionWorkspace::try_new(budget)
         .map_err(StyleResolutionError::CascadeResolution)?;
 
     for element in index.elements() {
-        let parent_style = context
-            .parent_element(element)
-            .and_then(|parent| styles_by_element.get(&parent));
+        let parent_presence = match context.parent_element(element) {
+            Some(_) => InheritanceParentPresence::Present,
+            None => InheritanceParentPresence::Absent,
+        };
         let rule_inputs = rule_inputs_for_element_with_limits(
             index, &context, element, collection, limits, budget,
         )?;
         let winners = resolve_cascade_winners(&rule_inputs, budget, &mut workspace)
             .map_err(StyleResolutionError::CascadeResolution)?;
-        let style = resolve_cascade_style_owned(winners, parent_style);
-        styles_by_element.insert(element, style.clone());
+        let style = resolve_cascade_style_owned(winners, parent_presence);
         entries.push(ResolvedElementStyle::new(
             element,
             context.element_namespace(element),
@@ -488,7 +486,6 @@ fn resolve_document_styles_incremental_suffix_with_index(
     let context =
         SelectorMatchingContext::with_limits(index, matching_environment, limits.selector_matching);
     let mut entries = Vec::with_capacity(index.len());
-    let mut styles_by_element = BTreeMap::new();
     let mut workspace = CascadeResolutionWorkspace::try_new(budget)
         .map_err(StyleResolutionError::CascadeResolution)?;
 
@@ -503,21 +500,20 @@ fn resolve_document_styles_incremental_suffix_with_index(
             {
                 return Ok(None);
             }
-            styles_by_element.insert(element, previous_entry.style().clone());
             entries.push(previous_entry.clone());
             continue;
         }
 
-        let parent_style = context
-            .parent_element(element)
-            .and_then(|parent| styles_by_element.get(&parent));
+        let parent_presence = match context.parent_element(element) {
+            Some(_) => InheritanceParentPresence::Present,
+            None => InheritanceParentPresence::Absent,
+        };
         let rule_inputs = rule_inputs_for_element_with_limits(
             index, &context, element, collection, limits, budget,
         )?;
         let winners = resolve_cascade_winners(&rule_inputs, budget, &mut workspace)
             .map_err(StyleResolutionError::CascadeResolution)?;
-        let style = resolve_cascade_style_owned(winners, parent_style);
-        styles_by_element.insert(element, style.clone());
+        let style = resolve_cascade_style_owned(winners, parent_presence);
         entries.push(ResolvedElementStyle::new(
             element,
             context.element_namespace(element),

@@ -70,10 +70,11 @@ fn document_style_resolution_debug_snapshot_covers_override_inheritance_and_defa
         resolve_document_styles_debug_snapshot(&dom, matching_environment(), &stylesheets)
             .expect("document style debug snapshot"),
         concat!(
-            "version: 4\n",
+            "version: 5\n",
             "document-style-resolution\n",
             "matching-environment: document-mode=no-quirks\n",
             "element[0]: selector-id=1 namespace=html name=\"section\"\n",
+            "  inheritance-parent: none\n",
             "  cascade-evaluation\n",
             "  rule-inputs: 1\n",
             "    rule-input[0]: source=stylesheet[2/0] origin=author attachment=style-rule specificity=selector(0,0,1) source-order=stylesheet[0/0] declarations=1\n",
@@ -121,6 +122,7 @@ fn document_style_resolution_debug_snapshot_covers_override_inheritance_and_defa
             "    width: initial(auto)\n",
             "    z-index: initial(auto)\n",
             "element[1]: selector-id=2 namespace=html name=\"div\"\n",
+            "  inheritance-parent: selector-id=1\n",
             "  cascade-evaluation\n",
             "  rule-inputs: 2\n",
             "    rule-input[0]: source=stylesheet[2/1] origin=author attachment=style-rule specificity=selector(0,0,1) source-order=stylesheet[0/1] declarations=1\n",
@@ -172,6 +174,60 @@ fn document_style_resolution_debug_snapshot_covers_override_inheritance_and_defa
             "    width: initial(auto)\n",
             "    z-index: initial(auto)\n",
         )
+    );
+}
+
+#[test]
+fn document_style_resolution_debug_snapshot_distinguishes_af7_defaulting_sources() {
+    let dom = document_element(
+        "section",
+        vec![("style", Some("color: red"))],
+        vec![
+            element("p", Vec::new(), Vec::new()),
+            element(
+                "p",
+                vec![(
+                    "style",
+                    Some("color: inherit; font-size: unset; width: initial; display: unset"),
+                )],
+                Vec::new(),
+            ),
+        ],
+    );
+
+    let snapshot = resolve_document_styles_debug_snapshot(&dom, matching_environment(), &[])
+        .expect("AF7 diagnostic snapshot");
+
+    assert!(snapshot.starts_with("version: 5\ndocument-style-resolution\n"));
+    let (_, root_and_descendants) = snapshot
+        .split_once("element[0]: selector-id=1 namespace=html name=\"section\"\n")
+        .expect("root element section");
+    let (root_section, child_sections) = root_and_descendants
+        .split_once("element[1]: selector-id=2 namespace=html name=\"p\"\n")
+        .expect("ordinary-defaulting child section");
+    let (ordinary_child_section, explicit_child_section) = child_sections
+        .split_once("element[2]: selector-id=3 namespace=html name=\"p\"\n")
+        .expect("explicit CSS-wide child section");
+
+    assert!(root_section.starts_with("  inheritance-parent: none\n"));
+    assert!(root_section.contains("    color: winner("));
+
+    assert!(ordinary_child_section.starts_with("  inheritance-parent: selector-id=1\n"));
+    assert!(ordinary_child_section.contains("    color: inherited\n"));
+    assert!(ordinary_child_section.contains("    display: initial(inline)\n"));
+
+    assert!(explicit_child_section.starts_with("  inheritance-parent: selector-id=1\n"));
+    assert!(
+        explicit_child_section.contains("    color: css-wide-inherited(keyword=inherit, winner(")
+    );
+    assert!(
+        explicit_child_section.contains("    font-size: css-wide-inherited(keyword=unset, winner(")
+    );
+    assert!(
+        explicit_child_section.contains("    width: css-wide-initial(keyword=initial, winner(")
+    );
+    assert!(
+        explicit_child_section.contains("    display: css-wide-initial(keyword=unset, winner(")
     );
 }
 

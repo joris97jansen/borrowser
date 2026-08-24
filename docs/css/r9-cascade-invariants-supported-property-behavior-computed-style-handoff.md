@@ -1,13 +1,18 @@
 # R9: Cascade Invariants, Supported Property Behavior, And Computed-Style Handoff
 
 Last updated: 2026-08-22
-Status: historical Milestone R close-out; AF6 supersedes winner invariants and resource model
+Status: historical Milestone R close-out; AF6 supersedes winner invariants and AF7 supersedes defaulting-source details
 
 R9's resolved-style and computed-style handoff remains the downstream
 architecture. AF6 supersedes its candidate materialization, priority, tie,
 allocation, and failure details while leaving inheritance/default fill and
 computed construction outside AF6. See
 `docs/css/af6-cascade-ordering-winner-selection-contract.md`.
+
+AF7 supersedes R9 wording that treats a parent `ResolvedStyle` as semantic
+input. The authoritative classifier receives typed immediate-parent presence;
+symbolic inheritance is materialized later from the parent `ComputedStyle`.
+See `docs/css/af7-specified-value-defaulting-source-resolution.md`.
 
 This document is the source-of-truth contract for Milestone R issue 9 and the
 Milestone R close-out boundary overall: the implemented cascade invariants,
@@ -144,7 +149,7 @@ For each property in `CascadePropertyId::ALL`, `resolve_cascade_style(...)`
 uses this order:
 
 1. if a local authored winner exists, record `ResolvedValueSource::Winner`
-2. otherwise, if the property inherits and a parent resolved style exists,
+2. otherwise, if the property inherits and an immediate parent exists,
    record `ResolvedValueSource::Inherited`
 3. otherwise, record `ResolvedValueSource::Initial(property.initial_value())`
 
@@ -159,8 +164,8 @@ That means:
 - defaulting is explicit and total, not a downstream guess
 
 `ResolvedValueSource::Inherited` records provenance, not a copied authored
-value. Downstream consumers are expected to follow the parent style chain when
-interpreting inherited properties.
+value. Computed materialization reads the same property from the immediate
+parent `ComputedStyle`; it does not follow or copy parent resolved winners.
 
 ## Structured Output Contract
 
@@ -201,9 +206,9 @@ The following invariants are part of the Milestone R contract:
 - `CascadeWinnerSet` contains at most one winner per supported property and is
   stored in canonical property order
 - `ResolvedStyle` contains exactly one entry per supported property
-- `ResolvedStyleBuilder` rejects duplicate property insertion in all builds
-- `ResolvedStyleBuilder::record_inherited(...)` is valid only for inherited
-  properties
+- the crate-private `ResolvedStyleBuilder` rejects duplicate property insertion
+  in all builds
+- ordinary inherited sources are emitted only for inherited properties
 - structured document style resolution does not mutate the DOM
 - legacy `attach_styles(...)` behavior is projection only; it must not become
   the owner of cascade semantics again
@@ -218,16 +223,16 @@ change together.
 
 ## Handoff To Computed-Style Work
 
-Milestone R ends at resolved specified-style output, not at typed computed
-values.
+AF7 ends at resolved specified-value/defaulting source output, not at typed
+computed values. The current computed-style materializer consumes the
+structured cascade contract like this:
 
-The next computed-style milestone must consume the structured cascade contract
-like this:
-
-- when a property entry is `Winner`, interpret `CascadeWinner.value`
-- when a property entry is `Inherited`, read the property from the parent style
-  chain
-- when a property entry is `Initial`, interpret `InitialStyleValue`
+- when a property entry is `Winner`, normalize `CascadeWinner.value`
+- when a property entry is `Inherited`, read the property from the immediate
+  parent `ComputedStyle`
+- when a property entry is `Initial`, materialize `InitialStyleValue`
+- when a property entry records a supported CSS-wide keyword, materialize its
+  already-selected initial or inherited source
 
 Computed-style work must not:
 
@@ -314,9 +319,9 @@ attributes.
 inheritance, but it does not copy the resolved parent value into the child
 entry.
 
-That is the intended design for Milestone R because it preserves provenance and
+That design now remains the AF7 contract because it preserves provenance and
 keeps inheritance/default policy separate from computed-value interpretation.
-The next milestone must preserve that discipline and treat:
+Computed materialization treats:
 
 - `Winner`
 - `Inherited`

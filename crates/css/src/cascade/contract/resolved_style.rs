@@ -12,18 +12,19 @@ use super::winners::{
 };
 use super::winners::{CascadeWinner, CascadeWinnerSet};
 
-/// Resolved-style output for the current cascade subset.
+/// Total specified-value/defaulting source resolution for the current cascade
+/// subset.
 ///
-/// This module owns total property fill after winner resolution, including
-/// inheritance/default materialization. It does not perform computed-value
-/// normalization or layout-facing interpretation.
+/// This source remains symbolic for inheritance. The computed-value layer
+/// later obtains the effective value from the immediate parent's computed
+/// style; this artifact never copies a parent winner or specified value.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ResolvedValueSource {
     Winner(CascadeWinner),
-    /// Inherit the value from the parent resolved style.
+    /// Inherit the value from the immediate parent's computed style.
     ///
     /// This source is emitted only when the property inherits and a parent
-    /// resolved style is available for the current element. Root-level fallback
+    /// exists for the current element. Root-level fallback
     /// for inherited properties resolves through `Initial(...)` instead.
     Inherited,
     Initial(InitialStyleValue),
@@ -94,16 +95,55 @@ impl ResolvedStyleEntry {
     }
 }
 
-/// Deterministic resolved-style surface produced by cascade.
+/// Deterministic specified-value/defaulting source-resolution surface.
 ///
 /// The final engine is expected to populate every supported property exactly
 /// once. Entries are stored in canonical property order rather than insertion
 /// order so snapshots and regression tests remain stable. `ResolvedStyle`
-/// therefore represents a total final output for the supported property subset,
-/// not a sparse intermediate map.
+/// therefore represents a total source-resolution output for the supported
+/// property subset, not a sparse winner set or a computed style.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ResolvedStyle {
     entries: Vec<ResolvedStyleEntry>,
+}
+
+/// Whether CSS defaulting has an immediate parent from which computed-value
+/// materialization can inherit later.
+///
+/// The authoritative AF7 classifier receives only this topology fact. It is
+/// therefore unable to inspect a parent's cascade winner, resolved source, or
+/// specified value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum InheritanceParentPresence {
+    Absent,
+    Present,
+}
+
+impl InheritanceParentPresence {
+    fn is_present(self) -> bool {
+        matches!(self, Self::Present)
+    }
+}
+
+enum WinnerInput<'a> {
+    Borrowed(&'a CascadeWinner),
+    Owned(CascadeWinner),
+}
+
+impl WinnerInput<'_> {
+    fn winner(&self) -> &CascadeWinner {
+        match self {
+            Self::Borrowed(winner) => winner,
+            Self::Owned(winner) => winner,
+        }
+    }
+
+    fn into_owned(self) -> CascadeWinner {
+        match self {
+            Self::Borrowed(winner) => winner.clone(),
+            Self::Owned(winner) => winner,
+        }
+    }
 }
 
 impl ResolvedStyle {
@@ -122,7 +162,7 @@ impl ResolvedStyle {
 /// cascade subset.
 ///
 /// This is the canonical default style surface for cases where no authored
-/// declarations win and no parent resolved style contributes inheritance. It
+/// declarations win and no parent computed context contributes inheritance. It
 /// is intentionally still a `ResolvedStyle`, not a computed style: values
 /// remain cascade-owned initial/default tokens until the computed-value layer
 /// consumes them.
@@ -138,95 +178,145 @@ pub fn resolve_initial_style() -> ResolvedStyle {
         .expect("initial style resolution must produce a total supported-property output")
 }
 
-/// Resolves a total `ResolvedStyle` from authored winners plus optional parent
-/// resolved style.
+/// Resolves a total `ResolvedStyle` from authored winners plus compatibility
+/// parent presence.
 ///
 /// This is the explicit inheritance/default-fill step in Borrowser's cascade
 /// pipeline. Local winning authored declarations take precedence. If no local
-/// winner exists, inherited properties record `Inherited` when a parent
-/// resolved style is present and otherwise fall back to their initial value.
+/// winner exists, inherited properties record `Inherited` when an immediate
+/// parent is present and otherwise fall back to their initial value.
 /// Non-inherited properties always fall back to their initial value when no
-/// local winner exists.
+/// local winner exists. The parent style's contents are deliberately ignored;
+/// only `Some` versus `None` crosses into the authoritative classifier.
 pub fn resolve_cascade_style(
     winners: &CascadeWinnerSet,
     parent_style: Option<&ResolvedStyle>,
 ) -> ResolvedStyle {
-    let mut builder = ResolvedStyleBuilder::new();
+    let parent_presence = match parent_style {
+        Some(_) => InheritanceParentPresence::Present,
+        None => InheritanceParentPresence::Absent,
+    };
+    resolve_cascade_style_with_parent_presence(winners, parent_presence)
+}
 
-    for property in property_registry().ids() {
-        if let Some(winner) = winners.get(property) {
-            match winner.value.css_wide_keyword() {
-                Some(keyword) => builder.record_css_wide_keyword(
-                    property,
-                    winner.clone(),
-                    keyword.keyword(),
-                    parent_style.is_some(),
-                ),
-                None => builder.record_winner(property, winner.clone()),
-            }
-            continue;
-        }
-
-        match (property.metadata().inheritance, parent_style) {
-            (CascadeInheritance::Inherited, Some(_)) => builder.record_inherited(property),
-            (CascadeInheritance::Inherited, None)
-            | (CascadeInheritance::NotInherited, Some(_))
-            | (CascadeInheritance::NotInherited, None) => builder.record_initial(property),
-        }
-    }
-
-    builder
-        .build()
-        .expect("cascade style resolution must produce a total supported-property output")
+pub(crate) fn resolve_cascade_style_with_parent_presence(
+    winners: &CascadeWinnerSet,
+    parent_presence: InheritanceParentPresence,
+) -> ResolvedStyle {
+    resolve_cascade_style_with_winners(
+        |property| winners.get(property).map(WinnerInput::Borrowed),
+        parent_presence,
+    )
 }
 
 /// Production resolved-style construction that consumes sparse winners so a
 /// winning specified value is not cloned again after AF6 materialization.
 pub(crate) fn resolve_cascade_style_owned(
     winners: CascadeWinnerSet,
-    parent_style: Option<&ResolvedStyle>,
+    parent_presence: InheritanceParentPresence,
 ) -> ResolvedStyle {
-    let mut builder = ResolvedStyleBuilder::new();
     let mut winners = winners.into_entries().peekable();
+    let style = resolve_cascade_style_with_winners(
+        |property| {
+            if winners
+                .peek()
+                .is_none_or(|entry| entry.property() != property)
+            {
+                return None;
+            }
 
-    for property in property_registry().ids() {
-        if winners
-            .peek()
-            .is_some_and(|entry| entry.property() == property)
-        {
             let (winner_property, winner) = winners
                 .next()
                 .expect("peeked cascade winner must remain available")
                 .into_parts();
             debug_assert_eq!(winner_property, property);
-            match winner.value.css_wide_keyword() {
-                Some(keyword) => builder.record_css_wide_keyword(
-                    property,
-                    winner,
-                    keyword.keyword(),
-                    parent_style.is_some(),
-                ),
-                None => builder.record_winner(property, winner),
-            }
-            continue;
-        }
+            Some(WinnerInput::Owned(winner))
+        },
+        parent_presence,
+    );
+    debug_assert!(winners.next().is_none());
+    style
+}
 
-        match (property.metadata().inheritance, parent_style) {
-            (CascadeInheritance::Inherited, Some(_)) => builder.record_inherited(property),
-            (CascadeInheritance::Inherited, None)
-            | (CascadeInheritance::NotInherited, Some(_))
-            | (CascadeInheritance::NotInherited, None) => builder.record_initial(property),
-        }
+fn resolve_cascade_style_with_winners<'a>(
+    mut winner_for_property: impl FnMut(CascadePropertyId) -> Option<WinnerInput<'a>>,
+    parent_presence: InheritanceParentPresence,
+) -> ResolvedStyle {
+    let mut builder = ResolvedStyleBuilder::new();
+
+    for property in property_registry().ids() {
+        let source =
+            resolve_property_source(property, winner_for_property(property), parent_presence);
+        builder.record_source(property, source);
     }
 
-    debug_assert!(winners.next().is_none());
     builder
         .build()
         .expect("cascade style resolution must produce a total supported-property output")
 }
 
-/// Resolves a total `ResolvedStyle` directly from matched rule inputs plus
-/// optional parent resolved style.
+fn resolve_property_source(
+    property: CascadePropertyId,
+    winner: Option<WinnerInput<'_>>,
+    parent_presence: InheritanceParentPresence,
+) -> ResolvedValueSource {
+    let Some(winner) = winner else {
+        return match (property.metadata().inheritance, parent_presence) {
+            (CascadeInheritance::Inherited, InheritanceParentPresence::Present) => {
+                ResolvedValueSource::Inherited
+            }
+            (CascadeInheritance::Inherited, InheritanceParentPresence::Absent)
+            | (CascadeInheritance::NotInherited, InheritanceParentPresence::Present)
+            | (CascadeInheritance::NotInherited, InheritanceParentPresence::Absent) => {
+                ResolvedValueSource::Initial(property.initial_value())
+            }
+        };
+    };
+
+    let keyword = winner
+        .winner()
+        .value
+        .css_wide_keyword()
+        .map(|value| value.keyword());
+    let winner = winner.into_owned();
+
+    match keyword {
+        None => ResolvedValueSource::Winner(winner),
+        Some(CssWideKeyword::Initial) => ResolvedValueSource::CssWideKeyword(
+            css_wide_initial_source(property, CssWideKeyword::Initial, winner),
+        ),
+        Some(CssWideKeyword::Inherit) if parent_presence.is_present() => {
+            ResolvedValueSource::CssWideKeyword(css_wide_inherited_source(
+                CssWideKeyword::Inherit,
+                winner,
+            ))
+        }
+        Some(CssWideKeyword::Inherit) => ResolvedValueSource::CssWideKeyword(
+            css_wide_initial_source(property, CssWideKeyword::Inherit, winner),
+        ),
+        Some(CssWideKeyword::Unset)
+            if property.metadata().inheritance == CascadeInheritance::Inherited
+                && parent_presence.is_present() =>
+        {
+            ResolvedValueSource::CssWideKeyword(css_wide_inherited_source(
+                CssWideKeyword::Unset,
+                winner,
+            ))
+        }
+        Some(CssWideKeyword::Unset) => ResolvedValueSource::CssWideKeyword(
+            css_wide_initial_source(property, CssWideKeyword::Unset, winner),
+        ),
+        Some(keyword @ (CssWideKeyword::Revert | CssWideKeyword::RevertLayer)) => {
+            unreachable!(
+                "unsupported CSS-wide keyword '{}' must be rejected before AF7 resolution",
+                keyword.as_css_keyword()
+            )
+        }
+    }
+}
+
+/// Resolves a total `ResolvedStyle` directly from matched rule inputs plus a
+/// compatibility parent-presence adapter.
 ///
 /// This keeps the rule-input -> winner-set -> resolved-style staircase
 /// explicit while offering one current-scope convenience entrypoint for the
@@ -245,18 +335,23 @@ pub fn resolve_cascade_style_from_rule_inputs(
         CascadeResolutionWorkspace::try_new(budget).expect("test winner workspace reserves");
     let winners = resolve_cascade_winners(&validated, budget, &mut workspace)
         .expect("test cascade winner resolution succeeds");
-    resolve_cascade_style_owned(winners, parent_style)
+    let parent_presence = match parent_style {
+        Some(_) => InheritanceParentPresence::Present,
+        None => InheritanceParentPresence::Absent,
+    };
+    resolve_cascade_style_owned(winners, parent_presence)
 }
 
 /// Error returned when a final `ResolvedStyle` is missing supported
 /// properties.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ResolvedStyleBuildError {
+pub(crate) struct ResolvedStyleBuildError {
     missing_properties: Vec<CascadePropertyId>,
 }
 
 impl ResolvedStyleBuildError {
-    pub fn missing_properties(&self) -> &[CascadePropertyId] {
+    #[cfg(test)]
+    pub(crate) fn missing_properties(&self) -> &[CascadePropertyId] {
         &self.missing_properties
     }
 }
@@ -278,16 +373,17 @@ impl std::error::Error for ResolvedStyleBuildError {}
 
 /// Deterministic builder for `ResolvedStyle`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ResolvedStyleBuilder {
+pub(crate) struct ResolvedStyleBuilder {
     entries: BTreeMap<CascadePropertyId, ResolvedValueSource>,
 }
 
 impl ResolvedStyleBuilder {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
-    pub fn record_winner(&mut self, property: CascadePropertyId, winner: CascadeWinner) {
+    #[cfg(test)]
+    pub(crate) fn record_winner(&mut self, property: CascadePropertyId, winner: CascadeWinner) {
         let previous = self
             .entries
             .insert(property, ResolvedValueSource::Winner(winner));
@@ -297,7 +393,8 @@ impl ResolvedStyleBuilder {
         );
     }
 
-    pub fn record_inherited(&mut self, property: CascadePropertyId) {
+    #[cfg(test)]
+    pub(crate) fn record_inherited(&mut self, property: CascadePropertyId) {
         assert_eq!(
             property.metadata().inheritance,
             CascadeInheritance::Inherited,
@@ -312,7 +409,7 @@ impl ResolvedStyleBuilder {
         );
     }
 
-    pub fn record_initial(&mut self, property: CascadePropertyId) {
+    pub(crate) fn record_initial(&mut self, property: CascadePropertyId) {
         let previous = self.entries.insert(
             property,
             ResolvedValueSource::Initial(property.initial_value()),
@@ -323,44 +420,15 @@ impl ResolvedStyleBuilder {
         );
     }
 
-    pub fn record_css_wide_keyword(
-        &mut self,
-        property: CascadePropertyId,
-        winner: CascadeWinner,
-        keyword: CssWideKeyword,
-        has_parent_style: bool,
-    ) {
-        let source = match keyword {
-            CssWideKeyword::Initial => css_wide_initial_source(property, keyword, winner),
-            CssWideKeyword::Inherit if has_parent_style => {
-                css_wide_inherited_source(keyword, winner)
-            }
-            CssWideKeyword::Inherit => css_wide_initial_source(property, keyword, winner),
-            CssWideKeyword::Unset
-                if property.metadata().inheritance == CascadeInheritance::Inherited
-                    && has_parent_style =>
-            {
-                css_wide_inherited_source(keyword, winner)
-            }
-            CssWideKeyword::Unset => css_wide_initial_source(property, keyword, winner),
-            CssWideKeyword::Revert | CssWideKeyword::RevertLayer => {
-                panic!(
-                    "unsupported CSS-wide keyword '{}' must be rejected before resolved style",
-                    keyword.as_css_keyword()
-                )
-            }
-        };
-
-        let previous = self
-            .entries
-            .insert(property, ResolvedValueSource::CssWideKeyword(source));
+    fn record_source(&mut self, property: CascadePropertyId, source: ResolvedValueSource) {
+        let previous = self.entries.insert(property, source);
         assert!(
             previous.is_none(),
             "resolved style must not record the same property twice"
         );
     }
 
-    pub fn build(self) -> Result<ResolvedStyle, ResolvedStyleBuildError> {
+    pub(crate) fn build(self) -> Result<ResolvedStyle, ResolvedStyleBuildError> {
         let missing_properties = property_registry()
             .ids()
             .filter(|property| !self.entries.contains_key(property))

@@ -62,6 +62,12 @@ Debug labels, snapshots, and golden fixtures serialize typed state for
 inspection. They are not the value boundary and must not be used as the
 implementation path for specified-to-computed behavior.
 
+AF7's `ResolvedStyle` is the total source-resolution handoff across this
+boundary. It records which winner, initial fallback, or symbolic inherited
+source supplies each registered property; it is not a duplicate materialized
+specified-value tree. Inherited materialization reads the immediate parent
+`ComputedStyle` as described below.
+
 ## Ownership Boundary
 
 CSS owns:
@@ -163,8 +169,8 @@ items are not implemented or approximated by AD5.
 Cascade owns source selection:
 
 1. a valid winning specified declaration;
-2. an inherited source when metadata says the property inherits and a parent
-   style exists;
+2. an inherited source when metadata says the property inherits and an
+   immediate parent exists;
 3. the metadata initial value.
 
 Computed style owns typed materialization of that source:

@@ -25,14 +25,18 @@ R6 makes initial/default handling an explicit cascade-owned surface through:
 - `CascadePropertyId::initial_value()`
 - `InitialStyleValue`
 - `ResolvedValueSource::Initial(...)`
-- `ResolvedStyleBuilder::record_initial(...)`
 - `resolve_initial_style()`
 - `resolve_cascade_style(...)`
 
 This means missing supported properties are never represented as absence in the
 final resolved-style output. They resolve either through inheritance, when the
-property inherits and a parent resolved style exists, or through an explicit
+property inherits and an immediate parent exists, or through an explicit
 initial/default value owned by the cascade contract.
+
+AF7 makes the construction builder crate-private and makes typed
+immediate-parent presence, rather than parent resolved contents, the
+authoritative defaulting input. See
+`docs/css/af7-specified-value-defaulting-source-resolution.md`.
 
 ## Initial/Default Table
 
@@ -67,12 +71,12 @@ For each property in `CascadePropertyId::ALL`, `resolve_cascade_style(...)`
 uses this order:
 
 1. if a local authored winner exists, record `ResolvedValueSource::Winner`
-2. otherwise, if the property inherits and a parent resolved style exists,
+2. otherwise, if the property inherits and an immediate parent exists,
    record `ResolvedValueSource::Inherited`
 3. otherwise, record `ResolvedValueSource::Initial(property.initial_value())`
 
 `resolve_initial_style()` is the canonical all-default resolved style. It is
-equivalent to resolving an empty winner set with no parent resolved style, and
+equivalent to resolving an empty winner set with no immediate parent, and
 it exists so the default surface can be tested and consumed directly.
 
 ## Boundary With Computed Style
@@ -100,7 +104,7 @@ R6 establishes these invariants:
 - defaulted entries are explicit `ResolvedValueSource::Initial(...)` records
 - root-level inherited properties fall back to initial/default values
 - non-inherited properties fall back to initial/default values even when a
-  parent resolved style exists
+  immediate parent exists
 - authored winners always outrank initial/default values
 - default snapshot output is canonical property order and independent of caller
   insertion order

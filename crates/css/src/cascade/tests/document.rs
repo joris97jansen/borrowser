@@ -1,3 +1,4 @@
+use super::super::integration::try_resolve_element_subtree_styles_with_limits;
 use super::super::{
     StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits, resolve_document_styles,
     resolve_document_styles_debug_snapshot,
@@ -9,10 +10,11 @@ use super::support::{
     namespaced_element, stylesheet,
 };
 use crate::{
-    CascadePropertyId, CascadeResolutionError, CascadeRuleMatch, RawRuleIndex, ResolvedValueSource,
-    Rule, SelectorDomBuildError, SelectorDomIndex, SelectorMatchability, SelectorMatchingContext,
-    StylesheetCollectionInput, StylesheetConditionInput, StylesheetOrder, StylesheetRuleRef,
-    StylesheetSourceId, resolve_document_styles_from_cascade_inputs,
+    CascadePropertyId, CascadeResolutionError, CascadeRuleMatch, CssWideResolvedSource,
+    RawRuleIndex, ResolvedValueSource, Rule, SelectorDomBuildError, SelectorDomIndex,
+    SelectorMatchability, SelectorMatchingContext, StylesheetCollectionInput,
+    StylesheetConditionInput, StylesheetOrder, StylesheetRuleRef, StylesheetSourceId,
+    resolve_document_styles_from_cascade_inputs,
 };
 
 #[test]
@@ -171,6 +173,88 @@ fn resolve_document_styles_produces_structured_output_without_mutating_dom() {
             .source(),
         &ResolvedValueSource::Initial(crate::InitialStyleValue::DisplayInline)
     );
+}
+
+#[test]
+fn document_resolution_keeps_parent_child_grandchild_inheritance_symbolic() {
+    let stylesheets = vec![stylesheet("section { color: red; }")];
+    let dom = document_element(
+        "section",
+        Vec::new(),
+        vec![element(
+            "div",
+            Vec::new(),
+            vec![element("span", Vec::new(), Vec::new())],
+        )],
+    );
+
+    let resolved = resolve_document_styles(&dom, matching_environment(), &stylesheets)
+        .expect("resolved document style");
+
+    assert_eq!(resolved.entries().len(), 3);
+    assert_eq!(
+        resolved.entries()[0]
+            .style()
+            .get(CascadePropertyId::Color)
+            .and_then(|entry| entry.winner())
+            .and_then(|winner| winner.value.to_css_text())
+            .as_deref(),
+        Some("red")
+    );
+    for entry in &resolved.entries()[1..] {
+        assert_eq!(
+            entry
+                .style()
+                .get(CascadePropertyId::Color)
+                .expect("color")
+                .source(),
+            &ResolvedValueSource::Inherited
+        );
+    }
+}
+
+#[test]
+fn isolated_element_subtree_has_no_external_parent_but_inherits_within_projection() {
+    let subtree = element(
+        "section",
+        Vec::new(),
+        vec![element(
+            "div",
+            Vec::new(),
+            vec![element("span", Vec::new(), Vec::new())],
+        )],
+    );
+    let html::Node::Element { element: root } = &subtree else {
+        panic!("expected element subtree root");
+    };
+
+    let resolved = try_resolve_element_subtree_styles_with_limits(
+        root,
+        matching_environment(),
+        &[],
+        &StyleResolutionLimits::default(),
+    )
+    .expect("isolated subtree resolves");
+
+    assert_eq!(resolved.entries().len(), 3);
+    assert_eq!(
+        resolved.entries()[0]
+            .style()
+            .get(CascadePropertyId::Color)
+            .expect("root color")
+            .source(),
+        &ResolvedValueSource::Initial(crate::InitialStyleValue::ColorBlack)
+    );
+    for entry in &resolved.entries()[1..] {
+        assert_eq!(
+            entry
+                .style()
+                .get(CascadePropertyId::Color)
+                .expect("descendant color")
+                .source(),
+            &ResolvedValueSource::Inherited
+        );
+    }
 }
 
 #[test]
@@ -476,6 +560,104 @@ fn resolve_document_styles_rejects_invalid_outline_shorthand_atomically() {
         &ResolvedValueSource::Initial(crate::InitialStyleValue::ZeroPx),
         "invalid shorthand must not partially emit an outline-width candidate"
     );
+}
+
+#[test]
+fn unsupported_css_wide_longhands_are_not_af7_candidates() {
+    let stylesheets = vec![stylesheet(concat!(
+        "div { color: red; color: revert; ",
+        "width: 40px; width: revert-layer; }",
+    ))];
+    let dom = document_element("div", Vec::new(), Vec::new());
+
+    let resolved = resolve_document_styles(&dom, matching_environment(), &stylesheets)
+        .expect("unsupported declarations remain non-candidates");
+    let style = resolved.entries()[0].style();
+
+    assert_eq!(
+        style
+            .get(CascadePropertyId::Color)
+            .and_then(|entry| entry.winner())
+            .and_then(|winner| winner.value.to_css_text())
+            .as_deref(),
+        Some("red")
+    );
+    assert_eq!(
+        style
+            .get(CascadePropertyId::Width)
+            .and_then(|entry| entry.winner())
+            .and_then(|winner| winner.value.to_css_text())
+            .as_deref(),
+        Some("40px")
+    );
+}
+
+#[test]
+fn unsupported_css_wide_outline_shorthands_are_rejected_atomically() {
+    for keyword in ["revert", "revert-layer"] {
+        let css = format!("div {{ outline: 2px solid red; outline: {keyword}; }}");
+        let resolved = resolve_document_styles(
+            &document_element("div", Vec::new(), Vec::new()),
+            matching_environment(),
+            &[stylesheet(&css)],
+        )
+        .expect("unsupported shorthand remains a non-candidate");
+        let style = resolved.entries()[0].style();
+
+        for (property, expected) in [
+            (CascadePropertyId::OutlineColor, "red"),
+            (CascadePropertyId::OutlineStyle, "solid"),
+            (CascadePropertyId::OutlineWidth, "2px"),
+        ] {
+            assert_eq!(
+                style
+                    .get(property)
+                    .and_then(|entry| entry.winner())
+                    .and_then(|winner| winner.value.to_css_text())
+                    .as_deref(),
+                Some(expected),
+                "{property:?} after outline: {keyword}"
+            );
+        }
+    }
+}
+
+#[test]
+fn supported_css_wide_outline_shorthand_flows_through_longhand_af7_resolution() {
+    let stylesheets = vec![stylesheet(concat!(
+        "section { outline: 2px solid red; }",
+        "div { outline: inherit; }",
+    ))];
+    let dom = document_element(
+        "section",
+        Vec::new(),
+        vec![element("div", Vec::new(), Vec::new())],
+    );
+
+    let resolved = resolve_document_styles(&dom, matching_environment(), &stylesheets)
+        .expect("CSS-wide shorthand resolves through longhands");
+    let child = resolved.entries()[1].style();
+    let mut shorthand_source = None;
+
+    for property in [
+        CascadePropertyId::OutlineColor,
+        CascadePropertyId::OutlineStyle,
+        CascadePropertyId::OutlineWidth,
+    ] {
+        let ResolvedValueSource::CssWideKeyword(CssWideResolvedSource::Inherited {
+            keyword,
+            winner,
+        }) = child.get(property).expect("outline longhand").source()
+        else {
+            panic!("{property:?} must resolve through explicit inherit");
+        };
+        assert_eq!(*keyword, crate::CssWideKeyword::Inherit);
+        assert_eq!(winner.value.to_css_text().as_deref(), Some("inherit"));
+        match &shorthand_source {
+            Some(source) => assert_eq!(&winner.source, source),
+            None => shorthand_source = Some(winner.source),
+        }
+    }
 }
 
 #[test]

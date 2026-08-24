@@ -184,6 +184,11 @@ current cascade origin/layer model cannot implement them correctly.
 - Debug output is deterministic and distinguishes authored declaration order
   from shorthand expansion order.
 
+AF7 integration coverage proves that a supported `outline: inherit`
+declaration expands into three AF6 longhand winners and reaches ordinary AF7
+CSS-wide resolution. AF7 does not own or reintroduce shorthand semantics; see
+`docs/css/af7-specified-value-defaulting-source-resolution.md`.
+
 ## Deliberate Exclusions
 
 AD6 deliberately excludes:

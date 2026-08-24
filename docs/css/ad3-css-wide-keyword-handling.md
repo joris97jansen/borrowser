@@ -25,6 +25,7 @@ Related documents:
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
 - `docs/engine-feature-gap-tracker.md`
 - `docs/css/af6-cascade-ordering-winner-selection-contract.md`
+- `docs/css/af7-specified-value-defaulting-source-resolution.md`
 
 ## Purpose
 
@@ -89,10 +90,11 @@ When a CSS-wide value wins, `resolve_cascade_style(...)` resolves it through
 property metadata:
 
 - `initial` resolves to `property.initial_value()`.
-- `inherit` resolves to explicit inheritance when a parent style is available.
+- `inherit` resolves to explicit inheritance when an immediate parent is
+  present.
 - root or no-parent `inherit` resolves to the property's initial value.
-- `unset` resolves like `inherit` for inherited-by-default properties when a
-  parent style is available.
+- `unset` resolves like `inherit` for inherited-by-default properties when an
+  immediate parent is present.
 - `unset` resolves like `initial` for non-inherited properties and for
   inherited properties at the root.
 
@@ -109,6 +111,10 @@ Computed style consumes already-resolved CSS-wide sources:
 - resolved CSS-wide initial sources materialize through
   `ComputedValue::from_initial(property)`;
 - resolved CSS-wide inherited sources copy the parent computed property value.
+
+AF7 represents that inherited choice symbolically. Its classifier receives
+typed parent presence, not a parent `ResolvedStyle`; only computed
+materialization reads the parent `ComputedStyle`.
 
 The computed layer does not decide what `initial`, `inherit`, or `unset` mean.
 That semantic choice belongs to the CSS cascade/resolved-style layer.

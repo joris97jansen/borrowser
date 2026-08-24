@@ -1,7 +1,7 @@
 use super::super::contract::{
-    CascadeResolutionBudget, CascadeResolutionWorkspace, InlineStyleRuleRef,
-    ValidatedCascadeRuleInputBuilder, append_cascade_evaluation_debug_snapshot,
-    resolve_cascade_style,
+    CascadeResolutionBudget, CascadeResolutionWorkspace, InheritanceParentPresence,
+    InlineStyleRuleRef, ValidatedCascadeRuleInputBuilder, append_cascade_evaluation_debug_snapshot,
+    resolve_cascade_style_with_parent_presence,
 };
 use super::collection::RuleCollection;
 use super::declarations::inline_style_declaration_inputs_from_model;
@@ -11,7 +11,6 @@ use super::selector_dom::build_document_selector_dom_with_element_limit;
 use crate::selectors::{SelectorMatchingContext, SelectorMatchingEnvironment};
 use crate::{model, syntax::ParseOptions};
 use html::Node;
-use std::collections::BTreeMap;
 use std::fmt::Write;
 
 /// Stable debug snapshot for declaration-list parsing and cascade eligibility.
@@ -108,7 +107,7 @@ pub(crate) fn resolve_document_styles_debug_snapshot(
     )?;
     let mut out = String::new();
 
-    writeln!(&mut out, "version: 4").expect("write snapshot");
+    writeln!(&mut out, "version: 5").expect("write snapshot");
     writeln!(&mut out, "document-style-resolution").expect("write snapshot");
     writeln!(
         &mut out,
@@ -122,7 +121,6 @@ pub(crate) fn resolve_document_styles_debug_snapshot(
         matching_environment,
         limits.selector_matching,
     );
-    let mut styles_by_element = BTreeMap::new();
     let cascade_budget = CascadeResolutionBudget::try_new(
         limits.max_declaration_inputs_per_element,
         limits.max_inline_declarations_per_element,
@@ -133,9 +131,11 @@ pub(crate) fn resolve_document_styles_debug_snapshot(
         .map_err(StyleResolutionError::CascadeResolution)?;
 
     for (element_index, element) in index.elements().enumerate() {
-        let parent_style = context
-            .parent_element(element)
-            .and_then(|parent| styles_by_element.get(&parent));
+        let parent_element = context.parent_element(element);
+        let parent_presence = match parent_element {
+            Some(_) => InheritanceParentPresence::Present,
+            None => InheritanceParentPresence::Absent,
+        };
 
         let rule_inputs = rule_inputs_for_element_with_limits(
             &index,
@@ -155,7 +155,7 @@ pub(crate) fn resolve_document_styles_debug_snapshot(
             false,
         )
         .map_err(StyleResolutionError::CascadeResolution)?;
-        let style = resolve_cascade_style(&winners, parent_style);
+        let style = resolve_cascade_style_with_parent_presence(&winners, parent_presence);
 
         writeln!(
             &mut out,
@@ -165,6 +165,15 @@ pub(crate) fn resolve_document_styles_debug_snapshot(
             context.element_local_name(element)
         )
         .expect("write snapshot");
+        match parent_element {
+            Some(parent) => writeln!(
+                &mut out,
+                "  inheritance-parent: selector-id={}",
+                parent.get()
+            )
+            .expect("write snapshot"),
+            None => writeln!(&mut out, "  inheritance-parent: none").expect("write snapshot"),
+        }
 
         for line in cascade_debug.lines() {
             writeln!(&mut out, "  {line}").expect("write snapshot");
@@ -173,8 +182,6 @@ pub(crate) fn resolve_document_styles_debug_snapshot(
         for line in style.to_debug_snapshot().lines().skip(1) {
             writeln!(&mut out, "  {line}").expect("write snapshot");
         }
-
-        styles_by_element.insert(element, style);
     }
 
     Ok(out)

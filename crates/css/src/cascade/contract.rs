@@ -32,8 +32,8 @@ pub use properties::{
 #[cfg(test)]
 pub use resolved_style::resolve_cascade_style_from_rule_inputs;
 pub use resolved_style::{
-    CssWideResolvedSource, ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder,
-    ResolvedStyleEntry, ResolvedValueSource, resolve_cascade_style, resolve_initial_style,
+    CssWideResolvedSource, ResolvedStyle, ResolvedStyleEntry, ResolvedValueSource,
+    resolve_cascade_style, resolve_initial_style,
 };
 pub use rules::{
     CascadeRuleInput, CascadeRuleInputBuildError, InlineStyleRuleInput, MatchedStylesheetRuleInput,
@@ -49,7 +49,9 @@ pub use winners::{
     CascadeWinnerSet, RuleInputSequenceViolation,
 };
 
-pub(crate) use resolved_style::resolve_cascade_style_owned;
+pub(crate) use resolved_style::{InheritanceParentPresence, resolve_cascade_style_owned};
+#[cfg(test)]
+pub(crate) use resolved_style::{ResolvedStyleBuilder, resolve_cascade_style_with_parent_presence};
 pub(crate) use rules::{ValidatedCascadeRuleInputBuilder, ValidatedCascadeRuleInputs};
 #[cfg(test)]
 pub(crate) use snapshot::append_cascade_evaluation_debug_snapshot;

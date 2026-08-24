@@ -29,6 +29,12 @@ specificity; sparse winners are selected by a reusable property-indexed
 workspace. See
 `docs/css/af6-cascade-ordering-winner-selection-contract.md`.
 
+AF7 now supplies total specified-value/defaulting source resolution after AF6.
+It records symbolic inherited or initial/CSS-wide sources for every registered
+property, while top-down computed materialization remains responsible for
+reading the immediate parent's computed value. See
+`docs/css/af7-specified-value-defaulting-source-resolution.md`.
+
 ## Related code
 
 - `crates/css/src/style_invalidation.rs`
@@ -61,6 +67,7 @@ Selector, cascade, and computed-style foundations:
   `docs/css/q8-selector-matching-invariants-extension-hooks.md`
 - AF4b: `docs/css/af4b-selector-dom-query-contract.md`
 - AF4e: `docs/css/af4e-selector-invalidation-parser-conformance-closeout.md`
+- AF7: `docs/css/af7-specified-value-defaulting-source-resolution.md`
 - R1-R9: the structured cascade and resolved-style contracts under
   `docs/css/r*.md`
 - S1/S6/S9: the computed-style property, assembly, and runtime contracts
@@ -185,7 +192,10 @@ future actual-value stage belongs to the later layout/paint/backend pipeline:
 device, rasterization, compatibility, and backend constraints may affect it.
 
 `ResolvedStyle` and `ResolvedDocumentStyle` are Borrowser's internal
-CSS-owned cascade/computed-style handoff artifacts. They are not CSSOM
+CSS-owned total specified-value/defaulting source-resolution artifacts and the
+handoff into computed materialization. Symbolic inherited entries defer value
+transfer to the immediate parent `ComputedStyle`; they do not copy parent
+specified data. They are not CSSOM
 "resolved values". In CSSOM, a resolved value is an API-facing compatibility
 concept used by APIs such as `getComputedStyle()` and can correspond to a
 computed or used value depending on the property and API rules. AF1 does not

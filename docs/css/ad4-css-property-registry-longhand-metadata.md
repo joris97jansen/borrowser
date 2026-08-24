@@ -82,6 +82,11 @@ boundary.
 longhand. It records inheritance, initial value, parser/value-kind contracts,
 invalid-value policy, length sign policy, and invalidation impact.
 
+AF7 consumes this registry directly to classify every missing winner and every
+supported `unset` winner. No separate inheritance or initial-value table exists
+in resolved-style construction. See
+`docs/css/af7-specified-value-defaulting-source-resolution.md`.
+
 ## Parser And Value-Kind Contract
 
 AD4 keeps the existing typed parser-kind model:

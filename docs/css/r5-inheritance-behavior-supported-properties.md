@@ -7,6 +7,12 @@ This document is the source-of-truth contract for Milestone R issue 5: the
 explicit inheritance/default-fill step that turns authored cascade winners into
 a total `ResolvedStyle` for Borrowser's current supported property subset.
 
+AF7 reconciliation (2026-08-24): R5's `Option<&ResolvedStyle>` wording is a
+historical compatibility API description, not the authoritative architecture.
+AF7 source classification receives only typed immediate-parent presence and
+inherits the effective value later from the parent `ComputedStyle`. See
+`docs/css/af7-specified-value-defaulting-source-resolution.md`.
+
 Related code:
 - `crates/css/src/cascade/contract.rs`
 - `crates/css/src/cascade.rs`
@@ -28,7 +34,8 @@ R5 adds the explicit inheritance/default-fill layer through:
 This layer consumes:
 
 - authored winners in `CascadeWinnerSet`
-- optional parent `ResolvedStyle`
+- typed immediate-parent presence (with the historical public wrapper adapting
+  optional parent `ResolvedStyle` to presence only)
 
 and produces:
 
@@ -51,7 +58,7 @@ That policy remains owned by `CascadePropertyId::metadata()`.
 For each supported property, R5 now resolves in this order:
 
 1. if a local authored winner exists, record `ResolvedValueSource::Winner`
-2. otherwise, if the property inherits and a parent resolved style exists,
+2. otherwise, if the property inherits and an immediate parent exists,
    record `ResolvedValueSource::Inherited`
 3. otherwise, record `ResolvedValueSource::Initial(...)`
 
@@ -66,9 +73,10 @@ This means:
 
 Inheritance is no longer an accidental downstream behavior.
 
-The parent resolved style is now an explicit input to cascade-style
-construction, but only at the inheritance/default-fill step. Winner selection
-remains parent-independent.
+Immediate-parent presence is an explicit input to cascade-style construction,
+but parent resolved contents are not. Winner selection remains
+parent-independent, and computed materialization later reads the parent
+computed value.
 
 That preserves the intended staircase:
 
@@ -94,8 +102,8 @@ R5 establishes these invariants:
 
 The test surface now covers:
 
-- inherited properties resolving through `Inherited` only when a parent style is
-  present
+- inherited properties resolving through `Inherited` only when an immediate
+  parent is present
 - inherited properties at the root falling back to initial values
 - explicit winners overriding parent inheritance
 - non-inherited properties staying initial even when the parent has a winner
@@ -116,7 +124,7 @@ R5 does not:
 This issue is complete when Borrowser can answer, in code:
 
 - which supported properties inherit
-- when parent resolved style should affect child style resolution
+- when immediate-parent presence affects child source resolution
 - and when the engine must fall back to explicit initial/default values instead
 
 That contract now exists and is covered by unit tests.
