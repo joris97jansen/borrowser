@@ -58,24 +58,18 @@ fn legacy_base_computed_style(parent: Option<&ComputedStyle>) -> ComputedStyle {
             (PropertyInheritance::Inherited, Some(parent)) => parent.get(property).value(),
             _ => ComputedValue::from_initial(property),
         };
-        if builder.record(property, value).is_err() {
-            #[cfg(debug_assertions)]
-            eprintln!(
-                "legacy base computed-style assembly degraded while recording '{}'",
+        builder.record(property, value).unwrap_or_else(|error| {
+            panic!(
+                "CSS engine invariant violated while recording registry-derived property '{}' for a legacy base computed style: {error}",
                 property.name()
-            );
-            return parent
-                .copied()
-                .unwrap_or_else(ComputedStyle::fallback_initial);
-        }
+            )
+        });
     }
 
     builder.build().unwrap_or_else(|error| {
-        #[cfg(debug_assertions)]
-        eprintln!("legacy base computed-style assembly degraded: {error}");
-        parent
-            .copied()
-            .unwrap_or_else(ComputedStyle::fallback_initial)
+        panic!(
+            "CSS engine invariant violated while constructing a registry-derived legacy base computed style: {error}"
+        )
     })
 }
 

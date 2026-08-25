@@ -1,7 +1,6 @@
 use std::fmt::Write;
 
 use css::ZIndex;
-use html::dom_utils::is_non_rendering_element;
 use layout::{LayoutBox, PositioningScheme};
 
 use super::PaintSource;
@@ -368,10 +367,6 @@ fn collect_context_contents(
     tree: &mut StackingContextTree,
     next_tree_order: &mut usize,
 ) {
-    if is_non_rendering_element(layout.node.node) {
-        return;
-    }
-
     let tree_order = *next_tree_order;
     *next_tree_order += 1;
     let source = PaintSource::from_layout(layout);

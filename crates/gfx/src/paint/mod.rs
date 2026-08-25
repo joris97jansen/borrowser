@@ -27,7 +27,7 @@ use crate::input::{ActiveTarget, InputValueStore};
 use crate::textarea::TextareaCachedLine;
 use css::{Display, Length};
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, Vec2};
-use html::{dom_utils::is_non_rendering_element, internal::Id};
+use html::internal::Id;
 use layout::{BoxKind, LayoutBox, LayoutPhaseOutput, ListMarker, Rectangle, TextMeasurer};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -112,12 +112,6 @@ fn paint_layout_box(
     let painter = ctx.painter;
     let origin = ctx.origin;
     let measurer = ctx.measurer;
-
-    // Non-rendering elements (e.g. <head>, <style>, <script>) suppress painting for the entire subtree.
-    // Layout/style should prevent paintable boxes from existing here.
-    if is_non_rendering_element(layout.node.node) {
-        return;
-    }
 
     let rect = Rect::from_min_size(
         Pos2 {
@@ -841,6 +835,33 @@ mod tests {
             .expect("second child fill");
 
         assert!(first < second);
+    }
+
+    #[test]
+    fn immediate_paint_does_not_suppress_a_layout_visible_title() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                html::internal::html_name("title"),
+                Vec::new(),
+                vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "80px".to_string()),
+                    ("height".to_string(), "20px".to_string()),
+                    ("background-color".to_string(), "#123456".to_string()),
+                ],
+                Vec::new(),
+            )],
+        };
+
+        let fills = rect_fill_sequence(&paint_shapes_for_dom(&dom));
+
+        assert!(
+            position_of_fill(&fills, Color32::from_rgb(0x12, 0x34, 0x56)).is_some(),
+            "immediate painting must trust Layout's decision to generate the title box"
+        );
     }
 
     #[test]

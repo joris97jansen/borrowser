@@ -121,6 +121,25 @@ pub(super) fn find_layout_box_by_id<'layout, 'dom>(
         .find_map(|child| find_layout_box_by_id(child, want))
 }
 
+pub(super) fn find_layout_box_by_element_name<'layout, 'style_tree, 'dom>(
+    layout: &'layout LayoutBox<'style_tree, 'dom>,
+    want_name: &str,
+) -> Option<&'layout LayoutBox<'style_tree, 'dom>> {
+    if layout.source_node().is_some_and(|styled| {
+        matches!(
+            styled.node,
+            Node::Element { element } if element.name() == want_name
+        )
+    }) {
+        return Some(layout);
+    }
+
+    layout
+        .children
+        .iter()
+        .find_map(|child| find_layout_box_by_element_name(child, want_name))
+}
+
 pub(super) fn set_first_element_attr(
     node: &mut Node,
     want_name: &str,
