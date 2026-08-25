@@ -4,8 +4,8 @@ use super::support::{
     no_quirks_patch_publication, two_paragraph_patch_document,
 };
 use crate::page::{
-    StyleRecalcKind, reset_rule_collection_build_count, rule_collection_build_count,
-    style_execution_build_count,
+    StyleRecalcKind, dependency_artifact_build_count, reset_rule_collection_build_count,
+    rule_collection_build_count, style_execution_build_count,
 };
 use crate::rendering::RetainedStyleArtifactAction;
 use bus::CoreEvent;
@@ -75,6 +75,329 @@ fn attribute_mutation_without_existing_style_cache_falls_back_to_full_recompute(
         style_execution_build_count(),
         1,
         "incremental-unavailable execution and full fallback share one selector DOM"
+    );
+}
+
+#[test]
+fn keyed_class_id_and_attribute_dependencies_authorize_suffix_recompute() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 291;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(2910);
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 291,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document(
+                ".hot { color: red; } #hero { color: blue; } [data-kind=promo] { color: green; }",
+                Some("p"),
+            ),
+        ),
+    });
+    assert_eq!(current_element_color_by_id(&mut tab, Id(7)), (0, 0, 0, 255));
+    let dependencies = tab
+        .page
+        .style_dependency_debug_snapshot()
+        .expect("retained CSS dependency summary");
+    assert!(dependencies.starts_with("version: 1\naf9-style-dependencies\n"));
+    assert!(dependencies.contains("trigger=id(\"hero\")"));
+    assert!(dependencies.contains("trigger=class(\"hot\")"));
+    assert!(dependencies.contains("trigger=attribute-html(\"data-kind\" = \"promo\")"));
+
+    let cases = [
+        ("class", "hot", (255, 0, 0, 255)),
+        ("id", "hero", (0, 0, 255, 255)),
+        ("data-kind", "promo", (0, 128, 0, 255)),
+    ];
+    for (index, (name, value, expected)) in cases.into_iter().enumerate() {
+        let from = DomVersion(1 + index as u64);
+        let to = DomVersion(2 + index as u64);
+        tab.on_core_event(CoreEvent::DomPatchUpdate {
+            tab_id: tab.tab_id,
+            request_id: 291,
+            publication: no_quirks_patch_publication(
+                handle,
+                from,
+                to,
+                vec![DomPatch::SetAttributes {
+                    key: PatchKey(7),
+                    attributes: vec![html::internal::unqualified_attribute(name, value)],
+                }],
+            ),
+        });
+        assert_eq!(current_element_color_by_id(&mut tab, Id(7)), expected);
+        assert!(matches!(
+            tab.page.last_style_recalc(),
+            Some(StyleRecalcKind::IncrementalSuffix { .. })
+        ));
+        let decision = tab
+            .page
+            .last_style_invalidation_decision_debug_snapshot()
+            .expect("CSS decision snapshot");
+        assert!(decision.contains("reason: selector-dependency-matched"));
+        assert!(decision.contains("selected-plan: scope: document-suffix node-ids: [7]"));
+    }
+}
+
+#[test]
+fn irrelevant_attribute_change_reuses_computed_style_without_style_generation_change() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 292;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(2920);
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 292,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document(".hot { color: red; }", Some("p")),
+        ),
+    });
+    assert_eq!(current_element_color_by_id(&mut tab, Id(7)), (0, 0, 0, 255));
+    let before = tab.page.style_generations();
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 292,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(1),
+            DomVersion(2),
+            vec![DomPatch::SetAttributes {
+                key: PatchKey(7),
+                attributes: vec![html::internal::unqualified_attribute("title", "neutral")],
+            }],
+        ),
+    });
+
+    assert_eq!(
+        tab.page.style_generations().style_inputs,
+        before.style_inputs
+    );
+    assert_eq!(current_element_color_by_id(&mut tab, Id(7)), (0, 0, 0, 255));
+    assert_eq!(
+        tab.page.last_style_recalc(),
+        Some(StyleRecalcKind::ReusedCache)
+    );
+    assert!(
+        tab.page
+            .last_style_invalidation_decision_debug_snapshot()
+            .is_some_and(|snapshot| snapshot.contains("reason: no-style-effect"))
+    );
+}
+
+#[test]
+fn inline_style_is_a_direct_cascade_dependency_without_style_selector() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 293;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(2930);
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 293,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document("p { color: black; }", Some("p")),
+        ),
+    });
+    assert_eq!(current_element_color_by_id(&mut tab, Id(7)), (0, 0, 0, 255));
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 293,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(1),
+            DomVersion(2),
+            vec![DomPatch::SetAttributes {
+                key: PatchKey(7),
+                attributes: vec![html::internal::unqualified_attribute("style", "color: red")],
+            }],
+        ),
+    });
+
+    assert_eq!(
+        current_element_color_by_id(&mut tab, Id(7)),
+        (255, 0, 0, 255)
+    );
+    assert!(
+        tab.page
+            .last_style_invalidation_decision_debug_snapshot()
+            .is_some_and(|snapshot| {
+                snapshot.contains("reason: inline-cascade-input-changed")
+                    && snapshot.contains("inline-style-changed: true")
+            })
+    );
+}
+
+#[test]
+fn structural_full_recompute_reuses_compatible_dependency_artifact() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 294;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(2940);
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 294,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document("body > p:first-child { color: red; }", Some("p")),
+        ),
+    });
+    assert_eq!(
+        current_element_color_by_id(&mut tab, Id(7)),
+        (255, 0, 0, 255)
+    );
+    reset_rule_collection_build_count();
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 294,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(1),
+            DomVersion(2),
+            vec![
+                DomPatch::CreateElement {
+                    key: PatchKey(9),
+                    name: html::internal::html_name("div"),
+                    attributes: Vec::new(),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(6),
+                    child: PatchKey(9),
+                },
+            ],
+        ),
+    });
+    let _ = current_element_color_by_id(&mut tab, Id(7));
+    assert!(matches!(
+        tab.page.last_style_recalc(),
+        Some(StyleRecalcKind::Full { .. })
+    ));
+    assert_eq!(dependency_artifact_build_count(), 0);
+    assert!(
+        tab.page
+            .last_style_invalidation_decision_debug_snapshot()
+            .is_some_and(
+                |snapshot| snapshot.contains("reason: structural-mutation-requires-full-rebuild")
+            )
+    );
+}
+
+#[test]
+fn multiple_attribute_operations_classify_committed_old_to_final_state() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 295;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(2950);
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 295,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document(".hot { color: red; }", Some("p")),
+        ),
+    });
+    assert_eq!(current_element_color_by_id(&mut tab, Id(7)), (0, 0, 0, 255));
+    let before = tab.page.style_generations();
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 295,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(1),
+            DomVersion(2),
+            vec![
+                DomPatch::SetAttributes {
+                    key: PatchKey(7),
+                    attributes: vec![html::internal::unqualified_attribute("class", "hot")],
+                },
+                DomPatch::SetAttributes {
+                    key: PatchKey(7),
+                    attributes: Vec::new(),
+                },
+            ],
+        ),
+    });
+
+    assert_eq!(
+        tab.page.style_generations().style_inputs,
+        before.style_inputs
+    );
+    assert!(
+        tab.page.last_dom_mutation_debug_snapshot().is_some_and(
+            |snapshot| snapshot.contains("node=7 namespace=html before=0 after=0 no-op=true")
+        )
+    );
+    assert!(
+        tab.page
+            .last_style_invalidation_decision_debug_snapshot()
+            .is_some_and(|snapshot| snapshot.contains("reason: no-style-effect"))
+    );
+}
+
+#[test]
+fn text_without_empty_dependency_skips_css_style_but_keeps_intrinsic_work() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 296;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(2960);
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 296,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion::INITIAL,
+            DomVersion(1),
+            initial_patch_document("p { color: black; }", Some("p")),
+        ),
+    });
+    assert_eq!(current_element_color_by_id(&mut tab, Id(7)), (0, 0, 0, 255));
+    let before = tab.page.style_generations();
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 296,
+        publication: no_quirks_patch_publication(
+            handle,
+            DomVersion(1),
+            DomVersion(2),
+            vec![DomPatch::SetText {
+                key: PatchKey(8),
+                text: "World".to_string(),
+            }],
+        ),
+    });
+
+    assert_eq!(
+        tab.page.style_generations().style_inputs,
+        before.style_inputs
+    );
+    assert!(tab.pending_render_work.requests().iter().any(|request| {
+        request.entry_point() == crate::rendering::RenderInvalidationEntryPoint::DomTextChanged
+    }));
+    assert!(
+        tab.page
+            .last_style_invalidation_decision_debug_snapshot()
+            .is_some_and(|snapshot| snapshot.contains("reason: no-style-effect"))
+    );
+    let _ = current_element_color_by_id(&mut tab, Id(7));
+    assert_eq!(
+        tab.page.last_style_recalc(),
+        Some(StyleRecalcKind::ReusedCache)
     );
 }
 

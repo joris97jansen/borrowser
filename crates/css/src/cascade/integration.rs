@@ -17,12 +17,11 @@ pub use self::cascade_diagnostic::{
     CascadeEvaluationWinnerRecord, cascade_evaluation_diagnostic,
 };
 #[cfg(test)]
-pub(crate) use self::collection::{
-    ActiveCollectedStyleRule, CollectedRule, InactiveStyleRuleReason,
-};
+pub(crate) use self::collection::ActiveCollectedStyleRule;
 pub use self::collection::{
     AtRuleSkipReason, RuleCollection, RuleCollectionBuildError, RuleCollectionStorage,
 };
+pub(crate) use self::collection::{CollectedRule, InactiveStyleRuleReason};
 pub use self::collection_diagnostic::{
     BoundedDiagnosticText, DiagnosticCondition, DiagnosticDeclarationProperty, DiagnosticRuleState,
     RULE_COLLECTION_DIAGNOSTIC_VERSION, RuleCollectionDiagnostic, RuleCollectionDiagnosticFailure,

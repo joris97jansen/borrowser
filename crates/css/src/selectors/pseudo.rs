@@ -4,7 +4,7 @@ use super::specificity::Specificity;
 
 /// The Selectors Level 4 tree-structural pseudo-classes supported by the
 /// current selector subset.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TreeStructuralPseudoClass {
     Root,
     Empty,

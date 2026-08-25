@@ -1,5 +1,8 @@
 use super::Tab;
-use crate::dom_store::{DomIdentityResolutionError, DomPatchError};
+use crate::dom_store::{
+    DomIdentityResolutionError, DomMutationSnapshotInvariantError, DomMutationSnapshotLimits,
+    DomPatchError,
+};
 use crate::page::{DomMutationFacts, PendingDomMutationFacts};
 use bus::{CoreEvent, DocumentPublication, DocumentPublicationFailure, DocumentPublicationPayload};
 use core_types::ResourceKind;
@@ -235,8 +238,34 @@ impl Tab {
                 let text_targets =
                     resolve_identities(&staged_store, handle, pending_facts.text_target_keys())
                         .map_err(map_dom_identity_resolution_error)?;
-                let facts =
-                    DomMutationFacts::resolve(pending_facts, attribute_targets, text_targets);
+                let committed_store = if pending_facts.document_replaced() {
+                    None
+                } else {
+                    Some(&self.dom_store)
+                };
+                let exact_attribute_mutations = staged_store
+                    .capture_exact_attribute_mutations(
+                        committed_store,
+                        handle,
+                        pending_facts.attribute_target_keys(),
+                        &DomMutationSnapshotLimits::default(),
+                    )
+                    .map_err(map_dom_mutation_snapshot_invariant_error)?;
+                let exact_text_mutations = staged_store
+                    .capture_exact_text_mutations(
+                        committed_store,
+                        handle,
+                        pending_facts.text_target_keys(),
+                        &DomMutationSnapshotLimits::default(),
+                    )
+                    .map_err(map_dom_mutation_snapshot_invariant_error)?;
+                let facts = DomMutationFacts::resolve(
+                    pending_facts,
+                    attribute_targets,
+                    text_targets,
+                    exact_attribute_mutations,
+                    exact_text_mutations,
+                );
                 (dom, facts, to)
             }
         };
@@ -307,6 +336,23 @@ fn map_dom_identity_resolution_error(
         DomIdentityResolutionError::UnknownHandle(_)
         | DomIdentityResolutionError::NeverAllocated(_)
         | DomIdentityResolutionError::LiveIdentityUnavailable(_) => {
+            DocumentPublicationFailure::InvariantViolation
+        }
+    }
+}
+
+fn map_dom_mutation_snapshot_invariant_error(
+    error: DomMutationSnapshotInvariantError,
+) -> DocumentPublicationFailure {
+    match error {
+        DomMutationSnapshotInvariantError::UnknownHandle(_)
+        | DomMutationSnapshotInvariantError::TargetNeverAllocated(_)
+        | DomMutationSnapshotInvariantError::LiveIdentityUnavailable(_)
+        | DomMutationSnapshotInvariantError::AttributeTargetNotElement(_)
+        | DomMutationSnapshotInvariantError::TextTargetNotText(_)
+        | DomMutationSnapshotInvariantError::HistoricalAttributeKindChanged(_)
+        | DomMutationSnapshotInvariantError::HistoricalTextKindChanged(_)
+        | DomMutationSnapshotInvariantError::ParentMissing(_) => {
             DocumentPublicationFailure::InvariantViolation
         }
     }

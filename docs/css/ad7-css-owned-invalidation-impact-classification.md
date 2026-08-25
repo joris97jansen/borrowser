@@ -17,6 +17,14 @@ descendant dependency graphs, media/container query invalidation, custom
 properties, animations, compositor layers, GPU behavior, transform/opacity
 support, dirty-region rendering, or broad CSS conformance.
 
+AF9 later adds selector/cascade dependency classification without changing
+AD7's stage. The required order remains neutral mutation plus CSS dependency
+artifact, CSS invalidation plan, style recomputation, computed-style
+comparison, then AD7 downstream impact. Property flags must not be used to
+skip selector matching or cascade recomputation before the new winner and
+computed value are known. See
+`docs/css/af9-selector-cascade-invalidation-dependencies.md`.
+
 Related code:
 
 - `crates/css/src/properties/types.rs`

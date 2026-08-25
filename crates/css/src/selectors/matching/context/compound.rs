@@ -1,7 +1,6 @@
-use super::super::comparison::matches_attribute_value;
-use super::super::host_language::{attribute_selector_value_case, matches_type_selector_name};
+use super::super::host_language::matches_type_selector_name;
 use super::SelectorMatchingContext;
-use super::attributes::attribute_value_text;
+use super::attributes::{attribute_value_text, matches_attribute_in_attributes};
 use super::dom::SelectorMatchDom;
 use crate::selectors::{
     AttributeMatchSelector, AttributeSelector, ClassSelector, CompoundSelector, IdSelector,
@@ -91,13 +90,12 @@ impl<D: SelectorMatchDom> SelectorMatchingContext<'_, D> {
         element: D::ElementId,
         selector: &AttributeMatchSelector,
     ) -> bool {
-        let Some(attribute) = self.effective_unqualified_attribute(element, selector.name().text())
-        else {
-            return false;
-        };
-
         let expected = attribute_value_text(selector.value());
-        let sensitivity = attribute_selector_value_case(self.element_namespace(element), attribute);
-        matches_attribute_value(selector.matcher(), attribute.value(), expected, sensitivity)
+        matches_attribute_in_attributes(
+            self.element_namespace(element),
+            self.attributes(element),
+            selector.name().text(),
+            Some((selector.matcher(), expected)),
+        )
     }
 }

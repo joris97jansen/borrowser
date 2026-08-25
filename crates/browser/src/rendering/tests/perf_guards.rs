@@ -262,9 +262,18 @@ fn ac9_paint_only_style_update_reuses_layout_and_recomputes_paint() {
         let dom = page.dom.as_deref_mut().expect("page DOM should exist");
         set_first_element_attr(dom, "p", "class", Some("paint".to_string()))
     };
-    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(vec![
+    page.mark_dom_changed_for_tests(DomMutationFacts::attribute_transition_for_tests(
         dirty_id,
-    ]));
+        html::ElementNamespace::Html,
+        vec![html::internal::unqualified_attribute(
+            "style",
+            "display: block; width: 100px;",
+        )],
+        vec![
+            html::internal::unqualified_attribute("style", "display: block; width: 100px;"),
+            html::internal::unqualified_attribute("class", "paint"),
+        ],
+    ));
 
     harness.execute_and_record(&mut page, empty_pending_work(), DEFAULT_VIEWPORT_WIDTH);
     assert_clean_after_recorded_frame(&page);

@@ -235,16 +235,19 @@ trigger or severity order. Current behavior is:
 | ordinary allocation | create document type/element/text/comment/PI | none by itself | none by itself |
 | topology/order | append, insert, remove, reparent | full style-input invalidation | Layout dirty |
 | template association | `CreateTemplateContents` | none by itself | none by itself |
-| attribute targets | `SetAttributes` | CSS-owned suffix eligibility for surviving identities; full fallback otherwise | no intrinsic work |
-| text targets | `SetText`, `AppendText` | AF4e full-document plan because `:empty` is text-sensitive | direct Layout work |
+| attribute targets | `SetAttributes` | AF9 exact committed transition through the CSS dependency artifact; relevant selector/inline changes receive suffix, irrelevant changes may receive none, unprovable cases are full | no intrinsic work |
+| text targets | `SetText`, `AppendText` | AF9 exact committed transition; active `:empty` may receive a parent suffix, no active `:empty` may receive none, unprovable cases are full | direct Layout work |
 | unclassified patch | future `DomPatch` understood by `DomStore` | conservative full-document plan | conservative direct Layout work |
 | stylesheet reconciliation | `<style>` text change, `<link>` add/remove/order change | stylesheet generation invalidation, full style invalidation | dirty |
 | external stylesheet install/fail/abort/state change | `CssDecodedBlock`, load completion, error, abort | stylesheet generation invalidation, full style invalidation when the active stylesheet set/state changes | dirty |
 
-Text-only DOM changes are conservatively full-restyled under AF4e. A future
-selector dependency index may prove a particular fact style-neutral by
-returning `None`; Browser must then preserve style generation and cache-key
-eligibility. If the changed text belongs to a `<style>` element, stylesheet
+AF9 preserves each coarse dimension and layers bounded exact details on top.
+A precision-capture failure does not erase surviving/historical identities or
+any other publication fact; it makes CSS classification conservative. Exact
+attribute/text details compare committed pre-publication state with the final
+staged `DomStore` through direct arena/key queries, so repeated operations
+expose one net transition without a materialized-tree target walk. If the changed
+text belongs to a `<style>` element, stylesheet
 reconciliation independently detects changed stylesheet input and submits a
 full CSS-owned plan.
 
@@ -318,11 +321,11 @@ borrow-backed `StyledNode` views is not retained artifact reuse.
 
 ### Incremental Suffix Restyle
 
-The current AF1 partial restyle mechanism is an opaque CSS-owned document-order
-suffix plan.
+The current AF1/AF9 partial restyle mechanism is an opaque CSS-owned
+document-order suffix plan.
 
-For attribute mutations with materialized dirty node IDs and a valid previous
-cache:
+For dependency-relevant attribute/inline-style transitions or a supported
+`:empty` text transition with materialized dirty node IDs and a valid previous cache:
 
 ```text
 reuse resolved/computed prefix before earliest dirty element
@@ -352,10 +355,10 @@ Pending plans merge through the CSS-owned plan API. A pending full plan cannot
 be narrowed by a later suffix plan. Multiple suffix plans are canonicalized,
 deduplicated, and recompute from the earliest dirty node.
 
-Patch-derived dirty IDs currently rely on the `DomStore` contract that
-materialized `Node::id() == Id(PatchKey.0)`. If that identity mapping changes,
-dirty IDs must be resolved by the DOM patch/materialization layer before
-reaching `PageState`.
+Patch-derived dirty IDs are resolved through the DOM-owned
+`materialized_node_id_for_key` bridge. Browser invalidation code does not infer
+`PatchKey`/`Id` numeric equality; a future mapping change remains confined to
+the DOM patch/materialization layer.
 
 ## CSS Engine Reuse Contract
 
@@ -473,10 +476,13 @@ first, with URL/text fallback only for snapshot mode.
 
 ### Selector-Aware Invalidation
 
-AF4e refinement: exact text participates in `:empty`, so an aggregate DOM
-publication containing text currently receives a CSS-owned full-document plan.
-A neutral mutation fact
-does not advance the Browser style-input generation by itself; only CSS
+AF9 implements the first selector-aware dependency artifact. It preserves
+separate sorted keyed type/ID/class/attribute-predicate/static-structural/
+relationship groups and composed paths
+from dependency-bearing compounds to the rightmost subject. Browser retains
+the opaque owned artifact under document identity plus the existing
+stylesheet generation and asks CSS to classify bounded neutral old/final
+attribute/text transitions. A neutral mutation fact does not advance the Browser style-input generation by itself; only CSS
 returning `Some(plan)` authorizes that transition and generic Style dirtiness.
 `None` preserves cache-key eligibility and any pending plan through CSS-owned
 merge. Browser applies this result once and emits one separate
@@ -484,11 +490,12 @@ merge. Browser applies this result once and emits one separate
 independent; `DomTextChanged` separately remains direct Layout input. CSS's
 aggregate authorization is never copied onto an intrinsic mutation request.
 
-Future selector invalidation should be introduced only with:
+Future targeted selector execution should extend AF9 only with:
 
-- explicit dependency extraction from parsed selector IR
-- conservative fallback for unsupported selectors
-- tests for sibling, ancestor, descendant, and future pseudo-class effects
+- stable source-DOM identity on retained style entries
+- neutral transactional topology deltas sufficient for the requested scope
+- CSS-owned affected-element derivation from AF9 subject paths
+- tests for sibling, ancestor, descendant, and structural effects
 - preservation of whole-document fallback on proof failure
 
 ### Stylesheet Cache
@@ -520,7 +527,9 @@ Milestone U is complete only while these invariants hold:
 - `runtime_css` emits complete decoded stylesheet text and owns no CSS
   semantics.
 - DOM mutations map to explicit restyle triggers.
-- Text-only mutations dirty layout without invalidating computed style.
+- Text-only mutations always preserve intrinsic Layout work; CSS independently
+  invalidates computed style only when AF9 finds an active `:empty` dependency
+  or cannot prove the exact transition safe.
 - CSS can authorize conservative suffix restyle with full fallback; Browser
   does not decide suffix safety.
 - Stylesheet changes invalidate stylesheet generation and style cache.

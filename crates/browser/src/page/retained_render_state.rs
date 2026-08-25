@@ -13,7 +13,8 @@ use crate::rendering::{
 };
 use css::{
     ComputedDocumentStyleInvalidationImpact, ComputedStyleReuseStats, StyleChangeFacts,
-    StyleInvalidationPlan, classify_style_invalidation, merge_style_invalidation_plans,
+    StyleInvalidationDecision, StyleInvalidationPlan, classify_style_invalidation,
+    merge_style_invalidation_plans,
 };
 use gfx::paint::PaintArtifact;
 use html::Node;
@@ -22,7 +23,10 @@ use layout::{
     RetainedLayoutFrameResult, RetainedLayoutKeySeed,
 };
 
-use super::style_cache::{PageStyleCache, PageStyleGenerations, StyleRecalcKind};
+use super::style_cache::{
+    PageStyleCache, PageStyleDependencyCache, PageStyleDependencyKey, PageStyleGenerations,
+    StyleRecalcKind,
+};
 
 /// One-shot proof that CSS classified and the retained-style owner applied a
 /// non-empty invalidation plan. Only this module can construct it.
@@ -49,6 +53,8 @@ pub(super) struct RetainedRenderState {
     pub(super) document_styles: DocumentStyleSet,
     pub(super) generations: PageStyleGenerations,
     pub(super) style_cache: Option<PageStyleCache>,
+    pub(super) style_dependency_cache: Option<PageStyleDependencyCache>,
+    pub(super) last_style_invalidation_decision: Option<String>,
     pub(super) dirty_state: RenderDirtyState,
     pub(super) last_dom_mutation_facts: Option<super::DomMutationFacts>,
     pub(super) pending_style_invalidation: Option<StyleInvalidationPlan>,
@@ -78,6 +84,8 @@ impl RetainedRenderState {
             document_styles: DocumentStyleSet::default(),
             generations: PageStyleGenerations::default(),
             style_cache: None,
+            style_dependency_cache: None,
+            last_style_invalidation_decision: None,
             dirty_state: RenderDirtyState::document_initial(),
             last_dom_mutation_facts: None,
             pending_style_invalidation: Some(
@@ -103,6 +111,8 @@ impl RetainedRenderState {
         self.document_styles.clear();
         self.generations = PageStyleGenerations::default();
         self.style_cache = None;
+        self.style_dependency_cache = None;
+        self.last_style_invalidation_decision = None;
         self.dirty_state = RenderDirtyState::document_initial();
         self.last_dom_mutation_facts = None;
         self.pending_style_invalidation = Some(
@@ -567,6 +577,7 @@ impl RetainedRenderState {
 
     pub(super) fn reset_retained_identities_for_document_replacement(&mut self) {
         self.identities.reset_for_document_replacement();
+        self.style_dependency_cache = None;
     }
 
     pub(super) fn discard_layout_for_full_invalidation(&mut self) {
@@ -598,15 +609,33 @@ impl RetainedRenderState {
         self.identities.reconcile_live_dom(dom);
     }
 
-    /// Applies one neutral style-input fact through the CSS-owned invalidation
-    /// classifier. The CSS result, not observation of the fact alone,
-    /// authorizes advancing the retained style-input generation.
+    pub(super) fn apply_style_invalidation_decision(
+        &mut self,
+        decision: StyleInvalidationDecision,
+    ) -> Option<AppliedCssStyleInvalidation> {
+        self.last_style_invalidation_decision = Some(decision.to_debug_snapshot());
+        self.apply_classified_style_input_change(decision.into_plan())
+    }
+
+    #[cfg(test)]
     pub(super) fn apply_style_input_change(
         &mut self,
         change: &StyleChangeFacts,
     ) -> Option<AppliedCssStyleInvalidation> {
-        let incoming = classify_style_invalidation(change);
-        self.apply_classified_style_input_change(incoming)
+        self.apply_classified_style_input_change(classify_style_invalidation(change))
+    }
+
+    pub(super) fn style_dependency_artifact_for_current_context(
+        &self,
+        environment: css::SelectorMatchingEnvironment,
+    ) -> Option<&css::StyleDependencyArtifact> {
+        let expected_key = self.current_style_dependency_key();
+        self.style_dependency_cache
+            .as_ref()
+            .filter(|entry| {
+                entry.key == expected_key && entry.artifact.matches_environment(environment)
+            })
+            .map(|entry| &entry.artifact)
     }
 
     pub(super) fn mark_stylesheets_changed(&mut self) -> AppliedCssStyleInvalidation {
@@ -617,6 +646,7 @@ impl RetainedRenderState {
             .stylesheets
             .checked_add(1)
             .expect("page stylesheet generation exhausted");
+        self.style_dependency_cache = None;
         self.advance_render_epoch();
         self.apply_nonempty_style_invalidation(plan)
     }
@@ -654,6 +684,13 @@ impl RetainedRenderState {
             self.style_cache = None;
         }
         self.pending_style_invalidation = merged;
+    }
+
+    pub(super) fn current_style_dependency_key(&self) -> PageStyleDependencyKey {
+        PageStyleDependencyKey {
+            identity_domain: self.identities.domain(),
+            stylesheet_generation: self.generations.stylesheets,
+        }
     }
 
     fn style_artifact_debug_snapshot(

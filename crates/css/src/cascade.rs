@@ -96,6 +96,7 @@ pub use integration::{
     try_resolve_document_styles_incremental_suffix_with_limits,
     try_resolve_document_styles_with_limits,
 };
+pub(crate) use integration::{CollectedRule, InactiveStyleRuleReason};
 
 // Legacy compatibility bridge
 pub use legacy_bridge::{LegacyStyleAttachmentError, attach_styles, try_attach_styles};

@@ -2,8 +2,13 @@ use std::{fmt::Write, num::NonZeroUsize};
 
 use css::{ChangedStyleNodeFacts, DomStyleChangeFacts, StyleChangeFacts};
 use html::{DomPatch, PatchKey, internal::Id};
+#[cfg(test)]
+use html::{ElementNamespace, ParserCreatedAttribute};
 
-use crate::dom_store::ResolvedMutationNodeIds;
+use crate::dom_store::{
+    DomMutationPrecisionFailure, ExactDomMutationDetails, ExactStoreAttributeMutation,
+    ExactStoreTextMutation, ResolvedMutationNodeIds,
+};
 
 /// Patch-layer facts collected before mutation targets are resolved against
 /// the staged post-publication DOM.
@@ -56,7 +61,12 @@ impl PendingDomMutationFacts {
                 // `DomPatch` is non-exhaustive. A future operation is not
                 // structurally classified merely because this Browser build
                 // does not know its meaning.
-                _ => facts.unclassified_patch_count += 1,
+                _ => {
+                    facts.unclassified_patch_count = facts
+                        .unclassified_patch_count
+                        .checked_add(1)
+                        .expect("a patch slice cannot contain more than usize::MAX entries");
+                }
             }
         }
         facts
@@ -70,8 +80,7 @@ impl PendingDomMutationFacts {
         &self.text_target_keys
     }
 
-    #[cfg(test)]
-    fn document_replaced(&self) -> bool {
+    pub(crate) fn document_replaced(&self) -> bool {
         self.document_replaced
     }
 
@@ -147,8 +156,8 @@ impl ChangedDomNodeFacts {
 ///
 /// Topology remains deliberately coarse in AF4e. Attribute and text targets
 /// retain surviving neutral DOM identities plus a count of valid historical
-/// targets so future CSS dependency indexing can refine policy without another
-/// Browser-to-CSS contract replacement.
+/// targets. AF9 layers exact committed-before/final-after details captured by
+/// `DomStore` on top without weakening this publication-level truth.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DomMutationFacts {
     document_replaced: bool,
@@ -157,6 +166,8 @@ pub(crate) struct DomMutationFacts {
     template_contents_associated: bool,
     attributes: ChangedDomNodeFacts,
     text: ChangedDomNodeFacts,
+    exact_attributes: ExactDomMutationDetails<ExactStoreAttributeMutation>,
+    exact_text: ExactDomMutationDetails<ExactStoreTextMutation>,
     unclassified_patch_count: usize,
 }
 
@@ -165,17 +176,21 @@ impl DomMutationFacts {
         pending: PendingDomMutationFacts,
         attributes: ResolvedMutationNodeIds,
         text: ResolvedMutationNodeIds,
+        exact_attributes: ExactDomMutationDetails<ExactStoreAttributeMutation>,
+        exact_text: ExactDomMutationDetails<ExactStoreTextMutation>,
     ) -> Self {
+        let attributes =
+            ChangedDomNodeFacts::from_resolution(&pending.attribute_target_keys, attributes);
+        let text = ChangedDomNodeFacts::from_resolution(&pending.text_target_keys, text);
         Self {
             document_replaced: pending.document_replaced,
             ordinary_nodes_allocated: pending.ordinary_nodes_allocated,
             tree_topology_or_order_operation: pending.tree_topology_or_order_operation,
             template_contents_associated: pending.template_contents_associated,
-            attributes: ChangedDomNodeFacts::from_resolution(
-                &pending.attribute_target_keys,
-                attributes,
-            ),
-            text: ChangedDomNodeFacts::from_resolution(&pending.text_target_keys, text),
+            attributes,
+            text,
+            exact_attributes,
+            exact_text,
             unclassified_patch_count: pending.unclassified_patch_count,
         }
     }
@@ -203,12 +218,18 @@ impl DomMutationFacts {
     pub(crate) fn to_css_style_change_facts(&self) -> StyleChangeFacts {
         let mut builder = DomStyleChangeFacts::builder()
             .attributes(if self.attributes.changed {
-                ChangedStyleNodeFacts::changed(self.attributes.live_node_ids.iter().copied())
+                ChangedStyleNodeFacts::changed_with_historical_targets(
+                    self.attributes.live_node_ids.iter().copied(),
+                    self.attributes.historical_target_count,
+                )
             } else {
                 ChangedStyleNodeFacts::unchanged()
             })
             .text(if self.text.changed {
-                ChangedStyleNodeFacts::changed(self.text.live_node_ids.iter().copied())
+                ChangedStyleNodeFacts::changed_with_historical_targets(
+                    self.text.live_node_ids.iter().copied(),
+                    self.text.historical_target_count,
+                )
             } else {
                 ChangedStyleNodeFacts::unchanged()
             });
@@ -230,9 +251,45 @@ impl DomMutationFacts {
         StyleChangeFacts::dom_publication(builder.build())
     }
 
+    pub(crate) fn css_attribute_mutation_views(
+        &self,
+    ) -> Option<Vec<css::DomStyleAttributeMutation<'_>>> {
+        let ExactDomMutationDetails::Complete(mutations) = &self.exact_attributes else {
+            return None;
+        };
+        let mut views = Vec::new();
+        views.try_reserve_exact(mutations.len()).ok()?;
+        views.extend(mutations.iter().map(|mutation| {
+            css::DomStyleAttributeMutation::new(
+                mutation.node_id,
+                mutation.element_namespace,
+                mutation.before.as_deref(),
+                &mutation.after,
+            )
+        }));
+        Some(views)
+    }
+
+    pub(crate) fn css_text_mutation_views(&self) -> Option<Vec<css::DomStyleTextMutation<'_>>> {
+        let ExactDomMutationDetails::Complete(mutations) = &self.exact_text else {
+            return None;
+        };
+        let mut views = Vec::new();
+        views.try_reserve_exact(mutations.len()).ok()?;
+        views.extend(mutations.iter().map(|mutation| {
+            css::DomStyleTextMutation::new(
+                mutation.node_id,
+                mutation.parent_element,
+                mutation.before.as_deref(),
+                &mutation.after,
+            )
+        }));
+        Some(views)
+    }
+
     pub(crate) fn to_debug_snapshot(&self) -> String {
         let mut out = String::new();
-        writeln!(&mut out, "version: 1").expect("write mutation facts");
+        writeln!(&mut out, "version: 2").expect("write mutation facts");
         writeln!(&mut out, "dom-mutation-facts").expect("write mutation facts");
         writeln!(&mut out, "document-replaced: {}", self.document_replaced)
             .expect("write mutation facts");
@@ -255,7 +312,9 @@ impl DomMutationFacts {
         )
         .expect("write mutation facts");
         append_changed_nodes(&mut out, "attributes", &self.attributes);
+        append_exact_attribute_details(&mut out, &self.exact_attributes);
         append_changed_nodes(&mut out, "text", &self.text);
+        append_exact_text_details(&mut out, &self.exact_text);
         writeln!(
             &mut out,
             "unclassified-patch-count: {}",
@@ -277,6 +336,27 @@ impl DomMutationFacts {
     pub(crate) fn attributes_changed_for_tests(node_ids: Vec<Id>) -> Self {
         Self {
             attributes: ChangedDomNodeFacts::changed_for_tests(node_ids),
+            ..Self::unchanged_for_tests()
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn attribute_transition_for_tests(
+        node_id: Id,
+        element_namespace: ElementNamespace,
+        before: Vec<ParserCreatedAttribute>,
+        after: Vec<ParserCreatedAttribute>,
+    ) -> Self {
+        Self {
+            attributes: ChangedDomNodeFacts::changed_for_tests(vec![node_id]),
+            exact_attributes: ExactDomMutationDetails::Complete(vec![
+                ExactStoreAttributeMutation {
+                    node_id,
+                    element_namespace,
+                    before: Some(before),
+                    after,
+                },
+            ]),
             ..Self::unchanged_for_tests()
         }
     }
@@ -335,6 +415,104 @@ impl DomMutationFacts {
                 historical_target_count: 0,
             },
             unclassified_patch_count: 0,
+            exact_attributes: ExactDomMutationDetails::Complete(Vec::new()),
+            exact_text: ExactDomMutationDetails::Complete(Vec::new()),
+        }
+    }
+}
+
+fn append_exact_attribute_details(
+    out: &mut String,
+    details: &ExactDomMutationDetails<ExactStoreAttributeMutation>,
+) {
+    match details {
+        ExactDomMutationDetails::Complete(mutations) => {
+            writeln!(out, "attributes-exact: complete count={}", mutations.len())
+                .expect("write mutation facts");
+            for mutation in mutations {
+                writeln!(
+                    out,
+                    "  node={} namespace={} before={} after={} no-op={}",
+                    mutation.node_id.0,
+                    mutation.element_namespace.snapshot_name(),
+                    mutation.before.as_ref().map_or(0, Vec::len),
+                    mutation.after.len(),
+                    mutation.before.as_deref() == Some(mutation.after.as_slice()),
+                )
+                .expect("write mutation facts");
+            }
+        }
+        ExactDomMutationDetails::ConservativeUnavailable(failure) => {
+            write!(
+                out,
+                "attributes-exact: conservative-unavailable kind={}",
+                failure.stable_label()
+            )
+            .expect("write mutation facts");
+            append_precision_failure(out, failure);
+        }
+    }
+}
+
+fn append_exact_text_details(
+    out: &mut String,
+    details: &ExactDomMutationDetails<ExactStoreTextMutation>,
+) {
+    match details {
+        ExactDomMutationDetails::Complete(mutations) => {
+            writeln!(out, "text-exact: complete count={}", mutations.len())
+                .expect("write mutation facts");
+            for mutation in mutations {
+                writeln!(
+                    out,
+                    "  node={} parent={} before-bytes={} after-bytes={} no-op={}",
+                    mutation.node_id.0,
+                    mutation
+                        .parent_element
+                        .map_or_else(|| "none".to_string(), |(id, _)| id.0.to_string()),
+                    mutation.before.as_ref().map_or(0, String::len),
+                    mutation.after.len(),
+                    mutation.before.as_deref() == Some(mutation.after.as_str()),
+                )
+                .expect("write mutation facts");
+            }
+        }
+        ExactDomMutationDetails::ConservativeUnavailable(failure) => {
+            write!(
+                out,
+                "text-exact: conservative-unavailable kind={}",
+                failure.stable_label()
+            )
+            .expect("write mutation facts");
+            append_precision_failure(out, failure);
+        }
+    }
+}
+
+fn append_precision_failure(out: &mut String, failure: &DomMutationPrecisionFailure) {
+    match failure {
+        DomMutationPrecisionFailure::DocumentIdentityChanged => {
+            writeln!(out).expect("write mutation facts");
+        }
+        DomMutationPrecisionFailure::LimitExceeded {
+            limit,
+            configured,
+            observed,
+        } => {
+            writeln!(
+                out,
+                " limit={} configured={} observed={}",
+                limit.stable_label(),
+                configured,
+                observed
+            )
+            .expect("write mutation facts");
+        }
+        DomMutationPrecisionFailure::CounterExhausted { counter } => {
+            writeln!(out, " counter={counter}").expect("write mutation facts");
+        }
+        DomMutationPrecisionFailure::Reservation { storage } => {
+            writeln!(out, " storage={}", storage.stable_label()).expect("write mutation facts");
         }
     }
 }
@@ -492,5 +670,14 @@ mod tests {
         );
         assert!(!mutation_targets.tree_topology_or_order_operation());
         assert_eq!(mutation_targets.unclassified_patch_count(), 0);
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "a committed DOM publication must establish document mode before invalidation"
+    )]
+    fn publication_invalidation_never_synthesizes_a_matching_environment() {
+        let mut page = crate::page::PageState::new();
+        let _ = page.mark_dom_changed(DomMutationFacts::text_changed_for_tests(Vec::new()));
     }
 }

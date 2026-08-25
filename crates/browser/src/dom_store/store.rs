@@ -35,7 +35,7 @@ impl ResolvedMutationNodeIds {
 
 #[derive(Clone)]
 pub struct DomStore {
-    docs: HashMap<DomHandle, DomDoc>,
+    pub(super) docs: HashMap<DomHandle, DomDoc>,
 }
 
 impl DomStore {

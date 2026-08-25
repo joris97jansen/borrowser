@@ -107,7 +107,7 @@ impl AttributeMatchSelector {
 }
 
 /// Supported attribute selector operators.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AttributeMatcher {
     Exact,
     Includes,

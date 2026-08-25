@@ -30,7 +30,7 @@ impl<D: SelectorMatchDom> SelectorMatchingContext<'_, D> {
     }
 }
 
-fn text_is_document_whitespace(text: &str) -> bool {
+pub(crate) fn text_is_document_whitespace(text: &str) -> bool {
     text.bytes()
         .all(|byte| matches!(byte, b'\t' | b'\n' | 0x0c | b'\r' | b' '))
 }

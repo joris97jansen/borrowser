@@ -114,6 +114,21 @@ impl PageState {
             .map(DomMutationFacts::to_debug_snapshot)
     }
 
+    /// Returns the CSS-owned retained selector/cascade dependency summary.
+    /// Browser exposes the text without interpreting dependency categories.
+    pub fn style_dependency_debug_snapshot(&self) -> Option<String> {
+        self.rendering
+            .style_dependency_cache
+            .as_ref()
+            .map(|entry| entry.artifact.to_debug_snapshot())
+    }
+
+    /// Returns CSS's last selector/cascade invalidation decision and selected
+    /// execution scope without Browser reclassifying its semantic reason.
+    pub fn last_style_invalidation_decision_debug_snapshot(&self) -> Option<&str> {
+        self.rendering.last_style_invalidation_decision.as_deref()
+    }
+
     /// Reports the retained/rebuilt policy for rendering artifacts owned or
     /// coordinated by the current page state.
     ///
@@ -188,14 +203,16 @@ impl PageState {
         source: CssStyleInvalidationSource,
     ) -> RenderInvalidationRequest {
         match source {
-            CssStyleInvalidationSource::DomPublication => self
-                .mark_dom_changed(DomMutationFacts::text_changed_for_tests(Vec::new()))
-                .requests()
-                .find(|request| {
-                    request.entry_point()
-                        == RenderInvalidationEntryPoint::DomPublicationStyleInvalidated
-                })
-                .expect("text publication must receive CSS Style authorization"),
+            CssStyleInvalidationSource::DomPublication => {
+                self.document_mode = Some(html::DocumentMode::NoQuirks);
+                self.mark_dom_changed(DomMutationFacts::text_changed_for_tests(Vec::new()))
+                    .requests()
+                    .find(|request| {
+                        request.entry_point()
+                            == RenderInvalidationEntryPoint::DomPublicationStyleInvalidated
+                    })
+                    .expect("text publication must receive CSS Style authorization")
+            }
             CssStyleInvalidationSource::StylesheetSetChanged => {
                 let authorization = self.rendering.mark_stylesheets_changed();
                 render_css_style_invalidation_request(source, authorization)

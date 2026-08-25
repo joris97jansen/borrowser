@@ -30,10 +30,16 @@ mod result;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use comparison::split_css_whitespace_separated_tokens as css_whitespace_separated_tokens;
+pub(crate) use context::text_is_document_whitespace;
 pub use context::{
     AncestorElements, ElementChildren, NextSiblingElements, PreviousSiblingElements,
     SelectorDomAttribute, SelectorMatchDom, SelectorMatchingContext, SelectorMatchingLimitError,
     SelectorMatchingLimits, SelectorNamespaceConstraint,
+};
+pub(crate) use context::{
+    compare_id_and_class_selector_values, id_and_class_selector_values_equal,
+    matches_attribute_in_attributes, matches_class_in_attributes, matches_id_in_attributes,
 };
 pub(crate) use dom_index::BoundedSelectorDomConstructionError;
 pub use dom_index::{

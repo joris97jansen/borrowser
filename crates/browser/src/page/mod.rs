@@ -10,7 +10,8 @@ pub(crate) use dom_mutation::{DomMutationFacts, PendingDomMutationFacts};
 pub(crate) use style_cache::{PageStyleGenerations, StyleRecalcKind};
 #[cfg(test)]
 pub(crate) use style_cache::{
-    reset_rule_collection_build_count, rule_collection_build_count, style_execution_build_count,
+    dependency_artifact_build_count, reset_rule_collection_build_count,
+    rule_collection_build_count, style_execution_build_count,
 };
 #[allow(unused_imports)]
 pub(crate) use stylesheets::PageStylesheetReconcile;
@@ -146,15 +147,31 @@ impl PageState {
 
         let intrinsic_requests = intrinsic_dom_mutation_requests(&facts);
         let css_facts = facts.to_css_style_change_facts();
-        let css_style_request =
-            self.rendering
-                .apply_style_input_change(&css_facts)
-                .map(|authorization| {
-                    render_css_style_invalidation_request(
-                        CssStyleInvalidationSource::DomPublication,
-                        authorization,
-                    )
-                });
+        let attribute_views = facts.css_attribute_mutation_views();
+        let text_views = facts.css_text_mutation_views();
+        let document_mode = self
+            .document_mode
+            .expect("a committed DOM publication must establish document mode before invalidation");
+        let matching_environment = css::SelectorMatchingEnvironment::new(document_mode);
+        let decision = css::classify_style_invalidation_with_dependencies(
+            css::StyleInvalidationInput::new(
+                &css_facts,
+                self.rendering
+                    .style_dependency_artifact_for_current_context(matching_environment),
+                matching_environment,
+            )
+            .with_attribute_mutations(attribute_views.as_deref())
+            .with_text_mutations(text_views.as_deref()),
+        );
+        let css_style_request = self
+            .rendering
+            .apply_style_invalidation_decision(decision)
+            .map(|authorization| {
+                render_css_style_invalidation_request(
+                    CssStyleInvalidationSource::DomPublication,
+                    authorization,
+                )
+            });
         for request in intrinsic_requests.iter().copied().chain(css_style_request) {
             self.rendering.mark_dirty_for_request(request);
         }

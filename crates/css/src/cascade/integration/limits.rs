@@ -24,6 +24,10 @@ pub struct StyleResolutionLimits {
     pub max_inline_style_bytes: usize,
     pub max_inline_declarations_per_element: usize,
     pub max_styled_elements_per_document: usize,
+    pub max_selector_dependency_records_per_document: usize,
+    pub max_selector_dependency_bytes_per_document: usize,
+    pub max_selector_dependency_path_steps_per_document: usize,
+    pub max_selector_dependency_evaluations_per_publication: usize,
     pub selector_matching: SelectorMatchingLimits,
 }
 
@@ -38,6 +42,10 @@ impl Default for StyleResolutionLimits {
             max_inline_style_bytes: 64 * 1024,
             max_inline_declarations_per_element: 1_024,
             max_styled_elements_per_document: 1_000_000,
+            max_selector_dependency_records_per_document: 1_048_576,
+            max_selector_dependency_bytes_per_document: 64 * 1024 * 1024,
+            max_selector_dependency_path_steps_per_document: 4_194_304,
+            max_selector_dependency_evaluations_per_publication: 4_194_304,
             selector_matching: SelectorMatchingLimits::default(),
         }
     }
@@ -53,6 +61,9 @@ pub enum StyleResolutionLimit {
     InlineStyleBytes,
     InlineDeclarationsPerElement,
     StyledElementsPerDocument,
+    SelectorDependencyRecordsPerDocument,
+    SelectorDependencyBytesPerDocument,
+    SelectorDependencyPathStepsPerDocument,
 }
 
 impl StyleResolutionLimit {
@@ -68,6 +79,13 @@ impl StyleResolutionLimit {
             Self::InlineStyleBytes => "inline-style-bytes",
             Self::InlineDeclarationsPerElement => "inline-declarations-per-element",
             Self::StyledElementsPerDocument => "styled-elements-per-document",
+            Self::SelectorDependencyRecordsPerDocument => {
+                "selector-dependency-records-per-document"
+            }
+            Self::SelectorDependencyBytesPerDocument => "selector-dependency-bytes-per-document",
+            Self::SelectorDependencyPathStepsPerDocument => {
+                "selector-dependency-path-steps-per-document"
+            }
         }
     }
 }

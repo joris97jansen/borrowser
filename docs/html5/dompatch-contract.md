@@ -179,6 +179,27 @@ witness proves complete successful application through equal drained/applied
 counts, terminal empty drain/buffers, and materialization after terminal drain;
 it does not claim that trusted application is transactional.
 
+### AF9 neutral publication facts
+
+Browser's AF9 invalidation handoff does not change `DomPatch` semantics. The
+runtime applier validates the complete staged batch and candidate
+materialization, while `DomStore` resolves requested mutation keys directly in
+the committed and final staged arenas for bounded exact attribute/text facts.
+It does not search the materialized node tree for known targets. Repeated
+`SetAttributes`, `SetText`, or `AppendText` operations are therefore one net
+committed transition for CSS; intermediate patch states do not become semantic
+selector facts.
+
+Exact facts augment rather than replace the coarse publication record. A
+precision limit/reservation failure can make CSS invalidation conservative but
+cannot erase that an attribute, text, topology, document, allocation, template,
+or unclassified dimension occurred. Wrong-kind, missing-live-identity, patch,
+protocol, or materialization failures remain fatal and abort publication
+atomically. Browser transports qualified attributes and old/final values but
+does not interpret ID, class, attribute-selector, inline-CSS, or `:empty`
+semantics. See
+`docs/css/af9-selector-cascade-invalidation-dependencies.md`.
+
 ## Version Rules
 
 `DomPatchBatch` carries `{ from, to, patches }` and requires:
