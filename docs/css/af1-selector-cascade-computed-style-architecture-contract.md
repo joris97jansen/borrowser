@@ -35,6 +35,13 @@ property, while top-down computed materialization remains responsible for
 reading the immediate parent's computed value. See
 `docs/css/af7-specified-value-defaulting-source-resolution.md`.
 
+AF8 closes the computed document handoff for the supported subset. It makes
+registry-derived initial construction invariant-safe, confirms
+`ComputedDocumentStyle` as the authoritative CSS-owned element artifact, and
+requires Layout and Paint to consume that structured output without restoring
+bridge-era visibility semantics. See
+`docs/css/af8-computed-style-document-artifact-contract.md`.
+
 ## Related code
 
 - `crates/css/src/style_invalidation.rs`
@@ -68,6 +75,7 @@ Selector, cascade, and computed-style foundations:
 - AF4b: `docs/css/af4b-selector-dom-query-contract.md`
 - AF4e: `docs/css/af4e-selector-invalidation-parser-conformance-closeout.md`
 - AF7: `docs/css/af7-specified-value-defaulting-source-resolution.md`
+- AF8: `docs/css/af8-computed-style-document-artifact-contract.md`
 - R1-R9: the structured cascade and resolved-style contracts under
   `docs/css/r*.md`
 - S1/S6/S9: the computed-style property, assembly, and runtime contracts

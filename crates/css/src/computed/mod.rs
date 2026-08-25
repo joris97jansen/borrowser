@@ -1,4 +1,4 @@
-//! Typed computed-style contract plus the current legacy bridge implementation.
+//! Typed computed-style contract plus isolated legacy compatibility APIs.
 //!
 //! `ResolvedStyle` from Milestone R is the normative cascade handoff into this
 //! layer. The long-term property pipeline is:
@@ -11,11 +11,11 @@
 //!
 //! `compute_document_styles(...)` and
 //! `compute_style_from_resolved_style(...)` are the production typed assembly
-//! paths. During the current bridge phase, `compute_style(...)` still consumes
-//! the legacy DOM-attached `(String, String)` declaration vector for
-//! compatibility consumers that have not moved to structured cascade output yet,
-//! but supported values still pass through the property-aware specified and
-//! computed-value layers.
+//! paths. `compute_style(...)` remains an explicitly legacy compatibility API
+//! for callers that still consume the DOM-attached `(String, String)`
+//! declaration vector; it is not part of Browser's structured production
+//! rendering path. Supported values crossing that bridge still pass through the
+//! property-aware specified and computed-value layers.
 
 mod builder;
 mod document;

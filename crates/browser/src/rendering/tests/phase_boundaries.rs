@@ -1,6 +1,6 @@
 use crate::rendering::*;
-use css::Display;
-use gfx::paint::PaintPhaseInput;
+use css::{Display, Length, LengthPercentage};
+use gfx::paint::{PaintArtifact, PaintColor, PaintPhaseInput, PaintPrimitive, PaintSource};
 use html::Node;
 use layout::{LayoutPhaseInput, layout_document};
 
@@ -436,6 +436,12 @@ fn runtime_style_phase_applies_minimal_ua_display_defaults() {
     assert!(!layout_snapshot.contains("Hidden"));
     assert!(!layout_snapshot.contains("p { color: red; }"));
     assert!(!layout_snapshot.contains("hidden()"));
+
+    let paint_artifact =
+        PaintArtifact::from_phase_input(PaintPhaseInput::new(&layout_output), &measurer);
+    let paint_snapshot = paint_artifact.to_debug_snapshot();
+    assert!(!paint_snapshot.contains("Hidden"));
+    assert!(!paint_snapshot.contains("hidden()"));
 }
 
 #[test]
@@ -516,7 +522,7 @@ fn parser_created_template_contents_remain_materialized_but_inert_to_render_pipe
 #[test]
 fn runtime_ua_display_defaults_are_author_and_inline_overridable() {
     let mut page = page_with_dom(
-        "<!doctype html><html><head><style>p { display: inline; } head, title { display: block; }</style><title>Shown title</title></head><body><p id=\"author\">Author</p><div style=\"display: inline-block;\">Inline</div></body></html>",
+        "<!doctype html><html><head><style>p { display: inline; } head, title { display: block; } title { width: 120px; height: 20px; background-color: #123456; }</style><title>Shown title</title></head><body><p id=\"author\">Author</p><div style=\"display: inline-block;\">Inline</div></body></html>",
     );
     let style_output = style_output_for_test(&mut page);
 
@@ -536,6 +542,14 @@ fn runtime_ua_display_defaults_are_author_and_inline_overridable() {
         styled_element_display(style_output.root(), "title"),
         Display::Block
     );
+    let title_style = find_styled_element(style_output.root(), "title")
+        .expect("title must exist in the structured style output")
+        .style;
+    assert_eq!(
+        title_style.width(),
+        Some(LengthPercentage::Length(Length::Px(120.0)))
+    );
+    assert_eq!(title_style.background_color(), (0x12, 0x34, 0x56, 0xff));
 
     let measurer = FixedTextMeasurer;
     let layout_output = layout_document(LayoutPhaseInput::from_style_output(
@@ -548,6 +562,42 @@ fn runtime_ua_display_defaults_are_author_and_inline_overridable() {
 
     assert!(layout_snapshot.contains("node=element(\"title\")"));
     assert!(layout_snapshot.contains("text(\"Shown title\")"));
+    let title_layout = find_layout_box_by_element_name(layout_output.root(), "title")
+        .expect("author-overridden title must generate a layout box");
+    assert_eq!(title_layout.rect.width, 120.0);
+
+    let title_source = PaintSource {
+        box_id: title_layout.box_id().index(),
+        node_id: title_layout.node_id(),
+        anonymous: title_layout.is_anonymous(),
+    };
+    let paint_artifact =
+        PaintArtifact::from_phase_input(PaintPhaseInput::new(&layout_output), &measurer);
+    let title_paint_node = paint_artifact
+        .tree()
+        .node_for_source(title_source)
+        .expect("semantic paint-tree traversal must retain the layout-visible title");
+    assert!(title_paint_node.primitives().iter().any(|primitive| {
+        matches!(
+            primitive,
+            PaintPrimitive::Background(background)
+                if background.source == title_source
+                    && background.color == PaintColor::from_rgba((0x12, 0x34, 0x56, 0xff))
+        )
+    }));
+    assert!(
+        !title_paint_node.children().is_empty(),
+        "semantic paint-tree traversal must retain the layout-visible title subtree"
+    );
+    assert!(
+        paint_artifact
+            .stacking_contexts()
+            .root()
+            .items()
+            .iter()
+            .any(|item| item.source() == title_source),
+        "stacking-context traversal must retain the layout-visible title"
+    );
 }
 
 #[test]

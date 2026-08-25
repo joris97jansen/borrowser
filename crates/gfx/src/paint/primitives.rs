@@ -1,7 +1,6 @@
 use std::fmt::Write;
 
 use css::{Display, Length, TextDecorationLine};
-use html::dom_utils::is_non_rendering_element;
 use html::internal::Id;
 use layout::inline::{InlineFragment, layout_inline_for_paint};
 use layout::{LayoutBox, LayoutPhaseOutput, ListMarker, Rectangle, ReplacedKind, TextMeasurer};
@@ -369,15 +368,6 @@ impl PaintNode {
 
     fn from_layout(layout: &LayoutBox<'_, '_>, measurer: &dyn TextMeasurer) -> Self {
         let source = PaintSource::from_layout(layout);
-        if is_non_rendering_element(layout.node.node) {
-            return Self {
-                source,
-                primitives: Vec::new(),
-                children: Vec::new(),
-                post_primitives: Vec::new(),
-            };
-        }
-
         let mut primitives = Vec::new();
         append_box_primitives(layout, measurer, &mut primitives);
         let mut post_primitives = Vec::new();

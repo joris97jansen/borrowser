@@ -3,8 +3,26 @@ use super::*;
 use crate::{BorderSide, ComputedStyleInvalidationImpact, computed::Outline};
 
 #[test]
+fn computed_style_initial_is_total_and_registry_derived() {
+    let canonical = ComputedStyle::try_initial()
+        .expect("compiled property metadata must construct a total initial computed style");
+
+    for property in property_registry().ids() {
+        assert_eq!(
+            canonical.get(property).value(),
+            ComputedValue::from_initial(property),
+            "initial computed value for '{}' must come from property metadata",
+            property.name()
+        );
+    }
+
+    assert_eq!(ComputedStyle::initial(), canonical);
+}
+
+#[test]
 fn computed_style_initial_snapshot_is_total_and_canonical() {
-    let style = ComputedStyle::initial();
+    let style = ComputedStyle::try_initial()
+        .expect("compiled property metadata must construct the initial snapshot");
 
     let entries = style.entries().collect::<Vec<_>>();
     assert_eq!(entries.len(), PropertyId::ALL.len());

@@ -91,9 +91,13 @@ property is missing.
 Important distinction:
 
 - the CSS initial value of `display` in this cascade contract is `inline`
-- temporary HTML/UA-style element defaults, such as block display for `div`,
-  remain bridge-phase computed-style behavior until the runtime cutover moves
-  those responsibilities into an explicit user-agent style source
+- Browser's structured production path now supplies HTML element defaults
+  through an explicit UA-origin stylesheet that participates in cascade
+- handwritten HTML/UA-ish defaults remain only in the legacy
+  `build_style_tree(...)` compatibility path and are not this contract
+
+AF8 closes that later production cutover; see
+`docs/css/af8-computed-style-document-artifact-contract.md`.
 
 ## Determinism Requirements
 
@@ -122,7 +126,7 @@ The test surface now covers:
 
 ## Non-Goals
 
-R6 does not:
+R6 itself did not:
 
 - broaden the supported property subset
 - compute typed values
@@ -130,6 +134,9 @@ R6 does not:
   `revert`
 - introduce user-agent stylesheet defaults
 - retire the legacy DOM-attached style bridge
+
+Later Browser runtime work introduced the UA-origin stylesheet. AF8 confirms
+that the remaining handwritten bridge behavior is compatibility-only.
 
 ## Exit Condition For This Issue
 

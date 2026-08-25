@@ -115,6 +115,22 @@ Architecture and foundation status:
 
 Milestone AF foundation status:
 
+- AF8 closes the computed-style document artifact and downstream authority
+  boundary for the supported property subset; see
+  `docs/css/af8-computed-style-document-artifact-contract.md`.
+  `ComputedDocumentStyle` is the authoritative CSS-owned per-element artifact;
+  canonical initial construction derives every value from AD4 metadata through
+  `ComputedValue::from_initial(...)` and `ComputedStyleBuilder`, and Browser
+  retains resolved/computed artifacts without owning CSS semantics. Structured
+  `StyledNode` output feeds Layout, percentages that need a layout basis remain
+  typed computed inputs, and Paint trusts Layout box generation rather than
+  suppressing HTML tag names. Browser's explicit UA-origin stylesheet owns the
+  currently supported HTML display defaults and author declarations may
+  override them through cascade. AF8 does not claim complete CSS properties,
+  selectors, units, used values, CSSOM, `getComputedStyle()`, JavaScript-facing
+  style APIs, custom properties, animations, transitions, or general style
+  sharing.
+
 - AF7 implements total specified-value/defaulting source resolution after AF6
   sparse winner selection; see
   `docs/css/af7-specified-value-defaulting-source-resolution.md`. Every AD4

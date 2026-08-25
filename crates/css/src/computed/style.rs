@@ -164,9 +164,10 @@ pub struct ComputedStyle {
 
     /// CSS `display` value.
     ///
-    /// The CSS initial value is `inline`. During the current bridge phase,
-    /// `build_style_tree()` may still override that with HTML/UA-ish
-    /// per-element defaults when no authored `display` declaration exists.
+    /// The CSS initial value is `inline`. The production structured style path
+    /// preserves the cascaded/computed value exactly; only the explicitly
+    /// legacy `build_style_tree()` compatibility API applies handwritten
+    /// per-element display defaults.
     pub(super) display: Display,
 
     /// CSS `overflow` shorthand keyword after computed-value resolution.
@@ -193,7 +194,11 @@ pub struct ComputedStyle {
 
 impl ComputedStyle {
     pub fn initial() -> Self {
-        Self::try_initial().unwrap_or_else(|_| Self::fallback_initial())
+        Self::try_initial().unwrap_or_else(|error| {
+            panic!(
+                "CSS engine invariant violated while constructing the registry-derived initial computed style: {error}"
+            )
+        })
     }
 
     pub(crate) fn try_initial() -> Result<Self, ComputedStyleBuildError> {
@@ -202,26 +207,6 @@ impl ComputedStyle {
             builder.record(property, ComputedValue::from_initial(property))?;
         }
         builder.build()
-    }
-
-    pub(crate) fn fallback_initial() -> Self {
-        Self {
-            color: (0, 0, 0, 255),
-            background_color: (0, 0, 0, 0),
-            font_size: Length::Px(16.0),
-            box_metrics: BoxMetrics::zero(),
-            border_edges: BorderEdges::zero(),
-            outline: Outline::none(),
-            display: Display::Inline,
-            overflow: Overflow::Visible,
-            position: Position::Static,
-            z_index: ZIndex::Auto,
-            text_decoration_line: TextDecorationLine::None,
-            width: None,
-            height: None,
-            min_width: None,
-            max_width: None,
-        }
     }
 
     /// Assembles a total computed style from the structured cascade output.

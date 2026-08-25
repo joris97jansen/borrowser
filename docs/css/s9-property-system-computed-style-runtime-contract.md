@@ -26,6 +26,7 @@ Related documents:
 - `docs/css/s6-computed-style-assembly-pipeline.md`
 - `docs/css/s7-structured-computed-style-representation.md`
 - `docs/css/s8-deterministic-debug-regression-coverage.md`
+- `docs/css/af8-computed-style-document-artifact-contract.md`
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
 
 ## Milestone S Result
@@ -46,13 +47,15 @@ for the supported property subset. Layout, paint, text measurement, and browser
 view construction consume `ComputedStyle` or `StyledNode`; they do not parse
 CSS text, inspect cascade winners, or recover from invalid declarations.
 
-The production document path is:
+The current production document path is:
 
 ```text
-DOM + StylesheetParse[]
-  -> compute_document_styles(...)
-  -> build_style_tree_with_stylesheets(...)
-  -> StyledNode tree
+DOM + UA/author/inline stylesheet inputs
+  -> ResolvedDocumentStyle
+  -> ComputedDocumentStyle
+  -> StyledNode / StylePhaseOutput
+  -> Layout
+  -> Paint
 ```
 
 Compatibility APIs still exist, but they are not the primary runtime contract.
@@ -320,10 +323,10 @@ bounded compatibility pieces remain intentionally transitional:
   bridge to avoid creating a second declaration parser. This is bridge-only
   behavior until a first-class declaration-value or declaration-list parse
   entrypoint exists.
-- HTML/UA-ish defaults such as element display mapping, link color, and button
-  defaults remain temporary compatibility behavior. The long-term model is an
-  explicit UA-origin stylesheet or equivalent first-class UA styling layer that
-  participates in cascade.
+- Browser's production path now supplies supported HTML defaults through an
+  explicit UA-origin stylesheet that participates in cascade. Handwritten
+  element display mapping, link color, and button defaults remain isolated
+  legacy compatibility behavior only.
 
 ## Debug And Regression Contract
 
