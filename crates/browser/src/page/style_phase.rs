@@ -110,6 +110,7 @@ impl PageState {
                 .map(|cache| cache.computed.clone());
             let recompute_count_before = retained.style_artifact_stats.recompute_count;
             let style_key = retained.current_style_artifact_key();
+            let dependency_key = retained.current_style_dependency_key();
             let pending_style_invalidation = retained.take_style_invalidation_for_recompute();
             let consumed_pending_invalidation = pending_style_invalidation.is_some();
             let mut style_dirty = true;
@@ -123,18 +124,22 @@ impl PageState {
                     )
                 })?;
             recompute_styles(
-                dom,
-                environment,
-                &stylesheet_inputs,
-                retained.generations,
-                style_key,
-                pending_style_invalidation.as_ref(),
+                super::style_cache::StyleRecomputeInput {
+                    dom,
+                    environment,
+                    sheets: &stylesheet_inputs,
+                    generations: retained.generations,
+                    key: style_key,
+                    pending: pending_style_invalidation.as_ref(),
+                    dependency_key,
+                },
                 StyleRecomputeState {
                     style_cache: &mut retained.style_cache,
                     style_dirty: &mut style_dirty,
                     last_style_recalc: &mut retained.last_style_recalc,
                     last_style_reuse: &mut retained.last_style_reuse,
                     last_style_incremental_eligible: &mut incremental_eligible,
+                    dependency_cache: &mut retained.style_dependency_cache,
                 },
             )?;
             if !style_dirty {

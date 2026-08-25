@@ -480,9 +480,18 @@ fn paint_only_style_change_preserves_layout_and_plans_retained_layout_reuse() {
         let dom = page.dom.as_deref_mut().expect("dom should exist");
         set_first_element_attr(dom, "p", "class", Some("paint".to_string()))
     };
-    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(vec![
+    page.mark_dom_changed_for_tests(DomMutationFacts::attribute_transition_for_tests(
         dirty_id,
-    ]));
+        html::ElementNamespace::Html,
+        vec![html::internal::unqualified_attribute(
+            "style",
+            "display: block; width: 100px;",
+        )],
+        vec![
+            html::internal::unqualified_attribute("style", "display: block; width: 100px;"),
+            html::internal::unqualified_attribute("class", "paint"),
+        ],
+    ));
 
     let prepared = page
         .prepare_style_phase_for_frame(&PendingRenderWork::default())
@@ -548,9 +557,18 @@ fn layout_affecting_style_change_forces_paint_recompute_planning() {
             Some("display: block; width: 140px;".to_string()),
         )
     };
-    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(vec![
+    page.mark_dom_changed_for_tests(DomMutationFacts::attribute_transition_for_tests(
         dirty_id,
-    ]));
+        html::ElementNamespace::Html,
+        vec![html::internal::unqualified_attribute(
+            "style",
+            "display: block; width: 100px;",
+        )],
+        vec![html::internal::unqualified_attribute(
+            "style",
+            "display: block; width: 140px;",
+        )],
+    ));
 
     let prepared = page
         .prepare_style_phase_for_frame(&PendingRenderWork::default())
@@ -603,9 +621,18 @@ fn stacking_order_affecting_style_change_invalidates_retained_paint() {
             Some("position: relative; z-index: 5;".to_string()),
         )
     };
-    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(vec![
+    page.mark_dom_changed_for_tests(DomMutationFacts::attribute_transition_for_tests(
         dirty_id,
-    ]));
+        html::ElementNamespace::Html,
+        vec![html::internal::unqualified_attribute(
+            "style",
+            "position: relative; z-index: 1;",
+        )],
+        vec![html::internal::unqualified_attribute(
+            "style",
+            "position: relative; z-index: 5;",
+        )],
+    ));
 
     let prepared = page
         .prepare_style_phase_for_frame(&PendingRenderWork::default())
@@ -776,9 +803,18 @@ fn paint_only_style_change_preserves_existing_viewport_layout_dirty_entry() {
         let dom = page.dom.as_deref_mut().expect("dom should exist");
         set_first_element_attr(dom, "p", "class", Some("paint".to_string()))
     };
-    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(vec![
+    page.mark_dom_changed_for_tests(DomMutationFacts::attribute_transition_for_tests(
         dirty_id,
-    ]));
+        html::ElementNamespace::Html,
+        vec![html::internal::unqualified_attribute(
+            "style",
+            "display: block; width: 100px;",
+        )],
+        vec![
+            html::internal::unqualified_attribute("style", "display: block; width: 100px;"),
+            html::internal::unqualified_attribute("class", "paint"),
+        ],
+    ));
 
     let prepared = page
         .prepare_style_phase_for_frame(&PendingRenderWork::default())
@@ -1429,7 +1465,12 @@ fn attribute_mutation_keeps_style_cache_but_marks_it_stale_until_restored() {
         "class",
         Some("hot".to_string()),
     );
-    let hint = DomMutationFacts::attributes_changed_for_tests(vec![p_id]);
+    let hint = DomMutationFacts::attribute_transition_for_tests(
+        p_id,
+        html::ElementNamespace::Html,
+        Vec::new(),
+        vec![html::internal::unqualified_attribute("class", "hot")],
+    );
     page.mark_dom_changed_for_tests(hint);
 
     let stale = page.render_pipeline_debug_snapshot();
@@ -1516,7 +1557,12 @@ fn text_full_invalidation_dominates_a_pending_css_suffix_plan() {
         "class",
         Some("hot".to_string()),
     );
-    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(vec![p_id]));
+    page.mark_dom_changed_for_tests(DomMutationFacts::attribute_transition_for_tests(
+        p_id,
+        html::ElementNamespace::Html,
+        Vec::new(),
+        vec![html::internal::unqualified_attribute("class", "hot")],
+    ));
     page.mark_dom_changed_for_tests(DomMutationFacts::text_changed_for_tests(Vec::new()));
 
     assert_eq!(
@@ -1541,7 +1587,12 @@ fn full_css_style_invalidation_dominates_pending_suffix_plan() {
         "class",
         Some("hot".to_string()),
     );
-    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(vec![p_id]));
+    page.mark_dom_changed_for_tests(DomMutationFacts::attribute_transition_for_tests(
+        p_id,
+        html::ElementNamespace::Html,
+        Vec::new(),
+        vec![html::internal::unqualified_attribute("class", "hot")],
+    ));
     page.mark_dom_changed_for_tests(DomMutationFacts::tree_changed_for_tests());
 
     assert_eq!(
@@ -1567,7 +1618,15 @@ fn inline_style_attribute_change_uses_supported_attribute_suffix_scope() {
         "style",
         Some("color: red;".to_string()),
     );
-    page.mark_dom_changed_for_tests(DomMutationFacts::attributes_changed_for_tests(vec![p_id]));
+    page.mark_dom_changed_for_tests(DomMutationFacts::attribute_transition_for_tests(
+        p_id,
+        html::ElementNamespace::Html,
+        Vec::new(),
+        vec![html::internal::unqualified_attribute(
+            "style",
+            "color: red;",
+        )],
+    ));
 
     let stale = page.render_pipeline_debug_snapshot();
     assert_eq!(

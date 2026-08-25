@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use crate::selectors::AttributeMatcher;
 
 /// Case policy for selector value comparison.
@@ -16,6 +18,18 @@ impl TextCaseSensitivity {
         match self {
             Self::Sensitive => actual == expected,
             Self::AsciiInsensitive => actual.eq_ignore_ascii_case(expected),
+        }
+    }
+
+    /// Compares selector values with the same ASCII-only case policy used by
+    /// equality matching, without materializing a folded owned string.
+    pub(super) fn compare(self, left: &str, right: &str) -> Ordering {
+        match self {
+            Self::Sensitive => left.cmp(right),
+            Self::AsciiInsensitive => left
+                .bytes()
+                .map(|byte| byte.to_ascii_lowercase())
+                .cmp(right.bytes().map(|byte| byte.to_ascii_lowercase())),
         }
     }
 
@@ -95,7 +109,7 @@ pub(super) fn matches_attribute_value(
     }
 }
 
-fn split_css_whitespace_separated_tokens(value: &str) -> impl Iterator<Item = &str> {
+pub(crate) fn split_css_whitespace_separated_tokens(value: &str) -> impl Iterator<Item = &str> {
     value
         .split(is_css_selector_whitespace)
         .filter(|token| !token.is_empty())
@@ -140,6 +154,10 @@ mod tests {
         assert!(!insensitive.has_prefix("FOO-É-BAR-tail", "foo-é-bar"));
         assert!(!insensitive.has_suffix("head-FOO-É-BAR", "foo-é-bar"));
         assert!(!insensitive.contains("head-FOO-É-BAR-tail", "foo-é-bar"));
+
+        assert_eq!(insensitive.compare("FOO-é", "foo-é"), Ordering::Equal);
+        assert_eq!(insensitive.compare("FOO-a", "foo-b"), Ordering::Less);
+        assert_eq!(sensitive.compare("FOO", "foo"), Ordering::Less);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 #![no_main]
 
-use css::cascade::fuzz::{CssCascadeFuzzConfig, run_seeded_cascade_fuzz_case};
 use css::cascade::StyleResolutionLimits;
+use css::cascade::fuzz::{CssCascadeFuzzConfig, run_seeded_cascade_fuzz_case};
 use css::selectors::SelectorMatchingLimits;
 use css::syntax::{SyntaxLimits, derive_css_fuzz_seed};
 use libfuzzer_sys::fuzz_target;
@@ -41,6 +41,7 @@ fuzz_target!(|data: &[u8]| {
             selector_matching: SelectorMatchingLimits {
                 max_axis_steps_per_match: 2_048,
             },
+            ..StyleResolutionLimits::default()
         },
         ..CssCascadeFuzzConfig::default()
     };

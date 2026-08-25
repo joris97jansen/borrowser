@@ -6,7 +6,7 @@ use html::{DomPatch, Node, PatchKey, internal::Id};
 
 pub(crate) struct DomDoc {
     pub(crate) version: DomVersion,
-    arena: DomArena,
+    pub(super) arena: DomArena,
     root: Option<PatchKey>,
     pub(crate) current: Option<Box<Node>>,
 }

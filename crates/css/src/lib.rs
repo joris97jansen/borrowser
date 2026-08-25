@@ -160,8 +160,11 @@ pub use specified::{
     parse_specified_value, parse_specified_value_with_limits, shorthand_expansion_debug_snapshot,
 };
 pub use style_invalidation::{
-    ChangedStyleNodeFacts, DomStyleChangeFacts, DomStyleChangeFactsBuilder, StyleChangeFacts,
-    StyleInvalidationPlan, classify_style_invalidation, merge_style_invalidation_plans,
+    ChangedStyleNodeFacts, DomStyleAttributeMutation, DomStyleChangeFacts,
+    DomStyleChangeFactsBuilder, DomStyleTextMutation, STYLE_DEPENDENCY_ARTIFACT_DEBUG_VERSION,
+    StyleChangeFacts, StyleDependencyArtifact, StyleInvalidationDecision, StyleInvalidationInput,
+    StyleInvalidationPlan, classify_style_invalidation,
+    classify_style_invalidation_with_dependencies, merge_style_invalidation_plans,
 };
 
 // Explicit syntax-layer surface for parser/tokenizer work and syntax tests.

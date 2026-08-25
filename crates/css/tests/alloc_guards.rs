@@ -1,10 +1,12 @@
 #![cfg(feature = "count-alloc")]
 
 use css::{
-    ParseOptions, Rule, RuleCollection, SelectorDomIndex, SelectorMatchingContext,
-    SelectorMatchingEnvironment, StyleResolutionLimits, StylesheetCollectionInput,
-    StylesheetConditionInput, StylesheetOrder, StylesheetSourceId,
-    af5_match_rule_inputs_for_allocation_guard, af6_resolve_winners_for_allocation_guard,
+    ChangedStyleNodeFacts, DomStyleAttributeMutation, DomStyleChangeFacts, ParseOptions, Rule,
+    RuleCollection, SelectorDomIndex, SelectorMatchingContext, SelectorMatchingEnvironment,
+    StyleChangeFacts, StyleDependencyArtifact, StyleInvalidationDecision, StyleInvalidationInput,
+    StyleResolutionLimits, StylesheetCollectionInput, StylesheetConditionInput, StylesheetOrder,
+    StylesheetSourceId, af5_match_rule_inputs_for_allocation_guard,
+    af6_resolve_winners_for_allocation_guard, classify_style_invalidation_with_dependencies,
     compute_document_styles, parse_stylesheet_with_options, perf_fixtures, property_registry,
     resolve_document_styles,
 };
@@ -123,6 +125,54 @@ fn measure<T>(warm: impl FnOnce(), run: impl FnOnce() -> T) -> (T, AllocCounts) 
     drop(guard);
 
     (output, counts)
+}
+
+fn af9_dependency_artifact(
+    source: &str,
+    environment: SelectorMatchingEnvironment,
+) -> StyleDependencyArtifact {
+    let sheet = parse_stylesheet_with_options(source, &ParseOptions::stylesheet());
+    let input = StylesheetCollectionInput::author(
+        StylesheetSourceId::in_memory_generation_index(0),
+        StylesheetOrder::new(0),
+        &sheet,
+        StylesheetConditionInput::None,
+    );
+    let limits = StyleResolutionLimits::default();
+    let collection = RuleCollection::try_new(&[input], &limits)
+        .expect("AF9 allocation-guard collection should build");
+    StyleDependencyArtifact::from_rule_collection(&collection, environment, &limits)
+}
+
+fn af9_attribute_change(node_id: html::internal::Id) -> StyleChangeFacts {
+    StyleChangeFacts::dom_publication(
+        DomStyleChangeFacts::builder()
+            .attributes(ChangedStyleNodeFacts::changed([node_id]))
+            .build(),
+    )
+}
+
+fn measure_af9_attribute_classification<'a>(
+    change: &'a StyleChangeFacts,
+    artifact: &'a StyleDependencyArtifact,
+    environment: SelectorMatchingEnvironment,
+    mutations: &'a [DomStyleAttributeMutation<'a>],
+) -> (StyleInvalidationDecision, AllocCounts) {
+    measure(
+        || {
+            let decision = classify_style_invalidation_with_dependencies(
+                StyleInvalidationInput::new(change, Some(artifact), environment)
+                    .with_attribute_mutations(Some(mutations)),
+            );
+            std::hint::black_box(decision);
+        },
+        || {
+            std::hint::black_box(classify_style_invalidation_with_dependencies(
+                StyleInvalidationInput::new(change, Some(artifact), environment)
+                    .with_attribute_mutations(Some(mutations)),
+            ))
+        },
+    )
 }
 
 #[test]
@@ -503,4 +553,155 @@ fn af5_matched_rule_inputs_borrow_declarations_without_vector_copy() {
         low_counts.allocs,
         high_counts.allocs
     );
+}
+
+#[test]
+fn af9_repeated_irrelevant_class_candidates_do_not_allocate_per_token() {
+    let environment = SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks);
+    let artifact = af9_dependency_artifact(".target { color: red; }", environment);
+    let node_id = html::internal::Id(7);
+    let change = af9_attribute_change(node_id);
+    let before = Vec::new();
+    let small_after = vec![html::internal::unqualified_attribute("class", "irrelevant")];
+    let large_after = vec![html::internal::unqualified_attribute(
+        "class",
+        "irrelevant ".repeat(100_000),
+    )];
+    let small_mutations = [DomStyleAttributeMutation::new(
+        node_id,
+        html::ElementNamespace::Html,
+        Some(&before),
+        &small_after,
+    )];
+    let large_mutations = [DomStyleAttributeMutation::new(
+        node_id,
+        html::ElementNamespace::Html,
+        Some(&before),
+        &large_after,
+    )];
+
+    let (small_decision, small_counts) =
+        measure_af9_attribute_classification(&change, &artifact, environment, &small_mutations);
+    let (large_decision, large_counts) =
+        measure_af9_attribute_classification(&change, &artifact, environment, &large_mutations);
+
+    eprintln!(
+        "AF9 repeated class candidates: small={small_counts:?} large={large_counts:?} tokens=100000"
+    );
+    assert!(small_decision.into_plan().is_none());
+    assert!(large_decision.into_plan().is_none());
+    assert_eq!(small_counts.allocs, 0, "small classification allocated");
+    assert_eq!(
+        small_counts.bytes, 0,
+        "small classification allocated bytes"
+    );
+    assert_eq!(small_counts.reallocs, 0, "small classification reallocated");
+    assert_eq!(
+        large_counts.allocs, small_counts.allocs,
+        "100,000 raw tokens changed classification allocation count"
+    );
+    assert_eq!(
+        large_counts.bytes, small_counts.bytes,
+        "100,000 raw tokens changed classification allocation bytes"
+    );
+    assert_eq!(
+        large_counts.reallocs, small_counts.reallocs,
+        "100,000 raw tokens changed classification reallocation count"
+    );
+}
+
+#[test]
+fn af9_unchanged_large_class_on_attribute_transition_has_constant_allocations() {
+    let environment = SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks);
+    let artifact = af9_dependency_artifact(".target, [title=new] { color: red; }", environment);
+    let node_id = html::internal::Id(8);
+    let change = af9_attribute_change(node_id);
+    let small_before = vec![
+        html::internal::unqualified_attribute("class", "irrelevant"),
+        html::internal::unqualified_attribute("title", "old"),
+    ];
+    let small_after = vec![
+        html::internal::unqualified_attribute("class", "irrelevant"),
+        html::internal::unqualified_attribute("title", "new"),
+    ];
+    let large_class = "irrelevant ".repeat(100_000);
+    let large_before = vec![
+        html::internal::unqualified_attribute("class", large_class.clone()),
+        html::internal::unqualified_attribute("title", "old"),
+    ];
+    let large_after = vec![
+        html::internal::unqualified_attribute("class", large_class),
+        html::internal::unqualified_attribute("title", "new"),
+    ];
+    let small_mutations = [DomStyleAttributeMutation::new(
+        node_id,
+        html::ElementNamespace::Html,
+        Some(&small_before),
+        &small_after,
+    )];
+    let large_mutations = [DomStyleAttributeMutation::new(
+        node_id,
+        html::ElementNamespace::Html,
+        Some(&large_before),
+        &large_after,
+    )];
+
+    let (small_decision, small_counts) =
+        measure_af9_attribute_classification(&change, &artifact, environment, &small_mutations);
+    let (large_decision, large_counts) =
+        measure_af9_attribute_classification(&change, &artifact, environment, &large_mutations);
+
+    eprintln!(
+        "AF9 unchanged class attribute transition: small={small_counts:?} large={large_counts:?} tokens=100000"
+    );
+    assert!(small_decision.into_plan().is_some());
+    assert!(large_decision.into_plan().is_some());
+    assert_eq!(
+        large_counts.allocs, small_counts.allocs,
+        "an unchanged 100,000-token class changed allocation count"
+    );
+    assert_eq!(
+        large_counts.bytes, small_counts.bytes,
+        "an unchanged 100,000-token class changed allocation bytes"
+    );
+    assert_eq!(
+        large_counts.reallocs, small_counts.reallocs,
+        "an unchanged 100,000-token class changed reallocation count"
+    );
+    assert!(
+        large_counts.allocs <= 1,
+        "only the one-node suffix plan may allocate: {large_counts:?}"
+    );
+    assert_eq!(large_counts.reallocs, 0);
+}
+
+#[test]
+fn af9_quirks_class_lookup_does_not_allocate_folded_candidates() {
+    let environment = SelectorMatchingEnvironment::new(html::DocumentMode::Quirks);
+    let artifact = af9_dependency_artifact(".target { color: red; }", environment);
+    let node_id = html::internal::Id(9);
+    let change = af9_attribute_change(node_id);
+    let before = vec![html::internal::unqualified_attribute(
+        "class",
+        "TaRgEt unrelated-before",
+    )];
+    let after = vec![html::internal::unqualified_attribute(
+        "class",
+        "TARGET unrelated-after",
+    )];
+    let mutations = [DomStyleAttributeMutation::new(
+        node_id,
+        html::ElementNamespace::Html,
+        Some(&before),
+        &after,
+    )];
+
+    let (decision, counts) =
+        measure_af9_attribute_classification(&change, &artifact, environment, &mutations);
+
+    eprintln!("AF9 Quirks class candidate lookup: {counts:?}");
+    assert!(decision.into_plan().is_none());
+    assert_eq!(counts.allocs, 0, "Quirks candidate folding allocated");
+    assert_eq!(counts.bytes, 0, "Quirks candidate folding allocated bytes");
+    assert_eq!(counts.reallocs, 0, "Quirks candidate folding reallocated");
 }

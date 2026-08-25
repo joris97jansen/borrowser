@@ -42,6 +42,12 @@ requires Layout and Paint to consume that structured output without restoring
 bridge-era visibility semantics. See
 `docs/css/af8-computed-style-document-artifact-contract.md`.
 
+AF9 now replaces AF1/AF4e's temporary aggregate invalidation proof with an
+owned CSS selector/cascade dependency artifact and exact, bounded neutral
+attribute/text transitions. Browser retains the opaque artifact and passes it
+back to CSS; it does not inspect dependency categories. See
+`docs/css/af9-selector-cascade-invalidation-dependencies.md`.
+
 ## Related code
 
 - `crates/css/src/style_invalidation.rs`
@@ -76,6 +82,7 @@ Selector, cascade, and computed-style foundations:
 - AF4e: `docs/css/af4e-selector-invalidation-parser-conformance-closeout.md`
 - AF7: `docs/css/af7-specified-value-defaulting-source-resolution.md`
 - AF8: `docs/css/af8-computed-style-document-artifact-contract.md`
+- AF9: `docs/css/af9-selector-cascade-invalidation-dependencies.md`
 - R1-R9: the structured cascade and resolved-style contracts under
   `docs/css/r*.md`
 - S1/S6/S9: the computed-style property, assembly, and runtime contracts
@@ -265,20 +272,22 @@ Callers cannot mutate fact fields directly. They use CSS-owned
 `StyleChangeFacts::dom_publication`, which prevent contradictory occurrence
 and identity state and canonicalize identities deterministically.
 
-The current conservative outcomes are:
+The AF9 conservative outcomes are:
 
 - `None`: CSS proved that no style recomputation is required for the fact;
-- an opaque document-order suffix plan for non-empty, materialized attribute
-  identities;
+- an opaque document-order suffix plan for relevant live attribute-selector
+  transitions, effective inline-style transitions, and supported `:empty`
+  direct-text transitions whose parent identity is available;
 - an opaque full-document plan for document replacement, tree changes,
-  stylesheet-set changes, text changes under AF4e, unclassified patches, and
-  unprovable attribute changes.
+  stylesheet-set changes, unclassified patches, stale/missing/incomplete
+  dependency metadata, historical mutation targets, and any unprovable exact
+  transition.
 
-Ordinary text changes currently receive full invalidation because exact text
-can change `:empty` matching and no dependency index can prove a narrower
-scope. Text inside `<style>` additionally participates in stylesheet
-reconciliation, which submits `StylesheetSetChanged` when active CSS input
-changes.
+With a complete compatible artifact, irrelevant or net-no-op attribute
+transitions and text transitions with no active `:empty` dependency receive no
+CSS Style plan. Browser still preserves their coarse intrinsic mutation facts.
+Text inside `<style>` additionally participates in stylesheet reconciliation,
+which submits `StylesheetSetChanged` when active CSS input changes.
 
 `merge_style_invalidation_plans(existing, incoming)` is CSS-owned. It preserves
 an existing plan when the incoming result is `None`, canonicalizes and
@@ -324,10 +333,10 @@ and invalidation proof code. It can widen the opaque plan to a full or richer
 CSS-owned scope without adding selector-specific branches, flags, AST reads,
 or merge rules to Browser/runtime.
 
-This first AF1 boundary is not a complete dependency graph. A later AF issue
-should replace the conservative suffix/full proof with selector-aware
-dependency extraction and richer CSS-owned invalidation planning when the
-supported selector set requires it.
+AF9 supplies dependency extraction without introducing a per-node dependency
+graph or a new partial structural executor. Milestone AG may use AF9's retained
+subject paths after retained styles are bound to stable source-DOM identities
+and neutral transactional topology deltas exist.
 
 ## Computed-style consumers
 

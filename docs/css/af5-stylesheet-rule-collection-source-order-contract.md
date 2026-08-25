@@ -148,6 +148,16 @@ They neither expose the active collection rule nor own a declaration vector.
 Inline style attributes remain element-local and are
 parsed/classified at most once for that element's style calculation.
 
+AF9 builds its retained selector/cascade dependency artifact from this exact
+collection. Only `ActiveStyle` rules with at least one declaration classified
+as `CascadeDeclarationApplicability::Supported` can contribute active
+dependency records. AF9 does not reparse declarations or infer participation
+from selector validity alone. Inactive invalid/unsupported/deferred rules and
+active rules containing only non-candidate declarations remain diagnostic
+states and do not impose an invalidation penalty. The artifact owns copied
+keys and paths; it never retains `RuleCollection<'source>` borrows. See
+`docs/css/af9-selector-cascade-invalidation-dependencies.md`.
+
 ## Matching and precedence
 
 Every active selector list is matched once per target element. The exact AF4
@@ -240,8 +250,8 @@ degrading behavior nor the legacy projection.
 
 ## Deliberate exclusions
 
-AF5 does not add selector indexes, compiled selectors, bloom filters, fast
-rejection, style sharing, cross-pass collection caching, networking/loading,
+AF5 does not add selector candidate-match indexes, compiled selectors, bloom
+filters, fast rejection, style sharing, cross-pass collection caching, networking/loading,
 `@import` loading, media parsing/evaluation, AJ stylesheet-set algorithms,
 cascade layers, runtime user stylesheets, animations, transitions, CSSOM, or
 new selector/property coverage. AF6 winner selection is documented separately;

@@ -113,6 +113,20 @@ identity is also a typed invariant failure. Callers do not duplicate or expose
 the internal numeric `PatchKey`/`Id` bridge. Resolution failure preserves the
 entire previously committed publication and retained-render state.
 
+AF9 queries committed and staged arena records by `PatchKey`, then uses the
+DOM-owned mapping only to produce resolved materialized IDs as neutral
+old/final mutation anchors. Direct text-parent identity comes from the arena
+parent back-reference through that same mapping; no materialized-tree target
+walk or numeric equality inference occurs outside DOM ownership. Browser may
+retain surviving IDs, historical-target counts, exact qualified
+attributes/text, and a direct text parent identity; it does not turn
+them into selector identities or infer dependency meaning. The retained CSS
+dependency artifact is separately keyed by `RetainedRenderIdentityDomain` and
+the authoritative stylesheet generation. AF9 still executes structural
+changes as full Style work; stable source-ID binding of individual retained
+style entries remains Milestone AG rather than an implied property of numeric
+`PatchKey`/`Id` equality.
+
 The production parser has a stricter, separate session-history contract:
 its allocator never reuses a `PatchKey` in the same parser session, including
 after `Clear`. AE13 retained-prefix validation enforces that parser-history

@@ -7,18 +7,20 @@ use css::{
 };
 use html::Node;
 
-use crate::rendering::RetainedStyleArtifactKey;
+use crate::rendering::{RetainedRenderIdentityDomain, RetainedStyleArtifactKey};
 
 #[cfg(test)]
 thread_local! {
     static RULE_COLLECTION_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static STYLE_EXECUTION_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static DEPENDENCY_ARTIFACT_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[cfg(test)]
 pub(crate) fn reset_rule_collection_build_count() {
     RULE_COLLECTION_BUILDS.set(0);
     STYLE_EXECUTION_BUILDS.set(0);
+    DEPENDENCY_ARTIFACT_BUILDS.set(0);
 }
 
 #[cfg(test)]
@@ -29,6 +31,11 @@ pub(crate) fn rule_collection_build_count() -> usize {
 #[cfg(test)]
 pub(crate) fn style_execution_build_count() -> usize {
     STYLE_EXECUTION_BUILDS.get()
+}
+
+#[cfg(test)]
+pub(crate) fn dependency_artifact_build_count() -> usize {
+    DEPENDENCY_ARTIFACT_BUILDS.get()
 }
 
 fn build_rule_collection<'source>(
@@ -77,6 +84,18 @@ pub(super) struct PageStyleCache {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct PageStyleDependencyKey {
+    pub(super) identity_domain: RetainedRenderIdentityDomain,
+    pub(super) stylesheet_generation: u64,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct PageStyleDependencyCache {
+    pub(super) key: PageStyleDependencyKey,
+    pub(super) artifact: css::StyleDependencyArtifact,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum StyleRecalcKind {
     ReusedCache,
     Full {
@@ -97,26 +116,42 @@ pub(super) struct StyleRecomputeState<'a> {
     /// necessarily invoke it. This is used only to label a later full
     /// recomputation as fallback from incremental eligibility.
     pub(super) last_style_incremental_eligible: &'a mut bool,
+    pub(super) dependency_cache: &'a mut Option<PageStyleDependencyCache>,
+}
+
+pub(super) struct StyleRecomputeInput<'a, 'source> {
+    pub(super) dom: &'a Node,
+    pub(super) environment: SelectorMatchingEnvironment,
+    pub(super) sheets: &'a [StylesheetCollectionInput<'source>],
+    pub(super) generations: PageStyleGenerations,
+    pub(super) key: RetainedStyleArtifactKey,
+    pub(super) pending: Option<&'a StyleInvalidationPlan>,
+    pub(super) dependency_key: PageStyleDependencyKey,
 }
 
 pub(super) fn recompute_styles(
-    dom: &Node,
-    environment: SelectorMatchingEnvironment,
-    sheets: &[StylesheetCollectionInput<'_>],
-    generations: PageStyleGenerations,
-    key: RetainedStyleArtifactKey,
-    pending: Option<&StyleInvalidationPlan>,
+    input: StyleRecomputeInput<'_, '_>,
     state: StyleRecomputeState<'_>,
 ) -> Result<(), ComputedStyleResolutionError> {
     let limits = StyleResolutionLimits::default();
-    let collection = build_rule_collection(sheets, &limits)?;
-    let style_execution = build_style_execution(dom, environment, &collection, &limits)?;
-    let execution = pending
+    let collection = build_rule_collection(input.sheets, &limits)?;
+    let replacement_dependency = (!state.dependency_cache.as_ref().is_some_and(|entry| {
+        entry.key == input.dependency_key && entry.artifact.matches_environment(input.environment)
+    }))
+    .then(|| {
+        #[cfg(test)]
+        DEPENDENCY_ARTIFACT_BUILDS.with(|count| count.set(count.get() + 1));
+        css::StyleDependencyArtifact::from_rule_collection(&collection, input.environment, &limits)
+    });
+    let style_execution =
+        build_style_execution(input.dom, input.environment, &collection, &limits)?;
+    let execution = input
+        .pending
         .map(|plan| {
             let previous = state
                 .style_cache
                 .as_ref()
-                .filter(|cache| cache.key.stylesheet_generation == generations.stylesheets)
+                .filter(|cache| cache.key.stylesheet_generation == input.generations.stylesheets)
                 .map(|cache| (&cache.resolved, &cache.computed));
             try_compute_document_styles_for_invalidation_plan_from_execution_with_limits(
                 plan,
@@ -136,10 +171,16 @@ pub(super) fn recompute_styles(
         });
         *state.last_style_reuse = Some(incremental.reuse_stats);
         *state.style_cache = Some(PageStyleCache {
-            key,
+            key: input.key,
             resolved: incremental.resolved,
             computed: incremental.computed,
         });
+        if let Some(artifact) = replacement_dependency {
+            *state.dependency_cache = Some(PageStyleDependencyCache {
+                key: input.dependency_key,
+                artifact,
+            });
+        }
         *state.style_dirty = false;
         return Ok(());
     }
@@ -147,15 +188,22 @@ pub(super) fn recompute_styles(
     let resolved = style_execution
         .resolve_document_styles()
         .map_err(ComputedStyleResolutionError::StyleResolution)?;
-    let computed = compute_document_styles_from_resolved_styles_with_reuse_stats(dom, &resolved)?;
+    let computed =
+        compute_document_styles_from_resolved_styles_with_reuse_stats(input.dom, &resolved)?;
     let elements = computed.computed.entries().len();
     *state.last_style_recalc = Some(StyleRecalcKind::Full { elements });
     *state.last_style_reuse = Some(computed.reuse_stats);
     *state.style_cache = Some(PageStyleCache {
-        key,
+        key: input.key,
         resolved,
         computed: computed.computed,
     });
+    if let Some(artifact) = replacement_dependency {
+        *state.dependency_cache = Some(PageStyleDependencyCache {
+            key: input.dependency_key,
+            artifact,
+        });
+    }
     *state.style_dirty = false;
     Ok(())
 }

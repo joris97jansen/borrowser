@@ -57,6 +57,15 @@ resolution failure leaves retained resolved/computed output absent or dirty as
 the calling path specifies; Browser must not retain an empty/default style or
 reinterpret the failure as incremental unavailability.
 
+AF9 adds a separate retained `StyleDependencyArtifact`. It is CSS-owned
+selector/cascade metadata rather than a computed document style artifact, and
+is keyed by retained document identity plus the existing authoritative
+stylesheet generation. Ordinary DOM style-input generation changes—including
+a conservative structural full recomputation—do not rebuild a compatible
+dependency artifact. Document replacement, stylesheet generation change, or
+CSS matching-environment incompatibility makes it ineligible. See
+`docs/css/af9-selector-cascade-invalidation-dependencies.md`.
+
 The following are deliberately not retained style artifacts:
 
 - `StyledNode`
@@ -130,9 +139,11 @@ with a full scope. Full document replacement also advances the retained
 identity domain so matching numeric DOM IDs cannot prove retained style
 continuity.
 
-Class, attribute, and inline style changes may receive an opaque CSS-owned
-document-suffix invalidation plan when the CSS classifier can prove the current
-conservative case from materialized dirty node IDs. Browser/runtime retains and
+Relevant ID, class, attribute-selector, and inline-style transitions may
+receive an opaque CSS-owned document-suffix invalidation plan when AF9 proves
+the committed transition through a compatible dependency artifact. Irrelevant
+or net-no-op attribute transitions may preserve the current computed artifact.
+Browser/runtime retains and
 forwards that plan; it does not choose a suffix scope. If the plan cannot be
 executed because retained artifacts are missing or incompatible, CSS execution
 reports incremental-unavailable and the runtime performs a deterministic full
@@ -141,11 +152,10 @@ cache exists, the incremental algorithm is not invoked; the result still
 records that CSS authorized incremental reuse and that runtime execution fell
 back to full computation.
 
-Text-only DOM mutation receives one CSS-owned full-document invalidation in the
-current supported selector model because it can change `:empty`. It also
-independently dirties Layout and Paint. This conservative scope is an
-optimization limitation; future reverse selector-dependency indexing may
-narrow the CSS plan without changing Browser's neutral fact contract.
+Text-only DOM mutation independently dirties Layout. AF9 asks CSS whether the
+old/final direct-text contribution can affect an active `:empty` selector; a
+relevant transition receives a parent suffix, an irrelevant transition may
+preserve computed style, and missing proof remains full-document.
 
 ## Debug Surface
 

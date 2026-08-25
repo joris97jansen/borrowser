@@ -78,11 +78,14 @@ pseudo-specific query.
 
 ## Text mutation invalidation and retained runtime handoff
 
-Exact text can change `:empty` matching. Until CSS owns a reverse selector
-dependency index, an aggregate `StyleChangeFacts::DomPublication` containing a
-text dimension classifies to a full-document `StyleInvalidationPlan`. CSS
-continues to own plan construction,
-canonicalization, merging, full-over-suffix dominance, and execution scope.
+Exact text can change `:empty` matching. AF9 now records `:empty` in CSS's
+owned dependency artifact and compares bounded committed old/final direct-text
+facts with this contract's document-whitespace definition. A relevant
+whitespace-contribution transition can receive a suffix from the direct parent;
+a text change with no active `:empty` dependency can receive no CSS Style plan.
+Missing or incomplete proof remains full-document. CSS continues to own plan
+construction, canonicalization, merging, full-over-suffix dominance, and
+execution scope.
 
 A Browser-observed mutation fact does not by itself authorize a retained
 style-input generation change. CSS's invalidation classification result
@@ -114,11 +117,12 @@ typed DOM-publication or stylesheet input has been classified and applied.
 Viewport, resource, input-state, and intrinsic DOM entry points cannot enter
 this path or manufacture direct Style triggers.
 
-For AF4e, text changes return `Some(full-document)`, discard a retained style
-artifact when present, and perform a full selector/cascade/computed-style
-recomputation. Independently, `DomTextChanged` remains direct Layout input
-with `TextContentChanged`; its Layout reason must survive even when Style is
-also dirty and later style-impact cleanup removes a cascaded reason.
+AF4e originally returned `Some(full-document)` for every text change. AF9
+supersedes that temporary scope as described above. Independently,
+`DomTextChanged` remains direct Layout input with `TextContentChanged`; its
+Layout reason must survive even when CSS returns no Style plan or when Style is
+also dirty and later style-impact cleanup removes a cascaded reason. See
+`docs/css/af9-selector-cascade-invalidation-dependencies.md`.
 
 ## Unsupported scope
 

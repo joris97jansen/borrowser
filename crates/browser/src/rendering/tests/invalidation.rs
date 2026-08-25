@@ -727,6 +727,7 @@ fn document_replacement_returns_explicit_full_pipeline_work_request() {
     .expect("parse should work");
     let mut page = PageState::new();
     page.start_nav("https://example.com/index.html");
+    page.document_mode = Some(output.document_mode);
 
     let publication = page.replace_dom(
         Box::new(output.document),
@@ -1122,6 +1123,7 @@ fn stylesheet_reconcile_returns_explicit_style_invalidation_request() {
     .expect("parse should work");
     let mut page = PageState::new();
     page.start_nav("https://example.com/index.html");
+    page.document_mode = Some(output.document_mode);
     let _ = page.replace_dom(
         Box::new(output.document),
         DomMutationFacts::document_replaced_for_tests(),

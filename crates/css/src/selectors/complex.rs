@@ -166,7 +166,7 @@ impl CompoundSelector {
 }
 
 /// Supported combinators for the current selector subset.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Combinator {
     Descendant,
     Child,

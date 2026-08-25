@@ -187,10 +187,10 @@ The ordinary DOM rows record intrinsic effects. Browser applies a CSS
 `Some(plan)` result once and emits a separate
 `DomPublicationStyleInvalidated` request; it does not copy that aggregate
 authorization onto intrinsic causes. Viewport changes do not imply restyle by
-default. AF4e text mutation does dirty Style through CSS's current aggregate
-full-document plan because text can change `:empty` matching. A future
-dependency-aware classifier may return `None`; Browser must then preserve
-style-cache eligibility. Generated content,
+default. AF9 may return no Style plan for text when its committed transition
+cannot affect an active `:empty` dependency; direct intrinsic Layout work
+still remains. A relevant `:empty` transition receives a CSS suffix, while
+missing proof is full-document. Generated content,
 additional text-sensitive selectors, viewport-dependent style, container
 queries, or media/environment dependencies must extend CSS-owned facts rather
 than Browser-owned selector policy.
@@ -232,7 +232,7 @@ are recorded by retained artifact lifecycle state and
 | viewport-only update in current supported CSS model | reuse style | viewport changes do not dirty style by default |
 | stylesheet set change | discard/recompute | stylesheet generation changes and style dirtiness is document-scoped |
 | document replacement | discard/recompute in a new identity domain | retained continuity cannot cross full document replacement |
-| text-only mutation | one CSS-authorized full discard/recompute in AF4e | exact text can change `:empty`; dependency indexing is not yet available |
+| text-only mutation | AF9 uses the compatible CSS dependency artifact: no Style work without active `:empty`, parent suffix when proved, full fallback when unprovable | intrinsic text Layout work remains independent of CSS Style classification |
 | unknown style impact | conservative recompute | CSS has not supplied a safe narrower fact |
 
 Browser/runtime owns retained style artifact lifetime and keys. CSS owns
@@ -330,7 +330,7 @@ counters and state assertions instead of wall-clock thresholds.
 | initial render | retained style/layout/paint recompute counters establish a baseline |
 | no-op repeated render | style/layout/paint recompute counters do not grow and retained reuse is visible |
 | repeated viewport resize | style recomputation does not grow by default; layout/paint work remains bounded by update count |
-| text/content update | AF4d performs at most one full style recomputation per publication; direct layout/paint work remains bounded |
+| text/content update | AF9 performs at most one CSS classification/recomputation authorization per publication; direct layout/paint work remains bounded |
 | paint-only style update | relayout is avoided when CSS-owned impact classification says paint-only |
 | layout-affecting style update | layout and paint recompute visibly |
 | stylesheet/global style update | style and downstream work recompute conservatively |
@@ -349,7 +349,7 @@ and crate-local rather than a broad wall-clock or global allocator shortcut.
 | partial raster invalidation | not implemented | requires backend-aware raster invalidation contract |
 | retained backend draw commands | not implemented | requires paint/backend command ownership boundary |
 | full display-list or retained scene architecture | not implemented | may extend paint-owned semantic artifacts deliberately |
-| full selector dependency invalidation | not implemented; AF1 supplies the minimal opaque CSS-owned plan boundary | a later AF issue should add richer CSS dependency facts without selector-specific Browser changes |
+| full selector dependency invalidation | AF9 supplies a keyed owned CSS artifact and conservative no-op/suffix/full classification; identity-directed structural execution is not implemented | Milestone AG should bind retained styles to stable source identities and add neutral topology deltas without selector-specific Browser branches |
 | broad browser-owned CSS property-impact table | deliberately excluded | CSS-owned impact classification only |
 | CSS containment | not implemented | requires CSS/layout containment contracts |
 | true minimal/subtree relayout execution | not implemented | Layout needs dependency graphs and executable subtree relayout boundaries |
@@ -368,7 +368,7 @@ foundation. It does not mean the renderer is complete.
 
 | future milestone area | likely owner | must build on | must preserve |
 | --- | --- | --- | --- |
-| selector dependency invalidation | CSS with Browser/runtime consumption | AC3 dirty state, AC4 work plans, AC5 style keys | CSS ownership of selector/cascade semantics |
+| targeted selector dependency execution | CSS with Browser/runtime consumption | AF9 dependency paths, AC3 dirty state, AC4 work plans, AC5 style keys, future stable source-style identity | CSS ownership of selector/cascade semantics and full fallback |
 | viewport/environment style dependencies | CSS | AC5 style key and generation model | no browser-owned CSS property semantics |
 | CSS containment | CSS and Layout | dirty scopes, layout boundaries, retained identity model | explicit containment semantics before narrower invalidation |
 | true subtree relayout | Layout with Browser/runtime orchestration | AC6 requested-scope and fallback model | Layout ownership of geometry and executable relayout rules |

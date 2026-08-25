@@ -9,6 +9,12 @@ mod pseudo;
 mod queries;
 mod traversal;
 
+pub(crate) use self::attributes::{
+    compare_id_and_class_selector_values, id_and_class_selector_values_equal,
+    matches_attribute_in_attributes, matches_class_in_attributes, matches_id_in_attributes,
+};
+pub(crate) use self::pseudo::text_is_document_whitespace;
+
 pub use self::dom::{SelectorDomAttribute, SelectorMatchDom};
 pub use self::limits::{SelectorMatchingLimitError, SelectorMatchingLimits};
 pub use self::traversal::{
@@ -16,7 +22,7 @@ pub use self::traversal::{
 };
 use html::ElementNamespace;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SelectorNamespaceConstraint {
     Unconstrained,
     Exact(ElementNamespace),

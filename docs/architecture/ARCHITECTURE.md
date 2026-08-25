@@ -108,10 +108,14 @@ HTML is parsed incrementally:
 `DocumentPublication` carries the parser-selected mode, one document handle,
 and one `DomVersion` transition with its patch payload. Browser tabs stage and
 apply the complete publication atomically through `DomStore`, materialize the
-candidate DOM, resolve mutation identities, and then construct composable
-neutral `DomMutationFacts` before commit. CSS classifies the complete fact set
+candidate DOM, and resolve mutation identities plus bounded old/final details
+directly from the committed and staged arenas before constructing composable
+neutral `DomMutationFacts` and committing. CSS classifies the complete fact set
 once; Browser independently derives intrinsic rendering consequences. Inert
 publications remain DOM commits without synthetic style invalidation.
+AF9 preserves the coarse fact set and adds bounded exact committed old/final
+attribute and text details. Precision failure widens CSS work but does not
+weaken transactional publication or intrinsic mutation truth.
 
 DOM nodes are simple, ergonomic Rust enums:
 
@@ -281,6 +285,19 @@ through that boundary. Text mutations are neutral Browser facts classified by
 CSS; only `Some(StyleInvalidationPlan)` advances the retained style-input
 generation. The direct text-to-Layout path remains independent.
 
+AF9 adds an owned immutable CSS dependency artifact extracted from AF5 active
+rules with supported declaration candidates. It freezes type, ID, class,
+attribute/predicate, structural, and relationship dependencies into sorted
+keyed groups used through binary search, while preserving composed
+dependency-to-subject paths. Mutation lookup probes those groups with borrowed
+ID/class/attribute candidates; unchanged class values avoid tokenization and
+Quirks folding does not allocate candidate strings. Browser can only
+retain it under document identity plus the existing stylesheet generation,
+ask CSS to validate the matching environment, and pass neutral facts back for
+an opaque no-op/suffix/full decision. Structural changes remain full Style
+execution. See
+`docs/css/af9-selector-cascade-invalidation-dependencies.md`.
+
 ### 3. **Cascade**
 
 The structured cascade path produces `ResolvedDocumentStyle` without mutating
@@ -369,6 +386,11 @@ opaque CSS-owned invalidation plan; CSS owns selector-semantic safety,
 canonicalization, merging, and plan-aware style execution. The runtime records
 actual reuse, incremental execution, or full fallback without defining a
 second selector-aware invalidation enum.
+
+AF9 keeps AD7 downstream of that execution: CSS first classifies selector and
+cascade dependencies, recomputes required style, and compares computed styles;
+only then may Browser consume CSS's property-impact projection to narrow
+Layout/Paint scheduling.
 
 ---
 

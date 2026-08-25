@@ -4,7 +4,9 @@ use super::support::{
     current_element_color_optional, find_styled_element, find_styled_node_id,
     initial_patch_document, no_quirks_patch_publication, two_paragraph_patch_document,
 };
-use crate::page::StyleRecalcKind;
+use crate::page::{
+    StyleRecalcKind, dependency_artifact_build_count, reset_rule_collection_build_count,
+};
 use bus::CoreEvent;
 use core_types::{DomHandle, DomVersion};
 use css::Display;
@@ -329,6 +331,7 @@ fn dom_patch_style_text_change_reconciles_stylesheet_slot_and_restyles() {
 
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
     let before = tab.page.style_generations();
+    reset_rule_collection_build_count();
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
@@ -352,9 +355,8 @@ fn dom_patch_style_text_change_reconciles_stylesheet_slot_and_restyles() {
             .is_some_and(|facts| facts.text().changed())
     );
     assert_eq!(
-        after.style_inputs,
-        before.style_inputs + 1,
-        "CSS must authorize a style-input generation advance for the text mutation"
+        after.style_inputs, before.style_inputs,
+        "the stylesheet generation is authoritative; non-:empty text does not also advance DOM style inputs"
     );
     assert_eq!(
         after.stylesheets,
@@ -362,6 +364,11 @@ fn dom_patch_style_text_change_reconciles_stylesheet_slot_and_restyles() {
         "style text mutation must update the document stylesheet generation"
     );
     assert_eq!(current_element_color(&mut tab, "p"), (0, 0, 255, 255));
+    assert_eq!(
+        dependency_artifact_build_count(),
+        1,
+        "a stylesheet generation change builds exactly one matching dependency artifact"
+    );
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
@@ -594,7 +601,7 @@ fn queued_attribute_mutations_merge_to_earliest_dirty_suffix() {
 }
 
 #[test]
-fn dom_patch_normal_text_change_conservatively_restyles_and_dirties_layout() {
+fn dom_patch_normal_text_change_without_empty_dependency_reuses_style_and_dirties_layout() {
     let mut tab = Tab::new(1);
     tab.nav_gen = 23;
     tab.page.start_nav("https://example.com/index.html");
@@ -638,23 +645,23 @@ fn dom_patch_normal_text_change_conservatively_restyles_and_dirties_layout() {
     );
     assert_eq!(after.dom, before.dom + 1);
     assert_eq!(
-        after.style_inputs,
-        before.style_inputs + 1,
-        "AF4d conservatively invalidates style because text can change :empty matching"
+        after.style_inputs, before.style_inputs,
+        "AF9 proves text style-neutral when the active dependency artifact has no :empty"
     );
     assert_eq!(
         after.stylesheets, before.stylesheets,
         "normal text changes must not reconcile a new stylesheet set"
     );
-    assert!(
-        tab.page.style_dirty(),
-        "CSS-authorized text invalidation must schedule style work"
-    );
+    assert!(!tab.page.style_dirty());
     assert!(
         tab.page.layout_dirty(),
         "normal text changes still require downstream layout work"
     );
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
+    assert_eq!(
+        tab.page.last_style_recalc(),
+        Some(StyleRecalcKind::ReusedCache)
+    );
 }
 
 #[test]
@@ -719,9 +726,17 @@ fn published_text_mutation_restyles_retained_empty_selector_without_losing_layou
         1
     );
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
-    assert_eq!(
+    assert!(matches!(
         tab.page.last_style_recalc(),
-        Some(StyleRecalcKind::Full { elements: 5 })
+        Some(StyleRecalcKind::IncrementalSuffix { .. })
+    ));
+    assert!(
+        tab.page
+            .last_style_invalidation_decision_debug_snapshot()
+            .is_some_and(|snapshot| {
+                snapshot.contains("empty=true")
+                    && snapshot.contains("selected-plan: scope: document-suffix node-ids: [7]")
+            })
     );
 }
 
@@ -984,6 +999,18 @@ fn mixed_attribute_and_text_publication_preserves_both_identities_and_one_css_au
         )
     );
     assert_eq!(current_element_color(&mut tab, "p"), (0, 0, 255, 255));
+    assert!(matches!(
+        tab.page.last_style_recalc(),
+        Some(crate::page::StyleRecalcKind::IncrementalSuffix { .. })
+    ));
+    assert!(
+        tab.page
+            .last_style_invalidation_decision_debug_snapshot()
+            .is_some_and(|snapshot| {
+                snapshot.contains("empty=true")
+                    && snapshot.contains("selected-plan: scope: document-suffix node-ids: [7]")
+            })
+    );
 }
 
 #[test]

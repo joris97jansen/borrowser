@@ -144,6 +144,25 @@ Milestone AF foundation status:
   recomputation, a duplicate specified-style tree, broad property coverage, or
   later AF computed-style closure work.
 
+- AF9 adds an owned, immutable CSS selector/cascade dependency artifact; see
+  `docs/css/af9-selector-cascade-invalidation-dependencies.md`. It extracts
+  only AF5 active rules with supported declaration candidates, preserves keyed
+  type/ID/class/attribute-predicate/static-structural/relationship groups with
+  binary-search lookup plus composed paths to the rightmost subject, and
+  uses borrowed, lazily tokenized mutation candidates with allocation-free
+  Quirks folding rather than per-token owned strings. It degrades typed construction failures to
+  conservative metadata unavailability. Browser retains the opaque artifact
+  under document identity plus the existing stylesheet generation and passes
+  bounded committed old/final attribute/text facts captured directly from
+  committed and staged `DomStore` arenas back to CSS. Relevant
+  selector, inline-style, and `:empty` transitions map to the existing suffix
+  executor; irrelevant transitions may avoid Style work; structural changes
+  remain full. AD7 remains downstream of computed-style comparison. AF9 does
+  not add stable source-identity retained style entries, transactional topology
+  deltas, dependency-directed structural restyle, per-node dependency graphs,
+  new selector syntax, or targeted Layout/Paint execution; those structural
+  execution foundations remain Milestone AG scope.
+
 - AF6 implements the supported CSS Cascade Level 5 priority and sparse winner
   boundary; see
   `docs/css/af6-cascade-ordering-winner-selection-contract.md`. Inline style is
@@ -191,11 +210,11 @@ Milestone AF foundation status:
   consumed by Browser/runtime. AF1 does not claim full selector coverage,
   media-query evaluation, custom properties, animations, transitions, CSSOM,
   `getComputedStyle()`, or JavaScript-facing style mutation.
-- AF4e now supplies correct conservative selector invalidation for the complete
-  supported AF4 subset. Reverse selector-dependency indexing and targeted or
-  fine-grained invalidation remain future CSS-owned optimization work.
-  Browser/runtime can consume a future richer plan without learning selector
-  semantics.
+- AF4e supplies the neutral publication/opaque plan boundary for the complete
+  supported AF4 subset. AF9 now supplies keyed CSS-owned dependency extraction
+  and conservative no-op/suffix/full classification. Identity-directed
+  structural execution and per-node dependency graphs remain future work;
+  Browser/runtime still does not learn selector semantics.
 - AF2 completes the existing Milestone P selector AST/parser foundation and
   adds CSS-owned selector diagnostic normalization plus model-boundary
   projection into the shared syntax diagnostic transport. AF2 does not claim
@@ -231,11 +250,12 @@ Milestone AF foundation status:
   `docs/css/af4d-tree-structural-pseudo-class-matching.md`. It includes
   ASCII-case-insensitive keyword classification, legacy single-colon
   pseudo-element diagnostics, truthful A/B/C specificity, parser-backed
-  matching, and conservative full-document text invalidation. Browser advances
+  matching, and the original conservative full-document text invalidation
+  baseline, now refined by AF9's active `:empty` dependency lookup. Browser advances
   its retained style-input generation only when CSS returns `Some(plan)`, while
   text remains independent direct Layout input. Dynamic/functional pseudos,
-  pseudo-elements, selector escape decoding, dependency indexing, and
-  fine-grained text invalidation remain gaps.
+  pseudo-elements, selector escape decoding, and identity-directed structural
+  invalidation remain gaps.
 - AF4c implements CSS-owned HTML host-language comparison for the already
   supported selector subset; see
   `docs/css/af4c-html-host-language-selector-comparison.md`. HTML type and
@@ -310,8 +330,9 @@ Major missing families remain:
 - selectors and media: broad selector coverage, pseudo-classes,
   pseudo-elements, attribute-selector `i`/`s` modifiers, namespace selectors,
   standards-conformant selector escape decoding, XML-document matching,
-  dependency-aware/targeted selector invalidation and reverse selector
-  dependency indexing, media queries, and container queries
+  identity-directed/targeted selector invalidation and per-node reverse
+  dependency graphs beyond AF9's owned selector index, media queries, and
+  container queries
 - custom properties and variables
 - animations and transitions
 - CSS Values and Units beyond the current narrow subset

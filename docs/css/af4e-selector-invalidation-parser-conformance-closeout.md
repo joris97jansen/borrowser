@@ -155,18 +155,20 @@ Viewport, resource, and input-state contracts are unchanged.
 
 ## Conservative selector invalidation
 
-CSS classifies the aggregate fact set once. Document replacement, topology,
-text, or unclassified facts currently produce full-document Style
-invalidation. A surviving attribute identity can retain the established
-document-order suffix plan; an attribute mutation with no surviving identity
-falls back to full-document. Allocation or template association alone is
-style-neutral because it does not alter the published selector-visible tree.
+AF4e established the aggregate neutral-fact and opaque-plan boundary. AF9 now
+refines its temporary attribute/text scopes with an owned CSS dependency
+artifact and exact committed old-to-final mutation details. Relevant live
+ID/class/attribute or inline-style transitions receive the established suffix
+plan. A text whitespace-contribution transition receives a parent suffix only
+when the active artifact contains `:empty`; irrelevant attribute/text changes
+can receive no Style plan. Missing, incompatible, or incomplete proof remains
+full-document.
 
-Text is full-document because `:empty` depends on ordinary direct text and no
-reverse selector-dependency index exists. The scope is conservatively broad
-but semantically correct. The neutral text identities remain available for a
-future targeted CSS classifier; Browser does not inspect stylesheets or test
-for `:empty`.
+Document replacement, topology/order, and unclassified facts remain
+full-document. Allocation or template association alone remains style-neutral.
+Browser preserves the AF4e coarse facts and intrinsic requests but does not
+inspect dependencies or test for `:empty`. See
+`docs/css/af9-selector-cascade-invalidation-dependencies.md`.
 
 ## Parser-backed conformance
 
@@ -285,9 +287,9 @@ No future cascade-winner ordering work is required to close AF4.
 
 ## Deliberate remaining gaps
 
-AF4e does not add reverse selector-dependency indexing, targeted or
-fine-grained selector invalidation, structural dependency graphs,
-candidate-rule indexing, selector caches, bloom filters, `:nth-child()` or new
+AF4e itself did not add dependency indexing. AF9 adds an owned keyed selector
+dependency artifact, but the following remain gaps: targeted structural execution, per-node dependency
+graphs, candidate-rule indexing, selector caches, bloom filters, `:nth-child()` or new
 functional pseudos, dynamic pseudo state, pseudo-elements, namespace selector
 syntax, attribute `i`/`s` modifiers, broader escape decoding, cascade-winner
 ordering, CSSOM, JavaScript mutation APIs, or selector semantics outside CSS.
