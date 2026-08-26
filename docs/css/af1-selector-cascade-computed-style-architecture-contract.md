@@ -404,6 +404,9 @@ AF1 does not implement:
 AF4e refinement: AF1's original broad pseudo-class non-goal is narrowed by the
 typed tree-structural subset documented in
 `af4d-tree-structural-pseudo-class-matching.md`. Dynamic and functional
-pseudos, pseudo-elements, dependency indexing, and fine-grained invalidation
-remain unsupported. Text changes conservatively receive a full CSS plan while
-retaining their independent direct Layout consequence.
+pseudos and pseudo-elements remain unsupported. AF9 now supplies bounded,
+CSS-owned dependency indexing for active supported selector/cascade inputs;
+per-node reverse dependency graphs, identity-directed structural execution,
+and fine-grained structural invalidation remain unsupported. AF9 may classify
+active `:empty` text transitions for suffix recomputation, while text retains
+its independent direct Layout consequence.
