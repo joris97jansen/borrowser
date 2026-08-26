@@ -115,6 +115,17 @@ Architecture and foundation status:
 
 Milestone AF foundation status:
 
+- AF10 closes Milestone AF as a selector, specificity, cascade, inheritance,
+  computed-style, and selector-dependency foundation for the documented
+  supported subset; see
+  `docs/css/af10-selector-cascade-computed-style-conformance-closeout.md`.
+  The central evidence index at `crates/css/tests/fixtures/README.md` maps the
+  authoritative semantic tests, versioned debug snapshots, bounded
+  diagnostics, AE parser-backed representative documents, and Browser render
+  handoff tests. AF10 adds no CSS semantics and does not claim broad selector,
+  property, media-query, custom-property, animation, CSSOM, JavaScript API, or
+  WPT conformance.
+
 - AF8 closes the computed-style document artifact and downstream authority
   boundary for the supported property subset; see
   `docs/css/af8-computed-style-document-artifact-contract.md`.
@@ -199,8 +210,8 @@ Milestone AF foundation status:
   style. Non-empty
   stylesheet `media` attributes and internal conditional at-rules currently
   fail closed. Real media queries remain AQ work; complete HTML stylesheet-set
-  processing remains AJ work; final AF cascade/computed-style closure remains
-  subsequent AF scope.
+  processing remains AJ work. AF10 closes the documented AF foundation without
+  turning those deferred features into supported cascade inputs.
 
 - AF1 defines the CSS-owned selector, cascade, computed-style, and style-input
   invalidation architecture contract; see
@@ -334,7 +345,13 @@ Major missing families remain:
   dependency graphs beyond AF9's owned selector index, media queries, and
   container queries
 - custom properties and variables
-- animations and transitions
+- cascade and scoping: cascade layers and layer ordering, rollback semantics,
+  `revert`, `revert-layer`, CSS `@scope`, scope proximity, scoped styles,
+  Shadow DOM, encapsulation ordering, and runtime user stylesheet management
+- animations and transitions as declaration sources or runtime systems
+- style systems and APIs: general style sharing, advanced selector
+  invalidation beyond AF9's bounded dependency artifact, CSSOM,
+  `getComputedStyle()`, and JavaScript-facing style APIs
 - CSS Values and Units beyond the current narrow subset
 - CSS Color beyond the current narrow keyword and hex subset
 - WPT-backed broad CSS conformance
