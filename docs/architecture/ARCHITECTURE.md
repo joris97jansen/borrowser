@@ -63,6 +63,20 @@ Each crate is intentionally small, isolated, and testable.
 
 As a rule of thumb: `layout` stays UI/input-agnostic, while interactive behaviors (rendering + input routing for things like text controls) live in `gfx` (e.g. `<textarea>` caret/selection helpers in `gfx::textarea`).
 
+## Conformance Testing Architecture
+
+Milestone AG's federated conformance architecture and current no-JavaScript
+scope are defined in
+[`docs/conformance/ag1-conformance-harness-architecture-no-js-scope.md`](../conformance/ag1-conformance-harness-architecture-no-js-scope.md).
+Tests/tooling owns cross-subsystem discovery, classification, selection,
+delegation, accounting, reporting, and external-artifact bookkeeping, while
+HTML, CSS, Layout, Paint, and Browser/runtime retain their production semantics
+and canonical observations. The current deterministic DOM, style, Layout,
+Paint-operation, and rendering-phase snapshots are semantic or structural
+regression surfaces, not pixel/raster WPT reftest support. AG1 defines this
+contract only; it does not implement a generic harness or claim broad web
+platform compatibility.
+
 ---
 
 # 📤 Message Bus (CoreCommand / CoreEvent)
