@@ -172,7 +172,7 @@ Milestone AF foundation status:
   not add stable source-identity retained style entries, transactional topology
   deltas, dependency-directed structural restyle, per-node dependency graphs,
   new selector syntax, or targeted Layout/Paint execution; those structural
-  execution foundations remain Milestone AG scope.
+  execution foundations remain future rendering/runtime work.
 
 - AF6 implements the supported CSS Cascade Level 5 priority and sparse winner
   boundary; see
@@ -355,6 +355,35 @@ Major missing families remain:
 - CSS Values and Units beyond the current narrow subset
 - CSS Color beyond the current narrow keyword and hex subset
 - WPT-backed broad CSS conformance
+
+## Conformance Infrastructure
+
+Current architecture status:
+
+- AG1 defines the federated conformance ownership model, orthogonal
+  classification/expectation/selection/stability/attempt/outcome dimensions,
+  current no-JavaScript capability boundary, semantic-reference terminology,
+  cross-engine evidence boundary, conformance accounting rules, and normal-CI
+  versus extended-lane eligibility criteria; see
+  `docs/conformance/ag1-conformance-harness-architecture-no-js-scope.md`.
+- AG orchestration is defined as delegating to subsystem adapters or existing
+  canonical runners and consuming subsystem-owned observations. In particular,
+  `html-test-support` remains the canonical parser-fixture runner and
+  `html::conformance` remains the parser-owned observation boundary.
+- AG1 is architecture-only. It does not complete Milestone AG or claim broad
+  WPT, HTML, CSS, rendering, or browser compatibility.
+
+Missing or incomplete:
+
+- system-wide conformance discovery and classification implementation
+- serialized AG metadata and normalized result models
+- subsystem adapters and delegation infrastructure
+- deterministic aggregate reporting and conformance summaries
+- fixture migration or broader pinned external-source adapters
+- cross-engine capture and artifact comparison workflows
+- rendered-output reftest and pixel/raster comparison infrastructure
+- JavaScript, DOM API, event-loop, WebDriver, CSSOM, interaction, navigation,
+  storage, and other broader browser-platform conformance
 
 ## Layout
 
