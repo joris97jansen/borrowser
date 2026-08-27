@@ -372,11 +372,19 @@ Current architecture status:
   `html::conformance` remains the parser-owned observation boundary.
 - AG1 is architecture-only. It does not complete Milestone AG or claim broad
   WPT, HTML, CSS, rendering, or browser compatibility.
+- AG2 implements the test/tooling-owned fixture inventory foundation in
+  `conformance-test-support`: strict versioned bundle descriptors, explicit
+  stable logical IDs, deterministic and portable discovery, typed deterministic
+  validation diagnostics, and a canonical checked-in manifest. The contract is
+  `docs/conformance/ag2-fixture-inventory-manifest-contract.md`.
+- AG2 seed fixtures prove inventory registration only. They do not claim
+  execution, pass status, semantic comparison, WPT coverage, raster support, or
+  browser conformance.
 
 Missing or incomplete:
 
-- system-wide conformance discovery and classification implementation
-- serialized AG metadata and normalized result models
+- execution-oriented classification, selection, and subsystem delegation
+- normalized AG expectation and result models
 - subsystem adapters and delegation infrastructure
 - deterministic aggregate reporting and conformance summaries
 - fixture migration or broader pinned external-source adapters

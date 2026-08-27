@@ -1,0 +1,11 @@
+format = "borrowser-conformance-fixture-v1"
+id = "css-cascade-basic-author-rule"
+scope = "static-html-css-no-js"
+observation = "css-cascade"
+test_path = "test.css"
+
+[source]
+kind = "native"
+
+[metadata]
+description = "Inventory seed for a CSS cascade observation."

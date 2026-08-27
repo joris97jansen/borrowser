@@ -1,0 +1,231 @@
+# AG2 conformance fixture inventory and manifest contract
+
+## Status and ownership
+
+This document is the normative AG2 contract for repository-owned conformance
+fixture discovery, validation, stable identity, and manifest generation. It
+implements the inventory foundation described by the AG1 architecture contract;
+AG1 remains authoritative where this document is silent.
+
+The test/tooling-only `conformance-test-support` crate owns generic inventory
+bookkeeping. It has no dependency on HTML, CSS, Layout, GFX/Paint,
+Browser/runtime, or `html-test-support`, and production crates do not depend on
+it. Subsystems continue to own browser semantics and their canonical
+observations. `html-test-support` remains the canonical parser-fixture runner.
+AG2 discovers declarations; it neither executes fixtures nor duplicates a
+subsystem implementation.
+
+## Root and bundle layout
+
+The inventory root is `tests/conformance/fixtures/`. Grouping directories may
+organize bundles for reviewers, but their names and file extensions never
+define identity, scope, observation, provenance, capability, or executability.
+
+A directory containing `fixture.toml` is one logical fixture bundle and one
+discovery leaf. Discovery does not register descendant bundles. It separately
+integrity-scans every descendant so nested descriptors and unsafe content cannot
+hide below a discovered bundle.
+
+V1 bundle contents are default-deny:
+
+- `fixture.toml` is required and authoritative;
+- `test_path` names one required regular payload file;
+- optional `[reference].path` names one required regular reference file;
+- subdirectories are permitted only to contain those declared files;
+- every other regular file is rejected as undeclared;
+- nested `fixture.toml` files, symlinks, non-regular entries, and names outside
+  the V1 portable component grammar are rejected.
+
+Assets or resources beyond these declarations require a future versioned schema
+change. Files outside a bundle are invalid rather than implicit fixtures.
+
+Fixture payload bytes are opaque to AG2. Discovery verifies filesystem shape but
+does not read, decode, normalize, parse, or hash payloads. In particular,
+extensions do not establish a text contract; CRLF, lone CR, invalid UTF-8, and
+other exact byte sequences remain unchanged. Only infrastructure-owned
+`fixture.toml`, the generated manifest, and documentation have an LF policy.
+
+## Versioned descriptor
+
+Every bundle uses this strict V1 shape:
+
+```toml
+format = "borrowser-conformance-fixture-v1"
+id = "stable-logical-id"
+scope = "static-html-css-no-js"
+observation = "dom-tree"
+test_path = "test.html"
+
+[source]
+kind = "native"
+
+[reference]
+kind = "semantic"
+path = "reference.html"
+
+[metadata]
+description = "A concise inventory description."
+```
+
+`[reference]` is optional; every other shown field is required. Unknown fields
+are errors at every table level. Schema evolution uses a new explicit `format`
+value and parser, never permissive field acceptance.
+
+The validation pipeline is:
+
+```text
+versioned serialized descriptor
+  -> strict TOML deserialization
+  -> typed semantic and path validation
+  -> ValidatedInventory
+  -> ConformanceManifest
+  -> canonical TOML bytes
+```
+
+No manifest can be built from an unvalidated serialized descriptor.
+
+## Stable logical identity
+
+`id` is an explicit `TestId`, not a filesystem identity. Its V1 grammar is 1 to
+128 ASCII bytes of lowercase kebab case: it begins with `a-z`; subsequent
+characters are `a-z`, `0-9`, or single separating hyphens; it cannot end with a
+hyphen or contain consecutive hyphens. Examples are
+`html-tokenizer-basic-document` and `css-cascade-basic-author-rule`.
+
+IDs remain stable when bundles or payloads are reorganized. They are never
+derived from paths, checkout locations, content hashes, timestamps, random
+values, filesystem metadata, or provenance identity. Exact duplicate IDs and
+ASCII case-folding collisions are repository errors. A case-unsafe ID is also
+invalid independently, which prevents aliases on case-insensitive hosts.
+
+## Independent inventory axes
+
+`scope = "static-html-css-no-js"` says only that the fixture is authored for
+Borrowser's named static HTML/CSS, no-JavaScript conformance domain. It does not
+state capability availability, harness readiness, execution eligibility,
+expectation, lane selection, stability, execution-attempt state, or outcome.
+Those remain independent AG concepts and are not implemented in AG2.
+
+`observation` declares the subsystem-owned surface a later adapter may observe:
+
+- `html-tokenizer`
+- `html-tree-construction`
+- `dom-tree`
+- `css-parsing`
+- `css-selectors`
+- `css-cascade`
+- `computed-style`
+- `layout-geometry`
+- `paint-operations`
+- `browser-runtime-semantic`
+
+`source.kind` independently records provenance. V1 supports `native` for an
+in-repository purpose-built fixture and `controlled-static-page` for an
+in-repository controlled real-page-style source. A controlled static page is
+not an observation category. V1 has no `SourceForm`: native provenance alone
+does not define an independent authored test form, and speculative WPT or
+external formats do not belong in AG2.
+
+An optional `[reference]` records only a declared relation. `semantic` denotes
+equivalence at a later subsystem-owned semantic observation; `structural`
+denotes equivalence at a later subsystem-owned structural observation. The
+relation combines independently with `observation`. It does not implement or
+claim comparison behavior, rendered-output/WPT reftests, screenshots, raster or
+pixel equality, or fuzzy-image support.
+
+## Deterministic discovery and diagnostics
+
+Discovery is iterative. At each directory it materializes entries, converts
+names to UTF-8, and sorts them before processing. A directory with
+`fixture.toml` registers one logical bundle and begins a separate iterative
+integrity scan of that bundle's full descendant tree. A directory without a
+descriptor is only grouping; regular files there produce a missing-descriptor
+diagnostic. The descriptor and every declared path must be regular files.
+
+One V1 component grammar applies to every organizational directory, bundle
+directory, descendant directory, payload filename, reference filename, and
+`fixture.toml` beneath the fixture root. A component is 1 to 128 ASCII bytes,
+begins and ends with lowercase `a-z` or `0-9`, and otherwise contains only
+lowercase `a-z`, `0-9`, `-`, `_`, or `.`. Consecutive dots are forbidden. The
+basename before the first dot cannot be a Windows device name: `con`, `prn`,
+`aux`, `nul`, `com1` through `com9`, or `lpt1` through `lpt9`.
+
+The grammar excludes uppercase aliases, Unicode normalization and case-folding
+ambiguity, control characters, backslashes, colons, platform-reserved
+punctuation, leading or trailing dots/spaces, and `.`/`..` semantics by
+construction. Borrowser does not emulate host filesystem case folding. Both
+discovered names and descriptor-declared relative paths use the same component
+validator. Serialized repository-relative paths join validated components with
+`/`; traversal outside the fixture bundle and symlinks are rejected.
+
+Discovery never follows a symlink. Every `fixture.toml` read is limited to 64
+KiB plus one sentinel byte; observing the sentinel produces
+`DescriptorTooLarge`, never a TOML diagnostic. The reader cannot allocate or
+consume materially beyond that bound. Fixture payload bytes are not loaded.
+
+Validation collects independent errors where practical. Diagnostics carry a
+stable repository-relative path and typed `InventoryDiagnosticKind`; final
+ordering is path, diagnostic-kind rank, then stable typed detail. Filesystem
+enumeration order therefore cannot select the visible error. Root failures that
+make safe traversal impossible stop discovery before bundle validation.
+
+## Canonical checked-in manifest
+
+`tests/conformance/manifest.toml` is a generated review artifact. Its only
+source of truth is the set of validated bundle-local `fixture.toml` files.
+Manifest V1 begins with:
+
+```toml
+format = "borrowser-conformance-manifest-v1"
+```
+
+It then contains one `[[tests]]` record per logical ID, ordered bytewise by
+`TestId`. Required fields occur in this exact order: `id`, `fixture_path`,
+`test_path`, `metadata_path`, `scope`, `observation`, `source_kind`. Optional
+`reference_kind` and `reference_path` follow in that order. The descriptor path
+is the metadata path because `fixture.toml` is the single authoritative
+descriptor/metadata source.
+
+The generator fixes record order, field order, one blank line before each
+record, UTF-8 encoding, LF newlines, and one final newline. TOML string lexical
+encoding is delegated to the pinned `toml` crate's typed scalar serializer; AG2
+does not implement a quoting or escaping language. Golden tests cover quotes,
+backslashes, Unicode, tabs, newlines, layout, and exact bytes.
+
+The manifest deliberately contains no capabilities, readiness, eligibility,
+expectations, lanes, stability, attempt state, results, timestamps, mtimes,
+hashes, hostnames, checkout paths, locale data, environment data, execution
+adapters, or external-source identities. Repository paths always use `/`.
+
+Generation is all-or-nothing. Complete discovery and validation precede any
+output mutation. `--check` reads only and fails for a missing, stale, or invalid
+manifest. `--update` serializes complete bytes to an established same-directory
+temporary file, flushes and synchronizes it, revalidates that no output path
+component or target became a symlink, and atomically persists over the target
+using `tempfile`'s platform replacement implementation. A pre-persist failure
+leaves the prior valid manifest intact. This is a narrow checked-in-artifact
+replacement boundary, not a general filesystem transaction or directory-sync
+durability guarantee.
+
+The CLI accepts exactly no argument or `--check`, and `--update`. Unknown
+operations, additional arguments, and combinations such as `--check extra` are
+usage errors and do not mutate the repository.
+
+Use:
+
+```sh
+make update-conformance-manifest
+make check-conformance-manifest
+```
+
+CI can run the check target for byte-for-byte freshness without executing a
+fixture or selecting an AG execution lane.
+
+## Non-claims and deferred work
+
+The seed corpus proves only layout, descriptor parsing, discovery, validation,
+identity, reference declaration, and manifest generation. Fixture registration
+does not imply executability, pass status, standards conformance, WPT coverage,
+or browser compatibility. Execution and semantic adapters, result/expectation
+models, reporting, lane selection, imports, broad WPT coverage, cross-engine
+capture, and rendered/raster comparison belong to later Milestone AG issues.

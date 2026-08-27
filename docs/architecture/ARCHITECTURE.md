@@ -77,6 +77,14 @@ regression surfaces, not pixel/raster WPT reftest support. AG1 defines this
 contract only; it does not implement a generic harness or claim broad web
 platform compatibility.
 
+AG2 adds the tooling-owned, deterministic fixture inventory and checked-in
+manifest contract described in
+[`docs/conformance/ag2-fixture-inventory-manifest-contract.md`](../conformance/ag2-fixture-inventory-manifest-contract.md).
+The `conformance-test-support` crate validates untrusted bundle declarations and
+emits host-independent inventory bytes without depending on production engine
+crates. This inventory is registration only; execution, results, adapters,
+cross-engine comparison, and rendered/raster reftests remain unimplemented.
+
 ---
 
 # 📤 Message Bus (CoreCommand / CoreEvent)
