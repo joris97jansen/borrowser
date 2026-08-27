@@ -1,0 +1,11 @@
+format = "borrowser-conformance-fixture-v1"
+id = "dom-tree-basic-document"
+scope = "static-html-css-no-js"
+observation = "dom-tree"
+test_path = "test.html"
+
+[source]
+kind = "native"
+
+[metadata]
+description = "Inventory seed for a parser-created DOM tree observation."

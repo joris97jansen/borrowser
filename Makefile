@@ -6,6 +6,7 @@ CLIPPY_JOBS ?= 4
 CLIPPY_JOB_FLAG := $(if $(strip $(CLIPPY_JOBS)),-j $(CLIPPY_JOBS),)
 
 .PHONY: format fmt-check lint lint-html5 lint-html5-hardening test test-html5-runtime test-html5-parser-conformance test-html5-external-fixtures update-html5-external-fixtures test-html5-external-fixtures-extended test-html5-parser-fatal-failures test-html5-toggle compile-html5-benches compile-css-benches test-css-perf-guards test-css-alloc-guards test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-rawtext-script-regressions test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-html5-tokenizer-script-data-fuzz-corpus test-html5-tokenizer-script-data-fuzz-smoke test-html5-tokenizer-script-data-fuzz-long test-html5-tokenizer-rawtext-fuzz-corpus test-html5-tokenizer-rawtext-fuzz-smoke test-html5-tokenizer-rawtext-fuzz-long test-html5-tokenizer-rcdata-fuzz-corpus test-html5-tokenizer-rcdata-fuzz-smoke test-html5-tokenizer-rcdata-fuzz-long test-html5-tree-builder-token-fuzz-corpus test-html5-tree-builder-token-fuzz-smoke test-html5-tree-builder-token-fuzz-long test-html5-pipeline-fuzz-corpus test-html5-pipeline-regressions test-html5-pipeline-fuzz-smoke test-html5-pipeline-fuzz-long test-css-tokenizer-fuzz-corpus test-css-tokenizer-fuzz-smoke test-css-tokenizer-fuzz-long test-css-parser-fuzz-corpus test-css-parser-fuzz-smoke test-css-parser-fuzz-long test-css-selector-parser-fuzz-corpus test-css-selector-parser-fuzz-smoke test-css-selector-parser-fuzz-long test-css-selector-matching-fuzz-corpus test-css-selector-matching-fuzz-smoke test-css-selector-matching-fuzz-long test-css-cascade-fuzz-corpus test-css-cascade-fuzz-smoke test-css-cascade-fuzz-long test-css-values-fuzz-corpus test-css-values-fuzz-smoke test-css-values-fuzz-long test-css-fuzz-regressions print-css-fuzz-regression-summary print-html5-pipeline-regression-snapshot test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
+.PHONY: check-conformance-manifest update-conformance-manifest
 
 # Format all crates in place
 format:
@@ -35,6 +36,14 @@ lint-html5-hardening:
 # Run all tests
 test:
 	cargo test --workspace --lib --bins --tests --examples --locked
+
+# Verify that the checked-in AG conformance inventory is byte-current.
+check-conformance-manifest:
+	cargo run -p conformance-test-support --bin conformance-manifest --locked -- --check
+
+# Regenerate only the checked-in AG conformance inventory manifest.
+update-conformance-manifest:
+	cargo run -p conformance-test-support --bin conformance-manifest --locked -- --update
 
 # Run tests with the default HTML5 build mode
 test-html5-runtime:

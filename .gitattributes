@@ -2,3 +2,8 @@
 /crates/html/tests/fixtures/html5/conformance/**/input.bin -text
 /crates/html/tests/fixtures/html5/conformance/**/*.toml text eol=lf
 /crates/html/tests/fixtures/html5/conformance/**/*.txt text eol=lf
+/tests/conformance/fixtures/** -text
+/tests/conformance/fixtures/**/fixture.toml text eol=lf
+/tests/conformance/manifest.toml text eol=lf
+/tests/conformance/README.md text eol=lf
+/docs/conformance/ag2-fixture-inventory-manifest-contract.md text eol=lf

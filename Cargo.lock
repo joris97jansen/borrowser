@@ -442,6 +442,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "conformance-test-support"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tempfile",
+ "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

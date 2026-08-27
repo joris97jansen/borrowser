@@ -1,0 +1,11 @@
+format = "borrowser-conformance-fixture-v1"
+id = "layout-geometry-basic-block-flow"
+scope = "static-html-css-no-js"
+observation = "layout-geometry"
+test_path = "test.html"
+
+[source]
+kind = "native"
+
+[metadata]
+description = "Inventory seed for a Layout-owned geometry observation."

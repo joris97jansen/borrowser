@@ -1,0 +1,102 @@
+format = "borrowser-conformance-manifest-v1"
+
+[[tests]]
+id = "browser-controlled-static-page-basic"
+fixture_path = "tests/conformance/fixtures/pages/controlled-static-basic"
+test_path = "tests/conformance/fixtures/pages/controlled-static-basic/test.html"
+metadata_path = "tests/conformance/fixtures/pages/controlled-static-basic/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "browser-runtime-semantic"
+source_kind = "controlled-static-page"
+
+[[tests]]
+id = "computed-style-basic-author-rule"
+fixture_path = "tests/conformance/fixtures/css/computed-style-basic"
+test_path = "tests/conformance/fixtures/css/computed-style-basic/test.css"
+metadata_path = "tests/conformance/fixtures/css/computed-style-basic/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "computed-style"
+source_kind = "native"
+
+[[tests]]
+id = "css-cascade-basic-author-rule"
+fixture_path = "tests/conformance/fixtures/css/cascade-basic"
+test_path = "tests/conformance/fixtures/css/cascade-basic/test.css"
+metadata_path = "tests/conformance/fixtures/css/cascade-basic/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "css-cascade"
+source_kind = "native"
+
+[[tests]]
+id = "css-parsing-basic-stylesheet"
+fixture_path = "tests/conformance/fixtures/css/parsing-basic"
+test_path = "tests/conformance/fixtures/css/parsing-basic/test.css"
+metadata_path = "tests/conformance/fixtures/css/parsing-basic/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "css-parsing"
+source_kind = "native"
+
+[[tests]]
+id = "css-selectors-basic-stylesheet"
+fixture_path = "tests/conformance/fixtures/css/selectors-basic"
+test_path = "tests/conformance/fixtures/css/selectors-basic/test.css"
+metadata_path = "tests/conformance/fixtures/css/selectors-basic/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "css-selectors"
+source_kind = "native"
+
+[[tests]]
+id = "dom-tree-basic-document"
+fixture_path = "tests/conformance/fixtures/html/dom-tree-basic"
+test_path = "tests/conformance/fixtures/html/dom-tree-basic/test.html"
+metadata_path = "tests/conformance/fixtures/html/dom-tree-basic/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "dom-tree"
+source_kind = "native"
+
+[[tests]]
+id = "html-tokenizer-basic-document"
+fixture_path = "tests/conformance/fixtures/html/tokenizer-basic"
+test_path = "tests/conformance/fixtures/html/tokenizer-basic/test.html"
+metadata_path = "tests/conformance/fixtures/html/tokenizer-basic/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "html-tokenizer"
+source_kind = "native"
+
+[[tests]]
+id = "html-tree-construction-basic-document"
+fixture_path = "tests/conformance/fixtures/html/tree-construction-basic"
+test_path = "tests/conformance/fixtures/html/tree-construction-basic/test.html"
+metadata_path = "tests/conformance/fixtures/html/tree-construction-basic/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "html-tree-construction"
+source_kind = "native"
+
+[[tests]]
+id = "layout-geometry-basic-block-flow"
+fixture_path = "tests/conformance/fixtures/rendering/layout-geometry-basic"
+test_path = "tests/conformance/fixtures/rendering/layout-geometry-basic/test.html"
+metadata_path = "tests/conformance/fixtures/rendering/layout-geometry-basic/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "layout-geometry"
+source_kind = "native"
+
+[[tests]]
+id = "paint-operations-basic-background"
+fixture_path = "tests/conformance/fixtures/rendering/paint-operations-basic"
+test_path = "tests/conformance/fixtures/rendering/paint-operations-basic/test.html"
+metadata_path = "tests/conformance/fixtures/rendering/paint-operations-basic/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "paint-operations"
+source_kind = "native"
+
+[[tests]]
+id = "paint-semantic-reference-basic"
+fixture_path = "tests/conformance/fixtures/rendering/paint-semantic-reference-basic"
+test_path = "tests/conformance/fixtures/rendering/paint-semantic-reference-basic/test.html"
+metadata_path = "tests/conformance/fixtures/rendering/paint-semantic-reference-basic/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "paint-operations"
+source_kind = "native"
+reference_kind = "semantic"
+reference_path = "tests/conformance/fixtures/rendering/paint-semantic-reference-basic/reference.html"

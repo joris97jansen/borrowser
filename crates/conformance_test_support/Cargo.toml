@@ -1,0 +1,17 @@
+[package]
+name = "conformance-test-support"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+tempfile = "3"
+toml = { version = "0.9", features = ["display", "parse", "serde"] }
+
+[lib]
+name = "conformance_test_support"
+path = "src/lib.rs"
+
+[[bin]]
+name = "conformance-manifest"
+path = "src/bin/conformance_manifest.rs"
