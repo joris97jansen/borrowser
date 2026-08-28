@@ -1,17 +1,23 @@
-//! Deterministic inventory tooling for Borrowser conformance fixtures.
+//! Deterministic inventory and classification tooling for Borrowser conformance fixtures.
 //!
-//! This crate owns fixture discovery, inventory validation, and manifest
-//! generation. It does not execute fixtures or implement browser semantics.
+//! This crate owns fixture discovery, inventory validation, manifest
+//! generation, and expected-result metadata validation. It does not execute
+//! fixtures or implement browser semantics.
 
 mod descriptor;
 mod diagnostic;
 mod discovery;
+mod expected_results;
 mod manifest;
 mod model;
 mod write;
 
 pub use diagnostic::{InventoryDiagnostic, InventoryDiagnosticKind, InventoryErrors};
 pub use discovery::{InventoryRepository, discover_inventory};
+pub use expected_results::{
+    ExpectedResultsErrors, ValidatedExpectedResults, load_expected_results,
+    serialize_expected_results_summary,
+};
 pub use manifest::{
     CONFORMANCE_MANIFEST_FORMAT_V1, ConformanceManifest, build_manifest, generate_manifest_bytes,
     serialize_manifest,

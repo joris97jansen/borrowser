@@ -1,0 +1,184 @@
+format = "borrowser-conformance-expected-results-v1"
+granularity = "logical-test"
+
+[[tests]]
+id = "browser-controlled-static-page-basic"
+classification = "not-yet-classified"
+reason = "The runtime-semantic seed still needs an explicit AG observation contract and truthful viewport, text-measurement, and resource-environment requirements."
+references = [
+  { kind = "documentation", path = "docs/rendering/v5-explicit-runtime-render-orchestration-path.md" },
+  { kind = "documentation", path = "docs/rendering/ac10-retained-rendering-runtime-closeout.md" },
+]
+
+[[tests]]
+id = "computed-style-basic-author-rule"
+classification = "not-yet-classified"
+reason = "The AG2 bundle supplies CSS source but no target DOM element, parent/inheritance context, or authoritative expected computed-style value, so this logical observation is not sufficiently specified."
+references = [
+  { kind = "documentation", path = "docs/css/af10-selector-cascade-computed-style-conformance-closeout.md" },
+  { kind = "documentation", path = "docs/css/s9-property-system-computed-style-runtime-contract.md" },
+]
+
+[[tests]]
+id = "css-cascade-basic-author-rule"
+classification = "not-yet-classified"
+reason = "The AG2 bundle supplies author CSS but no target DOM element, matching results, competing declaration context, or authoritative expected cascade winner, so this logical observation is not sufficiently specified."
+references = [
+  { kind = "documentation", path = "docs/css/af10-selector-cascade-computed-style-conformance-closeout.md" },
+]
+
+[[tests]]
+id = "css-parsing-basic-stylesheet"
+classification = "classified"
+requirements = ["no-js", "requires-css-feature"]
+lane_exclusions = []
+references = [
+  { kind = "documentation", path = "docs/css/n8-parser-contract-cutover.md" },
+  { kind = "documentation", path = "docs/css/syntax-parser-contract.md" },
+]
+
+[tests.engine]
+availability = "available"
+
+[tests.harness]
+readiness = "not-ready"
+limitations = [
+  { kind = "missing-subsystem-adapter", reason = "AG does not yet delegate CSS syntax fixtures to the CSS-owned deterministic parse observation." },
+  { kind = "missing-expected-observation", reason = "An authoritative typed or snapshot expected parse observation has not yet been authored for this logical test." },
+  { kind = "missing-comparison-surface", reason = "AG does not yet compare a CSS-owned parse observation with an authored expected semantic value." },
+]
+
+[tests.environment]
+requirements = []
+
+[tests.expectation]
+kind = "expected-pass"
+
+[tests.stability]
+state = "not-yet-established"
+
+[[tests]]
+id = "css-selectors-basic-stylesheet"
+classification = "not-yet-classified"
+reason = "The AG2 bundle supplies stylesheet source but does not define whether the logical observation is selector parsing or selector matching and supplies no target DOM/matching context or authoritative expected value."
+references = [
+  { kind = "documentation", path = "docs/css/af10-selector-cascade-computed-style-conformance-closeout.md" },
+  { kind = "documentation", path = "docs/css/af2-selector-ast-and-parser.md" },
+]
+
+[[tests]]
+id = "dom-tree-basic-document"
+classification = "classified"
+requirements = ["no-js", "requires-html-parser-feature"]
+lane_exclusions = []
+references = [
+  { kind = "documentation", path = "docs/html5/ae14-html-parser-foundation-closeout.md" },
+  { kind = "documentation", path = "docs/html5/ae2-parser-created-dom-node-model.md" },
+]
+
+[tests.engine]
+availability = "available"
+
+[tests.harness]
+readiness = "not-ready"
+limitations = [
+  { kind = "missing-subsystem-adapter", reason = "AG does not yet delegate DOM-tree fixtures to the canonical parser-fixture runner and HTML-owned observation boundary." },
+  { kind = "missing-expected-observation", reason = "An authoritative expected parser-created DOM snapshot has not yet been authored for this logical test." },
+  { kind = "missing-comparison-surface", reason = "AG does not yet compare the HTML-owned canonical DOM observation with an authored expected semantic value." },
+]
+
+[tests.environment]
+requirements = []
+
+[tests.expectation]
+kind = "expected-pass"
+
+[tests.stability]
+state = "not-yet-established"
+
+[[tests]]
+id = "html-tokenizer-basic-document"
+classification = "classified"
+requirements = ["no-js", "requires-html-parser-feature"]
+lane_exclusions = []
+references = [
+  { kind = "documentation", path = "docs/html5/ae13-parser-conformance-regression-harness.md" },
+  { kind = "documentation", path = "docs/html5/ae14-html-parser-foundation-closeout.md" },
+]
+
+[tests.engine]
+availability = "available"
+
+[tests.harness]
+readiness = "not-ready"
+limitations = [
+  { kind = "missing-subsystem-adapter", reason = "AG does not yet delegate tokenizer fixtures to the canonical parser-fixture runner and HTML-owned observation boundary." },
+  { kind = "missing-expected-observation", reason = "An authoritative expected token stream has not yet been authored for this logical test." },
+  { kind = "missing-comparison-surface", reason = "AG does not yet compare the HTML-owned canonical token observation with an authored expected semantic value." },
+]
+
+[tests.environment]
+requirements = []
+
+[tests.expectation]
+kind = "expected-pass"
+
+[tests.stability]
+state = "not-yet-established"
+
+[[tests]]
+id = "html-tree-construction-basic-document"
+classification = "classified"
+requirements = ["no-js", "requires-html-parser-feature"]
+lane_exclusions = []
+references = [
+  { kind = "documentation", path = "docs/html5/ae13-parser-conformance-regression-harness.md" },
+  { kind = "documentation", path = "docs/html5/ae14-html-parser-foundation-closeout.md" },
+]
+
+[tests.engine]
+availability = "available"
+
+[tests.harness]
+readiness = "not-ready"
+limitations = [
+  { kind = "missing-subsystem-adapter", reason = "AG does not yet delegate tree-construction fixtures to the canonical parser-fixture runner and HTML-owned observation boundary." },
+  { kind = "missing-expected-observation", reason = "An authoritative expected tree-construction observation has not yet been authored for this logical test." },
+  { kind = "missing-comparison-surface", reason = "AG does not yet compare the HTML-owned canonical tree-construction observation with an authored expected semantic value." },
+]
+
+[tests.environment]
+requirements = []
+
+[tests.expectation]
+kind = "expected-pass"
+
+[tests.stability]
+state = "not-yet-established"
+
+[[tests]]
+id = "layout-geometry-basic-block-flow"
+classification = "not-yet-classified"
+reason = "The layout seed's truthful viewport and text-measurement environment requirements and AG geometry expectation are not yet specified."
+references = [
+  { kind = "documentation", path = "docs/rendering/w8-box-generation-formatting-debug-surfaces.md" },
+  { kind = "documentation", path = "docs/rendering/x3-width-height-resolution-supported-subset.md" },
+]
+
+[[tests]]
+id = "paint-operations-basic-background"
+classification = "not-yet-classified"
+reason = "The paint seed's truthful text-measurement environment requirements and AG paint-operation expectation are not yet specified."
+references = [
+  { kind = "documentation", path = "docs/rendering/aa8-paint-debug-visual-regression-surface.md" },
+  { kind = "documentation", path = "docs/rendering/aa9-paint-model-invariants-extension-points.md" },
+]
+
+[[tests]]
+id = "paint-semantic-reference-basic"
+classification = "not-yet-classified"
+reason = "The semantic paint reference still needs a truthful AG comparison contract and explicit rendering-environment requirements."
+references = [
+  { kind = "documentation", path = "docs/rendering/aa8-paint-debug-visual-regression-surface.md" },
+  { kind = "documentation", path = "docs/rendering/aa9-paint-model-invariants-extension-points.md" },
+]

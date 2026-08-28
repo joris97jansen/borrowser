@@ -229,3 +229,20 @@ does not imply executability, pass status, standards conformance, WPT coverage,
 or browser compatibility. Execution and semantic adapters, result/expectation
 models, reporting, lane selection, imports, broad WPT coverage, cross-engine
 capture, and rendered/raster comparison belong to later Milestone AG issues.
+
+## Relationship to AG3 classification metadata
+
+AG3 adds the separate human-authored
+`tests/conformance/expected-results.toml` registry described by
+[`ag3-expected-results-classification-contract.md`](ag3-expected-results-classification-contract.md).
+It reconciles one record per validated AG2 `TestId`, but it does not extend the
+fixture descriptor or generated manifest. `borrowser-conformance-fixture-v1`
+and `borrowser-conformance-manifest-v1` remain unchanged and continue to reject
+unknown AG3 fields.
+
+AG2 inventory truth supplies stable identity and the sole authoritative
+`ObservationSurface`. AG3 supplies independent classification, capability,
+harness, expectation, stability, environment-requirement, and inert lane-policy
+truth. Neither format is generated from the other. The AG3 primary subsystem
+owner is derived from AG2's observation, and expected-failure metadata does not
+duplicate that observation.
