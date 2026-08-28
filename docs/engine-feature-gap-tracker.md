@@ -380,13 +380,35 @@ Current architecture status:
 - AG2 seed fixtures prove inventory registration only. They do not claim
   execution, pass status, semantic comparison, WPT coverage, raster support, or
   browser conformance.
+- AG3 adds the separate strict, versioned, human-authored expected-result and
+  classification registry in `tests/conformance/expected-results.toml`; see
+  `docs/conformance/ag3-expected-results-classification-contract.md`. It
+  reconciles every discovered AG2 `TestId` explicitly and keeps classification
+  completeness, engine capability, harness readiness, expectation, stability,
+  environment requirements, and named lane exclusions orthogonal.
+- AG3 derives primary subsystem ownership from AG2's authoritative observation
+  surface and produces an ephemeral deterministic repository-metadata summary.
+  It does not persist environment availability or eligibility and does not
+  claim any seed is runnable. Four narrow parser/CSS-syntax capability
+  assertions are evidence-backed but remain harness-not-ready for missing
+  delegation, authored expected observations, and comparison infrastructure.
+  The V1 vocabulary separately preserves unsupported expectation representation
+  for cases where an authoritative expectation exists but cannot yet be encoded
+  truthfully.
+  Seven seeds remain explicitly not yet classified, including selector,
+  cascade, and computed-style bundles whose required DOM/target context is not
+  authored.
+- AG3 does not complete Milestone AG or claim broad WPT, HTML, CSS, rendering,
+  or browser conformance. It adds no runner, adapter, execution request,
+  observed result, lane execution, or production-engine behavior.
 
 Missing or incomplete:
 
-- execution-oriented classification, selection, and subsystem delegation
-- normalized AG expectation and result models
+- execution selection and subsystem delegation
+- normalized observed-result and expectation-evaluation models
 - subsystem adapters and delegation infrastructure
-- deterministic aggregate reporting and conformance summaries
+- deterministic execution-result reporting and aggregate conformance-progress
+  summaries beyond AG3's repository-metadata summary
 - fixture migration or broader pinned external-source adapters
 - cross-engine capture and artifact comparison workflows
 - rendered-output reftest and pixel/raster comparison infrastructure

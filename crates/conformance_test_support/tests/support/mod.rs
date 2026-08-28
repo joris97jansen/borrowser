@@ -37,6 +37,25 @@ impl TestRepository {
     pub fn repository(&self) -> conformance_test_support::InventoryRepository {
         conformance_test_support::InventoryRepository::new(self.root(), self.fixture_root())
     }
+
+    #[allow(dead_code)]
+    pub fn expected_results_path(&self) -> PathBuf {
+        self.root().join("tests/conformance/expected-results.toml")
+    }
+
+    #[allow(dead_code)]
+    pub fn write_expected_results(&self, contents: &str) {
+        fs::write(self.expected_results_path(), contents).expect("expected-results registry");
+    }
+
+    #[allow(dead_code)]
+    pub fn documentation(&self, relative: &str) {
+        let path = self.root().join(relative);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("documentation parent");
+        }
+        fs::write(path, "# Contract\n").expect("documentation file");
+    }
 }
 
 pub fn descriptor(id: &str, observation: &str, test_path: &str) -> String {
@@ -56,6 +75,7 @@ description = "Temporary inventory fixture."
     )
 }
 
+#[allow(dead_code)]
 pub fn descriptor_with_reference(
     id: &str,
     observation: &str,
