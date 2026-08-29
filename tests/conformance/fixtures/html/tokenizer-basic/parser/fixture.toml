@@ -1,0 +1,31 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "html-tokenizer-basic-document"
+
+[source]
+kind = "native"
+
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "fb91b5863b2d586d53db989dcc88eaeb8f78d6ba8c4d351b0a5ac31172efe592"
+
+[execution]
+reference_delivery = "whole"
+
+[execution.target]
+kind = "standalone-tokenizer"
+
+[[execution.deliveries]]
+name = "whole"
+unit = "unicode-scalars"
+strategy = "whole"
+
+[expectations]
+tokens = "tokens.txt"
+parse_errors = "parse-errors.txt"
+
+[disposition]
+status = "active"
+
+[metadata]
+description = "AG4 tokenizer seed adapted from the reviewed AE tokenizer-character-data fixture with an exact empty parse-error oracle."

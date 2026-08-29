@@ -64,7 +64,7 @@ AG is the system-wide owner of:
 - lane and run selection;
 - fixture, source, and provenance bookkeeping;
 - delegation to subsystem execution boundaries;
-- future normalized result collection;
+- normalized result collection for implemented adapters;
 - reporting and summaries; and
 - cross-engine artifact bookkeeping.
 
@@ -83,6 +83,14 @@ or styling, Layout, Paint, or Browser/runtime behavior. A subsystem adapter may
 translate orchestration requests and subsystem-owned results, but it must not
 reimplement algorithms, manufacture semantic precision, or create a second
 semantic truth path.
+
+AG4 realizes the first execution slice with a separate test/tooling
+`conformance-runner` crate. `conformance-test-support` remains the generic,
+engine-independent inventory/classification layer; `conformance-runner`
+depends downward on it and on `html-test-support`; `html-test-support` remains
+independent of AG and delegates to `html::conformance`. This is the future home
+for subsystem-neutral orchestration and additional adapters, but AG4 implements
+only the HTML parser adapter.
 
 The subsystem boundaries are:
 
@@ -121,6 +129,12 @@ An observed execution outcome exists only after an attempted execution. `Not
 attempted` is an execution-attempt state, not an observed outcome. Likewise,
 `flaky` is stability metadata derived from execution history or repetition; it
 is not an observed outcome.
+
+AG4 makes this invariant structural in its normalized model: the attempted
+branch owns exactly one terminal observed execution outcome, while the
+not-attempted branch cannot contain one. Typed evaluation information produced
+before a subsystem executor is invoked may be retained separately, but it is
+not relabeled as an observed execution outcome.
 
 Selection is relative to a named lane or concrete execution request. A test
 can be runnable, expected-failing, known-flaky, excluded from normal CI, and
@@ -198,11 +212,12 @@ an active fixture that completed, a matching expected failure, or a matching
 expected unsupported result. This is a parser-runner policy result, not a
 universal standards-conformance result.
 
-Future AG normalization must preserve the underlying expectation,
+AG4 parser normalization preserves the underlying expectation,
 engine/platform capability availability, harness executability, execution
 eligibility, execution-attempt state, and observed outcome instead of
 translating AE13's policy-level `Pass` directly into a conformance pass. AG1
-does not change AE13 code, types, fixture formats, or evaluation behavior.
+itself does not change AE13 behavior; AG4 consumes a narrow rich evaluation
+view derived from the same canonical AE execution/comparison path.
 
 ## Independent Classification Axes
 
@@ -552,6 +567,8 @@ runnable.
 - AG coordinates and accounts; engine subsystems execute and own semantics.
 - `html-test-support` remains the canonical parser-fixture runner.
 - `html::conformance` remains the parser-owned observation boundary.
+- Generic `conformance-test-support` remains engine-independent; subsystem
+  execution dependencies belong only in `conformance-runner` adapters.
 - Generic conformance code never duplicates parser, CSS, Layout, Paint, or
   Browser/runtime semantics.
 - Classification completeness, engine/platform capability availability,

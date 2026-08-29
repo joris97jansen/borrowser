@@ -389,3 +389,14 @@ V2 stable post-validation runner contradictions additionally include
 `strategy-schedule-contradiction`. The former is selected directly from the
 production typed delivery-error identity. Malformed declarations remain
 fixture validation failures, never runner contradictions.
+
+## AG4 package and evaluation use
+
+AG-owned parser packages embed one strict V2 declaration beneath the generic
+AG fixture V2 entry path and declare every input/sidecar file to AG's
+default-deny inventory. `html-test-support` still performs all V2 schema,
+path/hash, sidecar, target, delivery, comparison, and disposition validation.
+AG requires active disposition and consumes the rich result from one canonical
+`evaluate_fixture()` call; it never constructs `ValidatedFixtureSpec` or
+reruns after mismatch to recover the retained baseline. Native AG4 tokenizer
+and tree-construction packages use exact typed parse-error snapshots.

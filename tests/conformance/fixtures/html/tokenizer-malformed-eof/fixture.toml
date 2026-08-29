@@ -1,0 +1,15 @@
+format = "borrowser-conformance-fixture-v2"
+id = "html-tokenizer-malformed-eof"
+scope = "static-html-css-no-js"
+observation = "html-tokenizer"
+test_path = "parser/input.html"
+
+[source]
+kind = "native"
+
+[metadata]
+description = "Malformed tokenizer EOF recovery with exact tokens and typed parse errors across whole and split delivery."
+
+[execution_package]
+entry_path = "parser/fixture.toml"
+support_paths = ["parser/parse-errors.txt", "parser/tokens.txt"]

@@ -2,12 +2,14 @@ use serde::Deserialize;
 
 use crate::diagnostic::InventoryDiagnosticKind;
 use crate::model::{
-    CONFORMANCE_FIXTURE_FORMAT_V1, InventoryScope, ObservationSurface, ReferenceKind, SourceKind,
-    TestId, TestIdValidationError,
+    CONFORMANCE_FIXTURE_FORMAT_V1, CONFORMANCE_FIXTURE_FORMAT_V2, FixtureFormat, InventoryScope,
+    MAX_EXECUTION_SUPPORT_PATHS_V2, ObservationSurface, ReferenceKind, SourceKind, TestId,
+    TestIdValidationError,
 };
 
 #[derive(Clone, Debug)]
 pub(crate) struct ParsedDescriptor {
+    pub format: FixtureFormat,
     pub test_path: String,
     pub scope: InventoryScope,
     pub observation: ObservationSurface,
@@ -15,6 +17,13 @@ pub(crate) struct ParsedDescriptor {
     pub reference: Option<ParsedReference>,
     pub description: String,
     pub test_id: TestId,
+    pub execution_package: Option<ParsedExecutionPackage>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ParsedExecutionPackage {
+    pub entry_path: String,
+    pub support_paths: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -34,6 +43,27 @@ struct DescriptorV1 {
     source: SourceV1,
     reference: Option<ReferenceV1>,
     metadata: MetadataV1,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DescriptorV2 {
+    format: String,
+    id: String,
+    scope: String,
+    observation: String,
+    test_path: String,
+    source: SourceV1,
+    reference: Option<ReferenceV1>,
+    execution_package: ExecutionPackageV2,
+    metadata: MetadataV1,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExecutionPackageV2 {
+    entry_path: String,
+    support_paths: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -98,17 +128,21 @@ pub(crate) fn parse_descriptor(bytes: &[u8]) -> DescriptorParseResult {
         .get("format")
         .and_then(toml::Value::as_str)
         .unwrap_or("");
-    if format != CONFORMANCE_FIXTURE_FORMAT_V1 {
-        return DescriptorParseResult {
-            raw_id,
-            descriptor: None,
-            diagnostics: vec![InventoryDiagnosticKind::UnsupportedDescriptorVersion {
-                value: format.to_owned(),
-            }],
-        };
-    }
+    let fixture_format = match format {
+        CONFORMANCE_FIXTURE_FORMAT_V1 => FixtureFormat::V1,
+        CONFORMANCE_FIXTURE_FORMAT_V2 => FixtureFormat::V2,
+        _ => {
+            return DescriptorParseResult {
+                raw_id,
+                descriptor: None,
+                diagnostics: vec![InventoryDiagnosticKind::UnsupportedDescriptorVersion {
+                    value: format.to_owned(),
+                }],
+            };
+        }
+    };
 
-    let unknown_fields = unknown_fields(table);
+    let unknown_fields = unknown_fields(table, fixture_format);
     if !unknown_fields.is_empty() {
         return DescriptorParseResult {
             raw_id,
@@ -120,37 +154,68 @@ pub(crate) fn parse_descriptor(bytes: &[u8]) -> DescriptorParseResult {
         };
     }
 
-    let wire = match toml::from_str::<DescriptorV1>(text) {
-        Ok(wire) => wire,
-        Err(_) => {
-            return DescriptorParseResult {
-                raw_id,
-                descriptor: None,
-                diagnostics: vec![InventoryDiagnosticKind::InvalidDescriptorShape],
-            };
-        }
-    };
-    debug_assert_eq!(wire.format, CONFORMANCE_FIXTURE_FORMAT_V1);
-    validate_wire(wire)
+    match fixture_format {
+        FixtureFormat::V1 => match toml::from_str::<DescriptorV1>(text) {
+            Ok(wire) => {
+                debug_assert_eq!(wire.format, CONFORMANCE_FIXTURE_FORMAT_V1);
+                validate_wire(
+                    FixtureFormat::V1,
+                    wire.id,
+                    wire.scope,
+                    wire.observation,
+                    wire.test_path,
+                    wire.source,
+                    wire.reference,
+                    wire.metadata,
+                    None,
+                )
+            }
+            Err(_) => invalid_shape(raw_id),
+        },
+        FixtureFormat::V2 => match toml::from_str::<DescriptorV2>(text) {
+            Ok(wire) => {
+                debug_assert_eq!(wire.format, CONFORMANCE_FIXTURE_FORMAT_V2);
+                validate_wire(
+                    FixtureFormat::V2,
+                    wire.id,
+                    wire.scope,
+                    wire.observation,
+                    wire.test_path,
+                    wire.source,
+                    wire.reference,
+                    wire.metadata,
+                    Some(wire.execution_package),
+                )
+            }
+            Err(_) => invalid_shape(raw_id),
+        },
+    }
 }
 
-fn unknown_fields(table: &toml::Table) -> Vec<String> {
+fn invalid_shape(raw_id: Option<String>) -> DescriptorParseResult {
+    DescriptorParseResult {
+        raw_id,
+        descriptor: None,
+        diagnostics: vec![InventoryDiagnosticKind::InvalidDescriptorShape],
+    }
+}
+
+fn unknown_fields(table: &toml::Table, format: FixtureFormat) -> Vec<String> {
     let mut fields = Vec::new();
-    collect_unknown(
-        table,
-        "",
-        &[
-            "format",
-            "id",
-            "scope",
-            "observation",
-            "test_path",
-            "source",
-            "reference",
-            "metadata",
-        ],
-        &mut fields,
-    );
+    let mut root = vec![
+        "format",
+        "id",
+        "scope",
+        "observation",
+        "test_path",
+        "source",
+        "reference",
+        "metadata",
+    ];
+    if format == FixtureFormat::V2 {
+        root.push("execution_package");
+    }
+    collect_unknown(table, "", &root, &mut fields);
     if let Some(source) = table.get("source").and_then(toml::Value::as_table) {
         collect_unknown(source, "source.", &["kind"], &mut fields);
     }
@@ -159,6 +224,17 @@ fn unknown_fields(table: &toml::Table) -> Vec<String> {
     }
     if let Some(metadata) = table.get("metadata").and_then(toml::Value::as_table) {
         collect_unknown(metadata, "metadata.", &["description"], &mut fields);
+    }
+    if let Some(package) = table
+        .get("execution_package")
+        .and_then(toml::Value::as_table)
+    {
+        collect_unknown(
+            package,
+            "execution_package.",
+            &["entry_path", "support_paths"],
+            &mut fields,
+        );
     }
     fields.sort();
     fields
@@ -172,58 +248,63 @@ fn collect_unknown(table: &toml::Table, prefix: &str, allowed: &[&str], fields: 
     }
 }
 
-fn validate_wire(wire: DescriptorV1) -> DescriptorParseResult {
-    let raw_id = wire.id.clone();
+#[allow(clippy::too_many_arguments)]
+fn validate_wire(
+    format: FixtureFormat,
+    id: String,
+    scope_value: String,
+    observation_value: String,
+    test_path: String,
+    source: SourceV1,
+    reference_value: Option<ReferenceV1>,
+    metadata: MetadataV1,
+    execution_package: Option<ExecutionPackageV2>,
+) -> DescriptorParseResult {
+    let raw_id = id.clone();
     let mut diagnostics = Vec::new();
-    let test_id = match TestId::parse(&wire.id) {
+    let test_id = match TestId::parse(&id) {
         Ok(id) => Some(id),
         Err(TestIdValidationError::TooLong) => {
-            diagnostics.push(InventoryDiagnosticKind::TestIdTooLong {
-                value: wire.id.clone(),
-            });
+            diagnostics.push(InventoryDiagnosticKind::TestIdTooLong { value: id.clone() });
             None
         }
         Err(TestIdValidationError::CaseUnsafe) => {
-            diagnostics.push(InventoryDiagnosticKind::CaseUnsafeTestId {
-                value: wire.id.clone(),
-            });
+            diagnostics.push(InventoryDiagnosticKind::CaseUnsafeTestId { value: id.clone() });
             None
         }
         Err(TestIdValidationError::InvalidGrammar) => {
-            diagnostics.push(InventoryDiagnosticKind::InvalidTestId {
-                value: wire.id.clone(),
-            });
+            diagnostics.push(InventoryDiagnosticKind::InvalidTestId { value: id.clone() });
             None
         }
     };
-    let scope = match InventoryScope::parse(&wire.scope) {
+    let scope = match InventoryScope::parse(&scope_value) {
         Some(scope) => Some(scope),
         None => {
             diagnostics.push(InventoryDiagnosticKind::InvalidScope {
-                value: wire.scope.clone(),
+                value: scope_value.clone(),
             });
             None
         }
     };
-    let observation = match ObservationSurface::parse(&wire.observation) {
+    let observation = match ObservationSurface::parse(&observation_value) {
         Some(observation) => Some(observation),
         None => {
             diagnostics.push(InventoryDiagnosticKind::InvalidObservation {
-                value: wire.observation.clone(),
+                value: observation_value.clone(),
             });
             None
         }
     };
-    let source_kind = match SourceKind::parse(&wire.source.kind) {
+    let source_kind = match SourceKind::parse(&source.kind) {
         Some(kind) => Some(kind),
         None => {
             diagnostics.push(InventoryDiagnosticKind::InvalidSourceKind {
-                value: wire.source.kind.clone(),
+                value: source.kind.clone(),
             });
             None
         }
     };
-    let reference = wire.reference.and_then(|reference| {
+    let reference = reference_value.and_then(|reference| {
         ReferenceKind::parse(&reference.kind)
             .map(|kind| ParsedReference {
                 kind,
@@ -236,22 +317,38 @@ fn validate_wire(wire: DescriptorV1) -> DescriptorParseResult {
                 None
             })
     });
-    if wire.metadata.description.trim().is_empty() {
+    if metadata.description.trim().is_empty() {
         diagnostics.push(InventoryDiagnosticKind::EmptyDescription);
     }
+    let execution_package = execution_package.and_then(|package| {
+        if package.support_paths.len() > MAX_EXECUTION_SUPPORT_PATHS_V2 {
+            diagnostics.push(InventoryDiagnosticKind::TooManyExecutionSupportPaths {
+                declared: package.support_paths.len(),
+                maximum: MAX_EXECUTION_SUPPORT_PATHS_V2,
+            });
+            None
+        } else {
+            Some(ParsedExecutionPackage {
+                entry_path: package.entry_path,
+                support_paths: package.support_paths,
+            })
+        }
+    });
 
     let descriptor = match (test_id, scope, observation, source_kind) {
         (Some(test_id), Some(scope), Some(observation), Some(source_kind))
             if diagnostics.is_empty() =>
         {
             Some(ParsedDescriptor {
-                test_path: wire.test_path,
+                format,
+                test_path,
                 scope,
                 observation,
                 source_kind,
                 reference,
-                description: wire.metadata.description,
+                description: metadata.description,
                 test_id,
+                execution_package,
             })
         }
         _ => None,

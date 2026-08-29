@@ -1,11 +1,15 @@
-format = "borrowser-conformance-fixture-v1"
+format = "borrowser-conformance-fixture-v2"
 id = "html-tree-construction-basic-document"
 scope = "static-html-css-no-js"
 observation = "html-tree-construction"
-test_path = "test.html"
+test_path = "parser/input.html"
 
 [source]
 kind = "native"
 
 [metadata]
-description = "Inventory seed for an HTML tree-construction observation."
+description = "Reviewed implicit-body recovery with exact tree, parse-error, and document-mode expectations."
+
+[execution_package]
+entry_path = "parser/fixture.toml"
+support_paths = ["parser/document-mode.txt", "parser/parse-errors.txt", "parser/tree.txt"]

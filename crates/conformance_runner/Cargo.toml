@@ -1,0 +1,25 @@
+[package]
+name = "conformance-runner"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+html-parser = ["dep:html-test-support"]
+
+[dependencies]
+conformance-test-support = { path = "../conformance_test_support" }
+html-test-support = { path = "../html_test_support", features = ["parser-fixtures"], optional = true }
+
+[dev-dependencies]
+serde_json = "1"
+tempfile = "3"
+
+[lib]
+name = "conformance_runner"
+path = "src/lib.rs"
+
+[[bin]]
+name = "conformance-runner"
+path = "src/bin/conformance_runner.rs"
+required-features = ["html-parser"]

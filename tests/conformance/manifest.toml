@@ -1,7 +1,8 @@
-format = "borrowser-conformance-manifest-v1"
+format = "borrowser-conformance-manifest-v2"
 
 [[tests]]
 id = "browser-controlled-static-page-basic"
+fixture_format = "borrowser-conformance-fixture-v1"
 fixture_path = "tests/conformance/fixtures/pages/controlled-static-basic"
 test_path = "tests/conformance/fixtures/pages/controlled-static-basic/test.html"
 metadata_path = "tests/conformance/fixtures/pages/controlled-static-basic/fixture.toml"
@@ -11,6 +12,7 @@ source_kind = "controlled-static-page"
 
 [[tests]]
 id = "computed-style-basic-author-rule"
+fixture_format = "borrowser-conformance-fixture-v1"
 fixture_path = "tests/conformance/fixtures/css/computed-style-basic"
 test_path = "tests/conformance/fixtures/css/computed-style-basic/test.css"
 metadata_path = "tests/conformance/fixtures/css/computed-style-basic/fixture.toml"
@@ -20,6 +22,7 @@ source_kind = "native"
 
 [[tests]]
 id = "css-cascade-basic-author-rule"
+fixture_format = "borrowser-conformance-fixture-v1"
 fixture_path = "tests/conformance/fixtures/css/cascade-basic"
 test_path = "tests/conformance/fixtures/css/cascade-basic/test.css"
 metadata_path = "tests/conformance/fixtures/css/cascade-basic/fixture.toml"
@@ -29,6 +32,7 @@ source_kind = "native"
 
 [[tests]]
 id = "css-parsing-basic-stylesheet"
+fixture_format = "borrowser-conformance-fixture-v1"
 fixture_path = "tests/conformance/fixtures/css/parsing-basic"
 test_path = "tests/conformance/fixtures/css/parsing-basic/test.css"
 metadata_path = "tests/conformance/fixtures/css/parsing-basic/fixture.toml"
@@ -38,6 +42,7 @@ source_kind = "native"
 
 [[tests]]
 id = "css-selectors-basic-stylesheet"
+fixture_format = "borrowser-conformance-fixture-v1"
 fixture_path = "tests/conformance/fixtures/css/selectors-basic"
 test_path = "tests/conformance/fixtures/css/selectors-basic/test.css"
 metadata_path = "tests/conformance/fixtures/css/selectors-basic/fixture.toml"
@@ -47,33 +52,91 @@ source_kind = "native"
 
 [[tests]]
 id = "dom-tree-basic-document"
+fixture_format = "borrowser-conformance-fixture-v2"
 fixture_path = "tests/conformance/fixtures/html/dom-tree-basic"
-test_path = "tests/conformance/fixtures/html/dom-tree-basic/test.html"
+test_path = "tests/conformance/fixtures/html/dom-tree-basic/parser/input.html"
 metadata_path = "tests/conformance/fixtures/html/dom-tree-basic/fixture.toml"
 scope = "static-html-css-no-js"
 observation = "dom-tree"
 source_kind = "native"
+execution_entry_path = "tests/conformance/fixtures/html/dom-tree-basic/parser/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/html/dom-tree-basic/parser/tree.txt"]
+
+[[tests]]
+id = "dom-tree-representative-static-document"
+fixture_format = "borrowser-conformance-fixture-v2"
+fixture_path = "tests/conformance/fixtures/html/dom-tree-representative-static"
+test_path = "tests/conformance/fixtures/html/dom-tree-representative-static/parser/input.html"
+metadata_path = "tests/conformance/fixtures/html/dom-tree-representative-static/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "dom-tree"
+source_kind = "native"
+execution_entry_path = "tests/conformance/fixtures/html/dom-tree-representative-static/parser/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/html/dom-tree-representative-static/parser/tree.txt"]
 
 [[tests]]
 id = "html-tokenizer-basic-document"
+fixture_format = "borrowser-conformance-fixture-v2"
 fixture_path = "tests/conformance/fixtures/html/tokenizer-basic"
-test_path = "tests/conformance/fixtures/html/tokenizer-basic/test.html"
+test_path = "tests/conformance/fixtures/html/tokenizer-basic/parser/input.html"
 metadata_path = "tests/conformance/fixtures/html/tokenizer-basic/fixture.toml"
 scope = "static-html-css-no-js"
 observation = "html-tokenizer"
 source_kind = "native"
+execution_entry_path = "tests/conformance/fixtures/html/tokenizer-basic/parser/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/html/tokenizer-basic/parser/parse-errors.txt", "tests/conformance/fixtures/html/tokenizer-basic/parser/tokens.txt"]
+
+[[tests]]
+id = "html-tokenizer-malformed-eof"
+fixture_format = "borrowser-conformance-fixture-v2"
+fixture_path = "tests/conformance/fixtures/html/tokenizer-malformed-eof"
+test_path = "tests/conformance/fixtures/html/tokenizer-malformed-eof/parser/input.html"
+metadata_path = "tests/conformance/fixtures/html/tokenizer-malformed-eof/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "html-tokenizer"
+source_kind = "native"
+execution_entry_path = "tests/conformance/fixtures/html/tokenizer-malformed-eof/parser/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/html/tokenizer-malformed-eof/parser/parse-errors.txt", "tests/conformance/fixtures/html/tokenizer-malformed-eof/parser/tokens.txt"]
 
 [[tests]]
 id = "html-tree-construction-basic-document"
+fixture_format = "borrowser-conformance-fixture-v2"
 fixture_path = "tests/conformance/fixtures/html/tree-construction-basic"
-test_path = "tests/conformance/fixtures/html/tree-construction-basic/test.html"
+test_path = "tests/conformance/fixtures/html/tree-construction-basic/parser/input.html"
 metadata_path = "tests/conformance/fixtures/html/tree-construction-basic/fixture.toml"
 scope = "static-html-css-no-js"
 observation = "html-tree-construction"
 source_kind = "native"
+execution_entry_path = "tests/conformance/fixtures/html/tree-construction-basic/parser/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/html/tree-construction-basic/parser/document-mode.txt", "tests/conformance/fixtures/html/tree-construction-basic/parser/parse-errors.txt", "tests/conformance/fixtures/html/tree-construction-basic/parser/tree.txt"]
+
+[[tests]]
+id = "html-tree-construction-malformed-recovery"
+fixture_format = "borrowser-conformance-fixture-v2"
+fixture_path = "tests/conformance/fixtures/html/tree-construction-malformed-recovery"
+test_path = "tests/conformance/fixtures/html/tree-construction-malformed-recovery/parser/input.html"
+metadata_path = "tests/conformance/fixtures/html/tree-construction-malformed-recovery/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "html-tree-construction"
+source_kind = "native"
+execution_entry_path = "tests/conformance/fixtures/html/tree-construction-malformed-recovery/parser/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/html/tree-construction-malformed-recovery/parser/document-mode.txt", "tests/conformance/fixtures/html/tree-construction-malformed-recovery/parser/parse-errors.txt", "tests/conformance/fixtures/html/tree-construction-malformed-recovery/parser/tree.txt"]
+
+[[tests]]
+id = "html-tree-construction-repeated-body-unavailable"
+fixture_format = "borrowser-conformance-fixture-v2"
+fixture_path = "tests/conformance/fixtures/html/tree-construction-repeated-body-unavailable"
+test_path = "tests/conformance/fixtures/html/tree-construction-repeated-body-unavailable/parser/input.html"
+metadata_path = "tests/conformance/fixtures/html/tree-construction-repeated-body-unavailable/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "html-tree-construction"
+source_kind = "native"
+execution_entry_path = "tests/conformance/fixtures/html/tree-construction-repeated-body-unavailable/parser/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/html/tree-construction-repeated-body-unavailable/parser/document-mode.txt", "tests/conformance/fixtures/html/tree-construction-repeated-body-unavailable/parser/parse-errors.txt", "tests/conformance/fixtures/html/tree-construction-repeated-body-unavailable/parser/tree.txt"]
 
 [[tests]]
 id = "layout-geometry-basic-block-flow"
+fixture_format = "borrowser-conformance-fixture-v1"
 fixture_path = "tests/conformance/fixtures/rendering/layout-geometry-basic"
 test_path = "tests/conformance/fixtures/rendering/layout-geometry-basic/test.html"
 metadata_path = "tests/conformance/fixtures/rendering/layout-geometry-basic/fixture.toml"
@@ -83,6 +146,7 @@ source_kind = "native"
 
 [[tests]]
 id = "paint-operations-basic-background"
+fixture_format = "borrowser-conformance-fixture-v1"
 fixture_path = "tests/conformance/fixtures/rendering/paint-operations-basic"
 test_path = "tests/conformance/fixtures/rendering/paint-operations-basic/test.html"
 metadata_path = "tests/conformance/fixtures/rendering/paint-operations-basic/fixture.toml"
@@ -92,6 +156,7 @@ source_kind = "native"
 
 [[tests]]
 id = "paint-semantic-reference-basic"
+fixture_format = "borrowser-conformance-fixture-v1"
 fixture_path = "tests/conformance/fixtures/rendering/paint-semantic-reference-basic"
 test_path = "tests/conformance/fixtures/rendering/paint-semantic-reference-basic/test.html"
 metadata_path = "tests/conformance/fixtures/rendering/paint-semantic-reference-basic/fixture.toml"

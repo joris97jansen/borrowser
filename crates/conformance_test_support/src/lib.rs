@@ -15,15 +15,22 @@ mod write;
 pub use diagnostic::{InventoryDiagnostic, InventoryDiagnosticKind, InventoryErrors};
 pub use discovery::{InventoryRepository, discover_inventory};
 pub use expected_results::{
-    ExpectedResultsErrors, ValidatedExpectedResults, load_expected_results,
-    serialize_expected_results_summary,
+    ClassificationView, ClassifiedExpectedResultView, EngineCapabilityKind, EngineCapabilityView,
+    EnvironmentRequirementKind, EnvironmentRequirementView, ExecutionBlocker, ExecutionEligibility,
+    ExecutionEnvironmentAssessment, ExpectationView, ExpectedFailureClassification,
+    ExpectedResultView, ExpectedResultsErrors, HarnessLimitationKind, HarnessLimitationView,
+    HarnessLimitationViews, HarnessReadinessView, LaneExclusionView, LanePolicyScope,
+    MissingCapabilityView, MissingCapabilityViews, RequirementTag, StabilityView, SubsystemOwner,
+    UnresolvedPrerequisite, ValidatedExpectedResults, evaluate_execution_eligibility,
+    load_expected_results, serialize_expected_results_summary,
 };
 pub use manifest::{
-    CONFORMANCE_MANIFEST_FORMAT_V1, ConformanceManifest, build_manifest, generate_manifest_bytes,
-    serialize_manifest,
+    CONFORMANCE_MANIFEST_FORMAT_V1, CONFORMANCE_MANIFEST_FORMAT_V2, ConformanceManifest,
+    build_manifest, generate_manifest_bytes, serialize_manifest,
 };
 pub use model::{
-    CONFORMANCE_FIXTURE_FORMAT_V1, InventoryScope, MAX_DESCRIPTOR_BYTES, ObservationSurface,
+    CONFORMANCE_FIXTURE_FORMAT_V1, CONFORMANCE_FIXTURE_FORMAT_V2, ExecutionPackage, FixtureFormat,
+    InventoryScope, MAX_DESCRIPTOR_BYTES, MAX_EXECUTION_SUPPORT_PATHS_V2, ObservationSurface,
     ReferenceDeclaration, ReferenceKind, RepositoryPath, SourceKind, TestId, ValidatedFixture,
     ValidatedInventory,
 };

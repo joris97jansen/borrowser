@@ -1098,7 +1098,7 @@ mod tests {
         let results =
             load_expected_results(repository_root, &inventory).expect("expected results registry");
 
-        assert_eq!(results.records().len(), 11);
+        assert_eq!(results.records().len(), 15);
         let classified_ids = results
             .records()
             .iter()
@@ -1106,26 +1106,48 @@ mod tests {
                 let Classification::Classified(metadata) = record.classification() else {
                     return None;
                 };
-                assert!(matches!(
-                    metadata.engine(),
-                    EngineCapabilityAvailability::Available
-                ));
-                let HarnessReadiness::NotReady { limitations } = metadata.harness() else {
-                    panic!("{} must remain harness-not-ready", record.id().as_str())
-                };
-                assert_eq!(
-                    limitations
-                        .iter()
-                        .map(HarnessLimitation::kind)
-                        .collect::<Vec<_>>(),
-                    [
-                        HarnessLimitationKind::MissingSubsystemAdapter,
-                        HarnessLimitationKind::MissingExpectedObservation,
-                        HarnessLimitationKind::MissingComparisonSurface,
-                    ],
-                    "{}",
-                    record.id().as_str()
-                );
+                match record.id().as_str() {
+                    "css-parsing-basic-stylesheet" => {
+                        assert!(matches!(
+                            metadata.engine(),
+                            EngineCapabilityAvailability::Available
+                        ));
+                        let HarnessReadiness::NotReady { limitations } = metadata.harness() else {
+                            panic!("CSS parser seed remains harness-not-ready")
+                        };
+                        assert_eq!(
+                            limitations
+                                .iter()
+                                .map(HarnessLimitation::kind)
+                                .collect::<Vec<_>>(),
+                            [
+                                HarnessLimitationKind::MissingSubsystemAdapter,
+                                HarnessLimitationKind::MissingExpectedObservation,
+                                HarnessLimitationKind::MissingComparisonSurface,
+                            ]
+                        );
+                    }
+                    "html-tree-construction-repeated-body-unavailable" => {
+                        let EngineCapabilityAvailability::Unavailable { missing } =
+                            metadata.engine()
+                        else {
+                            panic!("repeated-body case remains capability-unavailable")
+                        };
+                        assert_eq!(missing.len(), 1);
+                        assert_eq!(
+                            missing[0].feature().map(CapabilityFeatureId::as_str),
+                            Some("merge-attributes-into-existing-body-element")
+                        );
+                        assert!(matches!(metadata.harness(), HarnessReadiness::Ready));
+                    }
+                    _ => {
+                        assert!(matches!(
+                            metadata.engine(),
+                            EngineCapabilityAvailability::Available
+                        ));
+                        assert!(matches!(metadata.harness(), HarnessReadiness::Ready));
+                    }
+                }
                 assert!(metadata.environment().requirements().is_empty());
                 assert!(matches!(metadata.expectation(), Expectation::ExpectedPass));
                 assert!(matches!(metadata.stability(), Stability::NotYetEstablished));
@@ -1138,8 +1160,12 @@ mod tests {
             BTreeSet::from([
                 "css-parsing-basic-stylesheet",
                 "dom-tree-basic-document",
+                "dom-tree-representative-static-document",
                 "html-tokenizer-basic-document",
+                "html-tokenizer-malformed-eof",
                 "html-tree-construction-basic-document",
+                "html-tree-construction-malformed-recovery",
+                "html-tree-construction-repeated-body-unavailable",
             ])
         );
 

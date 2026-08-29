@@ -6,8 +6,8 @@ use std::path::{Component, Path, PathBuf};
 use crate::descriptor::{ParsedDescriptor, parse_descriptor};
 use crate::diagnostic::{InventoryDiagnostic, InventoryDiagnosticKind, InventoryErrors};
 use crate::model::{
-    MAX_DESCRIPTOR_BYTES, PortablePathComponent, ReferenceDeclaration, RepositoryPath,
-    ValidatedFixture, ValidatedInventory,
+    ExecutionPackage, FixtureFormat, MAX_DESCRIPTOR_BYTES, PortablePathComponent,
+    ReferenceDeclaration, RepositoryPath, ValidatedFixture, ValidatedInventory,
 };
 
 #[derive(Clone, Debug)]
@@ -264,10 +264,6 @@ fn integrity_scan_bundle(
             };
             if name.as_str() == "fixture.toml" && directory != bundle_root {
                 nested_descriptors.insert(child_display.clone());
-                diagnostics.push(InventoryDiagnostic::new(
-                    child_display.clone(),
-                    InventoryDiagnosticKind::NestedFixtureBundle,
-                ));
             }
             if kind == ScannedEntryKind::Directory {
                 child_directories.push(path.clone());
@@ -421,6 +417,7 @@ fn validate_bundle(
         diagnostics.push(InventoryDiagnostic::new(&metadata_path, kind));
     }
     let Some(descriptor) = parsed.descriptor else {
+        reject_nested_descriptors(bundle, None, diagnostics);
         return;
     };
     validate_bundle_descriptor(bundle, metadata_path, descriptor, fixtures, diagnostics);
@@ -481,11 +478,108 @@ fn validate_bundle_descriptor(
     let reference_path = descriptor.reference.as_ref().map(|reference| {
         validate_declared_path(bundle, "reference.path", &reference.path, diagnostics)
     });
+    let execution_entry = descriptor.execution_package.as_ref().map(|package| {
+        validate_declared_path(
+            bundle,
+            "execution_package.entry_path",
+            &package.entry_path,
+            diagnostics,
+        )
+    });
+    let execution_support = descriptor
+        .execution_package
+        .as_ref()
+        .map(|package| {
+            package
+                .support_paths
+                .iter()
+                .map(|path| {
+                    validate_declared_path(
+                        bundle,
+                        "execution_package.support_paths",
+                        path,
+                        diagnostics,
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    let allowed_nested_entry = execution_entry
+        .as_ref()
+        .and_then(|validation| validation.repository_path.as_ref())
+        .map(RepositoryPath::as_str);
+    reject_nested_descriptors(bundle, allowed_nested_entry, diagnostics);
+
+    let package_relative_root = execution_entry.as_ref().and_then(|entry| {
+        let relative = entry.normalized_relative.as_deref()?;
+        let Some((root, _)) = relative.rsplit_once('/') else {
+            diagnostics.push(InventoryDiagnostic::new(
+                &metadata_path,
+                InventoryDiagnosticKind::ExecutionEntryNotNested {
+                    value: relative.to_owned(),
+                },
+            ));
+            return None;
+        };
+        Some(root.to_owned())
+    });
+
+    if let Some(root) = package_relative_root.as_deref() {
+        validate_inside_package("test_path", &test_path, root, &metadata_path, diagnostics);
+        for support in &execution_support {
+            validate_inside_package(
+                "execution_package.support_paths",
+                support,
+                root,
+                &metadata_path,
+                diagnostics,
+            );
+        }
+    }
+
+    let mut declared_relative = BTreeMap::<String, String>::new();
+    record_declared_path(
+        "test_path",
+        &test_path,
+        &metadata_path,
+        &mut declared_relative,
+        diagnostics,
+    );
+    if let Some(reference) = &reference_path {
+        record_declared_path(
+            "reference.path",
+            reference,
+            &metadata_path,
+            &mut declared_relative,
+            diagnostics,
+        );
+    }
+    if let Some(entry) = &execution_entry {
+        record_declared_path(
+            "execution_package.entry_path",
+            entry,
+            &metadata_path,
+            &mut declared_relative,
+            diagnostics,
+        );
+    }
+    for support in &execution_support {
+        record_declared_path(
+            "execution_package.support_paths",
+            support,
+            &metadata_path,
+            &mut declared_relative,
+            diagnostics,
+        );
+    }
 
     let declarations_were_safe = test_path.safe
         && reference_path
             .as_ref()
-            .is_none_or(|reference| reference.safe);
+            .is_none_or(|reference| reference.safe)
+        && execution_entry.as_ref().is_none_or(|entry| entry.safe)
+        && execution_support.iter().all(|support| support.safe);
     if declarations_were_safe {
         let mut declared = BTreeSet::from([metadata_path.clone()]);
         if let Some(path) = test_path.repository_path.as_ref() {
@@ -497,11 +591,19 @@ fn validate_bundle_descriptor(
         {
             declared.insert(path.as_str().to_owned());
         }
+        if let Some(Some(path)) = execution_entry
+            .as_ref()
+            .map(|entry| entry.repository_path.as_ref())
+        {
+            declared.insert(path.as_str().to_owned());
+        }
+        for support in &execution_support {
+            if let Some(path) = support.repository_path.as_ref() {
+                declared.insert(path.as_str().to_owned());
+            }
+        }
         for (path, entry) in &bundle.entries {
-            if entry.kind == ScannedEntryKind::RegularFile
-                && !declared.contains(path)
-                && !bundle.nested_descriptors.contains(path)
-            {
+            if entry.kind == ScannedEntryKind::RegularFile && !declared.contains(path) {
                 diagnostics.push(InventoryDiagnostic::new(
                     path,
                     InventoryDiagnosticKind::UndeclaredBundleFile,
@@ -524,7 +626,32 @@ fn validate_bundle_descriptor(
     if has_reference && reference.is_none() {
         return;
     }
+    let execution_package = match (
+        descriptor.execution_package,
+        execution_entry,
+        execution_support,
+    ) {
+        (None, None, support) if support.is_empty() => None,
+        (Some(_), Some(entry), support) => {
+            let Some(entry_path) = entry.repository_path else {
+                return;
+            };
+            let support_paths = support
+                .into_iter()
+                .map(|validation| validation.repository_path)
+                .collect::<Option<Vec<_>>>();
+            let Some(support_paths) = support_paths else {
+                return;
+            };
+            Some(ExecutionPackage::validated(entry_path, support_paths))
+        }
+        _ => return,
+    };
+    if descriptor.format == FixtureFormat::V2 && package_relative_root.is_none() {
+        return;
+    }
     fixtures.push(ValidatedFixture::validated(
+        descriptor.format,
         descriptor.test_id,
         RepositoryPath::validated(bundle.repository_path.clone()),
         test_path,
@@ -533,12 +660,73 @@ fn validate_bundle_descriptor(
         descriptor.observation,
         descriptor.source_kind,
         reference,
+        execution_package,
         descriptor.description,
     ));
 }
 
+fn reject_nested_descriptors(
+    bundle: &DiscoveredBundle,
+    allowed_entry: Option<&str>,
+    diagnostics: &mut Vec<InventoryDiagnostic>,
+) {
+    for nested in &bundle.nested_descriptors {
+        if Some(nested.as_str()) != allowed_entry {
+            diagnostics.push(InventoryDiagnostic::new(
+                nested,
+                InventoryDiagnosticKind::NestedFixtureBundle,
+            ));
+        }
+    }
+}
+
+fn validate_inside_package(
+    field: &str,
+    validation: &DeclaredPathValidation,
+    package_root: &str,
+    metadata_path: &str,
+    diagnostics: &mut Vec<InventoryDiagnostic>,
+) {
+    let Some(relative) = validation.normalized_relative.as_deref() else {
+        return;
+    };
+    let prefix = format!("{package_root}/");
+    if !relative.starts_with(&prefix) {
+        diagnostics.push(InventoryDiagnostic::new(
+            metadata_path,
+            InventoryDiagnosticKind::ExecutionFileOutsidePackage {
+                field: field.to_owned(),
+                value: relative.to_owned(),
+            },
+        ));
+    }
+}
+
+fn record_declared_path(
+    field: &str,
+    validation: &DeclaredPathValidation,
+    metadata_path: &str,
+    declared: &mut BTreeMap<String, String>,
+    diagnostics: &mut Vec<InventoryDiagnostic>,
+) {
+    let Some(relative) = validation.normalized_relative.as_ref() else {
+        return;
+    };
+    if let Some(first_field) = declared.insert(relative.clone(), field.to_owned()) {
+        diagnostics.push(InventoryDiagnostic::new(
+            metadata_path,
+            InventoryDiagnosticKind::DuplicateDeclaredPath {
+                first_field,
+                field: field.to_owned(),
+                value: relative.clone(),
+            },
+        ));
+    }
+}
+
 struct DeclaredPathValidation {
     safe: bool,
+    normalized_relative: Option<String>,
     repository_path: Option<RepositoryPath>,
 }
 
@@ -558,6 +746,7 @@ fn validate_declared_path(
         ));
         return DeclaredPathValidation {
             safe: false,
+            normalized_relative: None,
             repository_path: None,
         };
     };
@@ -571,6 +760,7 @@ fn validate_declared_path(
         ));
         return DeclaredPathValidation {
             safe: false,
+            normalized_relative: None,
             repository_path: None,
         };
     }
@@ -578,6 +768,7 @@ fn validate_declared_path(
     match bundle.entries.get(&repository_path) {
         Some(entry) if entry.kind == ScannedEntryKind::RegularFile => DeclaredPathValidation {
             safe: true,
+            normalized_relative: Some(relative),
             repository_path: Some(RepositoryPath::validated(repository_path)),
         },
         Some(_) => {
@@ -590,6 +781,7 @@ fn validate_declared_path(
             ));
             DeclaredPathValidation {
                 safe: true,
+                normalized_relative: Some(relative),
                 repository_path: None,
             }
         }
@@ -603,6 +795,7 @@ fn validate_declared_path(
             ));
             DeclaredPathValidation {
                 safe: true,
+                normalized_relative: Some(relative),
                 repository_path: None,
             }
         }

@@ -1,0 +1,2 @@
+# format: html5-parse-errors-v1
+PARSE_ERROR occurrence=1 stage=tokenizer code=standard:eof-in-comment recovery=emit-current-comment-at-eof position=normalized-utf8:37:2:1:source-unavailable:no-input-provenance-map context=absent context-token=null context-mode=null context-namespace=null

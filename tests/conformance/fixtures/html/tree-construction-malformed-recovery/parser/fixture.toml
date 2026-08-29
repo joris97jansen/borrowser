@@ -1,0 +1,39 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "html-tree-construction-malformed-recovery"
+
+[source]
+kind = "native"
+
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "2d1294691049f3b801f919e67ee92c09ff429a889045caa427b6c050f6995b4c"
+
+[execution]
+reference_delivery = "whole-unicode"
+
+[execution.target]
+kind = "document"
+scripting = "disabled"
+
+[[execution.deliveries]]
+name = "whole-unicode"
+unit = "unicode-scalars"
+strategy = "whole"
+
+[[execution.deliveries]]
+name = "declared-scalar-split"
+unit = "unicode-scalars"
+strategy = "boundaries"
+boundaries = [1]
+
+[expectations]
+parse_errors = "parse-errors.txt"
+document_mode = "document-mode.txt"
+tree = "tree.txt"
+
+[disposition]
+status = "active"
+
+[metadata]
+description = "AG4 tree-construction adaptation of the reviewed AE active-formatting-recovery fixture."

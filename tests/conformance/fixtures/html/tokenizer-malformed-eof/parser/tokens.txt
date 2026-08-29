@@ -1,0 +1,4 @@
+# format: html5-token-v2
+TOKEN ordinal=1 kind=doctype name="html" public-id=null system-id=null force-quirks=false
+TOKEN ordinal=2 kind=comment data="open<div title='x\n"
+TOKEN ordinal=3 kind=eof

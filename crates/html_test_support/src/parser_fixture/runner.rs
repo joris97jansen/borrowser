@@ -1,4 +1,5 @@
 use super::disposition::{DispositionEvaluationError, evaluate_disposition};
+use super::evaluation::{FixtureAttemptState, FixtureEvaluation};
 use super::execution::{
     FixtureObservationGuardrails, RequestedSurfaces, observation_request_for_input,
 };
@@ -143,6 +144,14 @@ pub fn run_fixture(fixture: &ValidatedFixtureSpec) -> Result<FixtureRunReport, F
     )
 }
 
+pub fn evaluate_fixture(fixture: &ValidatedFixtureSpec) -> FixtureEvaluation {
+    evaluate_fixture_with_executor_and_access(
+        fixture,
+        &mut ProductionObservationExecutor,
+        &mut ProductionFixtureFileAccess,
+    )
+}
+
 #[cfg(test)]
 pub(super) fn run_fixture_with_executor(
     fixture: &ValidatedFixtureSpec,
@@ -156,6 +165,18 @@ pub(super) fn run_fixture_with_executor_and_access(
     executor: &mut impl ParserObservationExecutor,
     file_access: &mut impl FixtureFileAccess,
 ) -> Result<FixtureRunReport, FixtureRunError> {
+    compatibility_report(
+        fixture,
+        evaluate_fixture_with_executor_and_access(fixture, executor, file_access),
+    )
+}
+
+pub(super) fn evaluate_fixture_with_executor_and_access(
+    fixture: &ValidatedFixtureSpec,
+    executor: &mut impl ParserObservationExecutor,
+    file_access: &mut impl FixtureFileAccess,
+) -> FixtureEvaluation {
+    let mut attempted = false;
     let outcome = if let FixtureDisposition::Skipped { classification, .. } = fixture.disposition()
     {
         FixtureExecutionOutcome::NotExecuted {
@@ -165,18 +186,46 @@ pub(super) fn run_fixture_with_executor_and_access(
         match fixture.execution_plan() {
             ValidatedExecutionPlan::SingleDelivery(_) => execute_fixture_v1(fixture, file_access),
             ValidatedExecutionPlan::Parity(policy) => {
-                execute_fixture_v2_policy_with_access(fixture, policy, executor, file_access)
+                let mut tracking = AttemptTrackingExecutor {
+                    inner: executor,
+                    attempted: &mut attempted,
+                };
+                execute_fixture_v2_policy_with_access(fixture, policy, &mut tracking, file_access)
             }
         }
     };
+    if matches!(
+        fixture.execution_plan(),
+        ValidatedExecutionPlan::SingleDelivery(_)
+    ) {
+        attempted = legacy_outcome_attempted(&outcome);
+    }
+    let disposition = evaluate_disposition(fixture.disposition(), &outcome);
+    FixtureEvaluation {
+        fixture_id: fixture.id().clone(),
+        repository_relative_path: fixture.repository_relative_path().to_owned(),
+        attempt: if attempted {
+            FixtureAttemptState::Attempted
+        } else {
+            FixtureAttemptState::NotAttempted
+        },
+        outcome,
+        disposition,
+    }
+}
+
+fn compatibility_report(
+    fixture: &ValidatedFixtureSpec,
+    evaluation: FixtureEvaluation,
+) -> Result<FixtureRunReport, FixtureRunError> {
+    let (fixture_id, repository_relative_path, outcome, disposition) = evaluation.into_parts();
     let details = failure_details(fixture, &outcome);
-    let disposition = evaluate_disposition(fixture.disposition(), &outcome)
-        .map_err(|policy| FixtureRunError { policy, details })?;
+    let disposition = disposition.map_err(|policy| FixtureRunError { policy, details })?;
     match (fixture.disposition(), outcome) {
         (FixtureDisposition::Active, FixtureExecutionOutcome::Completed { result }) => {
             Ok(FixtureRunReport::new(
-                fixture.id().clone(),
-                fixture.repository_relative_path().to_string(),
+                fixture_id,
+                repository_relative_path,
                 disposition,
                 Some(*result),
             ))
@@ -188,18 +237,56 @@ pub(super) fn run_fixture_with_executor_and_access(
                 reference_delivery,
             },
         ) => Ok(FixtureRunReport::new_v2(
-            fixture.id().clone(),
-            fixture.repository_relative_path().to_string(),
+            fixture_id,
+            repository_relative_path,
             disposition,
             reference_delivery.as_ref(),
             deliveries,
         )),
         _ => Ok(FixtureRunReport::new(
-            fixture.id().clone(),
-            fixture.repository_relative_path().to_string(),
+            fixture_id,
+            repository_relative_path,
             disposition,
             None,
         )),
+    }
+}
+
+struct AttemptTrackingExecutor<'a, E> {
+    inner: &'a mut E,
+    attempted: &'a mut bool,
+}
+
+impl<E: ParserObservationExecutor> ParserObservationExecutor for AttemptTrackingExecutor<'_, E> {
+    fn execute(
+        &mut self,
+        request: ParserObservationRequest<'_>,
+    ) -> Result<CanonicalParserResult, ParserObservationExecutionError> {
+        *self.attempted = true;
+        self.inner.execute(request)
+    }
+}
+
+fn legacy_outcome_attempted(outcome: &FixtureExecutionOutcome) -> bool {
+    match outcome {
+        FixtureExecutionOutcome::Completed { .. }
+        | FixtureExecutionOutcome::ExpectationMismatch { .. }
+        | FixtureExecutionOutcome::InvariantFailed { .. }
+        | FixtureExecutionOutcome::IncompleteObservation { .. }
+        | FixtureExecutionOutcome::ExecutionFailed {
+            class: LegacyExecutionFailureClass::TokenizerDriver,
+            ..
+        } => true,
+        FixtureExecutionOutcome::NotExecuted { .. }
+        | FixtureExecutionOutcome::CompletedV2 { .. }
+        | FixtureExecutionOutcome::ExpectationMismatchV2 { .. }
+        | FixtureExecutionOutcome::ParityMismatchV2 { .. }
+        | FixtureExecutionOutcome::UnsupportedExpectation { .. }
+        | FixtureExecutionOutcome::UnsupportedFixtureSemantics { .. }
+        | FixtureExecutionOutcome::ExecutionFailed { .. }
+        | FixtureExecutionOutcome::ExecutionFailedV2 { .. }
+        | FixtureExecutionOutcome::FinalInvariantFailedV2 { .. }
+        | FixtureExecutionOutcome::IncompleteObservationV2 { .. } => false,
     }
 }
 
@@ -607,6 +694,7 @@ pub(super) fn execute_fixture_v2_with_guardrails_and_access(
                         strategy: diagnostic_strategy_spelling(scheduled),
                         surface,
                         diff,
+                        reference_result: None,
                     });
                 }
                 Ok(None) => {
@@ -637,10 +725,12 @@ pub(super) fn execute_fixture_v2_with_guardrails_and_access(
     if let Some(outcome) = first_final_invariant {
         return outcome;
     }
-    if let Some(outcome) = first_parity {
+    if let Some(mut outcome) = first_parity {
+        attach_reference_result(&mut outcome, baseline);
         return outcome;
     }
-    if let Some(outcome) = first_expectation {
+    if let Some(mut outcome) = first_expectation {
+        attach_reference_result(&mut outcome, baseline);
         return outcome;
     }
     let baseline_report = match retained_report(baseline_strategy, baseline) {
@@ -1012,11 +1102,24 @@ fn compare_applicable_expectations(
                     strategy: diagnostic_strategy_spelling(strategy),
                     surface,
                     diff,
+                    reference_result: None,
                 }));
             }
         }
     }
     Ok(None)
+}
+
+fn attach_reference_result(outcome: &mut FixtureExecutionOutcome, result: CanonicalParserResult) {
+    match outcome {
+        FixtureExecutionOutcome::ExpectationMismatchV2 {
+            reference_result, ..
+        }
+        | FixtureExecutionOutcome::ParityMismatchV2 {
+            reference_result, ..
+        } => *reference_result = Some(Box::new(result)),
+        _ => unreachable!("reference evidence attaches only to V2 comparison mismatches"),
+    }
 }
 
 fn strategy_requires_completed_result(
@@ -1542,7 +1645,9 @@ fn incomplete_reason_name(reason: &IncompleteObservationReason) -> &'static str 
     }
 }
 
-fn invariant_failure_name(code: html::conformance::InvariantFailureCode) -> &'static str {
+pub(super) fn invariant_failure_name(
+    code: html::conformance::InvariantFailureCode,
+) -> &'static str {
     use html::conformance::InvariantFailureCode as I;
     match code {
         I::DecoderCarryNotEmpty => "decoder-carry-not-empty",

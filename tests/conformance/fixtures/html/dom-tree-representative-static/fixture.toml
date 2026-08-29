@@ -1,0 +1,15 @@
+format = "borrowser-conformance-fixture-v2"
+id = "dom-tree-representative-static-document"
+scope = "static-html-css-no-js"
+observation = "dom-tree"
+test_path = "parser/input.html"
+
+[source]
+kind = "native"
+
+[metadata]
+description = "Representative static document with reviewed parser-created DOM structure."
+
+[execution_package]
+entry_path = "parser/fixture.toml"
+support_paths = ["parser/tree.txt"]

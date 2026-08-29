@@ -1,11 +1,15 @@
-format = "borrowser-conformance-fixture-v1"
+format = "borrowser-conformance-fixture-v2"
 id = "dom-tree-basic-document"
 scope = "static-html-css-no-js"
 observation = "dom-tree"
-test_path = "test.html"
+test_path = "parser/input.html"
 
 [source]
 kind = "native"
 
 [metadata]
-description = "Inventory seed for a parser-created DOM tree observation."
+description = "Reviewed parser-created DOM structure with html5-dom-v3 as the primary semantic subject."
+
+[execution_package]
+entry_path = "parser/fixture.toml"
+support_paths = ["parser/tree.txt"]

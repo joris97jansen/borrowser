@@ -363,6 +363,118 @@ fn fixture_loader_dispatches_exact_v1_and_v2_schemas_before_validation() {
 }
 
 #[test]
+fn public_execution_model_and_parse_error_strength_are_validated_semantics() {
+    let legacy = TestRepository::new();
+    add_fixture(&legacy, "legacy", "legacy", b"hello");
+    let fixture = load_single_native_fixture(&legacy);
+    assert_eq!(
+        fixture.execution_model(),
+        ParserFixtureExecutionModel::LegacySingleDelivery
+    );
+
+    let exact = TestRepository::new();
+    let bundle = add_fixture_v2(&exact, "exact", "exact", b"hello");
+    fs::write(
+        bundle.join("parse-errors.txt"),
+        "# format: html5-parse-errors-v1\n",
+    )
+    .expect("exact parse-error snapshot");
+    rewrite(&bundle.join("fixture.toml"), |text| {
+        text.replace(
+            "tokens = \"tokens.txt\"",
+            "tokens = \"tokens.txt\"\nparse_errors = \"parse-errors.txt\"",
+        )
+    });
+    let fixture = load_single_native_fixture(&exact);
+    assert_eq!(
+        fixture.execution_model(),
+        ParserFixtureExecutionModel::CanonicalObservationParity
+    );
+    assert!(fixture.declared_expectations().any(|expectation| matches!(
+        expectation,
+        DeclaredExpectation::ParseErrors(ParseErrorExpectationStrength::Exact)
+    )));
+
+    let count = TestRepository::new();
+    let bundle = add_fixture_v2(&count, "count", "count", b"hello");
+    rewrite(&bundle.join("fixture.toml"), |text| {
+        text.replace(FIXTURE_FORMAT_V2, FIXTURE_FORMAT_V3).replace(
+            "tokens = \"tokens.txt\"",
+            "tokens = \"tokens.txt\"\nparse_errors = { kind = \"count\", count = 3 }",
+        )
+    });
+    let fixture = load_single_native_fixture(&count);
+    assert_eq!(
+        fixture.execution_model(),
+        ParserFixtureExecutionModel::CanonicalObservationParity
+    );
+    assert!(fixture.declared_expectations().any(|expectation| matches!(
+        expectation,
+        DeclaredExpectation::ParseErrors(ParseErrorExpectationStrength::Count { expected: 3 })
+    )));
+}
+
+#[test]
+fn rich_evaluation_retains_mismatch_observation_without_recovery_rerun() {
+    struct CountingExecutor {
+        calls: usize,
+    }
+    impl super::runner::ParserObservationExecutor for CountingExecutor {
+        fn execute(
+            &mut self,
+            request: ParserObservationRequest<'_>,
+        ) -> Result<CanonicalParserResult, ParserObservationExecutionError> {
+            self.calls += 1;
+            html::conformance::execute_parser_observation(request)
+        }
+    }
+
+    let repository = TestRepository::new();
+    let bundle = add_fixture_v2(&repository, "mismatch", "mismatch", b"hello");
+    fs::write(
+        bundle.join("tokens.txt"),
+        "# format: html5-token-v2\nTOKEN ordinal=1 kind=character data=\"different\"\nTOKEN ordinal=2 kind=eof\n",
+    )
+    .expect("valid mismatching snapshot");
+    rewrite(&bundle.join("fixture.toml"), |text| {
+        text.replace(
+            "[expectations]",
+            "[[execution.deliveries]]\nname = \"split\"\nunit = \"unicode-scalars\"\nstrategy = \"boundaries\"\nboundaries = [1]\n\n[expectations]",
+        )
+    });
+    let fixture = load_single_native_fixture(&repository);
+    let mut executor = CountingExecutor { calls: 0 };
+    let mut access = super::load::ProductionFixtureFileAccess;
+    let evaluation = super::runner::evaluate_fixture_with_executor_and_access(
+        &fixture,
+        &mut executor,
+        &mut access,
+    );
+    let planned_execution_calls = executor.calls;
+    assert!(
+        planned_execution_calls > 1,
+        "the canonical AE plan retains baseline and parity executions"
+    );
+    assert!(matches!(
+        evaluation.observed_outcome(),
+        FixtureObservedOutcome::ExpectationMismatch {
+            surface: ExpectationSurface::Tokens,
+            ..
+        }
+    ));
+    assert!(
+        evaluation
+            .serialize_reference_observation(ExpectationSurface::Tokens)
+            .expect("canonical serialization")
+            .is_some()
+    );
+    assert_eq!(
+        executor.calls, planned_execution_calls,
+        "serializing retained evidence does not rerun the parser"
+    );
+}
+
+#[test]
 fn fixture_v1_compatibility_path_has_no_representatives_or_mandatory_final_audit() {
     use html::conformance::{ParserObservationExecutionError, ParserObservationRequest};
     struct MustNotExecute;
@@ -1323,6 +1435,7 @@ fn parity_mismatch_names_fixture_strategy_surface_and_first_record() {
         strategy,
         surface: ExpectationSurface::Tokens,
         diff,
+        ..
     } = &outcome
     else {
         panic!("expected token parity mismatch: {outcome:?}");
@@ -1616,6 +1729,7 @@ fn transition_mismatch_selection_follows_fixture_declaration_order() {
             ref strategy,
             surface: ExpectationSurface::Transitions,
             diff,
+            ..
         } => {
             assert!(strategy.contains("declared:first-trace"), "{strategy}");
             assert!(diff.contains("transition delivery: first-trace"), "{diff}");

@@ -132,6 +132,76 @@ impl ValidatedFixtureSpec {
         .map(TransitionSnapshotExpectation::delivery)
     }
 
+    pub fn execution_model(&self) -> ParserFixtureExecutionModel {
+        match self.execution_plan() {
+            ValidatedExecutionPlan::SingleDelivery(_) => {
+                ParserFixtureExecutionModel::LegacySingleDelivery
+            }
+            ValidatedExecutionPlan::Parity(_) => {
+                ParserFixtureExecutionModel::CanonicalObservationParity
+            }
+        }
+    }
+
+    pub fn disposition_kind(&self) -> FixtureDispositionKind {
+        match self.disposition() {
+            FixtureDisposition::Active => FixtureDispositionKind::Active,
+            FixtureDisposition::ExpectedUnsupported { .. } => {
+                FixtureDispositionKind::ExpectedUnsupported
+            }
+            FixtureDisposition::ExpectedFailure { .. }
+            | FixtureDisposition::ExpectedFailureV2 { .. } => {
+                FixtureDispositionKind::ExpectedFailure
+            }
+            FixtureDisposition::Skipped { .. } => FixtureDispositionKind::Skipped,
+        }
+    }
+
+    pub fn declared_expectations(&self) -> std::vec::IntoIter<DeclaredExpectation> {
+        let expectations = self.expectations();
+        let mut declared = Vec::with_capacity(9);
+        if expectations.is_declared(ExpectationSurface::Tokens) {
+            declared.push(DeclaredExpectation::Tokens);
+        }
+        if let ExpectedSurface::Compare(expectation) = expectations.parse_errors() {
+            declared.push(DeclaredExpectation::ParseErrors(match expectation {
+                ParseErrorExpectation::Exact(_) => ParseErrorExpectationStrength::Exact,
+                ParseErrorExpectation::Count(expected) => ParseErrorExpectationStrength::Count {
+                    expected: *expected,
+                },
+            }));
+        }
+        for (surface, declaration) in [
+            (
+                ExpectationSurface::ImplementationDiagnostics,
+                DeclaredExpectation::ImplementationDiagnostics,
+            ),
+            (
+                ExpectationSurface::DocumentMode,
+                DeclaredExpectation::DocumentMode,
+            ),
+            (ExpectationSurface::Tree, DeclaredExpectation::Tree),
+            (ExpectationSurface::Patches, DeclaredExpectation::Patches),
+            (
+                ExpectationSurface::Transitions,
+                DeclaredExpectation::Transitions,
+            ),
+            (
+                ExpectationSurface::UnsupportedFeatures,
+                DeclaredExpectation::UnsupportedFeatures,
+            ),
+            (
+                ExpectationSurface::FinalInvariants,
+                DeclaredExpectation::FinalInvariants,
+            ),
+        ] {
+            if expectations.is_declared(surface) {
+                declared.push(declaration);
+            }
+        }
+        declared.into_iter()
+    }
+
     pub fn description(&self) -> Option<&str> {
         self.description.as_deref()
     }

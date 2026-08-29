@@ -377,9 +377,10 @@ Current architecture status:
   stable logical IDs, deterministic and portable discovery, typed deterministic
   validation diagnostics, and a canonical checked-in manifest. The contract is
   `docs/conformance/ag2-fixture-inventory-manifest-contract.md`.
-- AG2 seed fixtures prove inventory registration only. They do not claim
-  execution, pass status, semantic comparison, WPT coverage, raster support, or
-  browser conformance.
+- AG2 inventory registration alone does not claim execution, pass status,
+  semantic comparison, WPT coverage, raster support, or browser conformance.
+  AG4 separately migrates only parser packages to strict AG fixture V2 and
+  Manifest V2.
 - AG3 adds the separate strict, versioned, human-authored expected-result and
   classification registry in `tests/conformance/expected-results.toml`; see
   `docs/conformance/ag3-expected-results-classification-contract.md`. It
@@ -388,27 +389,44 @@ Current architecture status:
   environment requirements, and named lane exclusions orthogonal.
 - AG3 derives primary subsystem ownership from AG2's authoritative observation
   surface and produces an ephemeral deterministic repository-metadata summary.
-  It does not persist environment availability or eligibility and does not
-  claim any seed is runnable. Four narrow parser/CSS-syntax capability
-  assertions are evidence-backed but remain harness-not-ready for missing
-  delegation, authored expected observations, and comparison infrastructure.
+  It does not persist environment availability or eligibility. AG4 exposes
+  immutable lossless consumer views and the canonical contextual evaluator;
+  seven parser records are harness-ready, six are runnable under the empty
+  parser environment assessment, and the repeated-body record is not runnable
+  because body-attribute merging, which its expected tree directly observes,
+  remains unavailable. The independently tracked repeated-body `frameset_ok`
+  gap is not a blocker for that logical case because its declared observations
+  cannot distinguish the transition. The CSS syntax
+  record remains harness-not-ready.
   The V1 vocabulary separately preserves unsupported expectation representation
   for cases where an authoritative expectation exists but cannot yet be encoded
   truthfully.
   Seven seeds remain explicitly not yet classified, including selector,
   cascade, and computed-style bundles whose required DOM/target context is not
   authored.
-- AG3 does not complete Milestone AG or claim broad WPT, HTML, CSS, rendering,
-  or browser conformance. It adds no runner, adapter, execution request,
-  observed result, lane execution, or production-engine behavior.
+- AG4 adds `conformance-runner` and deterministic bounded reporting for focused
+  `html-tokenizer`, `html-tree-construction`, and `dom-tree` packages. It
+  delegates exactly one canonical fixture evaluation to `html-test-support`;
+  AE retains its complete baseline/parity parser schedule. The dependency route
+  is `conformance-runner -> html-test-support -> html::conformance -> production
+  HTML parser`, with no CSS/Layout/Paint/GFX/Browser/runtime/JS dependency.
+  The normalized attempted branch exclusively owns observed execution outcomes;
+  pre-execution AE classifications remain typed not-attempted evidence. DOM
+  fixture equivalence declares only the final canonical tree, while applicable
+  parser observations remain auxiliary report evidence. AG bounds serialized
+  evidence immediately at its ownership boundary as well as bounding the final
+  report.
+  See `docs/conformance/ag4-parser-dom-conformance-runners.md`.
+- AG4 does not complete Milestone AG or claim broad WPT/html5lib, complete HTML,
+  CSS, rendering, JavaScript, or browser conformance. AE parser-observation
+  byte-payload accounting remains a separate deferred AE follow-up.
 
 Missing or incomplete:
 
-- execution selection and subsystem delegation
-- normalized observed-result and expectation-evaluation models
-- subsystem adapters and delegation infrastructure
-- deterministic execution-result reporting and aggregate conformance-progress
-  summaries beyond AG3's repository-metadata summary
+- generic named-lane selection and scheduling
+- CSS, Layout, Paint/GFX, and Browser/runtime subsystem adapters
+- aggregate cross-subsystem conformance-progress summaries beyond AG3 metadata
+  and AG4 parser-case reports
 - fixture migration or broader pinned external-source adapters
 - cross-engine capture and artifact comparison workflows
 - rendered-output reftest and pixel/raster comparison infrastructure

@@ -1,0 +1,33 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "html-tree-construction-repeated-body-unavailable"
+
+[source]
+kind = "native"
+
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "96b178cf75d170a15e5882bdeaba878c52df43cde1ed626919a7f74f3aac8304"
+
+[execution]
+reference_delivery = "whole"
+
+[execution.target]
+kind = "document"
+scripting = "disabled"
+
+[[execution.deliveries]]
+name = "whole"
+unit = "unicode-scalars"
+strategy = "whole"
+
+[expectations]
+parse_errors = "parse-errors.txt"
+document_mode = "document-mode.txt"
+tree = "tree.txt"
+
+[disposition]
+status = "active"
+
+[metadata]
+description = "Specification-derived repeated-body oracle; AG3 prevents execution while body-attribute merging is unavailable."
