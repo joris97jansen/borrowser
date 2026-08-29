@@ -1,0 +1,33 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "html-tree-construction-basic-document"
+
+[source]
+kind = "native"
+
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "14da7553a95c1109c379de48c176287761130743bb481c5c30272df24775213b"
+
+[execution]
+reference_delivery = "whole"
+
+[execution.target]
+kind = "document"
+scripting = "disabled"
+
+[[execution.deliveries]]
+name = "whole"
+unit = "unicode-scalars"
+strategy = "whole"
+
+[expectations]
+parse_errors = "parse-errors.txt"
+document_mode = "document-mode.txt"
+tree = "tree.txt"
+
+[disposition]
+status = "active"
+
+[metadata]
+description = "AG4 tree-construction seed adapted from the reviewed AE body-text-recovery fixture with specification-derived no-quirks and empty parse-error expectations."

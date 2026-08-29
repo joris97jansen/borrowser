@@ -76,6 +76,41 @@ description = "Temporary inventory fixture."
 }
 
 #[allow(dead_code)]
+pub fn descriptor_v2(
+    id: &str,
+    observation: &str,
+    test_path: &str,
+    entry_path: &str,
+    support_paths: &[&str],
+) -> String {
+    let support_paths = support_paths
+        .iter()
+        .map(|path| format!("  \"{path}\","))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        r#"format = "borrowser-conformance-fixture-v2"
+id = "{id}"
+scope = "static-html-css-no-js"
+observation = "{observation}"
+test_path = "{test_path}"
+
+[source]
+kind = "native"
+
+[execution_package]
+entry_path = "{entry_path}"
+support_paths = [
+{support_paths}
+]
+
+[metadata]
+description = "Temporary packaged inventory fixture."
+"#
+    )
+}
+
+#[allow(dead_code)]
 pub fn descriptor_with_reference(
     id: &str,
     observation: &str,

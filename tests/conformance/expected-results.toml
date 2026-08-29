@@ -80,12 +80,32 @@ references = [
 availability = "available"
 
 [tests.harness]
-readiness = "not-ready"
-limitations = [
-  { kind = "missing-subsystem-adapter", reason = "AG does not yet delegate DOM-tree fixtures to the canonical parser-fixture runner and HTML-owned observation boundary." },
-  { kind = "missing-expected-observation", reason = "An authoritative expected parser-created DOM snapshot has not yet been authored for this logical test." },
-  { kind = "missing-comparison-surface", reason = "AG does not yet compare the HTML-owned canonical DOM observation with an authored expected semantic value." },
+readiness = "ready"
+
+[tests.environment]
+requirements = []
+
+[tests.expectation]
+kind = "expected-pass"
+
+[tests.stability]
+state = "not-yet-established"
+
+[[tests]]
+id = "dom-tree-representative-static-document"
+classification = "classified"
+requirements = ["no-js", "requires-html-parser-feature"]
+lane_exclusions = []
+references = [
+  { kind = "documentation", path = "docs/html5/ae13-parser-conformance-regression-harness.md" },
+  { kind = "documentation", path = "docs/html5/ae14-html-parser-foundation-closeout.md" },
 ]
+
+[tests.engine]
+availability = "available"
+
+[tests.harness]
+readiness = "ready"
 
 [tests.environment]
 requirements = []
@@ -110,12 +130,32 @@ references = [
 availability = "available"
 
 [tests.harness]
-readiness = "not-ready"
-limitations = [
-  { kind = "missing-subsystem-adapter", reason = "AG does not yet delegate tokenizer fixtures to the canonical parser-fixture runner and HTML-owned observation boundary." },
-  { kind = "missing-expected-observation", reason = "An authoritative expected token stream has not yet been authored for this logical test." },
-  { kind = "missing-comparison-surface", reason = "AG does not yet compare the HTML-owned canonical token observation with an authored expected semantic value." },
+readiness = "ready"
+
+[tests.environment]
+requirements = []
+
+[tests.expectation]
+kind = "expected-pass"
+
+[tests.stability]
+state = "not-yet-established"
+
+[[tests]]
+id = "html-tokenizer-malformed-eof"
+classification = "classified"
+requirements = ["no-js", "requires-html-parser-feature"]
+lane_exclusions = []
+references = [
+  { kind = "documentation", path = "docs/html5/ae13-parser-conformance-regression-harness.md" },
+  { kind = "documentation", path = "docs/html5/ae13d-native-corpus-coverage.md" },
 ]
+
+[tests.engine]
+availability = "available"
+
+[tests.harness]
+readiness = "ready"
 
 [tests.environment]
 requirements = []
@@ -140,12 +180,60 @@ references = [
 availability = "available"
 
 [tests.harness]
-readiness = "not-ready"
-limitations = [
-  { kind = "missing-subsystem-adapter", reason = "AG does not yet delegate tree-construction fixtures to the canonical parser-fixture runner and HTML-owned observation boundary." },
-  { kind = "missing-expected-observation", reason = "An authoritative expected tree-construction observation has not yet been authored for this logical test." },
-  { kind = "missing-comparison-surface", reason = "AG does not yet compare the HTML-owned canonical tree-construction observation with an authored expected semantic value." },
+readiness = "ready"
+
+[tests.environment]
+requirements = []
+
+[tests.expectation]
+kind = "expected-pass"
+
+[tests.stability]
+state = "not-yet-established"
+
+[[tests]]
+id = "html-tree-construction-malformed-recovery"
+classification = "classified"
+requirements = ["no-js", "requires-html-parser-feature"]
+lane_exclusions = []
+references = [
+  { kind = "documentation", path = "docs/html5/ae13-parser-conformance-regression-harness.md" },
+  { kind = "documentation", path = "docs/html5/ae13d-native-corpus-coverage.md" },
 ]
+
+[tests.engine]
+availability = "available"
+
+[tests.harness]
+readiness = "ready"
+
+[tests.environment]
+requirements = []
+
+[tests.expectation]
+kind = "expected-pass"
+
+[tests.stability]
+state = "not-yet-established"
+
+[[tests]]
+id = "html-tree-construction-repeated-body-unavailable"
+classification = "classified"
+requirements = ["no-js", "requires-html-parser-feature"]
+lane_exclusions = []
+references = [
+  { kind = "documentation", path = "docs/html5/ae13-parser-conformance-regression-harness.md" },
+  { kind = "documentation", path = "docs/html5/ae14-html-parser-foundation-closeout.md" },
+]
+
+[tests.engine]
+availability = "unavailable"
+missing = [
+  { kind = "html-parser-feature", feature = "merge-attributes-into-existing-body-element", reason = "The selected repeated-body input requires merging previously absent attributes into the existing body element, which AE records as unavailable." },
+]
+
+[tests.harness]
+readiness = "ready"
 
 [tests.environment]
 requirements = []

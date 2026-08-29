@@ -6,7 +6,7 @@ This document is the normative AG3 contract for logical-test classification
 and expected-result metadata. AG1 remains authoritative for the federated
 conformance architecture and orthogonal state model. AG2 remains authoritative
 for fixture discovery, stable `TestId`, `InventoryScope`, `ObservationSurface`,
-and manifest V1.
+versioned execution-package declarations, and Manifest V2.
 
 The test/tooling-only `conformance-test-support` crate owns parsing,
 validation, reconciliation, sealed metadata, and repository-stable summary
@@ -41,9 +41,8 @@ granularity = "logical-test"
 
 It is keyed one-to-one by AG2's stable logical `TestId`. Classification truth
 is deliberately separate from fixture/inventory truth. AG3 adds no field to
-`borrowser-conformance-fixture-v1` or
-`borrowser-conformance-manifest-v1`; both AG2 formats remain byte-compatible
-and default-deny AG3 fields.
+either AG fixture descriptor version or `borrowser-conformance-manifest-v2`;
+all AG2 schemas default-deny AG3 fields.
 
 The public loader accepts a repository root and validated AG2 inventory; it
 always resolves `tests/conformance/expected-results.toml`. Path-taking is an
@@ -52,15 +51,15 @@ alternate registry, overlay, environment-specific registry, or search path.
 Registry-level diagnostics use the fixed repository-relative registry identity
 rather than a host-dependent absolute path.
 
-The public Rust boundary is deliberately limited to the current tooling
-pipeline: `load_expected_results`, `serialize_expected_results_summary`, the
-opaque `ValidatedExpectedResults` value connecting those operations, and the
-displayable `ExpectedResultsErrors` failure type. The validated value has no
-public constructor or record/domain getters, and the error exposes no typed
-diagnostic internals. Classification, capability, harness, environment,
-expectation, stability, lane, reference, ownership, scalar-identifier,
-diagnostic-detail, and format/path constants remain crate-private until a
-concrete consumer requires an intentionally designed API.
+The public Rust boundary includes `load_expected_results`,
+`serialize_expected_results_summary`, the opaque `ValidatedExpectedResults`,
+immutable lossless AG4 consumer views, the canonical contextual eligibility
+evaluator, and the displayable `ExpectedResultsErrors` failure type. It has no
+public constructors, serde/schema values, or mutable records, and the error
+exposes no typed diagnostic internals. Only the closed vocabulary and borrowed
+reason-bearing views needed for execution are public; reference records,
+scalar identifier constructors, diagnostic detail, and format/path constants
+remain crate-private.
 
 The registry is bounded to 4 MiB, must be UTF-8, must be a regular file inside
 the repository, and may not be reached through a symlinked path. Every TOML
@@ -306,8 +305,10 @@ logical-test metadata
   -> later execution attempt
 ```
 
-The crate contains a narrow internal pure evaluation model to prove AG1's
-semantics without freezing a public execution-request API. It combines engine
+The crate contains a narrow pure evaluation model implementing AG1's
+semantics. AG4 exposes it through immutable typed views and one public
+`evaluate_execution_eligibility` function shaped by the first real consumer;
+it still does not freeze a general lane or provisioning API. It combines engine
 availability, harness readiness, and a synthetic typed assessment of each
 declared environment requirement. All known blockers coexist and sort
 deterministically. Unknown prerequisites remain explicitly unresolved. One or
@@ -316,10 +317,23 @@ unresolved; without blockers, unresolved prerequisites establish
 `NotYetEstablished`; only no blockers and no unresolved prerequisites establish
 `Runnable`.
 
-The evaluator and assessment types are not exported through `lib.rs`, are not
-an `ExpectedResultRecord` convenience method, and have no production or CLI
-consumer. A later execution-selection issue must define the real request and
-may then wrap or promote these semantics.
+`ValidatedExpectedResults::get(TestId)` and deterministic `iter()` return
+borrowed views. Those views preserve `available`, `unavailable` with every
+typed feature/reason, `not-yet-established`, `ready`, `not-ready` with every
+limitation/reason, classification reason, expected-failure reason, flaky
+reason, environment reason, and lane-exclusion reason. They expose no serde
+schema, constructors, or mutable records. AG4 supplies only the empty parser
+environment assessment because current parser cases declare no special
+environment requirements. Generic named-lane selection and broad environment
+assessment remain later AG work.
+
+AG4 evaluates these metadata dimensions and canonical eligibility before it
+requires execution infrastructure. Not-yet-classified and harness-not-ready or
+harness-readiness-not-yet-established cases therefore remain honestly
+reportable without an executable subsystem package. A `Ready` harness claim is
+an affirmative infrastructure assertion: AG4 still loads and reconciles its
+declared package even when engine capability makes the case non-runnable. Only
+a runnable case with a successfully reconciled ready package is evaluated.
 
 ## Deterministic summary and contributor workflow
 
@@ -355,9 +369,8 @@ When adding or changing a fixture:
 
 ## Seed evidence and harness-readiness audit
 
-AG3 reviewed all 11 AG2 seeds without execution or host inspection. The seven
-records initially considered classified received an explicit AG1 readiness
-audit:
+AG3 originally reviewed 11 AG2 seeds without execution or host inspection. The
+following table records that historical pre-AG4 readiness audit:
 
 | Seed | Future subsystem-owned observation | Authoritative expected semantic value today | Would an adapter alone permit truthful pass/fail? | Final AG3 state |
 | --- | --- | --- | --- | --- |
@@ -378,26 +391,46 @@ The remaining four records stay explicitly not yet classified:
 | `paint-semantic-reference-basic` | the AG semantic-comparison contract and rendering requirements are unspecified |
 | `browser-controlled-static-page-basic` | V5/AC10 establish runtime orchestration, but this fixture's AG observation and viewport/text/resource requirements are unspecified |
 
-The four available assertions are narrow production-path assertions, not
-claims that AG can execute the fixtures or that Borrowser broadly conforms.
-Each is expected-pass with stability not yet established and no special
-logical-test environment requirements. Each remains harness-not-ready with
-three exact limitations: missing subsystem adapter, missing expected
-observation, and missing comparison surface. No unsupported expectation
-representation is declared for these four seeds because no authoritative
-expectation exists yet to encode. No missing observation surface is declared
-because the relevant HTML/CSS subsystem-owned observation already exists. The
-other seven records remain wholly unclassified rather than persisting partial
-or inferred dimensions.
+### AG4 parser readiness transition
+
+AG4 expands the inventory to 15 logical tests. The three original parser
+records and the new tokenizer, tree-recovery, and representative-DOM records
+are now `harness.readiness = "ready"` only because each has a strict V2 package,
+canonical AE loading, a matching adapter/profile, an independently reviewed
+expected observation, and an implemented comparison surface. Their engine
+capability is available and their current environment requirements are empty,
+so the canonical evaluator marks them runnable.
+
+`html-tree-construction-repeated-body-unavailable` also has a ready harness and
+standards-derived expectation, but declares the
+`merge-attributes-into-existing-body-element` `html-parser-feature` gap. The
+expected final tree requires the existing body to retain `a=one` and acquire
+the missing `b=three` and `c=four` attributes. The case's exact parse errors,
+document mode, and final tree do not observe the separate repeated-body
+`frameset_ok = false` transition, so that production gap remains in AE tracking
+without becoming a blocker for this logical AG case. The case is therefore not
+runnable, not attempted, and has no observed parser outcome. It is not an
+XFAIL. AG4 has no repository XFAIL seed because the reviewed known parser gaps
+are capability gaps rather than honest runnable semantic mismatches; typed
+orchestration tests cover XFAIL/XPASS policy normalization.
+
+The initial four available assertions were narrow production-path assertions,
+not broad conformance claims. AG4's six available parser records remain equally
+narrow even though their package, adapter, expectation, and comparison evidence
+now permits execution. The available CSS syntax record retains the initial
+three not-ready limitations. Seven non-parser records remain wholly
+unclassified rather than persisting partial or inferred dimensions.
 
 ## Non-claims and deferred work
 
-AG3 adds metadata and accounting only. It does not implement a runner,
+AG3 itself adds metadata and accounting only. AG4 now consumes its immutable
+views and eligibility result for parser cases; AG3 still does not implement a runner,
 subsystem adapter, execution request, environment inspection or provisioning,
 lane selection, CI execution, source/WPT importer, cross-engine capture,
 rendered/raster comparison, browser automation, observed outcome,
 attempt state, result normalization, XFAIL/XPASS evaluation, or production
-browser behavior. Those require later Milestone AG contracts and issues.
+browser behavior. Non-parser execution and the other listed facilities require
+later Milestone AG contracts and issues.
 
 AG3 therefore closes the expected-result metadata issue without closing
 Milestone AG or claiming broad WPT, HTML, CSS, rendering, or browser

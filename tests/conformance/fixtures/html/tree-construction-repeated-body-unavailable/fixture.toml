@@ -1,0 +1,15 @@
+format = "borrowser-conformance-fixture-v2"
+id = "html-tree-construction-repeated-body-unavailable"
+scope = "static-html-css-no-js"
+observation = "html-tree-construction"
+test_path = "parser/input.html"
+
+[source]
+kind = "native"
+
+[metadata]
+description = "Standards-derived repeated-body outcome retained as non-runnable until body-attribute merging exists."
+
+[execution_package]
+entry_path = "parser/fixture.toml"
+support_paths = ["parser/document-mode.txt", "parser/parse-errors.txt", "parser/tree.txt"]

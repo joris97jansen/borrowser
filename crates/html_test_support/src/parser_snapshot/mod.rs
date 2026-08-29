@@ -102,7 +102,6 @@ impl SnapshotData {
         }
     }
 
-    #[cfg(test)]
     pub(crate) fn bytes(&self) -> &str {
         &self.bytes
     }

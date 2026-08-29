@@ -442,6 +442,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "conformance-runner"
+version = "0.1.0"
+dependencies = [
+ "conformance-test-support",
+ "html-test-support",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "conformance-test-support"
 version = "0.1.0"
 dependencies = [

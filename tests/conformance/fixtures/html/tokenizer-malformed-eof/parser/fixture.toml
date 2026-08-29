@@ -1,0 +1,37 @@
+format = "borrowser-html-parser-fixture-v2"
+id = "html-tokenizer-malformed-eof"
+
+[source]
+kind = "native"
+
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "0a478015cc6f8fd7de92ddd658f5f19a4ee645e5854b2da12a5955c59c15d58b"
+
+[execution]
+reference_delivery = "whole-unicode"
+
+[execution.target]
+kind = "standalone-tokenizer"
+
+[[execution.deliveries]]
+name = "whole-unicode"
+unit = "unicode-scalars"
+strategy = "whole"
+
+[[execution.deliveries]]
+name = "declared-scalar-split"
+unit = "unicode-scalars"
+strategy = "boundaries"
+boundaries = [1]
+
+[expectations]
+tokens = "tokens.txt"
+parse_errors = "parse-errors.txt"
+
+[disposition]
+status = "active"
+
+[metadata]
+description = "AG4 standalone-tokenizer adaptation of the reviewed AE tokenizer-eof-recovery oracle; document-tree errors are intentionally inapplicable."

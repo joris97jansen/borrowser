@@ -16,6 +16,10 @@ const MAX_SEMANTIC_IDENTIFIER_BYTES: usize = 128;
 pub(crate) struct NonEmptyReason(String);
 
 impl NonEmptyReason {
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+
     pub(crate) fn parse(value: String) -> Result<Self, ReasonValidationError> {
         if value.trim().is_empty() {
             return Err(ReasonValidationError::Empty);
@@ -41,6 +45,10 @@ pub(crate) enum ReasonValidationError {
 pub(crate) struct CapabilityFeatureId(String);
 
 impl CapabilityFeatureId {
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+
     pub(crate) fn parse(value: String) -> Option<Self> {
         is_semantic_identifier(&value).then_some(Self(value))
     }
@@ -145,7 +153,7 @@ mod semantic_identifier_tests {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum RequirementTag {
+pub enum RequirementTag {
     NoJs,
     RequiresJs,
     RequiresDomApi,
@@ -176,7 +184,7 @@ impl RequirementTag {
         Self::RequiresUserInteraction,
     ];
 
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::NoJs => "no-js",
             Self::RequiresJs => "requires-js",
@@ -199,7 +207,7 @@ impl RequirementTag {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum EngineCapabilityKind {
+pub enum EngineCapabilityKind {
     JavaScriptExecution,
     DomApi,
     Networking,
@@ -226,7 +234,7 @@ impl EngineCapabilityKind {
         Self::UserInteraction,
     ];
 
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::JavaScriptExecution => "javascript-execution",
             Self::DomApi => "dom-api",
@@ -277,6 +285,14 @@ impl MissingEngineCapability {
         self.kind
     }
 
+    pub(crate) fn feature(&self) -> Option<&CapabilityFeatureId> {
+        self.feature.as_ref()
+    }
+
+    pub(crate) fn reason(&self) -> &NonEmptyReason {
+        &self.reason
+    }
+
     pub(crate) fn validated(
         kind: EngineCapabilityKind,
         feature: Option<CapabilityFeatureId>,
@@ -300,7 +316,7 @@ pub(crate) enum EngineCapabilityAvailability {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum HarnessLimitationKind {
+pub enum HarnessLimitationKind {
     MissingSubsystemAdapter,
     UnsupportedSourceFormat,
     MissingExpectedObservation,
@@ -323,7 +339,7 @@ impl HarnessLimitationKind {
         Self::MissingEnvironmentProvisioning,
     ];
 
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::MissingSubsystemAdapter => "missing-subsystem-adapter",
             Self::UnsupportedSourceFormat => "unsupported-source-format",
@@ -352,6 +368,10 @@ impl HarnessLimitation {
         self.kind
     }
 
+    pub(crate) fn reason(&self) -> &NonEmptyReason {
+        &self.reason
+    }
+
     pub(crate) fn validated(kind: HarnessLimitationKind, reason: NonEmptyReason) -> Self {
         Self { kind, reason }
     }
@@ -365,7 +385,7 @@ pub(crate) enum HarnessReadiness {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum EnvironmentRequirementKind {
+pub enum EnvironmentRequirementKind {
     ControlledFontSet,
     ViewportConfiguration,
     DeviceScale,
@@ -388,7 +408,7 @@ impl EnvironmentRequirementKind {
         Self::UserInteractionEnvironment,
     ];
 
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::ControlledFontSet => "controlled-font-set",
             Self::ViewportConfiguration => "viewport-configuration",
@@ -440,6 +460,10 @@ impl EnvironmentRequirement {
         &self.key
     }
 
+    pub(crate) fn reason(&self) -> &NonEmptyReason {
+        &self.reason
+    }
+
     pub(crate) fn validated(key: EnvironmentRequirementKey, reason: NonEmptyReason) -> Self {
         Self { key, reason }
     }
@@ -462,14 +486,14 @@ impl ExecutionEnvironmentRequirements {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum ExpectedFailureClassification {
+pub enum ExpectedFailureClassification {
     SemanticMismatch,
 }
 
 impl ExpectedFailureClassification {
     pub(crate) const ALL: [Self; 1] = [Self::SemanticMismatch];
 
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::SemanticMismatch => "semantic-mismatch",
         }
@@ -497,7 +521,7 @@ pub(crate) enum Stability {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum LanePolicyScope {
+pub enum LanePolicyScope {
     NormalCi,
     LocalExtended,
     ScheduledExtended,
@@ -512,7 +536,7 @@ impl LanePolicyScope {
         Self::ManualExtended,
     ];
 
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::NormalCi => "normal-ci",
             Self::LocalExtended => "local-extended",
@@ -537,6 +561,10 @@ pub(crate) struct LaneExclusion {
 impl LaneExclusion {
     pub(crate) fn policy(&self) -> LanePolicyScope {
         self.policy
+    }
+
+    pub(crate) fn reason(&self) -> &NonEmptyReason {
+        &self.reason
     }
 
     pub(crate) fn validated(policy: LanePolicyScope, reason: NonEmptyReason) -> Self {
@@ -621,7 +649,7 @@ pub(crate) enum Classification {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum SubsystemOwner {
+pub enum SubsystemOwner {
     HtmlParser,
     Css,
     Layout,
@@ -638,7 +666,7 @@ impl SubsystemOwner {
         Self::BrowserRuntime,
     ];
 
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::HtmlParser => "html-parser",
             Self::Css => "css",

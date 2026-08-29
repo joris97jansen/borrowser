@@ -174,6 +174,39 @@ pub enum ParserTargetKind {
     Fragment,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParserFixtureExecutionModel {
+    LegacySingleDelivery,
+    CanonicalObservationParity,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FixtureDispositionKind {
+    Active,
+    ExpectedUnsupported,
+    ExpectedFailure,
+    Skipped,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParseErrorExpectationStrength {
+    Exact,
+    Count { expected: u64 },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeclaredExpectation {
+    Tokens,
+    ParseErrors(ParseErrorExpectationStrength),
+    ImplementationDiagnostics,
+    DocumentMode,
+    Tree,
+    Patches,
+    Transitions,
+    UnsupportedFeatures,
+    FinalInvariants,
+}
+
 #[derive(Clone, Debug)]
 pub(super) struct FragmentContext {
     namespace: ElementNamespace,
@@ -621,7 +654,7 @@ pub(super) enum FixtureCapability {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ExpectationSurface {
+pub enum ExpectationSurface {
     Tokens,
     ParseErrors,
     ImplementationDiagnostics,
@@ -634,7 +667,7 @@ pub(crate) enum ExpectationSurface {
 }
 
 impl ExpectationSurface {
-    pub(crate) const fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             Self::Tokens => "tokens",
             Self::ParseErrors => "parse-errors",
@@ -763,11 +796,13 @@ pub(super) enum FixtureExecutionOutcome {
         strategy: String,
         surface: ExpectationSurface,
         diff: String,
+        reference_result: Option<Box<CanonicalParserResult>>,
     },
     ParityMismatchV2 {
         strategy: String,
         surface: ExpectationSurface,
         diff: String,
+        reference_result: Option<Box<CanonicalParserResult>>,
     },
     UnsupportedExpectation {
         surface: ExpectationSurface,

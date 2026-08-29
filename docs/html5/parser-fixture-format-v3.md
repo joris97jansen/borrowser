@@ -63,3 +63,15 @@ mismatches retain the existing parse-errors spelling.
 The existing html5-dom-v3 tree snapshot is reused for namespaces, templates,
 doctypes, comments, text, attributes, and processing instructions. Fixture-v3
 does not imply a new DOM snapshot version.
+
+## AG4 consumer rule
+
+AG4 may load any V1/V2/V3 declaration through the canonical loader, but its
+modern tokenizer, tree-construction, and DOM profiles require the validated
+canonical observation/parity execution model. The decision uses
+`ParserFixtureExecutionModel`, not the serialized `format` string. V1 remains
+supported unchanged by standalone AE regression infrastructure and is rejected
+only when reconciled with an AG4 profile. V3 count-strength parse-error
+expectations remain visible as `ParseErrorExpectationStrength::Count`; AG4's
+initial exact-error profiles reject them rather than treating them as absent or
+fabricating identities.

@@ -292,7 +292,7 @@ fn outcome_name(value: &FixtureOutcomeClassification) -> String {
     }
 }
 
-fn skip_name(value: &SkipClassification) -> String {
+pub(super) fn skip_name(value: &SkipClassification) -> String {
     match value {
         SkipClassification::UnsupportedCapability(capability) => {
             format!("unsupported:{}", capability_name(capability))
@@ -300,7 +300,7 @@ fn skip_name(value: &SkipClassification) -> String {
     }
 }
 
-fn capability_name(value: &FixtureCapability) -> String {
+pub(super) fn capability_name(value: &FixtureCapability) -> String {
     match value {
         FixtureCapability::RawByteInput => "raw-byte-input".to_string(),
         FixtureCapability::ByteDelivery => "byte-delivery".to_string(),

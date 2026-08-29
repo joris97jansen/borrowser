@@ -1,0 +1,15 @@
+format = "borrowser-conformance-fixture-v2"
+id = "html-tree-construction-malformed-recovery"
+scope = "static-html-css-no-js"
+observation = "html-tree-construction"
+test_path = "parser/input.html"
+
+[source]
+kind = "native"
+
+[metadata]
+description = "Malformed active-formatting recovery with exact parse errors, document mode, and construction tree."
+
+[execution_package]
+entry_path = "parser/fixture.toml"
+support_paths = ["parser/document-mode.txt", "parser/parse-errors.txt", "parser/tree.txt"]

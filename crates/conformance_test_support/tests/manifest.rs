@@ -51,10 +51,11 @@ fn exact_manifest_contract_has_fixed_fields_whitespace_and_reference_metadata() 
     .expect("UTF-8 manifest");
     assert_eq!(
         actual,
-        r#"format = "borrowser-conformance-manifest-v1"
+        r#"format = "borrowser-conformance-manifest-v2"
 
 [[tests]]
 id = "semantic-reference"
+fixture_format = "borrowser-conformance-fixture-v1"
 fixture_path = "tests/conformance/fixtures/reference"
 test_path = "tests/conformance/fixtures/reference/test.html"
 metadata_path = "tests/conformance/fixtures/reference/fixture.toml"

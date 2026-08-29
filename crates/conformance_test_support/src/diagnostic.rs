@@ -70,6 +70,22 @@ pub enum InventoryDiagnosticKind {
         value: String,
     },
     EmptyDescription,
+    TooManyExecutionSupportPaths {
+        declared: usize,
+        maximum: usize,
+    },
+    ExecutionEntryNotNested {
+        value: String,
+    },
+    ExecutionFileOutsidePackage {
+        field: String,
+        value: String,
+    },
+    DuplicateDeclaredPath {
+        first_field: String,
+        field: String,
+        value: String,
+    },
     InvalidRelativePath {
         field: &'static str,
         value: String,
@@ -117,10 +133,14 @@ impl InventoryDiagnosticKind {
             | Self::InvalidObservation { .. }
             | Self::InvalidSourceKind { .. }
             | Self::InvalidReferenceKind { .. }
-            | Self::EmptyDescription => 6,
+            | Self::EmptyDescription
+            | Self::TooManyExecutionSupportPaths { .. } => 6,
             Self::InvalidRelativePath { .. }
             | Self::MissingDeclaredFile { .. }
-            | Self::DeclaredPathNotRegularFile { .. } => 7,
+            | Self::DeclaredPathNotRegularFile { .. }
+            | Self::ExecutionEntryNotNested { .. }
+            | Self::ExecutionFileOutsidePackage { .. }
+            | Self::DuplicateDeclaredPath { .. } => 7,
             Self::DuplicateTestId { .. } | Self::CaseCollidingTestId { .. } => 9,
         }
     }
@@ -142,6 +162,16 @@ impl InventoryDiagnosticKind {
             | Self::InvalidSourceKind { value }
             | Self::InvalidReferenceKind { value } => value.clone(),
             Self::UnknownDescriptorField { field } => field.clone(),
+            Self::TooManyExecutionSupportPaths { declared, maximum } => {
+                format!("{declared:020}:{maximum:020}")
+            }
+            Self::ExecutionEntryNotNested { value } => value.clone(),
+            Self::ExecutionFileOutsidePackage { field, value } => format!("{field}:{value}"),
+            Self::DuplicateDeclaredPath {
+                first_field,
+                field,
+                value,
+            } => format!("{value}:{first_field}:{field}"),
             Self::InvalidRelativePath { field, value }
             | Self::MissingDeclaredFile { field, value }
             | Self::DeclaredPathNotRegularFile { field, value } => format!("{field}:{value}"),
@@ -174,7 +204,7 @@ impl fmt::Display for InventoryDiagnostic {
             InventoryDiagnosticKind::NonPortablePathComponent { value } => {
                 write!(
                     f,
-                    "path component is outside the V1 portable grammar: {value:?}"
+                    "path component is outside the portable fixture grammar: {value:?}"
                 )
             }
             InventoryDiagnosticKind::MissingFixtureDescriptor => {
@@ -207,7 +237,7 @@ impl fmt::Display for InventoryDiagnostic {
                 write!(f, "unknown fixture descriptor field '{field}'")
             }
             InventoryDiagnosticKind::InvalidDescriptorShape => {
-                f.write_str("fixture.toml does not match the v1 descriptor shape")
+                f.write_str("fixture.toml does not match its versioned descriptor shape")
             }
             InventoryDiagnosticKind::InvalidTestId { value } => {
                 write!(f, "invalid test id '{value}'")
@@ -233,6 +263,26 @@ impl fmt::Display for InventoryDiagnostic {
             InventoryDiagnosticKind::EmptyDescription => {
                 f.write_str("metadata.description must be non-empty")
             }
+            InventoryDiagnosticKind::TooManyExecutionSupportPaths { declared, maximum } => write!(
+                f,
+                "execution_package.support_paths declares {declared} paths, above the {maximum}-path limit"
+            ),
+            InventoryDiagnosticKind::ExecutionEntryNotNested { value } => write!(
+                f,
+                "execution_package.entry_path must name a file below a nested package directory: '{value}'"
+            ),
+            InventoryDiagnosticKind::ExecutionFileOutsidePackage { field, value } => write!(
+                f,
+                "{field} is outside the execution package directory: '{value}'"
+            ),
+            InventoryDiagnosticKind::DuplicateDeclaredPath {
+                first_field,
+                field,
+                value,
+            } => write!(
+                f,
+                "{field} duplicates path '{value}' first declared by {first_field}"
+            ),
             InventoryDiagnosticKind::InvalidRelativePath { field, value } => {
                 write!(f, "{field} is not a safe bundle-relative path: '{value}'")
             }

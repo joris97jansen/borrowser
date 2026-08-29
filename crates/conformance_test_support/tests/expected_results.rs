@@ -3,6 +3,7 @@ mod support;
 use std::fs;
 
 use conformance_test_support::{
+    ClassificationView, EngineCapabilityView, ExpectationView, HarnessReadinessView, StabilityView,
     discover_inventory, load_expected_results, serialize_expected_results_summary,
 };
 use support::{TestRepository, descriptor};
@@ -162,6 +163,117 @@ fn expected_failure_is_typed_and_uses_inventory_observation_without_duplication(
         &record.replace("failure = { kind = \"semantic-mismatch\" }\n", ""),
     ));
     assert_error_contains(&repository, "expected-fail requires failure classification");
+}
+
+#[test]
+fn public_execution_views_preserve_all_normative_states_and_reasons() {
+    let repository = repository_with_fixture("layout-case", "layout-geometry");
+    let record = classified_record("layout-case", "requires-layout-feature")
+        .replace(
+            "availability = \"available\"",
+            "availability = \"unavailable\"\nmissing = [{ kind = \"layout-feature\", feature = \"css-grid\", reason = \"Exact missing capability reason.\" }]",
+        )
+        .replace(
+            "The synthetic adapter is deliberately absent.",
+            "Exact harness limitation reason.",
+        )
+        .replace(
+            "requirements = []",
+            "requirements = [{ kind = \"viewport-configuration\", profile = \"fixed-800x600\", reason = \"Exact environment reason.\" }]",
+        )
+        .replace(
+            "kind = \"expected-pass\"",
+            "kind = \"expected-fail\"\nreason = \"Exact expected-failure reason.\"\nfailure = { kind = \"semantic-mismatch\" }",
+        )
+        .replace(
+            "state = \"not-yet-established\"",
+            "state = \"flaky\"\nreason = \"Exact flaky reason.\"",
+        )
+        .replace(
+            "lane_exclusions = []",
+            "lane_exclusions = [{ policy = \"normal-ci\", reason = \"Exact lane reason.\" }]",
+        );
+    repository.write_expected_results(&envelope(&record));
+    let inventory = discover_inventory(&repository.repository()).unwrap();
+    let results = load_expected_results(repository.root(), &inventory).unwrap();
+    let view = results.iter().next().unwrap();
+    let ClassificationView::Classified(metadata) = view.classification() else {
+        panic!("classified view");
+    };
+    let EngineCapabilityView::Unavailable { mut missing } = metadata.engine_capability() else {
+        panic!("unavailable engine view");
+    };
+    let capability = missing.next().unwrap();
+    assert_eq!(capability.feature(), Some("css-grid"));
+    assert_eq!(capability.reason(), "Exact missing capability reason.");
+    let HarnessReadinessView::NotReady { mut limitations } = metadata.harness_readiness() else {
+        panic!("not-ready harness view");
+    };
+    assert_eq!(
+        limitations.next().unwrap().reason(),
+        "Exact harness limitation reason."
+    );
+    let environment = metadata.environment_requirements().next().unwrap();
+    assert_eq!(environment.profile(), "fixed-800x600");
+    assert_eq!(environment.reason(), "Exact environment reason.");
+    assert!(matches!(
+        metadata.expectation(),
+        ExpectationView::ExpectedFail {
+            reason: "Exact expected-failure reason.",
+            ..
+        }
+    ));
+    assert!(matches!(
+        metadata.stability(),
+        StabilityView::Flaky {
+            reason: "Exact flaky reason."
+        }
+    ));
+    assert_eq!(
+        metadata.lane_exclusions().next().unwrap().reason(),
+        "Exact lane reason."
+    );
+}
+
+#[test]
+fn public_execution_views_preserve_not_yet_established_and_unclassified_reason() {
+    let repository = repository_with_fixture("layout-case", "layout-geometry");
+    let unclassified = r#"[[tests]]
+id = "layout-case"
+classification = "not-yet-classified"
+reason = "Exact classification reason."
+references = []
+"#;
+    repository.write_expected_results(&envelope(unclassified));
+    let inventory = discover_inventory(&repository.repository()).unwrap();
+    let results = load_expected_results(repository.root(), &inventory).unwrap();
+    assert!(matches!(
+        results.iter().next().unwrap().classification(),
+        ClassificationView::NotYetClassified {
+            reason: "Exact classification reason."
+        }
+    ));
+
+    let record = classified_record("layout-case", "requires-layout-feature")
+        .replace("availability = \"available\"", "availability = \"not-yet-established\"")
+        .replace(
+            "readiness = \"not-ready\"\nlimitations = [\n  { kind = \"missing-subsystem-adapter\", reason = \"The synthetic adapter is deliberately absent.\" },\n]",
+            "readiness = \"not-yet-established\"",
+        );
+    repository.write_expected_results(&envelope(&record));
+    let results = load_expected_results(repository.root(), &inventory).unwrap();
+    let view = results.iter().next().unwrap();
+    let ClassificationView::Classified(metadata) = view.classification() else {
+        panic!("classified view");
+    };
+    assert!(matches!(
+        metadata.engine_capability(),
+        EngineCapabilityView::NotYetEstablished
+    ));
+    assert!(matches!(
+        metadata.harness_readiness(),
+        HarnessReadinessView::NotYetEstablished
+    ));
 }
 
 #[test]
@@ -363,18 +475,20 @@ fn repository_registry_has_complete_seed_coverage_and_only_evidenced_assertions(
     ))
     .expect("repository inventory");
     let results = load_expected_results(root, &inventory).expect("repository expected results");
-    assert_eq!(inventory.fixtures().len(), 11);
+    assert_eq!(inventory.fixtures().len(), 15);
     let summary = String::from_utf8(serialize_expected_results_summary(&results)).unwrap();
     for expected in [
-        "discovered = 11\n",
-        "classified = 4\n",
+        "discovered = 15\n",
+        "classified = 8\n",
         "not_yet_classified = 7\n",
-        "available = 4\n",
-        "not_ready = 4\n",
-        "missing_subsystem_adapter = 4\n",
-        "missing_expected_observation = 4\n",
+        "available = 7\n",
+        "unavailable = 1\n",
+        "ready = 7\n",
+        "not_ready = 1\n",
+        "missing_subsystem_adapter = 1\n",
+        "missing_expected_observation = 1\n",
         "unsupported_expectation_representation = 0\n",
-        "missing_comparison_surface = 4\n",
+        "missing_comparison_surface = 1\n",
     ] {
         assert!(summary.contains(expected), "missing {expected:?}");
     }

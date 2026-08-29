@@ -39,6 +39,27 @@ V1 bundle contents are default-deny:
 Assets or resources beyond these declarations require a future versioned schema
 change. Files outside a bundle are invalid rather than implicit fixtures.
 
+AG4 adds `borrowser-conformance-fixture-v2` for one explicitly bounded opaque
+subsystem execution package. V2 keeps `fixture.toml`, `test_path`, and optional
+`reference.path` unchanged and adds:
+
+```toml
+[execution_package]
+entry_path = "parser/fixture.toml"
+support_paths = ["parser/parse-errors.txt", "parser/tokens.txt"]
+```
+
+`entry_path` must be nested and establishes the package root. `test_path` and
+every support path must be beneath that root. The entry, test payload,
+reference when present, and each support file are separate declarations;
+duplicates are errors. V2 allows only the exact nested `fixture.toml` named by
+`entry_path`; every other nested descriptor remains invalid. Every contained
+regular file is still default-deny, symlinks and non-regular entries remain
+invalid, and support paths are limited to 256. The schema deliberately has no
+package-kind field and no unrestricted assets or resources directory. Generic
+AG validation treats package bytes as opaque and never interprets parser,
+CSS, Layout, Paint, or runtime semantics.
+
 Fixture payload bytes are opaque to AG2. Discovery verifies filesystem shape but
 does not read, decode, normalize, parse, or hash payloads. In particular,
 extensions do not establish a text contract; CRLF, lone CR, invalid UTF-8, and
@@ -83,6 +104,11 @@ versioned serialized descriptor
 ```
 
 No manifest can be built from an unvalidated serialized descriptor.
+
+V1 remains strict and unchanged. V2 has the same required common fields and
+requires the strict `[execution_package]` table shown above. Unknown root or
+nested fields are errors in both versions; V2 is not a permissive extension of
+V1.
 
 ## Stable logical identity
 
@@ -142,7 +168,7 @@ integrity scan of that bundle's full descendant tree. A directory without a
 descriptor is only grouping; regular files there produce a missing-descriptor
 diagnostic. The descriptor and every declared path must be regular files.
 
-One V1 component grammar applies to every organizational directory, bundle
+One portable component grammar applies to every organizational directory, bundle
 directory, descendant directory, payload filename, reference filename, and
 `fixture.toml` beneath the fixture root. A component is 1 to 128 ASCII bytes,
 begins and ends with lowercase `a-z` or `0-9`, and otherwise contains only
@@ -173,18 +199,23 @@ make safe traversal impossible stop discovery before bundle validation.
 
 `tests/conformance/manifest.toml` is a generated review artifact. Its only
 source of truth is the set of validated bundle-local `fixture.toml` files.
-Manifest V1 begins with:
+AG4 evolves the generated review artifact to Manifest V2 because reviewers
+must be able to see which descriptor version and explicitly declared package
+files were validated. Manifest V2 begins with:
 
 ```toml
-format = "borrowser-conformance-manifest-v1"
+format = "borrowser-conformance-manifest-v2"
 ```
 
 It then contains one `[[tests]]` record per logical ID, ordered bytewise by
-`TestId`. Required fields occur in this exact order: `id`, `fixture_path`,
+`TestId`. Required fields occur in this exact order: `id`, `fixture_format`, `fixture_path`,
 `test_path`, `metadata_path`, `scope`, `observation`, `source_kind`. Optional
-`reference_kind` and `reference_path` follow in that order. The descriptor path
-is the metadata path because `fixture.toml` is the single authoritative
-descriptor/metadata source.
+`reference_kind` and `reference_path` follow in that order. V2 fixture records
+then contain `execution_entry_path` and the sorted
+`execution_support_paths` array. V1 records omit those two package fields. The
+descriptor path is the metadata path because the outer `fixture.toml` remains
+the single authoritative AG descriptor/metadata source; a nested subsystem
+descriptor is only an opaque declared package entry.
 
 The generator fixes record order, field order, one blank line before each
 record, UTF-8 encoding, LF newlines, and one final newline. TOML string lexical
@@ -223,22 +254,24 @@ fixture or selecting an AG execution lane.
 
 ## Non-claims and deferred work
 
-The seed corpus proves only layout, descriptor parsing, discovery, validation,
-identity, reference declaration, and manifest generation. Fixture registration
-does not imply executability, pass status, standards conformance, WPT coverage,
-or browser compatibility. Execution and semantic adapters, result/expectation
-models, reporting, lane selection, imports, broad WPT coverage, cross-engine
-capture, and rendered/raster comparison belong to later Milestone AG issues.
+The inventory layer proves only layout, descriptor parsing, discovery,
+validation, identity, reference/package declaration, and manifest generation.
+Fixture registration does not imply executability, pass status, standards
+conformance, WPT coverage, or browser compatibility. AG4 separately executes
+only the classified HTML parser V2 packages through `conformance-runner`;
+generic inventory does not execute them. CSS/Layout/Paint/runtime adapters,
+lane selection, broad imports, cross-engine capture, and rendered/raster
+comparison remain later Milestone AG work.
 
 ## Relationship to AG3 classification metadata
 
 AG3 adds the separate human-authored
 `tests/conformance/expected-results.toml` registry described by
 [`ag3-expected-results-classification-contract.md`](ag3-expected-results-classification-contract.md).
-It reconciles one record per validated AG2 `TestId`, but it does not extend the
-fixture descriptor or generated manifest. `borrowser-conformance-fixture-v1`
-and `borrowser-conformance-manifest-v1` remain unchanged and continue to reject
-unknown AG3 fields.
+It reconciles one record per validated AG2 `TestId`, but it does not place AG3
+fields in either fixture descriptor version or Manifest V2. V1 remains
+unchanged; V2 and Manifest V2 add only generic package review truth and continue
+to reject unknown AG3 fields.
 
 AG2 inventory truth supplies stable identity and the sole authoritative
 `ObservationSurface`. AG3 supplies independent classification, capability,

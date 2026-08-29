@@ -80,10 +80,22 @@ platform compatibility.
 AG2 adds the tooling-owned, deterministic fixture inventory and checked-in
 manifest contract described in
 [`docs/conformance/ag2-fixture-inventory-manifest-contract.md`](../conformance/ag2-fixture-inventory-manifest-contract.md).
-The `conformance-test-support` crate validates untrusted bundle declarations and
-emits host-independent inventory bytes without depending on production engine
-crates. This inventory is registration only; execution, results, adapters,
-cross-engine comparison, and rendered/raster reftests remain unimplemented.
+The `conformance-test-support` crate validates untrusted bundle declarations,
+classification metadata, and contextual eligibility and emits host-independent
+inventory bytes without depending on production engine crates. AG4 adds the
+test/tooling-only `conformance-runner`, which depends on generic AG support and
+`html-test-support`. Its parser route is strictly
+`conformance-runner -> html-test-support -> html::conformance -> production HTML parser`.
+The generic crate does not depend back on HTML, and HTML/test support does not
+depend on AG. AG4 implements only tokenizer, tree-construction, and
+parser-created DOM profiles; CSS, Layout, Paint/GFX, Browser/runtime, JS,
+cross-engine, and raster execution remain unimplemented.
+`conformance-runner` enables no subsystem adapter by default; the parser lane
+selects its optional `html-parser` feature explicitly. Semantic Cargo metadata
+tests resolve package identities through direct aliases, workspace-inherited
+aliases, and target-specific dependencies, then evaluate the default and
+HTML-enabled feature closures separately to keep the dependency direction
+enforceable.
 
 ---
 

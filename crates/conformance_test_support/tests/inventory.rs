@@ -6,7 +6,7 @@ use conformance_test_support::{
     InventoryDiagnosticKind, InventoryRepository, MAX_DESCRIPTOR_BYTES, ObservationSurface,
     discover_inventory, generate_manifest_bytes,
 };
-use support::{TestRepository, descriptor};
+use support::{TestRepository, descriptor, descriptor_v2};
 
 #[test]
 fn filesystem_creation_order_does_not_change_discovery_or_diagnostics() {
@@ -605,6 +605,196 @@ fn every_v1_observation_value_is_explicitly_supported() {
         let inventory = discover_inventory(&repository.repository()).expect("valid observation");
         assert_eq!(inventory.fixtures()[0].observation(), expected);
     }
+}
+
+#[test]
+fn v2_accepts_one_explicit_default_deny_execution_package() {
+    let repository = TestRepository::new();
+    repository.bundle(
+        "packaged",
+        &descriptor_v2(
+            "packaged-tokenizer",
+            "html-tokenizer",
+            "parser/input.html",
+            "parser/fixture.toml",
+            &["parser/tokens.txt", "parser/parse-errors.txt"],
+        ),
+        &[
+            ("parser/fixture.toml", b"canonical subsystem declaration"),
+            ("parser/input.html", b"<p>input"),
+            ("parser/tokens.txt", b"tokens"),
+            ("parser/parse-errors.txt", b"errors"),
+        ],
+    );
+    let inventory = discover_inventory(&repository.repository()).expect("valid V2 package");
+    let fixture = &inventory.fixtures()[0];
+    let package = fixture.execution_package().expect("execution package");
+    assert_eq!(
+        package.entry_path().as_str(),
+        "tests/conformance/fixtures/packaged/parser/fixture.toml"
+    );
+    assert_eq!(
+        package
+            .support_paths()
+            .iter()
+            .map(|path| path.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "tests/conformance/fixtures/packaged/parser/parse-errors.txt",
+            "tests/conformance/fixtures/packaged/parser/tokens.txt",
+        ]
+    );
+}
+
+#[test]
+fn v2_rejects_undeclared_and_extra_nested_descriptors() {
+    let undeclared = TestRepository::new();
+    undeclared.bundle(
+        "packaged",
+        &descriptor_v2(
+            "packaged-tokenizer",
+            "html-tokenizer",
+            "parser/input.html",
+            "parser/fixture.toml",
+            &["parser/tokens.txt"],
+        ),
+        &[
+            ("parser/fixture.toml", b"entry"),
+            ("parser/input.html", b"input"),
+            ("parser/tokens.txt", b"tokens"),
+            ("parser/undeclared.txt", b"not declared"),
+        ],
+    );
+    assert_kind(&undeclared, |kind| {
+        matches!(kind, InventoryDiagnosticKind::UndeclaredBundleFile)
+    });
+
+    let nested = TestRepository::new();
+    nested.bundle(
+        "packaged",
+        &descriptor_v2(
+            "packaged-tokenizer",
+            "html-tokenizer",
+            "parser/input.html",
+            "parser/fixture.toml",
+            &["parser/tokens.txt", "parser/nested/fixture.toml"],
+        ),
+        &[
+            ("parser/fixture.toml", b"entry"),
+            ("parser/input.html", b"input"),
+            ("parser/tokens.txt", b"tokens"),
+            ("parser/nested/fixture.toml", b"nested"),
+        ],
+    );
+    assert_kind(&nested, |kind| {
+        matches!(kind, InventoryDiagnosticKind::NestedFixtureBundle)
+    });
+}
+
+#[test]
+fn v2_rejects_duplicate_and_out_of_package_paths() {
+    let duplicate = TestRepository::new();
+    duplicate.bundle(
+        "packaged",
+        &descriptor_v2(
+            "packaged-tokenizer",
+            "html-tokenizer",
+            "parser/input.html",
+            "parser/fixture.toml",
+            &["parser/input.html"],
+        ),
+        &[
+            ("parser/fixture.toml", b"entry"),
+            ("parser/input.html", b"input"),
+        ],
+    );
+    assert_kind(&duplicate, |kind| {
+        matches!(kind, InventoryDiagnosticKind::DuplicateDeclaredPath { .. })
+    });
+
+    let outside = TestRepository::new();
+    outside.bundle(
+        "packaged",
+        &descriptor_v2(
+            "packaged-tokenizer",
+            "html-tokenizer",
+            "input.html",
+            "parser/fixture.toml",
+            &["parser/tokens.txt"],
+        ),
+        &[
+            ("parser/fixture.toml", b"entry"),
+            ("parser/tokens.txt", b"tokens"),
+            ("input.html", b"input"),
+        ],
+    );
+    assert_kind(&outside, |kind| {
+        matches!(
+            kind,
+            InventoryDiagnosticKind::ExecutionFileOutsidePackage { .. }
+        )
+    });
+}
+
+#[test]
+fn v2_execution_support_count_accepts_exact_boundary_and_rejects_plus_one() {
+    let support = (0..conformance_test_support::MAX_EXECUTION_SUPPORT_PATHS_V2)
+        .map(|index| format!("parser/support-{index:03}.txt"))
+        .collect::<Vec<_>>();
+    let support_refs = support.iter().map(String::as_str).collect::<Vec<_>>();
+    let repository = TestRepository::new();
+    repository.bundle(
+        "packaged",
+        &descriptor_v2(
+            "packaged-boundary",
+            "html-tokenizer",
+            "parser/input.html",
+            "parser/fixture.toml",
+            &support_refs,
+        ),
+        &[
+            ("parser/fixture.toml", b"entry"),
+            ("parser/input.html", b"input"),
+        ],
+    );
+    for path in &support {
+        fs::write(
+            repository.fixture_root().join("packaged").join(path),
+            b"support",
+        )
+        .expect("support file");
+    }
+    discover_inventory(&repository.repository()).expect("exact support-path boundary");
+
+    let too_many = support
+        .iter()
+        .map(String::as_str)
+        .chain(std::iter::once("parser/support-extra.txt"))
+        .collect::<Vec<_>>();
+    let repository = TestRepository::new();
+    repository.bundle(
+        "packaged",
+        &descriptor_v2(
+            "packaged-boundary-plus-one",
+            "html-tokenizer",
+            "parser/input.html",
+            "parser/fixture.toml",
+            &too_many,
+        ),
+        &[
+            ("parser/fixture.toml", b"entry"),
+            ("parser/input.html", b"input"),
+        ],
+    );
+    assert_kind(&repository, |kind| {
+        matches!(
+            kind,
+            InventoryDiagnosticKind::TooManyExecutionSupportPaths {
+                declared: 257,
+                maximum: 256
+            }
+        )
+    });
 }
 
 fn assert_kind(repository: &TestRepository, predicate: impl Fn(&InventoryDiagnosticKind) -> bool) {

@@ -72,6 +72,28 @@ There is one canonical parser-fixture runner. Existing golden, WPT-style, and
 internal corpus infrastructure will be adapted to it in later slices rather
 than being joined by another independent harness.
 
+AG4 adds a narrow immutable consumer boundary around that same runner.
+`evaluate_fixture()` returns one rich `FixtureEvaluation` containing attempt
+state, canonical observed outcome, exact stable failure identity/category,
+incomplete-observation reason/counts, AE disposition evaluation, and
+serialization access to the retained reference observation. Existing
+`run_fixture()` is a compatibility projection of the same internal evaluation;
+it is not a second execution path. An AG call starts exactly one canonical
+fixture evaluation, while the validated AE13c plan remains free to perform all
+baseline, declared, representative, whole, and chunk parser invocations. A
+mismatch baseline is retained in the evaluation so consumers never rerun a
+fixture to recover observations.
+
+The validated fixture exposes only three additional semantic views needed by
+AG4: legacy-single-delivery versus canonical-observation-parity execution
+model, disposition kind, and typed declared expectations including exact
+versus count parse-error strength. Existing ID, input, target, scripting,
+source, hash, and delivery accessors remain authoritative. Serialized schema
+versions, constructors, file access, scheduling internals, and mutable fixture
+state remain private. Legacy fixture-v1 behavior is unchanged; it remains a
+standalone AE regression model and does not satisfy AG4's modern parser
+observation profiles.
+
 ## AE13a execution boundary
 
 AE13a executes one configuration:
@@ -1007,6 +1029,12 @@ its legacy whole-tokenizer path: it generates no representative strategies,
 does not request final invariants, and performs no AE13c parity. V2 requires an
 authoritative domain baseline and requests final invariants for every supported
 execution, whether or not a `final_invariants` sidecar is declared.
+
+Fixture-v3 also normalizes to the canonical parity execution model. Its
+parse-error count expectation remains a weaker typed comparison and is never
+converted into an exact parse-error identity. Initial native AG4 tokenizer and
+tree-construction profiles require exact parse-error snapshots and reject a
+count-strength package during profile reconciliation, before parser execution.
 
 ### Strategy semantics and order
 

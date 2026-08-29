@@ -1,9 +1,26 @@
 use std::fmt;
 
 pub const CONFORMANCE_FIXTURE_FORMAT_V1: &str = "borrowser-conformance-fixture-v1";
+pub const CONFORMANCE_FIXTURE_FORMAT_V2: &str = "borrowser-conformance-fixture-v2";
 pub const MAX_DESCRIPTOR_BYTES: u64 = 64 * 1024;
+pub const MAX_EXECUTION_SUPPORT_PATHS_V2: usize = 256;
 pub(crate) const MAX_PORTABLE_PATH_COMPONENT_BYTES: usize = 128;
 const MAX_TEST_ID_BYTES: usize = 128;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum FixtureFormat {
+    V1,
+    V2,
+}
+
+impl FixtureFormat {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::V1 => CONFORMANCE_FIXTURE_FORMAT_V1,
+            Self::V2 => CONFORMANCE_FIXTURE_FORMAT_V2,
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct PortablePathComponent(String);
@@ -279,6 +296,33 @@ pub struct ReferenceDeclaration {
     path: RepositoryPath,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExecutionPackage {
+    entry_path: RepositoryPath,
+    support_paths: Vec<RepositoryPath>,
+}
+
+impl ExecutionPackage {
+    pub fn entry_path(&self) -> &RepositoryPath {
+        &self.entry_path
+    }
+
+    pub fn support_paths(&self) -> &[RepositoryPath] {
+        &self.support_paths
+    }
+
+    pub(crate) fn validated(
+        entry_path: RepositoryPath,
+        mut support_paths: Vec<RepositoryPath>,
+    ) -> Self {
+        support_paths.sort();
+        Self {
+            entry_path,
+            support_paths,
+        }
+    }
+}
+
 impl ReferenceDeclaration {
     pub fn kind(&self) -> ReferenceKind {
         self.kind
@@ -295,6 +339,7 @@ impl ReferenceDeclaration {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValidatedFixture {
+    format: FixtureFormat,
     id: TestId,
     fixture_path: RepositoryPath,
     test_path: RepositoryPath,
@@ -303,10 +348,15 @@ pub struct ValidatedFixture {
     observation: ObservationSurface,
     source_kind: SourceKind,
     reference: Option<ReferenceDeclaration>,
+    execution_package: Option<ExecutionPackage>,
     description: String,
 }
 
 impl ValidatedFixture {
+    pub fn format(&self) -> FixtureFormat {
+        self.format
+    }
+
     pub fn id(&self) -> &TestId {
         &self.id
     }
@@ -339,12 +389,17 @@ impl ValidatedFixture {
         self.reference.as_ref()
     }
 
+    pub fn execution_package(&self) -> Option<&ExecutionPackage> {
+        self.execution_package.as_ref()
+    }
+
     pub fn description(&self) -> &str {
         &self.description
     }
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn validated(
+        format: FixtureFormat,
         id: TestId,
         fixture_path: RepositoryPath,
         test_path: RepositoryPath,
@@ -353,9 +408,11 @@ impl ValidatedFixture {
         observation: ObservationSurface,
         source_kind: SourceKind,
         reference: Option<ReferenceDeclaration>,
+        execution_package: Option<ExecutionPackage>,
         description: String,
     ) -> Self {
         Self {
+            format,
             id,
             fixture_path,
             test_path,
@@ -364,6 +421,7 @@ impl ValidatedFixture {
             observation,
             source_kind,
             reference,
+            execution_package,
             description,
         }
     }

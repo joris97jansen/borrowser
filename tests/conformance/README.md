@@ -2,8 +2,10 @@
 
 This directory contains the repository-owned AG conformance fixture inventory.
 Each logical fixture is a directory bundle containing exactly one authoritative
-`fixture.toml` descriptor plus only the payload and optional reference file
-declared by that descriptor. See
+outer AG `fixture.toml` descriptor plus only its explicitly declared files.
+V1 declares one payload and an optional reference. V2 may additionally declare
+one opaque, default-deny subsystem execution package with one entry and a
+bounded list of support files. See
 [`docs/conformance/ag2-fixture-inventory-manifest-contract.md`](../../docs/conformance/ag2-fixture-inventory-manifest-contract.md)
 for the normative layout, schema, identity, validation, and manifest contract.
 Expected-result and classification metadata lives separately in the
@@ -16,10 +18,13 @@ To add a fixture:
    grouping is for contributors only; it does not define fixture semantics.
    Every path component must follow the contract's lowercase ASCII portable
    component grammar.
-2. Add a strict `borrowser-conformance-fixture-v1` `fixture.toml` with a new,
+2. Add a strict versioned AG `fixture.toml` with a new,
    stable logical ID and explicit scope, observation surface, source kind, and
    bundle-relative payload path.
-3. Add only the files named by `test_path` and optional `[reference].path`.
+3. For inventory-only fixtures, use V1 and add only `test_path` and optional
+   `[reference].path`. For an executable subsystem package, use V2, keep the
+   package nested, declare its exact entry plus every support file, and add no
+   undeclared file. The outer AG schema never encodes subsystem semantics.
 4. Run `make update-conformance-manifest`.
 5. Add exactly one record for the new logical ID to `expected-results.toml`.
    Use an explicit `not-yet-classified` record with a reason when evidence does
@@ -28,6 +33,14 @@ To add a fixture:
 6. Run `make check-conformance-manifest`,
    `make check-conformance-expected-results`, and the
    `conformance-test-support` tests.
+7. For an AG4 parser case, require a modern canonical AE V2/V3 execution model,
+   active AE disposition, exact AG/AE ID and input reconciliation, and run
+   `make check-conformance-parser`. Do not construct `ValidatedFixtureSpec`,
+   parse AE sidecars in AG, or copy Borrowser output as an oracle.
+   A `dom-tree` package declares only the canonical tree expectation; parser
+   errors, document mode, diagnostics, unsupported features, and final
+   invariants are reportable actual evidence rather than extra DOM-equivalence
+   predicates.
 
 `fixture.toml` is the source of truth. `manifest.toml` is a checked-in,
 deterministically generated review artifact and must not be edited by hand.
@@ -57,3 +70,12 @@ first and opt only `fixture.toml` back into LF-normalized infrastructure text.
 Inventory presence means only that a descriptor was discovered and validated.
 It does not mean the fixture is runnable, passes, conforms to a standard, is a
 WPT reftest, or demonstrates browser compatibility.
+
+AG4 currently executes only `html-tokenizer`, `html-tree-construction`, and
+`dom-tree` packages. Generic AG metadata decides eligibility; the HTML adapter
+delegates one canonical evaluation to `html-test-support`, which may execute
+all baseline/parity parser strategies. CSS/Layout/Paint/Browser/runtime, broad
+WPT/html5lib import, reftests, pixels, cross-engine execution, JavaScript, DOM
+APIs, events, and dynamic behavior remain outside this lane.
+The subsystem-neutral runner has no adapter feature enabled by default;
+repository parser commands explicitly enable `html-parser`.

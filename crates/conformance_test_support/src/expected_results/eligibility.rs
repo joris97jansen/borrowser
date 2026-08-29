@@ -1,26 +1,30 @@
-//! Internal proof of AG1 execution-eligibility semantics.
+//! Canonical AG1 execution-eligibility semantics over validated AG3 metadata.
 //!
-//! AG3 has no execution request or consumer, so these types deliberately stay
-//! private to expected-result tooling. A later execution issue may expose an
-//! API shaped by a real caller rather than treating this model as stable.
+//! AG4 exposes the closed result vocabulary and one evaluator to execution
+//! orchestration. Validation records, mutable environment entries, and the
+//! blocker/unresolved precedence remain owned here rather than being
+//! reimplemented by subsystem adapters.
 
 use std::collections::BTreeMap;
 
 use super::model::{
-    ClassifiedMetadata, EngineCapabilityAvailability, EnvironmentRequirementKey, HarnessLimitation,
-    HarnessReadiness, MissingEngineCapability,
+    ClassifiedMetadata, EngineCapabilityAvailability, EngineCapabilityKind,
+    EnvironmentRequirementKey, EnvironmentRequirementKind, HarnessLimitationKind, HarnessReadiness,
 };
+use super::view::{ClassificationView, ExpectedResultView};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct AssessmentReason(String);
 
 impl AssessmentReason {
+    #[cfg_attr(not(test), allow(dead_code))]
     fn validated(value: &str) -> Self {
         assert!(!value.trim().is_empty());
         Self(value.to_owned())
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum EnvironmentRequirementSatisfaction {
     Satisfied,
@@ -29,11 +33,16 @@ enum EnvironmentRequirementSatisfaction {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct ExecutionEnvironmentAssessment {
+pub struct ExecutionEnvironmentAssessment {
     entries: BTreeMap<EnvironmentRequirementKey, EnvironmentRequirementSatisfaction>,
 }
 
 impl ExecutionEnvironmentAssessment {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
     fn insert(
         &mut self,
         key: EnvironmentRequirementKey,
@@ -44,24 +53,40 @@ impl ExecutionEnvironmentAssessment {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum ExecutionBlocker {
-    EngineCapability(MissingEngineCapability),
-    Harness(HarnessLimitation),
+pub enum ExecutionBlocker {
+    EngineCapability {
+        kind: EngineCapabilityKind,
+        feature: Option<String>,
+        reason: String,
+    },
+    Harness {
+        kind: HarnessLimitationKind,
+        reason: String,
+    },
     Environment {
-        requirement: EnvironmentRequirementKey,
-        reason: AssessmentReason,
+        kind: EnvironmentRequirementKind,
+        profile: String,
+        requirement_reason: String,
+        assessment_reason: String,
     },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum UnresolvedPrerequisite {
+pub enum UnresolvedPrerequisite {
+    Classification {
+        reason: String,
+    },
     EngineCapabilityAvailability,
     HarnessReadiness,
-    EnvironmentRequirement(EnvironmentRequirementKey),
+    EnvironmentRequirement {
+        kind: EnvironmentRequirementKind,
+        profile: String,
+        reason: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum ExecutionEligibility {
+pub enum ExecutionEligibility {
     Runnable,
     NotRunnable {
         blockers: Vec<ExecutionBlocker>,
@@ -72,7 +97,7 @@ enum ExecutionEligibility {
     },
 }
 
-fn evaluate_execution_eligibility(
+fn evaluate_classified_eligibility(
     metadata: &ClassifiedMetadata,
     environment: &ExecutionEnvironmentAssessment,
 ) -> ExecutionEligibility {
@@ -81,21 +106,29 @@ fn evaluate_execution_eligibility(
 
     match metadata.engine() {
         EngineCapabilityAvailability::Available => {}
-        EngineCapabilityAvailability::Unavailable { missing } => blockers.extend(
-            missing
-                .iter()
-                .cloned()
-                .map(ExecutionBlocker::EngineCapability),
-        ),
+        EngineCapabilityAvailability::Unavailable { missing } => {
+            blockers.extend(missing.iter().map(|capability| {
+                ExecutionBlocker::EngineCapability {
+                    kind: capability.kind(),
+                    feature: capability
+                        .feature()
+                        .map(|feature| feature.as_str().to_owned()),
+                    reason: capability.reason().as_str().to_owned(),
+                }
+            }))
+        }
         EngineCapabilityAvailability::NotYetEstablished => {
             unresolved.push(UnresolvedPrerequisite::EngineCapabilityAvailability);
         }
     }
     match metadata.harness() {
         HarnessReadiness::Ready => {}
-        HarnessReadiness::NotReady { limitations } => {
-            blockers.extend(limitations.iter().cloned().map(ExecutionBlocker::Harness))
-        }
+        HarnessReadiness::NotReady { limitations } => blockers.extend(limitations.iter().map(
+            |limitation| ExecutionBlocker::Harness {
+                kind: limitation.kind(),
+                reason: limitation.reason().as_str().to_owned(),
+            },
+        )),
         HarnessReadiness::NotYetEstablished => {
             unresolved.push(UnresolvedPrerequisite::HarnessReadiness);
         }
@@ -105,14 +138,18 @@ fn evaluate_execution_eligibility(
             Some(EnvironmentRequirementSatisfaction::Satisfied) => {}
             Some(EnvironmentRequirementSatisfaction::Unavailable { reason }) => {
                 blockers.push(ExecutionBlocker::Environment {
-                    requirement: requirement.key().clone(),
-                    reason: reason.clone(),
+                    kind: requirement.key().kind(),
+                    profile: requirement.key().profile().as_str().to_owned(),
+                    requirement_reason: requirement.reason().as_str().to_owned(),
+                    assessment_reason: reason.0.clone(),
                 });
             }
             Some(EnvironmentRequirementSatisfaction::Unknown) | None => {
-                unresolved.push(UnresolvedPrerequisite::EnvironmentRequirement(
-                    requirement.key().clone(),
-                ));
+                unresolved.push(UnresolvedPrerequisite::EnvironmentRequirement {
+                    kind: requirement.key().kind(),
+                    profile: requirement.key().profile().as_str().to_owned(),
+                    reason: requirement.reason().as_str().to_owned(),
+                });
             }
         }
     }
@@ -131,13 +168,35 @@ fn evaluate_execution_eligibility(
     }
 }
 
+pub fn evaluate_execution_eligibility(
+    result: ExpectedResultView<'_>,
+    environment: &ExecutionEnvironmentAssessment,
+) -> ExecutionEligibility {
+    match result.classification() {
+        ClassificationView::NotYetClassified { reason } => {
+            ExecutionEligibility::NotYetEstablished {
+                unresolved: vec![UnresolvedPrerequisite::Classification {
+                    reason: reason.to_owned(),
+                }],
+            }
+        }
+        ClassificationView::Classified(_) => evaluate_classified_eligibility(
+            result
+                .classified_metadata()
+                .expect("classification view and validated metadata agree"),
+            environment,
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::expected_results::model::{
         CapabilityFeatureId, EngineCapabilityKind, EnvironmentProfileId, EnvironmentRequirement,
         EnvironmentRequirementKind, ExecutionEnvironmentRequirements, Expectation,
-        HarnessLimitationKind, LaneExclusion, NonEmptyReason, RequirementTag, Stability,
+        HarnessLimitation, HarnessLimitationKind, LaneExclusion, MissingEngineCapability,
+        NonEmptyReason, RequirementTag, Stability,
     };
 
     fn reason(value: &str) -> NonEmptyReason {
@@ -189,7 +248,7 @@ mod tests {
             requirement.key().clone(),
             EnvironmentRequirementSatisfaction::Satisfied,
         );
-        let result = evaluate_execution_eligibility(
+        let result = evaluate_classified_eligibility(
             &metadata(
                 EngineCapabilityAvailability::Available,
                 HarnessReadiness::Ready,
@@ -212,11 +271,13 @@ mod tests {
             vec![requirement.clone()],
         );
         assert_eq!(
-            evaluate_execution_eligibility(&metadata, &ExecutionEnvironmentAssessment::default()),
+            evaluate_classified_eligibility(&metadata, &ExecutionEnvironmentAssessment::default()),
             ExecutionEligibility::NotYetEstablished {
-                unresolved: vec![UnresolvedPrerequisite::EnvironmentRequirement(
-                    requirement.key().clone()
-                )]
+                unresolved: vec![UnresolvedPrerequisite::EnvironmentRequirement {
+                    kind: EnvironmentRequirementKind::ControlledFontSet,
+                    profile: "font-profile-a".to_owned(),
+                    reason: "required by the synthetic execution request".to_owned(),
+                }]
             }
         );
 
@@ -228,7 +289,7 @@ mod tests {
             },
         );
         assert!(matches!(
-            evaluate_execution_eligibility(&metadata, &unavailable),
+            evaluate_classified_eligibility(&metadata, &unavailable),
             ExecutionEligibility::NotRunnable { blockers, unresolved }
                 if blockers.len() == 1 && unresolved.is_empty()
         ));
@@ -277,22 +338,29 @@ mod tests {
         let ExecutionEligibility::NotRunnable {
             blockers,
             unresolved,
-        } = evaluate_execution_eligibility(&metadata, &assessment)
+        } = evaluate_classified_eligibility(&metadata, &assessment)
         else {
             panic!("known blockers must establish non-runnable")
         };
         assert_eq!(blockers.len(), 3);
-        assert_eq!(
-            blockers[0],
-            ExecutionBlocker::EngineCapability(engine_blocker)
-        );
-        assert_eq!(blockers[1], ExecutionBlocker::Harness(harness_blocker));
+        assert!(matches!(
+            &blockers[0],
+            ExecutionBlocker::EngineCapability { kind: EngineCapabilityKind::LayoutFeature, feature: Some(feature), reason }
+                if feature == "css-grid" && reason == "grid is unavailable"
+        ));
+        assert!(matches!(
+            &blockers[1],
+            ExecutionBlocker::Harness { kind: HarnessLimitationKind::MissingSubsystemAdapter, reason }
+                if reason == "layout adapter is unavailable"
+        ));
         assert!(matches!(blockers[2], ExecutionBlocker::Environment { .. }));
         assert_eq!(
             unresolved,
-            vec![UnresolvedPrerequisite::EnvironmentRequirement(
-                font.key().clone()
-            )]
+            vec![UnresolvedPrerequisite::EnvironmentRequirement {
+                kind: EnvironmentRequirementKind::ControlledFontSet,
+                profile: "font-profile-a".to_owned(),
+                reason: "required by the synthetic execution request".to_owned(),
+            }]
         );
     }
 
@@ -308,7 +376,7 @@ mod tests {
             vec![first.clone(), second.clone()],
         );
         let result =
-            evaluate_execution_eligibility(&metadata, &ExecutionEnvironmentAssessment::default());
+            evaluate_classified_eligibility(&metadata, &ExecutionEnvironmentAssessment::default());
         let ExecutionEligibility::NotYetEstablished { unresolved } = result else {
             panic!("only unknown prerequisites must remain not yet established")
         };
@@ -319,11 +387,19 @@ mod tests {
         assert_eq!(unresolved[1], UnresolvedPrerequisite::HarnessReadiness);
         assert_eq!(
             unresolved[2],
-            UnresolvedPrerequisite::EnvironmentRequirement(second.key().clone())
+            UnresolvedPrerequisite::EnvironmentRequirement {
+                kind: EnvironmentRequirementKind::ControlledFontSet,
+                profile: "font-a".to_owned(),
+                reason: "required by the synthetic execution request".to_owned(),
+            }
         );
         assert_eq!(
             unresolved[3],
-            UnresolvedPrerequisite::EnvironmentRequirement(first.key().clone())
+            UnresolvedPrerequisite::EnvironmentRequirement {
+                kind: EnvironmentRequirementKind::ControlledFontSet,
+                profile: "font-b".to_owned(),
+                reason: "required by the synthetic execution request".to_owned(),
+            }
         );
     }
 }
