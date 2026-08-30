@@ -2,6 +2,7 @@ use crate::dom_patch::{DomPatch, DomPatchBatch};
 use crate::html5::bridge::PatchEmitterAdapter;
 #[cfg(any(test, feature = "parser-conformance"))]
 use crate::html5::bridge::{PatchHistoryObservationConfig, RawPatchHistoryCapture};
+use crate::html5::shared::HtmlParseSemanticCompleteness;
 #[cfg(feature = "parser-conformance")]
 use crate::html5::shared::ParserObservationCapture;
 use crate::html5::shared::{
@@ -235,6 +236,10 @@ impl Html5ParseSession {
 
     pub fn parse_errors(&self) -> Vec<ParseError> {
         self.ctx.errors()
+    }
+
+    pub fn semantic_completeness(&self) -> HtmlParseSemanticCompleteness {
+        self.ctx.semantic_completeness()
     }
 
     #[cfg(feature = "parser-conformance")]

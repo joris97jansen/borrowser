@@ -1,0 +1,2 @@
+.parent { color: red; }
+.child { color: inherit; width: unset; }

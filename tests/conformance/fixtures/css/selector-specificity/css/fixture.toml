@@ -1,0 +1,9 @@
+format = "borrowser-css-fixture-v1"
+id = "css-selector-specificity-list"
+profile = "selector-specificity"
+
+[input]
+selector_list = "selectors.txt"
+
+[expectations]
+snapshot = "expected.txt"

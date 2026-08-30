@@ -1,0 +1,15 @@
+format = "borrowser-conformance-fixture-v2"
+id = "css-inheritance-wide-keywords"
+scope = "static-html-css-no-js"
+observation = "css-cascade"
+test_path = "css/input.css"
+
+[source]
+kind = "native"
+
+[metadata]
+description = "AF resolved-style seed for inheritance and CSS-wide keyword resolution."
+
+[execution_package]
+entry_path = "css/fixture.toml"
+support_paths = ["css/document.html", "css/expected.txt"]

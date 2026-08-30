@@ -110,8 +110,9 @@ pub use crate::names::{
 #[cfg(feature = "html5")]
 pub use crate::parser::{
     HtmlErrorPolicy, HtmlParseCounters, HtmlParseError, HtmlParseEvent, HtmlParseOptions,
-    HtmlParser, HtmlTokenizerLimits, HtmlTokenizerOptions, HtmlTreeBuilderLimits,
-    HtmlTreeBuilderOptions, ParseOutput, parse_document,
+    HtmlParseSemanticCompleteness, HtmlParseSemanticDegradationReason,
+    HtmlParseSemanticDegradations, HtmlParser, HtmlTokenizerLimits, HtmlTokenizerOptions,
+    HtmlTreeBuilderLimits, HtmlTreeBuilderOptions, ParseOutput, parse_document,
 };
 pub use crate::types::{ElementNode, Node, ProcessingInstructionNode};
 

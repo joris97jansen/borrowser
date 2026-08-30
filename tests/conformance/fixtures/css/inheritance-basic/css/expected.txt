@@ -1,0 +1,5 @@
+format: borrowser-css-resolved-style-observation-v1
+document-mode: no-quirks
+target: child
+  color: css-wide:inherit->inherited
+  width: css-wide:unset->initial

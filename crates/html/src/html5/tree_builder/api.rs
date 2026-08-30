@@ -33,6 +33,10 @@ use std::num::NonZeroU32;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TreeBuilderLimits {
     pub max_open_elements_depth: usize,
+    /// Maximum number of active template insertion modes. This is separate
+    /// from open-elements depth so each semantics-changing guardrail is
+    /// independently configurable and observable.
+    pub max_template_mode_depth: usize,
     /// Maximum number of non-document DOM nodes created in a single document.
     /// The synthetic document root is intentionally exempt.
     pub max_nodes_created: usize,
@@ -43,6 +47,7 @@ impl Default for TreeBuilderLimits {
     fn default() -> Self {
         Self {
             max_open_elements_depth: 1024,
+            max_template_mode_depth: 1024,
             max_nodes_created: 65_536,
             max_children_per_node: 16_384,
         }

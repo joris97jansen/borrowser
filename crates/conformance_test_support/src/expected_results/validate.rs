@@ -1098,7 +1098,7 @@ mod tests {
         let results =
             load_expected_results(repository_root, &inventory).expect("expected results registry");
 
-        assert_eq!(results.records().len(), 15);
+        assert_eq!(results.records().len(), 18);
         let classified_ids = results
             .records()
             .iter()
@@ -1107,26 +1107,6 @@ mod tests {
                     return None;
                 };
                 match record.id().as_str() {
-                    "css-parsing-basic-stylesheet" => {
-                        assert!(matches!(
-                            metadata.engine(),
-                            EngineCapabilityAvailability::Available
-                        ));
-                        let HarnessReadiness::NotReady { limitations } = metadata.harness() else {
-                            panic!("CSS parser seed remains harness-not-ready")
-                        };
-                        assert_eq!(
-                            limitations
-                                .iter()
-                                .map(HarnessLimitation::kind)
-                                .collect::<Vec<_>>(),
-                            [
-                                HarnessLimitationKind::MissingSubsystemAdapter,
-                                HarnessLimitationKind::MissingExpectedObservation,
-                                HarnessLimitationKind::MissingComparisonSurface,
-                            ]
-                        );
-                    }
                     "html-tree-construction-repeated-body-unavailable" => {
                         let EngineCapabilityAvailability::Unavailable { missing } =
                             metadata.engine()
@@ -1158,7 +1138,13 @@ mod tests {
         assert_eq!(
             classified_ids,
             BTreeSet::from([
+                "computed-style-basic-author-rule",
+                "css-cascade-basic-author-rule",
+                "css-inheritance-wide-keywords",
                 "css-parsing-basic-stylesheet",
+                "css-selector-matching-parser-dom",
+                "css-selector-specificity-list",
+                "css-selector-parsing-basic-list",
                 "dom-tree-basic-document",
                 "dom-tree-representative-static-document",
                 "html-tokenizer-basic-document",
@@ -1184,9 +1170,6 @@ mod tests {
             unclassified_ids,
             BTreeSet::from([
                 "browser-controlled-static-page-basic",
-                "computed-style-basic-author-rule",
-                "css-cascade-basic-author-rule",
-                "css-selectors-basic-stylesheet",
                 "layout-geometry-basic-block-flow",
                 "paint-operations-basic-background",
                 "paint-semantic-reference-basic",

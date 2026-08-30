@@ -1,0 +1,17 @@
+[package]
+name = "css-test-support"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+css = { path = "../css" }
+html = { path = "../html", features = ["html5", "internal-api"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lib]
+name = "css_test_support"
+path = "src/lib.rs"

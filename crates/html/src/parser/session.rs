@@ -543,6 +543,7 @@ impl HtmlParser {
             contains_full_patch_history: false,
             counters: self.counters(),
             parse_errors: self.parse_errors(),
+            semantic_completeness: self.session.semantic_completeness(),
         };
         Ok(ConformanceFinalizedOutput {
             output,
@@ -582,6 +583,7 @@ impl HtmlParser {
             contains_full_patch_history: !self.patches_drained_before_output,
             counters: self.counters(),
             parse_errors: self.parse_errors(),
+            semantic_completeness: self.session.semantic_completeness(),
         })
     }
 

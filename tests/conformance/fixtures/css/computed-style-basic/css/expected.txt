@@ -1,0 +1,5 @@
+format: borrowser-css-computed-style-observation-v1
+document-mode: no-quirks
+target: section
+  display: block
+  color: rgba(128, 0, 128, 255)

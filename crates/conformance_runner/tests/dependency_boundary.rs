@@ -413,6 +413,85 @@ fn parser_execution_dependency_graph_preserves_ownership_boundaries() {
 }
 
 #[test]
+fn css_execution_dependency_graph_is_explicit_and_stops_before_rendering() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root");
+    let metadata = cargo_metadata(&workspace_root.join("Cargo.toml"), true);
+    let runner = package(&metadata, "conformance-runner");
+    assert_eq!(
+        feature_values(runner, "css"),
+        &[serde_json::Value::String("dep:css-test-support".to_owned())]
+    );
+    let runner_dependencies = package_dependencies(&metadata, "conformance-runner");
+    assert_absent(
+        &runner_dependencies,
+        FORBIDDEN_DIRECT_RUNNER_PACKAGES,
+        "direct conformance-runner declarations",
+    );
+
+    let graph = workspace_graph(&metadata, "conformance-runner", &["default", "css"]);
+    for required in [
+        "conformance-test-support",
+        "css-test-support",
+        "css",
+        "html",
+    ] {
+        assert!(
+            graph.contains(required),
+            "CSS adapter graph misses {required}"
+        );
+    }
+    assert_absent(
+        &graph,
+        &[
+            "layout",
+            "gfx",
+            "paint",
+            "browser",
+            "runtime",
+            "runtime_net",
+            "runtime_parse",
+            "runtime_css",
+            "js",
+            "net",
+            "platform",
+            "app_api",
+        ],
+        "CSS conformance graph",
+    );
+
+    let support = package_dependencies(&metadata, "css-test-support");
+    for required in ["css", "html"] {
+        assert!(
+            support.contains(required),
+            "css-test-support misses {required}"
+        );
+    }
+    assert_absent(
+        &support,
+        &[
+            "layout",
+            "gfx",
+            "paint",
+            "browser",
+            "runtime",
+            "runtime_net",
+            "runtime_parse",
+            "runtime_css",
+            "js",
+            "net",
+            "platform",
+            "app_api",
+            "conformance-test-support",
+            "conformance-runner",
+        ],
+        "css-test-support",
+    );
+}
+
+#[test]
 fn direct_aliased_html_is_a_forbidden_runner_declaration() {
     let metadata = synthetic_workspace_metadata(
         "",

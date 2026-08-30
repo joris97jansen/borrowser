@@ -12,16 +12,25 @@ fn main() {
 }
 
 #[derive(Debug)]
+#[allow(
+    dead_code,
+    reason = "some variants require an explicitly enabled adapter"
+)]
 enum CliError {
     Arguments,
-    Run(conformance_runner::ParserRunError),
-    Report(conformance_runner::ReportPublicationError),
+    Feature(&'static str),
+    Run(String),
+    Report(String),
 }
 
 impl std::fmt::Display for CliError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Arguments => f.write_str("usage: conformance-runner [--check]"),
+            Self::Arguments => f.write_str("usage: conformance-runner [--css] [--check]"),
+            Self::Feature(feature) => write!(
+                f,
+                "conformance runner adapter feature is not enabled: {feature}"
+            ),
             Self::Run(error) => write!(f, "conformance execution failed: {error}"),
             Self::Report(error) => write!(f, "conformance report publication failed: {error}"),
         }
@@ -30,9 +39,12 @@ impl std::fmt::Display for CliError {
 
 fn run() -> Result<i32, CliError> {
     let mut check = false;
+    let mut css = false;
     for argument in std::env::args().skip(1) {
         if argument == "--check" && !check {
             check = true;
+        } else if argument == "--css" && !css {
+            css = true;
         } else {
             return Err(CliError::Arguments);
         }
@@ -41,15 +53,35 @@ fn run() -> Result<i32, CliError> {
         .parent()
         .and_then(Path::parent)
         .expect("crate is a direct workspace child");
-    let summary =
-        conformance_runner::run_repository_parser_cases(repository_root).map_err(CliError::Run)?;
-    // The complete bounded report is constructed before stdout publication.
-    // A transport failure may still occur after stdout accepted a prefix.
-    conformance_runner::build_and_write_report(summary.cases(), &mut std::io::stdout().lock())
-        .map_err(CliError::Report)?;
-    Ok(if check && summary.has_unexpected_results() {
-        1
+    if css {
+        run_css(repository_root, check)
     } else {
-        0
-    })
+        run_parser(repository_root, check)
+    }
+}
+
+#[cfg(feature = "html-parser")]
+fn run_parser(repository_root: &Path, check: bool) -> Result<i32, CliError> {
+    let summary = conformance_runner::run_repository_parser_cases(repository_root)
+        .map_err(|error| CliError::Run(error.to_string()))?;
+    conformance_runner::build_and_write_report(summary.cases(), &mut std::io::stdout().lock())
+        .map_err(|error| CliError::Report(error.to_string()))?;
+    Ok(i32::from(check && summary.has_unexpected_results()))
+}
+#[cfg(not(feature = "html-parser"))]
+fn run_parser(_: &Path, _: bool) -> Result<i32, CliError> {
+    Err(CliError::Feature("html-parser"))
+}
+
+#[cfg(feature = "css")]
+fn run_css(repository_root: &Path, check: bool) -> Result<i32, CliError> {
+    let summary = conformance_runner::run_repository_css_cases(repository_root)
+        .map_err(|error| CliError::Run(error.to_string()))?;
+    conformance_runner::build_and_write_css_report(summary.cases(), &mut std::io::stdout().lock())
+        .map_err(|error| CliError::Report(error.to_string()))?;
+    Ok(i32::from(check && summary.has_unexpected_results()))
+}
+#[cfg(not(feature = "css"))]
+fn run_css(_: &Path, _: bool) -> Result<i32, CliError> {
+    Err(CliError::Feature("css"))
 }

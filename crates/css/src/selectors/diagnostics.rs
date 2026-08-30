@@ -144,7 +144,7 @@ impl<'a> SelectorDiagnostic<'a> {
 }
 
 impl InvalidSelectorReason {
-    pub(crate) const fn stable_label(self) -> &'static str {
+    pub const fn stable_label(self) -> &'static str {
         match self {
             Self::EmptySelectorList => "empty-selector-list",
             Self::EmptyCompoundSelector => "empty-compound-selector",
@@ -162,7 +162,7 @@ impl InvalidSelectorReason {
 }
 
 impl UnsupportedSelectorFeature {
-    pub(crate) const fn stable_label(self) -> &'static str {
+    pub const fn stable_label(self) -> &'static str {
         match self {
             Self::Namespace => "namespace",
             Self::AttributeCaseModifier => "attribute-case-modifier",

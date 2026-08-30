@@ -379,8 +379,8 @@ Current architecture status:
   `docs/conformance/ag2-fixture-inventory-manifest-contract.md`.
 - AG2 inventory registration alone does not claim execution, pass status,
   semantic comparison, WPT coverage, raster support, or browser conformance.
-  AG4 separately migrates only parser packages to strict AG fixture V2 and
-  Manifest V2.
+  AG4 migrates parser packages and AG5 migrates executable CSS packages to
+  strict AG fixture V2 and Manifest V2.
 - AG3 adds the separate strict, versioned, human-authored expected-result and
   classification registry in `tests/conformance/expected-results.toml`; see
   `docs/conformance/ag3-expected-results-classification-contract.md`. It
@@ -396,14 +396,13 @@ Current architecture status:
   because body-attribute merging, which its expected tree directly observes,
   remains unavailable. The independently tracked repeated-body `frameset_ok`
   gap is not a blocker for that logical case because its declared observations
-  cannot distinguish the transition. The CSS syntax
-  record remains harness-not-ready.
+  cannot distinguish the transition.
   The V1 vocabulary separately preserves unsupported expectation representation
   for cases where an authoritative expectation exists but cannot yet be encoded
   truthfully.
-  Seven seeds remain explicitly not yet classified, including selector,
-  cascade, and computed-style bundles whose required DOM/target context is not
-  authored.
+  CSS-ready records now use strict AG2 V2 execution packages with explicit
+  authored inputs, targets, and expectations; no DOM or cascade semantics are
+  inferred from an inventory seed.
 - AG4 adds `conformance-runner` and deterministic bounded reporting for focused
   `html-tokenizer`, `html-tree-construction`, and `dom-tree` packages. It
   delegates exactly one canonical fixture evaluation to `html-test-support`;
@@ -420,11 +419,32 @@ Current architecture status:
 - AG4 does not complete Milestone AG or claim broad WPT/html5lib, complete HTML,
   CSS, rendering, JavaScript, or browser conformance. AE parser-observation
   byte-payload accounting remains a separate deferred AE follow-up.
+- AG5 adds the dedicated `css-test-support` adapter and seven phase-isolated
+  CSS profiles for property/value parsing, selector parsing, per-selector
+  specificity, selector matching, cascade winners, inheritance/CSS-wide
+  resolution, and `ComputedDocumentStyle`. Combined fixtures use the canonical
+  bounded HTML document parser, parser-selected mode, document-root structural
+  target addresses over complete ordinary child lists, and CSS-owned projection
+  compatibility. `css-test-support`
+  depends only on production CSS/HTML plus schema libraries; the runner owns
+  reconciliation with generic AG2 inventory and metadata. Combined cascade
+  fixtures carry explicit ordered author/user/user-agent stylesheet inputs,
+  and resolved/computed target access retains projection provenance. The runner retains the
+  full orthogonal AG state and emits a separately versioned bounded
+  `borrowser-conformance-css-report-v1`; parser report V1 remains byte-locked.
+  CSS is an explicit feature whose dependency closure stops before Layout,
+  Paint/GFX, Browser/runtime, and JavaScript. See
+  `docs/conformance/ag5-css-conformance-runners.md`.
+- AG5 represents standards-style HTML fragment requests, including context
+  namespace and local name, but does not execute them because HTML has no
+  canonical contextual fragment parser. It does not
+  claim broad CSS/WPT compliance and adds no media queries, custom properties,
+  animations, CSSOM, dynamic behavior, Layout, or Paint execution.
 
 Missing or incomplete:
 
 - generic named-lane selection and scheduling
-- CSS, Layout, Paint/GFX, and Browser/runtime subsystem adapters
+- Layout, Paint/GFX, and Browser/runtime subsystem adapters
 - aggregate cross-subsystem conformance-progress summaries beyond AG3 metadata
   and AG4 parser-case reports
 - fixture migration or broader pinned external-source adapters

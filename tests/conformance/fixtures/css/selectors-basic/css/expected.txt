@@ -1,0 +1,11 @@
+version: 1
+selector-parse
+result: parsed
+span: @0..24
+selector[0] @0..23 specificity=(0,1,2)
+  compound[0] @0..4 specificity=(0,0,1)
+    - type("main") node=@0..4 name=@0..4
+  combined[0] child @5..23
+    compound @7..23 specificity=(0,1,1)
+      - type("article") node=@7..14 name=@7..14
+      - class("featured") node=@14..23 name=@15..23

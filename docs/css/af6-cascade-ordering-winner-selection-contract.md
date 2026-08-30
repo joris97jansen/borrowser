@@ -352,6 +352,16 @@ winner callback runs after all candidates for that property have been
 compared. There is no second diagnostic winner engine and one cascade failure
 has one stable failed-diagnostic representation.
 
+The standalone `cascade_evaluation_diagnostic` remains a CSS-owned production
+triage surface with its own bounded observer storage. Its returned snapshot is
+an owned diagnostic, not a projection-key-addressable style artifact. AG5 does
+not claim otherwise: cascade-winner fixtures inspect winner provenance from the
+projection-provenanced `ResolvedDocumentStyle` produced by
+`StyleResolutionExecution`. Inheritance and computed-style fixtures do not run
+the diagnostic as throwaway work, so diagnostic-only limits cannot fail an
+otherwise complete requested observation. Test support never rebuilds
+candidates, compares priorities, or infers winner order.
+
 R8 exact-string snapshots remain crate-private/test-only regression fixtures.
 The arbitrary-rule-input helper is compiled only for unit tests and returns a
 typed cascade result. The integrated document trace consumes its existing

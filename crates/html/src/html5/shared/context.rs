@@ -13,6 +13,10 @@ use super::{
     ParserObservationConfig, ParserObservationRecorder, ParserRecoveryAction, ParserResourceLimit,
     ParserStage, Utf8ReplacementPayload, Utf8ReplacementReason, WhatwgParseErrorCode,
 };
+use super::{
+    HtmlParseSemanticCompleteness, HtmlParseSemanticCompletenessTracker, guardrail_degradation,
+    resource_limit_degradation,
+};
 use super::{ParserReservationController, ParserReservationSite, ParserResourceExhaustion};
 use std::collections::VecDeque;
 
@@ -25,6 +29,7 @@ pub struct DocumentParseContext {
     pub errors: Option<VecDeque<ParseError>>,
     pub(crate) observations: Option<ParserObservationRecorder>,
     pub(crate) reservations: ParserReservationController,
+    pub(crate) semantic_completeness: HtmlParseSemanticCompletenessTracker,
 }
 
 impl Default for DocumentParseContext {
@@ -58,6 +63,7 @@ impl DocumentParseContext {
             errors: None,
             observations: ParserObservationRecorder::new(observations),
             reservations: ParserReservationController::default(),
+            semantic_completeness: HtmlParseSemanticCompletenessTracker::default(),
         };
         if ctx.error_policy.track
             && ctx.error_policy.max_stored != 0
@@ -206,6 +212,9 @@ impl DocumentParseContext {
         position: usize,
         description: Option<&'static str>,
     ) {
+        if let Some(reason) = resource_limit_degradation(limit) {
+            self.semantic_completeness.record(reason);
+        }
         let mut sink = ParserEventSink::new(
             &mut self.counters,
             self.error_policy,
@@ -236,6 +245,8 @@ impl DocumentParseContext {
         position: usize,
         description: Option<&'static str>,
     ) {
+        self.semantic_completeness
+            .record(guardrail_degradation(guardrail));
         let mut sink = ParserEventSink::new(
             &mut self.counters,
             self.error_policy,
@@ -256,6 +267,10 @@ impl DocumentParseContext {
                 aux: Some(consecutive_steps.min(u32::MAX as usize) as u32),
             },
         );
+    }
+
+    pub(crate) fn semantic_completeness(&self) -> HtmlParseSemanticCompleteness {
+        self.semantic_completeness.status()
     }
 
     pub(crate) fn record_utf8_replacement(

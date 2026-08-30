@@ -1,11 +1,15 @@
-format = "borrowser-conformance-fixture-v1"
+format = "borrowser-conformance-fixture-v2"
 id = "css-parsing-basic-stylesheet"
 scope = "static-html-css-no-js"
 observation = "css-parsing"
-test_path = "test.css"
+test_path = "css/input.css"
 
 [source]
 kind = "native"
 
 [metadata]
-description = "Inventory seed for a CSS parsing observation."
+description = "Reviewed AD property/value seed using the canonical model declaration carrier."
+
+[execution_package]
+entry_path = "css/fixture.toml"
+support_paths = ["css/expected.txt"]

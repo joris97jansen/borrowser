@@ -1,0 +1,5 @@
+format: borrowser-css-property-value-observation-v1
+property: color
+classification: longhand
+result: parsed
+specified: navy

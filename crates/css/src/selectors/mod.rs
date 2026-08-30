@@ -28,6 +28,7 @@ mod parser;
 mod pseudo;
 mod serialize;
 mod simple;
+mod source;
 mod specificity;
 
 #[cfg(test)]
@@ -41,7 +42,9 @@ pub(crate) use matching::BoundedSelectorDomConstructionError;
 
 pub(crate) use self::serialize::write_selector_parse_result_snapshot_body;
 pub use self::serialize::{
-    serialize_selector_list_for_snapshot, serialize_selector_parse_result_for_snapshot,
+    SelectorSnapshotSerializationError, serialize_selector_list_for_snapshot,
+    serialize_selector_parse_result_for_snapshot,
+    serialize_selector_parse_result_for_snapshot_bounded,
 };
 
 // Parse-result contract
@@ -71,7 +74,10 @@ pub use matching::{
     SelectorDomElementId, SelectorDomElementIter, SelectorDomIndex, SelectorDomNodeKind,
     SelectorListMatchBuilder, SelectorListMatchOutcome, SelectorMatchDom, SelectorMatchability,
     SelectorMatchingContext, SelectorMatchingEnvironment, SelectorMatchingLimitError,
-    SelectorMatchingLimits, SelectorNamespaceConstraint,
+    SelectorMatchingLimits, SelectorNamespaceConstraint, StyleProjection,
+    StyleProjectionBuildError, StyleProjectionElementKey, StyleProjectionKeyError,
+    StyleProjectionMatchError,
 };
 
 pub use parser::{parse_selector_list, parse_selector_list_with_limits};
+pub use source::{parse_selector_source, parse_selector_source_with_limits};

@@ -7,6 +7,27 @@ use super::super::support::{
 use super::{ConsumedFunction, ConsumedSimpleBlock, StylesheetParser};
 
 impl<'a> StylesheetParser<'a> {
+    pub(in super::super) fn parse_component_value_list(&mut self) -> Vec<CssComponentValue> {
+        let mut values = Vec::new();
+        let mut cursor = 0usize;
+        while let Some(token) = self.tokens.get(cursor) {
+            if matches!(token.kind, CssTokenKind::Eof) {
+                break;
+            }
+            if self.selector_prelude_limit_reached(values.len(), token.span.start) {
+                break;
+            }
+            let (value, next) = self.consume_component_value(cursor, 0);
+            values.push(value);
+            cursor = if next <= cursor {
+                cursor.saturating_add(1)
+            } else {
+                next
+            };
+        }
+        values
+    }
+
     pub(super) fn consume_component_value(
         &mut self,
         start: usize,

@@ -297,6 +297,17 @@ impl<'dom> SelectorDomIndex<'dom> {
             .and_then(SelectorDomElementId::from_validated_index)
     }
 
+    pub(crate) fn element_for_source(&self, source: &ElementNode) -> Option<SelectorDomElementId> {
+        self.elements
+            .iter()
+            .position(|element| std::ptr::eq(element.source, source))
+            .and_then(SelectorDomElementId::from_validated_index)
+    }
+
+    pub(crate) fn source_element(&self, element: SelectorDomElementId) -> &'dom ElementNode {
+        self.record(element).source
+    }
+
     pub fn to_debug_snapshot(&self) -> String {
         let mut out = String::new();
         writeln!(&mut out, "version: 3").expect("writing to String cannot fail");

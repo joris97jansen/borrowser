@@ -1,6 +1,6 @@
 use conformance_test_support::{
     EngineCapabilityKind, EnvironmentRequirementKind, ExpectedFailureClassification,
-    HarnessLimitationKind, LanePolicyScope, RequirementTag,
+    HarnessLimitationKind, LanePolicyScope, ObservationSurface, RequirementTag,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -212,6 +212,28 @@ pub enum ExecutionAttempt {
     },
 }
 
+/// Reusable AG1 structural attempt boundary for subsystem adapters whose
+/// pre-attempt and terminal outcome types are not parser semantics.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SubsystemExecutionAttempt<Reason, PreAttempt, Outcome> {
+    NotAttempted {
+        reason: Reason,
+        pre_attempt: Option<PreAttempt>,
+    },
+    Attempted {
+        outcome: Outcome,
+    },
+}
+
+impl<Reason, PreAttempt, Outcome> SubsystemExecutionAttempt<Reason, PreAttempt, Outcome> {
+    pub fn observed_outcome(&self) -> Option<&Outcome> {
+        match self {
+            Self::NotAttempted { .. } => None,
+            Self::Attempted { outcome } => Some(outcome),
+        }
+    }
+}
+
 impl ExecutionAttempt {
     #[cfg(any(feature = "html-parser", test))]
     pub(crate) const fn eligibility_blocked() -> Self {
@@ -254,6 +276,39 @@ pub enum DerivedPolicyResult {
     NotRun,
     NotYetEstablished,
     UnexpectedOutcome,
+}
+
+/// The subsystem-neutral AG state carried alongside every normalized result.
+///
+/// This deliberately keeps metadata establishment, eligibility, expectation,
+/// and derived policy as orthogonal dimensions. Subsystem observations and
+/// terminal outcomes are not stored here and remain lossless typed values in
+/// their owning adapter.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgCaseState {
+    pub test_id: String,
+    pub observation: ObservationSurface,
+    pub classification: ClassificationCompleteness,
+    pub requirements: Vec<RequirementTag>,
+    pub capability: Option<CapabilityAvailability>,
+    pub harness: Option<HarnessReadiness>,
+    pub environment_requirements: Vec<ReasonedEnvironmentRequirement>,
+    pub stability: Option<Stability>,
+    pub lane_exclusions: Vec<ReasonedLaneExclusion>,
+    pub eligibility: Eligibility,
+    pub expectation: AgExpectation,
+    pub policy: DerivedPolicyResult,
+}
+
+/// Policy-facing projection of a lossless subsystem terminal outcome.
+///
+/// Adapters derive this value from their closed outcome enums; it never
+/// replaces or rewrites the observed subsystem result.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ObservedPolicyClass {
+    SemanticPass,
+    SemanticMismatch,
+    OtherTerminalOutcome,
 }
 
 impl DerivedPolicyResult {
@@ -300,12 +355,39 @@ pub(crate) fn derive_policy(
     let ExecutionAttempt::Attempted { outcome } = execution else {
         return DerivedPolicyResult::UnexpectedOutcome;
     };
-    let semantic_pass = matches!(outcome, ObservedExecutionOutcome::SemanticPass);
-    let semantic_mismatch = matches!(
-        outcome,
-        ObservedExecutionOutcome::ExpectationMismatch { .. }
-            | ObservedExecutionOutcome::ParityMismatch { .. }
-    );
+    derive_policy_from_class(
+        expectation,
+        eligibility,
+        match outcome {
+            ObservedExecutionOutcome::SemanticPass => ObservedPolicyClass::SemanticPass,
+            ObservedExecutionOutcome::ExpectationMismatch { .. }
+            | ObservedExecutionOutcome::ParityMismatch { .. } => {
+                ObservedPolicyClass::SemanticMismatch
+            }
+            ObservedExecutionOutcome::ExecutionFailure { .. }
+            | ObservedExecutionOutcome::IncompleteObservation { .. }
+            | ObservedExecutionOutcome::FinalInvariantFailure { .. } => {
+                ObservedPolicyClass::OtherTerminalOutcome
+            }
+        },
+    )
+}
+
+#[cfg(any(feature = "html-parser", feature = "css", test))]
+pub(crate) fn derive_policy_from_class(
+    expectation: &AgExpectation,
+    eligibility: &Eligibility,
+    observed: ObservedPolicyClass,
+) -> DerivedPolicyResult {
+    if !matches!(eligibility, Eligibility::Runnable) {
+        return if matches!(eligibility, Eligibility::NotYetEstablished { .. }) {
+            DerivedPolicyResult::NotYetEstablished
+        } else {
+            DerivedPolicyResult::NotRun
+        };
+    }
+    let semantic_pass = observed == ObservedPolicyClass::SemanticPass;
+    let semantic_mismatch = observed == ObservedPolicyClass::SemanticMismatch;
     match expectation {
         AgExpectation::ExpectedPass => {
             if semantic_pass {

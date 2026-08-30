@@ -1,11 +1,15 @@
-format = "borrowser-conformance-fixture-v1"
+format = "borrowser-conformance-fixture-v2"
 id = "css-cascade-basic-author-rule"
 scope = "static-html-css-no-js"
 observation = "css-cascade"
-test_path = "test.css"
+test_path = "css/input.css"
 
 [source]
 kind = "native"
 
 [metadata]
-description = "Inventory seed for a CSS cascade observation."
+description = "Strict AG5 refinement of the original AG2 author-rule cascade seed: the class selector wins over the type selector through AF's production winner-selection path."
+
+[execution_package]
+entry_path = "css/fixture.toml"
+support_paths = ["css/document.html", "css/expected.txt"]

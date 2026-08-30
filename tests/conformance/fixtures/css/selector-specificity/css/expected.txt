@@ -1,0 +1,4 @@
+format: borrowser-css-selector-specificity-observation-v1
+result: parsed
+selector[0]: (1,0,0)
+selector[1]: (0,1,1)

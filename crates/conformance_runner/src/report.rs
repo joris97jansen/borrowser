@@ -89,13 +89,13 @@ impl std::error::Error for ReportBuildError {}
 /// Bounds evidence as soon as serialized parser observations and mismatch
 /// diagnostics cross from AE into AG. This is deliberately separate from AE's
 /// deferred observation-capture byte accounting.
-#[cfg(any(feature = "html-parser", test))]
+#[cfg(any(feature = "html-parser", feature = "css", test))]
 pub(crate) struct RetainedEvidenceBudget {
     limits: ReportLimits,
     retained: usize,
 }
 
-#[cfg(any(feature = "html-parser", test))]
+#[cfg(any(feature = "html-parser", feature = "css", test))]
 impl RetainedEvidenceBudget {
     pub(crate) const fn new(limits: ReportLimits) -> Self {
         Self {
@@ -104,16 +104,26 @@ impl RetainedEvidenceBudget {
         }
     }
 
+    #[cfg(any(feature = "html-parser", test))]
     pub(crate) fn retain_observation(
         &mut self,
         test_id: &str,
         surface: ParserObservationSurface,
         bytes: usize,
     ) -> Result<(), ReportBuildError> {
+        self.retain_named_observation(test_id, surface_name(surface), bytes)
+    }
+
+    pub(crate) fn retain_named_observation(
+        &mut self,
+        test_id: &str,
+        surface: &str,
+        bytes: usize,
+    ) -> Result<(), ReportBuildError> {
         if bytes > self.limits.observation_bytes {
             return Err(ReportBuildError::ObservationTooLarge {
                 test_id: test_id.to_owned(),
-                surface: surface_name(surface).to_owned(),
+                surface: surface.to_owned(),
                 actual: bytes,
                 maximum: self.limits.observation_bytes,
             });
@@ -635,38 +645,42 @@ fn policy_name(value: DerivedPolicyResult) -> &'static str {
     }
 }
 
-struct BoundedWriter {
+pub(crate) struct BoundedWriter {
     bytes: Vec<u8>,
     maximum: usize,
 }
 
 impl BoundedWriter {
-    fn new(maximum: usize) -> Result<Self, ReportBuildError> {
+    pub(crate) fn new(maximum: usize) -> Result<Self, ReportBuildError> {
         let initial = maximum.min(64 * 1024);
         let mut bytes = Vec::new();
         reserve_bytes(&mut bytes, initial)?;
         Ok(Self { bytes, maximum })
     }
 
-    fn finish(self) -> Vec<u8> {
+    pub(crate) fn finish(self) -> Vec<u8> {
         self.bytes
     }
 
-    fn number(&mut self, key: &str, value: usize) -> Result<(), ReportBuildError> {
+    pub(crate) fn number(&mut self, key: &str, value: usize) -> Result<(), ReportBuildError> {
         self.raw(key)?;
         self.raw(" = ")?;
         self.raw(&value.to_string())?;
         self.raw("\n")
     }
 
-    fn line(&mut self, key: &str, value: &str) -> Result<(), ReportBuildError> {
+    pub(crate) fn line(&mut self, key: &str, value: &str) -> Result<(), ReportBuildError> {
         self.raw(key)?;
         self.raw(" = \"")?;
         self.escaped(value)?;
         self.raw("\"\n")
     }
 
-    fn optional_line(&mut self, key: &str, value: Option<&str>) -> Result<(), ReportBuildError> {
+    pub(crate) fn optional_line(
+        &mut self,
+        key: &str,
+        value: Option<&str>,
+    ) -> Result<(), ReportBuildError> {
         match value {
             Some(value) => self.line(key, value),
             None => {
@@ -705,7 +719,7 @@ impl BoundedWriter {
         self.line(key, value)
     }
 
-    fn list<'a>(
+    pub(crate) fn list<'a>(
         &mut self,
         key: &str,
         values: impl Iterator<Item = &'a str>,
@@ -744,7 +758,7 @@ impl BoundedWriter {
         Ok(())
     }
 
-    fn raw(&mut self, value: &str) -> Result<(), ReportBuildError> {
+    pub(crate) fn raw(&mut self, value: &str) -> Result<(), ReportBuildError> {
         let new_len =
             self.bytes
                 .len()
@@ -1064,36 +1078,7 @@ mod tests {
             ae_disposition: Some(NormalizedAeDispositionContext::UnexpectedOutcome),
             policy: DerivedPolicyResult::UnexpectedFail,
         };
-        let expected = concat!(
-            "format = \"borrowser-conformance-parser-report-v1\"\n",
-            "case-count = 1\n",
-            "\nBEGIN case\n",
-            "test-id = \"typed-parser-case\"\n",
-            "profile = \"html-tokenizer\"\n",
-            "classification = \"classified\"\n",
-            "requirements = [\"no-js\"]\n",
-            "engine = \"available\"\n",
-            "harness = \"ready\"\n",
-            "stability = \"stable\"\n",
-            "eligibility = \"runnable\"\n",
-            "expectation = \"expected-pass\"\n",
-            "attempt = \"attempted\"\n",
-            "not-attempted-reason = null\n",
-            "pre-attempt-outcome = null\n",
-            "observed = \"expectation-mismatch\"\n",
-            "observed-strategy = \"whole\"\n",
-            "observed-surface = \"tokens\"\n",
-            "observed-difference = \"line one\\n\\\"quoted\\\" \\\\ slash\"\n",
-            "ae-disposition = \"unexpected-outcome\"\n",
-            "policy = \"unexpected-fail\"\n",
-            "observation-count = 1\n",
-            "BEGIN observation\n",
-            "surface = \"tokens\"\n",
-            "snapshot-format = \"html5-token-v2\"\n",
-            "bytes = \"TOKEN \\\\\\\"x\\\\\\\"\\nEOF\"\n",
-            "END observation\n",
-            "END case\n",
-        );
-        assert_eq!(build_report(&[case]).unwrap(), expected.as_bytes());
+        let expected = include_bytes!("../tests/data/parser-report-v1-compat.txt");
+        assert_eq!(build_report(&[case]).unwrap(), expected);
     }
 }

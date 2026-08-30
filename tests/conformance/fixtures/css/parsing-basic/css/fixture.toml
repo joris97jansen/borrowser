@@ -1,0 +1,13 @@
+format = "borrowser-css-fixture-v1"
+id = "css-parsing-basic-stylesheet"
+profile = "property-value"
+
+[input]
+stylesheet = "input.css"
+
+[property]
+rule_index = 0
+declaration_index = 0
+
+[expectations]
+snapshot = "expected.txt"

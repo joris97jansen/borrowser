@@ -47,7 +47,8 @@ impl SelectorDomIndex<'_> {
         .expect("write snapshot");
 
         writeln!(&mut out, "selectors:").expect("write snapshot");
-        write_selector_parse_result_snapshot_body(&mut out, selectors, 2);
+        write_selector_parse_result_snapshot_body(&mut out, selectors, 2)
+            .expect("write selector parse snapshot body");
 
         writeln!(&mut out, "dom:").expect("write snapshot");
         write_selector_dom_snapshot_body(&mut out, self, 2);

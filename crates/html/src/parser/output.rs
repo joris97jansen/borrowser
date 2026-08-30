@@ -1,5 +1,5 @@
 use crate::dom_patch::DomPatch;
-use crate::{DocumentMode, Node};
+use crate::{DocumentMode, HtmlParseSemanticCompleteness, Node};
 
 use super::types::{HtmlParseCounters, HtmlParseEvent};
 
@@ -20,4 +20,6 @@ pub struct ParseOutput {
     pub contains_full_patch_history: bool,
     pub counters: HtmlParseCounters,
     pub parse_errors: Vec<HtmlParseEvent>,
+    /// HTML-owned integrity contract for downstream consumers of the parsed DOM.
+    pub semantic_completeness: HtmlParseSemanticCompleteness,
 }

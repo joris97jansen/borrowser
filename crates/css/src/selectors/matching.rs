@@ -25,6 +25,7 @@ mod debug;
 mod dom_index;
 mod environment;
 mod host_language;
+mod projection;
 mod result;
 
 #[cfg(test)]
@@ -48,6 +49,10 @@ pub use dom_index::{
 };
 pub use environment::SelectorMatchingEnvironment;
 pub(crate) use host_language::matches_unqualified_attribute_name;
+pub use projection::{
+    StyleProjection, StyleProjectionBuildError, StyleProjectionElementKey, StyleProjectionKeyError,
+    StyleProjectionMatchError,
+};
 pub use result::{
     MatchedSelector, SelectorListMatchBuilder, SelectorListMatchOutcome, SelectorMatchability,
 };

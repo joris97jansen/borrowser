@@ -1,0 +1,19 @@
+format = "borrowser-css-fixture-v1"
+id = "css-selector-matching-parser-dom"
+profile = "selector-matching"
+
+[input]
+selector_list = "selectors.txt"
+html = { kind = "document", path = "document.html" }
+
+[[targets]]
+label = "target"
+steps = [
+  { child_index = 1, expected_namespace = "html", expected_local_name = "html" },
+  { child_index = 1, expected_namespace = "html", expected_local_name = "body" },
+  { child_index = 0, expected_namespace = "html", expected_local_name = "main" },
+  { child_index = 0, expected_namespace = "html", expected_local_name = "article" },
+]
+
+[expectations]
+snapshot = "expected.txt"

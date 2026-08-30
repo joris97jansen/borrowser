@@ -13,6 +13,7 @@ mod materialize;
 mod model;
 mod reuse;
 
+pub(crate) use compute::compute_document_styles_from_resolved_styles_with_index;
 pub use compute::{
     compute_document_styles, compute_document_styles_from_resolved_styles,
     compute_document_styles_from_resolved_styles_with_reuse_stats,

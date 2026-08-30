@@ -485,6 +485,22 @@ and supported-subset reporting separate from claims of broad CSS conformance.
 - Milestone AF completion means foundation completion for the documented
   subset only.
 
+AG5 exposes this reviewed subset through seven strict conformance profiles:
+property/value, selector parsing, per-selector specificity, selector matching,
+cascade winner, inheritance/CSS-wide resolution, and computed style. Every
+profile delegates to the production AD/AF path and preserves typed invalid,
+unsupported, resource, and invariant outcomes. The harness adds measurement,
+not new CSS semantics; snapshots remain regression records rather than oracles.
+The nested CSS adapter is independent from generic AG inventory crates; the AG
+runner owns outer/nested reconciliation. Combined profiles admit explicit
+ordered author, user, and namespace-constrained user-agent stylesheet inputs,
+while inline style remains element-attached HTML input. Projection-provenanced
+resolved and computed wrappers prevent a neutral target key from being paired
+with a same-shaped artifact from another DOM. Cascade diagnostics remain an
+independent CSS triage surface and are not throwaway prerequisites for resolved
+or computed observations.
+See `docs/conformance/ag5-css-conformance-runners.md`.
+
 ## Deliberate exclusions
 
 AF10 deliberately excludes:
