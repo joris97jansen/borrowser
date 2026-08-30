@@ -145,11 +145,11 @@ impl Html5TreeBuilder {
             );
             return Ok(None);
         }
-        if self.template_modes.len() >= self.config.limits.max_open_elements_depth {
+        if self.template_modes.len() >= self.config.limits.max_template_mode_depth {
             self.record_tree_resource_limit(
                 context,
                 crate::html5::shared::ParserResourceLimit::TreeTemplateModeDepth,
-                self.config.limits.max_open_elements_depth,
+                self.config.limits.max_template_mode_depth,
                 Some("resource-limit-template-mode-depth"),
             );
             return Ok(None);

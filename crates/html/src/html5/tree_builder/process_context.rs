@@ -8,6 +8,7 @@ use crate::html5::shared::{
     TreeConstructionUnsupportedFeature, TreeDispatchPath, TreeTransitionEvent,
     UnsupportedFeatureEvent, UnsupportedFeatureObservationFailure,
 };
+use crate::html5::shared::{HtmlParseSemanticCompletenessTracker, resource_limit_degradation};
 use crate::html5::tree_builder::TreeBuilderError;
 use crate::html5::tree_builder::modes::InsertionMode;
 use crate::names::ElementNamespace;
@@ -29,6 +30,7 @@ pub(in crate::html5::tree_builder) enum SelfClosingFlagEffect {
 
 pub(crate) struct TreeConstructionEventSink<'a> {
     shared: ParserEventSink<'a>,
+    semantic_completeness: &'a mut HtmlParseSemanticCompletenessTracker,
 }
 
 impl TreeConstructionEventSink<'_> {
@@ -64,6 +66,9 @@ impl TreeConstructionEventSink<'_> {
         context: ParserContextSummary,
         description: Option<&'static str>,
     ) {
+        if let Some(reason) = resource_limit_degradation(limit) {
+            self.semantic_completeness.record(reason);
+        }
         self.shared
             .record_tree_resource_limit(limit, configured_limit, context, description);
     }
@@ -142,11 +147,13 @@ impl<'a> TreeBuilderProcessContext<'a> {
             errors,
             observations,
             reservations,
+            semantic_completeness,
         } = parse_context;
         Self {
             atoms,
             events: TreeConstructionEventSink {
                 shared: ParserEventSink::new(counters, *error_policy, errors, observations),
+                semantic_completeness,
             },
             token_kind: ParserTokenKind::Eof,
             token_source,

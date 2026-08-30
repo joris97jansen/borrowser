@@ -200,6 +200,14 @@ default.
 policy result; report construction/serialization failures exit separately from
 stdout transport failures.
 
+AG5 factors only the lossless AG metadata mapping and structural
+attempted/not-attempted shape into reusable typed machinery. Parser-specific
+profiles, AE disposition, pre-attempt state, and every parser terminal outcome
+remain parser types. The V1 parser serializer remains unchanged and an exact
+checked-in byte fixture prevents format, field-order, spelling, escaping,
+absence, evidence, or ordering drift. AG5 introduces a separate CSS V1 report;
+there is no parser V2 or aggregate subsystem report.
+
 ## Focused seed corpus and oracle discipline
 
 AG4 has two tokenizer cases, three tree-construction cases, and two DOM cases.

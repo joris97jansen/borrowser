@@ -446,6 +446,7 @@ name = "conformance-runner"
 version = "0.1.0"
 dependencies = [
  "conformance-test-support",
+ "css-test-support",
  "html-test-support",
  "serde_json",
  "tempfile",
@@ -597,6 +598,17 @@ dependencies = [
  "criterion",
  "html",
  "url",
+]
+
+[[package]]
+name = "css-test-support"
+version = "0.1.0"
+dependencies = [
+ "css",
+ "html",
+ "serde",
+ "tempfile",
+ "toml 0.8.23",
 ]
 
 [[package]]

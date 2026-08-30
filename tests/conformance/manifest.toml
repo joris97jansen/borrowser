@@ -12,43 +12,87 @@ source_kind = "controlled-static-page"
 
 [[tests]]
 id = "computed-style-basic-author-rule"
-fixture_format = "borrowser-conformance-fixture-v1"
+fixture_format = "borrowser-conformance-fixture-v2"
 fixture_path = "tests/conformance/fixtures/css/computed-style-basic"
-test_path = "tests/conformance/fixtures/css/computed-style-basic/test.css"
+test_path = "tests/conformance/fixtures/css/computed-style-basic/css/input.css"
 metadata_path = "tests/conformance/fixtures/css/computed-style-basic/fixture.toml"
 scope = "static-html-css-no-js"
 observation = "computed-style"
 source_kind = "native"
+execution_entry_path = "tests/conformance/fixtures/css/computed-style-basic/css/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/css/computed-style-basic/css/document.html", "tests/conformance/fixtures/css/computed-style-basic/css/expected.txt"]
 
 [[tests]]
 id = "css-cascade-basic-author-rule"
-fixture_format = "borrowser-conformance-fixture-v1"
+fixture_format = "borrowser-conformance-fixture-v2"
 fixture_path = "tests/conformance/fixtures/css/cascade-basic"
-test_path = "tests/conformance/fixtures/css/cascade-basic/test.css"
+test_path = "tests/conformance/fixtures/css/cascade-basic/css/input.css"
 metadata_path = "tests/conformance/fixtures/css/cascade-basic/fixture.toml"
 scope = "static-html-css-no-js"
 observation = "css-cascade"
 source_kind = "native"
+execution_entry_path = "tests/conformance/fixtures/css/cascade-basic/css/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/css/cascade-basic/css/document.html", "tests/conformance/fixtures/css/cascade-basic/css/expected.txt"]
+
+[[tests]]
+id = "css-inheritance-wide-keywords"
+fixture_format = "borrowser-conformance-fixture-v2"
+fixture_path = "tests/conformance/fixtures/css/inheritance-basic"
+test_path = "tests/conformance/fixtures/css/inheritance-basic/css/input.css"
+metadata_path = "tests/conformance/fixtures/css/inheritance-basic/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "css-cascade"
+source_kind = "native"
+execution_entry_path = "tests/conformance/fixtures/css/inheritance-basic/css/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/css/inheritance-basic/css/document.html", "tests/conformance/fixtures/css/inheritance-basic/css/expected.txt"]
 
 [[tests]]
 id = "css-parsing-basic-stylesheet"
-fixture_format = "borrowser-conformance-fixture-v1"
+fixture_format = "borrowser-conformance-fixture-v2"
 fixture_path = "tests/conformance/fixtures/css/parsing-basic"
-test_path = "tests/conformance/fixtures/css/parsing-basic/test.css"
+test_path = "tests/conformance/fixtures/css/parsing-basic/css/input.css"
 metadata_path = "tests/conformance/fixtures/css/parsing-basic/fixture.toml"
 scope = "static-html-css-no-js"
 observation = "css-parsing"
 source_kind = "native"
+execution_entry_path = "tests/conformance/fixtures/css/parsing-basic/css/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/css/parsing-basic/css/expected.txt"]
 
 [[tests]]
-id = "css-selectors-basic-stylesheet"
-fixture_format = "borrowser-conformance-fixture-v1"
+id = "css-selector-matching-parser-dom"
+fixture_format = "borrowser-conformance-fixture-v2"
+fixture_path = "tests/conformance/fixtures/css/selector-matching"
+test_path = "tests/conformance/fixtures/css/selector-matching/css/selectors.txt"
+metadata_path = "tests/conformance/fixtures/css/selector-matching/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "css-selectors"
+source_kind = "native"
+execution_entry_path = "tests/conformance/fixtures/css/selector-matching/css/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/css/selector-matching/css/document.html", "tests/conformance/fixtures/css/selector-matching/css/expected.txt"]
+
+[[tests]]
+id = "css-selector-parsing-basic-list"
+fixture_format = "borrowser-conformance-fixture-v2"
 fixture_path = "tests/conformance/fixtures/css/selectors-basic"
-test_path = "tests/conformance/fixtures/css/selectors-basic/test.css"
+test_path = "tests/conformance/fixtures/css/selectors-basic/css/selectors.txt"
 metadata_path = "tests/conformance/fixtures/css/selectors-basic/fixture.toml"
 scope = "static-html-css-no-js"
 observation = "css-selectors"
 source_kind = "native"
+execution_entry_path = "tests/conformance/fixtures/css/selectors-basic/css/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/css/selectors-basic/css/expected.txt"]
+
+[[tests]]
+id = "css-selector-specificity-list"
+fixture_format = "borrowser-conformance-fixture-v2"
+fixture_path = "tests/conformance/fixtures/css/selector-specificity"
+test_path = "tests/conformance/fixtures/css/selector-specificity/css/selectors.txt"
+metadata_path = "tests/conformance/fixtures/css/selector-specificity/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "css-selectors"
+source_kind = "native"
+execution_entry_path = "tests/conformance/fixtures/css/selector-specificity/css/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/css/selector-specificity/css/expected.txt"]
 
 [[tests]]
 id = "dom-tree-basic-document"

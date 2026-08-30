@@ -1,6 +1,9 @@
 use super::types::{HtmlParseEventCode, HtmlParseEventOrigin};
 use super::{HtmlErrorPolicy, HtmlParseOptions, HtmlParser, parse_document};
-use crate::{DomPatch, Node, PatchKey};
+use crate::{
+    DomPatch, HtmlTokenizerLimits, HtmlTokenizerOptions, HtmlTreeBuilderLimits,
+    HtmlTreeBuilderOptions, Node, PatchKey,
+};
 
 fn first_child_element_named<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
     let children = node.children()?;
@@ -1949,4 +1952,265 @@ fn facade_and_one_shot_preserve_typed_parser_fatal_failure() {
     )
     .expect_err("one-shot parse must publish no output after fatal failure");
     assert_eq!(one_shot, fatal);
+}
+
+#[test]
+fn semantic_completeness_is_independent_of_parse_errors_and_diagnostic_retention() {
+    use crate::HtmlParseSemanticCompleteness;
+
+    let malformed = parse_document("<!doctype html><p><div>", HtmlParseOptions::default())
+        .expect("recoverable malformed document");
+    assert_eq!(
+        malformed.semantic_completeness,
+        HtmlParseSemanticCompleteness::Complete
+    );
+
+    let bounded_errors = HtmlParseOptions {
+        error_policy: HtmlErrorPolicy {
+            track: true,
+            max_stored: 1,
+            debug_only: false,
+            track_counters: true,
+        },
+        ..HtmlParseOptions::default()
+    };
+    let dropped = parse_document("&bogus;&bogus;&bogus;", bounded_errors)
+        .expect("recoverable character references");
+    assert!(dropped.counters.errors_dropped > 0);
+    assert_eq!(
+        dropped.semantic_completeness,
+        HtmlParseSemanticCompleteness::Complete
+    );
+}
+
+#[test]
+fn semantics_changing_limits_degrade_while_token_batching_does_not() {
+    use crate::{HtmlParseSemanticCompleteness, HtmlParseSemanticDegradationReason};
+
+    let tag_limited = HtmlParseOptions {
+        tokenizer: HtmlTokenizerOptions {
+            limits: HtmlTokenizerLimits {
+                max_tag_name_bytes: 3,
+                ..HtmlTokenizerLimits::default()
+            },
+            ..HtmlTokenizerOptions::default()
+        },
+        ..HtmlParseOptions::default()
+    };
+    let tag = parse_document("<abcdef></abcdef>", tag_limited).expect("bounded tag parse");
+    let HtmlParseSemanticCompleteness::Degraded(reasons) = tag.semantic_completeness else {
+        panic!("tag truncation must degrade semantic output")
+    };
+    assert!(
+        reasons
+            .reasons()
+            .any(|reason| reason == HtmlParseSemanticDegradationReason::TagNameTruncated)
+    );
+
+    let tree_limited = HtmlParseOptions {
+        tree_builder: HtmlTreeBuilderOptions {
+            limits: HtmlTreeBuilderLimits {
+                max_nodes_created: 4,
+                ..HtmlTreeBuilderLimits::default()
+            },
+            ..HtmlTreeBuilderOptions::default()
+        },
+        ..HtmlParseOptions::default()
+    };
+    let tree =
+        parse_document("<!doctype html><div></div>", tree_limited).expect("bounded tree parse");
+    assert!(matches!(
+        tree.semantic_completeness,
+        HtmlParseSemanticCompleteness::Degraded(_)
+    ));
+
+    let batched = HtmlParseOptions {
+        tokenizer: HtmlTokenizerOptions {
+            limits: HtmlTokenizerLimits {
+                max_tokens_per_batch: 1,
+                ..HtmlTokenizerLimits::default()
+            },
+            ..HtmlTokenizerOptions::default()
+        },
+        ..HtmlParseOptions::default()
+    };
+    let batched = parse_document("<!doctype html><html><body><p>x</p></body></html>", batched)
+        .expect("cooperatively batched parse");
+    assert_eq!(
+        batched.semantic_completeness,
+        HtmlParseSemanticCompleteness::Complete
+    );
+}
+
+#[test]
+fn every_configurable_semantics_changing_parser_guardrail_marks_actual_output_degradation() {
+    use crate::{HtmlParseSemanticCompleteness, HtmlParseSemanticDegradationReason as Reason};
+
+    fn assert_degraded(input: &str, options: HtmlParseOptions, expected: Reason) {
+        let first = parse_document(input, options.clone()).expect("bounded parser recovery");
+        let second = parse_document(input, options).expect("repeat bounded parser recovery");
+        assert_eq!(first.semantic_completeness, second.semantic_completeness);
+        let HtmlParseSemanticCompleteness::Degraded(reasons) = first.semantic_completeness else {
+            panic!("expected {expected:?} for {input:?}")
+        };
+        assert!(
+            reasons.contains(expected),
+            "missing {expected:?} for {input:?}"
+        );
+        assert_eq!(reasons.len(), reasons.reasons().count());
+    }
+
+    fn tokenizer(limits: HtmlTokenizerLimits) -> HtmlParseOptions {
+        HtmlParseOptions {
+            tokenizer: HtmlTokenizerOptions {
+                limits,
+                ..HtmlTokenizerOptions::default()
+            },
+            ..HtmlParseOptions::default()
+        }
+    }
+
+    assert_degraded(
+        "<abcdef></abcdef>",
+        tokenizer(HtmlTokenizerLimits {
+            max_tag_name_bytes: 3,
+            ..HtmlTokenizerLimits::default()
+        }),
+        Reason::TagNameTruncated,
+    );
+    assert_degraded(
+        "<div abcdef=1></div>",
+        tokenizer(HtmlTokenizerLimits {
+            max_attribute_name_bytes: 3,
+            ..HtmlTokenizerLimits::default()
+        }),
+        Reason::AttributeNameTruncated,
+    );
+    assert_degraded(
+        "<div data=abcdef></div>",
+        tokenizer(HtmlTokenizerLimits {
+            max_attribute_value_bytes: 4,
+            ..HtmlTokenizerLimits::default()
+        }),
+        Reason::AttributeValueTruncated,
+    );
+    assert_degraded(
+        "<div a=1 b=2></div>",
+        tokenizer(HtmlTokenizerLimits {
+            max_attributes_per_tag: 1,
+            ..HtmlTokenizerLimits::default()
+        }),
+        Reason::AttributeDroppedByCountLimit,
+    );
+    assert_degraded(
+        "<!--abcdef-->",
+        tokenizer(HtmlTokenizerLimits {
+            max_comment_bytes: 4,
+            ..HtmlTokenizerLimits::default()
+        }),
+        Reason::CommentTruncated,
+    );
+    assert_degraded(
+        "<?longtarget data?><p>ok",
+        tokenizer(HtmlTokenizerLimits {
+            max_processing_instruction_target_bytes: 3,
+            ..HtmlTokenizerLimits::default()
+        }),
+        Reason::ProcessingInstructionTargetSuppressed,
+    );
+    assert_degraded(
+        "<?pi abcdef?>",
+        tokenizer(HtmlTokenizerLimits {
+            max_processing_instruction_data_bytes: 4,
+            ..HtmlTokenizerLimits::default()
+        }),
+        Reason::ProcessingInstructionDataTruncated,
+    );
+    assert_degraded(
+        "<!DOCTYPE html PUBLIC \"abcdef\"><p>",
+        tokenizer(HtmlTokenizerLimits {
+            max_doctype_bytes: 10,
+            ..HtmlTokenizerLimits::default()
+        }),
+        Reason::DoctypeBoundedRecovery,
+    );
+    assert_degraded(
+        "<style>hello</style class=x></style>",
+        tokenizer(HtmlTokenizerLimits {
+            max_end_tag_match_scan_bytes: 8,
+            ..HtmlTokenizerLimits::default()
+        }),
+        Reason::TextModeEndTagMatchAbandoned,
+    );
+    assert_degraded(
+        "&#123456789012345678901234567890;",
+        HtmlParseOptions::default(),
+        Reason::NumericCharacterReferenceBoundedRecovery,
+    );
+
+    let tree = |limits| HtmlParseOptions {
+        tree_builder: HtmlTreeBuilderOptions {
+            limits,
+            ..HtmlTreeBuilderOptions::default()
+        },
+        ..HtmlParseOptions::default()
+    };
+    assert_degraded(
+        "<!doctype html><html><body><div><span></span></div></body></html>",
+        tree(HtmlTreeBuilderLimits {
+            max_open_elements_depth: 3,
+            ..HtmlTreeBuilderLimits::default()
+        }),
+        Reason::TreeOpenElementsDepthSuppressed,
+    );
+    assert_degraded(
+        "<!doctype html><html><body><div></div></body></html>",
+        tree(HtmlTreeBuilderLimits {
+            max_nodes_created: 4,
+            ..HtmlTreeBuilderLimits::default()
+        }),
+        Reason::TreeNodeCreationSuppressed,
+    );
+    assert_degraded(
+        "<!doctype html><html><body><p></p><p></p></body></html>",
+        tree(HtmlTreeBuilderLimits {
+            max_children_per_node: 1,
+            ..HtmlTreeBuilderLimits::default()
+        }),
+        Reason::TreeChildInsertionSuppressed,
+    );
+    assert_degraded(
+        "<!doctype html><html><body><template></template></body></html>",
+        tree(HtmlTreeBuilderLimits {
+            max_template_mode_depth: 0,
+            ..HtmlTreeBuilderLimits::default()
+        }),
+        Reason::TreeTemplateModeDepthSuppressed,
+    );
+}
+
+#[test]
+fn touching_semantics_changing_thresholds_without_suppression_remains_complete() {
+    use crate::HtmlParseSemanticCompleteness;
+
+    let options = HtmlParseOptions {
+        tokenizer: HtmlTokenizerOptions {
+            limits: HtmlTokenizerLimits {
+                max_tag_name_bytes: 3,
+                max_attribute_name_bytes: 4,
+                max_attribute_value_bytes: 4,
+                max_attributes_per_tag: 1,
+                max_comment_bytes: 4,
+                ..HtmlTokenizerLimits::default()
+            },
+            ..HtmlTokenizerOptions::default()
+        },
+        ..HtmlParseOptions::default()
+    };
+    let output =
+        parse_document("<div data=abcd><!--abcd--></div>", options).expect("exact-boundary parse");
+    assert_eq!(
+        output.semantic_completeness,
+        HtmlParseSemanticCompleteness::Complete
+    );
 }

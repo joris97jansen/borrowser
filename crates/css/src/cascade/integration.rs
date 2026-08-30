@@ -44,17 +44,19 @@ pub(crate) use self::declarations::{
 
 use self::limits::validate_representation_limits;
 use self::rule_inputs::rule_inputs_for_element_with_limits;
-use self::selector_dom::{
-    build_document_selector_dom_with_element_limit,
-    build_element_subtree_selector_dom_with_element_limit,
-};
+#[cfg(feature = "count-alloc")]
+use self::selector_dom::build_document_selector_dom_with_element_limit;
+use self::selector_dom::build_element_subtree_selector_dom_with_element_limit;
 use super::contract::{
     CascadeResolutionBudget, CascadeResolutionWorkspace, InheritanceParentPresence,
     StylesheetOrder, StylesheetSourceId, resolve_cascade_style_owned, resolve_cascade_winners,
 };
 use super::document::{ResolvedDocumentStyle, ResolvedElementStyle};
 use crate::model;
-use crate::selectors::{SelectorDomIndex, SelectorMatchingContext, SelectorMatchingEnvironment};
+use crate::selectors::{
+    SelectorDomIndex, SelectorMatchingContext, SelectorMatchingEnvironment, StyleProjection,
+    StyleProjectionBuildError, StyleProjectionElementKey, StyleProjectionKeyError,
+};
 use html::{ElementNode, Node, internal::Id};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -69,12 +71,67 @@ pub struct IncrementalResolvedDocumentStyle {
     pub stats: IncrementalStyleResolutionStats,
 }
 
+/// Resolved styles plus private provenance for the immutable document whose
+/// selector projection produced them.
+pub struct ProjectionResolvedDocumentStyle<'dom> {
+    source_root: &'dom Node,
+    matching_environment: SelectorMatchingEnvironment,
+    element_count: usize,
+    resolved: ResolvedDocumentStyle,
+}
+
+impl ProjectionResolvedDocumentStyle<'_> {
+    pub fn resolved(&self) -> &ResolvedDocumentStyle {
+        &self.resolved
+    }
+
+    pub fn into_resolved(self) -> ResolvedDocumentStyle {
+        self.resolved
+    }
+}
+
+/// Computed styles retaining the selector-projection provenance of the
+/// resolved artifact from which they were materialized.
+pub struct ProjectionComputedDocumentStyle<'dom> {
+    source_root: &'dom Node,
+    matching_environment: SelectorMatchingEnvironment,
+    element_count: usize,
+    computed: crate::ComputedDocumentStyle,
+}
+
+impl ProjectionComputedDocumentStyle<'_> {
+    pub fn computed(&self) -> &crate::ComputedDocumentStyle {
+        &self.computed
+    }
+
+    pub fn into_computed(self) -> crate::ComputedDocumentStyle {
+        self.computed
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StyleProjectionArtifactError {
+    SourceRootMismatch,
+    MatchingEnvironmentMismatch,
+    ProjectionShapeMismatch,
+    Key(StyleProjectionKeyError),
+}
+
+impl StyleProjectionArtifactError {
+    pub const fn stable_label(self) -> &'static str {
+        match self {
+            Self::SourceRootMismatch => "source-root-mismatch",
+            Self::MatchingEnvironmentMismatch => "matching-environment-mismatch",
+            Self::ProjectionShapeMismatch => "projection-shape-mismatch",
+            Self::Key(_) => "projection-key",
+        }
+    }
+}
+
 /// One pass-scoped selector-DOM and rule-collection view. Browser orchestration
 /// can reuse this value when an incremental attempt falls back to a full pass.
 pub struct StyleResolutionExecution<'dom, 'collection, 'source> {
-    root: &'dom Node,
-    index: SelectorDomIndex<'dom>,
-    matching_environment: SelectorMatchingEnvironment,
+    projection: StyleProjection<'dom>,
     collection: &'collection RuleCollection<'source>,
     limits: StyleResolutionLimits,
     cascade_budget: CascadeResolutionBudget,
@@ -88,10 +145,12 @@ impl<'dom, 'collection, 'source> StyleResolutionExecution<'dom, 'collection, 'so
         limits: &StyleResolutionLimits,
     ) -> Result<Self, StyleResolutionError> {
         validate_representation_limits(limits)?;
-        let index = build_document_selector_dom_with_element_limit(
+        let projection = StyleProjection::try_from_document_with_element_limit(
             root,
+            matching_environment,
             limits.max_styled_elements_per_document,
-        )?;
+        )
+        .map_err(map_style_projection_build_error)?;
         let cascade_budget = CascadeResolutionBudget::try_new(
             limits.max_declaration_inputs_per_element,
             limits.max_inline_declarations_per_element,
@@ -99,9 +158,7 @@ impl<'dom, 'collection, 'source> StyleResolutionExecution<'dom, 'collection, 'so
         )
         .map_err(StyleResolutionError::CascadeResolution)?;
         Ok(Self {
-            root,
-            index,
-            matching_environment,
+            projection,
             collection,
             limits: *limits,
             cascade_budget,
@@ -109,17 +166,128 @@ impl<'dom, 'collection, 'source> StyleResolutionExecution<'dom, 'collection, 'so
     }
 
     pub(crate) fn root(&self) -> &'dom Node {
-        self.root
+        self.projection.root()
+    }
+
+    pub fn projection_key_for_element(
+        &self,
+        element: &'dom ElementNode,
+    ) -> Option<StyleProjectionElementKey<'dom>> {
+        self.projection.key_for_element(element)
+    }
+
+    pub fn validate_projection_key(
+        &self,
+        key: &StyleProjectionElementKey<'dom>,
+    ) -> Result<(), StyleProjectionKeyError> {
+        self.projection.validate_key(key)
+    }
+
+    pub fn resolved_style_for_key<'result>(
+        &self,
+        resolved: &'result ProjectionResolvedDocumentStyle<'dom>,
+        key: &StyleProjectionElementKey<'dom>,
+    ) -> Result<Option<&'result ResolvedElementStyle>, StyleProjectionArtifactError> {
+        self.validate_resolved_artifact(resolved)?;
+        let element = self
+            .projection
+            .selector_element_for_validated_key(key)
+            .map_err(StyleProjectionArtifactError::Key)?;
+        Ok(resolved.resolved.get(element))
+    }
+
+    pub fn compute_document_styles_from_projection_resolved(
+        &self,
+        resolved: &ProjectionResolvedDocumentStyle<'dom>,
+    ) -> Result<ProjectionComputedDocumentStyle<'dom>, crate::ComputedStyleResolutionError> {
+        if !std::ptr::eq(self.projection.root(), resolved.source_root) {
+            return Err(crate::ComputedStyleResolutionError::ProjectionSourceRootMismatch);
+        }
+        if self.projection.environment() != resolved.matching_environment {
+            return Err(
+                crate::ComputedStyleResolutionError::MatchingEnvironmentMismatch {
+                    expected: self.projection.environment(),
+                    actual: resolved.matching_environment,
+                },
+            );
+        }
+        if self.projection.len() != resolved.element_count {
+            return Err(
+                crate::ComputedStyleResolutionError::ProjectionShapeMismatch {
+                    expected_elements: self.projection.len(),
+                    actual_elements: resolved.element_count,
+                },
+            );
+        }
+        crate::computed::compute_document_styles_from_resolved_styles_with_index(
+            self.projection.index(),
+            &resolved.resolved,
+        )
+        .map(|computed| ProjectionComputedDocumentStyle {
+            source_root: self.projection.root(),
+            matching_environment: self.projection.environment(),
+            element_count: self.projection.len(),
+            computed,
+        })
+    }
+
+    pub fn computed_style_for_key<'result>(
+        &self,
+        computed: &'result ProjectionComputedDocumentStyle<'dom>,
+        key: &StyleProjectionElementKey<'dom>,
+    ) -> Result<Option<&'result crate::ComputedElementStyle>, StyleProjectionArtifactError> {
+        if !std::ptr::eq(self.projection.root(), computed.source_root) {
+            return Err(StyleProjectionArtifactError::SourceRootMismatch);
+        }
+        if self.projection.environment() != computed.matching_environment {
+            return Err(StyleProjectionArtifactError::MatchingEnvironmentMismatch);
+        }
+        if self.projection.len() != computed.element_count {
+            return Err(StyleProjectionArtifactError::ProjectionShapeMismatch);
+        }
+        let element = self
+            .projection
+            .selector_element_for_validated_key(key)
+            .map_err(StyleProjectionArtifactError::Key)?;
+        Ok(computed.computed.get(element))
     }
 
     pub fn resolve_document_styles(&self) -> Result<ResolvedDocumentStyle, StyleResolutionError> {
         resolve_document_styles_with_index(
-            &self.index,
-            self.matching_environment,
+            self.projection.index(),
+            self.projection.environment(),
             self.collection,
             &self.limits,
             self.cascade_budget,
         )
+    }
+
+    pub fn resolve_document_styles_with_projection(
+        &self,
+    ) -> Result<ProjectionResolvedDocumentStyle<'dom>, StyleResolutionError> {
+        self.resolve_document_styles()
+            .map(|resolved| ProjectionResolvedDocumentStyle {
+                source_root: self.projection.root(),
+                matching_environment: self.projection.environment(),
+                element_count: self.projection.len(),
+                resolved,
+            })
+    }
+
+    fn validate_resolved_artifact(
+        &self,
+        resolved: &ProjectionResolvedDocumentStyle<'dom>,
+    ) -> Result<(), StyleProjectionArtifactError> {
+        if !std::ptr::eq(self.projection.root(), resolved.source_root) {
+            return Err(StyleProjectionArtifactError::SourceRootMismatch);
+        }
+        if self.projection.environment() != resolved.matching_environment {
+            return Err(StyleProjectionArtifactError::MatchingEnvironmentMismatch);
+        }
+        if self.projection.len() != resolved.element_count {
+            return Err(StyleProjectionArtifactError::ProjectionShapeMismatch);
+        }
+        Ok(())
     }
 
     pub fn resolve_document_styles_incremental_suffix(
@@ -128,14 +296,28 @@ impl<'dom, 'collection, 'source> StyleResolutionExecution<'dom, 'collection, 'so
         dirty_node_ids: &[Id],
     ) -> Result<Option<IncrementalResolvedDocumentStyle>, StyleResolutionError> {
         resolve_document_styles_incremental_suffix_with_index(
-            &self.index,
-            self.matching_environment,
+            self.projection.index(),
+            self.projection.environment(),
             self.collection,
             previous,
             dirty_node_ids,
             &self.limits,
             self.cascade_budget,
         )
+    }
+}
+
+fn map_style_projection_build_error(error: StyleProjectionBuildError) -> StyleResolutionError {
+    match error {
+        StyleProjectionBuildError::SelectorDom(error) => {
+            StyleResolutionError::SelectorDomBuild(error)
+        }
+        StyleProjectionBuildError::ElementLimitExceeded { limit, .. } => {
+            StyleResolutionError::LimitExceeded {
+                limit: StyleResolutionLimit::StyledElementsPerDocument,
+                configured: limit,
+            }
+        }
     }
 }
 
@@ -627,6 +809,99 @@ mod tests {
         assert_eq!(
             try_reserve_compatibility_inputs(&mut inputs, usize::MAX),
             Err(StylesheetCollectionInputBuildError::Reservation)
+        );
+    }
+
+    #[test]
+    fn resolved_and_computed_artifacts_preserve_projection_provenance() {
+        let dom = html::parse_document(
+            "<!doctype html><html><body><p class=target>text</p></body></html>",
+            html::HtmlParseOptions::default(),
+        )
+        .expect("DOM")
+        .document;
+        let sheet = model::parse_stylesheet_with_options(
+            ".target { color: red; width: 4px; }",
+            &crate::ParseOptions::stylesheet(),
+        );
+        let limits = StyleResolutionLimits::default();
+        let input = [StylesheetCollectionInput::author(
+            StylesheetSourceId::in_memory_generation_index(0),
+            StylesheetOrder::new(0),
+            &sheet,
+            StylesheetConditionInput::None,
+        )];
+        let collection = RuleCollection::try_new(&input, &limits).expect("collection");
+        let environment = SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks);
+        let first = StyleResolutionExecution::try_new(&dom, environment, &collection, &limits)
+            .expect("first execution");
+        let target_id = first.projection.index().elements().last().expect("target");
+        let target = first.projection.index().source_element(target_id);
+        let key = first.projection_key_for_element(target).expect("key");
+        let resolved = first
+            .resolve_document_styles_with_projection()
+            .expect("projection-bound resolved style");
+        let compatible = StyleResolutionExecution::try_new(&dom, environment, &collection, &limits)
+            .expect("compatible execution");
+        assert_eq!(compatible.validate_projection_key(&key), Ok(()));
+        assert!(
+            compatible
+                .resolved_style_for_key(&resolved, &key)
+                .expect("compatible resolved artifact and key")
+                .is_some()
+        );
+        let computed = compatible
+            .compute_document_styles_from_projection_resolved(&resolved)
+            .expect("computed through compatible projection");
+        assert!(
+            compatible
+                .computed_style_for_key(&computed, &key)
+                .expect("validated key")
+                .is_some()
+        );
+
+        let incompatible_environment = StyleResolutionExecution::try_new(
+            &dom,
+            SelectorMatchingEnvironment::new(html::DocumentMode::Quirks),
+            &collection,
+            &limits,
+        )
+        .expect("alternate-environment execution");
+        assert!(matches!(
+            incompatible_environment.compute_document_styles_from_projection_resolved(&resolved),
+            Err(crate::ComputedStyleResolutionError::MatchingEnvironmentMismatch { .. })
+        ));
+
+        let other_dom = html::parse_document(
+            "<!doctype html><html><body><p class=target>text</p></body></html>",
+            html::HtmlParseOptions::default(),
+        )
+        .expect("other DOM")
+        .document;
+        let other =
+            StyleResolutionExecution::try_new(&other_dom, environment, &collection, &limits)
+                .expect("other execution");
+        let other_target_id = other
+            .projection
+            .index()
+            .elements()
+            .last()
+            .expect("other target");
+        let other_target = other.projection.index().source_element(other_target_id);
+        let other_key = other
+            .projection_key_for_element(other_target)
+            .expect("other key");
+        assert_eq!(
+            other.resolved_style_for_key(&resolved, &other_key),
+            Err(StyleProjectionArtifactError::SourceRootMismatch)
+        );
+        assert!(matches!(
+            other.compute_document_styles_from_projection_resolved(&resolved),
+            Err(crate::ComputedStyleResolutionError::ProjectionSourceRootMismatch)
+        ));
+        assert_eq!(
+            other.computed_style_for_key(&computed, &other_key),
+            Err(StyleProjectionArtifactError::SourceRootMismatch)
         );
     }
 }

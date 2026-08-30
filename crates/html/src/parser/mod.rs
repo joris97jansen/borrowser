@@ -24,3 +24,7 @@ pub(crate) use self::session::{
     ConformanceFinalizationError, ConformanceFinalizedOutput, PatchMaterializationWitness,
 };
 pub use self::types::{HtmlParseCounters, HtmlParseError, HtmlParseEvent};
+pub use crate::html5::shared::{
+    HtmlParseSemanticCompleteness, HtmlParseSemanticDegradationReason,
+    HtmlParseSemanticDegradations,
+};

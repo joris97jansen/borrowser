@@ -1,0 +1,29 @@
+format = "borrowser-conformance-parser-report-v1"
+case-count = 1
+
+BEGIN case
+test-id = "typed-parser-case"
+profile = "html-tokenizer"
+classification = "classified"
+requirements = ["no-js"]
+engine = "available"
+harness = "ready"
+stability = "stable"
+eligibility = "runnable"
+expectation = "expected-pass"
+attempt = "attempted"
+not-attempted-reason = null
+pre-attempt-outcome = null
+observed = "expectation-mismatch"
+observed-strategy = "whole"
+observed-surface = "tokens"
+observed-difference = "line one\n\"quoted\" \\ slash"
+ae-disposition = "unexpected-outcome"
+policy = "unexpected-fail"
+observation-count = 1
+BEGIN observation
+surface = "tokens"
+snapshot-format = "html5-token-v2"
+bytes = "TOKEN \\\"x\\\"\nEOF"
+END observation
+END case

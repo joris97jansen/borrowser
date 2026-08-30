@@ -88,7 +88,8 @@ fn write_rule(
             )
             .expect("write style rule header");
             writeln!(out, "{}  selectors", indent_str).expect("write selectors header");
-            write_selector_parse_result_snapshot_body(out, &rule.selectors, indent + 4);
+            write_selector_parse_result_snapshot_body(out, &rule.selectors, indent + 4)
+                .expect("write selector parse snapshot body");
             writeln!(
                 out,
                 "{}  declarations @{}..{}",

@@ -1,0 +1,1 @@
+#target, article.featured, section

@@ -2,16 +2,17 @@ use std::fmt::Write;
 
 use html::Node;
 
+use super::StyleResolutionExecution;
 use super::collection::RuleCollection;
 use super::limits::{StyleResolutionError, StyleResolutionLimits};
 use super::rule_inputs::rule_inputs_for_element_with_limits;
-use super::selector_dom::build_document_selector_dom_with_element_limit;
 use super::source::StylesheetCollectionInput;
+#[cfg(test)]
+use crate::cascade::contract::CascadeResolutionBudget;
 use crate::cascade::contract::{
     CascadeCandidateObservationIndex, CascadeDeclarationCandidate, CascadeDeclarationSource,
     CascadeEvaluationFailure, CascadeEvaluationObserver, CascadePriority, CascadePropertyId,
-    CascadeResolutionBudget, CascadeResolutionWorkspace,
-    resolve_cascade_winners_from_validated_inputs,
+    CascadeResolutionWorkspace, resolve_cascade_winners_from_validated_inputs,
 };
 use crate::selectors::{
     SelectorDomElementId, SelectorMatchingContext, SelectorMatchingEnvironment,
@@ -1078,31 +1079,28 @@ pub fn cascade_evaluation_diagnostic(
             );
         }
     };
-    let index = match build_document_selector_dom_with_element_limit(
-        root,
-        style_limits.max_styled_elements_per_document,
-    ) {
-        Ok(index) => index,
-        Err(error) => {
-            return CascadeEvaluationDiagnostic::Failed(
-                CascadeEvaluationDiagnosticFailure::StyleExecution(error),
-            );
-        }
+    let execution =
+        match StyleResolutionExecution::try_new(root, environment, &collection, style_limits) {
+            Ok(execution) => execution,
+            Err(error) => {
+                return CascadeEvaluationDiagnostic::Failed(
+                    CascadeEvaluationDiagnosticFailure::StyleExecution(error),
+                );
+            }
+        };
+    cascade_evaluation_diagnostic_from_execution(&execution, diagnostic_limits)
+}
+
+pub(super) fn cascade_evaluation_diagnostic_from_execution(
+    execution: &StyleResolutionExecution<'_, '_, '_>,
+    diagnostic_limits: CascadeEvaluationDiagnosticLimits,
+) -> CascadeEvaluationDiagnostic {
+    let diagnostic_limits = match diagnostic_limits.validate() {
+        Ok(limits) => limits,
+        Err(failure) => return CascadeEvaluationDiagnostic::Failed(failure),
     };
-    let budget = match CascadeResolutionBudget::try_new(
-        style_limits.max_declaration_inputs_per_element,
-        style_limits.max_inline_declarations_per_element,
-        style_limits.max_matched_rules_per_element,
-    ) {
-        Ok(budget) => budget,
-        Err(error) => {
-            return CascadeEvaluationDiagnostic::Failed(
-                CascadeEvaluationDiagnosticFailure::StyleExecution(
-                    StyleResolutionError::CascadeResolution(error),
-                ),
-            );
-        }
-    };
+    let index = execution.projection.index();
+    let budget = execution.cascade_budget;
     let mut workspace = match CascadeResolutionWorkspace::try_new(budget) {
         Ok(workspace) => workspace,
         Err(error) => {
@@ -1113,16 +1111,19 @@ pub fn cascade_evaluation_diagnostic(
             );
         }
     };
-    let context =
-        SelectorMatchingContext::with_limits(&index, environment, style_limits.selector_matching);
+    let context = SelectorMatchingContext::with_limits(
+        index,
+        execution.projection.environment(),
+        execution.limits.selector_matching,
+    );
     let mut observer = BoundedCascadeObserver::new(diagnostic_limits);
     for element in index.elements() {
         let inputs = match rule_inputs_for_element_with_limits(
-            &index,
+            index,
             &context,
             element,
-            &collection,
-            style_limits,
+            execution.collection,
+            &execution.limits,
             budget,
         ) {
             Ok(inputs) => inputs,
@@ -1436,6 +1437,7 @@ fn write_source_label(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cascade::integration::selector_dom::build_document_selector_dom_with_element_limit;
     use crate::{
         ParseOptions, StylesheetOrder, StylesheetSourceId, parse_stylesheet_with_options,
         try_resolve_document_styles_from_cascade_inputs_with_limits,

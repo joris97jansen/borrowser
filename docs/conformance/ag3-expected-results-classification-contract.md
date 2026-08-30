@@ -372,7 +372,7 @@ When adding or changing a fixture:
 AG3 originally reviewed 11 AG2 seeds without execution or host inspection. The
 following table records that historical pre-AG4 readiness audit:
 
-| Seed | Future subsystem-owned observation | Authoritative expected semantic value today | Would an adapter alone permit truthful pass/fail? | Final AG3 state |
+| Seed | Future subsystem-owned observation | Authoritative expected semantic value at AG3 completion | Would an adapter alone permit truthful pass/fail? | Final AG3 state |
 | --- | --- | --- | --- | --- |
 | `html-tokenizer-basic-document` | HTML-owned canonical tokenizer observation through `html::conformance` | none; the AG2 bundle contains input only and no expected token stream | no; AG also lacks an authored expected observation and comparison path | classified because AE13/AE14 establish the narrow production capability; harness not ready for missing adapter, missing expected observation, and missing comparison surface |
 | `html-tree-construction-basic-document` | HTML-owned canonical tree-construction observation | none; no expected tree-construction observation is authored | no, for the same two additional harness gaps | classified because AE13/AE14 establish the narrow production capability; the same three harness limitations apply |
@@ -382,7 +382,8 @@ following table records that historical pre-AG4 readiness audit:
 | `css-cascade-basic-author-rule` | CSS-owned cascade winner for a specified target and candidate context | none; no target element, matching result, competing candidate context, or expected winner is authored | no; an adapter would have to invent cascade inputs and an expected value | explicitly not yet classified despite AF10 proving underlying cascade capability |
 | `computed-style-basic-author-rule` | CSS-owned computed style for a specified element within a document/inheritance context | none; no target DOM element, parent/inheritance context, or expected style is authored | no; an adapter would have to invent document inputs and an expected value | explicitly not yet classified despite AF10/S9 proving underlying computed-style capability |
 
-The remaining four records stay explicitly not yet classified:
+At AG3 completion, the remaining four records were explicitly not yet
+classified:
 
 | Seed | Reason |
 | --- | --- |
@@ -417,20 +418,63 @@ orchestration tests cover XFAIL/XPASS policy normalization.
 The initial four available assertions were narrow production-path assertions,
 not broad conformance claims. AG4's six available parser records remain equally
 narrow even though their package, adapter, expectation, and comparison evidence
-now permits execution. The available CSS syntax record retains the initial
-three not-ready limitations. Seven non-parser records remain wholly
-unclassified rather than persisting partial or inferred dimensions.
+now permits execution. At the AG4 checkpoint, CSS execution had not yet received
+the package, adapter, and comparison work recorded by the next transition.
+
+### AG5 CSS readiness transition
+
+AG5 expands the current inventory to 18 logical tests. The following seven CSS
+records are now classified and `harness.readiness = "ready"` in
+`tests/conformance/expected-results.toml`:
+
+- `css-parsing-basic-stylesheet`;
+- `css-selector-parsing-basic-list`;
+- `css-selector-specificity-list`;
+- `css-selector-matching-parser-dom`;
+- `css-cascade-basic-author-rule`;
+- `css-inheritance-wide-keywords`;
+- `computed-style-basic-author-rule`.
+
+Each readiness assertion is backed by a strict AG2 V2 outer package, a strict
+`borrowser-css-fixture-v1` nested package, the CSS subsystem adapter, an
+explicit production execution profile, an independently reviewed expected
+observation, an implemented semantic comparison surface, and typed AG3
+capability, readiness, and expectation state. These records exercise seven
+focused production paths; they do not establish broader selector, property,
+CSS, WPT, rendering, or browser compatibility.
+
+The historical `css-selectors-basic-stylesheet` seed was underspecified between
+selector parsing and selector matching and supplied a stylesheet rather than a
+direct selector-list input. AG5 retired it and introduced
+`css-selector-parsing-basic-list` as a new stable logical selector-parsing case.
+Retaining the former `TestId` would have changed both its authored carrier and
+its observation meaning, so the identity change is deliberate rather than an
+implicit seed repurposing.
+
+The current manifest and expected-results registry leave exactly these four
+records `not-yet-classified`:
+
+| Seed | Remaining current gap |
+| --- | --- |
+| `layout-geometry-basic-block-flow` | no Layout execution adapter or fully specified AG expectation and viewport/text profile |
+| `paint-operations-basic-background` | no Paint/GFX execution adapter or fully specified paint observation and rendering requirements |
+| `paint-semantic-reference-basic` | no semantic Paint comparison adapter or fully specified rendering requirements |
+| `browser-controlled-static-page-basic` | no Browser/runtime execution adapter or fully specified observation and viewport/text/resource requirements |
 
 ## Non-claims and deferred work
 
-AG3 itself adds metadata and accounting only. AG4 now consumes its immutable
-views and eligibility result for parser cases; AG3 still does not implement a runner,
-subsystem adapter, execution request, environment inspection or provisioning,
-lane selection, CI execution, source/WPT importer, cross-engine capture,
-rendered/raster comparison, browser automation, observed outcome,
+AG3 itself adds immutable classification metadata and accounting only. It does
+not implement a runner, subsystem adapter, execution request, environment
+inspection or provisioning, lane selection, source/WPT importer, cross-engine
+capture, rendered/raster comparison, browser automation, observed outcome,
 attempt state, result normalization, XFAIL/XPASS evaluation, or production
-browser behavior. Non-parser execution and the other listed facilities require
-later Milestone AG contracts and issues.
+browser behavior. AG4 consumes AG3 views and eligibility for parser execution;
+AG5 consumes the same metadata boundary for CSS execution.
+
+Layout, Paint/GFX, and Browser/runtime execution adapters, broader lane
+selection and environment provisioning, broad WPT/source importing,
+cross-engine capture, rendered/raster comparison, and browser automation remain
+future Milestone AG work. AG5 adds none of those facilities.
 
 AG3 therefore closes the expected-result metadata issue without closing
 Milestone AG or claiming broad WPT, HTML, CSS, rendering, or browser

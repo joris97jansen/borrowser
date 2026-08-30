@@ -12,20 +12,65 @@ references = [
 
 [[tests]]
 id = "computed-style-basic-author-rule"
-classification = "not-yet-classified"
-reason = "The AG2 bundle supplies CSS source but no target DOM element, parent/inheritance context, or authoritative expected computed-style value, so this logical observation is not sufficiently specified."
+classification = "classified"
+requirements = ["no-js", "requires-css-feature", "requires-html-parser-feature"]
+lane_exclusions = []
 references = [
   { kind = "documentation", path = "docs/css/af10-selector-cascade-computed-style-conformance-closeout.md" },
   { kind = "documentation", path = "docs/css/s9-property-system-computed-style-runtime-contract.md" },
 ]
 
+[tests.engine]
+availability = "available"
+[tests.harness]
+readiness = "ready"
+[tests.environment]
+requirements = []
+[tests.expectation]
+kind = "expected-pass"
+[tests.stability]
+state = "not-yet-established"
+
 [[tests]]
 id = "css-cascade-basic-author-rule"
-classification = "not-yet-classified"
-reason = "The AG2 bundle supplies author CSS but no target DOM element, matching results, competing declaration context, or authoritative expected cascade winner, so this logical observation is not sufficiently specified."
+classification = "classified"
+requirements = ["no-js", "requires-css-feature", "requires-html-parser-feature"]
+lane_exclusions = []
 references = [
   { kind = "documentation", path = "docs/css/af10-selector-cascade-computed-style-conformance-closeout.md" },
+  { kind = "documentation", path = "docs/css/af6-cascade-ordering-winner-selection-contract.md" },
 ]
+
+[tests.engine]
+availability = "available"
+[tests.harness]
+readiness = "ready"
+[tests.environment]
+requirements = []
+[tests.expectation]
+kind = "expected-pass"
+[tests.stability]
+state = "not-yet-established"
+
+[[tests]]
+id = "css-inheritance-wide-keywords"
+classification = "classified"
+requirements = ["no-js", "requires-css-feature", "requires-html-parser-feature"]
+lane_exclusions = []
+references = [
+  { kind = "documentation", path = "docs/css/af10-selector-cascade-computed-style-conformance-closeout.md" },
+  { kind = "documentation", path = "docs/css/af7-specified-value-defaulting-source-resolution.md" },
+]
+[tests.engine]
+availability = "available"
+[tests.harness]
+readiness = "ready"
+[tests.environment]
+requirements = []
+[tests.expectation]
+kind = "expected-pass"
+[tests.stability]
+state = "not-yet-established"
 
 [[tests]]
 id = "css-parsing-basic-stylesheet"
@@ -41,12 +86,7 @@ references = [
 availability = "available"
 
 [tests.harness]
-readiness = "not-ready"
-limitations = [
-  { kind = "missing-subsystem-adapter", reason = "AG does not yet delegate CSS syntax fixtures to the CSS-owned deterministic parse observation." },
-  { kind = "missing-expected-observation", reason = "An authoritative typed or snapshot expected parse observation has not yet been authored for this logical test." },
-  { kind = "missing-comparison-surface", reason = "AG does not yet compare a CSS-owned parse observation with an authored expected semantic value." },
-]
+readiness = "ready"
 
 [tests.environment]
 requirements = []
@@ -58,13 +98,64 @@ kind = "expected-pass"
 state = "not-yet-established"
 
 [[tests]]
-id = "css-selectors-basic-stylesheet"
-classification = "not-yet-classified"
-reason = "The AG2 bundle supplies stylesheet source but does not define whether the logical observation is selector parsing or selector matching and supplies no target DOM/matching context or authoritative expected value."
+id = "css-selector-matching-parser-dom"
+classification = "classified"
+requirements = ["no-js", "requires-css-feature", "requires-html-parser-feature"]
+lane_exclusions = []
+references = [
+  { kind = "documentation", path = "docs/css/af4b-selector-dom-query-contract.md" },
+  { kind = "documentation", path = "docs/css/af10-selector-cascade-computed-style-conformance-closeout.md" },
+]
+[tests.engine]
+availability = "available"
+[tests.harness]
+readiness = "ready"
+[tests.environment]
+requirements = []
+[tests.expectation]
+kind = "expected-pass"
+[tests.stability]
+state = "not-yet-established"
+
+[[tests]]
+id = "css-selector-specificity-list"
+classification = "classified"
+requirements = ["no-js", "requires-css-feature"]
+lane_exclusions = []
+references = [
+  { kind = "documentation", path = "docs/css/af2-selector-ast-and-parser.md" },
+]
+[tests.engine]
+availability = "available"
+[tests.harness]
+readiness = "ready"
+[tests.environment]
+requirements = []
+[tests.expectation]
+kind = "expected-pass"
+[tests.stability]
+state = "not-yet-established"
+
+[[tests]]
+id = "css-selector-parsing-basic-list"
+classification = "classified"
+requirements = ["no-js", "requires-css-feature"]
+lane_exclusions = []
 references = [
   { kind = "documentation", path = "docs/css/af10-selector-cascade-computed-style-conformance-closeout.md" },
   { kind = "documentation", path = "docs/css/af2-selector-ast-and-parser.md" },
 ]
+
+[tests.engine]
+availability = "available"
+[tests.harness]
+readiness = "ready"
+[tests.environment]
+requirements = []
+[tests.expectation]
+kind = "expected-pass"
+[tests.stability]
+state = "not-yet-established"
 
 [[tests]]
 id = "dom-tree-basic-document"

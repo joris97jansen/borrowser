@@ -142,6 +142,25 @@ cache-key semantics.
 Layout snapshots, and semantic Paint snapshots remain internal deterministic
 regression contracts. They are not CSSOM or JavaScript-facing APIs.
 
+AG5 stops at `ComputedDocumentStyle`.
+`ProjectionResolvedDocumentStyle` privately retains the immutable source root
+alongside its matching environment, projection element count, and resolved
+styles. A `StyleResolutionExecution` may materialize it only after source-root
+identity, matching environment, and projection shape match; the existing full
+resolved-entry validation then checks document-order selector identity,
+namespace, and local name. Compatible executions over the same immutable root
+are accepted, while an alternate matching environment or same-shaped different
+document is rejected. A validated
+Computed materialization returns `ProjectionComputedDocumentStyle`, which
+retains the same private root, environment, and projection-shape provenance.
+Both target-specific resolved lookup and target-specific computed lookup accept
+only their projection-provenanced wrappers; the execution does not accept an
+arbitrary bare resolved/computed artifact beside a key. The general legacy APIs
+that independently rebuild and fully validate a projection remain available.
+A validated `StyleProjectionElementKey` addresses the target computed style without
+treating numerically equal selector IDs from independent projections as
+identity. This does not create `StylePhaseOutput` or invoke Layout or Paint.
+
 ## Supported subset and partial values
 
 The supported property families remain those registered by AD4: foreground and

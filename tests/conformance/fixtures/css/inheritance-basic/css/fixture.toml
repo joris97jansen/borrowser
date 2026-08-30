@@ -1,0 +1,20 @@
+format = "borrowser-css-fixture-v1"
+id = "css-inheritance-wide-keywords"
+profile = "inheritance-css-wide"
+
+[input]
+stylesheets = [{ path = "input.css", origin = "author", order = 0, source = 0 }]
+html = { kind = "document", path = "document.html" }
+
+[[targets]]
+label = "child"
+steps = [
+  { child_index = 1, expected_namespace = "html", expected_local_name = "html" },
+  { child_index = 1, expected_namespace = "html", expected_local_name = "body" },
+  { child_index = 0, expected_namespace = "html", expected_local_name = "div" },
+  { child_index = 0, expected_namespace = "html", expected_local_name = "span" },
+]
+
+[expectations]
+snapshot = "expected.txt"
+selected_properties = ["color", "width"]

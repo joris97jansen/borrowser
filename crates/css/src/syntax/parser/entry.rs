@@ -99,6 +99,34 @@ pub(super) fn parse_declaration_list_structured(
     }
 }
 
+pub(super) fn parse_component_value_list_structured(
+    input: &str,
+    options: &ParseOptions,
+) -> (
+    super::super::CssInput,
+    Vec<super::CssComponentValue>,
+    ParseStats,
+) {
+    let tokenization = tokenize_str_with_options(input, options);
+    let mut diagnostics = Vec::new();
+    let mut stats = ParseStats {
+        input_bytes: tokenization.stats.input_bytes,
+        diagnostics_emitted: tokenization.stats.diagnostics_emitted,
+        hit_limit: tokenization.stats.hit_limit,
+        ..ParseStats::default()
+    };
+    let input = tokenization.input;
+    let tokens = tokenization.tokens;
+    if !validate_token_stream_invariants(options, &input, &tokens, 0, &mut diagnostics, &mut stats)
+    {
+        return (input, Vec::new(), stats);
+    }
+    let mut parser =
+        StylesheetParser::new(&input, &tokens, options, 0, &mut diagnostics, &mut stats);
+    let values = parser.parse_component_value_list();
+    (input, values, stats)
+}
+
 fn append_offset_diagnostics(
     options: &ParseOptions,
     diagnostics: &mut Vec<SyntaxDiagnostic>,

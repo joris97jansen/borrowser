@@ -1,11 +1,15 @@
-format = "borrowser-conformance-fixture-v1"
-id = "css-selectors-basic-stylesheet"
+format = "borrowser-conformance-fixture-v2"
+id = "css-selector-parsing-basic-list"
 scope = "static-html-css-no-js"
 observation = "css-selectors"
-test_path = "test.css"
+test_path = "css/selectors.txt"
 
 [source]
 kind = "native"
 
 [metadata]
-description = "Inventory seed for a CSS selector observation using ordinary stylesheet source."
+description = "Replacement for the AG2 stylesheet inventory seed: direct selector-list input is a distinct logical case required by the phase-isolated AG5 parser profile."
+
+[execution_package]
+entry_path = "css/fixture.toml"
+support_paths = ["css/expected.txt"]

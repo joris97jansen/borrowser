@@ -1,0 +1,15 @@
+format = "borrowser-conformance-fixture-v2"
+id = "css-selector-specificity-list"
+scope = "static-html-css-no-js"
+observation = "css-selectors"
+test_path = "css/selectors.txt"
+
+[source]
+kind = "native"
+
+[metadata]
+description = "AF selector-list specificity seed preserving one tuple per selector index."
+
+[execution_package]
+entry_path = "css/fixture.toml"
+support_paths = ["css/expected.txt"]

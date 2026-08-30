@@ -13,6 +13,11 @@ use super::super::{style::ComputedStyleBuildError, value::ComputedValueNormaliza
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ComputedStyleResolutionError {
     SelectorDomBuild(SelectorDomBuildError),
+    ProjectionSourceRootMismatch,
+    ProjectionShapeMismatch {
+        expected_elements: usize,
+        actual_elements: usize,
+    },
     MissingMatchingEnvironment,
     MatchingEnvironmentMismatch {
         expected: SelectorMatchingEnvironment,
@@ -83,10 +88,52 @@ pub enum ComputedStyleResolutionError {
     StyleResolution(StyleResolutionError),
 }
 
+impl ComputedStyleResolutionError {
+    pub const fn stable_label(&self) -> &'static str {
+        match self {
+            Self::SelectorDomBuild(_) => "selector-dom-build",
+            Self::ProjectionSourceRootMismatch => "projection-source-root-mismatch",
+            Self::ProjectionShapeMismatch { .. } => "projection-shape-mismatch",
+            Self::MissingMatchingEnvironment => "missing-matching-environment",
+            Self::MatchingEnvironmentMismatch { .. } => "matching-environment-mismatch",
+            Self::MissingResolvedElement { .. } => "missing-resolved-element",
+            Self::ResolvedElementNameMismatch { .. } => "resolved-element-name-mismatch",
+            Self::ResolvedElementNamespaceMismatch { .. } => "resolved-element-namespace-mismatch",
+            Self::MissingComputedParent { .. } => "missing-computed-parent",
+            Self::MissingComputedElementStyle { .. } => "missing-computed-element-style",
+            Self::ComputedElementNameMismatch { .. } => "computed-element-name-mismatch",
+            Self::ComputedElementNamespaceMismatch { .. } => "computed-element-namespace-mismatch",
+            Self::ComputedElementIdentityMismatch { .. } => "computed-element-identity-mismatch",
+            Self::ExtraComputedElementStyle { .. } => "extra-computed-element-style",
+            Self::MissingResolvedProperty { .. } => "missing-resolved-property",
+            Self::MissingInheritedParent { .. } => "missing-inherited-parent",
+            Self::NonInheritedPropertyMarkedInherited { .. } => {
+                "non-inherited-property-marked-inherited"
+            }
+            Self::InitialValueMismatch { .. } => "initial-value-mismatch",
+            Self::WinnerMissingSpecifiedValue { .. } => "winner-missing-specified-value",
+            Self::WinnerPropertyMismatch { .. } => "winner-property-mismatch",
+            Self::Normalization(_) => "normalization",
+            Self::Build(_) => "build",
+            Self::StyleResolution(_) => "style-resolution",
+        }
+    }
+}
+
 impl std::fmt::Display for ComputedStyleResolutionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::SelectorDomBuild(error) => write!(f, "{error}"),
+            Self::ProjectionSourceRootMismatch => {
+                f.write_str("computed style projection source root mismatch")
+            }
+            Self::ProjectionShapeMismatch {
+                expected_elements,
+                actual_elements,
+            } => write!(
+                f,
+                "computed style projection expected {expected_elements} elements, got {actual_elements}"
+            ),
             Self::MissingMatchingEnvironment => {
                 write!(f, "computed style matching environment is unavailable")
             }
@@ -224,7 +271,9 @@ impl std::error::Error for ComputedStyleResolutionError {
             Self::Normalization(error) => Some(error),
             Self::Build(error) => Some(error),
             Self::StyleResolution(error) => Some(error),
-            Self::MissingMatchingEnvironment
+            Self::ProjectionSourceRootMismatch
+            | Self::ProjectionShapeMismatch { .. }
+            | Self::MissingMatchingEnvironment
             | Self::MatchingEnvironmentMismatch { .. }
             | Self::MissingResolvedElement { .. }
             | Self::ResolvedElementNameMismatch { .. }

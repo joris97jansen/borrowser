@@ -114,6 +114,7 @@ impl From<HtmlTokenizerOptions> for TokenizerConfig {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HtmlTreeBuilderLimits {
     pub max_open_elements_depth: usize,
+    pub max_template_mode_depth: usize,
     pub max_nodes_created: usize,
     pub max_children_per_node: usize,
 }
@@ -123,6 +124,7 @@ impl Default for HtmlTreeBuilderLimits {
         let limits = TreeBuilderLimits::default();
         Self {
             max_open_elements_depth: limits.max_open_elements_depth,
+            max_template_mode_depth: limits.max_template_mode_depth,
             max_nodes_created: limits.max_nodes_created,
             max_children_per_node: limits.max_children_per_node,
         }
@@ -133,6 +135,7 @@ impl From<HtmlTreeBuilderLimits> for TreeBuilderLimits {
     fn from(value: HtmlTreeBuilderLimits) -> Self {
         Self {
             max_open_elements_depth: value.max_open_elements_depth,
+            max_template_mode_depth: value.max_template_mode_depth,
             max_nodes_created: value.max_nodes_created,
             max_children_per_node: value.max_children_per_node,
         }

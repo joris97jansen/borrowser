@@ -1,8 +1,9 @@
 use super::helpers::assert_tokenizer_invariants;
 use crate::html5::shared::{
-    DocumentParseContext, ErrorPolicy, ImplementationDiagnosticCode, ImplementationDiagnosticEvent,
-    Input, LegacyParseErrorCode as ParseErrorCode, ParserGuardrail, ParserObservationConfig,
-    SurfaceCaptureRequest,
+    DocumentParseContext, ErrorPolicy, HtmlParseSemanticCompleteness,
+    HtmlParseSemanticDegradationReason, ImplementationDiagnosticCode,
+    ImplementationDiagnosticEvent, Input, LegacyParseErrorCode as ParseErrorCode, ParserGuardrail,
+    ParserObservationConfig, SurfaceCaptureRequest,
 };
 use crate::html5::tokenizer::states::TokenizerState;
 use crate::html5::tokenizer::{
@@ -82,4 +83,9 @@ fn forced_step_stall_recovery_consumes_one_scalar_as_literal_text() {
         payload.consecutive_stall_steps.get(),
         MAX_CONSECUTIVE_STALLED_PROGRESS_STEPS as u64
     );
+    assert!(matches!(
+        ctx.semantic_completeness(),
+        HtmlParseSemanticCompleteness::Degraded(reasons)
+            if reasons.contains(HtmlParseSemanticDegradationReason::TokenizerStallRecovery)
+    ));
 }

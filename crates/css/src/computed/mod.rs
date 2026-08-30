@@ -30,6 +30,7 @@ mod style_tree;
 mod value;
 
 pub use builder::ComputedStyleBuilder;
+pub(crate) use document::compute_document_styles_from_resolved_styles_with_index;
 pub use document::{
     ComputedDocumentStyle, ComputedDocumentStyleWithStats, ComputedElementStyle,
     ComputedStyleResolutionError, ComputedStyleReuseStats, IncrementalComputedDocumentStyle,

@@ -1,0 +1,19 @@
+format = "borrowser-css-fixture-v1"
+id = "computed-style-basic-author-rule"
+profile = "computed-style"
+
+[input]
+stylesheets = [{ path = "input.css", origin = "author", order = 0, source = 0 }]
+html = { kind = "document", path = "document.html" }
+
+[[targets]]
+label = "section"
+steps = [
+  { child_index = 1, expected_namespace = "html", expected_local_name = "html" },
+  { child_index = 1, expected_namespace = "html", expected_local_name = "body" },
+  { child_index = 0, expected_namespace = "html", expected_local_name = "section" },
+]
+
+[expectations]
+snapshot = "expected.txt"
+selected_properties = ["display", "color"]

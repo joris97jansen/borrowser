@@ -60,6 +60,17 @@ package-kind field and no unrestricted assets or resources directory. Generic
 AG validation treats package bytes as opaque and never interprets parser,
 CSS, Layout, Paint, or runtime semantics.
 
+AG5 uses the same unchanged V2 envelope for CSS. A CSS-ready package declares
+one nested `borrowser-css-fixture-v1` descriptor and every authored input and
+expected snapshot as explicit support paths. The CSS adapter—not AG2—requires
+exact outer/nested IDs, maps the nested execution profile to AG2's authoritative
+CSS observation surface, reconciles `test_path` with that profile's primary
+stylesheet or selector-list input, and enforces required/optional/forbidden
+fields before production execution. It infers no semantics from extensions or
+directories. The default-deny file-set, containment, portability, symlink,
+regular-file, duplicate, missing-file, and 256-support-path rules remain AG2
+authority.
+
 Fixture payload bytes are opaque to AG2. Discovery verifies filesystem shape but
 does not read, decode, normalize, parse, or hash payloads. In particular,
 extensions do not establish a text contract; CRLF, lone CR, invalid UTF-8, and
@@ -257,11 +268,14 @@ fixture or selecting an AG execution lane.
 The inventory layer proves only layout, descriptor parsing, discovery,
 validation, identity, reference/package declaration, and manifest generation.
 Fixture registration does not imply executability, pass status, standards
-conformance, WPT coverage, or browser compatibility. AG4 separately executes
-only the classified HTML parser V2 packages through `conformance-runner`;
-generic inventory does not execute them. CSS/Layout/Paint/runtime adapters,
-lane selection, broad imports, cross-engine capture, and rendered/raster
-comparison remain later Milestone AG work.
+conformance, WPT coverage, or browser compatibility. Generic AG2 inventory does
+not execute fixtures. AG4 separately executes classified HTML tokenizer,
+tree-construction, and parser-created DOM V2 packages through
+`conformance-runner`; AG5 separately executes classified CSS property/value,
+selector, cascade, inheritance, and computed-style V2 packages through the CSS
+adapter. Layout, Paint/GFX, and Browser/runtime adapters, broader lane
+selection, broad WPT/source imports, cross-engine capture, rendered/raster
+comparison, and browser automation remain later Milestone AG work.
 
 ## Relationship to AG3 classification metadata
 

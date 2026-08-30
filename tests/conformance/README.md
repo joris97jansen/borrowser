@@ -41,6 +41,26 @@ To add a fixture:
    errors, document mode, diagnostics, unsupported features, and final
    invariants are reportable actual evidence rather than extra DOM-equivalence
    predicates.
+8. For an AG5 CSS case, use outer V2 plus one strict nested
+   `borrowser-css-fixture-v1` descriptor. Declare every selector list,
+   stylesheet, document/fragment input, expected snapshot, and package file.
+   Property/value declares the phase-specific singular
+   `[input].stylesheet` carrier and no cascade metadata. Combined cascade
+   profiles declare a bounded ordered `stylesheets` list;
+   every item has `path`, `origin`, `order`, and `source` (user-agent input also
+   declares its namespace). A fragment request additionally declares its
+   context namespace and local name; it is representable but not executable.
+   The nested profile determines the required and forbidden fields and whether
+   outer `test_path` names the selector-list or profile-specific stylesheet
+   input. Selector matching intentionally uses its selector list as `test_path`;
+   its required HTML request is explicit support context and is never inferred.
+   Target addresses start at the document root and index every ordinary child,
+   including text, comments, processing instructions, and doctypes. Every step
+   must select an element with the declared namespace/local name, so the path is
+   an assertion about the traversed parser-created tree, never a selector or an
+   engine ID. Outer/nested reconciliation belongs to
+   the runner adapter; `css-test-support` validates only the nested CSS package
+   and does not depend on generic AG crates. Run `make check-conformance-css`.
 
 `fixture.toml` is the source of truth. `manifest.toml` is a checked-in,
 deterministically generated review artifact and must not be edited by hand.
@@ -71,11 +91,15 @@ Inventory presence means only that a descriptor was discovered and validated.
 It does not mean the fixture is runnable, passes, conforms to a standard, is a
 WPT reftest, or demonstrates browser compatibility.
 
-AG4 currently executes only `html-tokenizer`, `html-tree-construction`, and
-`dom-tree` packages. Generic AG metadata decides eligibility; the HTML adapter
+AG4 executes `html-tokenizer`, `html-tree-construction`, and `dom-tree`
+packages. AG5 executes the seven focused CSS profiles documented in
+[`docs/conformance/ag5-css-conformance-runners.md`](../../docs/conformance/ag5-css-conformance-runners.md).
+Generic AG metadata decides eligibility; the HTML adapter
 delegates one canonical evaluation to `html-test-support`, which may execute
-all baseline/parity parser strategies. CSS/Layout/Paint/Browser/runtime, broad
+all baseline/parity parser strategies. Layout/Paint/Browser/runtime, broad
 WPT/html5lib import, reftests, pixels, cross-engine execution, JavaScript, DOM
-APIs, events, and dynamic behavior remain outside this lane.
+APIs, events, and dynamic behavior remain outside these lanes. AG5 CSS execution
+ends at `ComputedDocumentStyle`; fragment requests are representable but remain
+capability-unavailable until HTML provides contextual fragment parsing.
 The subsystem-neutral runner has no adapter feature enabled by default;
-repository parser commands explicitly enable `html-parser`.
+repository commands explicitly enable `html-parser` or `css`.

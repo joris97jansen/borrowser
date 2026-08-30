@@ -1,0 +1,6 @@
+format: borrowser-css-selector-matching-observation-v1
+document-mode: no-quirks
+target: target
+  matchability: parsed
+  matched-selector[0]: (1,0,0)
+  matched-selector[1]: (0,1,1)

@@ -32,3 +32,10 @@ pub(crate) fn parse_declaration_list_structured(
 ) -> model::StructuredDeclarationListParse {
     entry::parse_declaration_list_structured(input, base_offset, options)
 }
+
+pub(crate) fn parse_component_value_list_structured(
+    input: &str,
+    options: &ParseOptions,
+) -> (super::CssInput, Vec<CssComponentValue>, super::ParseStats) {
+    entry::parse_component_value_list_structured(input, options)
+}

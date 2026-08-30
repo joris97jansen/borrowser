@@ -1,0 +1,4 @@
+format: borrowser-css-cascade-winner-observation-v1
+document-mode: no-quirks
+target: notice
+  color: winner source=stylesheet specificity=(0,1,0) value=blue

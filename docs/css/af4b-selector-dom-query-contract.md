@@ -231,6 +231,31 @@ dirty-node integration. That is an explicit mapping between identity domains,
 not reuse or equivalence. Source DOM IDs do not appear in selector-DOM debug
 snapshots as selector identity.
 
+### Projection-validated element correspondence
+
+`StyleProjection` owns one checked selector index and matching environment.
+`StyleProjectionElementKey` is an opaque, borrow-scoped compatibility locator,
+not a serialized identity and not a fixture address. CSS may consume it only
+after independently validating the immutable source root and source element,
+the remapped selector identity and document-order position, namespace and local
+name, projection shape, and matching environment against the consuming
+projection. A raw numeric `SelectorDomElementId` from another projection is
+never sufficient evidence.
+
+The contract is projection compatibility, not Rust producer-object identity:
+two projections over the same immutable source DOM and matching environment may
+interoperate after all facts validate. A different root, source element,
+environment, shape, remapping, namespace, or local name is rejected. Key fields
+remain private; parser node IDs and selector IDs do not cross fixture or report
+boundaries.
+
+Style artifacts preserve this proof rather than weakening it after matching.
+`ProjectionResolvedDocumentStyle` and `ProjectionComputedDocumentStyle` retain
+the immutable root, matching environment, and projection shape privately.
+`StyleResolutionExecution` validates the artifact and the opaque element key
+before target lookup. A bare style artifact with numerically matching selector
+IDs is never sufficient.
+
 ## Neutral Element And Relationship Facts
 
 `SelectorMatchDom` exposes neutral facts only:

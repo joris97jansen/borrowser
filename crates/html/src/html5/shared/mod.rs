@@ -12,6 +12,7 @@ mod input;
 mod observation;
 mod observation_model;
 mod reservation;
+mod semantic_completeness;
 mod span;
 mod token;
 
@@ -43,5 +44,12 @@ pub use observation_model::*;
 ))]
 pub use reservation::ParserFailureInjection;
 pub(crate) use reservation::ParserReservationController;
+pub use semantic_completeness::{
+    HtmlParseSemanticCompleteness, HtmlParseSemanticDegradationReason,
+    HtmlParseSemanticDegradations,
+};
+pub(crate) use semantic_completeness::{
+    HtmlParseSemanticCompletenessTracker, guardrail_degradation, resource_limit_degradation,
+};
 pub use span::{Span, TextSpan};
 pub use token::{Attribute, AttributeValue, ProcessingInstructionToken, TextValue, Token};

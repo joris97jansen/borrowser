@@ -392,6 +392,18 @@ impl Html5Tokenizer {
     }
 
     fn check_pending_comment_limit(&mut self, input: &Input, ctx: &mut DocumentParseContext) {
+        // Closing syntax advances the cursor beyond the retained comment body.
+        // Reaching the byte limit while consuming `-`, `--`, or `--!` does not
+        // truncate observable comment data and therefore is not a semantic
+        // degradation activation.
+        if matches!(
+            self.state,
+            TokenizerState::CommentEndDash
+                | TokenizerState::CommentEnd
+                | TokenizerState::CommentEndBang
+        ) {
+            return;
+        }
         let Some(start) = self.require_pending_comment_start(input) else {
             return;
         };

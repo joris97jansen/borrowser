@@ -144,6 +144,17 @@ pub enum HtmlParseError {
     PatchValidation(String),
 }
 
+impl HtmlParseError {
+    pub const fn stable_label(&self) -> &'static str {
+        match self {
+            Self::Decode => "decode",
+            Self::DocumentModeUnavailable => "document-mode-unavailable",
+            Self::Fatal(_) => "fatal",
+            Self::PatchValidation(_) => "patch-validation",
+        }
+    }
+}
+
 impl core::fmt::Display for HtmlParseError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {

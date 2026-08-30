@@ -69,8 +69,34 @@ pub(super) fn compute_document_styles_from_resolved_styles_pass(
 ) -> Result<Option<ComputedDocumentStyleWithStats>, ComputedStyleResolutionError> {
     let index = SelectorDomIndex::try_from_document(root)
         .map_err(ComputedStyleResolutionError::SelectorDomBuild)?;
+    compute_document_styles_from_resolved_styles_with_index_pass(
+        &index,
+        resolved_styles,
+        previous_computed,
+        reused_prefix_len,
+    )
+}
+
+pub(crate) fn compute_document_styles_from_resolved_styles_with_index(
+    index: &SelectorDomIndex<'_>,
+    resolved_styles: &ResolvedDocumentStyle,
+) -> Result<ComputedDocumentStyle, ComputedStyleResolutionError> {
+    compute_document_styles_from_resolved_styles_with_index_pass(index, resolved_styles, None, 0)
+        .map(|computed| {
+            computed
+                .expect("full projection-compatible computed pass cannot miss prefix validation")
+                .computed
+        })
+}
+
+fn compute_document_styles_from_resolved_styles_with_index_pass(
+    index: &SelectorDomIndex<'_>,
+    resolved_styles: &ResolvedDocumentStyle,
+    previous_computed: Option<&ComputedDocumentStyle>,
+    reused_prefix_len: usize,
+) -> Result<Option<ComputedDocumentStyleWithStats>, ComputedStyleResolutionError> {
     let matching_environment = resolved_styles.matching_environment();
-    let context = SelectorMatchingContext::new(&index, matching_environment);
+    let context = SelectorMatchingContext::new(index, matching_environment);
 
     if let Some(previous_computed) = previous_computed
         && previous_computed.matching_environment() != matching_environment
