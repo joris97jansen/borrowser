@@ -5,9 +5,9 @@ use crate::model::*;
 
 pub const REPORT_FORMAT_V1: &str = "borrowser-conformance-parser-report-v1";
 
-/// Fixed AG4 report policy. These limits are runner infrastructure policy,
-/// not parser limits, and are not configurable by fixtures, hosts, the CLI,
-/// or environment variables.
+/// Fixed AG report policy shared by the versioned parser, CSS, and rendering
+/// reports. These are runner infrastructure limits, not subsystem limits, and
+/// are not configurable by fixtures, hosts, the CLI, or environment variables.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ReportLimits {
     pub total_bytes: usize,
@@ -86,16 +86,15 @@ impl std::fmt::Display for ReportBuildError {
 
 impl std::error::Error for ReportBuildError {}
 
-/// Bounds evidence as soon as serialized parser observations and mismatch
-/// diagnostics cross from AE into AG. This is deliberately separate from AE's
-/// deferred observation-capture byte accounting.
-#[cfg(any(feature = "html-parser", feature = "css", test))]
+/// Bounds evidence as soon as subsystem observations and mismatch diagnostics
+/// cross into AG. Subsystems retain ownership of any earlier capture limits.
+#[cfg(any(feature = "html-parser", feature = "css", feature = "rendering", test))]
 pub(crate) struct RetainedEvidenceBudget {
     limits: ReportLimits,
     retained: usize,
 }
 
-#[cfg(any(feature = "html-parser", feature = "css", test))]
+#[cfg(any(feature = "html-parser", feature = "css", feature = "rendering", test))]
 impl RetainedEvidenceBudget {
     pub(crate) const fn new(limits: ReportLimits) -> Self {
         Self {
@@ -131,6 +130,7 @@ impl RetainedEvidenceBudget {
         self.retain(bytes)
     }
 
+    #[cfg(any(feature = "html-parser", feature = "css", feature = "rendering", test))]
     pub(crate) fn retain_mismatch(
         &mut self,
         test_id: &str,
@@ -206,11 +206,11 @@ fn build_report_with_limits(
     writer.number("case-count", cases.len())?;
     for case in cases {
         writer.raw("\nBEGIN case\n")?;
-        writer.line("test-id", &case.test_id)?;
+        writer.line("test-id", case.ag.test_id.as_str())?;
         writer.line("profile", profile_name(case.profile))?;
         write_metadata(&mut writer, case)?;
-        write_eligibility(&mut writer, &case.eligibility)?;
-        write_expectation(&mut writer, &case.expectation)?;
+        write_eligibility(&mut writer, &case.ag.eligibility)?;
+        write_expectation(&mut writer, &case.ag.expectation)?;
         write_execution(&mut writer, &case.execution)?;
         writer.optional_line("ae-disposition", case.ae_disposition.map(disposition_name))?;
         writer.line("policy", policy_name(case.policy))?;
@@ -235,7 +235,7 @@ fn validate_case_limits(
         for artifact in &case.observations {
             if artifact.bytes.len() > limits.observation_bytes {
                 return Err(ReportBuildError::ObservationTooLarge {
-                    test_id: case.test_id.clone(),
+                    test_id: case.ag.test_id.as_str().to_owned(),
                     surface: surface_name(artifact.surface).to_owned(),
                     actual: artifact.bytes.len(),
                     maximum: limits.observation_bytes,
@@ -254,7 +254,7 @@ fn validate_case_limits(
             && diagnostic.len() > limits.mismatch_diagnostic_bytes
         {
             return Err(ReportBuildError::MismatchDiagnosticTooLarge {
-                test_id: case.test_id.clone(),
+                test_id: case.ag.test_id.as_str().to_owned(),
                 actual: diagnostic.len(),
                 maximum: limits.mismatch_diagnostic_bytes,
             });
@@ -267,7 +267,7 @@ fn write_metadata(
     writer: &mut BoundedWriter,
     case: &NormalizedCaseResult,
 ) -> Result<(), ReportBuildError> {
-    match &case.classification {
+    match &case.ag.classification {
         ClassificationCompleteness::NotYetClassified { reason } => {
             writer.line("classification", "not-yet-classified")?;
             writer.line("classification-reason", reason)?;
@@ -278,9 +278,9 @@ fn write_metadata(
     }
     writer.list(
         "requirements",
-        case.requirements.iter().map(|value| value.as_str()),
+        case.ag.requirements.iter().map(|value| value.as_str()),
     )?;
-    match &case.capability {
+    match &case.ag.capability {
         None => writer.optional_line("engine", None)?,
         Some(engine) => match engine {
             CapabilityAvailability::Available => writer.line("engine", "available")?,
@@ -299,7 +299,7 @@ fn write_metadata(
             }
         },
     }
-    match &case.harness {
+    match &case.ag.harness {
         None => writer.optional_line("harness", None)?,
         Some(harness) => match harness {
             HarnessReadiness::Ready => writer.line("harness", "ready")?,
@@ -315,14 +315,14 @@ fn write_metadata(
             }
         },
     }
-    for item in &case.environment_requirements {
+    for item in &case.ag.environment_requirements {
         writer.raw("BEGIN environment-requirement\n")?;
         writer.line("kind", item.kind.as_str())?;
         writer.line("profile", &item.profile)?;
         writer.line("reason", &item.reason)?;
         writer.raw("END environment-requirement\n")?;
     }
-    match &case.stability {
+    match &case.ag.stability {
         None => writer.optional_line("stability", None)?,
         Some(stability) => match stability {
             Stability::Stable => writer.line("stability", "stable")?,
@@ -333,7 +333,7 @@ fn write_metadata(
             }
         },
     }
-    for item in &case.lane_exclusions {
+    for item in &case.ag.lane_exclusions {
         writer.raw("BEGIN lane-exclusion\n")?;
         writer.line("policy", item.policy.as_str())?;
         writer.line("reason", &item.reason)?;
@@ -715,7 +715,7 @@ impl BoundedWriter {
         }
     }
 
-    fn multiline(&mut self, key: &str, value: &str) -> Result<(), ReportBuildError> {
+    pub(crate) fn multiline(&mut self, key: &str, value: &str) -> Result<(), ReportBuildError> {
         self.line(key, value)
     }
 
@@ -797,23 +797,27 @@ thread_local! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use conformance_test_support::RequirementTag;
+    use conformance_test_support::{ObservationSurface, RequirementTag, TestId};
 
     fn case_with_artifact(bytes: &str) -> NormalizedCaseResult {
         NormalizedCaseResult {
-            test_id: "parser-case".to_owned(),
-            profile: ParserObservationProfile::HtmlTokenizer,
-            classification: ClassificationCompleteness::NotYetClassified {
-                reason: "reason".to_owned(),
+            ag: AgCaseState {
+                test_id: TestId::parse("parser-case").unwrap(),
+                observation: ObservationSurface::HtmlTokenizer,
+                classification: ClassificationCompleteness::NotYetClassified {
+                    reason: "reason".to_owned(),
+                },
+                requirements: vec![],
+                capability: None,
+                harness: None,
+                environment_requirements: vec![],
+                stability: None,
+                lane_exclusions: vec![],
+                eligibility: Eligibility::NotYetEstablished { unresolved: vec![] },
+                expectation: AgExpectation::NotEstablished,
             },
-            requirements: vec![],
-            capability: None,
-            harness: None,
-            environment_requirements: vec![],
-            stability: None,
-            lane_exclusions: vec![],
-            eligibility: Eligibility::NotYetEstablished { unresolved: vec![] },
-            expectation: AgExpectation::NotEstablished,
+            variant: ExecutionVariantId::new(SingletonExecutionVariant::Singleton),
+            profile: ParserObservationProfile::HtmlTokenizer,
             execution: ExecutionAttempt::eligibility_blocked(),
             observations: vec![ObservationArtifact {
                 surface: ParserObservationSurface::Tokens,
@@ -1052,17 +1056,21 @@ mod tests {
     #[test]
     fn parser_report_v1_has_an_exact_byte_contract() {
         let case = NormalizedCaseResult {
-            test_id: "typed-parser-case".to_owned(),
+            ag: AgCaseState {
+                test_id: TestId::parse("typed-parser-case").unwrap(),
+                observation: ObservationSurface::HtmlTokenizer,
+                classification: ClassificationCompleteness::Classified,
+                requirements: vec![RequirementTag::NoJs],
+                capability: Some(CapabilityAvailability::Available),
+                harness: Some(HarnessReadiness::Ready),
+                environment_requirements: vec![],
+                stability: Some(Stability::Stable),
+                lane_exclusions: vec![],
+                eligibility: Eligibility::Runnable,
+                expectation: AgExpectation::ExpectedPass,
+            },
+            variant: ExecutionVariantId::new(SingletonExecutionVariant::Singleton),
             profile: ParserObservationProfile::HtmlTokenizer,
-            classification: ClassificationCompleteness::Classified,
-            requirements: vec![RequirementTag::NoJs],
-            capability: Some(CapabilityAvailability::Available),
-            harness: Some(HarnessReadiness::Ready),
-            environment_requirements: vec![],
-            stability: Some(Stability::Stable),
-            lane_exclusions: vec![],
-            eligibility: Eligibility::Runnable,
-            expectation: AgExpectation::ExpectedPass,
             execution: ExecutionAttempt::Attempted {
                 outcome: ObservedExecutionOutcome::ExpectationMismatch {
                     strategy: Some("whole".to_owned()),

@@ -184,17 +184,21 @@ fn run_repository_parser_cases_with_evaluator(
         let eligibility =
             eligibility_facts(evaluate_execution_eligibility(expected_view, &environment));
         let mut result = NormalizedCaseResult {
-            test_id: fixture.id().as_str().to_owned(),
+            ag: AgCaseState {
+                test_id: fixture.id().clone(),
+                observation: fixture.observation(),
+                classification: metadata.classification,
+                requirements: metadata.requirements,
+                capability: metadata.capability,
+                harness: metadata.harness,
+                environment_requirements: metadata.environment_requirements,
+                stability: metadata.stability,
+                lane_exclusions: metadata.lane_exclusions,
+                eligibility,
+                expectation,
+            },
+            variant: ExecutionVariantId::new(SingletonExecutionVariant::Singleton),
             profile,
-            classification: metadata.classification,
-            requirements: metadata.requirements,
-            capability: metadata.capability,
-            harness: metadata.harness,
-            environment_requirements: metadata.environment_requirements,
-            stability: metadata.stability,
-            lane_exclusions: metadata.lane_exclusions,
-            eligibility,
-            expectation,
             execution: ExecutionAttempt::eligibility_blocked(),
             observations: Vec::new(),
             ae_disposition: None,
@@ -203,26 +207,30 @@ fn run_repository_parser_cases_with_evaluator(
         // A ready harness assertion is evidence that the executable package and
         // comparison profile exist, even when engine capability blocks execution.
         // Unready or unclassified cases need no executable package to be reported.
-        let canonical = if matches!(result.harness, Some(HarnessReadiness::Ready)) {
+        let canonical = if matches!(result.ag.harness, Some(HarnessReadiness::Ready)) {
             Some(load_and_reconcile(repository_root, fixture, profile)?)
         } else {
             None
         };
-        if matches!(result.eligibility, Eligibility::Runnable) {
+        if matches!(result.ag.eligibility, Eligibility::Runnable) {
             let canonical = canonical
                 .as_ref()
                 .ok_or(ParserRunError::EvaluationInvariant {
-                    test_id: result.test_id.clone(),
+                    test_id: result.ag.test_id.as_str().to_owned(),
                     problem: "runnable AG3 result does not have a ready reconciled harness",
                 })?;
             evaluate_and_normalize_once(&mut result, &mut evidence_budget, || {
                 evaluator(canonical)
             })?;
         }
-        result.policy = derive_policy(&result.expectation, &result.eligibility, &result.execution);
+        result.policy = derive_policy(
+            &result.ag.expectation,
+            &result.ag.eligibility,
+            &result.execution,
+        );
         cases.push(result);
     }
-    cases.sort_by(|left, right| left.test_id.cmp(&right.test_id));
+    cases.sort_by(|left, right| left.ag.test_id.cmp(&right.ag.test_id));
     Ok(ParserRunSummary { cases })
 }
 
@@ -454,7 +462,7 @@ fn apply_evaluation(
     evidence_budget: &mut RetainedEvidenceBudget,
 ) -> Result<(), ParserRunError> {
     result.execution = normalize_execution(
-        &result.test_id,
+        result.ag.test_id.as_str(),
         evaluation.attempt(),
         evaluation.observed_outcome(),
         evidence_budget,
@@ -484,14 +492,14 @@ fn apply_evaluation(
         if let Some(observation) = evaluation
             .serialize_reference_observation(*surface)
             .map_err(|_| ParserRunError::ObservationSerialization {
-                test_id: result.test_id.clone(),
+                test_id: result.ag.test_id.as_str().to_owned(),
                 surface: normalized_surface,
             })?
         {
             let format = observation.format().to_owned();
             let bytes = observation.into_bytes();
             evidence_budget
-                .retain_observation(&result.test_id, normalized_surface, bytes.len())
+                .retain_observation(result.ag.test_id.as_str(), normalized_surface, bytes.len())
                 .map_err(ParserRunError::Reporting)?;
             result.observations.push(ObservationArtifact {
                 surface: normalized_surface,
@@ -811,7 +819,7 @@ mod tests {
         .unwrap();
         let case = &summary.cases()[0];
         assert!(matches!(
-            case.eligibility,
+            case.ag.eligibility,
             Eligibility::NotYetEstablished { .. }
         ));
         assert_eq!(case.execution.observed_outcome(), None);
@@ -829,7 +837,10 @@ mod tests {
         })
         .unwrap();
         let case = &summary.cases()[0];
-        assert!(matches!(case.eligibility, Eligibility::NotRunnable { .. }));
+        assert!(matches!(
+            case.ag.eligibility,
+            Eligibility::NotRunnable { .. }
+        ));
         assert_eq!(case.execution.observed_outcome(), None);
     }
 
@@ -846,7 +857,7 @@ mod tests {
         .unwrap();
         let case = &summary.cases()[0];
         assert!(matches!(
-            case.eligibility,
+            case.ag.eligibility,
             Eligibility::NotYetEstablished { .. }
         ));
         assert_eq!(case.execution.observed_outcome(), None);
@@ -892,15 +903,20 @@ mod tests {
         let unavailable = summary
             .cases()
             .iter()
-            .find(|case| case.test_id == "html-tree-construction-repeated-body-unavailable")
+            .find(|case| {
+                case.ag.test_id.as_str() == "html-tree-construction-repeated-body-unavailable"
+            })
             .unwrap();
-        assert!(matches!(unavailable.harness, Some(HarnessReadiness::Ready)));
         assert!(matches!(
-            unavailable.capability,
+            unavailable.ag.harness,
+            Some(HarnessReadiness::Ready)
+        ));
+        assert!(matches!(
+            unavailable.ag.capability,
             Some(CapabilityAvailability::Unavailable { .. })
         ));
         assert_eq!(unavailable.execution.observed_outcome(), None);
-        assert!(!calls.borrow().contains_key(&unavailable.test_id));
+        assert!(!calls.borrow().contains_key(unavailable.ag.test_id.as_str()));
     }
 
     fn packaged_fixture(format: &str, parse_errors: &str) -> (tempfile::TempDir, ValidatedFixture) {

@@ -440,16 +440,28 @@ Current architecture status:
   canonical contextual fragment parser. It does not
   claim broad CSS/WPT compliance and adds no media queries, custom properties,
   animations, CSSOM, dynamic behavior, Layout, or Paint execution.
+- AG6 adds `rendering-test-support` and independently executed width variants
+  for Layout/Paint structural snapshot comparison. Explicit HTML and stylesheet
+  inputs flow through the production parser, CSS's projection-preserving style
+  phase, Layout, and Paint. Canonical owner serializers write into a bounded AG
+  sink, and the runner emits `borrowser-conformance-rendering-report-v1` at
+  execution-variant granularity while AG2 `TestId` and AG3 V1 metadata remain
+  logical-test scoped. The controlled `synthetic-text-metrics-v1` environment
+  is artificial and is not font-conformance evidence. See
+  `docs/conformance/ag6-layout-paint-structural-conformance.md`.
+- AG6 does not execute reference documents, compare pixels, load resources,
+  or observe Browser/runtime retention, invalidation, epochs, artifact reuse,
+  work planning, or repaint state. Those remain AG7/runtime/future gaps.
 
 Missing or incomplete:
 
 - generic named-lane selection and scheduling
-- Layout, Paint/GFX, and Browser/runtime subsystem adapters
+- Browser/runtime subsystem adapters
 - aggregate cross-subsystem conformance-progress summaries beyond AG3 metadata
   and AG4 parser-case reports
 - fixture migration or broader pinned external-source adapters
 - cross-engine capture and artifact comparison workflows
-- rendered-output reftest and pixel/raster comparison infrastructure
+- rendered-output reference comparison and pixel/raster infrastructure
 - JavaScript, DOM API, event-loop, WebDriver, CSSOM, interaction, navigation,
   storage, and other broader browser-platform conformance
 
@@ -516,6 +528,9 @@ Current supported subset:
 
 Missing or incomplete:
 
+- non-element styled/Layout boxes can currently carry a copied parent
+  background into Paint; fixtures that mix text with a painted parent must not
+  treat the resulting duplicate background primitive as correct semantics
 - full border rendering beyond the supported physical solid-border subset
 - full outline rendering beyond the supported rectangular longhand subset
 - border radius

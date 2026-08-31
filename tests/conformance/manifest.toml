@@ -180,23 +180,51 @@ execution_support_paths = ["tests/conformance/fixtures/html/tree-construction-re
 
 [[tests]]
 id = "layout-geometry-basic-block-flow"
-fixture_format = "borrowser-conformance-fixture-v1"
+fixture_format = "borrowser-conformance-fixture-v2"
 fixture_path = "tests/conformance/fixtures/rendering/layout-geometry-basic"
-test_path = "tests/conformance/fixtures/rendering/layout-geometry-basic/test.html"
+test_path = "tests/conformance/fixtures/rendering/layout-geometry-basic/rendering/document.html"
 metadata_path = "tests/conformance/fixtures/rendering/layout-geometry-basic/fixture.toml"
 scope = "static-html-css-no-js"
 observation = "layout-geometry"
 source_kind = "native"
+execution_entry_path = "tests/conformance/fixtures/rendering/layout-geometry-basic/rendering/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/rendering/layout-geometry-basic/rendering/author.css", "tests/conformance/fixtures/rendering/layout-geometry-basic/rendering/expected-01.txt", "tests/conformance/fixtures/rendering/layout-geometry-basic/rendering/expected-02.txt"]
+
+[[tests]]
+id = "paint-layering-positioned-order"
+fixture_format = "borrowser-conformance-fixture-v2"
+fixture_path = "tests/conformance/fixtures/rendering/paint-layering-positioned"
+test_path = "tests/conformance/fixtures/rendering/paint-layering-positioned/rendering/document.html"
+metadata_path = "tests/conformance/fixtures/rendering/paint-layering-positioned/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "paint-operations"
+source_kind = "native"
+execution_entry_path = "tests/conformance/fixtures/rendering/paint-layering-positioned/rendering/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/rendering/paint-layering-positioned/rendering/author.css", "tests/conformance/fixtures/rendering/paint-layering-positioned/rendering/expected-01.txt", "tests/conformance/fixtures/rendering/paint-layering-positioned/rendering/expected-02.txt", "tests/conformance/fixtures/rendering/paint-layering-positioned/rendering/expected-03.txt"]
 
 [[tests]]
 id = "paint-operations-basic-background"
-fixture_format = "borrowser-conformance-fixture-v1"
+fixture_format = "borrowser-conformance-fixture-v2"
 fixture_path = "tests/conformance/fixtures/rendering/paint-operations-basic"
-test_path = "tests/conformance/fixtures/rendering/paint-operations-basic/test.html"
+test_path = "tests/conformance/fixtures/rendering/paint-operations-basic/rendering/document.html"
 metadata_path = "tests/conformance/fixtures/rendering/paint-operations-basic/fixture.toml"
 scope = "static-html-css-no-js"
 observation = "paint-operations"
 source_kind = "native"
+execution_entry_path = "tests/conformance/fixtures/rendering/paint-operations-basic/rendering/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/rendering/paint-operations-basic/rendering/author.css", "tests/conformance/fixtures/rendering/paint-operations-basic/rendering/expected-01.txt"]
+
+[[tests]]
+id = "paint-semantic-artifact-ac7"
+fixture_format = "borrowser-conformance-fixture-v2"
+fixture_path = "tests/conformance/fixtures/rendering/paint-semantic-artifact-ac7"
+test_path = "tests/conformance/fixtures/rendering/paint-semantic-artifact-ac7/rendering/document.html"
+metadata_path = "tests/conformance/fixtures/rendering/paint-semantic-artifact-ac7/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "paint-operations"
+source_kind = "native"
+execution_entry_path = "tests/conformance/fixtures/rendering/paint-semantic-artifact-ac7/rendering/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/rendering/paint-semantic-artifact-ac7/rendering/author.css", "tests/conformance/fixtures/rendering/paint-semantic-artifact-ac7/rendering/expected-01.txt"]
 
 [[tests]]
 id = "paint-semantic-reference-basic"

@@ -9,6 +9,44 @@ use super::{
 };
 use crate::selectors::SelectorListParseResult;
 
+#[cfg(test)]
+thread_local! {
+    static PROJECTION_BUILD_COUNT: std::cell::Cell<Option<usize>> = const {
+        std::cell::Cell::new(None)
+    };
+}
+
+#[cfg(test)]
+pub(crate) fn count_style_projection_builds<T>(operation: impl FnOnce() -> T) -> (T, usize) {
+    struct CountScope;
+    impl Drop for CountScope {
+        fn drop(&mut self) {
+            PROJECTION_BUILD_COUNT.with(|count| count.set(None));
+        }
+    }
+
+    PROJECTION_BUILD_COUNT.with(|count| {
+        assert!(
+            count.replace(Some(0)).is_none(),
+            "projection count scopes cannot nest"
+        );
+    });
+    let scope = CountScope;
+    let result = operation();
+    let count = PROJECTION_BUILD_COUNT.with(|count| count.get().unwrap_or_default());
+    drop(scope);
+    (result, count)
+}
+
+#[cfg(test)]
+fn record_style_projection_build() {
+    PROJECTION_BUILD_COUNT.with(|count| {
+        if let Some(current) = count.get() {
+            count.set(Some(current.saturating_add(1)));
+        }
+    });
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StyleProjectionBuildError {
     SelectorDom(SelectorDomBuildError),
@@ -65,6 +103,8 @@ impl<'dom> StyleProjection<'dom> {
         environment: SelectorMatchingEnvironment,
         maximum_elements: usize,
     ) -> Result<Self, StyleProjectionBuildError> {
+        #[cfg(test)]
+        record_style_projection_build();
         let index = SelectorDomIndex::try_from_document_with_element_limit(root, maximum_elements)
             .map_err(|error| match error {
                 BoundedSelectorDomConstructionError::Build(error) => {

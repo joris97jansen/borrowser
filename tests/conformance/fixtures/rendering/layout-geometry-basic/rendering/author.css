@@ -1,0 +1,4 @@
+html, body, main, div { display: block; }
+body { margin: 0; }
+main { width: 50%; }
+div { height: 10px; }

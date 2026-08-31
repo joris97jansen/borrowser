@@ -1,0 +1,21 @@
+format = "borrowser-rendering-fixture-v1"
+id = "layout-geometry-basic-block-flow"
+profiles = ["layout-sizing"]
+
+[input]
+html = "document.html"
+stylesheets = [{ path = "author.css", origin = "author", order = 0, source = 0 }]
+
+[[variants]]
+environment = "synthetic-text-metrics-v1"
+available_width_css_px = 320
+expectations = [
+  { profile = "layout-sizing", snapshot = "expected-01.txt" },
+]
+
+[[variants]]
+environment = "synthetic-text-metrics-v1"
+available_width_css_px = 640
+expectations = [
+  { profile = "layout-sizing", snapshot = "expected-02.txt" },
+]

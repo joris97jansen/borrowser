@@ -39,9 +39,11 @@ pub struct CssObservationArtifact {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CssCaseResult {
     pub ag: AgCaseState,
+    pub variant: ExecutionVariantId<SingletonExecutionVariant>,
     pub profile: Option<CssExecutionProfile>,
     pub execution: CssExecutionAttempt,
     pub observation: Option<CssObservationArtifact>,
+    pub policy: DerivedPolicyResult,
 }
 
 #[derive(Debug)]
@@ -94,7 +96,7 @@ impl CssRunSummary {
         &self.cases
     }
     pub fn has_unexpected_results(&self) -> bool {
-        self.cases.iter().any(|case| case.ag.policy.is_unexpected())
+        self.cases.iter().any(|case| case.policy.is_unexpected())
     }
 }
 
@@ -209,7 +211,7 @@ pub fn run_repository_css_cases(repository_root: &Path) -> Result<CssRunSummary,
         };
         cases.push(CssCaseResult {
             ag: AgCaseState {
-                test_id: outer.id().as_str().to_owned(),
+                test_id: outer.id().clone(),
                 observation: outer.observation(),
                 classification: metadata.classification,
                 requirements: metadata.requirements,
@@ -220,11 +222,12 @@ pub fn run_repository_css_cases(repository_root: &Path) -> Result<CssRunSummary,
                 lane_exclusions: metadata.lane_exclusions,
                 eligibility,
                 expectation,
-                policy,
             },
+            variant: ExecutionVariantId::new(SingletonExecutionVariant::Singleton),
             profile,
             execution,
             observation,
+            policy,
         });
     }
     cases.sort_by(|left, right| left.ag.test_id.cmp(&right.ag.test_id));

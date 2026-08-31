@@ -1,6 +1,11 @@
 # Borrowser Architecture 🦀🏗️  
 *A clean, modular browser engine written in Rust.*
 
+The conformance architecture is documented incrementally under
+`docs/conformance/`. AG6's Layout/Paint structural execution boundary and
+controlled rendering host are specified in
+`docs/conformance/ag6-layout-paint-structural-conformance.md`.
+
 This document describes the internal architecture of Borrowser:  
 how HTML is parsed, how CSS is applied, how layout is computed,  
 how rendering happens, and how components communicate across threads.

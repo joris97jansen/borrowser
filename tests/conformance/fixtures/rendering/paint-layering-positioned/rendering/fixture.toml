@@ -1,0 +1,16 @@
+format = "borrowser-rendering-fixture-v1"
+id = "paint-layering-positioned-order"
+profiles = ["paint-layering", "paint-order", "paint-stacking-contexts"]
+
+[input]
+html = "document.html"
+stylesheets = [{ path = "author.css", origin = "author", order = 0, source = 0 }]
+
+[[variants]]
+environment = "synthetic-text-metrics-v1"
+available_width_css_px = 320
+expectations = [
+  { profile = "paint-layering", snapshot = "expected-01.txt" },
+  { profile = "paint-stacking-contexts", snapshot = "expected-03.txt" },
+  { profile = "paint-order", snapshot = "expected-02.txt" },
+]

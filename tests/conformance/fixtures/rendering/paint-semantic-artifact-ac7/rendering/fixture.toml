@@ -1,0 +1,14 @@
+format = "borrowser-rendering-fixture-v1"
+id = "paint-semantic-artifact-ac7"
+profiles = ["paint-semantic-artifact"]
+
+[input]
+html = "document.html"
+stylesheets = [{ path = "author.css", origin = "author", order = 0, source = 0 }]
+
+[[variants]]
+environment = "synthetic-text-metrics-v1"
+available_width_css_px = 320
+expectations = [
+  { profile = "paint-semantic-artifact", snapshot = "expected-01.txt" },
+]

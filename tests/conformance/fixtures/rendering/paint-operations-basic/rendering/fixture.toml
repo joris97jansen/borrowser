@@ -1,0 +1,12 @@
+format = "borrowser-rendering-fixture-v1"
+id = "paint-operations-basic-background"
+profiles = ["paint-operations"]
+
+[input]
+html = "document.html"
+stylesheets = [{ path = "author.css", origin = "author", order = 0, source = 0 }]
+
+[[variants]]
+environment = "synthetic-text-metrics-v1"
+available_width_css_px = 320
+expectations = [{ profile = "paint-operations", snapshot = "expected-01.txt" }]

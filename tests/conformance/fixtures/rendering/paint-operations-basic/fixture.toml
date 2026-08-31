@@ -1,11 +1,15 @@
-format = "borrowser-conformance-fixture-v1"
+format = "borrowser-conformance-fixture-v2"
 id = "paint-operations-basic-background"
 scope = "static-html-css-no-js"
 observation = "paint-operations"
-test_path = "test.html"
+test_path = "rendering/document.html"
 
 [source]
 kind = "native"
 
 [metadata]
-description = "Inventory seed for a Paint-owned semantic operation observation."
+description = "Paint-owned background operation under the controlled AG6 host."
+
+[execution_package]
+entry_path = "rendering/fixture.toml"
+support_paths = ["rendering/author.css", "rendering/expected-01.txt"]

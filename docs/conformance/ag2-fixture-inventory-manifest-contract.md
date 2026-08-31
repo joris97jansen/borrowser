@@ -293,3 +293,11 @@ harness, expectation, stability, environment-requirement, and inert lane-policy
 truth. Neither format is generated from the other. The AG3 primary subsystem
 owner is derived from AG2's observation, and expected-failure metadata does not
 duplicate that observation.
+
+# AG6 rendering packages
+
+AG6 rendering packages use AG2 fixture V2 transport. Execution-package paths
+declare files only: width and profile identity live in the strict nested
+rendering descriptor and never in `TestId`, filesystem paths, or snapshot file
+names. A package can declare at most 64 stylesheets and 80 expectation files,
+which totals 144 paths and remains below AG2's 256 support-path ceiling.

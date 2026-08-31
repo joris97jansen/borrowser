@@ -16,7 +16,7 @@ pub fn build_css_report(cases: &[CssCaseResult]) -> Result<Vec<u8>, ReportBuildE
             && observation.bytes.len() > DEFAULT_REPORT_LIMITS.observation_bytes
         {
             return Err(ReportBuildError::ObservationTooLarge {
-                test_id: case.ag.test_id.clone(),
+                test_id: case.ag.test_id.as_str().to_owned(),
                 surface: case.ag.observation.as_str().to_owned(),
                 actual: observation.bytes.len(),
                 maximum: DEFAULT_REPORT_LIMITS.observation_bytes,
@@ -28,7 +28,7 @@ pub fn build_css_report(cases: &[CssCaseResult]) -> Result<Vec<u8>, ReportBuildE
             && difference.len() > DEFAULT_REPORT_LIMITS.mismatch_diagnostic_bytes
         {
             return Err(ReportBuildError::MismatchDiagnosticTooLarge {
-                test_id: case.ag.test_id.clone(),
+                test_id: case.ag.test_id.as_str().to_owned(),
                 actual: difference.len(),
                 maximum: DEFAULT_REPORT_LIMITS.mismatch_diagnostic_bytes,
             });
@@ -39,12 +39,12 @@ pub fn build_css_report(cases: &[CssCaseResult]) -> Result<Vec<u8>, ReportBuildE
     writer.number("case-count", cases.len())?;
     for case in cases {
         writer.raw("\nBEGIN case\n")?;
-        writer.line("test-id", &case.ag.test_id)?;
+        writer.line("test-id", case.ag.test_id.as_str())?;
         writer.line("observation", case.ag.observation.as_str())?;
         writer.optional_line("profile", case.profile.map(profile_name))?;
         write_ag(&mut writer, &case.ag)?;
         write_execution(&mut writer, &case.execution)?;
-        writer.line("policy", policy_name(case.ag.policy))?;
+        writer.line("policy", policy_name(case.policy))?;
         match &case.observation {
             Some(observation) => {
                 writer.number("observation-count", 1)?;
@@ -445,7 +445,7 @@ mod tests {
     fn attempted_failure(phase: CssExecutionPhase, failure: CssExecutionFailure) -> CssCaseResult {
         CssCaseResult {
             ag: AgCaseState {
-                test_id: "typed-css-failure".to_owned(),
+                test_id: conformance_test_support::TestId::parse("typed-css-failure").unwrap(),
                 observation: ObservationSurface::CssSelectors,
                 classification: ClassificationCompleteness::Classified,
                 requirements: vec![],
@@ -456,14 +456,71 @@ mod tests {
                 lane_exclusions: vec![],
                 eligibility: Eligibility::Runnable,
                 expectation: AgExpectation::ExpectedPass,
-                policy: DerivedPolicyResult::UnexpectedOutcome,
             },
+            variant: ExecutionVariantId::new(SingletonExecutionVariant::Singleton),
             profile: Some(css_test_support::CssExecutionProfile::SelectorMatching),
             execution: CssExecutionAttempt::Attempted {
                 outcome: CssObservedExecutionOutcome::ExecutionFailure { phase, failure },
             },
             observation: None,
+            policy: DerivedPolicyResult::UnexpectedOutcome,
         }
+    }
+
+    #[test]
+    fn css_report_v1_has_an_exact_byte_contract_and_omits_singleton_variant_identity() {
+        let case = CssCaseResult {
+            ag: AgCaseState {
+                test_id: conformance_test_support::TestId::parse("typed-css-case").unwrap(),
+                observation: ObservationSurface::CssSelectors,
+                classification: ClassificationCompleteness::NotYetClassified {
+                    reason: "classification pending".to_owned(),
+                },
+                requirements: vec![],
+                capability: None,
+                harness: None,
+                environment_requirements: vec![],
+                stability: None,
+                lane_exclusions: vec![],
+                eligibility: Eligibility::NotYetEstablished { unresolved: vec![] },
+                expectation: AgExpectation::NotEstablished,
+            },
+            variant: ExecutionVariantId::new(SingletonExecutionVariant::Singleton),
+            profile: None,
+            execution: CssExecutionAttempt::NotAttempted {
+                reason: crate::css_runner::CssNotAttemptedReason::Eligibility,
+                pre_attempt: None,
+            },
+            observation: None,
+            policy: DerivedPolicyResult::NotYetEstablished,
+        };
+        assert_eq!(
+            build_css_report(&[case]).unwrap(),
+            concat!(
+                "format = \"borrowser-conformance-css-report-v1\"\n",
+                "case-count = 1\n",
+                "\nBEGIN case\n",
+                "test-id = \"typed-css-case\"\n",
+                "observation = \"css-selectors\"\n",
+                "profile = null\n",
+                "classification = \"not-yet-classified\"\n",
+                "classification-reason = \"classification pending\"\n",
+                "requirements = []\n",
+                "engine = null\n",
+                "harness = null\n",
+                "stability = null\n",
+                "eligibility = \"not-yet-established\"\n",
+                "expectation = \"not-established\"\n",
+                "attempt = \"not-attempted\"\n",
+                "not-attempted-reason = \"eligibility\"\n",
+                "pre-attempt-outcome = null\n",
+                "observed = null\n",
+                "policy = \"not-yet-established\"\n",
+                "observation-count = 0\n",
+                "END case\n",
+            )
+            .as_bytes()
+        );
     }
 
     #[test]

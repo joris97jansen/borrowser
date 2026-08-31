@@ -1,0 +1,273 @@
+use std::collections::BTreeSet;
+use std::path::Path;
+
+use conformance_test_support::{
+    FixtureFormat, MAX_DESCRIPTOR_BYTES, MAX_EXECUTION_SUPPORT_PATHS_V2, ValidatedFixture,
+};
+use rendering_test_support::{
+    RENDERING_EXPECTATION_PAIR_COUNT_V1, RENDERING_STYLESHEET_COUNT_V1,
+    RenderingFixtureLimitConfigurationError, RenderingFixtureLimits, RenderingFixtureLoadError,
+    RenderingFixturePackage, RenderingObservationOwner, load_fixture_package,
+};
+
+use crate::report::DEFAULT_REPORT_LIMITS;
+
+#[derive(Debug)]
+pub enum RenderingPackageReconciliationError {
+    FixtureV2Required {
+        test_id: String,
+    },
+    ExecutionPackageRequired {
+        test_id: String,
+    },
+    LimitConfiguration(RenderingFixtureLimitConfigurationError),
+    DescriptorLimitDoesNotFitPlatform {
+        configured: u64,
+    },
+    SupportPathCapacityIncompatible {
+        required: usize,
+        maximum: usize,
+    },
+    EntryMustBeFixtureToml {
+        test_id: String,
+    },
+    Nested(RenderingFixtureLoadError),
+    IdMismatch {
+        outer: String,
+        nested: String,
+    },
+    PackageRootOutsideRepository {
+        test_id: String,
+    },
+    PrimaryInputMismatch {
+        outer: String,
+        nested: String,
+    },
+    ReferencedFileSetMismatch {
+        test_id: String,
+        declared: Vec<String>,
+        referenced: Vec<String>,
+    },
+}
+
+impl RenderingPackageReconciliationError {
+    pub const fn stable_label(&self) -> &'static str {
+        match self {
+            Self::FixtureV2Required { .. } => "fixture-v2-required",
+            Self::ExecutionPackageRequired { .. } => "execution-package-required",
+            Self::LimitConfiguration(_) => "limit-configuration",
+            Self::DescriptorLimitDoesNotFitPlatform { .. } => {
+                "descriptor-limit-does-not-fit-platform"
+            }
+            Self::SupportPathCapacityIncompatible { .. } => "support-path-capacity-incompatible",
+            Self::EntryMustBeFixtureToml { .. } => "entry-must-be-fixture-toml",
+            Self::Nested(_) => "nested-fixture-load",
+            Self::IdMismatch { .. } => "id-mismatch",
+            Self::PackageRootOutsideRepository { .. } => "package-root-outside-repository",
+            Self::PrimaryInputMismatch { .. } => "primary-input-mismatch",
+            Self::ReferencedFileSetMismatch { .. } => "referenced-file-set-mismatch",
+        }
+    }
+}
+
+impl std::fmt::Display for RenderingPackageReconciliationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::FixtureV2Required { test_id } => {
+                write!(formatter, "rendering case {test_id} requires AG fixture V2")
+            }
+            Self::ExecutionPackageRequired { test_id } => write!(
+                formatter,
+                "rendering case {test_id} requires exactly one AG execution package"
+            ),
+            Self::LimitConfiguration(error) => write!(formatter, "{error}"),
+            Self::DescriptorLimitDoesNotFitPlatform { configured } => write!(
+                formatter,
+                "AG descriptor limit {configured} does not fit this platform"
+            ),
+            Self::SupportPathCapacityIncompatible { required, maximum } => write!(
+                formatter,
+                "rendering V1 may require {required} support paths, exceeding AG2 maximum {maximum}"
+            ),
+            Self::EntryMustBeFixtureToml { test_id } => write!(
+                formatter,
+                "rendering case {test_id} execution entry must be fixture.toml"
+            ),
+            Self::Nested(error) => write!(formatter, "{error}"),
+            Self::IdMismatch { outer, nested } => write!(
+                formatter,
+                "outer AG id {outer} does not equal nested rendering id {nested}"
+            ),
+            Self::PackageRootOutsideRepository { test_id } => write!(
+                formatter,
+                "rendering case {test_id} package root is outside the repository"
+            ),
+            Self::PrimaryInputMismatch { outer, nested } => write!(
+                formatter,
+                "outer test_path {outer} does not equal nested primary input {nested}"
+            ),
+            Self::ReferencedFileSetMismatch { test_id, .. } => write!(
+                formatter,
+                "rendering case {test_id} declared and nested referenced file sets differ"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for RenderingPackageReconciliationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::LimitConfiguration(error) => Some(error),
+            Self::Nested(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+pub fn reconcile_rendering_package(
+    repository_root: &Path,
+    outer: &ValidatedFixture,
+    owner: RenderingObservationOwner,
+) -> Result<RenderingFixturePackage, RenderingPackageReconciliationError> {
+    let test_id = outer.id().as_str().to_owned();
+    if outer.format() != FixtureFormat::V2 {
+        return Err(RenderingPackageReconciliationError::FixtureV2Required { test_id });
+    }
+    let execution = outer.execution_package().ok_or_else(|| {
+        RenderingPackageReconciliationError::ExecutionPackageRequired {
+            test_id: test_id.clone(),
+        }
+    })?;
+    if Path::new(execution.entry_path().as_str())
+        .file_name()
+        .and_then(|name| name.to_str())
+        != Some("fixture.toml")
+    {
+        return Err(RenderingPackageReconciliationError::EntryMustBeFixtureToml { test_id });
+    }
+    let entry_path = repository_root.join(execution.entry_path().as_str());
+    let package = load_fixture_package(&entry_path, owner, ag_rendering_fixture_limits()?)
+        .map_err(RenderingPackageReconciliationError::Nested)?;
+    if package.id() != outer.id().as_str() {
+        return Err(RenderingPackageReconciliationError::IdMismatch {
+            outer: outer.id().as_str().to_owned(),
+            nested: package.id().to_owned(),
+        });
+    }
+    let package_root = entry_path.parent().ok_or_else(|| {
+        RenderingPackageReconciliationError::EntryMustBeFixtureToml {
+            test_id: outer.id().as_str().to_owned(),
+        }
+    })?;
+    let package_relative = package_root.strip_prefix(repository_root).map_err(|_| {
+        RenderingPackageReconciliationError::PackageRootOutsideRepository {
+            test_id: outer.id().as_str().to_owned(),
+        }
+    })?;
+    let nested_primary = portable_display(&package_relative.join(package.primary_input_path()));
+    if outer.test_path().as_str() != nested_primary {
+        return Err(RenderingPackageReconciliationError::PrimaryInputMismatch {
+            outer: outer.test_path().as_str().to_owned(),
+            nested: nested_primary,
+        });
+    }
+    let declared: BTreeSet<_> = std::iter::once(outer.test_path().as_str().to_owned())
+        .chain(
+            execution
+                .support_paths()
+                .iter()
+                .map(|path| path.as_str().to_owned()),
+        )
+        .collect();
+    let referenced: BTreeSet<_> = package
+        .referenced_paths()
+        .map(|path| portable_display(&package_relative.join(path)))
+        .collect();
+    if declared != referenced {
+        return Err(
+            RenderingPackageReconciliationError::ReferencedFileSetMismatch {
+                test_id: outer.id().as_str().to_owned(),
+                declared: declared.into_iter().collect(),
+                referenced: referenced.into_iter().collect(),
+            },
+        );
+    }
+    Ok(package)
+}
+
+pub(crate) fn ag_rendering_fixture_limits()
+-> Result<RenderingFixtureLimits, RenderingPackageReconciliationError> {
+    let descriptor_bytes = usize::try_from(MAX_DESCRIPTOR_BYTES).map_err(|_| {
+        RenderingPackageReconciliationError::DescriptorLimitDoesNotFitPlatform {
+            configured: MAX_DESCRIPTOR_BYTES,
+        }
+    })?;
+    let required_support_paths = RENDERING_STYLESHEET_COUNT_V1
+        .checked_add(RENDERING_EXPECTATION_PAIR_COUNT_V1)
+        .ok_or(
+            RenderingPackageReconciliationError::SupportPathCapacityIncompatible {
+                required: usize::MAX,
+                maximum: MAX_EXECUTION_SUPPORT_PATHS_V2,
+            },
+        )?;
+    if required_support_paths > MAX_EXECUTION_SUPPORT_PATHS_V2 {
+        return Err(
+            RenderingPackageReconciliationError::SupportPathCapacityIncompatible {
+                required: required_support_paths,
+                maximum: MAX_EXECUTION_SUPPORT_PATHS_V2,
+            },
+        );
+    }
+    RenderingFixtureLimits::try_new(descriptor_bytes, DEFAULT_REPORT_LIMITS.observation_bytes)
+        .map_err(RenderingPackageReconciliationError::LimitConfiguration)
+}
+
+fn portable_display(path: &Path) -> String {
+    path.components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ag_transport_and_report_limits_reconcile_with_rendering_v1() {
+        let limits = ag_rendering_fixture_limits().unwrap();
+        assert_eq!(limits.descriptor_bytes() as u64, MAX_DESCRIPTOR_BYTES);
+        assert_eq!(
+            limits.expected_snapshot_bytes(),
+            DEFAULT_REPORT_LIMITS.observation_bytes
+        );
+        assert_eq!(
+            RENDERING_STYLESHEET_COUNT_V1 + RENDERING_EXPECTATION_PAIR_COUNT_V1,
+            144
+        );
+        assert!(
+            limits.stylesheet_count() + limits.expectation_pair_count()
+                <= MAX_EXECUTION_SUPPORT_PATHS_V2
+        );
+    }
+
+    #[test]
+    fn reconciliation_errors_have_closed_stable_identity_and_typed_sources() {
+        let mismatch = RenderingPackageReconciliationError::IdMismatch {
+            outer: "outer".to_owned(),
+            nested: "nested".to_owned(),
+        };
+        assert_eq!(mismatch.stable_label(), "id-mismatch");
+        assert_eq!(
+            mismatch.to_string(),
+            "outer AG id outer does not equal nested rendering id nested"
+        );
+
+        let nested =
+            RenderingPackageReconciliationError::Nested(RenderingFixtureLoadError::Invalid(
+                rendering_test_support::RenderingFixtureProblem::EmptyProfiles,
+            ));
+        assert_eq!(nested.stable_label(), "nested-fixture-load");
+        assert!(std::error::Error::source(&nested).is_some());
+    }
+}

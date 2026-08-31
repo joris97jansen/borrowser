@@ -337,21 +337,85 @@ state = "not-yet-established"
 
 [[tests]]
 id = "layout-geometry-basic-block-flow"
-classification = "not-yet-classified"
-reason = "The layout seed's truthful viewport and text-measurement environment requirements and AG geometry expectation are not yet specified."
+classification = "classified"
+requirements = ["no-js", "requires-html-parser-feature", "requires-css-feature", "requires-layout-feature"]
+lane_exclusions = []
 references = [
+  { kind = "documentation", path = "docs/conformance/ag6-layout-paint-structural-conformance.md" },
   { kind = "documentation", path = "docs/rendering/w8-box-generation-formatting-debug-surfaces.md" },
   { kind = "documentation", path = "docs/rendering/x3-width-height-resolution-supported-subset.md" },
 ]
+[tests.engine]
+availability = "available"
+[tests.harness]
+readiness = "ready"
+[tests.environment]
+requirements = []
+[tests.expectation]
+kind = "expected-pass"
+[tests.stability]
+state = "stable"
+
+[[tests]]
+id = "paint-layering-positioned-order"
+classification = "classified"
+requirements = ["no-js", "requires-html-parser-feature", "requires-css-feature", "requires-layout-feature", "requires-paint-feature"]
+lane_exclusions = []
+references = [
+  { kind = "documentation", path = "docs/conformance/ag6-layout-paint-structural-conformance.md" },
+  { kind = "documentation", path = "docs/rendering/ab7-deterministic-debug-regression-coverage.md" },
+]
+[tests.engine]
+availability = "available"
+[tests.harness]
+readiness = "ready"
+[tests.environment]
+requirements = []
+[tests.expectation]
+kind = "expected-pass"
+[tests.stability]
+state = "stable"
 
 [[tests]]
 id = "paint-operations-basic-background"
-classification = "not-yet-classified"
-reason = "The paint seed's truthful text-measurement environment requirements and AG paint-operation expectation are not yet specified."
+classification = "classified"
+requirements = ["no-js", "requires-html-parser-feature", "requires-css-feature", "requires-layout-feature", "requires-paint-feature"]
+lane_exclusions = []
 references = [
+  { kind = "documentation", path = "docs/conformance/ag6-layout-paint-structural-conformance.md" },
   { kind = "documentation", path = "docs/rendering/aa8-paint-debug-visual-regression-surface.md" },
   { kind = "documentation", path = "docs/rendering/aa9-paint-model-invariants-extension-points.md" },
 ]
+[tests.engine]
+availability = "available"
+[tests.harness]
+readiness = "ready"
+[tests.environment]
+requirements = []
+[tests.expectation]
+kind = "expected-pass"
+[tests.stability]
+state = "stable"
+
+[[tests]]
+id = "paint-semantic-artifact-ac7"
+classification = "classified"
+requirements = ["no-js", "requires-html-parser-feature", "requires-css-feature", "requires-layout-feature", "requires-paint-feature"]
+lane_exclusions = []
+references = [
+  { kind = "documentation", path = "docs/conformance/ag6-layout-paint-structural-conformance.md" },
+  { kind = "documentation", path = "docs/rendering/ac7-retained-paint-artifact-reuse-repaint-planning.md" },
+]
+[tests.engine]
+availability = "available"
+[tests.harness]
+readiness = "ready"
+[tests.environment]
+requirements = []
+[tests.expectation]
+kind = "expected-pass"
+[tests.stability]
+state = "stable"
 
 [[tests]]
 id = "paint-semantic-reference-basic"

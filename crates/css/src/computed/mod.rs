@@ -55,6 +55,7 @@ pub use style::{
     BorderEdges, BorderSide, BoxMetrics, ComputedStyle, ComputedStyleBuildError,
     ComputedStyleEntry, Outline,
 };
+pub(crate) use style_tree::build_style_tree_from_computed_styles_with_index;
 pub use style_tree::{
     StylePhaseOutput, StyledNode, build_style_tree_from_computed_styles,
     build_style_tree_with_stylesheets,
