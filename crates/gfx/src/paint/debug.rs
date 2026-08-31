@@ -1,4 +1,4 @@
-use std::fmt::Write;
+use std::fmt;
 
 use layout::{LayoutBox, Rectangle};
 
@@ -15,127 +15,127 @@ use super::{
 /// This serializes Borrowser paint primitives and paint-owned ordering rules.
 /// It is not an egui command stream, retained display list, scene graph,
 /// compositor model, or pixel snapshot.
-pub fn paint_operation_debug_snapshot(input: &PaintInput<'_, '_, '_>) -> String {
-    let mut writer = PaintOperationDebugWriter::new(input);
-    writer.write_snapshot();
-    writer.finish()
+pub fn write_paint_operation_debug_snapshot(
+    input: &PaintInput<'_, '_, '_>,
+    out: &mut dyn fmt::Write,
+) -> fmt::Result {
+    PaintOperationDebugWriter::new(input, out).write_snapshot()
 }
 
-struct PaintOperationDebugWriter<'a, 'layout, 'style_tree, 'dom> {
+struct PaintOperationDebugWriter<'a, 'layout, 'style_tree, 'dom, 'writer> {
     input: &'a PaintInput<'layout, 'style_tree, 'dom>,
-    out: String,
+    out: &'writer mut dyn fmt::Write,
     next_index: usize,
 }
 
-impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'style_tree, 'dom> {
-    fn new(input: &'a PaintInput<'layout, 'style_tree, 'dom>) -> Self {
+impl<'a, 'layout, 'style_tree, 'dom, 'writer>
+    PaintOperationDebugWriter<'a, 'layout, 'style_tree, 'dom, 'writer>
+{
+    fn new(
+        input: &'a PaintInput<'layout, 'style_tree, 'dom>,
+        out: &'writer mut dyn fmt::Write,
+    ) -> Self {
         Self {
             input,
-            out: String::new(),
+            out,
             next_index: 0,
         }
     }
 
-    fn write_snapshot(&mut self) {
-        writeln!(&mut self.out, "version: 1").expect("write paint operation snapshot");
-        writeln!(&mut self.out, "paint-operation-snapshot")
-            .expect("write paint operation snapshot");
+    fn write_snapshot(&mut self) -> fmt::Result {
+        writeln!(self.out, "version: 1")?;
+        writeln!(self.out, "paint-operation-snapshot")?;
         writeln!(
-            &mut self.out,
+            self.out,
             "layout-root-id: {}",
             self.input.layout().root().node_id().0
-        )
-        .expect("write paint operation snapshot");
+        )?;
         writeln!(
-            &mut self.out,
+            self.out,
             "viewport-width: {:.2}",
             self.input.layout().viewport_width()
-        )
-        .expect("write paint operation snapshot");
+        )?;
         writeln!(
-            &mut self.out,
+            self.out,
             "document-rect: {}",
             rectangle_debug_label(self.input.layout().document_rect())
-        )
-        .expect("write paint operation snapshot");
-        self.write_stacking_context(self.input.stacking_contexts().root());
+        )?;
+        self.write_stacking_context(self.input.stacking_contexts().root())
     }
 
-    fn finish(self) -> String {
-        self.out
-    }
-
-    fn write_stacking_context(&mut self, context: &StackingContextNode) {
+    fn write_stacking_context(&mut self, context: &StackingContextNode) -> fmt::Result {
         if context.id() != self.input.stacking_contexts().root_id() {
             let clips = ancestor_overflow_clips(
                 self.input.layout().root(),
                 context.source().paint_source(),
             );
-            self.write_stacking_context_with_ancestor_clips(&clips, context);
-            return;
+            return self.write_stacking_context_with_ancestor_clips(&clips, context);
         }
 
-        self.write_stacking_context_body(context);
+        self.write_stacking_context_body(context)
     }
 
     fn write_stacking_context_with_ancestor_clips(
         &mut self,
         clips: &[PaintClip],
         context: &StackingContextNode,
-    ) {
+    ) -> fmt::Result {
         let Some((clip, rest)) = clips.split_first() else {
-            self.write_stacking_context_body(context);
-            return;
+            return self.write_stacking_context_body(context);
         };
 
-        self.write_clip_operation("begin-clip", clip);
-        self.write_stacking_context_with_ancestor_clips(rest, context);
-        self.write_clip_operation("end-clip", clip);
+        self.write_clip_operation("begin-clip", clip)?;
+        self.write_stacking_context_with_ancestor_clips(rest, context)?;
+        self.write_clip_operation("end-clip", clip)
     }
 
-    fn write_stacking_context_body(&mut self, context: &StackingContextNode) {
+    fn write_stacking_context_body(&mut self, context: &StackingContextNode) -> fmt::Result {
         for slot in self.input.stacking_contexts().ordered_slots(context.id()) {
             match slot {
                 StackingOrderSlot::ChildContext(child_context_id) => {
                     if let Some(child) = self.input.stacking_contexts().context(child_context_id) {
-                        self.write_stacking_context(child);
+                        self.write_stacking_context(child)?;
                     }
                 }
                 StackingOrderSlot::ContextSource(source) => {
                     if let Some(node) = self.input.tree().node_for_source(source) {
-                        self.write_node(node, context.id());
+                        self.write_node(node, context.id())?;
                     }
                 }
             }
         }
+        Ok(())
     }
 
-    fn write_node(&mut self, node: &PaintNode, owner_context: StackingContextId) {
+    fn write_node(&mut self, node: &PaintNode, owner_context: StackingContextId) -> fmt::Result {
         let clip_index = node
             .primitives()
             .iter()
             .position(|primitive| matches!(primitive, PaintPrimitive::Clip(_)));
 
         let Some(clip_index) = clip_index else {
-            self.write_primitives(node.primitives());
-            self.write_children(node, owner_context);
-            self.write_primitives(node.post_primitives());
-            return;
+            self.write_primitives(node.primitives())?;
+            self.write_children(node, owner_context)?;
+            return self.write_primitives(node.post_primitives());
         };
 
-        self.write_primitives(&node.primitives()[..clip_index]);
+        self.write_primitives(&node.primitives()[..clip_index])?;
 
         let PaintPrimitive::Clip(clip) = &node.primitives()[clip_index] else {
             unreachable!("clip index points at a clip primitive");
         };
-        self.write_clip_operation("begin-clip", clip);
-        self.write_primitives(&node.primitives()[clip_index + 1..]);
-        self.write_children(node, owner_context);
-        self.write_clip_operation("end-clip", clip);
-        self.write_primitives(node.post_primitives());
+        self.write_clip_operation("begin-clip", clip)?;
+        self.write_primitives(&node.primitives()[clip_index + 1..])?;
+        self.write_children(node, owner_context)?;
+        self.write_clip_operation("end-clip", clip)?;
+        self.write_primitives(node.post_primitives())
     }
 
-    fn write_children(&mut self, node: &PaintNode, owner_context: StackingContextId) {
+    fn write_children(
+        &mut self,
+        node: &PaintNode,
+        owner_context: StackingContextId,
+    ) -> fmt::Result {
         for child in node.children() {
             if self
                 .input
@@ -145,17 +145,19 @@ impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'sty
                 continue;
             }
 
-            self.write_node(child, owner_context);
+            self.write_node(child, owner_context)?;
         }
+        Ok(())
     }
 
-    fn write_primitives(&mut self, primitives: &[PaintPrimitive]) {
+    fn write_primitives(&mut self, primitives: &[PaintPrimitive]) -> fmt::Result {
         for primitive in primitives {
-            self.write_primitive(primitive);
+            self.write_primitive(primitive)?;
         }
+        Ok(())
     }
 
-    fn write_primitive(&mut self, primitive: &PaintPrimitive) {
+    fn write_primitive(&mut self, primitive: &PaintPrimitive) -> fmt::Result {
         match primitive {
             PaintPrimitive::Background(background) => self.write_fill_rect(
                 PaintOrderPhase::BoxBackground,
@@ -186,20 +188,19 @@ impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'sty
         source: PaintSource,
         rect: Rectangle,
         color: PaintColor,
-    ) {
-        self.write_operation_prefix(phase, "fill-rect");
+    ) -> fmt::Result {
+        self.write_operation_prefix(phase, "fill-rect")?;
         writeln!(
-            &mut self.out,
+            self.out,
             " detail={} source={} rect={} color={}",
             detail,
             source_debug_label(source),
             rectangle_debug_label(rect),
             color_debug_label(color)
         )
-        .expect("write paint operation snapshot");
     }
 
-    fn write_border(&mut self, border: &PaintBorder) {
+    fn write_border(&mut self, border: &PaintBorder) -> fmt::Result {
         let rect = border.rect;
         self.write_border_side(
             PaintOrderPhase::BoxBorder,
@@ -212,7 +213,7 @@ impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'sty
                 height: border.edges.top.width,
             },
             border.edges.top,
-        );
+        )?;
         self.write_border_side(
             PaintOrderPhase::BoxBorder,
             "border-right",
@@ -224,7 +225,7 @@ impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'sty
                 height: rect.height,
             },
             border.edges.right,
-        );
+        )?;
         self.write_border_side(
             PaintOrderPhase::BoxBorder,
             "border-bottom",
@@ -236,7 +237,7 @@ impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'sty
                 height: border.edges.bottom.width,
             },
             border.edges.bottom,
-        );
+        )?;
         self.write_border_side(
             PaintOrderPhase::BoxBorder,
             "border-left",
@@ -248,10 +249,10 @@ impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'sty
                 height: rect.height,
             },
             border.edges.left,
-        );
+        )
     }
 
-    fn write_outline(&mut self, outline: &PaintOutline) {
+    fn write_outline(&mut self, outline: &PaintOutline) -> fmt::Result {
         let side = PaintBorderSide {
             width: outline.width,
             color: outline.color,
@@ -267,7 +268,7 @@ impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'sty
                 height: outline.width,
             },
             side,
-        );
+        )?;
         self.write_border_side(
             PaintOrderPhase::BoxOutline,
             "outline-right",
@@ -279,7 +280,7 @@ impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'sty
                 height: outline.border_rect.height,
             },
             side,
-        );
+        )?;
         self.write_border_side(
             PaintOrderPhase::BoxOutline,
             "outline-bottom",
@@ -291,7 +292,7 @@ impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'sty
                 height: outline.width,
             },
             side,
-        );
+        )?;
         self.write_border_side(
             PaintOrderPhase::BoxOutline,
             "outline-left",
@@ -303,7 +304,7 @@ impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'sty
                 height: outline.border_rect.height,
             },
             side,
-        );
+        )
     }
 
     fn write_border_side(
@@ -313,18 +314,18 @@ impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'sty
         source: PaintSource,
         rect: Rectangle,
         side: PaintBorderSide,
-    ) {
+    ) -> fmt::Result {
         if !side.is_visible() {
-            return;
+            return Ok(());
         }
 
-        self.write_fill_rect(phase, detail, source, rect, side.color);
+        self.write_fill_rect(phase, detail, source, rect, side.color)
     }
 
-    fn write_list_marker(&mut self, marker: &PaintListMarker) {
-        self.write_operation_prefix(PaintOrderPhase::ListMarker, "draw-list-marker");
+    fn write_list_marker(&mut self, marker: &PaintListMarker) -> fmt::Result {
+        self.write_operation_prefix(PaintOrderPhase::ListMarker, "draw-list-marker")?;
         writeln!(
-            &mut self.out,
+            self.out,
             " source={} rect={} marker-kind={} color={} font-size={:.2}",
             source_debug_label(marker.source),
             rectangle_debug_label(marker.rect),
@@ -332,25 +333,23 @@ impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'sty
             color_debug_label(marker.color),
             marker.font_size_px
         )
-        .expect("write paint operation snapshot");
     }
 
-    fn write_clip_operation(&mut self, kind: &'static str, clip: &PaintClip) {
-        self.write_operation_prefix(PaintOrderPhase::OverflowClipForContentsAndDescendants, kind);
+    fn write_clip_operation(&mut self, kind: &'static str, clip: &PaintClip) -> fmt::Result {
+        self.write_operation_prefix(PaintOrderPhase::OverflowClipForContentsAndDescendants, kind)?;
         writeln!(
-            &mut self.out,
+            self.out,
             " source={} rect={} scope={}",
             source_debug_label(clip.source),
             rectangle_debug_label(clip.rect),
             clip_scope_debug_label(clip.scope)
         )
-        .expect("write paint operation snapshot");
     }
 
-    fn write_text(&mut self, text: &PaintText) {
-        self.write_operation_prefix(PaintOrderPhase::InlineFormattingContent, "draw-text");
+    fn write_text(&mut self, text: &PaintText) -> fmt::Result {
+        self.write_operation_prefix(PaintOrderPhase::InlineFormattingContent, "draw-text")?;
         writeln!(
-            &mut self.out,
+            self.out,
             " source={} rect={} color={} font-size={:.2} text={:?}",
             source_debug_label(text.source),
             rectangle_debug_label(text.rect),
@@ -358,13 +357,12 @@ impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'sty
             text.font_size_px,
             text.text
         )
-        .expect("write paint operation snapshot");
     }
 
-    fn write_text_decoration(&mut self, decoration: &PaintTextDecoration) {
-        self.write_operation_prefix(PaintOrderPhase::InlineFormattingContent, "fill-rect");
+    fn write_text_decoration(&mut self, decoration: &PaintTextDecoration) -> fmt::Result {
+        self.write_operation_prefix(PaintOrderPhase::InlineFormattingContent, "fill-rect")?;
         writeln!(
-            &mut self.out,
+            self.out,
             " detail=text-decoration source={} rect={} line={} color={} thickness={:.2}",
             source_debug_label(decoration.source),
             rectangle_debug_label(decoration.rect),
@@ -372,43 +370,44 @@ impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'sty
             color_debug_label(decoration.color),
             decoration.thickness
         )
-        .expect("write paint operation snapshot");
     }
 
-    fn write_inline_box(&mut self, inline_box: &PaintInlineBox) {
-        self.write_operation_prefix(PaintOrderPhase::InlineFormattingContent, "inline-box");
+    fn write_inline_box(&mut self, inline_box: &PaintInlineBox) -> fmt::Result {
+        self.write_operation_prefix(PaintOrderPhase::InlineFormattingContent, "inline-box")?;
         writeln!(
-            &mut self.out,
+            self.out,
             " source={} rect={} fallback-background={}",
             optional_source_debug_label(inline_box.source),
             rectangle_debug_label(inline_box.rect),
             optional_color_debug_label(inline_box.fallback_background)
         )
-        .expect("write paint operation snapshot");
     }
 
-    fn write_replaced(&mut self, replaced: &PaintReplaced) {
-        self.write_operation_prefix(PaintOrderPhase::InlineFormattingContent, "replaced");
+    fn write_replaced(&mut self, replaced: &PaintReplaced) -> fmt::Result {
+        self.write_operation_prefix(PaintOrderPhase::InlineFormattingContent, "replaced")?;
         writeln!(
-            &mut self.out,
+            self.out,
             " source={} rect={} replaced-kind={}",
             optional_source_debug_label(replaced.source),
             rectangle_debug_label(replaced.rect),
             replaced_kind_debug_label(replaced.kind)
         )
-        .expect("write paint operation snapshot");
     }
 
-    fn write_operation_prefix(&mut self, phase: PaintOrderPhase, kind: &'static str) {
+    fn write_operation_prefix(
+        &mut self,
+        phase: PaintOrderPhase,
+        kind: &'static str,
+    ) -> fmt::Result {
         write!(
-            &mut self.out,
+            self.out,
             "op[{}]: phase={} kind={}",
             self.next_index,
             phase.debug_label(),
             kind
-        )
-        .expect("write paint operation snapshot");
+        )?;
         self.next_index += 1;
+        Ok(())
     }
 }
 

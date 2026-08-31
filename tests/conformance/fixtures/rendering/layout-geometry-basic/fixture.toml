@@ -1,11 +1,19 @@
-format = "borrowser-conformance-fixture-v1"
+format = "borrowser-conformance-fixture-v2"
 id = "layout-geometry-basic-block-flow"
 scope = "static-html-css-no-js"
 observation = "layout-geometry"
-test_path = "test.html"
+test_path = "rendering/document.html"
 
 [source]
 kind = "native"
 
 [metadata]
-description = "Inventory seed for a Layout-owned geometry observation."
+description = "Layout-owned basic block-flow sizing geometry at two controlled available widths."
+
+[execution_package]
+entry_path = "rendering/fixture.toml"
+support_paths = [
+  "rendering/author.css",
+  "rendering/expected-01.txt",
+  "rendering/expected-02.txt",
+]

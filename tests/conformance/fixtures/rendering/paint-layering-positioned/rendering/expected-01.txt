@@ -1,0 +1,28 @@
+version: 1
+paint-layering-snapshot
+layout-root-id: 0
+root-context: 0
+context id=0 parent=none source=root-document(box=0 node=0 anonymous=false) layer=normal-flow z-index=auto tree-order=0 children=2 items=8
+  items:
+    item[0]: source=box=0 node=0 anonymous=false layer=normal-flow z-index=auto tree-order=0
+    item[1]: source=box=1 node=0 anonymous=false layer=normal-flow z-index=auto tree-order=1
+    item[2]: source=box=2 node=0 anonymous=true layer=normal-flow z-index=auto tree-order=2
+    item[3]: source=box=3 node=0 anonymous=false layer=normal-flow z-index=auto tree-order=3
+    item[4]: source=box=4 node=0 anonymous=false layer=normal-flow z-index=auto tree-order=4
+    item[5]: source=box=5 node=0 anonymous=false layer=normal-flow z-index=auto tree-order=5
+    item[6]: source=box=8 node=0 anonymous=true layer=normal-flow z-index=auto tree-order=8
+    item[7]: source=box=9 node=0 anonymous=false layer=normal-flow z-index=auto tree-order=9
+  ordered-slots:
+    slot[0]: child-context id=1 source=positioned-element(box=6 node=0 anonymous=false) layer=negative-z-index z-index=-1 tree-order=6
+    context id=1 parent=0 source=positioned-element(box=6 node=0 anonymous=false) layer=negative-z-index z-index=-1 tree-order=6 children=0 items=1
+      items:
+        item[0]: source=box=6 node=0 anonymous=false layer=normal-flow z-index=auto tree-order=6
+      ordered-slots:
+        slot[0]: context-source source=box=6 node=0 anonymous=false
+    slot[1]: context-source source=box=0 node=0 anonymous=false
+    slot[2]: child-context id=2 source=positioned-element(box=7 node=0 anonymous=false) layer=positive-z-index z-index=2 tree-order=7
+    context id=2 parent=0 source=positioned-element(box=7 node=0 anonymous=false) layer=positive-z-index z-index=2 tree-order=7 children=0 items=1
+      items:
+        item[0]: source=box=7 node=0 anonymous=false layer=normal-flow z-index=auto tree-order=7
+      ordered-slots:
+        slot[0]: context-source source=box=7 node=0 anonymous=false

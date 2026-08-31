@@ -7,11 +7,13 @@ edition = "2024"
 default = []
 html-parser = ["dep:html-test-support"]
 css = ["dep:css-test-support"]
+rendering = ["dep:rendering-test-support"]
 
 [dependencies]
 conformance-test-support = { path = "../conformance_test_support" }
 html-test-support = { path = "../html_test_support", features = ["parser-fixtures"], optional = true }
 css-test-support = { path = "../css_test_support", optional = true }
+rendering-test-support = { path = "../rendering_test_support", optional = true }
 
 [dev-dependencies]
 serde_json = "1"

@@ -1,4 +1,4 @@
-use std::fmt::Write;
+use std::fmt;
 
 use css::ZIndex;
 use layout::{LayoutBox, PositioningScheme};
@@ -157,17 +157,20 @@ impl StackingContextTree {
         );
     }
 
+    pub(crate) fn write_debug_snapshot(&self, out: &mut (impl fmt::Write + ?Sized)) -> fmt::Result {
+        writeln!(out, "version: 2")?;
+        writeln!(out, "stacking-context-tree")?;
+        writeln!(out, "root-context: {}", self.root.index())?;
+        for context in &self.contexts {
+            context.append_debug_snapshot(out, 0)?;
+        }
+        Ok(())
+    }
+
     pub fn to_debug_snapshot(&self) -> String {
         let mut out = String::new();
-        writeln!(&mut out, "version: 2").expect("write stacking context snapshot");
-        writeln!(&mut out, "stacking-context-tree").expect("write stacking context snapshot");
-        writeln!(&mut out, "root-context: {}", self.root.index())
+        self.write_debug_snapshot(&mut out)
             .expect("write stacking context snapshot");
-        for context in &self.contexts {
-            context
-                .append_debug_snapshot(&mut out, 0)
-                .expect("write stacking context snapshot");
-        }
         out
     }
 }
@@ -207,12 +210,15 @@ impl StackingContextNode {
         &self.items
     }
 
-    fn append_debug_snapshot(&self, out: &mut String, depth: usize) -> std::fmt::Result {
-        let indent = "  ".repeat(depth);
+    fn append_debug_snapshot(
+        &self,
+        out: &mut (impl fmt::Write + ?Sized),
+        depth: usize,
+    ) -> fmt::Result {
+        write_snapshot_indent(out, depth)?;
         writeln!(
             out,
-            "{}context id={} parent={} source={} layer={} z-index={} tree-order={} children={} items={}",
-            indent,
+            "context id={} parent={} source={} layer={} z-index={} tree-order={} children={} items={}",
             self.id.index(),
             optional_context_debug_label(self.parent),
             self.source.to_debug_label(),
@@ -223,10 +229,10 @@ impl StackingContextNode {
             self.items.len()
         )?;
         for item in &self.items {
+            write_snapshot_indent(out, depth + 1)?;
             writeln!(
                 out,
-                "{}  item source={} context={} layer={} z-index={} tree-order={}",
-                indent,
+                "item source={} context={} layer={} z-index={} tree-order={}",
                 paint_source_debug_label(item.source),
                 item.context.index(),
                 item.order_key.layer.debug_label(),
@@ -236,6 +242,13 @@ impl StackingContextNode {
         }
         Ok(())
     }
+}
+
+fn write_snapshot_indent(out: &mut (impl fmt::Write + ?Sized), depth: usize) -> fmt::Result {
+    for _ in 0..depth {
+        out.write_str("  ")?;
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

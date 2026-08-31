@@ -475,15 +475,15 @@ fn repository_registry_has_complete_seed_coverage_and_only_evidenced_assertions(
     ))
     .expect("repository inventory");
     let results = load_expected_results(root, &inventory).expect("repository expected results");
-    assert_eq!(inventory.fixtures().len(), 18);
+    assert_eq!(inventory.fixtures().len(), 20);
     let summary = String::from_utf8(serialize_expected_results_summary(&results)).unwrap();
     for expected in [
-        "discovered = 18\n",
-        "classified = 14\n",
-        "not_yet_classified = 4\n",
-        "available = 13\n",
+        "discovered = 20\n",
+        "classified = 18\n",
+        "not_yet_classified = 2\n",
+        "available = 17\n",
         "unavailable = 1\n",
-        "ready = 14\n",
+        "ready = 18\n",
         "not_ready = 0\n",
         "missing_subsystem_adapter = 0\n",
         "missing_expected_observation = 0\n",

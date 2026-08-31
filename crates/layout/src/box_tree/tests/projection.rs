@@ -1415,6 +1415,26 @@ fn layout_phase_output_tracks_out_of_flow_participants_in_tree_order() {
     );
 
     let snapshot = output.to_debug_snapshot();
+    let mut writer_snapshot = String::new();
+    output
+        .write_debug_snapshot(&mut writer_snapshot)
+        .expect("layout snapshot writer");
+    assert_eq!(writer_snapshot, snapshot);
+    let mut writer_snapshot = String::new();
+    output
+        .write_sizing_debug_snapshot(&mut writer_snapshot)
+        .expect("layout sizing snapshot writer");
+    assert_eq!(writer_snapshot, output.to_sizing_debug_snapshot());
+    let mut writer_snapshot = String::new();
+    output
+        .write_advanced_flow_debug_snapshot(&mut writer_snapshot)
+        .expect("layout advanced-flow snapshot writer");
+    assert_eq!(writer_snapshot, output.to_advanced_flow_debug_snapshot());
+    let mut writer_snapshot = String::new();
+    output
+        .write_flex_debug_snapshot(&mut writer_snapshot)
+        .expect("layout flex snapshot writer");
+    assert_eq!(writer_snapshot, output.to_flex_debug_snapshot());
     assert!(snapshot.contains("out-of-flow-participants: 2"));
     assert!(snapshot.contains(&format!(
         "out-of-flow[0]: box-id=b{} kind=absolute positioned-cb=b{}",

@@ -1,4 +1,4 @@
-use std::fmt::Write;
+use std::fmt::{self, Write};
 
 use css::{Display, Length, TextDecorationLine};
 use html::internal::Id;
@@ -79,17 +79,16 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
     ///
     /// This walks the paint tree in construction order. It is a debug and
     /// regression surface, not a sorted display list or retained paint scene.
+    pub fn write_order_debug_snapshot(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        writeln!(out, "version: 1")?;
+        writeln!(out, "paint-order")?;
+        writeln!(out, "layout-root-id: {}", self.layout.root().node_id().0)?;
+        self.append_stacking_order_debug_snapshot(out)
+    }
+
     pub fn to_order_debug_snapshot(&self) -> String {
         let mut out = String::new();
-        writeln!(&mut out, "version: 1").expect("write paint order snapshot");
-        writeln!(&mut out, "paint-order").expect("write paint order snapshot");
-        writeln!(
-            &mut out,
-            "layout-root-id: {}",
-            self.layout.root().node_id().0
-        )
-        .expect("write paint order snapshot");
-        self.append_stacking_order_debug_snapshot(&mut out)
+        self.write_order_debug_snapshot(&mut out)
             .expect("write paint order snapshot");
         out
     }
@@ -99,8 +98,15 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
     /// This is a frame-local semantic representation derived before immediate
     /// backend drawing. It is not a compositor layer tree, retained scene,
     /// display list, backend command stream, or paint invalidation surface.
+    pub fn write_stacking_context_debug_snapshot(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        self.stacking_contexts().write_debug_snapshot(out)
+    }
+
     pub fn to_stacking_context_debug_snapshot(&self) -> String {
-        self.stacking_contexts().to_debug_snapshot()
+        let mut out = String::new();
+        self.write_stacking_context_debug_snapshot(&mut out)
+            .expect("write stacking context snapshot");
+        out
     }
 
     /// Stable paint-owned layering snapshot for AB7 regression tests.
@@ -109,28 +115,22 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
     /// order snapshots, operation snapshots, and immediate painting. It is not
     /// a compositor layer tree, retained scene, display list, backend command
     /// stream, or paint invalidation surface.
-    pub fn to_layering_debug_snapshot(&self) -> String {
-        let mut out = String::new();
-        writeln!(&mut out, "version: 1").expect("write paint layering snapshot");
-        writeln!(&mut out, "paint-layering-snapshot").expect("write paint layering snapshot");
+    pub fn write_layering_debug_snapshot(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        writeln!(out, "version: 1")?;
+        writeln!(out, "paint-layering-snapshot")?;
+        writeln!(out, "layout-root-id: {}", self.layout.root().node_id().0)?;
         writeln!(
-            &mut out,
-            "layout-root-id: {}",
-            self.layout.root().node_id().0
-        )
-        .expect("write paint layering snapshot");
-        writeln!(
-            &mut out,
+            out,
             "root-context: {}",
             self.stacking_contexts().root_id().index()
-        )
-        .expect("write paint layering snapshot");
-        self.append_layering_context_debug_snapshot(
-            self.stacking_contexts().root_id(),
-            &mut out,
-            0,
-        )
-        .expect("write paint layering snapshot");
+        )?;
+        self.append_layering_context_debug_snapshot(self.stacking_contexts().root_id(), out, 0)
+    }
+
+    pub fn to_layering_debug_snapshot(&self) -> String {
+        let mut out = String::new();
+        self.write_layering_debug_snapshot(&mut out)
+            .expect("write paint layering snapshot");
         out
     }
 
@@ -139,11 +139,21 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
     /// This is derived from semantic paint primitives and AA ordering rules.
     /// It is not a backend command stream, pixel snapshot, retained display
     /// list, scene graph, or compositor artifact.
-    pub fn to_operation_debug_snapshot(&self) -> String {
-        super::debug::paint_operation_debug_snapshot(self)
+    pub fn write_operation_debug_snapshot(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        super::debug::write_paint_operation_debug_snapshot(self, out)
     }
 
-    fn append_stacking_order_debug_snapshot(&self, out: &mut String) -> std::fmt::Result {
+    pub fn to_operation_debug_snapshot(&self) -> String {
+        let mut out = String::new();
+        self.write_operation_debug_snapshot(&mut out)
+            .expect("write paint operation snapshot");
+        out
+    }
+
+    fn append_stacking_order_debug_snapshot(
+        &self,
+        out: &mut (impl fmt::Write + ?Sized),
+    ) -> fmt::Result {
         writeln!(out, "paint-tree-order")?;
         self.append_context_order_debug_snapshot(self.stacking_contexts().root_id(), out, 0)
     }
@@ -151,20 +161,19 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
     fn append_context_order_debug_snapshot(
         &self,
         context_id: StackingContextId,
-        out: &mut String,
+        out: &mut (impl fmt::Write + ?Sized),
         depth: usize,
-    ) -> std::fmt::Result {
+    ) -> fmt::Result {
         for slot in self.stacking_contexts().ordered_slots(context_id) {
             match slot {
                 StackingOrderSlot::ChildContext(child_context_id) => {
                     let Some(child) = self.stacking_contexts().context(child_context_id) else {
                         continue;
                     };
-                    let indent = "  ".repeat(depth);
+                    write_snapshot_indent(out, depth)?;
                     writeln!(
                         out,
-                        "{}phase=stacking-context child-context id={} layer={} z-index={} tree-order={}",
-                        indent,
+                        "phase=stacking-context child-context id={} layer={} z-index={} tree-order={}",
                         child.id().index(),
                         child.order_key().layer().debug_label(),
                         optional_i32_debug_label(child.order_key().z_index()),
@@ -191,17 +200,16 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
     fn append_layering_context_debug_snapshot(
         &self,
         context_id: StackingContextId,
-        out: &mut String,
+        out: &mut (impl fmt::Write + ?Sized),
         depth: usize,
-    ) -> std::fmt::Result {
+    ) -> fmt::Result {
         let Some(context) = self.stacking_contexts().context(context_id) else {
             return Ok(());
         };
-        let indent = "  ".repeat(depth);
+        write_snapshot_indent(out, depth)?;
         writeln!(
             out,
-            "{}context id={} parent={} source={} layer={} z-index={} tree-order={} children={} items={}",
-            indent,
+            "context id={} parent={} source={} layer={} z-index={} tree-order={} children={} items={}",
             context.id().index(),
             optional_context_debug_label(context.parent()),
             context_source_debug_label(context.source()),
@@ -211,19 +219,21 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
             context.children().len(),
             context.items().len()
         )?;
-        writeln!(out, "{}  items:", indent)?;
+        write_snapshot_indent(out, depth + 1)?;
+        writeln!(out, "items:")?;
         for (index, item) in context.items().iter().enumerate() {
+            write_snapshot_indent(out, depth + 2)?;
             writeln!(
                 out,
-                "{}    item[{index}]: source={} layer={} z-index={} tree-order={}",
-                indent,
+                "item[{index}]: source={} layer={} z-index={} tree-order={}",
                 paint_source_debug_label(item.source()),
                 item.order_key().layer().debug_label(),
                 optional_i32_debug_label(item.order_key().z_index()),
                 item.order_key().tree_order()
             )?;
         }
-        writeln!(out, "{}  ordered-slots:", indent)?;
+        write_snapshot_indent(out, depth + 1)?;
+        writeln!(out, "ordered-slots:")?;
         for (index, slot) in self
             .stacking_contexts()
             .ordered_slots(context_id)
@@ -235,10 +245,10 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
                     let Some(child) = self.stacking_contexts().context(child_context_id) else {
                         continue;
                     };
+                    write_snapshot_indent(out, depth + 2)?;
                     writeln!(
                         out,
-                        "{}    slot[{index}]: child-context id={} source={} layer={} z-index={} tree-order={}",
-                        indent,
+                        "slot[{index}]: child-context id={} source={} layer={} z-index={} tree-order={}",
                         child.id().index(),
                         context_source_debug_label(child.source()),
                         child.order_key().layer().debug_label(),
@@ -248,10 +258,10 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
                     self.append_layering_context_debug_snapshot(child.id(), out, depth + 2)?;
                 }
                 StackingOrderSlot::ContextSource(source) => {
+                    write_snapshot_indent(out, depth + 2)?;
                     writeln!(
                         out,
-                        "{}    slot[{index}]: context-source source={}",
-                        indent,
+                        "slot[{index}]: context-source source={}",
                         paint_source_debug_label(source)
                     )?;
                 }
@@ -294,12 +304,15 @@ impl PaintArtifact {
         &self.stacking_contexts
     }
 
+    pub fn write_debug_snapshot(&self, out: &mut (impl fmt::Write + ?Sized)) -> fmt::Result {
+        writeln!(out, "version: 1")?;
+        writeln!(out, "paint-artifact")?;
+        self.tree.append_debug_snapshot(out)
+    }
+
     pub fn to_debug_snapshot(&self) -> String {
         let mut out = String::new();
-        writeln!(&mut out, "version: 1").expect("write paint artifact snapshot");
-        writeln!(&mut out, "paint-artifact").expect("write paint artifact snapshot");
-        self.tree
-            .append_debug_snapshot(&mut out)
+        self.write_debug_snapshot(&mut out)
             .expect("write paint artifact snapshot");
         out
     }
@@ -325,7 +338,7 @@ impl PaintTree {
         }
     }
 
-    fn append_debug_snapshot(&self, out: &mut String) -> std::fmt::Result {
+    fn append_debug_snapshot(&self, out: &mut (impl fmt::Write + ?Sized)) -> fmt::Result {
         writeln!(out, "paint-tree")?;
         self.root.append_debug_snapshot(out, 0)
     }
@@ -387,12 +400,15 @@ impl PaintNode {
         }
     }
 
-    fn append_debug_snapshot(&self, out: &mut String, depth: usize) -> std::fmt::Result {
-        let indent = "  ".repeat(depth);
+    fn append_debug_snapshot(
+        &self,
+        out: &mut (impl fmt::Write + ?Sized),
+        depth: usize,
+    ) -> fmt::Result {
+        write_snapshot_indent(out, depth)?;
         writeln!(
             out,
-            "{}box={} node={} anonymous={} primitives={} children={}",
-            indent,
+            "box={} node={} anonymous={} primitives={} children={}",
             self.source.box_id,
             self.source.node_id.0,
             self.source.anonymous,
@@ -400,53 +416,55 @@ impl PaintNode {
             self.children.len()
         )?;
         for primitive in &self.primitives {
-            writeln!(out, "{}  primitive {}", indent, primitive.to_debug_label())?;
+            write_snapshot_indent(out, depth + 1)?;
+            write!(out, "primitive ")?;
+            write_primitive_debug_label(out, primitive)?;
+            writeln!(out)?;
         }
         for child in &self.children {
             child.append_debug_snapshot(out, depth + 1)?;
         }
         for primitive in &self.post_primitives {
-            writeln!(
-                out,
-                "{}  post-primitive {}",
-                indent,
-                primitive.to_debug_label()
-            )?;
+            write_snapshot_indent(out, depth + 1)?;
+            write!(out, "post-primitive ")?;
+            write_primitive_debug_label(out, primitive)?;
+            writeln!(out)?;
         }
         Ok(())
     }
 
     fn append_order_debug_snapshot_with_stacking_contexts(
         &self,
-        out: &mut String,
+        out: &mut (impl fmt::Write + ?Sized),
         depth: usize,
         owner_context: StackingContextId,
         stacking_contexts: &StackingContextTree,
-    ) -> std::fmt::Result {
-        let indent = "  ".repeat(depth);
+    ) -> fmt::Result {
+        write_snapshot_indent(out, depth)?;
         writeln!(
             out,
-            "{}box={} node={} anonymous={}",
-            indent, self.source.box_id, self.source.node_id.0, self.source.anonymous
+            "box={} node={} anonymous={}",
+            self.source.box_id, self.source.node_id.0, self.source.anonymous
         )?;
         for primitive in &self.primitives {
-            writeln!(
+            write_snapshot_indent(out, depth + 1)?;
+            write!(
                 out,
-                "{}  phase={} primitive {}",
-                indent,
+                "phase={} primitive ",
                 primitive.order_phase().debug_label(),
-                primitive.to_debug_label()
             )?;
+            write_primitive_debug_label(out, primitive)?;
+            writeln!(out)?;
         }
         for child in &self.children {
             if stacking_contexts.source_starts_external_context(owner_context, child.source) {
                 continue;
             }
 
+            write_snapshot_indent(out, depth + 1)?;
             writeln!(
                 out,
-                "{}  phase={} child-subtree box={} node={}",
-                indent,
+                "phase={} child-subtree box={} node={}",
                 PaintOrderPhase::ChildSubtree.debug_label(),
                 child.source.box_id,
                 child.source.node_id.0
@@ -459,16 +477,41 @@ impl PaintNode {
             )?;
         }
         for primitive in &self.post_primitives {
-            writeln!(
+            write_snapshot_indent(out, depth + 1)?;
+            write!(
                 out,
-                "{}  phase={} primitive {}",
-                indent,
+                "phase={} primitive ",
                 primitive.order_phase().debug_label(),
-                primitive.to_debug_label()
             )?;
+            write_primitive_debug_label(out, primitive)?;
+            writeln!(out)?;
         }
         Ok(())
     }
+}
+
+fn write_snapshot_indent(out: &mut (impl fmt::Write + ?Sized), depth: usize) -> fmt::Result {
+    for _ in 0..depth {
+        out.write_str("  ")?;
+    }
+    Ok(())
+}
+
+fn write_primitive_debug_label(
+    out: &mut (impl fmt::Write + ?Sized),
+    primitive: &PaintPrimitive,
+) -> fmt::Result {
+    if let PaintPrimitive::Text(text) = primitive {
+        return write!(
+            out,
+            "text rect={} color={} font-size={:.2} text={:?}",
+            rectangle_debug_label(text.rect),
+            text.color.to_debug_label(),
+            text.font_size_px,
+            text.text
+        );
+    }
+    out.write_str(&primitive.to_debug_label())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2915,5 +2958,57 @@ mod tests {
         assert!(first.contains("paint-input"));
         assert!(first.contains("primitive background"));
         assert!(!first.contains("egui"));
+    }
+
+    #[test]
+    fn canonical_paint_writers_match_string_snapshot_apis_byte_for_byte() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                html::internal::html_name("section"),
+                Vec::new(),
+                vec![("background-color".to_string(), "#abcdef".to_string())],
+                vec![Node::Text {
+                    id: Id(3),
+                    text: "paint".to_owned(),
+                }],
+            )],
+        };
+        let styled = build_style_tree(&dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+
+        let mut actual = String::new();
+        input
+            .artifact()
+            .write_debug_snapshot(&mut actual)
+            .expect("artifact writer");
+        assert_eq!(actual, input.artifact().to_debug_snapshot());
+
+        let mut actual = String::new();
+        input
+            .write_order_debug_snapshot(&mut actual)
+            .expect("order writer");
+        assert_eq!(actual, input.to_order_debug_snapshot());
+
+        let mut actual = String::new();
+        input
+            .write_stacking_context_debug_snapshot(&mut actual)
+            .expect("stacking writer");
+        assert_eq!(actual, input.to_stacking_context_debug_snapshot());
+
+        let mut actual = String::new();
+        input
+            .write_layering_debug_snapshot(&mut actual)
+            .expect("layering writer");
+        assert_eq!(actual, input.to_layering_debug_snapshot());
+
+        let mut actual = String::new();
+        input
+            .write_operation_debug_snapshot(&mut actual)
+            .expect("operation writer");
+        assert_eq!(actual, input.to_operation_debug_snapshot());
     }
 }

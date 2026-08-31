@@ -1,0 +1,12 @@
+version: 1
+paint-artifact
+paint-tree
+box=0 node=0 anonymous=false primitives=0 children=1
+  box=1 node=0 anonymous=false primitives=0 children=3
+    box=2 node=0 anonymous=true primitives=0 children=1
+      box=3 node=0 anonymous=false primitives=0 children=0
+    box=4 node=0 anonymous=false primitives=0 children=1
+      box=5 node=0 anonymous=false primitives=1 children=0
+        primitive background rect=x=0.00 y=0.00 w=20.00 h=10.00 color=rgba(255,0,0,255)
+    box=6 node=0 anonymous=true primitives=0 children=1
+      box=7 node=0 anonymous=false primitives=0 children=0

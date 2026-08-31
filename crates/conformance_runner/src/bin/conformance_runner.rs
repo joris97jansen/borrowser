@@ -26,7 +26,9 @@ enum CliError {
 impl std::fmt::Display for CliError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Arguments => f.write_str("usage: conformance-runner [--css] [--check]"),
+            Self::Arguments => {
+                f.write_str("usage: conformance-runner [--css|--rendering] [--check]")
+            }
             Self::Feature(feature) => write!(
                 f,
                 "conformance runner adapter feature is not enabled: {feature}"
@@ -40,11 +42,14 @@ impl std::fmt::Display for CliError {
 fn run() -> Result<i32, CliError> {
     let mut check = false;
     let mut css = false;
+    let mut rendering = false;
     for argument in std::env::args().skip(1) {
         if argument == "--check" && !check {
             check = true;
         } else if argument == "--css" && !css {
             css = true;
+        } else if argument == "--rendering" && !rendering {
+            rendering = true;
         } else {
             return Err(CliError::Arguments);
         }
@@ -53,7 +58,11 @@ fn run() -> Result<i32, CliError> {
         .parent()
         .and_then(Path::parent)
         .expect("crate is a direct workspace child");
-    if css {
+    if css && rendering {
+        Err(CliError::Arguments)
+    } else if rendering {
+        run_rendering(repository_root, check)
+    } else if css {
         run_css(repository_root, check)
     } else {
         run_parser(repository_root, check)
@@ -84,4 +93,20 @@ fn run_css(repository_root: &Path, check: bool) -> Result<i32, CliError> {
 #[cfg(not(feature = "css"))]
 fn run_css(_: &Path, _: bool) -> Result<i32, CliError> {
     Err(CliError::Feature("css"))
+}
+
+#[cfg(feature = "rendering")]
+fn run_rendering(repository_root: &Path, check: bool) -> Result<i32, CliError> {
+    let summary = conformance_runner::run_repository_rendering_cases(repository_root)
+        .map_err(|error| CliError::Run(error.to_string()))?;
+    conformance_runner::build_and_write_rendering_report(
+        summary.cases(),
+        &mut std::io::stdout().lock(),
+    )
+    .map_err(|error| CliError::Report(error.to_string()))?;
+    Ok(i32::from(check && summary.has_unexpected_results()))
+}
+#[cfg(not(feature = "rendering"))]
+fn run_rendering(_: &Path, _: bool) -> Result<i32, CliError> {
+    Err(CliError::Feature("rendering"))
 }

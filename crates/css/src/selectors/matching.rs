@@ -49,6 +49,8 @@ pub use dom_index::{
 };
 pub use environment::SelectorMatchingEnvironment;
 pub(crate) use host_language::matches_unqualified_attribute_name;
+#[cfg(test)]
+pub(crate) use projection::count_style_projection_builds;
 pub use projection::{
     StyleProjection, StyleProjectionBuildError, StyleProjectionElementKey, StyleProjectionKeyError,
     StyleProjectionMatchError,

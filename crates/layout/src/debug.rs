@@ -1,4 +1,4 @@
-use std::fmt::Write;
+use std::fmt::{self, Write};
 
 use css::StyledNode;
 use html::Node;
@@ -45,34 +45,25 @@ impl<'style_tree, 'dom, 'runtime> LayoutPhaseInput<'style_tree, 'dom, 'runtime> 
 }
 
 impl<'style_tree, 'dom> LayoutPhaseOutput<'style_tree, 'dom> {
+    pub fn write_debug_snapshot(&self, out: &mut (impl fmt::Write + ?Sized)) -> fmt::Result {
+        writeln!(out, "version: 1")?;
+        writeln!(out, "layout-phase-output")?;
+        writeln!(out, "viewport-width: {:.2}", self.viewport_width())?;
+        writeln!(
+            out,
+            "document-rect: {}",
+            rectangle_debug_label(self.document_rect())
+        )?;
+        writeln!(out, "layout-boxes: {}", count_layout_boxes(self.root()))?;
+        write_out_of_flow_header_and_participants(out, self.out_of_flow_participants())?;
+        append_layout_box_snapshot(out, self.root(), 0, 0)?;
+        Ok(())
+    }
+
     /// Stable debug snapshot for the layout-to-paint phase boundary.
     pub fn to_debug_snapshot(&self) -> String {
         let mut out = String::new();
-        writeln!(&mut out, "version: 1").expect("write snapshot");
-        writeln!(&mut out, "layout-phase-output").expect("write snapshot");
-        writeln!(&mut out, "viewport-width: {:.2}", self.viewport_width()).expect("write snapshot");
-        writeln!(
-            &mut out,
-            "document-rect: {}",
-            rectangle_debug_label(self.document_rect())
-        )
-        .expect("write snapshot");
-        writeln!(
-            &mut out,
-            "layout-boxes: {}",
-            count_layout_boxes(self.root())
-        )
-        .expect("write snapshot");
-        if !self.out_of_flow_participants().is_empty() {
-            writeln!(
-                &mut out,
-                "out-of-flow-participants: {}",
-                self.out_of_flow_participants().len()
-            )
-            .expect("write snapshot");
-            append_out_of_flow_participants_snapshot(&mut out, self.out_of_flow_participants());
-        }
-        append_layout_box_snapshot(&mut out, self.root(), 0, 0);
+        self.write_debug_snapshot(&mut out).expect("write snapshot");
         out
     }
 
@@ -81,33 +72,25 @@ impl<'style_tree, 'dom> LayoutPhaseOutput<'style_tree, 'dom> {
     /// This surface complements `to_debug_snapshot()` by exposing content-box
     /// geometry, box metrics, flow participation, and the used-size metadata
     /// recorded by the normal-flow sizing pass.
-    pub fn to_sizing_debug_snapshot(&self) -> String {
-        let mut out = String::new();
-        writeln!(&mut out, "version: 1").expect("write snapshot");
-        writeln!(&mut out, "layout-sizing-flow").expect("write snapshot");
-        writeln!(&mut out, "viewport-width: {:.2}", self.viewport_width()).expect("write snapshot");
+    pub fn write_sizing_debug_snapshot(&self, out: &mut (impl fmt::Write + ?Sized)) -> fmt::Result {
+        writeln!(out, "version: 1")?;
+        writeln!(out, "layout-sizing-flow")?;
+        writeln!(out, "viewport-width: {:.2}", self.viewport_width())?;
         writeln!(
-            &mut out,
+            out,
             "document-rect: {}",
             rectangle_debug_label(self.document_rect())
-        )
-        .expect("write snapshot");
-        writeln!(
-            &mut out,
-            "layout-boxes: {}",
-            count_layout_boxes(self.root())
-        )
-        .expect("write snapshot");
-        if !self.out_of_flow_participants().is_empty() {
-            writeln!(
-                &mut out,
-                "out-of-flow-participants: {}",
-                self.out_of_flow_participants().len()
-            )
+        )?;
+        writeln!(out, "layout-boxes: {}", count_layout_boxes(self.root()))?;
+        write_out_of_flow_header_and_participants(out, self.out_of_flow_participants())?;
+        append_layout_sizing_snapshot(out, self.root(), 0, 0)?;
+        Ok(())
+    }
+
+    pub fn to_sizing_debug_snapshot(&self) -> String {
+        let mut out = String::new();
+        self.write_sizing_debug_snapshot(&mut out)
             .expect("write snapshot");
-            append_out_of_flow_participants_snapshot(&mut out, self.out_of_flow_participants());
-        }
-        append_layout_sizing_snapshot(&mut out, self.root(), 0, 0);
         out
     }
 
@@ -116,33 +99,28 @@ impl<'style_tree, 'dom> LayoutPhaseOutput<'style_tree, 'dom> {
     /// This surface records the semantic layout decisions retained on
     /// `LayoutBox`, including block-flow placement and margin-collapse records.
     /// It must not reconstruct those decisions from final coordinates.
-    pub fn to_advanced_flow_debug_snapshot(&self) -> String {
-        let mut out = String::new();
-        writeln!(&mut out, "version: 1").expect("write snapshot");
-        writeln!(&mut out, "layout-advanced-flow").expect("write snapshot");
-        writeln!(&mut out, "viewport-width: {:.2}", self.viewport_width()).expect("write snapshot");
+    pub fn write_advanced_flow_debug_snapshot(
+        &self,
+        out: &mut (impl fmt::Write + ?Sized),
+    ) -> fmt::Result {
+        writeln!(out, "version: 1")?;
+        writeln!(out, "layout-advanced-flow")?;
+        writeln!(out, "viewport-width: {:.2}", self.viewport_width())?;
         writeln!(
-            &mut out,
+            out,
             "document-rect: {}",
             rectangle_debug_label(self.document_rect())
-        )
-        .expect("write snapshot");
-        writeln!(
-            &mut out,
-            "layout-boxes: {}",
-            count_layout_boxes(self.root())
-        )
-        .expect("write snapshot");
-        if !self.out_of_flow_participants().is_empty() {
-            writeln!(
-                &mut out,
-                "out-of-flow-participants: {}",
-                self.out_of_flow_participants().len()
-            )
+        )?;
+        writeln!(out, "layout-boxes: {}", count_layout_boxes(self.root()))?;
+        write_out_of_flow_header_and_participants(out, self.out_of_flow_participants())?;
+        append_layout_advanced_flow_snapshot(out, self.root(), 0, 0)?;
+        Ok(())
+    }
+
+    pub fn to_advanced_flow_debug_snapshot(&self) -> String {
+        let mut out = String::new();
+        self.write_advanced_flow_debug_snapshot(&mut out)
             .expect("write snapshot");
-            append_out_of_flow_participants_snapshot(&mut out, self.out_of_flow_participants());
-        }
-        append_layout_advanced_flow_snapshot(&mut out, self.root(), 0, 0);
         out
     }
 
@@ -151,21 +129,36 @@ impl<'style_tree, 'dom> LayoutPhaseOutput<'style_tree, 'dom> {
     /// This surface serializes the flex metadata stored on `LayoutBox` by the
     /// layout algorithm. It deliberately avoids reconstructing flex decisions
     /// from final rectangles.
-    pub fn to_flex_debug_snapshot(&self) -> String {
-        let mut out = String::new();
-        writeln!(&mut out, "version: 1").expect("write snapshot");
-        writeln!(&mut out, "layout-flex").expect("write snapshot");
-        writeln!(&mut out, "viewport-width: {:.2}", self.viewport_width()).expect("write snapshot");
+    pub fn write_flex_debug_snapshot(&self, out: &mut (impl fmt::Write + ?Sized)) -> fmt::Result {
+        writeln!(out, "version: 1")?;
+        writeln!(out, "layout-flex")?;
+        writeln!(out, "viewport-width: {:.2}", self.viewport_width())?;
         writeln!(
-            &mut out,
+            out,
             "flex-containers: {}",
             count_flex_containers(self.root())
-        )
-        .expect("write snapshot");
+        )?;
         let mut next_container_index = 0;
-        append_layout_flex_snapshot(&mut out, self.root(), &mut next_container_index);
+        append_layout_flex_snapshot(out, self.root(), &mut next_container_index)
+    }
+
+    pub fn to_flex_debug_snapshot(&self) -> String {
+        let mut out = String::new();
+        self.write_flex_debug_snapshot(&mut out)
+            .expect("write snapshot");
         out
     }
+}
+
+fn write_out_of_flow_header_and_participants(
+    out: &mut (impl fmt::Write + ?Sized),
+    participants: &[crate::OutOfFlowLayoutParticipant],
+) -> fmt::Result {
+    if !participants.is_empty() {
+        writeln!(out, "out-of-flow-participants: {}", participants.len())?;
+        append_out_of_flow_participants_snapshot(out, participants)?;
+    }
+    Ok(())
 }
 
 fn count_styled_nodes(node: &StyledNode<'_>) -> usize {
@@ -198,26 +191,25 @@ fn count_flex_containers(layout: &LayoutBox<'_, '_>) -> usize {
 }
 
 fn append_out_of_flow_participants_snapshot(
-    out: &mut String,
+    out: &mut (impl fmt::Write + ?Sized),
     participants: &[crate::OutOfFlowLayoutParticipant],
-) {
+) -> fmt::Result {
     for (index, participant) in participants.iter().enumerate() {
         writeln!(
             out,
             "out-of-flow[{index}]: {}",
             participant.as_debug_label()
-        )
-        .expect("write snapshot");
+        )?;
     }
+    Ok(())
 }
 
 fn append_layout_box_snapshot(
-    out: &mut String,
+    out: &mut (impl fmt::Write + ?Sized),
     layout: &LayoutBox<'_, '_>,
     index: usize,
     depth: usize,
-) -> usize {
-    let indent = "  ".repeat(depth);
+) -> Result<usize, fmt::Error> {
     let behavior = flex_display_behavior_debug_label(layout);
     let flex_participation =
         flex_formatting_participation_debug_label(layout.flex_formatting_participation());
@@ -227,13 +219,14 @@ fn append_layout_box_snapshot(
     let flex_container_cross_axis =
         flex_container_cross_axis_debug_label(layout.flex_container_cross_axis);
     let flex_item_cross_axis = flex_item_cross_axis_debug_label(layout.flex_item_cross_axis);
+    write_indent(out, depth)?;
     writeln!(
         out,
-        "{indent}box[{index}]: box-id={} anchor-id={} source={} node={} kind={}{} cb={} establishes-cb={} position={} flow={} positioned-cb={} establishes-positioned-cb={} fc={} establishes-fc={} block-participation={}{}{}{}{}{} ifc={} establishes-ifc={} inline-participation={} rect={} overflow={} children={} marker={} replaced={} intrinsic={} style={}",
+        "box[{index}]: box-id={} anchor-id={} source={} node={} kind={}{} cb={} establishes-cb={} position={} flow={} positioned-cb={} establishes-positioned-cb={} fc={} establishes-fc={} block-participation={}{}{}{}{}{} ifc={} establishes-ifc={} inline-participation={} rect={} overflow={} children={} marker={} replaced={} intrinsic={} style={}",
         box_id_debug_label(layout.box_id()),
         layout.node_id().0,
         layout_box_source_debug_label(layout.source),
-        node_debug_label(layout.node.node),
+        NodeSnapshotLabel(layout.node.node),
         box_kind_debug_label(layout.kind),
         behavior,
         optional_containing_block_id_debug_label(layout.containing_block()),
@@ -260,76 +253,74 @@ fn append_layout_box_snapshot(
         replaced_kind_debug_label(layout.replaced),
         intrinsic_size_debug_label(layout.replaced_intrinsic),
         layout.style.to_boundary_debug_label(),
-    )
-    .expect("write snapshot");
+    )?;
 
     let mut next_index = index + 1;
     for child in &layout.children {
-        next_index = append_layout_box_snapshot(out, child, next_index, depth + 1);
+        next_index = append_layout_box_snapshot(out, child, next_index, depth + 1)?;
     }
-    next_index
+    Ok(next_index)
 }
 
 fn append_layout_flex_snapshot(
-    out: &mut String,
+    out: &mut (impl fmt::Write + ?Sized),
     layout: &LayoutBox<'_, '_>,
     next_container_index: &mut usize,
-) {
+) -> fmt::Result {
     if matches!(layout.display_behavior(), DisplayBoxBehavior::FlexContainer) {
         let container_index = *next_container_index;
         *next_container_index += 1;
-        let flex_items = direct_flex_items(layout);
+        let flex_item_count = layout
+            .children
+            .iter()
+            .filter(|child| {
+                child.flex_formatting_participation() == FlexFormattingParticipation::FlexItem
+            })
+            .count();
 
         writeln!(
             out,
             "container[{container_index}]: box-id={} source={} node={} main=({}) cross=({}) items={}",
             box_id_debug_label(layout.box_id()),
             layout_box_source_debug_label(layout.source),
-            node_debug_label(layout.node.node),
+            NodeSnapshotLabel(layout.node.node),
             retained_flex_container_main_axis_debug_label(layout.flex_container_main_axis),
             retained_flex_container_cross_axis_debug_label(layout.flex_container_cross_axis),
-            flex_items.len(),
-        )
-        .expect("write snapshot");
+            flex_item_count,
+        )?;
 
-        for (item_index, item) in flex_items.iter().enumerate() {
+        for (item_index, item) in layout
+            .children
+            .iter()
+            .filter(|child| {
+                child.flex_formatting_participation() == FlexFormattingParticipation::FlexItem
+            })
+            .enumerate()
+        {
             writeln!(
                 out,
                 "  item[{item_index}]: box-id={} source={} node={} main=({}) cross=({})",
                 box_id_debug_label(item.box_id()),
                 layout_box_source_debug_label(item.source),
-                node_debug_label(item.node.node),
+                NodeSnapshotLabel(item.node.node),
                 retained_flex_item_main_axis_debug_label(item.flex_item_main_axis),
                 retained_flex_item_cross_axis_debug_label(item.flex_item_cross_axis),
-            )
-            .expect("write snapshot");
+            )?;
         }
     }
 
     for child in &layout.children {
-        append_layout_flex_snapshot(out, child, next_container_index);
+        append_layout_flex_snapshot(out, child, next_container_index)?;
     }
-}
-
-fn direct_flex_items<'layout, 'style_tree, 'dom>(
-    layout: &'layout LayoutBox<'style_tree, 'dom>,
-) -> Vec<&'layout LayoutBox<'style_tree, 'dom>> {
-    layout
-        .children
-        .iter()
-        .filter(|child| {
-            child.flex_formatting_participation() == FlexFormattingParticipation::FlexItem
-        })
-        .collect()
+    Ok(())
 }
 
 fn append_layout_sizing_snapshot(
-    out: &mut String,
+    out: &mut (impl fmt::Write + ?Sized),
     layout: &LayoutBox<'_, '_>,
     index: usize,
     depth: usize,
-) -> usize {
-    let indent = "  ".repeat(depth);
+) -> Result<usize, fmt::Error> {
     let metrics = layout.box_metrics();
     let margins = layout.flow_margins();
     let content_rect = Rectangle {
@@ -339,12 +330,13 @@ fn append_layout_sizing_snapshot(
         height: layout.content_height(),
     };
 
+    write_indent(out, depth)?;
     writeln!(
         out,
-        "{indent}box[{index}]: box-id={} source={} node={} kind={} cb={} position={} flow={} positioned-cb={} block-participation={} inline-participation={} border-box={} content-box={} overflow={} margin={} padding={} border={} used-size={} children={}",
+        "box[{index}]: box-id={} source={} node={} kind={} cb={} position={} flow={} positioned-cb={} block-participation={} inline-participation={} border-box={} content-box={} overflow={} margin={} padding={} border={} used-size={} children={}",
         box_id_debug_label(layout.box_id()),
         layout_box_source_debug_label(layout.source),
-        node_debug_label(layout.node.node),
+        NodeSnapshotLabel(layout.node.node),
         box_kind_debug_label(layout.kind),
         optional_containing_block_id_debug_label(layout.containing_block()),
         positioning_scheme_debug_label(layout.positioning_scheme()),
@@ -360,23 +352,21 @@ fn append_layout_sizing_snapshot(
         box_metrics_border_debug_label(metrics),
         used_content_size_debug_label(layout.used_content_size),
         layout.children.len(),
-    )
-    .expect("write snapshot");
+    )?;
 
     let mut next_index = index + 1;
     for child in &layout.children {
-        next_index = append_layout_sizing_snapshot(out, child, next_index, depth + 1);
+        next_index = append_layout_sizing_snapshot(out, child, next_index, depth + 1)?;
     }
-    next_index
+    Ok(next_index)
 }
 
 fn append_layout_advanced_flow_snapshot(
-    out: &mut String,
+    out: &mut (impl fmt::Write + ?Sized),
     layout: &LayoutBox<'_, '_>,
     index: usize,
     depth: usize,
-) -> usize {
-    let indent = "  ".repeat(depth);
+) -> Result<usize, fmt::Error> {
     let content_rect = Rectangle {
         x: layout.content_x_and_width().0,
         y: layout.content_y(),
@@ -384,12 +374,13 @@ fn append_layout_advanced_flow_snapshot(
         height: layout.content_height(),
     };
 
+    write_indent(out, depth)?;
     writeln!(
         out,
-        "{indent}box[{index}]: box-id={} source={} node={} kind={} cb={} establishes-cb={} position={} flow={} positioned-cb={} establishes-positioned-cb={} fc={} establishes-fc={} block-participation={} inline-participation={} block-flow-placement={} overflow={} margin={} border={} border-box={} content-box={} children={}",
+        "box[{index}]: box-id={} source={} node={} kind={} cb={} establishes-cb={} position={} flow={} positioned-cb={} establishes-positioned-cb={} fc={} establishes-fc={} block-participation={} inline-participation={} block-flow-placement={} overflow={} margin={} border={} border-box={} content-box={} children={}",
         box_id_debug_label(layout.box_id()),
         layout_box_source_debug_label(layout.source),
-        node_debug_label(layout.node.node),
+        NodeSnapshotLabel(layout.node.node),
         box_kind_debug_label(layout.kind),
         optional_containing_block_id_debug_label(layout.containing_block()),
         bool_debug_label(layout.establishes_containing_block()),
@@ -408,14 +399,20 @@ fn append_layout_advanced_flow_snapshot(
         rectangle_debug_label(layout.rect),
         rectangle_debug_label(content_rect),
         layout.children.len(),
-    )
-    .expect("write snapshot");
+    )?;
 
     let mut next_index = index + 1;
     for child in &layout.children {
-        next_index = append_layout_advanced_flow_snapshot(out, child, next_index, depth + 1);
+        next_index = append_layout_advanced_flow_snapshot(out, child, next_index, depth + 1)?;
     }
-    next_index
+    Ok(next_index)
+}
+
+fn write_indent(out: &mut (impl fmt::Write + ?Sized), depth: usize) -> fmt::Result {
+    for _ in 0..depth {
+        out.write_str("  ")?;
+    }
+    Ok(())
 }
 
 fn box_id_debug_label(id: BoxId) -> String {
@@ -596,6 +593,33 @@ pub(crate) fn node_debug_label(node: &Node) -> String {
             Some(name) => format!("doctype(\"{}\")", name.escape_default()),
             None => "doctype".to_string(),
         },
+    }
+}
+
+struct NodeSnapshotLabel<'a>(&'a Node);
+
+impl fmt::Display for NodeSnapshotLabel<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            Node::Document { .. } => formatter.write_str("document"),
+            Node::Element { element } => write!(formatter, "element(\"{}\")", element.name()),
+            Node::Text { text, .. } => write!(formatter, "text(\"{}\")", text.escape_default()),
+            Node::Comment { text, .. } => {
+                write!(formatter, "comment(\"{}\")", text.escape_default())
+            }
+            Node::ProcessingInstruction {
+                processing_instruction,
+            } => write!(
+                formatter,
+                "processing-instruction(target=\"{}\", data=\"{}\")",
+                processing_instruction.target().escape_default(),
+                processing_instruction.data().escape_default()
+            ),
+            Node::DocumentType { name, .. } => match name {
+                Some(name) => write!(formatter, "doctype(\"{}\")", name.escape_default()),
+                None => formatter.write_str("doctype"),
+            },
+        }
     }
 }
 

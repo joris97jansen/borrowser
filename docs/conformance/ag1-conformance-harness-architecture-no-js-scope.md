@@ -631,3 +631,12 @@ AG1 is closeable when this architecture and current no-JavaScript scope are
 documented and discoverable. Closing AG1 means only that the design contract is
 defined. The Milestone AG harness, metadata, delegation, reporting,
 cross-engine workflow, and future raster infrastructure remain outstanding.
+
+# AG6 execution-variant refinement
+
+AG6 materializes the AG1 logical-case/execution-variant distinction. AG2
+`TestId` remains logical identity; a rendering attempt is keyed by the typed
+pair `(TestId, RenderingExecutionVariantId)`. Width variants execute
+independently and remain ordered by their typed environment and width values.
+Parser and CSS V1 results retain an internal singleton execution variant whose
+identity is deliberately absent from their existing report formats.

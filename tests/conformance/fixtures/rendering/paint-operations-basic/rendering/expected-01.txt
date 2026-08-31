@@ -1,0 +1,6 @@
+version: 1
+paint-operation-snapshot
+layout-root-id: 0
+viewport-width: 320.00
+document-rect: x=0.00 y=0.00 w=320.00 h=20.00
+op[0]: phase=box-background kind=fill-rect detail=background source=(box=5 node=0 anonymous=false) rect=x=0.00 y=0.00 w=40.00 h=20.00 color=rgba(255,0,0,255)

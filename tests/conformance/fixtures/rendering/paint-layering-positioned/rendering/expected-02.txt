@@ -1,0 +1,25 @@
+version: 1
+paint-order
+layout-root-id: 0
+paint-tree-order
+phase=stacking-context child-context id=1 layer=negative-z-index z-index=-1 tree-order=6
+  box=6 node=0 anonymous=false
+    phase=box-background primitive background rect=x=0.00 y=0.00 w=30.00 h=20.00 color=rgba(0,0,255,255)
+box=0 node=0 anonymous=false
+  phase=child-subtree child-subtree box=1 node=0
+  box=1 node=0 anonymous=false
+    phase=child-subtree child-subtree box=2 node=0
+    box=2 node=0 anonymous=true
+      phase=child-subtree child-subtree box=3 node=0
+      box=3 node=0 anonymous=false
+    phase=child-subtree child-subtree box=4 node=0
+    box=4 node=0 anonymous=false
+      phase=child-subtree child-subtree box=5 node=0
+      box=5 node=0 anonymous=false
+    phase=child-subtree child-subtree box=8 node=0
+    box=8 node=0 anonymous=true
+      phase=child-subtree child-subtree box=9 node=0
+      box=9 node=0 anonymous=false
+phase=stacking-context child-context id=2 layer=positive-z-index z-index=2 tree-order=7
+  box=7 node=0 anonymous=false
+    phase=box-background primitive background rect=x=0.00 y=20.00 w=30.00 h=20.00 color=rgba(255,0,0,255)

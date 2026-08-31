@@ -35,7 +35,7 @@ fn all_seven_css_profiles_execute_through_strict_repository_packages() {
             case.ag.test_id
         );
         assert_eq!(
-            case.ag.policy,
+            case.policy,
             DerivedPolicyResult::ExpectedPass,
             "{}",
             case.ag.test_id
@@ -319,7 +319,10 @@ fn by_id<'a>(
     cases: &'a [conformance_runner::CssCaseResult],
     id: &str,
 ) -> &'a conformance_runner::CssCaseResult {
-    cases.iter().find(|case| case.ag.test_id == id).unwrap()
+    cases
+        .iter()
+        .find(|case| case.ag.test_id.as_str() == id)
+        .unwrap()
 }
 
 #[test]
@@ -329,23 +332,23 @@ fn css_adapter_preserves_policy_states_without_inventing_profiles() {
     let cases = summary.cases();
     assert_eq!(cases.len(), 10);
     assert_eq!(
-        by_id(cases, "css-policy-pass").ag.policy,
+        by_id(cases, "css-policy-pass").policy,
         DerivedPolicyResult::ExpectedPass
     );
     assert_eq!(
-        by_id(cases, "css-policy-mismatch").ag.policy,
+        by_id(cases, "css-policy-mismatch").policy,
         DerivedPolicyResult::UnexpectedFail
     );
     assert_eq!(
-        by_id(cases, "css-policy-xfail").ag.policy,
+        by_id(cases, "css-policy-xfail").policy,
         DerivedPolicyResult::ExpectedFail
     );
     assert_eq!(
-        by_id(cases, "css-policy-xpass").ag.policy,
+        by_id(cases, "css-policy-xpass").policy,
         DerivedPolicyResult::UnexpectedPass
     );
     assert_eq!(
-        by_id(cases, "css-policy-engine-unavailable").ag.policy,
+        by_id(cases, "css-policy-engine-unavailable").policy,
         DerivedPolicyResult::NotRun
     );
     assert!(
@@ -354,7 +357,7 @@ fn css_adapter_preserves_policy_states_without_inventing_profiles() {
             .is_some()
     );
     assert_eq!(
-        by_id(cases, "css-policy-fragment-unavailable").ag.policy,
+        by_id(cases, "css-policy-fragment-unavailable").policy,
         DerivedPolicyResult::NotRun
     );
     assert!(
@@ -363,12 +366,12 @@ fn css_adapter_preserves_policy_states_without_inventing_profiles() {
             .is_some()
     );
     assert_eq!(
-        by_id(cases, "css-policy-unclassified").ag.policy,
+        by_id(cases, "css-policy-unclassified").policy,
         DerivedPolicyResult::NotYetEstablished
     );
     assert!(by_id(cases, "css-policy-unclassified").profile.is_none());
     assert_eq!(
-        by_id(cases, "css-policy-harness-not-ready").ag.policy,
+        by_id(cases, "css-policy-harness-not-ready").policy,
         DerivedPolicyResult::NotRun
     );
     assert!(
@@ -377,11 +380,11 @@ fn css_adapter_preserves_policy_states_without_inventing_profiles() {
             .is_none()
     );
     assert_eq!(
-        by_id(cases, "css-policy-unsupported").ag.policy,
+        by_id(cases, "css-policy-unsupported").policy,
         DerivedPolicyResult::ExpectedPass
     );
     assert_eq!(
-        by_id(cases, "css-policy-resource-failure").ag.policy,
+        by_id(cases, "css-policy-resource-failure").policy,
         DerivedPolicyResult::UnexpectedOutcome
     );
     let report = String::from_utf8(build_css_report(cases).unwrap()).unwrap();

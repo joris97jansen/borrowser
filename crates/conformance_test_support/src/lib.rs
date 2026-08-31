@@ -31,7 +31,7 @@ pub use manifest::{
 pub use model::{
     CONFORMANCE_FIXTURE_FORMAT_V1, CONFORMANCE_FIXTURE_FORMAT_V2, ExecutionPackage, FixtureFormat,
     InventoryScope, MAX_DESCRIPTOR_BYTES, MAX_EXECUTION_SUPPORT_PATHS_V2, ObservationSurface,
-    ReferenceDeclaration, ReferenceKind, RepositoryPath, SourceKind, TestId, ValidatedFixture,
-    ValidatedInventory,
+    ReferenceDeclaration, ReferenceKind, RepositoryPath, SourceKind, TestId, TestIdValidationError,
+    ValidatedFixture, ValidatedInventory,
 };
 pub use write::{ManifestCheck, ManifestOutputError, check_manifest, update_manifest};

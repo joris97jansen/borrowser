@@ -1,7 +1,26 @@
 use conformance_test_support::{
     EngineCapabilityKind, EnvironmentRequirementKind, ExpectedFailureClassification,
-    HarnessLimitationKind, LanePolicyScope, ObservationSurface, RequirementTag,
+    HarnessLimitationKind, LanePolicyScope, ObservationSurface, RequirementTag, TestId,
 };
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SingletonExecutionVariant {
+    #[default]
+    Singleton,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ExecutionVariantId<V>(V);
+
+impl<V> ExecutionVariantId<V> {
+    pub const fn new(value: V) -> Self {
+        Self(value)
+    }
+
+    pub const fn value(&self) -> &V {
+        &self.0
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ParserObservationProfile {
@@ -286,7 +305,7 @@ pub enum DerivedPolicyResult {
 /// their owning adapter.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AgCaseState {
-    pub test_id: String,
+    pub test_id: TestId,
     pub observation: ObservationSurface,
     pub classification: ClassificationCompleteness,
     pub requirements: Vec<RequirementTag>,
@@ -297,7 +316,6 @@ pub struct AgCaseState {
     pub lane_exclusions: Vec<ReasonedLaneExclusion>,
     pub eligibility: Eligibility,
     pub expectation: AgExpectation,
-    pub policy: DerivedPolicyResult,
 }
 
 /// Policy-facing projection of a lossless subsystem terminal outcome.
@@ -322,17 +340,9 @@ impl DerivedPolicyResult {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NormalizedCaseResult {
-    pub test_id: String,
+    pub ag: AgCaseState,
+    pub variant: ExecutionVariantId<SingletonExecutionVariant>,
     pub profile: ParserObservationProfile,
-    pub classification: ClassificationCompleteness,
-    pub requirements: Vec<RequirementTag>,
-    pub capability: Option<CapabilityAvailability>,
-    pub harness: Option<HarnessReadiness>,
-    pub environment_requirements: Vec<ReasonedEnvironmentRequirement>,
-    pub stability: Option<Stability>,
-    pub lane_exclusions: Vec<ReasonedLaneExclusion>,
-    pub eligibility: Eligibility,
-    pub expectation: AgExpectation,
     pub execution: ExecutionAttempt,
     pub observations: Vec<ObservationArtifact>,
     pub ae_disposition: Option<NormalizedAeDispositionContext>,
@@ -373,7 +383,7 @@ pub(crate) fn derive_policy(
     )
 }
 
-#[cfg(any(feature = "html-parser", feature = "css", test))]
+#[cfg(any(feature = "html-parser", feature = "css", feature = "rendering", test))]
 pub(crate) fn derive_policy_from_class(
     expectation: &AgExpectation,
     eligibility: &Eligibility,

@@ -1,0 +1,16 @@
+version: 2
+stacking-context-tree
+root-context: 0
+context id=0 parent=none source=root-document(box=0 node=0 anonymous=false) layer=normal-flow z-index=auto tree-order=0 children=2 items=8
+  item source=box=0 node=0 anonymous=false context=0 layer=normal-flow z-index=auto tree-order=0
+  item source=box=1 node=0 anonymous=false context=0 layer=normal-flow z-index=auto tree-order=1
+  item source=box=2 node=0 anonymous=true context=0 layer=normal-flow z-index=auto tree-order=2
+  item source=box=3 node=0 anonymous=false context=0 layer=normal-flow z-index=auto tree-order=3
+  item source=box=4 node=0 anonymous=false context=0 layer=normal-flow z-index=auto tree-order=4
+  item source=box=5 node=0 anonymous=false context=0 layer=normal-flow z-index=auto tree-order=5
+  item source=box=8 node=0 anonymous=true context=0 layer=normal-flow z-index=auto tree-order=8
+  item source=box=9 node=0 anonymous=false context=0 layer=normal-flow z-index=auto tree-order=9
+context id=1 parent=0 source=positioned-element(box=6 node=0 anonymous=false) layer=negative-z-index z-index=-1 tree-order=6 children=0 items=1
+  item source=box=6 node=0 anonymous=false context=1 layer=normal-flow z-index=auto tree-order=6
+context id=2 parent=0 source=positioned-element(box=7 node=0 anonymous=false) layer=positive-z-index z-index=2 tree-order=7 children=0 items=1
+  item source=box=7 node=0 anonymous=false context=2 layer=normal-flow z-index=auto tree-order=7

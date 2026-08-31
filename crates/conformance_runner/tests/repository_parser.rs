@@ -24,32 +24,33 @@ fn repository_parser_profiles_execute_and_normalize_orthogonally() {
         summary
             .cases()
             .windows(2)
-            .all(|pair| pair[0].test_id < pair[1].test_id)
+            .all(|pair| pair[0].ag.test_id < pair[1].ag.test_id)
     );
 
-    for case in summary
-        .cases()
-        .iter()
-        .filter(|case| case.test_id != "html-tree-construction-repeated-body-unavailable")
-    {
+    for case in summary.cases().iter().filter(|case| {
+        case.ag.test_id.as_str() != "html-tree-construction-repeated-body-unavailable"
+    }) {
         assert_eq!(
             case.execution,
             ExecutionAttempt::Attempted {
                 outcome: ObservedExecutionOutcome::SemanticPass,
             },
             "{}",
-            case.test_id
+            case.ag.test_id
         );
         assert_eq!(
             case.policy,
             DerivedPolicyResult::ExpectedPass,
             "{}",
-            case.test_id
+            case.ag.test_id
         );
-        assert_eq!(case.classification, ClassificationCompleteness::Classified);
-        assert_eq!(case.capability, Some(CapabilityAvailability::Available));
         assert_eq!(
-            case.requirements,
+            case.ag.classification,
+            ClassificationCompleteness::Classified
+        );
+        assert_eq!(case.ag.capability, Some(CapabilityAvailability::Available));
+        assert_eq!(
+            case.ag.requirements,
             [
                 RequirementTag::NoJs,
                 RequirementTag::RequiresHtmlParserFeature
@@ -60,7 +61,7 @@ fn repository_parser_profiles_execute_and_normalize_orthogonally() {
     let unavailable = summary
         .cases()
         .iter()
-        .find(|case| case.test_id == "html-tree-construction-repeated-body-unavailable")
+        .find(|case| case.ag.test_id.as_str() == "html-tree-construction-repeated-body-unavailable")
         .unwrap();
     assert_eq!(
         unavailable.execution,
@@ -71,7 +72,7 @@ fn repository_parser_profiles_execute_and_normalize_orthogonally() {
     );
     assert_eq!(unavailable.execution.observed_outcome(), None);
     assert_eq!(unavailable.policy, DerivedPolicyResult::NotRun);
-    let Some(CapabilityAvailability::Unavailable { missing }) = &unavailable.capability else {
+    let Some(CapabilityAvailability::Unavailable { missing }) = &unavailable.ag.capability else {
         panic!("unavailable metadata remains orthogonal")
     };
     assert_eq!(
@@ -95,7 +96,7 @@ fn observation_profiles_have_distinct_reportable_surfaces() {
         summary
             .cases()
             .iter()
-            .find(|case| case.test_id == id)
+            .find(|case| case.ag.test_id.as_str() == id)
             .unwrap()
             .observations
             .iter()

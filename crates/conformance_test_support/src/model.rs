@@ -106,7 +106,7 @@ impl TestId {
         &self.0
     }
 
-    pub(crate) fn parse(value: &str) -> Result<Self, TestIdValidationError> {
+    pub fn parse(value: &str) -> Result<Self, TestIdValidationError> {
         if value.len() > MAX_TEST_ID_BYTES {
             return Err(TestIdValidationError::TooLong);
         }
@@ -127,7 +127,7 @@ impl fmt::Display for TestId {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TestIdValidationError {
+pub enum TestIdValidationError {
     TooLong,
     CaseUnsafe,
     InvalidGrammar,

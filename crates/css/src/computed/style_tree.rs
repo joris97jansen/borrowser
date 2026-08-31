@@ -143,7 +143,15 @@ pub fn build_style_tree_from_computed_styles<'a>(
 ) -> Result<StyledNode<'a>, ComputedStyleResolutionError> {
     let index = SelectorDomIndex::try_from_document(root)
         .map_err(ComputedStyleResolutionError::SelectorDomBuild)?;
-    let context = SelectorMatchingContext::new(&index, computed_styles.matching_environment());
+    build_style_tree_from_computed_styles_with_index(root, &index, computed_styles)
+}
+
+pub(crate) fn build_style_tree_from_computed_styles_with_index<'a>(
+    root: &'a html::Node,
+    index: &SelectorDomIndex<'a>,
+    computed_styles: &ComputedDocumentStyle,
+) -> Result<StyledNode<'a>, ComputedStyleResolutionError> {
+    let context = SelectorMatchingContext::new(index, computed_styles.matching_environment());
     let mut element_ids = index.elements();
     let mut entries = ComputedElementStyleCursor::new(computed_styles.entries());
     let styled = build_style_tree_from_computed_entries(

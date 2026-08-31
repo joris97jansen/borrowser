@@ -137,6 +137,57 @@ pub struct StyleResolutionExecution<'dom, 'collection, 'source> {
     cascade_budget: CascadeResolutionBudget,
 }
 
+/// Typed failures for the explicit-input CSS style phase.
+///
+/// Each variant preserves the production phase that rejected the input; no
+/// selector projection or computed-style artifact crosses the CSS boundary.
+#[derive(Debug)]
+pub enum StylePhaseExecutionError {
+    RuleCollection(RuleCollectionBuildError),
+    ExecutionBuild(StyleResolutionError),
+    Resolution(StyleResolutionError),
+    ComputedStyle(crate::ComputedStyleResolutionError),
+    StyleTree(crate::ComputedStyleResolutionError),
+}
+
+impl StylePhaseExecutionError {
+    pub const fn stable_label(&self) -> &'static str {
+        match self {
+            Self::RuleCollection(_) => "rule-collection",
+            Self::ExecutionBuild(_) => "execution-build",
+            Self::Resolution(_) => "resolution",
+            Self::ComputedStyle(_) => "computed-style",
+            Self::StyleTree(_) => "style-tree",
+        }
+    }
+}
+
+impl std::fmt::Display for StylePhaseExecutionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::RuleCollection(error) => write!(formatter, "rule collection failed: {error}"),
+            Self::ExecutionBuild(error) => {
+                write!(formatter, "style execution setup failed: {error}")
+            }
+            Self::Resolution(error) => write!(formatter, "style resolution failed: {error}"),
+            Self::ComputedStyle(error) => {
+                write!(formatter, "computed-style construction failed: {error}")
+            }
+            Self::StyleTree(error) => write!(formatter, "style-tree construction failed: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for StylePhaseExecutionError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::RuleCollection(error) => Some(error),
+            Self::ExecutionBuild(error) | Self::Resolution(error) => Some(error),
+            Self::ComputedStyle(error) | Self::StyleTree(error) => Some(error),
+        }
+    }
+}
+
 impl<'dom, 'collection, 'source> StyleResolutionExecution<'dom, 'collection, 'source> {
     pub fn try_new(
         root: &'dom Node,
@@ -252,6 +303,37 @@ impl<'dom, 'collection, 'source> StyleResolutionExecution<'dom, 'collection, 'so
         Ok(computed.computed.get(element))
     }
 
+    pub(crate) fn build_style_phase_output_from_projection_computed(
+        &self,
+        computed: &ProjectionComputedDocumentStyle<'dom>,
+    ) -> Result<crate::StylePhaseOutput<'dom>, crate::ComputedStyleResolutionError> {
+        if !std::ptr::eq(self.projection.root(), computed.source_root) {
+            return Err(crate::ComputedStyleResolutionError::ProjectionSourceRootMismatch);
+        }
+        if self.projection.environment() != computed.matching_environment {
+            return Err(
+                crate::ComputedStyleResolutionError::MatchingEnvironmentMismatch {
+                    expected: self.projection.environment(),
+                    actual: computed.matching_environment,
+                },
+            );
+        }
+        if self.projection.len() != computed.element_count {
+            return Err(
+                crate::ComputedStyleResolutionError::ProjectionShapeMismatch {
+                    expected_elements: self.projection.len(),
+                    actual_elements: computed.element_count,
+                },
+            );
+        }
+        crate::computed::build_style_tree_from_computed_styles_with_index(
+            self.projection.root(),
+            self.projection.index(),
+            &computed.computed,
+        )
+        .map(crate::StylePhaseOutput::new)
+    }
+
     pub fn resolve_document_styles(&self) -> Result<ResolvedDocumentStyle, StyleResolutionError> {
         resolve_document_styles_with_index(
             self.projection.index(),
@@ -305,6 +387,32 @@ impl<'dom, 'collection, 'source> StyleResolutionExecution<'dom, 'collection, 'so
             self.cascade_budget,
         )
     }
+}
+
+/// Resolves explicit stylesheet inputs into a Layout-ready style phase while
+/// preserving one pass-scoped selector projection from cascade through styled
+/// tree construction.
+pub fn try_build_style_phase_output_from_cascade_inputs_with_limits<'dom, 'source>(
+    root: &'dom Node,
+    matching_environment: SelectorMatchingEnvironment,
+    stylesheets: &[StylesheetCollectionInput<'source>],
+    limits: &StyleResolutionLimits,
+) -> Result<crate::StylePhaseOutput<'dom>, StylePhaseExecutionError> {
+    validate_representation_limits(limits).map_err(StylePhaseExecutionError::ExecutionBuild)?;
+    let collection = RuleCollection::try_new(stylesheets, limits)
+        .map_err(StylePhaseExecutionError::RuleCollection)?;
+    let execution =
+        StyleResolutionExecution::try_new(root, matching_environment, &collection, limits)
+            .map_err(StylePhaseExecutionError::ExecutionBuild)?;
+    let resolved = execution
+        .resolve_document_styles_with_projection()
+        .map_err(StylePhaseExecutionError::Resolution)?;
+    let computed = execution
+        .compute_document_styles_from_projection_resolved(&resolved)
+        .map_err(StylePhaseExecutionError::ComputedStyle)?;
+    execution
+        .build_style_phase_output_from_projection_computed(&computed)
+        .map_err(StylePhaseExecutionError::StyleTree)
 }
 
 fn map_style_projection_build_error(error: StyleProjectionBuildError) -> StyleResolutionError {
@@ -850,7 +958,7 @@ mod tests {
                 .expect("compatible resolved artifact and key")
                 .is_some()
         );
-        let computed = compatible
+        let mut computed = compatible
             .compute_document_styles_from_projection_resolved(&resolved)
             .expect("computed through compatible projection");
         assert!(
@@ -899,9 +1007,71 @@ mod tests {
             other.compute_document_styles_from_projection_resolved(&resolved),
             Err(crate::ComputedStyleResolutionError::ProjectionSourceRootMismatch)
         ));
+        assert!(matches!(
+            other.build_style_phase_output_from_projection_computed(&computed),
+            Err(crate::ComputedStyleResolutionError::ProjectionSourceRootMismatch)
+        ));
+        assert!(matches!(
+            incompatible_environment.build_style_phase_output_from_projection_computed(&computed),
+            Err(crate::ComputedStyleResolutionError::MatchingEnvironmentMismatch { .. })
+        ));
+        computed.element_count += 1;
+        assert!(matches!(
+            compatible.build_style_phase_output_from_projection_computed(&computed),
+            Err(crate::ComputedStyleResolutionError::ProjectionShapeMismatch { .. })
+        ));
         assert_eq!(
             other.computed_style_for_key(&computed, &other_key),
             Err(StyleProjectionArtifactError::SourceRootMismatch)
+        );
+    }
+
+    #[test]
+    fn explicit_input_style_phase_reuses_one_projection_through_styled_tree_construction() {
+        let dom = html::parse_document(
+            "<!doctype html><html><body><p class=target>text</p></body></html>",
+            html::HtmlParseOptions::default(),
+        )
+        .expect("DOM")
+        .document;
+        let sheet = model::parse_stylesheet_with_options(
+            ".target { display: block; width: 4px; }",
+            &crate::ParseOptions::stylesheet(),
+        );
+        let input = [StylesheetCollectionInput::author(
+            StylesheetSourceId::in_memory_generation_index(0),
+            StylesheetOrder::new(0),
+            &sheet,
+            StylesheetConditionInput::None,
+        )];
+        let (phase, projection_builds) = crate::selectors::count_style_projection_builds(|| {
+            try_build_style_phase_output_from_cascade_inputs_with_limits(
+                &dom,
+                SelectorMatchingEnvironment::new(html::DocumentMode::NoQuirks),
+                &input,
+                &StyleResolutionLimits::default(),
+            )
+        });
+        let phase = phase.expect("style phase");
+        assert_eq!(projection_builds, 1);
+        assert!(
+            phase
+                .to_debug_snapshot()
+                .contains("kind=element namespace=html name=\"p\"")
+        );
+    }
+
+    #[test]
+    fn style_phase_failure_preserves_typed_source_and_stable_phase_identity() {
+        let error = StylePhaseExecutionError::ComputedStyle(
+            crate::ComputedStyleResolutionError::ProjectionSourceRootMismatch,
+        );
+        assert_eq!(error.stable_label(), "computed-style");
+        assert!(std::error::Error::source(&error).is_some());
+        assert!(
+            error
+                .to_string()
+                .contains("computed-style construction failed")
         );
     }
 }

@@ -1098,7 +1098,7 @@ mod tests {
         let results =
             load_expected_results(repository_root, &inventory).expect("expected results registry");
 
-        assert_eq!(results.records().len(), 18);
+        assert_eq!(results.records().len(), 20);
         let classified_ids = results
             .records()
             .iter()
@@ -1130,7 +1130,17 @@ mod tests {
                 }
                 assert!(metadata.environment().requirements().is_empty());
                 assert!(matches!(metadata.expectation(), Expectation::ExpectedPass));
-                assert!(matches!(metadata.stability(), Stability::NotYetEstablished));
+                if matches!(
+                    record.id().as_str(),
+                    "layout-geometry-basic-block-flow"
+                        | "paint-layering-positioned-order"
+                        | "paint-operations-basic-background"
+                        | "paint-semantic-artifact-ac7"
+                ) {
+                    assert!(matches!(metadata.stability(), Stability::Stable));
+                } else {
+                    assert!(matches!(metadata.stability(), Stability::NotYetEstablished));
+                }
                 assert!(metadata.lane_exclusions().is_empty());
                 Some(record.id().as_str())
             })
@@ -1152,6 +1162,10 @@ mod tests {
                 "html-tree-construction-basic-document",
                 "html-tree-construction-malformed-recovery",
                 "html-tree-construction-repeated-body-unavailable",
+                "layout-geometry-basic-block-flow",
+                "paint-layering-positioned-order",
+                "paint-operations-basic-background",
+                "paint-semantic-artifact-ac7",
             ])
         );
 
@@ -1170,8 +1184,6 @@ mod tests {
             unclassified_ids,
             BTreeSet::from([
                 "browser-controlled-static-page-basic",
-                "layout-geometry-basic-block-flow",
-                "paint-operations-basic-background",
                 "paint-semantic-reference-basic",
             ])
         );

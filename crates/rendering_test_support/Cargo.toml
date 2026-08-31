@@ -1,0 +1,19 @@
+[package]
+name = "rendering-test-support"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+css = { path = "../css" }
+gfx = { path = "../gfx" }
+html = { path = "../html", features = ["html5"] }
+layout = { path = "../layout" }
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lib]
+name = "rendering_test_support"
+path = "src/lib.rs"

@@ -471,11 +471,20 @@ attempt state, result normalization, XFAIL/XPASS evaluation, or production
 browser behavior. AG4 consumes AG3 views and eligibility for parser execution;
 AG5 consumes the same metadata boundary for CSS execution.
 
-Layout, Paint/GFX, and Browser/runtime execution adapters, broader lane
-selection and environment provisioning, broad WPT/source importing,
-cross-engine capture, rendered/raster comparison, and browser automation remain
-future Milestone AG work. AG5 adds none of those facilities.
+AG6 consumes the same logical metadata boundary for Layout/Paint structural
+execution. Browser/runtime execution adapters, broader lane selection and
+environment provisioning, broad WPT/source importing, cross-engine capture,
+rendered/raster comparison, and browser automation remain future Milestone AG
+work.
 
 AG3 therefore closes the expected-result metadata issue without closing
 Milestone AG or claiming broad WPT, HTML, CSS, rendering, or browser
 compatibility.
+
+# AG6 logical metadata rule
+
+AG3 V1 metadata remains one-to-one with logical AG2 `TestId`. Rendering widths
+and selected Layout/Paint profiles do not carry expectation, capability,
+harness, environment, stability, or lane overrides. Expected-fail policy is
+derived for each aggregate variant assertion. A future AG3 schema version is
+required if genuine cases need different policy by width or profile.

@@ -68,6 +68,8 @@ pub use validation::SelectorStructureError;
 pub use values::{SelectorIdent, SelectorString};
 
 // Matching contract
+#[cfg(test)]
+pub(crate) use matching::count_style_projection_builds;
 pub use matching::{
     AncestorElements, ElementChildren, MatchedSelector, NextSiblingElements,
     PreviousSiblingElements, SelectorDomAttribute, SelectorDomBuildError, SelectorDomBuildStorage,

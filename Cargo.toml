@@ -24,6 +24,7 @@ members = [
   "crates/conformance_runner",
   "crates/html_test_support",
   "crates/css_test_support",
+  "crates/rendering_test_support",
   "crates/app_api",
   "crates/browser",
   "crates/net",
