@@ -6,7 +6,93 @@ use conformance_test_support::{
     InventoryDiagnosticKind, InventoryRepository, MAX_DESCRIPTOR_BYTES, ObservationSurface,
     discover_inventory, generate_manifest_bytes,
 };
-use support::{TestRepository, descriptor, descriptor_v2};
+use support::{TestRepository, descriptor, descriptor_v2, descriptor_v3};
+
+#[test]
+fn v3_reference_relation_and_package_containment_are_strict() {
+    let valid = TestRepository::new();
+    valid.bundle(
+        "paired",
+        &descriptor_v3(
+            "paired-reference",
+            "paint-operations",
+            "rendering/test.html",
+            ("semantic", "mismatch", "rendering/reference.html"),
+            "rendering/fixture.toml",
+            &["rendering/test.css", "rendering/reference.css"],
+        ),
+        &[
+            ("rendering/test.html", b"test"),
+            ("rendering/reference.html", b"reference"),
+            ("rendering/fixture.toml", b"nested"),
+            ("rendering/test.css", b"test css"),
+            ("rendering/reference.css", b"reference css"),
+        ],
+    );
+    let inventory = discover_inventory(&valid.repository()).expect("valid V3 inventory");
+    assert_eq!(
+        inventory.fixtures()[0]
+            .reference()
+            .expect("reference")
+            .relation(),
+        conformance_test_support::ReferenceRelation::Mismatch
+    );
+
+    for (name, test_path, reference_path) in [
+        ("test-outside", "test.html", "rendering/reference.html"),
+        ("reference-outside", "rendering/test.html", "reference.html"),
+    ] {
+        let repository = TestRepository::new();
+        repository.bundle(
+            name,
+            &descriptor_v3(
+                name,
+                "paint-operations",
+                test_path,
+                ("semantic", "match", reference_path),
+                "rendering/fixture.toml",
+                &[],
+            ),
+            &[
+                (test_path, b"test"),
+                (reference_path, b"reference"),
+                ("rendering/fixture.toml", b"nested"),
+            ],
+        );
+        assert_kind(&repository, |kind| {
+            matches!(
+                kind,
+                InventoryDiagnosticKind::ExecutionFileOutsidePackage { .. }
+            )
+        });
+    }
+}
+
+#[test]
+fn v3_test_and_reference_roles_cannot_be_support_paths() {
+    for duplicate in ["rendering/test.html", "rendering/reference.html"] {
+        let repository = TestRepository::new();
+        repository.bundle(
+            "duplicate-role",
+            &descriptor_v3(
+                "duplicate-role",
+                "paint-operations",
+                "rendering/test.html",
+                ("semantic", "match", "rendering/reference.html"),
+                "rendering/fixture.toml",
+                &[duplicate],
+            ),
+            &[
+                ("rendering/test.html", b"test"),
+                ("rendering/reference.html", b"reference"),
+                ("rendering/fixture.toml", b"nested"),
+            ],
+        );
+        assert_kind(&repository, |kind| {
+            matches!(kind, InventoryDiagnosticKind::DuplicateDeclaredPath { .. })
+        });
+    }
+}
 
 #[test]
 fn filesystem_creation_order_does_not_change_discovery_or_diagnostics() {

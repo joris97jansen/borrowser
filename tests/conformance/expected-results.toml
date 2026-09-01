@@ -357,6 +357,48 @@ kind = "expected-pass"
 state = "stable"
 
 [[tests]]
+id = "layout-reference-equivalent-simple"
+classification = "classified"
+requirements = ["no-js", "requires-html-parser-feature", "requires-css-feature", "requires-layout-feature"]
+lane_exclusions = []
+references = [
+  { kind = "documentation", path = "docs/conformance/ag7-static-structural-reference-comparison.md" },
+]
+[tests.engine]
+availability = "available"
+[tests.harness]
+readiness = "ready"
+[tests.environment]
+requirements = []
+[tests.expectation]
+kind = "expected-pass"
+[tests.stability]
+state = "stable"
+
+[[tests]]
+id = "layout-reference-grid-unavailable"
+classification = "classified"
+requirements = ["no-js", "requires-html-parser-feature", "requires-css-feature", "requires-layout-feature"]
+lane_exclusions = []
+references = [
+  { kind = "documentation", path = "docs/conformance/ag7-static-structural-reference-comparison.md" },
+  { kind = "documentation", path = "docs/engine-feature-gap-tracker.md" },
+]
+[tests.engine]
+availability = "unavailable"
+missing = [
+  { kind = "layout-feature", feature = "css-grid", reason = "CSS Grid layout is not implemented, so this static relation is inventory truth but not runnable." },
+]
+[tests.harness]
+readiness = "ready"
+[tests.environment]
+requirements = []
+[tests.expectation]
+kind = "expected-pass"
+[tests.stability]
+state = "not-yet-established"
+
+[[tests]]
 id = "paint-layering-positioned-order"
 classification = "classified"
 requirements = ["no-js", "requires-html-parser-feature", "requires-css-feature", "requires-layout-feature", "requires-paint-feature"]
@@ -398,6 +440,44 @@ kind = "expected-pass"
 state = "stable"
 
 [[tests]]
+id = "paint-reference-equivalent-cascade"
+classification = "classified"
+requirements = ["no-js", "requires-html-parser-feature", "requires-css-feature", "requires-layout-feature", "requires-paint-feature"]
+lane_exclusions = []
+references = [
+  { kind = "documentation", path = "docs/conformance/ag7-static-structural-reference-comparison.md" },
+]
+[tests.engine]
+availability = "available"
+[tests.harness]
+readiness = "ready"
+[tests.environment]
+requirements = []
+[tests.expectation]
+kind = "expected-pass"
+[tests.stability]
+state = "stable"
+
+[[tests]]
+id = "paint-reference-intentional-mismatch"
+classification = "classified"
+requirements = ["no-js", "requires-html-parser-feature", "requires-css-feature", "requires-layout-feature", "requires-paint-feature"]
+lane_exclusions = []
+references = [
+  { kind = "documentation", path = "docs/conformance/ag7-static-structural-reference-comparison.md" },
+]
+[tests.engine]
+availability = "available"
+[tests.harness]
+readiness = "ready"
+[tests.environment]
+requirements = []
+[tests.expectation]
+kind = "expected-pass"
+[tests.stability]
+state = "stable"
+
+[[tests]]
 id = "paint-semantic-artifact-ac7"
 classification = "classified"
 requirements = ["no-js", "requires-html-parser-feature", "requires-css-feature", "requires-layout-feature", "requires-paint-feature"]
@@ -419,9 +499,19 @@ state = "stable"
 
 [[tests]]
 id = "paint-semantic-reference-basic"
-classification = "not-yet-classified"
-reason = "The semantic paint reference still needs a truthful AG comparison contract and explicit rendering-environment requirements."
+classification = "classified"
+requirements = ["no-js", "requires-html-parser-feature", "requires-css-feature", "requires-layout-feature", "requires-paint-feature"]
+lane_exclusions = []
 references = [
-  { kind = "documentation", path = "docs/rendering/aa8-paint-debug-visual-regression-surface.md" },
-  { kind = "documentation", path = "docs/rendering/aa9-paint-model-invariants-extension-points.md" },
+  { kind = "documentation", path = "docs/conformance/ag7-static-structural-reference-comparison.md" },
 ]
+[tests.engine]
+availability = "available"
+[tests.harness]
+readiness = "ready"
+[tests.environment]
+requirements = []
+[tests.expectation]
+kind = "expected-pass"
+[tests.stability]
+state = "stable"

@@ -25,13 +25,14 @@ pub use expected_results::{
     load_expected_results, serialize_expected_results_summary,
 };
 pub use manifest::{
-    CONFORMANCE_MANIFEST_FORMAT_V1, CONFORMANCE_MANIFEST_FORMAT_V2, ConformanceManifest,
-    build_manifest, generate_manifest_bytes, serialize_manifest,
+    CONFORMANCE_MANIFEST_FORMAT_V1, CONFORMANCE_MANIFEST_FORMAT_V2, CONFORMANCE_MANIFEST_FORMAT_V3,
+    ConformanceManifest, build_manifest, generate_manifest_bytes, serialize_manifest,
 };
 pub use model::{
-    CONFORMANCE_FIXTURE_FORMAT_V1, CONFORMANCE_FIXTURE_FORMAT_V2, ExecutionPackage, FixtureFormat,
-    InventoryScope, MAX_DESCRIPTOR_BYTES, MAX_EXECUTION_SUPPORT_PATHS_V2, ObservationSurface,
-    ReferenceDeclaration, ReferenceKind, RepositoryPath, SourceKind, TestId, TestIdValidationError,
-    ValidatedFixture, ValidatedInventory,
+    CONFORMANCE_FIXTURE_FORMAT_V1, CONFORMANCE_FIXTURE_FORMAT_V2, CONFORMANCE_FIXTURE_FORMAT_V3,
+    ExecutionPackage, FixtureFormat, InventoryScope, MAX_DESCRIPTOR_BYTES,
+    MAX_EXECUTION_SUPPORT_PATHS_V2, ObservationSurface, ReferenceDeclaration, ReferenceKind,
+    ReferenceRelation, RepositoryPath, SourceKind, TestId, TestIdValidationError, ValidatedFixture,
+    ValidatedInventory,
 };
 pub use write::{ManifestCheck, ManifestOutputError, check_manifest, update_manifest};

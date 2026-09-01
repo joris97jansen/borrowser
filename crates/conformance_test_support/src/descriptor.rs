@@ -2,9 +2,9 @@ use serde::Deserialize;
 
 use crate::diagnostic::InventoryDiagnosticKind;
 use crate::model::{
-    CONFORMANCE_FIXTURE_FORMAT_V1, CONFORMANCE_FIXTURE_FORMAT_V2, FixtureFormat, InventoryScope,
-    MAX_EXECUTION_SUPPORT_PATHS_V2, ObservationSurface, ReferenceKind, SourceKind, TestId,
-    TestIdValidationError,
+    CONFORMANCE_FIXTURE_FORMAT_V1, CONFORMANCE_FIXTURE_FORMAT_V2, CONFORMANCE_FIXTURE_FORMAT_V3,
+    FixtureFormat, InventoryScope, MAX_EXECUTION_SUPPORT_PATHS_V2, ObservationSurface,
+    ReferenceKind, ReferenceRelation, SourceKind, TestId, TestIdValidationError,
 };
 
 #[derive(Clone, Debug)]
@@ -29,6 +29,7 @@ pub(crate) struct ParsedExecutionPackage {
 #[derive(Clone, Debug)]
 pub(crate) struct ParsedReference {
     pub kind: ReferenceKind,
+    pub relation: ReferenceRelation,
     pub path: String,
 }
 
@@ -61,6 +62,20 @@ struct DescriptorV2 {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct DescriptorV3 {
+    format: String,
+    id: String,
+    scope: String,
+    observation: String,
+    test_path: String,
+    source: SourceV1,
+    reference: ReferenceV3,
+    execution_package: ExecutionPackageV2,
+    metadata: MetadataV1,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ExecutionPackageV2 {
     entry_path: String,
     support_paths: Vec<String>,
@@ -76,6 +91,14 @@ struct SourceV1 {
 #[serde(deny_unknown_fields)]
 struct ReferenceV1 {
     kind: String,
+    path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReferenceV3 {
+    kind: String,
+    relation: String,
     path: String,
 }
 
@@ -131,6 +154,7 @@ pub(crate) fn parse_descriptor(bytes: &[u8]) -> DescriptorParseResult {
     let fixture_format = match format {
         CONFORMANCE_FIXTURE_FORMAT_V1 => FixtureFormat::V1,
         CONFORMANCE_FIXTURE_FORMAT_V2 => FixtureFormat::V2,
+        CONFORMANCE_FIXTURE_FORMAT_V3 => FixtureFormat::V3,
         _ => {
             return DescriptorParseResult {
                 raw_id,
@@ -165,7 +189,7 @@ pub(crate) fn parse_descriptor(bytes: &[u8]) -> DescriptorParseResult {
                     wire.observation,
                     wire.test_path,
                     wire.source,
-                    wire.reference,
+                    wire.reference.map(ReferenceWire::Legacy),
                     wire.metadata,
                     None,
                 )
@@ -182,7 +206,24 @@ pub(crate) fn parse_descriptor(bytes: &[u8]) -> DescriptorParseResult {
                     wire.observation,
                     wire.test_path,
                     wire.source,
-                    wire.reference,
+                    wire.reference.map(ReferenceWire::Legacy),
+                    wire.metadata,
+                    Some(wire.execution_package),
+                )
+            }
+            Err(_) => invalid_shape(raw_id),
+        },
+        FixtureFormat::V3 => match toml::from_str::<DescriptorV3>(text) {
+            Ok(wire) => {
+                debug_assert_eq!(wire.format, CONFORMANCE_FIXTURE_FORMAT_V3);
+                validate_wire(
+                    FixtureFormat::V3,
+                    wire.id,
+                    wire.scope,
+                    wire.observation,
+                    wire.test_path,
+                    wire.source,
+                    Some(ReferenceWire::V3(wire.reference)),
                     wire.metadata,
                     Some(wire.execution_package),
                 )
@@ -212,7 +253,7 @@ fn unknown_fields(table: &toml::Table, format: FixtureFormat) -> Vec<String> {
         "reference",
         "metadata",
     ];
-    if format == FixtureFormat::V2 {
+    if matches!(format, FixtureFormat::V2 | FixtureFormat::V3) {
         root.push("execution_package");
     }
     collect_unknown(table, "", &root, &mut fields);
@@ -220,7 +261,12 @@ fn unknown_fields(table: &toml::Table, format: FixtureFormat) -> Vec<String> {
         collect_unknown(source, "source.", &["kind"], &mut fields);
     }
     if let Some(reference) = table.get("reference").and_then(toml::Value::as_table) {
-        collect_unknown(reference, "reference.", &["kind", "path"], &mut fields);
+        let allowed = if format == FixtureFormat::V3 {
+            &["kind", "relation", "path"][..]
+        } else {
+            &["kind", "path"][..]
+        };
+        collect_unknown(reference, "reference.", allowed, &mut fields);
     }
     if let Some(metadata) = table.get("metadata").and_then(toml::Value::as_table) {
         collect_unknown(metadata, "metadata.", &["description"], &mut fields);
@@ -256,7 +302,7 @@ fn validate_wire(
     observation_value: String,
     test_path: String,
     source: SourceV1,
-    reference_value: Option<ReferenceV1>,
+    reference_value: Option<ReferenceWire>,
     metadata: MetadataV1,
     execution_package: Option<ExecutionPackageV2>,
 ) -> DescriptorParseResult {
@@ -305,17 +351,31 @@ fn validate_wire(
         }
     };
     let reference = reference_value.and_then(|reference| {
-        ReferenceKind::parse(&reference.kind)
-            .map(|kind| ParsedReference {
-                kind,
-                path: reference.path,
-            })
-            .or_else(|| {
-                diagnostics.push(InventoryDiagnosticKind::InvalidReferenceKind {
-                    value: reference.kind,
-                });
+        let (kind_value, relation_value, path) = match reference {
+            ReferenceWire::Legacy(reference) => (reference.kind, None, reference.path),
+            ReferenceWire::V3(reference) => {
+                (reference.kind, Some(reference.relation), reference.path)
+            }
+        };
+        let relation = match relation_value {
+            None => Some(ReferenceRelation::Match),
+            Some(value) => ReferenceRelation::parse(&value).or_else(|| {
+                diagnostics.push(InventoryDiagnosticKind::InvalidReferenceRelation { value });
                 None
-            })
+            }),
+        };
+        let kind = ReferenceKind::parse(&kind_value).or_else(|| {
+            diagnostics.push(InventoryDiagnosticKind::InvalidReferenceKind { value: kind_value });
+            None
+        });
+        match (kind, relation) {
+            (Some(kind), Some(relation)) => Some(ParsedReference {
+                kind,
+                relation,
+                path,
+            }),
+            _ => None,
+        }
     });
     if metadata.description.trim().is_empty() {
         diagnostics.push(InventoryDiagnosticKind::EmptyDescription);
@@ -360,6 +420,11 @@ fn validate_wire(
     }
 }
 
+enum ReferenceWire {
+    Legacy(ReferenceV1),
+    V3(ReferenceV3),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -398,6 +463,63 @@ description = "A basic tokenizer inventory fixture."
             result.diagnostics,
             vec![InventoryDiagnosticKind::UnknownDescriptorField {
                 field: "source.future".to_owned()
+            }]
+        );
+    }
+
+    #[test]
+    fn v1_and_v2_do_not_accept_v3_relation_fields() {
+        let v1 = VALID.replace(
+            "[metadata]",
+            "[reference]\nkind = \"semantic\"\nrelation = \"match\"\npath = \"reference.html\"\n\n[metadata]",
+        );
+        let result = parse_descriptor(v1.as_bytes());
+        assert_eq!(
+            result.diagnostics,
+            vec![InventoryDiagnosticKind::UnknownDescriptorField {
+                field: "reference.relation".to_owned(),
+            }]
+        );
+
+        let v2 = v1
+            .replace(
+                "borrowser-conformance-fixture-v1",
+                "borrowser-conformance-fixture-v2",
+            )
+            .replace(
+                "[metadata]",
+                "[execution_package]\nentry_path = \"rendering/fixture.toml\"\nsupport_paths = []\n\n[metadata]",
+            );
+        let result = parse_descriptor(v2.as_bytes());
+        assert_eq!(
+            result.diagnostics,
+            vec![InventoryDiagnosticKind::UnknownDescriptorField {
+                field: "reference.relation".to_owned(),
+            }]
+        );
+    }
+
+    #[test]
+    fn v3_requires_a_closed_reference_relation() {
+        let v3 = VALID
+            .replace(
+                "borrowser-conformance-fixture-v1",
+                "borrowser-conformance-fixture-v3",
+            )
+            .replace("test_path = \"test.html\"", "test_path = \"rendering/test.html\"")
+            .replace(
+                "[metadata]",
+                concat!(
+                    "[reference]\nkind = \"semantic\"\nrelation = \"different\"\npath = \"rendering/reference.html\"\n\n",
+                    "[execution_package]\nentry_path = \"rendering/fixture.toml\"\nsupport_paths = []\n\n",
+                    "[metadata]",
+                ),
+            );
+        let result = parse_descriptor(v3.as_bytes());
+        assert_eq!(
+            result.diagnostics,
+            vec![InventoryDiagnosticKind::InvalidReferenceRelation {
+                value: "different".to_owned(),
             }]
         );
     }

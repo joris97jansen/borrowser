@@ -2,6 +2,7 @@ use std::fmt;
 
 pub const CONFORMANCE_FIXTURE_FORMAT_V1: &str = "borrowser-conformance-fixture-v1";
 pub const CONFORMANCE_FIXTURE_FORMAT_V2: &str = "borrowser-conformance-fixture-v2";
+pub const CONFORMANCE_FIXTURE_FORMAT_V3: &str = "borrowser-conformance-fixture-v3";
 pub const MAX_DESCRIPTOR_BYTES: u64 = 64 * 1024;
 pub const MAX_EXECUTION_SUPPORT_PATHS_V2: usize = 256;
 pub(crate) const MAX_PORTABLE_PATH_COMPONENT_BYTES: usize = 128;
@@ -11,6 +12,7 @@ const MAX_TEST_ID_BYTES: usize = 128;
 pub enum FixtureFormat {
     V1,
     V2,
+    V3,
 }
 
 impl FixtureFormat {
@@ -18,6 +20,7 @@ impl FixtureFormat {
         match self {
             Self::V1 => CONFORMANCE_FIXTURE_FORMAT_V1,
             Self::V2 => CONFORMANCE_FIXTURE_FORMAT_V2,
+            Self::V3 => CONFORMANCE_FIXTURE_FORMAT_V3,
         }
     }
 }
@@ -254,6 +257,29 @@ pub enum ReferenceKind {
     Structural,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ReferenceRelation {
+    Match,
+    Mismatch,
+}
+
+impl ReferenceRelation {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Match => "match",
+            Self::Mismatch => "mismatch",
+        }
+    }
+
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        match value {
+            "match" => Some(Self::Match),
+            "mismatch" => Some(Self::Mismatch),
+            _ => None,
+        }
+    }
+}
+
 impl ReferenceKind {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -293,6 +319,7 @@ impl fmt::Display for RepositoryPath {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReferenceDeclaration {
     kind: ReferenceKind,
+    relation: ReferenceRelation,
     path: RepositoryPath,
 }
 
@@ -332,8 +359,20 @@ impl ReferenceDeclaration {
         &self.path
     }
 
-    pub(crate) fn validated(kind: ReferenceKind, path: RepositoryPath) -> Self {
-        Self { kind, path }
+    pub fn relation(&self) -> ReferenceRelation {
+        self.relation
+    }
+
+    pub(crate) fn validated(
+        kind: ReferenceKind,
+        relation: ReferenceRelation,
+        path: RepositoryPath,
+    ) -> Self {
+        Self {
+            kind,
+            relation,
+            path,
+        }
     }
 }
 

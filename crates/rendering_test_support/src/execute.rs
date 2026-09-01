@@ -4,9 +4,10 @@ use css::{
 };
 
 use crate::fixture::{
-    RenderingExpectedSnapshot, RenderingFixturePackage, RenderingStylesheetOrigin,
+    RenderingDocumentInput, RenderingExpectedSnapshot, RenderingStylesheetOrigin,
     RenderingVariantExecution,
 };
+use crate::paired_fixture::PairedRenderingVariantHandle;
 use crate::{
     BoundedObservationSink, LayoutObservationProfile, ObservationSinkFailure,
     PaintObservationProfile, RenderingObservationOwner, RenderingObservationProfile,
@@ -145,6 +146,85 @@ pub struct RenderingProfileObservation {
     pub profile: RenderingObservationProfile,
     pub bytes: String,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CanonicalRenderingCapture {
+    pub variant: crate::RenderingExecutionVariantId,
+    pub observations: Vec<RenderingProfileObservation>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RenderingCaptureOutcome {
+    Complete(CanonicalRenderingCapture),
+    ExecutionFailure {
+        phase: RenderingExecutionPhase,
+        failure: RenderingExecutionFailure,
+    },
+    IncompleteObservation {
+        phase: RenderingExecutionPhase,
+        profile: RenderingObservationProfile,
+        reason: RenderingIncompleteObservationReason,
+        observations: Vec<RenderingProfileObservation>,
+    },
+    FinalInvariantFailure {
+        phase: RenderingExecutionPhase,
+        failure: RenderingFinalInvariantFailure,
+        observations: Vec<RenderingProfileObservation>,
+    },
+}
+
+impl RenderingCaptureOutcome {
+    pub const fn stable_label(&self) -> &'static str {
+        match self {
+            Self::Complete(_) => "complete",
+            Self::ExecutionFailure { .. } => "execution-failure",
+            Self::IncompleteObservation { .. } => "incomplete-observation",
+            Self::FinalInvariantFailure { .. } => "final-invariant-failure",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PairedRenderingCaptureOutcome {
+    pub test: RenderingCaptureOutcome,
+    pub reference: RenderingCaptureOutcome,
+}
+
+#[derive(Clone, Copy)]
+struct RenderingCaptureLimits {
+    per_observation_bytes: usize,
+    cumulative_observation_bytes: usize,
+}
+
+pub fn capture_paired_variant(
+    handle: PairedRenderingVariantHandle<'_>,
+) -> PairedRenderingCaptureOutcome {
+    let package = handle.package;
+    let variant = handle.id();
+    let test = capture_rendering_document(
+        &package.test,
+        package.owner,
+        &package.profiles,
+        variant,
+        RenderingCaptureLimits {
+            per_observation_bytes: package.limits.observation_bytes(),
+            cumulative_observation_bytes:
+                crate::PAIRED_RENDERING_CUMULATIVE_OBSERVATION_BYTES_PER_SIDE_V1,
+        },
+    );
+    let reference = capture_rendering_document(
+        &package.reference,
+        package.owner,
+        &package.profiles,
+        variant,
+        RenderingCaptureLimits {
+            per_observation_bytes: package.limits.observation_bytes(),
+            cumulative_observation_bytes:
+                crate::PAIRED_RENDERING_CUMULATIVE_OBSERVATION_BYTES_PER_SIDE_V1,
+        },
+    );
+    PairedRenderingCaptureOutcome { test, reference }
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RenderingMismatchEvidence {
     pub profile: RenderingObservationProfile,
@@ -200,6 +280,53 @@ pub fn evaluate_variant(
 ) -> RenderingObservedExecutionOutcome {
     let package = execution.package;
     let variant = execution.id();
+    let capture = capture_rendering_document(
+        &package.document,
+        package.owner,
+        &package.profiles,
+        variant,
+        RenderingCaptureLimits {
+            per_observation_bytes: package.limits.expected_snapshot_bytes(),
+            cumulative_observation_bytes: package.limits.cumulative_observation_bytes(),
+        },
+    );
+    match capture {
+        RenderingCaptureOutcome::Complete(capture) => {
+            compare_profiles(capture.observations, &execution.expected)
+        }
+        RenderingCaptureOutcome::ExecutionFailure { phase, failure } => {
+            RenderingObservedExecutionOutcome::ExecutionFailure { phase, failure }
+        }
+        RenderingCaptureOutcome::IncompleteObservation {
+            phase,
+            profile,
+            reason,
+            observations,
+        } => RenderingObservedExecutionOutcome::IncompleteObservation {
+            phase,
+            profile,
+            reason,
+            observations,
+        },
+        RenderingCaptureOutcome::FinalInvariantFailure {
+            phase,
+            failure,
+            observations,
+        } => RenderingObservedExecutionOutcome::FinalInvariantFailure {
+            phase,
+            failure,
+            observations,
+        },
+    }
+}
+
+fn capture_rendering_document(
+    document: &RenderingDocumentInput,
+    owner: RenderingObservationOwner,
+    profiles: &[RenderingObservationProfile],
+    variant: crate::RenderingExecutionVariantId,
+    capture_limits: RenderingCaptureLimits,
+) -> RenderingCaptureOutcome {
     let options = html::HtmlParseOptions {
         tokenizer: html::HtmlTokenizerOptions {
             emit_eof: true,
@@ -216,54 +343,56 @@ pub fn evaluate_variant(
             track_counters: true,
         },
     };
-    let parsed_html = match html::parse_document(&package.html, options) {
+    let parsed_html = match html::parse_document(&document.html, options) {
         Ok(output) => output,
         Err(error) => {
-            return execution_failure(
-                RenderingExecutionPhase::HtmlDocumentParsing,
-                RenderingExecutionFailure::HtmlParser(error),
-            );
+            return RenderingCaptureOutcome::ExecutionFailure {
+                phase: RenderingExecutionPhase::HtmlDocumentParsing,
+                failure: RenderingExecutionFailure::HtmlParser(error),
+            };
         }
     };
     if let html::HtmlParseSemanticCompleteness::Degraded(degradations) =
         parsed_html.semantic_completeness
     {
-        return execution_failure(
-            RenderingExecutionPhase::HtmlDocumentParsing,
-            RenderingExecutionFailure::HtmlSemanticInputResourceLimited { degradations },
-        );
+        return RenderingCaptureOutcome::ExecutionFailure {
+            phase: RenderingExecutionPhase::HtmlDocumentParsing,
+            failure: RenderingExecutionFailure::HtmlSemanticInputResourceLimited { degradations },
+        };
     }
     let mut parsed_stylesheets = Vec::new();
     if parsed_stylesheets
-        .try_reserve(package.stylesheets.len())
+        .try_reserve(document.stylesheets.len())
         .is_err()
     {
-        return storage_failure(
+        return capture_storage_failure(
             RenderingExecutionPhase::CssStylesheetParsing,
             RenderingExecutionStorage::ParsedStylesheets,
         );
     }
-    for (index, authored) in package.stylesheets.iter().enumerate() {
+    for (index, authored) in document.stylesheets.iter().enumerate() {
         let parsed = css::parse_stylesheet_with_options(
             &authored.source_text,
             &css::ParseOptions::stylesheet(),
         );
         if parsed.stats.hit_limit {
-            return execution_failure(
-                RenderingExecutionPhase::CssStylesheetParsing,
-                RenderingExecutionFailure::StylesheetSemanticInputResourceLimited { index },
-            );
+            return RenderingCaptureOutcome::ExecutionFailure {
+                phase: RenderingExecutionPhase::CssStylesheetParsing,
+                failure: RenderingExecutionFailure::StylesheetSemanticInputResourceLimited {
+                    index,
+                },
+            };
         }
         parsed_stylesheets.push(parsed);
     }
     let mut inputs = Vec::new();
     if inputs.try_reserve(parsed_stylesheets.len()).is_err() {
-        return storage_failure(
+        return capture_storage_failure(
             RenderingExecutionPhase::CssStylesheetInputConstruction,
             RenderingExecutionStorage::StylesheetInputs,
         );
     }
-    for (authored, parsed) in package.stylesheets.iter().zip(&parsed_stylesheets) {
+    for (authored, parsed) in document.stylesheets.iter().zip(&parsed_stylesheets) {
         let source = match authored.origin {
             RenderingStylesheetOrigin::UserAgent => StylesheetSourceId::built_in_user_agent(),
             RenderingStylesheetOrigin::User | RenderingStylesheetOrigin::Author => {
@@ -305,7 +434,7 @@ pub fn evaluate_variant(
         &StyleResolutionLimits::default(),
     ) {
         Ok(output) => output,
-        Err(error) => return style_failure(error),
+        Err(error) => return capture_style_failure(error),
     };
     let layout = layout::layout_document(layout::LayoutPhaseInput::from_style_output(
         &style_output,
@@ -313,77 +442,72 @@ pub fn evaluate_variant(
         &variant.environment,
         None,
     ));
-    let paint = (package.owner == RenderingObservationOwner::Paint).then(|| {
+    let paint = (owner == RenderingObservationOwner::Paint).then(|| {
         gfx::paint::PaintInput::from_phase_input(
             gfx::paint::PaintPhaseInput::new(&layout),
             &variant.environment,
         )
     });
-    compare_profiles(package, &layout, paint.as_ref(), &execution.expected)
+    capture_profiles(profiles, variant, capture_limits, &layout, paint.as_ref())
 }
 
-fn compare_profiles(
-    package: &RenderingFixturePackage,
+fn capture_profiles(
+    profiles: &[RenderingObservationProfile],
+    variant: crate::RenderingExecutionVariantId,
+    capture_limits: RenderingCaptureLimits,
     layout: &layout::LayoutPhaseOutput<'_, '_>,
     paint: Option<&gfx::paint::PaintInput<'_, '_, '_>>,
-    expected: &[RenderingExpectedSnapshot],
-) -> RenderingObservedExecutionOutcome {
+) -> RenderingCaptureOutcome {
     let mut observations = Vec::new();
-    if observations.try_reserve(package.profiles.len()).is_err() {
-        return storage_failure(
+    if observations.try_reserve(profiles.len()).is_err() {
+        return capture_storage_failure(
             RenderingExecutionPhase::ObservationSerialization,
             RenderingExecutionStorage::Observations,
         );
     }
-    for profile in &package.profiles {
+    let mut cumulative_bytes = 0usize;
+    for profile in profiles {
         let captured =
-            capture_observation(
-                package.limits.expected_snapshot_bytes(),
-                |sink| match profile {
-                    RenderingObservationProfile::Layout(
-                        LayoutObservationProfile::LayoutPhaseOutput,
-                    ) => layout.write_debug_snapshot(sink),
-                    RenderingObservationProfile::Layout(LayoutObservationProfile::LayoutSizing) => {
-                        layout.write_sizing_debug_snapshot(sink)
-                    }
-                    RenderingObservationProfile::Layout(
-                        LayoutObservationProfile::LayoutAdvancedFlow,
-                    ) => layout.write_advanced_flow_debug_snapshot(sink),
-                    RenderingObservationProfile::Layout(LayoutObservationProfile::LayoutFlex) => {
-                        layout.write_flex_debug_snapshot(sink)
-                    }
-                    RenderingObservationProfile::Paint(
-                        PaintObservationProfile::PaintSemanticArtifact,
-                    ) => paint
+            capture_observation(capture_limits.per_observation_bytes, |sink| match profile {
+                RenderingObservationProfile::Layout(
+                    LayoutObservationProfile::LayoutPhaseOutput,
+                ) => layout.write_debug_snapshot(sink),
+                RenderingObservationProfile::Layout(LayoutObservationProfile::LayoutSizing) => {
+                    layout.write_sizing_debug_snapshot(sink)
+                }
+                RenderingObservationProfile::Layout(
+                    LayoutObservationProfile::LayoutAdvancedFlow,
+                ) => layout.write_advanced_flow_debug_snapshot(sink),
+                RenderingObservationProfile::Layout(LayoutObservationProfile::LayoutFlex) => {
+                    layout.write_flex_debug_snapshot(sink)
+                }
+                RenderingObservationProfile::Paint(
+                    PaintObservationProfile::PaintSemanticArtifact,
+                ) => paint
+                    .expect("validated owner")
+                    .artifact()
+                    .write_debug_snapshot(sink),
+                RenderingObservationProfile::Paint(PaintObservationProfile::PaintOrder) => paint
+                    .expect("validated owner")
+                    .write_order_debug_snapshot(sink),
+                RenderingObservationProfile::Paint(
+                    PaintObservationProfile::PaintStackingContexts,
+                ) => paint
+                    .expect("validated owner")
+                    .write_stacking_context_debug_snapshot(sink),
+                RenderingObservationProfile::Paint(PaintObservationProfile::PaintLayering) => paint
+                    .expect("validated owner")
+                    .write_layering_debug_snapshot(sink),
+                RenderingObservationProfile::Paint(PaintObservationProfile::PaintOperations) => {
+                    paint
                         .expect("validated owner")
-                        .artifact()
-                        .write_debug_snapshot(sink),
-                    RenderingObservationProfile::Paint(PaintObservationProfile::PaintOrder) => {
-                        paint
-                            .expect("validated owner")
-                            .write_order_debug_snapshot(sink)
-                    }
-                    RenderingObservationProfile::Paint(
-                        PaintObservationProfile::PaintStackingContexts,
-                    ) => paint
-                        .expect("validated owner")
-                        .write_stacking_context_debug_snapshot(sink),
-                    RenderingObservationProfile::Paint(PaintObservationProfile::PaintLayering) => {
-                        paint
-                            .expect("validated owner")
-                            .write_layering_debug_snapshot(sink)
-                    }
-                    RenderingObservationProfile::Paint(
-                        PaintObservationProfile::PaintOperations,
-                    ) => paint
-                        .expect("validated owner")
-                        .write_operation_debug_snapshot(sink),
-                },
-            );
+                        .write_operation_debug_snapshot(sink)
+                }
+            });
         let bytes = match captured {
             Ok(bytes) => bytes,
             Err(CaptureObservationFailure::Incomplete(reason)) => {
-                return RenderingObservedExecutionOutcome::IncompleteObservation {
+                return RenderingCaptureOutcome::IncompleteObservation {
                     phase: RenderingExecutionPhase::ObservationSerialization,
                     profile: *profile,
                     reason,
@@ -391,7 +515,7 @@ fn compare_profiles(
                 };
             }
             Err(CaptureObservationFailure::WriterInvariant) => {
-                return RenderingObservedExecutionOutcome::FinalInvariantFailure {
+                return RenderingCaptureOutcome::FinalInvariantFailure {
                     phase: RenderingExecutionPhase::ObservationSerialization,
                     failure:
                         RenderingFinalInvariantFailure::CanonicalWriterFailedWithoutSinkFailure,
@@ -399,13 +523,46 @@ fn compare_profiles(
                 };
             }
         };
+        let Some(next_cumulative) = cumulative_bytes.checked_add(bytes.len()) else {
+            return RenderingCaptureOutcome::IncompleteObservation {
+                phase: RenderingExecutionPhase::ObservationSerialization,
+                profile: *profile,
+                reason: RenderingIncompleteObservationReason::ByteLimitExceeded {
+                    maximum: capture_limits.cumulative_observation_bytes,
+                    observed_at_least: usize::MAX,
+                },
+                observations,
+            };
+        };
+        if next_cumulative > capture_limits.cumulative_observation_bytes {
+            return RenderingCaptureOutcome::IncompleteObservation {
+                phase: RenderingExecutionPhase::ObservationSerialization,
+                profile: *profile,
+                reason: RenderingIncompleteObservationReason::ByteLimitExceeded {
+                    maximum: capture_limits.cumulative_observation_bytes,
+                    observed_at_least: next_cumulative,
+                },
+                observations,
+            };
+        }
+        cumulative_bytes = next_cumulative;
         observations.push(RenderingProfileObservation {
             profile: *profile,
             bytes,
         });
     }
+    RenderingCaptureOutcome::Complete(CanonicalRenderingCapture {
+        variant,
+        observations,
+    })
+}
+
+fn compare_profiles(
+    observations: Vec<RenderingProfileObservation>,
+    expected: &[RenderingExpectedSnapshot],
+) -> RenderingObservedExecutionOutcome {
     let mut mismatches = Vec::new();
-    if mismatches.try_reserve(package.profiles.len()).is_err() {
+    if mismatches.try_reserve(observations.len()).is_err() {
         return storage_failure(
             RenderingExecutionPhase::SnapshotComparison,
             RenderingExecutionStorage::Mismatches,
@@ -512,7 +669,7 @@ fn capture_observation(
     })
 }
 
-fn style_failure(error: StylePhaseExecutionError) -> RenderingObservedExecutionOutcome {
+fn capture_style_failure(error: StylePhaseExecutionError) -> RenderingCaptureOutcome {
     let (phase, failure) = match error {
         StylePhaseExecutionError::RuleCollection(error) => (
             RenderingExecutionPhase::CssRuleCollection,
@@ -535,7 +692,17 @@ fn style_failure(error: StylePhaseExecutionError) -> RenderingObservedExecutionO
             RenderingExecutionFailure::CssStyleTree(error),
         ),
     };
-    execution_failure(phase, failure)
+    RenderingCaptureOutcome::ExecutionFailure { phase, failure }
+}
+
+fn capture_storage_failure(
+    phase: RenderingExecutionPhase,
+    storage: RenderingExecutionStorage,
+) -> RenderingCaptureOutcome {
+    RenderingCaptureOutcome::ExecutionFailure {
+        phase,
+        failure: RenderingExecutionFailure::StorageAllocation { storage },
+    }
 }
 fn execution_failure(
     phase: RenderingExecutionPhase,
@@ -556,6 +723,61 @@ fn storage_failure(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn paired_capture_attempts_reference_after_test_terminal_failure() {
+        let variant = crate::RenderingExecutionVariantId {
+            environment: crate::SyntheticTextMetricsV1::SyntheticTextMetricsV1,
+            available_width_css_px: crate::AvailableWidthCssPx::try_new(320).unwrap(),
+        };
+        let package = crate::PairedRenderingFixturePackage {
+            id: "both-side-attempt-test".to_owned(),
+            owner: RenderingObservationOwner::Layout,
+            test: RenderingDocumentInput {
+                html: "<!doctype html><div></div>".to_owned(),
+                html_path: "test.html".to_owned(),
+                stylesheets: vec![crate::fixture::RenderingStylesheetInput {
+                    source_text: "x"
+                        .repeat(css::SyntaxLimits::default().max_stylesheet_input_bytes + 1),
+                    origin: RenderingStylesheetOrigin::Author,
+                    order: 0,
+                    source: 0,
+                    namespace: None,
+                }],
+                stylesheet_bytes: css::SyntaxLimits::default().max_stylesheet_input_bytes + 1,
+            },
+            reference: RenderingDocumentInput {
+                html: "<!doctype html><div></div>".to_owned(),
+                html_path: "reference.html".to_owned(),
+                stylesheets: vec![],
+                stylesheet_bytes: 0,
+            },
+            profiles: vec![RenderingObservationProfile::Layout(
+                LayoutObservationProfile::LayoutPhaseOutput,
+            )],
+            variants: vec![variant],
+            referenced_paths: vec![],
+            limits: crate::PairedRenderingFixtureLimits::try_new(64 * 1024, 8 * 1024 * 1024)
+                .unwrap(),
+        };
+        let captures = capture_paired_variant(crate::PairedRenderingVariantHandle {
+            package: &package,
+            variant: &package.variants[0],
+        });
+        assert!(matches!(
+            captures.test,
+            RenderingCaptureOutcome::ExecutionFailure {
+                phase: RenderingExecutionPhase::CssStylesheetParsing,
+                failure: RenderingExecutionFailure::StylesheetSemanticInputResourceLimited {
+                    index: 0
+                },
+            }
+        ));
+        assert!(matches!(
+            captures.reference,
+            RenderingCaptureOutcome::Complete(_)
+        ));
+    }
 
     #[test]
     fn writer_error_without_sink_failure_is_a_final_invariant_class() {

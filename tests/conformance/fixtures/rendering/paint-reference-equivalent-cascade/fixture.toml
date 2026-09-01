@@ -1,0 +1,20 @@
+format = "borrowser-conformance-fixture-v3"
+id = "paint-reference-equivalent-cascade"
+scope = "static-html-css-no-js"
+observation = "paint-operations"
+test_path = "rendering/test.html"
+
+[source]
+kind = "native"
+
+[reference]
+kind = "semantic"
+relation = "match"
+path = "rendering/reference.html"
+
+[execution_package]
+entry_path = "rendering/fixture.toml"
+support_paths = ["rendering/test-base.css", "rendering/test-override.css", "rendering/reference.css"]
+
+[metadata]
+description = "Equivalent Paint output reached through a two-source override and a direct reference declaration."

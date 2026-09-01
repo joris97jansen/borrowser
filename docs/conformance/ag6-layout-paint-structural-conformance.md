@@ -84,12 +84,19 @@ The V1 resource limits are AG2's 64 KiB transport limit for the descriptor,
 4 MiB for HTML, the production CSS syntax maximum (currently 4 MiB) per
 stylesheet, 16 MiB for all stylesheet source, 64 stylesheets, the AG report's
 8 MiB ceiling per expected or actual observation,
-32 MiB cumulative expected snapshot source, 16 variants, 5 selected profiles,
+40 MiB derived maximum actual owner bytes across five maximum-sized
+observations, 32 MiB cumulative expected snapshot source, 16 variants, 5 selected profiles,
 and 80 `(variant, profile)` expectation pairs. All cumulative arithmetic is
 checked. The maximum 64 stylesheet and 80 expectation support files total 144,
 below AG2's 256 support-path maximum. Expected snapshot bodies are loaded per
 variant; the report's separate 8 MiB observation ceiling is not presented as an
 authored-input memory limit.
+
+For each stylesheet, the loader validates the path, performs the individually
+bounded read, decodes UTF-8, and only then applies cumulative stylesheet-byte
+accounting. This ordering is part of AG6 fixture failure compatibility: an
+individual path, file-size, or UTF-8 failure is not replaced by a later
+aggregate-limit diagnosis.
 
 The runner derives the descriptor ceiling from AG2 and the individual expected
 snapshot ceiling from the AG report contract, then validates that those values
@@ -100,9 +107,10 @@ sheet aggregate permits several maximum-sized controlled sheets without making
 64 such sheets resident. Five profiles is the largest closed owner vocabulary,
 16 variants is sufficient for a compact width matrix, and their product is the
 80-pair ceiling. Eight MiB permits existing canonical structural artifacts while
-remaining bounded during owner serialization; the 32 MiB expected aggregate
-keeps a package bounded independently of AG's separately enforced report
-budget.
+remaining bounded during owner serialization. The derived 40 MiB actual
+aggregate preserves AG6's original five-times-eight-MiB capture behavior; the
+32 MiB expected aggregate keeps authored package input bounded independently
+of AG's separately enforced run-wide report budget.
 
 ## Attempt and report contract
 
@@ -147,3 +155,19 @@ surfaces remain outside AG6 even when they consume Paint artifacts. The AC7
 seed observes only the freshly constructed Paint-owned semantic artifact; it
 contains no retained key, lifecycle action, reuse counter, epoch, or repaint
 assertion.
+
+## AG7 shared capture boundary and report evolution
+
+AG7 extracts AG6's production execution and owner-observation capture into one
+internal primitive. AG6 still loads `borrowser-rendering-fixture-v1`, invokes
+that primitive once, and applies the existing authored-snapshot oracle. It does
+not change stylesheet coordinates, execution variants, owner profiles,
+canonical bytes, mismatch classification, or AG3 policy semantics.
+
+AG7 invokes the same primitive for test and reference documents. The primitive
+continues to own strict host inputs and bounded capture only; HTML, CSS, Layout,
+and Paint remain production owners of their semantics. Rendering report V1 is
+retained as an exact snapshot-only compatibility serializer. The repository
+CLI now emits `borrowser-conformance-rendering-report-v2`, which represents
+both authored-snapshot and document-reference oracles without changing V1
+bytes.

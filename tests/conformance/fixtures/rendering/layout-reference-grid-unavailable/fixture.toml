@@ -1,0 +1,20 @@
+format = "borrowser-conformance-fixture-v3"
+id = "layout-reference-grid-unavailable"
+scope = "static-html-css-no-js"
+observation = "layout-geometry"
+test_path = "rendering/test.html"
+
+[source]
+kind = "native"
+
+[reference]
+kind = "structural"
+relation = "match"
+path = "rendering/reference.html"
+
+[execution_package]
+entry_path = "rendering/fixture.toml"
+support_paths = ["rendering/test.css", "rendering/reference.css"]
+
+[metadata]
+description = "A classified static grid relation that remains unavailable until CSS Grid layout exists."

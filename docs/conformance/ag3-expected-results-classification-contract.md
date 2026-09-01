@@ -461,6 +461,26 @@ records `not-yet-classified`:
 | `paint-semantic-reference-basic` | no semantic Paint comparison adapter or fully specified rendering requirements |
 | `browser-controlled-static-page-basic` | no Browser/runtime execution adapter or fully specified observation and viewport/text/resource requirements |
 
+### AG7 static reference readiness transition
+
+AG7 expands the inventory to 24 logical tests. The migrated
+`paint-semantic-reference-basic` and the new equivalent-layout,
+equivalent-cascade, and intentional-mismatch records are classified, stable,
+harness-ready, and expected-pass. Their V3 outer reference relation is generic
+inventory truth; AG3 expectation metadata does not duplicate or override it.
+
+`layout-reference-grid-unavailable` has a valid ready paired package but records
+the genuine `css-grid` Layout capability gap. It is not runnable, is not
+attempted, and projects to `not-run`; it is not an observed comparator
+unsupported result and not an XFAIL.
+
+The permanent corpus contains no artificial AG7 expected failure. XFAIL and
+XPASS projection is exercised with temporary test repositories. Those IDs do
+not enter the manifest, registry, or repository conformance totals. For paired
+cases, only a successfully executed but unsatisfied relation is a semantic
+mismatch eligible for XFAIL. Capture, resource, serialization, allocation, or
+invariant terminals remain unexpected outcomes.
+
 ## Non-claims and deferred work
 
 AG3 itself adds immutable classification metadata and accounting only. It does
@@ -471,8 +491,9 @@ attempt state, result normalization, XFAIL/XPASS evaluation, or production
 browser behavior. AG4 consumes AG3 views and eligibility for parser execution;
 AG5 consumes the same metadata boundary for CSS execution.
 
-AG6 consumes the same logical metadata boundary for Layout/Paint structural
-execution. Browser/runtime execution adapters, broader lane selection and
+AG6 consumes the same logical metadata boundary for authored Layout/Paint
+snapshots, and AG7 consumes it after static document-reference relation
+evaluation. Browser/runtime execution adapters, broader lane selection and
 environment provisioning, broad WPT/source importing, cross-engine capture,
 rendered/raster comparison, and browser automation remain future Milestone AG
 work.

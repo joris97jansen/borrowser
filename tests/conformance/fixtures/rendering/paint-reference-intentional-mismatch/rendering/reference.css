@@ -1,0 +1,3 @@
+html, body, div { display: block; }
+body { margin: 0; }
+div { width: 20px; height: 20px; background-color: blue; }

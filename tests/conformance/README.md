@@ -3,9 +3,10 @@
 This directory contains the repository-owned AG conformance fixture inventory.
 Each logical fixture is a directory bundle containing exactly one authoritative
 outer AG `fixture.toml` descriptor plus only its explicitly declared files.
-V1 declares one payload and an optional reference. V2 may additionally declare
-one opaque, default-deny subsystem execution package with one entry and a
-bounded list of support files. See
+V1 declares one payload and an optional implied-match reference. V2 may
+additionally declare one opaque, default-deny subsystem execution package with
+one entry and a bounded list of support files. V3 requires an executable
+package plus an outer reference kind, match/mismatch relation, and path. See
 [`docs/conformance/ag2-fixture-inventory-manifest-contract.md`](../../docs/conformance/ag2-fixture-inventory-manifest-contract.md)
 for the normative layout, schema, identity, validation, and manifest contract.
 Expected-result and classification metadata lives separately in the
@@ -61,6 +62,14 @@ To add a fixture:
    engine ID. Outer/nested reconciliation belongs to
    the runner adapter; `css-test-support` validates only the nested CSS package
    and does not depend on generic AG crates. Run `make check-conformance-css`.
+9. For an AG7 static reference case, use outer V3 plus one strict
+   `borrowser-paired-rendering-fixture-v1` descriptor. Put the descriptor, test
+   HTML, reference HTML, and every stylesheet beneath the execution-package
+   root. Declare test and reference through their dedicated outer fields;
+   support paths contain only remaining nested files. Each side declares full
+   origin/order/source/namespace stylesheet coordinates. Select only Layout
+   profiles for `layout-geometry` or only Paint profiles for
+   `paint-operations`. Run `make check-conformance-rendering`.
 
 `fixture.toml` is the source of truth. `manifest.toml` is a checked-in,
 deterministically generated review artifact and must not be edited by hand.
@@ -96,10 +105,13 @@ packages. AG5 executes the seven focused CSS profiles documented in
 [`docs/conformance/ag5-css-conformance-runners.md`](../../docs/conformance/ag5-css-conformance-runners.md).
 Generic AG metadata decides eligibility; the HTML adapter
 delegates one canonical evaluation to `html-test-support`, which may execute
-all baseline/parity parser strategies. Layout/Paint/Browser/runtime, broad
-WPT/html5lib import, reftests, pixels, cross-engine execution, JavaScript, DOM
-APIs, events, and dynamic behavior remain outside these lanes. AG5 CSS execution
+all baseline/parity parser strategies. AG6/AG7 Layout and Paint cases use the
+separate rendering lane. Browser/runtime observation, broad WPT/html5lib
+import, WPT reftest execution, pixels, cross-engine execution, JavaScript, DOM
+APIs, events, and dynamic behavior remain outside the current lanes. AG7
+static relations compare subsystem-owned structural bytes and add neither WPT
+source adaptation nor raster support. AG5 CSS execution
 ends at `ComputedDocumentStyle`; fragment requests are representable but remain
 capability-unavailable until HTML provides contextual fragment parsing.
 The subsystem-neutral runner has no adapter feature enabled by default;
-repository commands explicitly enable `html-parser` or `css`.
+repository commands explicitly enable `html-parser`, `css`, or `rendering`.

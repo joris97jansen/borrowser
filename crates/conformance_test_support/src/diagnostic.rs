@@ -69,6 +69,9 @@ pub enum InventoryDiagnosticKind {
     InvalidReferenceKind {
         value: String,
     },
+    InvalidReferenceRelation {
+        value: String,
+    },
     EmptyDescription,
     TooManyExecutionSupportPaths {
         declared: usize,
@@ -133,6 +136,7 @@ impl InventoryDiagnosticKind {
             | Self::InvalidObservation { .. }
             | Self::InvalidSourceKind { .. }
             | Self::InvalidReferenceKind { .. }
+            | Self::InvalidReferenceRelation { .. }
             | Self::EmptyDescription
             | Self::TooManyExecutionSupportPaths { .. } => 6,
             Self::InvalidRelativePath { .. }
@@ -160,7 +164,8 @@ impl InventoryDiagnosticKind {
             | Self::InvalidScope { value }
             | Self::InvalidObservation { value }
             | Self::InvalidSourceKind { value }
-            | Self::InvalidReferenceKind { value } => value.clone(),
+            | Self::InvalidReferenceKind { value }
+            | Self::InvalidReferenceRelation { value } => value.clone(),
             Self::UnknownDescriptorField { field } => field.clone(),
             Self::TooManyExecutionSupportPaths { declared, maximum } => {
                 format!("{declared:020}:{maximum:020}")
@@ -259,6 +264,9 @@ impl fmt::Display for InventoryDiagnostic {
             }
             InventoryDiagnosticKind::InvalidReferenceKind { value } => {
                 write!(f, "invalid reference kind '{value}'")
+            }
+            InventoryDiagnosticKind::InvalidReferenceRelation { value } => {
+                write!(f, "invalid reference relation '{value}'")
             }
             InventoryDiagnosticKind::EmptyDescription => {
                 f.write_str("metadata.description must be non-empty")

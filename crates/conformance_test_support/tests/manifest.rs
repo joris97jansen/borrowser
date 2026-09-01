@@ -3,8 +3,9 @@ mod support;
 use std::fs;
 
 use conformance_test_support::{
-    InventoryRepository, ManifestCheck, ReferenceKind, build_manifest, check_manifest,
-    discover_inventory, generate_manifest_bytes, serialize_manifest, update_manifest,
+    InventoryRepository, ManifestCheck, ReferenceKind, ReferenceRelation, build_manifest,
+    check_manifest, discover_inventory, generate_manifest_bytes, serialize_manifest,
+    update_manifest,
 };
 use support::{TestRepository, descriptor, descriptor_with_reference};
 
@@ -51,7 +52,7 @@ fn exact_manifest_contract_has_fixed_fields_whitespace_and_reference_metadata() 
     .expect("UTF-8 manifest");
     assert_eq!(
         actual,
-        r#"format = "borrowser-conformance-manifest-v2"
+        r#"format = "borrowser-conformance-manifest-v3"
 
 [[tests]]
 id = "semantic-reference"
@@ -63,6 +64,7 @@ scope = "static-html-css-no-js"
 observation = "paint-operations"
 source_kind = "native"
 reference_kind = "semantic"
+reference_relation = "match"
 reference_path = "tests/conformance/fixtures/reference/reference.html"
 "#
     );
@@ -87,9 +89,14 @@ fn structural_reference_is_validated_and_serialized_as_a_declaration() {
         inventory.fixtures()[0].reference().unwrap().kind(),
         ReferenceKind::Structural
     );
+    assert_eq!(
+        inventory.fixtures()[0].reference().unwrap().relation(),
+        ReferenceRelation::Match
+    );
     let manifest = String::from_utf8(generate_manifest_bytes(&repository.repository()).unwrap())
         .expect("UTF-8 manifest");
     assert!(manifest.contains("reference_kind = \"structural\"\n"));
+    assert!(manifest.contains("reference_relation = \"match\"\n"));
     assert!(manifest.contains(
         "reference_path = \"tests/conformance/fixtures/structural-reference/reference.html\"\n"
     ));
