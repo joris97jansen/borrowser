@@ -1,0 +1,30 @@
+format = "borrowser-conformance-rendering-report-v1"
+granularity = "execution-variant"
+logical-case-count = 1
+execution-variant-count = 1
+
+BEGIN logical-case
+test-id = "rendering-report-limit"
+observation = "paint-operations"
+classification = "classified"
+requirements = []
+engine = "available"
+harness = "ready"
+expectation = "expected-pass"
+stability = "stable"
+eligibility = "runnable"
+variant-count = 1
+BEGIN variant
+environment = "synthetic-text-metrics-v1"
+available-width-css-px = 320
+profiles = ["paint-operations"]
+attempt = "attempted"
+observed = "semantic-pass"
+observation-count = 1
+BEGIN observation
+profile = "paint-operations"
+bytes = "owner bytes"
+END observation
+policy = "expected-pass"
+END variant
+END logical-case

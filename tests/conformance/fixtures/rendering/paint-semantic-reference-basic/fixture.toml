@@ -1,15 +1,20 @@
-format = "borrowser-conformance-fixture-v1"
+format = "borrowser-conformance-fixture-v3"
 id = "paint-semantic-reference-basic"
 scope = "static-html-css-no-js"
 observation = "paint-operations"
-test_path = "test.html"
+test_path = "rendering/test.html"
 
 [source]
 kind = "native"
 
 [reference]
 kind = "semantic"
-path = "reference.html"
+relation = "match"
+path = "rendering/reference.html"
+
+[execution_package]
+entry_path = "rendering/fixture.toml"
+support_paths = ["rendering/test.css", "rendering/reference.css"]
 
 [metadata]
-description = "Inventory-only declaration of a semantic Paint reference relation."
+description = "Equivalent Paint operations reached through inline and stylesheet-authored declarations."

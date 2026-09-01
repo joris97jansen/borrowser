@@ -3,12 +3,13 @@ use std::fmt::Write;
 use crate::diagnostic::InventoryErrors;
 use crate::discovery::{InventoryRepository, discover_inventory};
 use crate::model::{
-    FixtureFormat, InventoryScope, ObservationSurface, ReferenceKind, RepositoryPath, SourceKind,
-    TestId, ValidatedInventory,
+    FixtureFormat, InventoryScope, ObservationSurface, ReferenceKind, ReferenceRelation,
+    RepositoryPath, SourceKind, TestId, ValidatedInventory,
 };
 
 pub const CONFORMANCE_MANIFEST_FORMAT_V1: &str = "borrowser-conformance-manifest-v1";
 pub const CONFORMANCE_MANIFEST_FORMAT_V2: &str = "borrowser-conformance-manifest-v2";
+pub const CONFORMANCE_MANIFEST_FORMAT_V3: &str = "borrowser-conformance-manifest-v3";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConformanceManifest {
@@ -49,6 +50,7 @@ impl ManifestEntry {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct ManifestReference {
     kind: ReferenceKind,
+    relation: ReferenceRelation,
     path: RepositoryPath,
 }
 
@@ -67,6 +69,7 @@ pub fn build_manifest(inventory: &ValidatedInventory) -> ConformanceManifest {
             source_kind: fixture.source_kind(),
             reference: fixture.reference().map(|reference| ManifestReference {
                 kind: reference.kind(),
+                relation: reference.relation(),
                 path: reference.path().clone(),
             }),
             execution_entry_path: fixture
@@ -91,7 +94,7 @@ pub fn generate_manifest_bytes(
 
 pub fn serialize_manifest(manifest: &ConformanceManifest) -> Vec<u8> {
     let mut output = String::new();
-    write_field(&mut output, "format", CONFORMANCE_MANIFEST_FORMAT_V2);
+    write_field(&mut output, "format", CONFORMANCE_MANIFEST_FORMAT_V3);
     for entry in &manifest.entries {
         output.push_str("\n[[tests]]\n");
         write_field(&mut output, "id", entry.id.as_str());
@@ -104,6 +107,11 @@ pub fn serialize_manifest(manifest: &ConformanceManifest) -> Vec<u8> {
         write_field(&mut output, "source_kind", entry.source_kind.as_str());
         if let Some(reference) = &entry.reference {
             write_field(&mut output, "reference_kind", reference.kind.as_str());
+            write_field(
+                &mut output,
+                "reference_relation",
+                reference.relation.as_str(),
+            );
             write_field(&mut output, "reference_path", reference.path.as_str());
         }
         if let Some(entry_path) = &entry.execution_entry_path {

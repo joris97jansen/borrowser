@@ -1,0 +1,15 @@
+format = "borrowser-paired-rendering-fixture-v1"
+id = "layout-reference-grid-unavailable"
+profiles = ["layout-phase-output"]
+
+[test]
+html = "test.html"
+stylesheets = [{ path = "test.css", origin = "author", order = 0, source = 0 }]
+
+[reference]
+html = "reference.html"
+stylesheets = [{ path = "reference.css", origin = "author", order = 0, source = 0 }]
+
+[[variants]]
+environment = "synthetic-text-metrics-v1"
+available_width_css_px = 320

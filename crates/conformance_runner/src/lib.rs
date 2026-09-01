@@ -53,13 +53,21 @@ pub use css_runner::{
 };
 
 #[cfg(feature = "rendering")]
-pub use rendering_package::{RenderingPackageReconciliationError, reconcile_rendering_package};
+pub use rendering_package::{
+    ReconciledPairedRenderingPackage, RenderingPackageReconciliationError,
+    reconcile_paired_rendering_package, reconcile_rendering_package,
+};
 #[cfg(feature = "rendering")]
 pub use rendering_report::{
-    RENDERING_REPORT_FORMAT_V1, build_and_write_rendering_report, build_rendering_report,
+    REFERENCE_DIFFERENCE_SERIALIZED_BYTES_V1, RENDERING_REPORT_FORMAT_V1,
+    RENDERING_REPORT_FORMAT_V2, build_and_write_rendering_report, build_rendering_report,
+    build_rendering_report_v1,
 };
 #[cfg(feature = "rendering")]
 pub use rendering_runner::{
-    RenderingCaseResult, RenderingExecutionAttempt, RenderingNotAttemptedReason, RenderingRunError,
-    RenderingRunSummary, RenderingVariantResult, run_repository_rendering_cases,
+    RenderingCaptureSummary, RenderingCaseResult, RenderingExecutionAttempt,
+    RenderingNotAttemptedReason, RenderingObservationSummary, RenderingOracleKind,
+    RenderingReferenceObservedOutcome, RenderingRelationResult, RenderingRunError,
+    RenderingRunSummary, RenderingVariantObservedOutcome, RenderingVariantResult,
+    run_repository_rendering_cases,
 };

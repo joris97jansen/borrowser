@@ -452,6 +452,20 @@ Current architecture status:
 - AG6 does not execute reference documents, compare pixels, load resources,
   or observe Browser/runtime retention, invalidation, epochs, artifact reuse,
   work planning, or repaint state. Those remain AG7/runtime/future gaps.
+- AG7 adds strict fixture V3 and Manifest V3 reference relations plus
+  `borrowser-paired-rendering-fixture-v1`. Test and reference documents use one
+  shared AG6 production capture primitive, identical typed available-width
+  environments, full per-side stylesheet coordinates, single-owner typed
+  profiles, and exact Layout/Paint owner bytes. Both runnable sides are
+  attempted; relation evaluation occurs only after two complete captures.
+  Rendering report V2 keeps oracle, relation, semantic result, terminal state,
+  bounded first-difference evidence, and AG3 policy distinct. See
+  `docs/conformance/ag7-static-structural-reference-comparison.md`.
+- AG7 is a Borrowser static structural/semantic reftest-style facility. It
+  does not add WPT relation-link parsing, screenshot/raster comparison,
+  viewport height, DPR, platform fonts, external resources, JavaScript,
+  Browser/runtime lifecycle observation, cross-engine execution, broad WPT
+  compliance, or browser compatibility.
 
 Missing or incomplete:
 
@@ -461,7 +475,7 @@ Missing or incomplete:
   and AG4 parser-case reports
 - fixture migration or broader pinned external-source adapters
 - cross-engine capture and artifact comparison workflows
-- rendered-output reference comparison and pixel/raster infrastructure
+- pixel/raster reference comparison infrastructure
 - JavaScript, DOM API, event-loop, WebDriver, CSSOM, interaction, navigation,
   storage, and other broader browser-platform conformance
 

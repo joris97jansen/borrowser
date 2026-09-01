@@ -111,6 +111,48 @@ description = "Temporary packaged inventory fixture."
 }
 
 #[allow(dead_code)]
+pub fn descriptor_v3(
+    id: &str,
+    observation: &str,
+    test_path: &str,
+    reference: (&str, &str, &str),
+    entry_path: &str,
+    support_paths: &[&str],
+) -> String {
+    let (reference_kind, reference_relation, reference_path) = reference;
+    let support_paths = support_paths
+        .iter()
+        .map(|path| format!("  \"{path}\","))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        r#"format = "borrowser-conformance-fixture-v3"
+id = "{id}"
+scope = "static-html-css-no-js"
+observation = "{observation}"
+test_path = "{test_path}"
+
+[source]
+kind = "native"
+
+[reference]
+kind = "{reference_kind}"
+relation = "{reference_relation}"
+path = "{reference_path}"
+
+[execution_package]
+entry_path = "{entry_path}"
+support_paths = [
+{support_paths}
+]
+
+[metadata]
+description = "Temporary paired rendering fixture."
+"#
+    )
+}
+
+#[allow(dead_code)]
 pub fn descriptor_with_reference(
     id: &str,
     observation: &str,

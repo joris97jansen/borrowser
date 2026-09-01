@@ -1098,7 +1098,7 @@ mod tests {
         let results =
             load_expected_results(repository_root, &inventory).expect("expected results registry");
 
-        assert_eq!(results.records().len(), 20);
+        assert_eq!(results.records().len(), 24);
         let classified_ids = results
             .records()
             .iter()
@@ -1120,6 +1120,19 @@ mod tests {
                         );
                         assert!(matches!(metadata.harness(), HarnessReadiness::Ready));
                     }
+                    "layout-reference-grid-unavailable" => {
+                        let EngineCapabilityAvailability::Unavailable { missing } =
+                            metadata.engine()
+                        else {
+                            panic!("grid reference remains capability-unavailable")
+                        };
+                        assert_eq!(missing.len(), 1);
+                        assert_eq!(
+                            missing[0].feature().map(CapabilityFeatureId::as_str),
+                            Some("css-grid")
+                        );
+                        assert!(matches!(metadata.harness(), HarnessReadiness::Ready));
+                    }
                     _ => {
                         assert!(matches!(
                             metadata.engine(),
@@ -1136,6 +1149,10 @@ mod tests {
                         | "paint-layering-positioned-order"
                         | "paint-operations-basic-background"
                         | "paint-semantic-artifact-ac7"
+                        | "layout-reference-equivalent-simple"
+                        | "paint-reference-equivalent-cascade"
+                        | "paint-reference-intentional-mismatch"
+                        | "paint-semantic-reference-basic"
                 ) {
                     assert!(matches!(metadata.stability(), Stability::Stable));
                 } else {
@@ -1163,9 +1180,14 @@ mod tests {
                 "html-tree-construction-malformed-recovery",
                 "html-tree-construction-repeated-body-unavailable",
                 "layout-geometry-basic-block-flow",
+                "layout-reference-equivalent-simple",
+                "layout-reference-grid-unavailable",
                 "paint-layering-positioned-order",
                 "paint-operations-basic-background",
+                "paint-reference-equivalent-cascade",
+                "paint-reference-intentional-mismatch",
                 "paint-semantic-artifact-ac7",
+                "paint-semantic-reference-basic",
             ])
         );
 
@@ -1182,10 +1204,7 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert_eq!(
             unclassified_ids,
-            BTreeSet::from([
-                "browser-controlled-static-page-basic",
-                "paint-semantic-reference-basic",
-            ])
+            BTreeSet::from(["browser-controlled-static-page-basic"])
         );
     }
 }

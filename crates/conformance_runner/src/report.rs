@@ -50,6 +50,9 @@ pub enum ReportBuildError {
         maximum: usize,
     },
     AllocationFailure,
+    UnsupportedReportCase {
+        format: &'static str,
+    },
 }
 
 impl std::fmt::Display for ReportBuildError {
@@ -80,6 +83,9 @@ impl std::fmt::Display for ReportBuildError {
                 "AG retained report evidence exceeds limit: bytes={actual} maximum={maximum}"
             ),
             Self::AllocationFailure => f.write_str("AG report allocation failed"),
+            Self::UnsupportedReportCase { format } => {
+                write!(f, "AG report format {format} cannot represent this case")
+            }
         }
     }
 }
@@ -669,6 +675,14 @@ impl BoundedWriter {
         self.raw("\n")
     }
 
+    #[cfg(feature = "rendering")]
+    pub(crate) fn u64_number(&mut self, key: &str, value: u64) -> Result<(), ReportBuildError> {
+        self.raw(key)?;
+        self.raw(" = ")?;
+        self.raw(&value.to_string())?;
+        self.raw("\n")
+    }
+
     pub(crate) fn line(&mut self, key: &str, value: &str) -> Result<(), ReportBuildError> {
         self.raw(key)?;
         self.raw(" = \"")?;
@@ -792,6 +806,25 @@ fn reserve_bytes(bytes: &mut Vec<u8>, additional: usize) -> Result<(), ReportBui
 #[cfg(test)]
 thread_local! {
     static FAIL_ALLOCATION: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(all(test, feature = "rendering"))]
+struct AllocationFailureReset {
+    previous: bool,
+}
+
+#[cfg(all(test, feature = "rendering"))]
+impl Drop for AllocationFailureReset {
+    fn drop(&mut self) {
+        FAIL_ALLOCATION.with(|failure| failure.set(self.previous));
+    }
+}
+
+#[cfg(all(test, feature = "rendering"))]
+pub(crate) fn with_forced_allocation_failure<Output>(operation: impl FnOnce() -> Output) -> Output {
+    let previous = FAIL_ALLOCATION.with(|failure| failure.replace(true));
+    let _reset = AllocationFailureReset { previous };
+    operation()
 }
 
 #[cfg(test)]

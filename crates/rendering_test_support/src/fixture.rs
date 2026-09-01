@@ -21,16 +21,36 @@ pub const RENDERING_EXPECTATION_PAIR_COUNT_V1: usize = 80;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RenderingFixtureLimits {
-    descriptor_bytes: usize,
-    html_input_bytes: usize,
-    stylesheet_input_bytes: usize,
+    input: RenderingInputLimits,
     cumulative_stylesheet_input_bytes: usize,
-    stylesheet_count: usize,
     expected_snapshot_bytes: usize,
+    cumulative_observation_bytes: usize,
     cumulative_expected_snapshot_bytes: usize,
-    variant_count: usize,
-    selected_profile_count: usize,
     expectation_pair_count: usize,
+}
+
+/// Limits shared by document input transport, independently of the oracle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RenderingInputLimits {
+    pub(crate) descriptor_bytes: usize,
+    pub(crate) html_input_bytes: usize,
+    pub(crate) stylesheet_input_bytes: usize,
+    pub(crate) stylesheet_count: usize,
+    pub(crate) variant_count: usize,
+    pub(crate) selected_profile_count: usize,
+}
+
+impl RenderingInputLimits {
+    pub(crate) fn v1(descriptor_bytes: usize) -> Self {
+        Self {
+            descriptor_bytes,
+            html_input_bytes: RENDERING_HTML_INPUT_BYTES_V1,
+            stylesheet_input_bytes: css::SyntaxLimits::default().max_stylesheet_input_bytes,
+            stylesheet_count: RENDERING_STYLESHEET_COUNT_V1,
+            variant_count: RENDERING_VARIANT_COUNT_V1,
+            selected_profile_count: RENDERING_SELECTED_PROFILE_COUNT_V1,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,6 +60,10 @@ pub enum RenderingFixtureLimitConfigurationError {
     ExpectedSnapshotLimitExceedsCumulativeLimit {
         configured: usize,
         cumulative_maximum: usize,
+    },
+    ObservationLimitProductDoesNotFitPlatform {
+        configured: usize,
+        profile_count: usize,
     },
 }
 
@@ -58,6 +82,13 @@ impl std::fmt::Display for RenderingFixtureLimitConfigurationError {
             } => write!(
                 formatter,
                 "rendering expected-snapshot byte limit {configured} exceeds the V1 cumulative maximum {cumulative_maximum}"
+            ),
+            Self::ObservationLimitProductDoesNotFitPlatform {
+                configured,
+                profile_count,
+            } => write!(
+                formatter,
+                "rendering observation byte limit {configured} times profile count {profile_count} does not fit this platform"
             ),
         }
     }
@@ -84,22 +115,26 @@ impl RenderingFixtureLimits {
                 },
             );
         }
+        let cumulative_observation_bytes = expected_snapshot_bytes
+            .checked_mul(RENDERING_SELECTED_PROFILE_COUNT_V1)
+            .ok_or(
+                RenderingFixtureLimitConfigurationError::ObservationLimitProductDoesNotFitPlatform {
+                    configured: expected_snapshot_bytes,
+                    profile_count: RENDERING_SELECTED_PROFILE_COUNT_V1,
+                },
+            )?;
         Ok(Self {
-            descriptor_bytes,
-            html_input_bytes: RENDERING_HTML_INPUT_BYTES_V1,
-            stylesheet_input_bytes: css::SyntaxLimits::default().max_stylesheet_input_bytes,
+            input: RenderingInputLimits::v1(descriptor_bytes),
             cumulative_stylesheet_input_bytes: RENDERING_CUMULATIVE_STYLESHEET_INPUT_BYTES_V1,
-            stylesheet_count: RENDERING_STYLESHEET_COUNT_V1,
             expected_snapshot_bytes,
+            cumulative_observation_bytes,
             cumulative_expected_snapshot_bytes: RENDERING_CUMULATIVE_EXPECTED_SNAPSHOT_BYTES_V1,
-            variant_count: RENDERING_VARIANT_COUNT_V1,
-            selected_profile_count: RENDERING_SELECTED_PROFILE_COUNT_V1,
             expectation_pair_count: RENDERING_EXPECTATION_PAIR_COUNT_V1,
         })
     }
 
     pub const fn descriptor_bytes(self) -> usize {
-        self.descriptor_bytes
+        self.input.descriptor_bytes
     }
 
     pub const fn expected_snapshot_bytes(self) -> usize {
@@ -107,11 +142,15 @@ impl RenderingFixtureLimits {
     }
 
     pub const fn stylesheet_count(self) -> usize {
-        self.stylesheet_count
+        self.input.stylesheet_count
     }
 
     pub const fn expectation_pair_count(self) -> usize {
         self.expectation_pair_count
+    }
+
+    pub(crate) const fn cumulative_observation_bytes(self) -> usize {
+        self.cumulative_observation_bytes
     }
 }
 
@@ -145,9 +184,7 @@ impl RenderingStylesheetNamespace {
 pub struct RenderingFixturePackage {
     pub(crate) id: String,
     pub(crate) owner: RenderingObservationOwner,
-    pub(crate) html: String,
-    pub(crate) html_path: String,
-    pub(crate) stylesheets: Vec<RenderingStylesheetInput>,
+    pub(crate) document: RenderingDocumentInput,
     pub(crate) profiles: Vec<RenderingObservationProfile>,
     pub(crate) variants: Vec<RenderingVariant>,
     pub(crate) referenced_paths: Vec<String>,
@@ -162,7 +199,7 @@ impl RenderingFixturePackage {
         self.owner
     }
     pub fn primary_input_path(&self) -> &str {
-        &self.html_path
+        &self.document.html_path
     }
     pub fn profiles(&self) -> &[RenderingObservationProfile] {
         &self.profiles
@@ -176,6 +213,14 @@ impl RenderingFixturePackage {
     pub fn referenced_paths(&self) -> impl Iterator<Item = &str> {
         self.referenced_paths.iter().map(String::as_str)
     }
+}
+
+#[derive(Debug)]
+pub(crate) struct RenderingDocumentInput {
+    pub(crate) html: String,
+    pub(crate) html_path: String,
+    pub(crate) stylesheets: Vec<RenderingStylesheetInput>,
+    pub(crate) stylesheet_bytes: usize,
 }
 
 #[derive(Debug)]
@@ -482,20 +527,67 @@ struct WireFixture {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct WireInput {
-    html: String,
+pub(crate) struct WireInput {
+    pub(crate) html: String,
     #[serde(default)]
-    stylesheets: Vec<WireStylesheet>,
+    pub(crate) stylesheets: Vec<WireStylesheet>,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct WireStylesheet {
-    path: String,
-    origin: RenderingStylesheetOrigin,
-    order: u32,
-    source: u32,
-    namespace: Option<RenderingStylesheetNamespace>,
+pub(crate) struct WireStylesheet {
+    pub(crate) path: String,
+    pub(crate) origin: RenderingStylesheetOrigin,
+    pub(crate) order: u32,
+    pub(crate) source: u32,
+    pub(crate) namespace: Option<RenderingStylesheetNamespace>,
+}
+
+#[derive(Debug)]
+pub(crate) enum RenderingInputLoadError {
+    Io { path: String, error: std::io::Error },
+    Invalid(RenderingInputProblem),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum RenderingInputProblem {
+    InvalidPortablePath {
+        path: String,
+    },
+    NonRegularOrSymlink {
+        path: String,
+    },
+    NonUtf8 {
+        path: String,
+    },
+    DuplicateReferencedPath {
+        path: String,
+    },
+    InputTooLarge {
+        path: String,
+        actual: usize,
+        maximum: usize,
+    },
+    ArithmeticOverflow {
+        resource: &'static str,
+    },
+    StorageAllocation {
+        resource: &'static str,
+    },
+    DuplicateStylesheetOrder {
+        order: u32,
+    },
+    NonMonotonicStylesheetOrder {
+        previous: u32,
+        current: u32,
+    },
+    DuplicateStylesheetSource {
+        source: u32,
+    },
+    MultipleUserAgentStylesheets,
+    UserAgentSourceMustBeZero,
+    StylesheetNamespaceRequired,
+    StylesheetNamespaceForbidden,
 }
 
 #[derive(Deserialize)]
@@ -523,7 +615,7 @@ pub fn load_fixture_package(
     }
     ensure_regular(entry_path, &entry_path.display().to_string())?;
     let descriptor =
-        read_bounded(entry_path, limits.descriptor_bytes).map_err(|error| match error {
+        read_bounded(entry_path, limits.input.descriptor_bytes).map_err(|error| match error {
             RenderingFixtureLoadError::Invalid(RenderingFixtureProblem::InputTooLarge {
                 actual,
                 maximum,
@@ -548,52 +640,35 @@ pub fn load_fixture_package(
         return invalid(RenderingFixtureProblem::WrongFormat);
     }
     validate_dimensions(&wire, owner, limits)?;
-    validate_stylesheet_coordinates(&wire.input.stylesheets)?;
     let package_root = entry_path.parent().ok_or({
         RenderingFixtureLoadError::Invalid(RenderingFixtureProblem::DescriptorMustBeFixtureToml)
     })?;
     let mut refs = BTreeSet::new();
-    let html = load_text(
+    let mut cumulative_stylesheet_bytes = 0usize;
+    let document = load_rendering_document(
         package_root,
-        &wire.input.html,
+        wire.input.html,
+        wire.input.stylesheets,
         &mut refs,
-        limits.html_input_bytes,
+        limits.input.html_input_bytes,
+        limits.input.stylesheet_input_bytes,
+        map_rendering_input_error,
+        |stylesheet_bytes| {
+            let cumulative = checked_add_resource(
+                cumulative_stylesheet_bytes,
+                stylesheet_bytes,
+                "cumulative stylesheet input bytes",
+            )?;
+            if cumulative > limits.cumulative_stylesheet_input_bytes {
+                return invalid(RenderingFixtureProblem::CumulativeStylesheetBytesExceeded {
+                    actual: cumulative,
+                    maximum: limits.cumulative_stylesheet_input_bytes,
+                });
+            }
+            cumulative_stylesheet_bytes = cumulative;
+            Ok(())
+        },
     )?;
-    let mut cumulative_stylesheets = 0usize;
-    let mut stylesheets = Vec::new();
-    stylesheets
-        .try_reserve(wire.input.stylesheets.len())
-        .map_err(|_| {
-            RenderingFixtureLoadError::Invalid(RenderingFixtureProblem::StorageAllocation {
-                resource: "stylesheet storage",
-            })
-        })?;
-    for sheet in wire.input.stylesheets {
-        let source_text = load_text(
-            package_root,
-            &sheet.path,
-            &mut refs,
-            limits.stylesheet_input_bytes,
-        )?;
-        cumulative_stylesheets = checked_add_resource(
-            cumulative_stylesheets,
-            source_text.len(),
-            "stylesheet bytes",
-        )?;
-        if cumulative_stylesheets > limits.cumulative_stylesheet_input_bytes {
-            return invalid(RenderingFixtureProblem::CumulativeStylesheetBytesExceeded {
-                actual: cumulative_stylesheets,
-                maximum: limits.cumulative_stylesheet_input_bytes,
-            });
-        }
-        stylesheets.push(RenderingStylesheetInput {
-            source_text,
-            origin: sheet.origin,
-            order: sheet.order,
-            source: sheet.source,
-            namespace: sheet.namespace,
-        });
-    }
     let mut cumulative_expected = 0usize;
     let mut variants = Vec::new();
     for variant in wire.variants {
@@ -640,9 +715,7 @@ pub fn load_fixture_package(
     Ok(RenderingFixturePackage {
         id: wire.id,
         owner,
-        html,
-        html_path: wire.input.html,
-        stylesheets,
+        document,
         profiles: sorted_profiles(wire.profiles),
         variants,
         referenced_paths,
@@ -700,22 +773,22 @@ fn validate_dimensions(
     if wire.variants.is_empty() {
         return invalid(RenderingFixtureProblem::EmptyVariants);
     }
-    if wire.input.stylesheets.len() > limits.stylesheet_count {
+    if wire.input.stylesheets.len() > limits.input.stylesheet_count {
         return invalid(RenderingFixtureProblem::TooManyStylesheets {
             actual: wire.input.stylesheets.len(),
-            maximum: limits.stylesheet_count,
+            maximum: limits.input.stylesheet_count,
         });
     }
-    if wire.profiles.len() > limits.selected_profile_count {
+    if wire.profiles.len() > limits.input.selected_profile_count {
         return invalid(RenderingFixtureProblem::TooManyProfiles {
             actual: wire.profiles.len(),
-            maximum: limits.selected_profile_count,
+            maximum: limits.input.selected_profile_count,
         });
     }
-    if wire.variants.len() > limits.variant_count {
+    if wire.variants.len() > limits.input.variant_count {
         return invalid(RenderingFixtureProblem::TooManyVariants {
             actual: wire.variants.len(),
-            maximum: limits.variant_count,
+            maximum: limits.input.variant_count,
         });
     }
     let pairs = wire
@@ -765,30 +838,30 @@ fn validate_dimensions(
     Ok(())
 }
 
-fn validate_stylesheet_coordinates(
+pub(crate) fn validate_stylesheet_coordinates(
     sheets: &[WireStylesheet],
-) -> Result<(), RenderingFixtureLoadError> {
+) -> Result<(), RenderingInputLoadError> {
     let mut orders = BTreeSet::new();
     let mut sources = BTreeSet::new();
     let mut previous = None;
     let mut ua = 0;
     for sheet in sheets {
         if !orders.insert(sheet.order) {
-            return invalid(RenderingFixtureProblem::DuplicateStylesheetOrder {
+            return input_invalid(RenderingInputProblem::DuplicateStylesheetOrder {
                 order: sheet.order,
             });
         }
         if let Some(previous) = previous
             && sheet.order <= previous
         {
-            return invalid(RenderingFixtureProblem::NonMonotonicStylesheetOrder {
+            return input_invalid(RenderingInputProblem::NonMonotonicStylesheetOrder {
                 previous,
                 current: sheet.order,
             });
         }
         previous = Some(sheet.order);
         if !sources.insert(sheet.source) {
-            return invalid(RenderingFixtureProblem::DuplicateStylesheetSource {
+            return input_invalid(RenderingInputProblem::DuplicateStylesheetSource {
                 source: sheet.source,
             });
         }
@@ -796,18 +869,18 @@ fn validate_stylesheet_coordinates(
             RenderingStylesheetOrigin::UserAgent => {
                 ua += 1;
                 if ua > 1 {
-                    return invalid(RenderingFixtureProblem::MultipleUserAgentStylesheets);
+                    return input_invalid(RenderingInputProblem::MultipleUserAgentStylesheets);
                 }
                 if sheet.source != 0 {
-                    return invalid(RenderingFixtureProblem::UserAgentSourceMustBeZero);
+                    return input_invalid(RenderingInputProblem::UserAgentSourceMustBeZero);
                 }
                 if sheet.namespace.is_none() {
-                    return invalid(RenderingFixtureProblem::StylesheetNamespaceRequired);
+                    return input_invalid(RenderingInputProblem::StylesheetNamespaceRequired);
                 }
             }
             RenderingStylesheetOrigin::User | RenderingStylesheetOrigin::Author => {
                 if sheet.namespace.is_some() {
-                    return invalid(RenderingFixtureProblem::StylesheetNamespaceForbidden);
+                    return input_invalid(RenderingInputProblem::StylesheetNamespaceForbidden);
                 }
             }
         }
@@ -825,28 +898,161 @@ fn invalid<T>(problem: RenderingFixtureProblem) -> Result<T, RenderingFixtureLoa
     Err(RenderingFixtureLoadError::Invalid(problem))
 }
 
-fn checked_add_resource(
+fn input_invalid<T>(problem: RenderingInputProblem) -> Result<T, RenderingInputLoadError> {
+    Err(RenderingInputLoadError::Invalid(problem))
+}
+
+pub(crate) fn map_rendering_input_error(
+    error: RenderingInputLoadError,
+) -> RenderingFixtureLoadError {
+    match error {
+        RenderingInputLoadError::Io { path, error } => {
+            RenderingFixtureLoadError::Io { path, error }
+        }
+        RenderingInputLoadError::Invalid(problem) => {
+            let problem = match problem {
+                RenderingInputProblem::InvalidPortablePath { path } => {
+                    RenderingFixtureProblem::InvalidPortablePath { path }
+                }
+                RenderingInputProblem::NonRegularOrSymlink { path } => {
+                    RenderingFixtureProblem::NonRegularOrSymlink { path }
+                }
+                RenderingInputProblem::NonUtf8 { path } => {
+                    RenderingFixtureProblem::NonUtf8 { path }
+                }
+                RenderingInputProblem::DuplicateReferencedPath { path } => {
+                    RenderingFixtureProblem::DuplicateReferencedPath { path }
+                }
+                RenderingInputProblem::InputTooLarge {
+                    path,
+                    actual,
+                    maximum,
+                } => RenderingFixtureProblem::InputTooLarge {
+                    path,
+                    actual,
+                    maximum,
+                },
+                RenderingInputProblem::ArithmeticOverflow { resource } => {
+                    RenderingFixtureProblem::ArithmeticOverflow { resource }
+                }
+                RenderingInputProblem::StorageAllocation { resource } => {
+                    RenderingFixtureProblem::StorageAllocation { resource }
+                }
+                RenderingInputProblem::DuplicateStylesheetOrder { order } => {
+                    RenderingFixtureProblem::DuplicateStylesheetOrder { order }
+                }
+                RenderingInputProblem::NonMonotonicStylesheetOrder { previous, current } => {
+                    RenderingFixtureProblem::NonMonotonicStylesheetOrder { previous, current }
+                }
+                RenderingInputProblem::DuplicateStylesheetSource { source } => {
+                    RenderingFixtureProblem::DuplicateStylesheetSource { source }
+                }
+                RenderingInputProblem::MultipleUserAgentStylesheets => {
+                    RenderingFixtureProblem::MultipleUserAgentStylesheets
+                }
+                RenderingInputProblem::UserAgentSourceMustBeZero => {
+                    RenderingFixtureProblem::UserAgentSourceMustBeZero
+                }
+                RenderingInputProblem::StylesheetNamespaceRequired => {
+                    RenderingFixtureProblem::StylesheetNamespaceRequired
+                }
+                RenderingInputProblem::StylesheetNamespaceForbidden => {
+                    RenderingFixtureProblem::StylesheetNamespaceForbidden
+                }
+            };
+            RenderingFixtureLoadError::Invalid(problem)
+        }
+    }
+}
+
+pub(crate) fn checked_add_resource(
     current: usize,
     additional: usize,
     resource: &'static str,
 ) -> Result<usize, RenderingFixtureLoadError> {
+    checked_add_rendering_input_resource(current, additional, resource)
+        .map_err(map_rendering_input_error)
+}
+
+fn checked_add_rendering_input_resource(
+    current: usize,
+    additional: usize,
+    resource: &'static str,
+) -> Result<usize, RenderingInputLoadError> {
     current.checked_add(additional).ok_or({
-        RenderingFixtureLoadError::Invalid(RenderingFixtureProblem::ArithmeticOverflow { resource })
+        RenderingInputLoadError::Invalid(RenderingInputProblem::ArithmeticOverflow { resource })
     })
 }
 
-fn load_text(
+fn load_rendering_input_text(
     root: &Path,
     relative: &str,
     refs: &mut BTreeSet<String>,
     maximum: usize,
-) -> Result<String, RenderingFixtureLoadError> {
-    let path = validate_and_register_path(root, relative, refs)?;
-    let bytes = read_bounded(&path, maximum)?;
+) -> Result<String, RenderingInputLoadError> {
+    let path = validate_and_register_input_path(root, relative, refs)?;
+    let bytes = read_bounded_rendering_input(&path, maximum)?;
     String::from_utf8(bytes).map_err(|_| {
-        RenderingFixtureLoadError::Invalid(RenderingFixtureProblem::NonUtf8 {
+        RenderingInputLoadError::Invalid(RenderingInputProblem::NonUtf8 {
             path: relative.to_owned(),
         })
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn load_rendering_document<Error, MapInputError, AccountStylesheet>(
+    root: &Path,
+    html_path: String,
+    stylesheet_wires: Vec<WireStylesheet>,
+    refs: &mut BTreeSet<String>,
+    html_maximum: usize,
+    stylesheet_maximum: usize,
+    mut map_input_error: MapInputError,
+    mut account_stylesheet: AccountStylesheet,
+) -> Result<RenderingDocumentInput, Error>
+where
+    MapInputError: FnMut(RenderingInputLoadError) -> Error,
+    AccountStylesheet: FnMut(usize) -> Result<(), Error>,
+{
+    validate_stylesheet_coordinates(&stylesheet_wires).map_err(&mut map_input_error)?;
+    let html = load_rendering_input_text(root, &html_path, refs, html_maximum)
+        .map_err(&mut map_input_error)?;
+    let mut stylesheet_bytes = 0usize;
+    let mut stylesheets = Vec::new();
+    stylesheets
+        .try_reserve(stylesheet_wires.len())
+        .map_err(|_| {
+            map_input_error(RenderingInputLoadError::Invalid(
+                RenderingInputProblem::StorageAllocation {
+                    resource: "stylesheet storage",
+                },
+            ))
+        })?;
+    for sheet in stylesheet_wires {
+        // Preserve the AG6 contract: validate/read/decode the individual file
+        // before cumulative accounting can select an aggregate-limit error.
+        let source_text = load_rendering_input_text(root, &sheet.path, refs, stylesheet_maximum)
+            .map_err(&mut map_input_error)?;
+        account_stylesheet(source_text.len())?;
+        stylesheet_bytes = checked_add_rendering_input_resource(
+            stylesheet_bytes,
+            source_text.len(),
+            "stylesheet bytes",
+        )
+        .map_err(&mut map_input_error)?;
+        stylesheets.push(RenderingStylesheetInput {
+            source_text,
+            origin: sheet.origin,
+            order: sheet.order,
+            source: sheet.source,
+            namespace: sheet.namespace,
+        });
+    }
+    Ok(RenderingDocumentInput {
+        html,
+        html_path,
+        stylesheets,
+        stylesheet_bytes,
     })
 }
 
@@ -855,6 +1061,14 @@ fn validate_and_register_path(
     relative: &str,
     refs: &mut BTreeSet<String>,
 ) -> Result<PathBuf, RenderingFixtureLoadError> {
+    validate_and_register_input_path(root, relative, refs).map_err(map_rendering_input_error)
+}
+
+fn validate_and_register_input_path(
+    root: &Path,
+    relative: &str,
+    refs: &mut BTreeSet<String>,
+) -> Result<PathBuf, RenderingInputLoadError> {
     let path = Path::new(relative);
     if relative.is_empty()
         || relative.contains('\\')
@@ -863,27 +1077,34 @@ fn validate_and_register_path(
             .components()
             .any(|component| !matches!(component, Component::Normal(_)))
     {
-        return invalid(RenderingFixtureProblem::InvalidPortablePath {
+        return input_invalid(RenderingInputProblem::InvalidPortablePath {
             path: relative.to_owned(),
         });
     }
     if !refs.insert(relative.to_owned()) {
-        return invalid(RenderingFixtureProblem::DuplicateReferencedPath {
+        return input_invalid(RenderingInputProblem::DuplicateReferencedPath {
             path: relative.to_owned(),
         });
     }
     let joined = root.join(path);
-    ensure_regular(&joined, relative)?;
+    ensure_regular_rendering_input(&joined, relative)?;
     Ok(joined)
 }
 
-fn ensure_regular(path: &Path, label: &str) -> Result<(), RenderingFixtureLoadError> {
-    let metadata = fs::symlink_metadata(path).map_err(|error| RenderingFixtureLoadError::Io {
+pub(crate) fn ensure_regular(path: &Path, label: &str) -> Result<(), RenderingFixtureLoadError> {
+    ensure_regular_rendering_input(path, label).map_err(map_rendering_input_error)
+}
+
+pub(crate) fn ensure_regular_rendering_input(
+    path: &Path,
+    label: &str,
+) -> Result<(), RenderingInputLoadError> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| RenderingInputLoadError::Io {
         path: label.to_owned(),
         error,
     })?;
     if metadata.file_type().is_symlink() || !metadata.is_file() {
-        return invalid(RenderingFixtureProblem::NonRegularOrSymlink {
+        return input_invalid(RenderingInputProblem::NonRegularOrSymlink {
             path: label.to_owned(),
         });
     }
@@ -891,25 +1112,42 @@ fn ensure_regular(path: &Path, label: &str) -> Result<(), RenderingFixtureLoadEr
 }
 
 fn regular_file_length(path: &Path, label: &str) -> Result<usize, RenderingFixtureLoadError> {
-    ensure_regular(path, label)?;
+    regular_rendering_input_file_length(path, label).map_err(map_rendering_input_error)
+}
+
+fn regular_rendering_input_file_length(
+    path: &Path,
+    label: &str,
+) -> Result<usize, RenderingInputLoadError> {
+    ensure_regular_rendering_input(path, label)?;
     let length = fs::metadata(path)
-        .map_err(|error| RenderingFixtureLoadError::Io {
+        .map_err(|error| RenderingInputLoadError::Io {
             path: label.to_owned(),
             error,
         })?
         .len();
     usize::try_from(length).map_err(|_| {
-        RenderingFixtureLoadError::Invalid(RenderingFixtureProblem::ArithmeticOverflow {
+        RenderingInputLoadError::Invalid(RenderingInputProblem::ArithmeticOverflow {
             resource: "file length",
         })
     })
 }
 
-fn read_bounded(path: &Path, maximum: usize) -> Result<Vec<u8>, RenderingFixtureLoadError> {
+pub(crate) fn read_bounded(
+    path: &Path,
+    maximum: usize,
+) -> Result<Vec<u8>, RenderingFixtureLoadError> {
+    read_bounded_rendering_input(path, maximum).map_err(map_rendering_input_error)
+}
+
+pub(crate) fn read_bounded_rendering_input(
+    path: &Path,
+    maximum: usize,
+) -> Result<Vec<u8>, RenderingInputLoadError> {
     let label = path.display().to_string();
-    let length = regular_file_length(path, &label)?;
+    let length = regular_rendering_input_file_length(path, &label)?;
     if length > maximum {
-        return invalid(RenderingFixtureProblem::InputTooLarge {
+        return input_invalid(RenderingInputProblem::InputTooLarge {
             path: label,
             actual: length,
             maximum,
@@ -917,27 +1155,27 @@ fn read_bounded(path: &Path, maximum: usize) -> Result<Vec<u8>, RenderingFixture
     }
     let mut bytes = Vec::new();
     bytes.try_reserve(length).map_err(|_| {
-        RenderingFixtureLoadError::Invalid(RenderingFixtureProblem::StorageAllocation {
+        RenderingInputLoadError::Invalid(RenderingInputProblem::StorageAllocation {
             resource: "authored file storage",
         })
     })?;
     let read_limit = maximum.checked_add(1).ok_or({
-        RenderingFixtureLoadError::Invalid(RenderingFixtureProblem::ArithmeticOverflow {
+        RenderingInputLoadError::Invalid(RenderingInputProblem::ArithmeticOverflow {
             resource: "bounded authored file read",
         })
     })?;
-    let file = fs::File::open(path).map_err(|error| RenderingFixtureLoadError::Io {
+    let file = fs::File::open(path).map_err(|error| RenderingInputLoadError::Io {
         path: label.clone(),
         error,
     })?;
     file.take(read_limit as u64)
         .read_to_end(&mut bytes)
-        .map_err(|error| RenderingFixtureLoadError::Io {
+        .map_err(|error| RenderingInputLoadError::Io {
             path: label.clone(),
             error,
         })?;
     if bytes.len() > maximum {
-        return invalid(RenderingFixtureProblem::InputTooLarge {
+        return input_invalid(RenderingInputProblem::InputTooLarge {
             path: label,
             actual: bytes.len(),
             maximum,
@@ -1006,19 +1244,43 @@ mod tests {
     #[test]
     fn rendering_owned_v1_limits_are_exact_and_transport_limits_are_injected() {
         let limits = RenderingFixtureLimits::try_new(123, 456).unwrap();
-        assert_eq!(limits.descriptor_bytes, 123);
-        assert_eq!(limits.html_input_bytes, 4 * 1024 * 1024);
+        assert_eq!(limits.input.descriptor_bytes, 123);
+        assert_eq!(limits.input.html_input_bytes, 4 * 1024 * 1024);
         assert_eq!(
-            limits.stylesheet_input_bytes,
+            limits.input.stylesheet_input_bytes,
             css::SyntaxLimits::default().max_stylesheet_input_bytes
         );
         assert_eq!(limits.cumulative_stylesheet_input_bytes, 16 * 1024 * 1024);
-        assert_eq!(limits.stylesheet_count, 64);
+        assert_eq!(limits.input.stylesheet_count, 64);
         assert_eq!(limits.expected_snapshot_bytes, 456);
+        assert_eq!(limits.cumulative_observation_bytes, 456 * 5);
         assert_eq!(limits.cumulative_expected_snapshot_bytes, 32 * 1024 * 1024);
-        assert_eq!(limits.variant_count, 16);
-        assert_eq!(limits.selected_profile_count, 5);
+        assert_eq!(limits.input.variant_count, 16);
+        assert_eq!(limits.input.selected_profile_count, 5);
         assert_eq!(limits.expectation_pair_count, 80);
+    }
+
+    #[test]
+    fn ag6_limit_construction_is_independent_of_paired_capture_policy() {
+        let limits =
+            RenderingFixtureLimits::try_new(1, RENDERING_CUMULATIVE_EXPECTED_SNAPSHOT_BYTES_V1)
+                .unwrap();
+        assert_eq!(
+            limits.expected_snapshot_bytes(),
+            RENDERING_CUMULATIVE_EXPECTED_SNAPSHOT_BYTES_V1
+        );
+        assert_eq!(
+            limits.cumulative_observation_bytes,
+            RENDERING_CUMULATIVE_EXPECTED_SNAPSHOT_BYTES_V1 * RENDERING_SELECTED_PROFILE_COUNT_V1
+        );
+        assert!(
+            !RenderingFixtureProblem::CumulativeStylesheetBytesExceeded {
+                actual: 2,
+                maximum: 1,
+            }
+            .to_string()
+            .contains("paired")
+        );
     }
 
     #[test]
@@ -1090,7 +1352,10 @@ mod tests {
         ));
 
         let pair_limits = RenderingFixtureLimits {
-            variant_count: 17,
+            input: RenderingInputLimits {
+                variant_count: 17,
+                ..limits.input
+            },
             ..limits
         };
         assert!(matches!(
@@ -1167,6 +1432,87 @@ mod tests {
                     actual: 5,
                     maximum: 4,
                 }
+            ))
+        ));
+    }
+
+    fn load_ag6_single_stylesheet_fixture(
+        root: &Path,
+        path: &str,
+        individual_maximum: usize,
+        cumulative_maximum: usize,
+    ) -> Result<RenderingFixturePackage, RenderingFixtureLoadError> {
+        std::fs::write(root.join("document.html"), "<div></div>").unwrap();
+        std::fs::write(root.join("expected.txt"), "expected").unwrap();
+        std::fs::write(
+            root.join("fixture.toml"),
+            format!(
+                concat!(
+                    "format = \"borrowser-rendering-fixture-v1\"\n",
+                    "id = \"ag6-error-precedence\"\n",
+                    "profiles = [\"layout-sizing\"]\n",
+                    "[input]\nhtml = \"document.html\"\n",
+                    "stylesheets = [{{ path = \"{}\", origin = \"author\", order = 0, source = 0 }}]\n",
+                    "[[variants]]\n",
+                    "environment = \"synthetic-text-metrics-v1\"\n",
+                    "available_width_css_px = 320\n",
+                    "expectations = [{{ profile = \"layout-sizing\", snapshot = \"expected.txt\" }}]\n",
+                ),
+                path
+            ),
+        )
+        .unwrap();
+        let base = fixture_limits();
+        let limits = RenderingFixtureLimits {
+            input: RenderingInputLimits {
+                stylesheet_input_bytes: individual_maximum,
+                ..base.input
+            },
+            cumulative_stylesheet_input_bytes: cumulative_maximum,
+            ..base
+        };
+        load_fixture_package(
+            &root.join("fixture.toml"),
+            RenderingObservationOwner::Layout,
+            limits,
+        )
+    }
+
+    #[test]
+    fn ag6_stylesheet_error_precedence_remains_read_decode_then_cumulative_accounting() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("document.html"), "<div></div>").unwrap();
+
+        std::fs::write(directory.path().join("invalid.css"), [0xff]).unwrap();
+        assert!(matches!(
+            load_ag6_single_stylesheet_fixture(directory.path(), "invalid.css", 8, 0),
+            Err(RenderingFixtureLoadError::Invalid(
+                RenderingFixtureProblem::NonUtf8 { .. }
+            ))
+        ));
+
+        std::fs::write(directory.path().join("oversized.css"), "ab").unwrap();
+        assert!(matches!(
+            load_ag6_single_stylesheet_fixture(directory.path(), "oversized.css", 1, 0),
+            Err(RenderingFixtureLoadError::Invalid(
+                RenderingFixtureProblem::InputTooLarge {
+                    actual: 2,
+                    maximum: 1,
+                    ..
+                }
+            ))
+        ));
+
+        assert!(matches!(
+            load_ag6_single_stylesheet_fixture(directory.path(), "missing.css", 8, 0),
+            Err(RenderingFixtureLoadError::Io { .. })
+        ));
+
+        std::fs::create_dir(directory.path().join("directory.css")).unwrap();
+        assert!(matches!(
+            load_ag6_single_stylesheet_fixture(directory.path(), "directory.css", 8, 0),
+            Err(RenderingFixtureLoadError::Invalid(
+                RenderingFixtureProblem::NonRegularOrSymlink { .. }
             ))
         ));
     }

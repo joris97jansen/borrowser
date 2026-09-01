@@ -1,4 +1,4 @@
-format = "borrowser-conformance-manifest-v2"
+format = "borrowser-conformance-manifest-v3"
 
 [[tests]]
 id = "browser-controlled-static-page-basic"
@@ -191,6 +191,36 @@ execution_entry_path = "tests/conformance/fixtures/rendering/layout-geometry-bas
 execution_support_paths = ["tests/conformance/fixtures/rendering/layout-geometry-basic/rendering/author.css", "tests/conformance/fixtures/rendering/layout-geometry-basic/rendering/expected-01.txt", "tests/conformance/fixtures/rendering/layout-geometry-basic/rendering/expected-02.txt"]
 
 [[tests]]
+id = "layout-reference-equivalent-simple"
+fixture_format = "borrowser-conformance-fixture-v3"
+fixture_path = "tests/conformance/fixtures/rendering/layout-reference-equivalent-simple"
+test_path = "tests/conformance/fixtures/rendering/layout-reference-equivalent-simple/rendering/test.html"
+metadata_path = "tests/conformance/fixtures/rendering/layout-reference-equivalent-simple/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "layout-geometry"
+source_kind = "native"
+reference_kind = "structural"
+reference_relation = "match"
+reference_path = "tests/conformance/fixtures/rendering/layout-reference-equivalent-simple/rendering/reference.html"
+execution_entry_path = "tests/conformance/fixtures/rendering/layout-reference-equivalent-simple/rendering/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/rendering/layout-reference-equivalent-simple/rendering/reference.css", "tests/conformance/fixtures/rendering/layout-reference-equivalent-simple/rendering/test.css"]
+
+[[tests]]
+id = "layout-reference-grid-unavailable"
+fixture_format = "borrowser-conformance-fixture-v3"
+fixture_path = "tests/conformance/fixtures/rendering/layout-reference-grid-unavailable"
+test_path = "tests/conformance/fixtures/rendering/layout-reference-grid-unavailable/rendering/test.html"
+metadata_path = "tests/conformance/fixtures/rendering/layout-reference-grid-unavailable/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "layout-geometry"
+source_kind = "native"
+reference_kind = "structural"
+reference_relation = "match"
+reference_path = "tests/conformance/fixtures/rendering/layout-reference-grid-unavailable/rendering/reference.html"
+execution_entry_path = "tests/conformance/fixtures/rendering/layout-reference-grid-unavailable/rendering/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/rendering/layout-reference-grid-unavailable/rendering/reference.css", "tests/conformance/fixtures/rendering/layout-reference-grid-unavailable/rendering/test.css"]
+
+[[tests]]
 id = "paint-layering-positioned-order"
 fixture_format = "borrowser-conformance-fixture-v2"
 fixture_path = "tests/conformance/fixtures/rendering/paint-layering-positioned"
@@ -215,6 +245,36 @@ execution_entry_path = "tests/conformance/fixtures/rendering/paint-operations-ba
 execution_support_paths = ["tests/conformance/fixtures/rendering/paint-operations-basic/rendering/author.css", "tests/conformance/fixtures/rendering/paint-operations-basic/rendering/expected-01.txt"]
 
 [[tests]]
+id = "paint-reference-equivalent-cascade"
+fixture_format = "borrowser-conformance-fixture-v3"
+fixture_path = "tests/conformance/fixtures/rendering/paint-reference-equivalent-cascade"
+test_path = "tests/conformance/fixtures/rendering/paint-reference-equivalent-cascade/rendering/test.html"
+metadata_path = "tests/conformance/fixtures/rendering/paint-reference-equivalent-cascade/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "paint-operations"
+source_kind = "native"
+reference_kind = "semantic"
+reference_relation = "match"
+reference_path = "tests/conformance/fixtures/rendering/paint-reference-equivalent-cascade/rendering/reference.html"
+execution_entry_path = "tests/conformance/fixtures/rendering/paint-reference-equivalent-cascade/rendering/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/rendering/paint-reference-equivalent-cascade/rendering/reference.css", "tests/conformance/fixtures/rendering/paint-reference-equivalent-cascade/rendering/test-base.css", "tests/conformance/fixtures/rendering/paint-reference-equivalent-cascade/rendering/test-override.css"]
+
+[[tests]]
+id = "paint-reference-intentional-mismatch"
+fixture_format = "borrowser-conformance-fixture-v3"
+fixture_path = "tests/conformance/fixtures/rendering/paint-reference-intentional-mismatch"
+test_path = "tests/conformance/fixtures/rendering/paint-reference-intentional-mismatch/rendering/test.html"
+metadata_path = "tests/conformance/fixtures/rendering/paint-reference-intentional-mismatch/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "paint-operations"
+source_kind = "native"
+reference_kind = "semantic"
+reference_relation = "mismatch"
+reference_path = "tests/conformance/fixtures/rendering/paint-reference-intentional-mismatch/rendering/reference.html"
+execution_entry_path = "tests/conformance/fixtures/rendering/paint-reference-intentional-mismatch/rendering/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/rendering/paint-reference-intentional-mismatch/rendering/reference.css", "tests/conformance/fixtures/rendering/paint-reference-intentional-mismatch/rendering/test.css"]
+
+[[tests]]
 id = "paint-semantic-artifact-ac7"
 fixture_format = "borrowser-conformance-fixture-v2"
 fixture_path = "tests/conformance/fixtures/rendering/paint-semantic-artifact-ac7"
@@ -228,12 +288,15 @@ execution_support_paths = ["tests/conformance/fixtures/rendering/paint-semantic-
 
 [[tests]]
 id = "paint-semantic-reference-basic"
-fixture_format = "borrowser-conformance-fixture-v1"
+fixture_format = "borrowser-conformance-fixture-v3"
 fixture_path = "tests/conformance/fixtures/rendering/paint-semantic-reference-basic"
-test_path = "tests/conformance/fixtures/rendering/paint-semantic-reference-basic/test.html"
+test_path = "tests/conformance/fixtures/rendering/paint-semantic-reference-basic/rendering/test.html"
 metadata_path = "tests/conformance/fixtures/rendering/paint-semantic-reference-basic/fixture.toml"
 scope = "static-html-css-no-js"
 observation = "paint-operations"
 source_kind = "native"
 reference_kind = "semantic"
-reference_path = "tests/conformance/fixtures/rendering/paint-semantic-reference-basic/reference.html"
+reference_relation = "match"
+reference_path = "tests/conformance/fixtures/rendering/paint-semantic-reference-basic/rendering/reference.html"
+execution_entry_path = "tests/conformance/fixtures/rendering/paint-semantic-reference-basic/rendering/fixture.toml"
+execution_support_paths = ["tests/conformance/fixtures/rendering/paint-semantic-reference-basic/rendering/reference.css", "tests/conformance/fixtures/rendering/paint-semantic-reference-basic/rendering/test.css"]

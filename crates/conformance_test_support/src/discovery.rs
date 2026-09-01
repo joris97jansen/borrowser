@@ -527,6 +527,17 @@ fn validate_bundle_descriptor(
 
     if let Some(root) = package_relative_root.as_deref() {
         validate_inside_package("test_path", &test_path, root, &metadata_path, diagnostics);
+        if descriptor.format == FixtureFormat::V3
+            && let Some(reference) = &reference_path
+        {
+            validate_inside_package(
+                "reference.path",
+                reference,
+                root,
+                &metadata_path,
+                diagnostics,
+            );
+        }
         for support in &execution_support {
             validate_inside_package(
                 "execution_package.support_paths",
@@ -620,7 +631,7 @@ fn validate_bundle_descriptor(
         (None, None) => None,
         (Some(reference), Some(validation)) => validation
             .repository_path
-            .map(|path| ReferenceDeclaration::validated(reference.kind, path)),
+            .map(|path| ReferenceDeclaration::validated(reference.kind, reference.relation, path)),
         _ => None,
     };
     if has_reference && reference.is_none() {
@@ -647,7 +658,9 @@ fn validate_bundle_descriptor(
         }
         _ => return,
     };
-    if descriptor.format == FixtureFormat::V2 && package_relative_root.is_none() {
+    if matches!(descriptor.format, FixtureFormat::V2 | FixtureFormat::V3)
+        && package_relative_root.is_none()
+    {
         return;
     }
     fixtures.push(ValidatedFixture::validated(

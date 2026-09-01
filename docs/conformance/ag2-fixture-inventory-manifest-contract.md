@@ -117,9 +117,10 @@ versioned serialized descriptor
 No manifest can be built from an unvalidated serialized descriptor.
 
 V1 remains strict and unchanged. V2 has the same required common fields and
-requires the strict `[execution_package]` table shown above. Unknown root or
-nested fields are errors in both versions; V2 is not a permissive extension of
-V1.
+requires the strict `[execution_package]` table shown above. V3 retains that
+envelope and requires an executable reference relation as specified below.
+Unknown root or nested fields are errors in every version; later formats are
+not permissive extensions of earlier schemas.
 
 ## Stable logical identity
 
@@ -163,12 +164,13 @@ not an observation category. V1 has no `SourceForm`: native provenance alone
 does not define an independent authored test form, and speculative WPT or
 external formats do not belong in AG2.
 
-An optional `[reference]` records only a declared relation. `semantic` denotes
-equivalence at a later subsystem-owned semantic observation; `structural`
-denotes equivalence at a later subsystem-owned structural observation. The
-relation combines independently with `observation`. It does not implement or
-claim comparison behavior, rendered-output/WPT reftests, screenshots, raster or
-pixel equality, or fuzzy-image support.
+An optional V1/V2 `[reference]` records an implied-match declaration.
+`semantic` denotes equivalence at a later subsystem-owned semantic observation;
+`structural` denotes equivalence at a later subsystem-owned structural
+observation. V3 makes `match` or `mismatch` explicit while retaining kind as an
+orthogonal claim. The relation combines independently with `observation`. It
+does not by itself claim WPT execution, screenshots, raster or pixel equality,
+or fuzzy-image support.
 
 ## Deterministic discovery and diagnostics
 
@@ -210,9 +212,10 @@ make safe traversal impossible stop discovery before bundle validation.
 
 `tests/conformance/manifest.toml` is a generated review artifact. Its only
 source of truth is the set of validated bundle-local `fixture.toml` files.
-AG4 evolves the generated review artifact to Manifest V2 because reviewers
-must be able to see which descriptor version and explicitly declared package
-files were validated. Manifest V2 begins with:
+AG4 evolved the generated review artifact to Manifest V2 so reviewers could
+see which descriptor version and package files were validated. AG7 evolves the
+checked-in artifact to Manifest V3 so reference polarity is reviewable. The
+historical V2 header is:
 
 ```toml
 format = "borrowser-conformance-manifest-v2"
@@ -221,8 +224,9 @@ format = "borrowser-conformance-manifest-v2"
 It then contains one `[[tests]]` record per logical ID, ordered bytewise by
 `TestId`. Required fields occur in this exact order: `id`, `fixture_format`, `fixture_path`,
 `test_path`, `metadata_path`, `scope`, `observation`, `source_kind`. Optional
-`reference_kind` and `reference_path` follow in that order. V2 fixture records
-then contain `execution_entry_path` and the sorted
+Manifest V2 places `reference_kind` and `reference_path` in that order;
+Manifest V3 inserts `reference_relation` between them. Executable fixture
+records then contain `execution_entry_path` and the sorted
 `execution_support_paths` array. V1 records omit those two package fields. The
 descriptor path is the metadata path because the outer `fixture.toml` remains
 the single authoritative AG descriptor/metadata source; a nested subsystem
@@ -263,6 +267,31 @@ make check-conformance-manifest
 CI can run the check target for byte-for-byte freshness without executing a
 fixture or selecting an AG execution lane.
 
+## AG7 fixture V3 and Manifest V3
+
+AG7 adds `borrowser-conformance-fixture-v3` without changing either earlier
+wire schema. V3 has the V2 executable-package envelope and requires one outer
+reference with `kind`, `relation`, and `path`. `relation` is exactly `match` or
+`mismatch`. Existing V1/V2 reference declarations continue to imply `match`;
+adding `relation` to either earlier descriptor is an unknown-field error.
+
+For V3, the parent of `execution_package.entry_path` is the package root.
+`test_path`, `reference.path`, and every support path must be beneath that root.
+Entry, test, reference, and support declarations are pairwise distinct. Test
+and reference are not support paths. The nested execution adapter must
+reconcile its complete referenced payload set exactly with the outer test,
+reference, and support set and must not open an undeclared path.
+
+Manifest `borrowser-conformance-manifest-v3` preserves the deterministic V2
+record, field, path, escaping, and newline rules and adds
+`reference_relation` between `reference_kind` and `reference_path`. Historical
+manifest constants describe their frozen schemas; the checked-in artifact uses
+V3. V1/V2 fixture references serialize their implied `match` into Manifest V3.
+
+AG2's generic execution support-path ceiling remains
+`MAX_EXECUTION_SUPPORT_PATHS_V2 = 256`. AG7's paired rendering package adds a
+stricter 64-support-path V1 sublimit; it does not redefine AG2's ceiling.
+
 ## Non-claims and deferred work
 
 The inventory layer proves only layout, descriptor parsing, discovery,
@@ -273,9 +302,10 @@ not execute fixtures. AG4 separately executes classified HTML tokenizer,
 tree-construction, and parser-created DOM V2 packages through
 `conformance-runner`; AG5 separately executes classified CSS property/value,
 selector, cascade, inheritance, and computed-style V2 packages through the CSS
-adapter. Layout, Paint/GFX, and Browser/runtime adapters, broader lane
-selection, broad WPT/source imports, cross-engine capture, rendered/raster
-comparison, and browser automation remain later Milestone AG work.
+adapter. AG6 executes Layout/Paint authored snapshots and AG7 executes static
+structural document references. Browser/runtime adapters, broader lane
+selection, broad WPT/source imports, cross-engine capture, raster comparison,
+and browser automation remain later Milestone AG work.
 
 ## Relationship to AG3 classification metadata
 
@@ -283,8 +313,8 @@ AG3 adds the separate human-authored
 `tests/conformance/expected-results.toml` registry described by
 [`ag3-expected-results-classification-contract.md`](ag3-expected-results-classification-contract.md).
 It reconciles one record per validated AG2 `TestId`, but it does not place AG3
-fields in either fixture descriptor version or Manifest V2. V1 remains
-unchanged; V2 and Manifest V2 add only generic package review truth and continue
+fields in any fixture descriptor or manifest version. V1/V2 remain unchanged;
+V3 and Manifest V3 add only generic reference/package review truth and continue
 to reject unknown AG3 fields.
 
 AG2 inventory truth supplies stable identity and the sole authoritative
