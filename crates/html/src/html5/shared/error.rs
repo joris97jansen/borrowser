@@ -122,6 +122,18 @@ pub enum ParserFatalError {
     ResourceExhaustion(ParserResourceExhaustion),
 }
 
+impl ParserFatalError {
+    /// Typed resource identity owned by HTML. Keeping this match beside the
+    /// non-exhaustive enum forces future fatal variants to receive an explicit
+    /// owner decision before downstream test tooling can classify them.
+    pub const fn is_resource_exhaustion(&self) -> bool {
+        match self {
+            Self::EngineInvariant => false,
+            Self::ResourceExhaustion(_) => true,
+        }
+    }
+}
+
 impl std::fmt::Display for ParserFatalError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -183,6 +195,7 @@ mod fatal_display_tests {
 
     #[test]
     fn fatal_display_uses_static_semantic_text_for_every_current_identity() {
+        assert!(!ParserFatalError::EngineInvariant.is_resource_exhaustion());
         assert_eq!(
             ParserFatalError::EngineInvariant.to_string(),
             "HTML parser engine invariant violation"
@@ -205,6 +218,10 @@ mod fatal_display_tests {
                 "HTML parser-owned reservation failed at PatchHistoryObservationStorage",
             ),
         ] {
+            assert!(
+                ParserFatalError::ResourceExhaustion(ParserResourceExhaustion::at(site))
+                    .is_resource_exhaustion()
+            );
             assert_eq!(
                 ParserFatalError::ResourceExhaustion(ParserResourceExhaustion::at(site))
                     .to_string(),

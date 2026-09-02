@@ -461,7 +461,10 @@ fn write_execution(
             pre_attempt,
         } => {
             writer.line("attempt", "not-attempted")?;
-            writer.line("not-attempted-reason", not_attempted_reason_name(*reason))?;
+            writer.line(
+                "not-attempted-reason",
+                historical_not_attempted_reason_name(*reason)?,
+            )?;
             writer.optional_line(
                 "pre-attempt-outcome",
                 pre_attempt.as_ref().map(pre_attempt_name),
@@ -587,10 +590,15 @@ pub(crate) fn surface_name(value: ParserObservationSurface) -> &'static str {
     }
 }
 
-fn not_attempted_reason_name(value: NotAttemptedReason) -> &'static str {
+fn historical_not_attempted_reason_name(
+    value: NotAttemptedReason,
+) -> Result<&'static str, ReportBuildError> {
     match value {
-        NotAttemptedReason::Eligibility => "eligibility",
-        NotAttemptedReason::AePreExecutionEvaluation => "ae-pre-execution-evaluation",
+        NotAttemptedReason::Eligibility => Ok("eligibility"),
+        NotAttemptedReason::AePreExecutionEvaluation => Ok("ae-pre-execution-evaluation"),
+        NotAttemptedReason::LaneExcluded => Err(ReportBuildError::UnsupportedReportCase {
+            format: REPORT_FORMAT_V1,
+        }),
     }
 }
 
@@ -1121,5 +1129,20 @@ mod tests {
         };
         let expected = include_bytes!("../tests/data/parser-report-v1-compat.txt");
         assert_eq!(build_report(&[case]).unwrap(), expected);
+    }
+
+    #[test]
+    fn parser_report_v1_rejects_named_lane_only_not_attempted_state() {
+        let mut case = case_with_artifact("");
+        case.execution = ExecutionAttempt::NotAttempted {
+            reason: NotAttemptedReason::LaneExcluded,
+            pre_attempt: None,
+        };
+        assert!(matches!(
+            build_report(&[case]),
+            Err(ReportBuildError::UnsupportedReportCase {
+                format: REPORT_FORMAT_V1,
+            })
+        ));
     }
 }

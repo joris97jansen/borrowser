@@ -8,6 +8,7 @@ default = []
 html-parser = ["dep:html-test-support"]
 css = ["dep:css-test-support"]
 rendering = ["dep:rendering-test-support"]
+aggregate = ["html-parser", "css", "rendering"]
 
 [dependencies]
 conformance-test-support = { path = "../conformance_test_support" }

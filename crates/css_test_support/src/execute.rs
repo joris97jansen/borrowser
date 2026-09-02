@@ -84,6 +84,200 @@ impl CssExecutionFailure {
     }
 }
 
+/// CSS-owned classification used by subsystem-neutral conformance accounting.
+///
+/// This projection is deliberately closed over the typed failure hierarchy.
+/// It does not replace the lossless failure and must not be inferred from a
+/// diagnostic or stable label.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CssExecutionFailureClass {
+    ResourceFailure,
+    OtherExecutionFailure,
+}
+
+pub const fn classify_execution_failure(failure: &CssExecutionFailure) -> CssExecutionFailureClass {
+    use CssExecutionFailureClass::{OtherExecutionFailure, ResourceFailure};
+
+    match failure {
+        CssExecutionFailure::HtmlParser(HtmlParseError::Fatal(error))
+            if error.is_resource_exhaustion() =>
+        {
+            ResourceFailure
+        }
+        CssExecutionFailure::HtmlParser(_) => OtherExecutionFailure,
+        CssExecutionFailure::HtmlSemanticInputResourceLimited(_)
+        | CssExecutionFailure::ResourceLimit { .. }
+        | CssExecutionFailure::StorageAllocation { .. } => ResourceFailure,
+        CssExecutionFailure::SelectorProjection(error) => classify_projection_build_failure(error),
+        CssExecutionFailure::SelectorMatching(error) => classify_projection_match_failure(error),
+        CssExecutionFailure::RuleCollection(error) => classify_rule_collection_failure(error),
+        CssExecutionFailure::StyleResolution(error) => classify_style_resolution_failure(error),
+        CssExecutionFailure::ComputedMaterialization(error) => {
+            classify_computed_style_failure(error)
+        }
+        CssExecutionFailure::TargetResolution { .. }
+        | CssExecutionFailure::ProjectionArtifact(_)
+        | CssExecutionFailure::RequiredObservation(_)
+        | CssExecutionFailure::ObservationLimitExceeded { .. }
+        | CssExecutionFailure::ObservationAllocationFailure => OtherExecutionFailure,
+    }
+}
+
+const fn classify_projection_build_failure(
+    failure: &StyleProjectionBuildError,
+) -> CssExecutionFailureClass {
+    match failure {
+        StyleProjectionBuildError::SelectorDom(failure) => classify_selector_dom_failure(failure),
+        StyleProjectionBuildError::ElementLimitExceeded { .. } => {
+            CssExecutionFailureClass::ResourceFailure
+        }
+    }
+}
+
+const fn classify_projection_match_failure(
+    failure: &StyleProjectionMatchError,
+) -> CssExecutionFailureClass {
+    match failure {
+        StyleProjectionMatchError::ProjectionKey(_) => {
+            CssExecutionFailureClass::OtherExecutionFailure
+        }
+        StyleProjectionMatchError::Matching(
+            css::SelectorMatchingLimitError::AxisStepLimitExceeded { .. },
+        ) => CssExecutionFailureClass::ResourceFailure,
+    }
+}
+
+const fn classify_selector_dom_failure(
+    failure: &css::SelectorDomBuildError,
+) -> CssExecutionFailureClass {
+    match failure {
+        css::SelectorDomBuildError::ElementIdRepresentationExhausted { .. }
+        | css::SelectorDomBuildError::ProjectionCapacityExceeded { .. }
+        | css::SelectorDomBuildError::StorageReservationFailed { .. } => {
+            CssExecutionFailureClass::ResourceFailure
+        }
+        css::SelectorDomBuildError::InvalidDocumentRoot { .. }
+        | css::SelectorDomBuildError::NestedDocument { .. }
+        | css::SelectorDomBuildError::MultipleDocumentElements { .. }
+        | css::SelectorDomBuildError::NonCanonicalHtmlElementLocalName { .. } => {
+            CssExecutionFailureClass::OtherExecutionFailure
+        }
+    }
+}
+
+pub const fn classify_rule_collection_failure(
+    failure: &css::RuleCollectionBuildError,
+) -> CssExecutionFailureClass {
+    match failure {
+        css::RuleCollectionBuildError::UnsupportedConfiguration { .. }
+        | css::RuleCollectionBuildError::LimitExceeded { .. }
+        | css::RuleCollectionBuildError::Reservation { .. } => {
+            CssExecutionFailureClass::ResourceFailure
+        }
+        css::RuleCollectionBuildError::DuplicateSourceId { .. }
+        | css::RuleCollectionBuildError::DuplicateStylesheetOrder { .. }
+        | css::RuleCollectionBuildError::NonMonotonicStylesheetOrder { .. }
+        | css::RuleCollectionBuildError::SelectorStateInvariant { .. }
+        | css::RuleCollectionBuildError::Coordinate(_) => {
+            CssExecutionFailureClass::OtherExecutionFailure
+        }
+    }
+}
+
+pub const fn classify_style_resolution_failure(
+    failure: &css::StyleResolutionError,
+) -> CssExecutionFailureClass {
+    match failure {
+        css::StyleResolutionError::SelectorDomBuild(failure) => {
+            classify_selector_dom_failure(failure)
+        }
+        css::StyleResolutionError::LimitExceeded { .. }
+        | css::StyleResolutionError::UnsupportedConfiguration { .. }
+        | css::StyleResolutionError::SelectorMatching(
+            css::SelectorMatchingLimitError::AxisStepLimitExceeded { .. },
+        ) => CssExecutionFailureClass::ResourceFailure,
+        css::StyleResolutionError::StylesheetInputBuild(failure) => match failure {
+            css::StylesheetCollectionInputBuildError::Reservation => {
+                CssExecutionFailureClass::ResourceFailure
+            }
+            css::StylesheetCollectionInputBuildError::Coordinate(_)
+            | css::StylesheetCollectionInputBuildError::SourceIdentity(_) => {
+                CssExecutionFailureClass::OtherExecutionFailure
+            }
+        },
+        css::StyleResolutionError::RuleCollectionBuild(failure) => {
+            classify_rule_collection_failure(failure)
+        }
+        css::StyleResolutionError::CascadeResolution(failure) => {
+            classify_cascade_resolution_failure(failure)
+        }
+        css::StyleResolutionError::MatchingEnvironmentMismatch { .. }
+        | css::StyleResolutionError::RuleInputBuild(_)
+        | css::StyleResolutionError::SourceCoordinate(_) => {
+            CssExecutionFailureClass::OtherExecutionFailure
+        }
+    }
+}
+
+const fn classify_cascade_resolution_failure(
+    failure: &css::CascadeResolutionError,
+) -> CssExecutionFailureClass {
+    match failure {
+        css::CascadeResolutionError::CandidateCeilingOverflow { .. }
+        | css::CascadeResolutionError::RuleInputCeilingOverflow { .. }
+        | css::CascadeResolutionError::UnsupportedLocatorLimit { .. }
+        | css::CascadeResolutionError::CandidateLimitExceeded { .. }
+        | css::CascadeResolutionError::WinnerWorkspaceReservationFailed { .. }
+        | css::CascadeResolutionError::WinnerOutputReservationFailed { .. }
+        | css::CascadeResolutionError::RuleInputStorageReservationFailed { .. } => {
+            CssExecutionFailureClass::ResourceFailure
+        }
+        css::CascadeResolutionError::RuleInputSequenceInvariant { .. }
+        | css::CascadeResolutionError::DeclarationSourceOrderInvariant { .. }
+        | css::CascadeResolutionError::DuplicateCandidateIdentity { .. }
+        | css::CascadeResolutionError::InconsistentCandidateIdentity { .. }
+        | css::CascadeResolutionError::EqualPriorityDistinctCandidates { .. } => {
+            CssExecutionFailureClass::OtherExecutionFailure
+        }
+    }
+}
+
+pub const fn classify_computed_style_failure(
+    failure: &css::ComputedStyleResolutionError,
+) -> CssExecutionFailureClass {
+    match failure {
+        css::ComputedStyleResolutionError::SelectorDomBuild(failure) => {
+            classify_selector_dom_failure(failure)
+        }
+        css::ComputedStyleResolutionError::StyleResolution(failure) => {
+            classify_style_resolution_failure(failure)
+        }
+        css::ComputedStyleResolutionError::ProjectionSourceRootMismatch
+        | css::ComputedStyleResolutionError::ProjectionShapeMismatch { .. }
+        | css::ComputedStyleResolutionError::MissingMatchingEnvironment
+        | css::ComputedStyleResolutionError::MatchingEnvironmentMismatch { .. }
+        | css::ComputedStyleResolutionError::MissingResolvedElement { .. }
+        | css::ComputedStyleResolutionError::ResolvedElementNameMismatch { .. }
+        | css::ComputedStyleResolutionError::ResolvedElementNamespaceMismatch { .. }
+        | css::ComputedStyleResolutionError::MissingComputedParent { .. }
+        | css::ComputedStyleResolutionError::MissingComputedElementStyle { .. }
+        | css::ComputedStyleResolutionError::ComputedElementNameMismatch { .. }
+        | css::ComputedStyleResolutionError::ComputedElementNamespaceMismatch { .. }
+        | css::ComputedStyleResolutionError::ComputedElementIdentityMismatch { .. }
+        | css::ComputedStyleResolutionError::ExtraComputedElementStyle { .. }
+        | css::ComputedStyleResolutionError::MissingResolvedProperty { .. }
+        | css::ComputedStyleResolutionError::MissingInheritedParent { .. }
+        | css::ComputedStyleResolutionError::NonInheritedPropertyMarkedInherited { .. }
+        | css::ComputedStyleResolutionError::InitialValueMismatch { .. }
+        | css::ComputedStyleResolutionError::WinnerMissingSpecifiedValue { .. }
+        | css::ComputedStyleResolutionError::WinnerPropertyMismatch { .. }
+        | css::ComputedStyleResolutionError::Normalization(_)
+        | css::ComputedStyleResolutionError::Build(_) => {
+            CssExecutionFailureClass::OtherExecutionFailure
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CssExecutionStorage {
     ParsedStylesheets,
@@ -939,6 +1133,82 @@ fn format_failure(_: std::fmt::Error) -> (CssExecutionPhase, CssExecutionFailure
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resource_classifier_is_exhaustive_over_css_failure_families() {
+        use CssExecutionFailureClass::{OtherExecutionFailure, ResourceFailure};
+
+        let resources = [
+            CssExecutionFailure::ResourceLimit {
+                resource: CssExecutionResourceLimit::SelectorParsing,
+            },
+            CssExecutionFailure::StorageAllocation {
+                storage: CssExecutionStorage::ParsedStylesheets,
+            },
+            CssExecutionFailure::SelectorProjection(
+                StyleProjectionBuildError::ElementLimitExceeded {
+                    limit: 1,
+                    observed: 2,
+                },
+            ),
+            CssExecutionFailure::SelectorProjection(StyleProjectionBuildError::SelectorDom(
+                css::SelectorDomBuildError::ElementIdRepresentationExhausted { maximum: 1 },
+            )),
+            CssExecutionFailure::SelectorMatching(StyleProjectionMatchError::Matching(
+                css::SelectorMatchingLimitError::AxisStepLimitExceeded { limit: 1 },
+            )),
+            CssExecutionFailure::RuleCollection(css::RuleCollectionBuildError::Reservation {
+                storage: css::RuleCollectionStorage::Rules,
+            }),
+            CssExecutionFailure::StyleResolution(css::StyleResolutionError::LimitExceeded {
+                limit: css::StyleResolutionLimit::MatchedRulesPerElement,
+                configured: 1,
+            }),
+            CssExecutionFailure::StyleResolution(css::StyleResolutionError::StylesheetInputBuild(
+                css::StylesheetCollectionInputBuildError::Reservation,
+            )),
+            CssExecutionFailure::StyleResolution(css::StyleResolutionError::CascadeResolution(
+                css::CascadeResolutionError::WinnerWorkspaceReservationFailed { requested: 1 },
+            )),
+            CssExecutionFailure::ComputedMaterialization(
+                css::ComputedStyleResolutionError::SelectorDomBuild(
+                    css::SelectorDomBuildError::ProjectionCapacityExceeded {
+                        storage: css::SelectorDomBuildStorage::ElementRecords,
+                    },
+                ),
+            ),
+        ];
+        assert!(
+            resources
+                .iter()
+                .all(|failure| classify_execution_failure(failure) == ResourceFailure)
+        );
+
+        let other = [
+            CssExecutionFailure::HtmlParser(HtmlParseError::Decode),
+            CssExecutionFailure::SelectorProjection(StyleProjectionBuildError::SelectorDom(
+                css::SelectorDomBuildError::NestedDocument { depth: 1 },
+            )),
+            CssExecutionFailure::SelectorMatching(StyleProjectionMatchError::ProjectionKey(
+                css::StyleProjectionKeyError::RootMismatch,
+            )),
+            CssExecutionFailure::StyleResolution(css::StyleResolutionError::SelectorDomBuild(
+                css::SelectorDomBuildError::NestedDocument { depth: 1 },
+            )),
+            CssExecutionFailure::ComputedMaterialization(
+                css::ComputedStyleResolutionError::MissingMatchingEnvironment,
+            ),
+            CssExecutionFailure::RequiredObservation(
+                CssRequiredObservationFailure::PropertyNameUnresolved,
+            ),
+            CssExecutionFailure::ObservationAllocationFailure,
+        ];
+        assert!(
+            other
+                .iter()
+                .all(|failure| classify_execution_failure(failure) == OtherExecutionFailure)
+        );
+    }
 
     fn test_limits() -> crate::CssFixtureLimits {
         crate::CssFixtureLimits::try_new(

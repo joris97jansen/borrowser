@@ -2,7 +2,8 @@ use std::path::Path;
 
 use conformance_test_support::{
     ExecutionEnvironmentAssessment, InventoryRepository, ObservationSurface, TestId,
-    ValidatedFixture, discover_inventory, evaluate_execution_eligibility, load_expected_results,
+    ValidatedExpectedResults, ValidatedFixture, ValidatedInventory, discover_inventory,
+    evaluate_execution_eligibility, load_expected_results,
 };
 use html_test_support::parser_fixture::{
     DeclaredExpectation, DispositionEvaluation, ExpectationSurface, FixtureAttemptState,
@@ -144,6 +145,11 @@ impl ParserRunSummary {
     pub fn has_unexpected_results(&self) -> bool {
         self.cases.iter().any(|case| case.policy.is_unexpected())
     }
+
+    #[cfg(feature = "aggregate")]
+    pub(crate) fn into_cases(self) -> Vec<NormalizedCaseResult> {
+        self.cases
+    }
 }
 
 pub fn run_repository_parser_cases(
@@ -154,13 +160,45 @@ pub fn run_repository_parser_cases(
 
 fn run_repository_parser_cases_with_evaluator(
     repository_root: &Path,
-    mut evaluator: impl FnMut(&ValidatedFixtureSpec) -> FixtureEvaluation,
+    evaluator: impl FnMut(&ValidatedFixtureSpec) -> FixtureEvaluation,
 ) -> Result<ParserRunSummary, ParserRunError> {
     let fixture_root = repository_root.join("tests/conformance/fixtures");
     let inventory = discover_inventory(&InventoryRepository::new(repository_root, &fixture_root))
         .map_err(ParserRunError::Inventory)?;
     let expected = load_expected_results(repository_root, &inventory)
         .map_err(ParserRunError::ExpectedResults)?;
+    run_repository_parser_cases_with_inventory_and_evaluator(
+        repository_root,
+        &inventory,
+        &expected,
+        OrchestrationSelectionMode::DirectAdapterExecution,
+        evaluator,
+    )
+}
+
+#[cfg(feature = "aggregate")]
+pub(crate) fn run_repository_parser_cases_with_inventory(
+    repository_root: &Path,
+    inventory: &ValidatedInventory,
+    expected: &ValidatedExpectedResults,
+    selection_mode: OrchestrationSelectionMode,
+) -> Result<ParserRunSummary, ParserRunError> {
+    run_repository_parser_cases_with_inventory_and_evaluator(
+        repository_root,
+        inventory,
+        expected,
+        selection_mode,
+        evaluate_fixture,
+    )
+}
+
+fn run_repository_parser_cases_with_inventory_and_evaluator(
+    repository_root: &Path,
+    inventory: &ValidatedInventory,
+    expected: &ValidatedExpectedResults,
+    selection_mode: OrchestrationSelectionMode,
+    mut evaluator: impl FnMut(&ValidatedFixtureSpec) -> FixtureEvaluation,
+) -> Result<ParserRunSummary, ParserRunError> {
     let environment = ExecutionEnvironmentAssessment::empty();
     let mut cases = Vec::new();
     cases
@@ -204,6 +242,20 @@ fn run_repository_parser_cases_with_evaluator(
             ae_disposition: None,
             policy: DerivedPolicyResult::NotRun,
         };
+        let execution_decision = orchestration_execution_decision(
+            &result.ag.eligibility,
+            &result.ag.lane_exclusions,
+            selection_mode,
+        );
+        if matches!(
+            execution_decision,
+            OrchestrationExecutionDecision::LaneExcluded
+        ) {
+            result.execution = ExecutionAttempt::NotAttempted {
+                reason: NotAttemptedReason::LaneExcluded,
+                pre_attempt: None,
+            };
+        }
         // A ready harness assertion is evidence that the executable package and
         // comparison profile exist, even when engine capability blocks execution.
         // Unready or unclassified cases need no executable package to be reported.
@@ -212,7 +264,7 @@ fn run_repository_parser_cases_with_evaluator(
         } else {
             None
         };
-        if matches!(result.ag.eligibility, Eligibility::Runnable) {
+        if matches!(execution_decision, OrchestrationExecutionDecision::Execute) {
             let canonical = canonical
                 .as_ref()
                 .ok_or(ParserRunError::EvaluationInvariant {
@@ -223,11 +275,18 @@ fn run_repository_parser_cases_with_evaluator(
                 evaluator(canonical)
             })?;
         }
-        result.policy = derive_policy(
-            &result.ag.expectation,
-            &result.ag.eligibility,
-            &result.execution,
-        );
+        result.policy = if matches!(
+            execution_decision,
+            OrchestrationExecutionDecision::LaneExcluded
+        ) {
+            DerivedPolicyResult::NotRun
+        } else {
+            derive_policy(
+                &result.ag.expectation,
+                &result.ag.eligibility,
+                &result.execution,
+            )
+        };
         cases.push(result);
     }
     cases.sort_by(|left, right| left.ag.test_id.cmp(&right.ag.test_id));
@@ -747,6 +806,7 @@ fn normalize_surface(surface: ExpectationSurface) -> ParserObservationSurface {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use conformance_test_support::LanePolicyScope;
     use std::fs;
 
     fn inventory_only_repository(metadata: &str) -> tempfile::TempDir {
@@ -806,6 +866,92 @@ mod tests {
         });
         assert_eq!(value, 17);
         assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn named_lane_exclusion_retains_metadata_and_never_invokes_parser_evaluator() {
+        let (repository, _) = packaged_fixture(
+            "borrowser-html-parser-fixture-v2",
+            "parse_errors = \"parse-errors.txt\"",
+        );
+        let metadata = classified_metadata(
+            "availability = \"available\"",
+            "readiness = \"ready\"",
+        )
+        .replace(
+            "lane_exclusions = []",
+            "lane_exclusions = [{ policy = \"normal-ci\", reason = \"Synthetic lane exclusion.\" }]",
+        );
+        fs::write(
+            repository
+                .path()
+                .join("tests/conformance/expected-results.toml"),
+            format!(
+                "format = \"borrowser-conformance-expected-results-v1\"\ngranularity = \"logical-test\"\n\n[[tests]]\nid = \"html-tokenizer-parser-case\"\n{metadata}"
+            ),
+        )
+        .unwrap();
+        let fixture_root = repository.path().join("tests/conformance/fixtures");
+        let inventory =
+            discover_inventory(&InventoryRepository::new(repository.path(), fixture_root)).unwrap();
+        let expected = load_expected_results(repository.path(), &inventory).unwrap();
+        let calls = std::cell::Cell::new(0_u32);
+        let summary = run_repository_parser_cases_with_inventory_and_evaluator(
+            repository.path(),
+            &inventory,
+            &expected,
+            OrchestrationSelectionMode::NamedLane(LanePolicyScope::NormalCi),
+            |_| {
+                calls.set(calls.get() + 1);
+                panic!("a lane-excluded runnable case must not invoke the evaluator")
+            },
+        )
+        .unwrap();
+
+        assert_eq!(calls.get(), 0);
+        assert_eq!(summary.cases()[0].ag.lane_exclusions.len(), 1);
+        assert!(matches!(
+            summary.cases()[0].execution,
+            ExecutionAttempt::NotAttempted {
+                reason: NotAttemptedReason::LaneExcluded,
+                pre_attempt: None,
+            }
+        ));
+        assert_eq!(summary.cases()[0].policy, DerivedPolicyResult::NotRun);
+
+        let direct = run_repository_parser_cases(repository.path()).unwrap();
+        assert!(matches!(
+            direct.cases()[0].execution,
+            ExecutionAttempt::Attempted { .. }
+        ));
+
+        let aggregate = crate::run_repository_aggregate(
+            repository.path(),
+            crate::AggregateExecutionRequest {
+                lane: LanePolicyScope::NormalCi,
+            },
+        )
+        .unwrap();
+        let case = &aggregate.cases()[0];
+        assert_eq!(case.ag.lane_exclusions.len(), 1);
+        assert!(matches!(
+            case.variants[0].selection,
+            crate::LaneSelection::Excluded {
+                lane: LanePolicyScope::NormalCi,
+                ..
+            }
+        ));
+        assert!(matches!(
+            case.variants[0].execution,
+            crate::AggregateExecutionAttempt::NotAttempted {
+                reason: crate::AggregateNotAttemptedReason::LaneExcluded,
+            }
+        ));
+        assert_eq!(case.variants[0].policy, DerivedPolicyResult::NotRun);
+        assert!(matches!(
+            case.variants[0].subsystem,
+            crate::AggregateSubsystemResult::Parser(_)
+        ));
     }
 
     #[test]

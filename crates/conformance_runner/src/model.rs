@@ -151,6 +151,7 @@ pub enum EligibilityFact {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NotAttemptedReason {
     Eligibility,
+    LaneExcluded,
     AePreExecutionEvaluation,
 }
 
@@ -318,6 +319,50 @@ pub struct AgCaseState {
     pub expectation: AgExpectation,
 }
 
+/// Crate-private orchestration choice. Historical direct adapter execution is
+/// intentionally not an AG lane and cannot be converted into one.
+#[cfg(any(feature = "html-parser", feature = "css", feature = "rendering"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OrchestrationSelectionMode {
+    DirectAdapterExecution,
+    #[cfg_attr(not(feature = "aggregate"), allow(dead_code))]
+    NamedLane(LanePolicyScope),
+}
+
+#[cfg(any(feature = "html-parser", feature = "css", feature = "rendering"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OrchestrationExecutionDecision {
+    Execute,
+    NotEligible,
+    LaneExcluded,
+}
+
+#[cfg(any(feature = "html-parser", feature = "css", feature = "rendering"))]
+pub(crate) fn orchestration_execution_decision(
+    eligibility: &Eligibility,
+    lane_exclusions: &[ReasonedLaneExclusion],
+    mode: OrchestrationSelectionMode,
+) -> OrchestrationExecutionDecision {
+    if !matches!(eligibility, Eligibility::Runnable) {
+        return OrchestrationExecutionDecision::NotEligible;
+    }
+    match mode {
+        OrchestrationSelectionMode::DirectAdapterExecution => {
+            OrchestrationExecutionDecision::Execute
+        }
+        OrchestrationSelectionMode::NamedLane(lane) => {
+            if lane_exclusions
+                .iter()
+                .any(|exclusion| exclusion.policy == lane)
+            {
+                OrchestrationExecutionDecision::LaneExcluded
+            } else {
+                OrchestrationExecutionDecision::Execute
+            }
+        }
+    }
+}
+
 /// Policy-facing projection of a lossless subsystem terminal outcome.
 ///
 /// Adapters derive this value from their closed outcome enums; it never
@@ -468,6 +513,65 @@ mod tests {
         assert_eq!(
             derive_policy(&AgExpectation::ExpectedPass, &eligibility, &execution),
             DerivedPolicyResult::NotRun
+        );
+    }
+
+    #[cfg(feature = "aggregate")]
+    #[test]
+    fn named_lane_selection_is_applied_only_after_runnable_eligibility() {
+        let exclusions = vec![ReasonedLaneExclusion {
+            policy: LanePolicyScope::NormalCi,
+            reason: "synthetic exclusion".to_owned(),
+        }];
+        assert_eq!(
+            orchestration_execution_decision(
+                &Eligibility::Runnable,
+                &exclusions,
+                OrchestrationSelectionMode::NamedLane(LanePolicyScope::NormalCi),
+            ),
+            OrchestrationExecutionDecision::LaneExcluded
+        );
+        assert_eq!(
+            orchestration_execution_decision(
+                &Eligibility::Runnable,
+                &exclusions,
+                OrchestrationSelectionMode::NamedLane(LanePolicyScope::LocalExtended),
+            ),
+            OrchestrationExecutionDecision::Execute
+        );
+        for eligibility in [
+            Eligibility::NotRunnable {
+                blockers: vec![],
+                unresolved: vec![],
+            },
+            Eligibility::NotYetEstablished { unresolved: vec![] },
+        ] {
+            assert_eq!(
+                orchestration_execution_decision(
+                    &eligibility,
+                    &exclusions,
+                    OrchestrationSelectionMode::NamedLane(LanePolicyScope::NormalCi),
+                ),
+                OrchestrationExecutionDecision::NotEligible
+            );
+        }
+        assert_eq!(exclusions.len(), 1, "AG3 declarations remain metadata");
+    }
+
+    #[cfg(any(feature = "html-parser", feature = "css", feature = "rendering"))]
+    #[test]
+    fn direct_adapter_execution_is_not_a_named_lane() {
+        let exclusions = vec![ReasonedLaneExclusion {
+            policy: LanePolicyScope::NormalCi,
+            reason: "synthetic exclusion".to_owned(),
+        }];
+        assert_eq!(
+            orchestration_execution_decision(
+                &Eligibility::Runnable,
+                &exclusions,
+                OrchestrationSelectionMode::DirectAdapterExecution,
+            ),
+            OrchestrationExecutionDecision::Execute
         );
     }
 }

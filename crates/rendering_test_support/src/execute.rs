@@ -112,6 +112,57 @@ impl RenderingExecutionFailure {
     }
 }
 
+/// Rendering-owned resource projection over the closed execution-failure
+/// hierarchy retained by rendering captures.
+///
+/// The lossless `RenderingExecutionFailure` remains authoritative. This class
+/// exists only so subsystem-neutral AG accounting does not inspect diagnostic
+/// text or reach into CSS/HTML implementation details.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RenderingExecutionFailureClass {
+    ResourceFailure,
+    OtherExecutionFailure,
+}
+
+impl From<css_test_support::CssExecutionFailureClass> for RenderingExecutionFailureClass {
+    fn from(value: css_test_support::CssExecutionFailureClass) -> Self {
+        match value {
+            css_test_support::CssExecutionFailureClass::ResourceFailure => Self::ResourceFailure,
+            css_test_support::CssExecutionFailureClass::OtherExecutionFailure => {
+                Self::OtherExecutionFailure
+            }
+        }
+    }
+}
+
+pub fn classify_execution_failure(
+    failure: &RenderingExecutionFailure,
+) -> RenderingExecutionFailureClass {
+    use RenderingExecutionFailureClass::{OtherExecutionFailure, ResourceFailure};
+
+    match failure {
+        RenderingExecutionFailure::HtmlParser(html::HtmlParseError::Fatal(error))
+            if error.is_resource_exhaustion() =>
+        {
+            ResourceFailure
+        }
+        RenderingExecutionFailure::HtmlParser(_) => OtherExecutionFailure,
+        RenderingExecutionFailure::HtmlSemanticInputResourceLimited { .. }
+        | RenderingExecutionFailure::StylesheetSemanticInputResourceLimited { .. }
+        | RenderingExecutionFailure::StorageAllocation { .. } => ResourceFailure,
+        RenderingExecutionFailure::CssRuleCollection(failure) => {
+            css_test_support::classify_rule_collection_failure(failure).into()
+        }
+        RenderingExecutionFailure::CssStyleResolution(failure) => {
+            css_test_support::classify_style_resolution_failure(failure).into()
+        }
+        RenderingExecutionFailure::CssComputedStyle(failure)
+        | RenderingExecutionFailure::CssStyleTree(failure) => {
+            css_test_support::classify_computed_style_failure(failure).into()
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RenderingIncompleteObservationReason {
     ByteLimitExceeded {
@@ -723,6 +774,115 @@ fn storage_failure(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resource_classifier_is_exhaustive_over_rendering_failure_families() {
+        use RenderingExecutionFailureClass::{OtherExecutionFailure, ResourceFailure};
+
+        let resources = [
+            RenderingExecutionFailure::StylesheetSemanticInputResourceLimited { index: 0 },
+            RenderingExecutionFailure::StorageAllocation {
+                storage: RenderingExecutionStorage::Observations,
+            },
+            RenderingExecutionFailure::CssRuleCollection(
+                css::RuleCollectionBuildError::Reservation {
+                    storage: css::RuleCollectionStorage::Declarations,
+                },
+            ),
+            RenderingExecutionFailure::CssStyleResolution(
+                css::StyleResolutionError::CascadeResolution(
+                    css::CascadeResolutionError::CandidateLimitExceeded {
+                        required: 2,
+                        maximum: 1,
+                    },
+                ),
+            ),
+            RenderingExecutionFailure::CssComputedStyle(
+                css::ComputedStyleResolutionError::SelectorDomBuild(
+                    css::SelectorDomBuildError::StorageReservationFailed {
+                        storage: css::SelectorDomBuildStorage::ElementRecords,
+                    },
+                ),
+            ),
+            RenderingExecutionFailure::CssStyleTree(
+                css::ComputedStyleResolutionError::StyleResolution(
+                    css::StyleResolutionError::LimitExceeded {
+                        limit: css::StyleResolutionLimit::StyledElementsPerDocument,
+                        configured: 1,
+                    },
+                ),
+            ),
+        ];
+        assert!(
+            resources
+                .iter()
+                .all(|failure| classify_execution_failure(failure) == ResourceFailure)
+        );
+
+        let other = [
+            RenderingExecutionFailure::HtmlParser(html::HtmlParseError::Decode),
+            RenderingExecutionFailure::CssStyleResolution(
+                css::StyleResolutionError::SelectorDomBuild(
+                    css::SelectorDomBuildError::NestedDocument { depth: 1 },
+                ),
+            ),
+            RenderingExecutionFailure::CssComputedStyle(
+                css::ComputedStyleResolutionError::MissingMatchingEnvironment,
+            ),
+            RenderingExecutionFailure::CssStyleTree(
+                css::ComputedStyleResolutionError::ProjectionSourceRootMismatch,
+            ),
+        ];
+        assert!(
+            other
+                .iter()
+                .all(|failure| classify_execution_failure(failure) == OtherExecutionFailure)
+        );
+    }
+
+    #[test]
+    fn wrapped_css_failures_delegate_to_the_css_owned_classifier() {
+        let rule_collection = css::RuleCollectionBuildError::Reservation {
+            storage: css::RuleCollectionStorage::Rules,
+        };
+        let expected = RenderingExecutionFailureClass::from(
+            css_test_support::classify_rule_collection_failure(&rule_collection),
+        );
+        assert_eq!(
+            classify_execution_failure(&RenderingExecutionFailure::CssRuleCollection(
+                rule_collection,
+            )),
+            expected
+        );
+
+        let style_resolution = css::StyleResolutionError::SelectorDomBuild(
+            css::SelectorDomBuildError::NestedDocument { depth: 1 },
+        );
+        let expected = RenderingExecutionFailureClass::from(
+            css_test_support::classify_style_resolution_failure(&style_resolution),
+        );
+        assert_eq!(
+            classify_execution_failure(&RenderingExecutionFailure::CssStyleResolution(
+                style_resolution,
+            )),
+            expected
+        );
+
+        let computed_style = css::ComputedStyleResolutionError::SelectorDomBuild(
+            css::SelectorDomBuildError::StorageReservationFailed {
+                storage: css::SelectorDomBuildStorage::ElementRecords,
+            },
+        );
+        let expected = RenderingExecutionFailureClass::from(
+            css_test_support::classify_computed_style_failure(&computed_style),
+        );
+        for failure in [
+            RenderingExecutionFailure::CssComputedStyle(computed_style.clone()),
+            RenderingExecutionFailure::CssStyleTree(computed_style),
+        ] {
+            assert_eq!(classify_execution_failure(&failure), expected);
+        }
+    }
 
     #[test]
     fn paired_capture_attempts_reference_after_test_terminal_failure() {

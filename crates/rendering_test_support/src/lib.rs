@@ -21,10 +21,11 @@ pub use comparison::{
 pub use environment::{AvailableWidthCssPx, RenderingExecutionVariantId, SyntheticTextMetricsV1};
 pub use execute::{
     CanonicalRenderingCapture, PairedRenderingCaptureOutcome, RenderingCaptureOutcome,
-    RenderingExecutionFailure, RenderingExecutionPhase, RenderingExecutionStorage,
-    RenderingFinalInvariantFailure, RenderingIncompleteObservationReason,
-    RenderingMismatchEvidence, RenderingObservedExecutionOutcome, RenderingProfileObservation,
-    RenderingSnapshotDifference, capture_paired_variant, evaluate_variant,
+    RenderingExecutionFailure, RenderingExecutionFailureClass, RenderingExecutionPhase,
+    RenderingExecutionStorage, RenderingFinalInvariantFailure,
+    RenderingIncompleteObservationReason, RenderingMismatchEvidence,
+    RenderingObservedExecutionOutcome, RenderingProfileObservation, RenderingSnapshotDifference,
+    capture_paired_variant, classify_execution_failure, evaluate_variant,
 };
 pub use fixture::{
     RENDERING_CUMULATIVE_EXPECTED_SNAPSHOT_BYTES_V1,
