@@ -52,7 +52,7 @@ fn exact_manifest_contract_has_fixed_fields_whitespace_and_reference_metadata() 
     .expect("UTF-8 manifest");
     assert_eq!(
         actual,
-        r#"format = "borrowser-conformance-manifest-v3"
+        r#"format = "borrowser-conformance-manifest-v4"
 
 [[tests]]
 id = "semantic-reference"
@@ -100,6 +100,36 @@ fn structural_reference_is_validated_and_serialized_as_a_declaration() {
     assert!(manifest.contains(
         "reference_path = \"tests/conformance/fixtures/structural-reference/reference.html\"\n"
     ));
+}
+
+#[test]
+fn repository_v4_external_source_and_manifest_lineage_are_lossless() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .unwrap();
+    let inventory = discover_inventory(&InventoryRepository::new(
+        root,
+        root.join("tests/conformance/fixtures"),
+    ))
+    .unwrap();
+    let fixture = inventory
+        .fixtures()
+        .iter()
+        .find(|fixture| fixture.id().as_str() == "wpt-derived-body-background-display-none")
+        .unwrap();
+    assert_eq!(fixture.source_kind().as_str(), "external-derived");
+    assert_eq!(
+        fixture.source().lineage_id().unwrap().as_str(),
+        "wpt-body-background-display-none-paint-v1"
+    );
+    let manifest = String::from_utf8(serialize_manifest(&build_manifest(&inventory))).unwrap();
+    let record = manifest
+        .split("id = \"wpt-derived-body-background-display-none\"")
+        .nth(1)
+        .unwrap();
+    assert!(record.contains("source_kind = \"external-derived\"\n"));
+    assert!(record.contains("source_lineage_id = \"wpt-body-background-display-none-paint-v1\"\n"));
 }
 
 #[test]

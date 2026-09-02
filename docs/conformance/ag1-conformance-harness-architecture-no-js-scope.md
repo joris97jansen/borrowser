@@ -108,6 +108,32 @@ Production and conformance execution must use the same subsystem implementation
 paths. Internal debug snapshots are versioned regression contracts, not public
 browser APIs and not inputs that may steer production behavior.
 
+### AG8 external-source boundaries
+
+AG8 preserves the federated boundary with these direct test-tooling edges:
+
+```text
+html-test-support -> external-test-provenance
+html-test-support -> html
+conformance-test-support -> external-test-provenance
+wpt-test-support -> external-test-provenance
+wpt-test-support -> conformance-test-support
+wpt-test-support -> html5ever
+rendering-test-support -> wpt-test-support
+rendering-test-support -> conformance-test-support
+rendering-test-support -> html, css, layout, gfx
+conformance-runner -> conformance-test-support
+conformance-runner -> selected subsystem test-support crates
+```
+
+`conformance-runner` has no direct WPT dependency. `external-test-provenance`
+contains only source-neutral identity, path, revision, digest, licence, and
+attribution primitives and has no dependency on Borrowser engine or AG crates.
+`conformance-test-support` never names a WPT type. WPT interpretation projects
+only generic `SourceRequirements` downward; WPT-specific forms, reference
+graphs, automation/readiness/server facts, and summaries remain WPT-owned. No
+production library or binary target depends on this test tooling.
+
 ## Orthogonal Conformance State
 
 AG's conformance state is multidimensional. The following dimensions must not

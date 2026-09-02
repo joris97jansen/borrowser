@@ -6,10 +6,10 @@ use super::load::{
 };
 use super::model::*;
 use super::schema::*;
+use external_test_provenance::parse_external_provenance_v1;
 use html::ElementNamespace;
 use html::conformance::InvariantFailureCode;
 use ring::digest::{SHA256, digest};
-use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 use std::fs;
@@ -503,22 +503,6 @@ fn validate_source(
     }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ExternalProvenanceDeclaration {
-    format: String,
-    upstream_project: String,
-    upstream_revision: String,
-    upstream_path: String,
-    source_record_ordinal: u64,
-    source_record_sha256: String,
-    source_file_sha256: String,
-    license_identifier: String,
-    license_notice: String,
-    attribution: String,
-    adaptation: String,
-}
-
 fn validate_source_v3(
     bundle: &FixtureBundle,
     source: FixtureSourceDeclarationV3,
@@ -539,72 +523,30 @@ fn validate_source_v3(
             validate_relative_path(&record_path).map_err(|kind| bundle_error(bundle, kind))?;
             let record_bytes = file_access.read_regular_file(bundle, &record_path)?;
             validate_sha256(bundle, &record_sha256, &record_bytes)?;
-            let record_text = std::str::from_utf8(&record_bytes).map_err(|_| {
+            let declaration = parse_external_provenance_v1(&record_bytes).map_err(|error| {
                 bundle_error(
                     bundle,
-                    FixtureLoadErrorKind::InvalidFixtureToml(
-                        "external provenance record must be UTF-8".to_string(),
-                    ),
+                    FixtureLoadErrorKind::InvalidFixtureToml(format!(
+                        "external provenance record: {error}"
+                    )),
                 )
             })?;
-            let declaration: ExternalProvenanceDeclaration =
-                toml::from_str(record_text).map_err(|error| {
-                    bundle_error(
-                        bundle,
-                        FixtureLoadErrorKind::InvalidFixtureToml(format!(
-                            "external provenance record: {error}"
-                        )),
-                    )
-                })?;
-            if declaration.format != "borrowser-external-provenance-v1" {
-                return invalid_combination(
-                    bundle,
-                    "external provenance record format must be borrowser-external-provenance-v1",
-                );
-            }
-            for (label, value) in [
-                ("upstream project", &declaration.upstream_project),
-                ("upstream revision", &declaration.upstream_revision),
-                ("upstream path", &declaration.upstream_path),
-                ("licence identifier", &declaration.license_identifier),
-                ("licence notice", &declaration.license_notice),
-                ("attribution", &declaration.attribution),
-                ("adaptation", &declaration.adaptation),
-            ] {
-                require_non_empty(bundle, label, value)?;
-            }
-            validate_external_revision_identifier(bundle, &declaration.upstream_revision)?;
-            validate_external_source_path(bundle, &declaration.upstream_path)?;
-            validate_hex_sha256(bundle, "source record", &declaration.source_record_sha256)?;
-            validate_hex_sha256(bundle, "source file", &declaration.source_file_sha256)?;
-            if declaration.source_record_ordinal == 0 {
-                return invalid_combination(
-                    bundle,
-                    "external provenance source record ordinal must be greater than zero",
-                );
-            }
-            let case_identity = format!(
-                "{}:{}:{}:{}",
-                declaration.upstream_revision,
-                declaration.upstream_path,
-                declaration.source_record_ordinal,
-                declaration.source_record_sha256,
-            );
+            let case_identity = declaration.case_identity();
             Ok(FixtureSource::External {
                 provenance: record_path.clone(),
                 provenance_record: Box::new(ExternalProvenance {
                     record_path,
                     provenance_sha256: record_sha256,
-                    upstream_project: declaration.upstream_project,
-                    upstream_revision: declaration.upstream_revision,
-                    upstream_path: declaration.upstream_path,
+                    upstream_project: declaration.upstream_project().as_str().to_owned(),
+                    upstream_revision: declaration.upstream_revision().as_str().to_owned(),
+                    upstream_path: declaration.upstream_path().as_str().to_owned(),
                     case_identity,
-                    source_file_sha256: declaration.source_file_sha256,
-                    source_record_sha256: declaration.source_record_sha256,
-                    license_identifier: declaration.license_identifier,
-                    license_notice: declaration.license_notice,
-                    attribution: declaration.attribution,
-                    adaptation: declaration.adaptation,
+                    source_file_sha256: declaration.source_file_sha256().to_hex(),
+                    source_record_sha256: declaration.source_record_sha256().to_hex(),
+                    license_identifier: declaration.license_identifier().as_str().to_owned(),
+                    license_notice: declaration.license_notice().as_str().to_owned(),
+                    attribution: declaration.attribution().as_str().to_owned(),
+                    adaptation: declaration.adaptation().to_owned(),
                 }),
             })
         }
@@ -1935,57 +1877,6 @@ fn validate_sha256(
                 actual,
             },
         ));
-    }
-    Ok(())
-}
-
-fn validate_hex_sha256(
-    bundle: &FixtureBundle,
-    label: &str,
-    value: &str,
-) -> Result<(), FixtureLoadError> {
-    if value.len() != 64
-        || !value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
-        return invalid_combination(
-            bundle,
-            &format!("{label} SHA-256 must be 64 hexadecimal characters"),
-        );
-    }
-    Ok(())
-}
-
-fn validate_external_revision_identifier(
-    bundle: &FixtureBundle,
-    value: &str,
-) -> Result<(), FixtureLoadError> {
-    if value != value.trim() || value.chars().any(char::is_control) {
-        return invalid_combination(
-            bundle,
-            "external upstream revision must be a stable normalized identifier",
-        );
-    }
-    Ok(())
-}
-
-fn validate_external_source_path(
-    bundle: &FixtureBundle,
-    value: &str,
-) -> Result<(), FixtureLoadError> {
-    if value.is_empty()
-        || value.contains('\\')
-        || value.contains(':')
-        || value.starts_with('/')
-        || value
-            .split('/')
-            .any(|component| component.is_empty() || component == "." || component == "..")
-    {
-        return invalid_combination(
-            bundle,
-            "external upstream path must be a portable repository-relative path",
-        );
     }
     Ok(())
 }

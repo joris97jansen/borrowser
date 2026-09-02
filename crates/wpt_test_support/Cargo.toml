@@ -1,0 +1,20 @@
+[package]
+name = "wpt-test-support"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+conformance-test-support = { path = "../conformance_test_support" }
+external-test-provenance = { path = "../external_test_provenance" }
+html5ever = "=0.39.0"
+serde = { version = "1.0", features = ["derive"] }
+tempfile = "3"
+toml = { version = "0.9", features = ["display", "parse", "serde"] }
+
+[lib]
+name = "wpt_test_support"
+path = "src/lib.rs"
+
+[[bin]]
+name = "conformance-wpt-import"
+path = "src/bin/conformance_wpt_import.rs"

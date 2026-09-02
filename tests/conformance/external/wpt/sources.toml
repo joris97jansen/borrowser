@@ -1,0 +1,140 @@
+format = "borrowser-external-source-set-v1"
+lineage_registry_format = "borrowser-external-lineage-registry-v1"
+source_set = "ag8-wpt-proof-population"
+upstream_project = "web-platform-tests/wpt"
+revision = "384c6d4cc3eeaef056564c29446bdfe853991da8"
+license = "BSD-3-Clause"
+license_notice_path = "tests/wpt/external/LICENSE-3-Clause.txt"
+license_notice_sha256 = "5fac07febb0e2a97fb0d7b0def149ec08b642e1ba4b9c345283ab1cbd2af6570"
+attribution = "Copyright Web Platform Tests contributors"
+
+[[files]]
+id = "body-source"
+path = "css/css-backgrounds/background-color-body-propagation-004.html"
+sha256 = "689f62b83cb181e6e2a5ca654ccb70d97a2073d50954cd3f8d61b7647dc836d7"
+role = "accounted-source"
+parents = ["wpt-css-body-background-display-none"]
+
+[[files]]
+id = "blank-reference"
+path = "css/reference/blank.html"
+sha256 = "e6a6d3340b0b940e028c760c75a092acd2e375f268715fcd8b1c6a64bbc56570"
+role = "reference-node"
+parents = ["wpt-css-body-background-display-none"]
+
+[[files]]
+id = "testharness-source"
+path = "css/css-backgrounds/parsing/background-attachment-valid.html"
+sha256 = "7dff82992b7aee95a0a1965891ec95190fc703bed13849c7ce2224e20803a743"
+role = "accounted-source"
+parents = ["wpt-css-background-attachment-valid"]
+
+[[files]]
+id = "webdriver-source"
+path = "webdriver/tests/classic/interface/interface.py"
+sha256 = "01656c5c6c3a61922512a2b30f568a2853aedca48f82fdaa05f2d08775a2f941"
+role = "accounted-source"
+parents = ["wpt-webdriver-navigator-webdriver-active"]
+
+[[files]]
+id = "multi-reference-source"
+path = "css/css-content/attr-case-sensitivity-003.html"
+sha256 = "8c67aae411272b6cf047f24d37ae3036f4e3d25758667cd6eb045d534734f01d"
+role = "accounted-source"
+parents = ["wpt-css-attr-case-sensitivity-multi-reference"]
+
+[[files]]
+id = "multi-match-reference"
+path = "css/css-content/attr-case-sensitivity-ref-003.html"
+sha256 = "cdca717f9ebf98365f1b0cc41c8c3fe05904c90e8e702c0f7d8ae6464136cf12"
+role = "reference-node"
+parents = ["wpt-css-attr-case-sensitivity-multi-reference"]
+
+[[files]]
+id = "multi-mismatch-reference"
+path = "css/css-content/attr-case-sensitivity-ref-002.html"
+sha256 = "fcfe060b15427e079b92413eb976240ea15676c8c4aa71e63489dbf428260c7b"
+role = "reference-node"
+parents = ["wpt-css-attr-case-sensitivity-multi-reference"]
+
+[[files]]
+id = "local-resource-source"
+path = "css/css-backgrounds/background-size-one-value-1x1-image.html"
+sha256 = "6c456617caa93c632920e415baa2fb577d1e203053ad529336588daa5aa7cb15"
+role = "accounted-source"
+parents = ["wpt-css-background-size-local-image"]
+
+[[files]]
+id = "local-resource-reference"
+path = "css/css-backgrounds/reference/background-size-one-value-1x1-image-ref.html"
+sha256 = "1524977fbe9adf5babb5aeeb7ec347da88f8afd598165dd24eff1759150a5edd"
+role = "reference-node"
+parents = ["wpt-css-background-size-local-image"]
+
+[[files]]
+id = "local-resource-image"
+path = "css/css-backgrounds/support/1x1-green.png"
+sha256 = "a236213916dd30bd771a233aa1d66381eabf335bf8885304b75a4e2e370d68ce"
+role = "static-resource"
+parents = ["wpt-css-background-size-local-image"]
+
+[[files]]
+id = "server-source"
+path = "trusted-types/navigate-to-javascript-url-006.sub.html"
+sha256 = "72ddee1655e3f53bc4f9443fa2520984b54664c8294e91e3484b146bce2ca9fb"
+role = "accounted-source"
+parents = ["wpt-trusted-types-server-substitution"]
+
+[[files]]
+id = "wait-source"
+path = "css/css-backgrounds/background-clip-color-repaint.html"
+sha256 = "80a2cbfc4922d926442bff47297f7eb4009043ebc0042508a8508a5f694f158f"
+role = "accounted-source"
+parents = ["wpt-css-background-clip-reftest-wait"]
+
+[[files]]
+id = "wait-reference"
+path = "css/css-backgrounds/background-clip-color-repaint-ref.html"
+sha256 = "083e93d640843fc589f3832fd74e927212dc5869f0cbdd235a2d2300a5684d08"
+role = "reference-node"
+parents = ["wpt-css-background-clip-reftest-wait"]
+
+[[records]]
+id = "wpt-css-body-background-display-none"
+source_file = "body-source"
+
+[[records]]
+id = "wpt-css-background-attachment-valid"
+source_file = "testharness-source"
+
+[[records]]
+id = "wpt-webdriver-navigator-webdriver-active"
+source_file = "webdriver-source"
+
+[[records]]
+id = "wpt-css-attr-case-sensitivity-multi-reference"
+source_file = "multi-reference-source"
+
+[[records]]
+id = "wpt-css-background-size-local-image"
+source_file = "local-resource-source"
+
+[[records]]
+id = "wpt-trusted-types-server-substitution"
+source_file = "server-source"
+
+[[records]]
+id = "wpt-css-background-clip-reftest-wait"
+source_file = "wait-source"
+
+[[lineages]]
+id = "wpt-body-background-display-none-paint-v1"
+source_record = "wpt-css-body-background-display-none"
+adapter = "rendering-paired-semantic"
+adapter_version = "1"
+derived_test_id = "wpt-derived-body-background-display-none"
+description = "Exact-copy adaptation of pinned WPT test/reference bytes into a Borrowser semantic Paint comparison; it is not a WPT raster result."
+transformation = "exact-copy-v1"
+reference_file = "blank-reference"
+test_artifact_sha256 = "689f62b83cb181e6e2a5ca654ccb70d97a2073d50954cd3f8d61b7647dc836d7"
+reference_artifact_sha256 = "e6a6d3340b0b940e028c760c75a092acd2e375f268715fcd8b1c6a64bbc56570"

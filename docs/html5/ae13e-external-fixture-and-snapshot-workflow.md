@@ -107,3 +107,19 @@ performance-owned `.github/workflows/perf.yml` remains unchanged.
 
 Do not broaden the allowlist by directory heuristic or claim the complete
 html5lib/WPT suite from this proof.
+
+## AG8 provenance compatibility
+
+AG8 extracts only genuinely source-neutral identity and validation primitives
+into `external-test-provenance`: normalized immutable revisions, strict Git
+commit identities where required, portable upstream paths, SHA-256 digests,
+record selectors, licence identity/notice, attribution, and the existing
+`borrowser-external-provenance-v1` parser/serializer. `html-test-support`
+depends directly on that lower test-only crate and remains independent of AG.
+
+AE13e's allowlist, `.dat` parsing, record ordinals/hashes, fixture-v3
+generation, disposition semantics, canonical execution, and check/update
+workflow do not move into AG8. Existing serialized provenance round-trips
+exactly. AG8 consumes compatible source-neutral identity concepts without
+creating a competing external-source contract or making the generated AE13e
+fixtures a provenance authority.

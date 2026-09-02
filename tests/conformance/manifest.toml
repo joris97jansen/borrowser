@@ -1,4 +1,4 @@
-format = "borrowser-conformance-manifest-v3"
+format = "borrowser-conformance-manifest-v4"
 
 [[tests]]
 id = "browser-controlled-static-page-basic"
@@ -300,3 +300,21 @@ reference_relation = "match"
 reference_path = "tests/conformance/fixtures/rendering/paint-semantic-reference-basic/rendering/reference.html"
 execution_entry_path = "tests/conformance/fixtures/rendering/paint-semantic-reference-basic/rendering/fixture.toml"
 execution_support_paths = ["tests/conformance/fixtures/rendering/paint-semantic-reference-basic/rendering/reference.css", "tests/conformance/fixtures/rendering/paint-semantic-reference-basic/rendering/test.css"]
+
+[[tests]]
+id = "wpt-derived-body-background-display-none"
+fixture_format = "borrowser-conformance-fixture-v4"
+fixture_path = "tests/conformance/fixtures/rendering/wpt-derived-body-background-display-none"
+test_path = "tests/conformance/fixtures/rendering/wpt-derived-body-background-display-none/rendering/test.html"
+metadata_path = "tests/conformance/fixtures/rendering/wpt-derived-body-background-display-none/fixture.toml"
+scope = "static-html-css-no-js"
+observation = "paint-operations"
+source_kind = "external-derived"
+source_lineage_id = "wpt-body-background-display-none-paint-v1"
+source_adapter = "rendering-paired-semantic"
+source_adapter_version = "1"
+reference_kind = "semantic"
+reference_relation = "match"
+reference_path = "tests/conformance/fixtures/rendering/wpt-derived-body-background-display-none/rendering/reference.html"
+execution_entry_path = "tests/conformance/fixtures/rendering/wpt-derived-body-background-display-none/rendering/fixture.toml"
+execution_support_paths = []

@@ -1,0 +1,59 @@
+format = "borrowser-wpt-selection-policy-v1"
+policy = "ag8-static-no-js-selection-v1"
+
+[direct]
+source_forms = ["reftest"]
+path_categories = ["css-backgrounds", "css-content"]
+feature_areas = ["css-background-special-backgrounds"]
+no_js = "required"
+resource_classes = ["self-contained", "pinned-local-static"]
+pixel_assertions = "exclude"
+platform_dependencies = "exclude"
+
+[[records]]
+id = "wpt-css-body-background-display-none"
+category = "css-backgrounds"
+path_prefix = "css/css-backgrounds/"
+
+[[records]]
+id = "wpt-css-background-attachment-valid"
+category = "css-backgrounds"
+path_prefix = "css/css-backgrounds/"
+
+[[records]]
+id = "wpt-webdriver-navigator-webdriver-active"
+category = "webdriver"
+path_prefix = "webdriver/tests/"
+
+[[records]]
+id = "wpt-css-attr-case-sensitivity-multi-reference"
+category = "css-content"
+path_prefix = "css/css-content/"
+
+[[records]]
+id = "wpt-css-background-size-local-image"
+category = "css-backgrounds"
+path_prefix = "css/css-backgrounds/"
+
+[[records]]
+id = "wpt-trusted-types-server-substitution"
+category = "trusted-types"
+path_prefix = "trusted-types/"
+
+[[records]]
+id = "wpt-css-background-clip-reftest-wait"
+category = "css-backgrounds"
+path_prefix = "css/css-backgrounds/"
+
+[[derived]]
+lineage_id = "wpt-body-background-display-none-paint-v1"
+source_record = "wpt-css-body-background-display-none"
+source_form = "reftest"
+category = "css-backgrounds"
+feature_area = "css-background-special-backgrounds"
+requires_no_js = true
+resource_classes = ["pinned-local-static"]
+capability_kind = "paint-feature"
+capability_feature = "display-none-subtree-paint-suppression"
+harness_adapter = "rendering-paired-semantic"
+representation = "paint-operations"

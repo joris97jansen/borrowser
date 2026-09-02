@@ -20,3 +20,9 @@ documented in the AE13e contract.
 WPT source material is distributed under the included 3-Clause BSD licence.
 The adapter's provenance records preserve the source revision, path, record
 identity, hashes, attribution, and representation-only adaptation.
+
+AE13e now shares its source-neutral digest, revision, path, record-selector,
+licence, and attribution primitives with AG8 through
+`external-test-provenance`. Its allowlist, `.dat` interpretation, generated
+fixture format, and execution semantics remain HTML parser test-support
+ownership and are not migrated into the AG8 WPT importer.

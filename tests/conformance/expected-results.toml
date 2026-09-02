@@ -515,3 +515,23 @@ requirements = []
 kind = "expected-pass"
 [tests.stability]
 state = "stable"
+
+[[tests]]
+id = "wpt-derived-body-background-display-none"
+classification = "classified"
+requirements = ["no-js", "requires-html-parser-feature", "requires-css-feature", "requires-layout-feature", "requires-paint-feature"]
+lane_exclusions = []
+references = [
+  { kind = "documentation", path = "docs/conformance/ag8-wpt-import-filtering-classification.md" },
+  { kind = "documentation", path = "docs/conformance/ag7-static-structural-reference-comparison.md" },
+]
+[tests.engine]
+availability = "available"
+[tests.harness]
+readiness = "ready"
+[tests.environment]
+requirements = []
+[tests.expectation]
+kind = "expected-pass"
+[tests.stability]
+state = "not-yet-established"

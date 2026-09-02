@@ -521,6 +521,8 @@ fn rendering_execution_dependency_graph_stops_before_browser_runtime_and_backend
     for required in [
         "conformance-test-support",
         "rendering-test-support",
+        "wpt-test-support",
+        "external-test-provenance",
         "html",
         "css",
         "layout",
@@ -547,7 +549,14 @@ fn rendering_execution_dependency_graph_stops_before_browser_runtime_and_backend
         "rendering conformance graph",
     );
     let support = package_dependencies(&metadata, "rendering-test-support");
-    for required in ["html", "css", "layout", "gfx"] {
+    for required in [
+        "html",
+        "css",
+        "layout",
+        "gfx",
+        "conformance-test-support",
+        "wpt-test-support",
+    ] {
         assert!(
             support.contains(required),
             "rendering-test-support misses {required}"
@@ -582,6 +591,78 @@ fn rendering_execution_dependency_graph_stops_before_browser_runtime_and_backend
         .map(|value| value.as_str().expect("feature name"))
         .collect();
     assert_eq!(html_features, BTreeSet::from(["html5"]));
+}
+
+#[test]
+fn ag8_external_source_dependency_dag_is_one_way_and_test_tooling_only() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root");
+    let metadata = cargo_metadata(&workspace_root.join("Cargo.toml"), true);
+
+    let provenance = package_dependencies(&metadata, "external-test-provenance");
+    for repository_package in [
+        "html",
+        "css",
+        "layout",
+        "gfx",
+        "conformance-test-support",
+        "wpt-test-support",
+        "html-test-support",
+    ] {
+        assert!(!provenance.contains(repository_package));
+    }
+
+    let generic = package_dependencies(&metadata, "conformance-test-support");
+    assert!(generic.contains("external-test-provenance"));
+    assert!(!generic.contains("wpt-test-support"));
+
+    let wpt = package_dependencies(&metadata, "wpt-test-support");
+    for required in [
+        "external-test-provenance",
+        "conformance-test-support",
+        "html5ever",
+    ] {
+        assert!(wpt.contains(required), "WPT support misses {required}");
+    }
+
+    let html_support = package_dependencies(&metadata, "html-test-support");
+    assert!(html_support.contains("external-test-provenance"));
+    assert!(!html_support.contains("conformance-test-support"));
+    assert!(!html_support.contains("wpt-test-support"));
+
+    let runner = package_dependencies(&metadata, "conformance-runner");
+    assert!(!runner.contains("wpt-test-support"));
+
+    for production in [
+        "html",
+        "css",
+        "layout",
+        "gfx",
+        "browser",
+        "runtime_net",
+        "runtime_parse",
+        "runtime_css",
+        "js",
+        "net",
+        "platform",
+        "app_api",
+        "borrowser",
+    ] {
+        let dependencies = package_dependencies(&metadata, production);
+        for tooling in [
+            "external-test-provenance",
+            "conformance-test-support",
+            "wpt-test-support",
+            "rendering-test-support",
+        ] {
+            assert!(
+                !dependencies.contains(tooling),
+                "production package {production} must not depend on {tooling}"
+            );
+        }
+    }
 }
 
 #[test]

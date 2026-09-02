@@ -466,6 +466,37 @@ Current architecture status:
   viewport height, DPR, platform fonts, external resources, JavaScript,
   Browser/runtime lifecycle observation, cross-engine execution, broad WPT
   compliance, or browser compatibility.
+- AG8 adds the lower-level source-neutral `external-test-provenance` boundary,
+  WPT-owned interpretation in `wpt-test-support`, generic source-neutral
+  `SourceRequirements` and orthogonal accounting in
+  `conformance-test-support`, and subsystem-owned adaptation in
+  `rendering-test-support`. The immutable proof population is exactly seven
+  accounted WPT records plus six declared reference/resource files at one
+  pinned revision. Deterministic accounting reports all seven original WPT
+  assertions as not selected for direct execution and separately selects one
+  exact-copy Paint-semantic derived adaptation; capability, harness,
+  environment/resource, and representation blockers remain simultaneous facts.
+- AG8's generic strict assessment profile owns repository-stable capability,
+  harness, environment/resource, and representation support. A separate strict
+  WPT policy owns test-form, path/category, feature, no-JS, resource/network,
+  pixel, and platform filters. Missing generic evidence remains
+  `not-yet-established`; `NoJs` itself requires positive evidence rather than
+  absence of a detected script. Unsupported records and bounded record-local
+  reference-interpretation limits are never hidden before accounting.
+- AG8 adds AG2 fixture/Manifest V4 lossless `external-derived` lineage while
+  preserving V1–V3, and reuses AG3's closed vocabulary without changing its V1
+  logical-test wire contract. One production-backed Paint-semantic derived
+  fixture passes through AG7. That result is explicitly not a WPT raster pass.
+  Its lineage reference must be the declared reference node targeted by the
+  actual upstream match edge. Fuzzy metadata retains its authoring graph node
+  but remains non-executable.
+  Normal checks are read-only; Git-object materialization and summary refresh
+  are separate explicit, bounded, integrity-checked operations. See
+  `docs/conformance/ag8-wpt-import-filtering-classification.md`.
+- AG8 does not add JavaScript, WebDriver, user interaction, WPT server
+  emulation, generalized networking, arbitrary resource crawling, screenshots,
+  raster/fuzzy comparison, full WPT manifest ingestion, a full checkout, or
+  broad WPT execution/compliance.
 
 Missing or incomplete:
 
@@ -473,7 +504,7 @@ Missing or incomplete:
 - Browser/runtime subsystem adapters
 - aggregate cross-subsystem conformance-progress summaries beyond AG3 metadata
   and AG4 parser-case reports
-- fixture migration or broader pinned external-source adapters
+- broader pinned external-source adapters beyond the exact AG8 and AE13e proofs
 - cross-engine capture and artifact comparison workflows
 - pixel/raster reference comparison infrastructure
 - JavaScript, DOM API, event-loop, WebDriver, CSSOM, interaction, navigation,

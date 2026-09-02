@@ -110,6 +110,9 @@ pub enum InventoryDiagnosticKind {
         first_value: String,
         first_path: String,
     },
+    ExternalLineageReconciliation {
+        reason: String,
+    },
 }
 
 impl InventoryDiagnosticKind {
@@ -146,6 +149,7 @@ impl InventoryDiagnosticKind {
             | Self::ExecutionFileOutsidePackage { .. }
             | Self::DuplicateDeclaredPath { .. } => 7,
             Self::DuplicateTestId { .. } | Self::CaseCollidingTestId { .. } => 9,
+            Self::ExternalLineageReconciliation { .. } => 10,
         }
     }
 
@@ -186,6 +190,7 @@ impl InventoryDiagnosticKind {
                 first_value,
                 first_path,
             } => format!("{value}:{first_value}:{first_path}"),
+            Self::ExternalLineageReconciliation { reason } => reason.clone(),
             _ => String::new(),
         }
     }
@@ -312,6 +317,12 @@ impl fmt::Display for InventoryDiagnostic {
                 f,
                 "test id '{value}' collides case-insensitively with '{first_value}' at '{first_path}'"
             ),
+            InventoryDiagnosticKind::ExternalLineageReconciliation { reason } => {
+                write!(
+                    f,
+                    "external-derived lineage reconciliation failed: {reason}"
+                )
+            }
         }
     }
 }

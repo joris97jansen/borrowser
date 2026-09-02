@@ -151,6 +151,30 @@ fn ag7_repository_seeds_are_executable_or_truthfully_not_run() {
 }
 
 #[test]
+fn ag8_derived_wpt_fixture_executes_only_as_a_semantic_paint_relation() {
+    rendering_test_support::validate_ag8_rendering_adaptation(repository_root()).unwrap();
+    let summary = run_repository_rendering_cases(repository_root()).unwrap();
+    let case = summary
+        .cases()
+        .iter()
+        .find(|case| case.ag.test_id.as_str() == "wpt-derived-body-background-display-none")
+        .unwrap();
+    assert_eq!(case.variants.len(), 1);
+    assert!(matches!(
+        case.variants[0].execution,
+        RenderingExecutionAttempt::Attempted {
+            outcome: RenderingVariantObservedOutcome::DocumentReference(
+                RenderingReferenceObservedOutcome::Relation {
+                    semantic: RenderingRelationResult::SemanticPass,
+                    ..
+                }
+            )
+        }
+    ));
+    assert_eq!(case.variants[0].policy, DerivedPolicyResult::ExpectedPass);
+}
+
+#[test]
 fn temporary_reference_packages_prove_xfail_and_xpass_without_corpus_entries() {
     let repository = tempfile::tempdir().unwrap();
     write_temporary_reference_policy_repository(repository.path());

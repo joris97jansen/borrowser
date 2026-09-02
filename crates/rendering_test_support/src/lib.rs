@@ -10,6 +10,7 @@ mod execute;
 mod fixture;
 mod observation;
 mod paired_fixture;
+mod wpt_adapter;
 
 pub use comparison::{
     REFERENCE_DIFFERENCE_EXCERPT_UTF8_BYTES_V1, RenderingComparisonFailure,
@@ -46,4 +47,8 @@ pub use paired_fixture::{
     PairedRenderingFixtureLimitConfigurationError, PairedRenderingFixtureLimits,
     PairedRenderingFixtureLoadError, PairedRenderingFixturePackage, PairedRenderingFixtureProblem,
     PairedRenderingVariantHandle, load_paired_fixture_package,
+};
+pub use wpt_adapter::{
+    AG8_DERIVED_LINEAGE_ID, AG8_DERIVED_TEST_ID, WptRenderingAdaptationError,
+    validate_ag8_rendering_adaptation,
 };

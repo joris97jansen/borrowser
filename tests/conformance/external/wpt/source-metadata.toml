@@ -1,0 +1,67 @@
+format = "borrowser-wpt-source-metadata-v1"
+source_metadata = "ag8-curated-wpt-source-metadata-v1"
+
+[[records]]
+id = "wpt-css-body-background-display-none"
+no_js = { evidence_kind = "source-sha256", evidence_value = "689f62b83cb181e6e2a5ca654ccb70d97a2073d50954cd3f8d61b7647dc836d7" }
+feature_areas = [{ id = "css-background-special-backgrounds", capability_kind = "css-feature", evidence_kind = "help-link", evidence_value = "https://drafts.csswg.org/css-backgrounds/#special-backgrounds" }]
+capabilities = []
+server_requirements = []
+controlled_http = []
+
+[[records]]
+id = "wpt-css-background-attachment-valid"
+feature_areas = [{ id = "css-background-attachment", capability_kind = "css-feature", evidence_kind = "help-link", evidence_value = "https://drafts.csswg.org/css-backgrounds/#background-attachment" }]
+capabilities = []
+server_requirements = []
+controlled_http = []
+
+[[records]]
+id = "wpt-webdriver-navigator-webdriver-active"
+feature_areas = [{ id = "webdriver", evidence_kind = "wpt-authored-form", evidence_value = "webdriver/tests Python wdspec" }]
+capabilities = []
+server_requirements = []
+controlled_http = []
+
+[[records]]
+id = "wpt-css-attr-case-sensitivity-multi-reference"
+no_js = { evidence_kind = "source-sha256", evidence_value = "8c67aae411272b6cf047f24d37ae3036f4e3d25758667cd6eb045d534734f01d" }
+feature_areas = [{ id = "css-values-attr", capability_kind = "css-feature", evidence_kind = "help-link", evidence_value = "https://www.w3.org/TR/css-values-4/#attr-notation" }]
+capabilities = []
+server_requirements = []
+controlled_http = []
+
+[[records]]
+id = "wpt-css-background-size-local-image"
+no_js = { evidence_kind = "source-sha256", evidence_value = "6c456617caa93c632920e415baa2fb577d1e203053ad529336588daa5aa7cb15" }
+feature_areas = [{ id = "css-background-size", capability_kind = "css-feature", evidence_kind = "help-link", evidence_value = "http://www.w3.org/TR/css3-background/#the-background-size" }]
+capabilities = []
+server_requirements = []
+controlled_http = []
+
+[[records]]
+id = "wpt-trusted-types-server-substitution"
+feature_areas = [{ id = "trusted-types", evidence_kind = "source-path", evidence_value = "trusted-types/navigate-to-javascript-url-006.sub.html" }]
+capabilities = [
+  { kind = "networking", feature = "http-navigation", evidence_kind = "source-sha256", evidence_value = "72ddee1655e3f53bc4f9443fa2520984b54664c8294e91e3484b146bce2ca9fb" },
+  { kind = "dom-api", feature = "document-and-iframe-mutation", evidence_kind = "source-sha256", evidence_value = "72ddee1655e3f53bc4f9443fa2520984b54664c8294e91e3484b146bce2ca9fb" },
+  { kind = "browser-runtime-feature", feature = "window-message-events", evidence_kind = "source-sha256", evidence_value = "72ddee1655e3f53bc4f9443fa2520984b54664c8294e91e3484b146bce2ca9fb" },
+  { kind = "browser-runtime-feature", feature = "document-navigation", evidence_kind = "source-sha256", evidence_value = "72ddee1655e3f53bc4f9443fa2520984b54664c8294e91e3484b146bce2ca9fb" },
+  { kind = "browser-runtime-feature", feature = "csp-trusted-types", evidence_kind = "source-sha256", evidence_value = "72ddee1655e3f53bc4f9443fa2520984b54664c8294e91e3484b146bce2ca9fb" },
+]
+server_requirements = [
+  { kind = "substitution", evidence_kind = "source-sha256", evidence_value = "72ddee1655e3f53bc4f9443fa2520984b54664c8294e91e3484b146bce2ca9fb" },
+  { kind = "special-origins", evidence_kind = "source-sha256", evidence_value = "72ddee1655e3f53bc4f9443fa2520984b54664c8294e91e3484b146bce2ca9fb" },
+  { kind = "pipes-and-headers", evidence_kind = "source-sha256", evidence_value = "72ddee1655e3f53bc4f9443fa2520984b54664c8294e91e3484b146bce2ca9fb" },
+]
+controlled_http = [{ profile = "wpt-special-origin-http", evidence_kind = "source-sha256", evidence_value = "72ddee1655e3f53bc4f9443fa2520984b54664c8294e91e3484b146bce2ca9fb" }]
+
+[[records]]
+id = "wpt-css-background-clip-reftest-wait"
+feature_areas = [{ id = "css-background-clip", capability_kind = "css-feature", evidence_kind = "help-link", evidence_value = "https://drafts.csswg.org/css-backgrounds/#the-background-clip" }]
+capabilities = [
+  { kind = "dom-api", feature = "document-style-mutation", evidence_kind = "source-sha256", evidence_value = "80a2cbfc4922d926442bff47297f7eb4009043ebc0042508a8508a5f694f158f" },
+  { kind = "browser-runtime-feature", feature = "animation-frame-scheduling", evidence_kind = "source-sha256", evidence_value = "80a2cbfc4922d926442bff47297f7eb4009043ebc0042508a8508a5f694f158f" },
+]
+server_requirements = []
+controlled_http = []

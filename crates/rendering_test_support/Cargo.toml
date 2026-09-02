@@ -4,10 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+conformance-test-support = { path = "../conformance_test_support" }
 css = { path = "../css" }
 gfx = { path = "../gfx" }
 html = { path = "../html", features = ["html5"] }
 layout = { path = "../layout" }
+wpt-test-support = { path = "../wpt_test_support" }
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 

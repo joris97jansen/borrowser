@@ -12,9 +12,7 @@ pub use eligibility::{
     evaluate_execution_eligibility,
 };
 pub use model::{
-    EngineCapabilityKind, EnvironmentRequirementKind, ExpectedFailureClassification,
-    HarnessLimitationKind, LanePolicyScope, RequirementTag, SubsystemOwner,
-    ValidatedExpectedResults,
+    ExpectedFailureClassification, LanePolicyScope, SubsystemOwner, ValidatedExpectedResults,
 };
 pub use summary::serialize_expected_results_summary;
 pub use validate::load_expected_results;

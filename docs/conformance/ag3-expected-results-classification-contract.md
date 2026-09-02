@@ -461,13 +461,22 @@ records `not-yet-classified`:
 | `paint-semantic-reference-basic` | no semantic Paint comparison adapter or fully specified rendering requirements |
 | `browser-controlled-static-page-basic` | no Browser/runtime execution adapter or fully specified observation and viewport/text/resource requirements |
 
-### AG7 static reference readiness transition
+### AG8 source-record accounting interoperability
 
-AG7 expands the inventory to 24 logical tests. The migrated
+AG8 expands the inventory to 25 logical tests. The migrated
 `paint-semantic-reference-basic` and the new equivalent-layout,
 equivalent-cascade, and intentional-mismatch records are classified, stable,
 harness-ready, and expected-pass. Their V3 outer reference relation is generic
 inventory truth; AG3 expectation metadata does not duplicate or override it.
+
+AG3 remains the canonical V1 classification contract at logical `TestId`
+granularity. AG8 reuses the unchanged closed `RequirementTag`,
+`EngineCapabilityKind`, `HarnessLimitationKind`, and
+`EnvironmentRequirementKind` vocabulary for source-neutral requirements and
+assessments, but source-record accounting is a different population and wire
+format. It does not replace or infer AG3 records. The AG3 V1 serialized names,
+validation, and summary remain byte-compatible; the one derived V4 fixture has
+an ordinary explicit AG3 logical-test record.
 
 `layout-reference-grid-unavailable` has a valid ready paired package but records
 the genuine `css-grid` Layout capability gap. It is not runnable, is not

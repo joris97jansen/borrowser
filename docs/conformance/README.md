@@ -7,6 +7,8 @@
 - AG5: CSS execution and CSS report V1.
 - AG6: Layout/Paint structural execution and rendering report V1.
 - AG7: static document-reference relations and rendering report V2.
+- AG8: bounded WPT-source interpretation, filtering, provenance, and complete
+  source-record accounting.
 
 AG6 is documented in
 [`ag6-layout-paint-structural-conformance.md`](ag6-layout-paint-structural-conformance.md).
@@ -15,3 +17,9 @@ documented in
 [`ag7-static-structural-reference-comparison.md`](ag7-static-structural-reference-comparison.md).
 AG7 adds static exact-owner-byte reference comparison, not broad WPT, browser
 compatibility, screenshots, or pixels.
+
+AG8 is documented in
+[`ag8-wpt-import-filtering-classification.md`](ag8-wpt-import-filtering-classification.md).
+It adds an exact seven-record WPT proof population and one subsystem-owned
+derived Paint-semantic fixture. It does not add a WPT runner, JavaScript,
+WebDriver, WPT-server execution, networking, screenshots, or raster comparison.
