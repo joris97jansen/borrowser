@@ -3,8 +3,8 @@ use std::path::Path;
 
 use conformance_test_support::{
     ExecutionEnvironmentAssessment, FixtureFormat, InventoryRepository, ObservationSurface,
-    ReferenceKind, ReferenceRelation, ValidatedFixture, discover_inventory,
-    evaluate_execution_eligibility, load_expected_results,
+    ReferenceKind, ReferenceRelation, ValidatedExpectedResults, ValidatedFixture,
+    ValidatedInventory, discover_inventory, evaluate_execution_eligibility, load_expected_results,
 };
 use rendering_test_support::{
     CanonicalRenderingCapture, PairedRenderingCaptureOutcome, RenderingCaptureOutcome,
@@ -29,11 +29,7 @@ use crate::report::{DEFAULT_REPORT_LIMITS, RetainedEvidenceBudget};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RenderingNotAttemptedReason {
     Eligibility,
-}
-impl RenderingNotAttemptedReason {
-    pub const fn stable_label(self) -> &'static str {
-        "eligibility"
-    }
+    LaneExcluded,
 }
 
 pub type RenderingExecutionAttempt = SubsystemExecutionAttempt<
@@ -220,6 +216,10 @@ impl RenderingRunSummary {
             .flat_map(|case| &case.variants)
             .any(|variant| variant.policy.is_unexpected())
     }
+    #[cfg(feature = "aggregate")]
+    pub(crate) fn into_cases(self) -> Vec<RenderingCaseResult> {
+        self.cases
+    }
 }
 
 pub fn run_repository_rendering_cases(
@@ -230,6 +230,36 @@ pub fn run_repository_rendering_cases(
         .map_err(RenderingRunError::Inventory)?;
     let expected = load_expected_results(repository_root, &inventory)
         .map_err(RenderingRunError::ExpectedResults)?;
+    run_repository_rendering_cases_with_inventory(
+        repository_root,
+        &inventory,
+        &expected,
+        OrchestrationSelectionMode::DirectAdapterExecution,
+    )
+}
+
+pub(crate) fn run_repository_rendering_cases_with_inventory(
+    repository_root: &Path,
+    inventory: &ValidatedInventory,
+    expected: &ValidatedExpectedResults,
+    selection_mode: OrchestrationSelectionMode,
+) -> Result<RenderingRunSummary, RenderingRunError> {
+    run_repository_rendering_cases_with_inventory_and_probe(
+        repository_root,
+        inventory,
+        expected,
+        selection_mode,
+        || {},
+    )
+}
+
+fn run_repository_rendering_cases_with_inventory_and_probe(
+    repository_root: &Path,
+    inventory: &ValidatedInventory,
+    expected: &ValidatedExpectedResults,
+    selection_mode: OrchestrationSelectionMode,
+    mut execution_probe: impl FnMut(),
+) -> Result<RenderingRunSummary, RenderingRunError> {
     let environment = ExecutionEnvironmentAssessment::empty();
     let mut cases = Vec::new();
     let mut evidence_budget = RetainedEvidenceBudget::new(DEFAULT_REPORT_LIMITS);
@@ -248,6 +278,11 @@ pub fn run_repository_rendering_cases(
         let eligibility =
             eligibility_facts(evaluate_execution_eligibility(expected_view, &environment));
         let expectation = ag_expectation(expected_view);
+        let execution_decision = orchestration_execution_decision(
+            &eligibility,
+            &metadata.lane_exclusions,
+            selection_mode,
+        );
         let mut variants = Vec::new();
         if matches!(metadata.harness, Some(HarnessReadiness::Ready)) {
             match outer.format() {
@@ -260,7 +295,11 @@ pub fn run_repository_rendering_cases(
                     .map_err(RenderingRunError::Fixture)?;
                     for variant in package.variants() {
                         let variant_id = variant.id();
-                        let execution = if matches!(eligibility, Eligibility::Runnable) {
+                        let execution = if matches!(
+                            execution_decision,
+                            OrchestrationExecutionDecision::Execute
+                        ) {
+                            execution_probe();
                             let execution = load_variant_execution(variant).map_err(|error| {
                                 RenderingRunError::Fixture(
                                     RenderingPackageReconciliationError::Nested(error),
@@ -272,10 +311,14 @@ pub fn run_repository_rendering_cases(
                                 outcome: RenderingVariantObservedOutcome::AuthoredSnapshot(outcome),
                             }
                         } else {
-                            not_attempted()
+                            not_attempted(execution_decision)
                         };
-                        let policy =
-                            derive_rendering_policy(&expectation, &eligibility, &execution);
+                        let policy = derive_rendering_policy_for_decision(
+                            &expectation,
+                            &eligibility,
+                            &execution,
+                            execution_decision,
+                        );
                         variants.push(RenderingVariantResult {
                             variant: ExecutionVariantId::new(variant_id),
                             profiles: package.profiles().to_vec(),
@@ -294,7 +337,11 @@ pub fn run_repository_rendering_cases(
                     .map_err(RenderingRunError::Fixture)?;
                     for variant in reconciled.package.variants() {
                         let variant_id = variant.id();
-                        let execution = if matches!(eligibility, Eligibility::Runnable) {
+                        let execution = if matches!(
+                            execution_decision,
+                            OrchestrationExecutionDecision::Execute
+                        ) {
+                            execution_probe();
                             let captures = capture_paired_variant(variant);
                             let outcome =
                                 evaluate_reference_captures(captures, reconciled.relation)
@@ -309,10 +356,14 @@ pub fn run_repository_rendering_cases(
                                 ),
                             }
                         } else {
-                            not_attempted()
+                            not_attempted(execution_decision)
                         };
-                        let policy =
-                            derive_rendering_policy(&expectation, &eligibility, &execution);
+                        let policy = derive_rendering_policy_for_decision(
+                            &expectation,
+                            &eligibility,
+                            &execution,
+                            execution_decision,
+                        );
                         variants.push(RenderingVariantResult {
                             variant: ExecutionVariantId::new(variant_id),
                             profiles: reconciled.package.profiles().to_vec(),
@@ -355,10 +406,31 @@ pub fn run_repository_rendering_cases(
     Ok(RenderingRunSummary { cases })
 }
 
-fn not_attempted() -> RenderingExecutionAttempt {
+fn not_attempted(decision: OrchestrationExecutionDecision) -> RenderingExecutionAttempt {
     RenderingExecutionAttempt::NotAttempted {
-        reason: RenderingNotAttemptedReason::Eligibility,
+        reason: match decision {
+            OrchestrationExecutionDecision::NotEligible => RenderingNotAttemptedReason::Eligibility,
+            OrchestrationExecutionDecision::LaneExcluded => {
+                RenderingNotAttemptedReason::LaneExcluded
+            }
+            OrchestrationExecutionDecision::Execute => {
+                unreachable!("execute decisions do not create a not-attempted result")
+            }
+        },
         pre_attempt: None,
+    }
+}
+
+fn derive_rendering_policy_for_decision(
+    expectation: &AgExpectation,
+    eligibility: &Eligibility,
+    execution: &RenderingExecutionAttempt,
+    decision: OrchestrationExecutionDecision,
+) -> DerivedPolicyResult {
+    if matches!(decision, OrchestrationExecutionDecision::LaneExcluded) {
+        DerivedPolicyResult::NotRun
+    } else {
+        derive_rendering_policy(expectation, eligibility, execution)
     }
 }
 
@@ -788,6 +860,147 @@ mod tests {
         assert_eq!(
             derive_rendering_policy(&expected_fail(), &Eligibility::Runnable, &failure),
             DerivedPolicyResult::UnexpectedOutcome
+        );
+    }
+
+    #[cfg(feature = "aggregate")]
+    fn repository_root() -> &'static Path {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .unwrap()
+    }
+
+    #[cfg(feature = "aggregate")]
+    fn lane_excluded_rendering_repository() -> tempfile::TempDir {
+        use std::fs;
+
+        let repository = tempfile::tempdir().unwrap();
+        let relative_root = Path::new("tests/conformance/fixtures/rendering/layout-geometry-basic");
+        for relative in [
+            "fixture.toml",
+            "rendering/fixture.toml",
+            "rendering/document.html",
+            "rendering/author.css",
+            "rendering/expected-01.txt",
+            "rendering/expected-02.txt",
+        ] {
+            let source = repository_root().join(relative_root).join(relative);
+            let target = repository.path().join(relative_root).join(relative);
+            fs::create_dir_all(target.parent().unwrap()).unwrap();
+            fs::copy(source, target).unwrap();
+        }
+        let expected = r#"format = "borrowser-conformance-expected-results-v1"
+granularity = "logical-test"
+
+[[tests]]
+id = "layout-geometry-basic-block-flow"
+classification = "classified"
+requirements = ["no-js", "requires-html-parser-feature", "requires-css-feature", "requires-layout-feature"]
+lane_exclusions = [{ policy = "normal-ci", reason = "Synthetic rendering lane exclusion." }]
+references = []
+
+[tests.engine]
+availability = "available"
+[tests.harness]
+readiness = "ready"
+[tests.environment]
+requirements = []
+[tests.expectation]
+kind = "expected-pass"
+[tests.stability]
+state = "stable"
+"#;
+        let expected_path = repository
+            .path()
+            .join("tests/conformance/expected-results.toml");
+        fs::create_dir_all(expected_path.parent().unwrap()).unwrap();
+        fs::write(expected_path, expected).unwrap();
+        repository
+    }
+
+    #[cfg(feature = "aggregate")]
+    #[test]
+    fn named_lane_exclusion_never_invokes_rendering_capture_and_remains_aggregate_state() {
+        use std::cell::Cell;
+
+        use conformance_test_support::{LanePolicyScope, TestId};
+
+        use crate::{
+            AggregateExecutionAttempt, AggregateExecutionRequest, AggregateNotAttemptedReason,
+            AggregateSubsystemResult, LaneSelection, run_repository_aggregate,
+        };
+
+        let repository = lane_excluded_rendering_repository();
+        let fixture_root = repository.path().join("tests/conformance/fixtures");
+        let inventory =
+            discover_inventory(&InventoryRepository::new(repository.path(), fixture_root)).unwrap();
+        let expected = load_expected_results(repository.path(), &inventory).unwrap();
+        let calls = Cell::new(0_u32);
+        let named = run_repository_rendering_cases_with_inventory_and_probe(
+            repository.path(),
+            &inventory,
+            &expected,
+            OrchestrationSelectionMode::NamedLane(LanePolicyScope::NormalCi),
+            || calls.set(calls.get() + 1),
+        )
+        .unwrap();
+        assert_eq!(calls.get(), 0);
+        assert_eq!(named.cases()[0].ag.lane_exclusions.len(), 1);
+        assert_eq!(named.cases()[0].variants.len(), 2);
+        assert!(named.cases()[0].variants.iter().all(|variant| matches!(
+            variant.execution,
+            RenderingExecutionAttempt::NotAttempted {
+                reason: RenderingNotAttemptedReason::LaneExcluded,
+                ..
+            }
+        )));
+        assert!(
+            named.cases()[0]
+                .variants
+                .iter()
+                .all(|variant| variant.policy == DerivedPolicyResult::NotRun)
+        );
+
+        let direct = run_repository_rendering_cases(repository.path()).unwrap();
+        assert!(direct.cases()[0].variants.iter().all(|variant| matches!(
+            variant.execution,
+            RenderingExecutionAttempt::Attempted { .. }
+        )));
+
+        let aggregate = run_repository_aggregate(
+            repository.path(),
+            AggregateExecutionRequest {
+                lane: LanePolicyScope::NormalCi,
+            },
+        )
+        .unwrap();
+        let id = TestId::parse("layout-geometry-basic-block-flow").unwrap();
+        let case = aggregate
+            .cases()
+            .iter()
+            .find(|case| case.ag.test_id == id)
+            .unwrap();
+        assert_eq!(case.ag.lane_exclusions.len(), 1);
+        assert_eq!(case.variants.len(), 2);
+        assert!(case.variants.iter().all(|variant| matches!(
+            variant.selection,
+            LaneSelection::Excluded {
+                lane: LanePolicyScope::NormalCi,
+                ..
+            }
+        )));
+        assert!(case.variants.iter().all(|variant| matches!(
+            variant.execution,
+            AggregateExecutionAttempt::NotAttempted {
+                reason: AggregateNotAttemptedReason::LaneExcluded,
+            }
+        )));
+        assert!(
+            case.variants
+                .iter()
+                .all(|variant| variant.policy == DerivedPolicyResult::NotRun
+                    && matches!(variant.subsystem, AggregateSubsystemResult::Rendering(_)))
         );
     }
 }

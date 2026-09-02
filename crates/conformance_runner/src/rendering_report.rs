@@ -84,7 +84,18 @@ fn build_rendering_report_with_limits(
             match &variant.execution {
                 RenderingExecutionAttempt::NotAttempted { reason, .. } => {
                     writer.line("attempt", "not-attempted")?;
-                    writer.line("not-attempted-reason", reason.stable_label())?;
+                    let reason = match reason {
+                        crate::RenderingNotAttemptedReason::Eligibility => "eligibility",
+                        crate::RenderingNotAttemptedReason::LaneExcluded => {
+                            return Err(ReportBuildError::UnsupportedReportCase {
+                                format: match version {
+                                    RenderingReportVersion::V1 => RENDERING_REPORT_FORMAT_V1,
+                                    RenderingReportVersion::V2 => RENDERING_REPORT_FORMAT_V2,
+                                },
+                            });
+                        }
+                    };
+                    writer.line("not-attempted-reason", reason)?;
                 }
                 RenderingExecutionAttempt::Attempted { outcome } => {
                     writer.line("attempt", "attempted")?;
@@ -838,6 +849,27 @@ mod tests {
             build_rendering_report(&[case]).unwrap(),
             include_bytes!("../tests/data/rendering-report-v2.txt")
         );
+    }
+
+    #[test]
+    fn historical_rendering_reports_reject_named_lane_only_not_attempted_state() {
+        let mut case = pass_with_observation("owner bytes".to_owned());
+        case.variants[0].execution = RenderingExecutionAttempt::NotAttempted {
+            reason: crate::RenderingNotAttemptedReason::LaneExcluded,
+            pre_attempt: None,
+        };
+        assert!(matches!(
+            build_rendering_report_v1(std::slice::from_ref(&case)),
+            Err(ReportBuildError::UnsupportedReportCase {
+                format: RENDERING_REPORT_FORMAT_V1,
+            })
+        ));
+        assert!(matches!(
+            build_rendering_report(&[case]),
+            Err(ReportBuildError::UnsupportedReportCase {
+                format: RENDERING_REPORT_FORMAT_V2,
+            })
+        ));
     }
 
     #[test]

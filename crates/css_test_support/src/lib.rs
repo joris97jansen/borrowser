@@ -9,9 +9,10 @@ mod fixture;
 mod target;
 
 pub use execute::{
-    CssExecutionFailure, CssExecutionPhase, CssExecutionResourceLimit, CssExecutionStorage,
-    CssFixtureEvaluation, CssObservedExecutionOutcome, CssRequiredObservationFailure,
-    evaluate_fixture,
+    CssExecutionFailure, CssExecutionFailureClass, CssExecutionPhase, CssExecutionResourceLimit,
+    CssExecutionStorage, CssFixtureEvaluation, CssObservedExecutionOutcome,
+    CssRequiredObservationFailure, classify_computed_style_failure, classify_execution_failure,
+    classify_rule_collection_failure, classify_style_resolution_failure, evaluate_fixture,
 };
 pub use fixture::{
     CSS_FIXTURE_FORMAT_V1, CSS_NESTED_MAX_HTML_INPUT_BYTES, CSS_NESTED_MAX_TARGETS,

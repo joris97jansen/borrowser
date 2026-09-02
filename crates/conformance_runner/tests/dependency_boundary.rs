@@ -525,6 +525,7 @@ fn rendering_execution_dependency_graph_stops_before_browser_runtime_and_backend
         "external-test-provenance",
         "html",
         "css",
+        "css-test-support",
         "layout",
         "gfx",
     ] {
@@ -552,6 +553,7 @@ fn rendering_execution_dependency_graph_stops_before_browser_runtime_and_backend
     for required in [
         "html",
         "css",
+        "css-test-support",
         "layout",
         "gfx",
         "conformance-test-support",
@@ -578,6 +580,11 @@ fn rendering_execution_dependency_graph_stops_before_browser_runtime_and_backend
         ],
         "rendering-test-support",
     );
+    let css_support = package_dependencies(&metadata, "css-test-support");
+    assert!(
+        !css_support.contains("rendering-test-support"),
+        "CSS test support must not depend back on rendering test support"
+    );
     let html_dependency = package(&metadata, "rendering-test-support")["dependencies"]
         .as_array()
         .expect("rendering support dependencies")
@@ -591,6 +598,51 @@ fn rendering_execution_dependency_graph_stops_before_browser_runtime_and_backend
         .map(|value| value.as_str().expect("feature name"))
         .collect();
     assert_eq!(html_features, BTreeSet::from(["html5"]));
+}
+
+#[test]
+fn aggregate_feature_composes_only_the_existing_typed_adapter_boundaries() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root");
+    let metadata = cargo_metadata(&workspace_root.join("Cargo.toml"), true);
+    let runner = package(&metadata, "conformance-runner");
+    assert_eq!(
+        feature_values(runner, "aggregate"),
+        &[
+            serde_json::Value::String("html-parser".to_owned()),
+            serde_json::Value::String("css".to_owned()),
+            serde_json::Value::String("rendering".to_owned()),
+        ]
+    );
+    let graph = workspace_graph(&metadata, "conformance-runner", &["default", "aggregate"]);
+    for required in [
+        "conformance-test-support",
+        "html-test-support",
+        "css-test-support",
+        "rendering-test-support",
+    ] {
+        assert!(
+            graph.contains(required),
+            "aggregate feature graph misses {required}"
+        );
+    }
+    assert_absent(
+        &graph,
+        &[
+            "browser",
+            "runtime",
+            "runtime_net",
+            "runtime_parse",
+            "runtime_css",
+            "js",
+            "net",
+            "platform",
+            "app_api",
+        ],
+        "aggregate conformance graph",
+    );
 }
 
 #[test]

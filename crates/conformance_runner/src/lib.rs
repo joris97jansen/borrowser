@@ -9,6 +9,9 @@ mod metadata;
 mod model;
 mod report;
 
+#[cfg(feature = "aggregate")]
+mod aggregate;
+
 #[cfg(feature = "css")]
 mod css_package;
 #[cfg(feature = "css")]
@@ -37,6 +40,16 @@ pub use model::{
 pub use report::{
     DEFAULT_REPORT_LIMITS, REPORT_FORMAT_V1, ReportBuildError, ReportLimits,
     ReportPublicationError, build_and_write_report, build_report,
+};
+
+#[cfg(feature = "aggregate")]
+pub use aggregate::{
+    AggregateAccounting, AggregateCaseResult, AggregateComparisonKind, AggregateExecutionAttempt,
+    AggregateExecutionRequest, AggregateExecutionVariantId, AggregateGroupingAccounting,
+    AggregateNotAttemptedReason, AggregateReconciliationError, AggregateRun, AggregateRunError,
+    AggregateSubsystemResult, AggregateTerminalOutcome, AggregateVariantKey,
+    AggregateVariantPopulationCounts, AggregateVariantResult, LaneSelection, LogicalHeadlineCounts,
+    TerminalOutcomeCounts, run_repository_aggregate,
 };
 
 #[cfg(feature = "html-parser")]

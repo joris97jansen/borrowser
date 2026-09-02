@@ -240,6 +240,11 @@ fn write_execution(
                     crate::css_runner::CssNotAttemptedReason::FragmentCapabilityUnavailable => {
                         "fragment-capability-unavailable"
                     }
+                    crate::css_runner::CssNotAttemptedReason::LaneExcluded => {
+                        return Err(ReportBuildError::UnsupportedReportCase {
+                            format: CSS_REPORT_FORMAT_V1,
+                        });
+                    }
                 },
             )?;
             writer.optional_line(
@@ -521,6 +526,26 @@ mod tests {
             )
             .as_bytes()
         );
+    }
+
+    #[test]
+    fn css_report_v1_rejects_named_lane_only_not_attempted_state() {
+        let mut case = attempted_failure(
+            CssExecutionPhase::SelectorParsing,
+            CssExecutionFailure::ResourceLimit {
+                resource: css_test_support::CssExecutionResourceLimit::SelectorParsing,
+            },
+        );
+        case.execution = CssExecutionAttempt::NotAttempted {
+            reason: crate::css_runner::CssNotAttemptedReason::LaneExcluded,
+            pre_attempt: None,
+        };
+        assert!(matches!(
+            build_css_report(&[case]),
+            Err(ReportBuildError::UnsupportedReportCase {
+                format: CSS_REPORT_FORMAT_V1,
+            })
+        ));
     }
 
     #[test]

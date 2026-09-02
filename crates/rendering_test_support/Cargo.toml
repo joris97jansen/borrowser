@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 conformance-test-support = { path = "../conformance_test_support" }
 css = { path = "../css" }
+css-test-support = { path = "../css_test_support" }
 gfx = { path = "../gfx" }
 html = { path = "../html", features = ["html5"] }
 layout = { path = "../layout" }
