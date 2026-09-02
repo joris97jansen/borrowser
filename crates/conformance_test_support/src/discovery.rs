@@ -9,6 +9,7 @@ use crate::model::{
     ExecutionPackage, FixtureFormat, MAX_DESCRIPTOR_BYTES, PortablePathComponent,
     ReferenceDeclaration, RepositoryPath, ValidatedFixture, ValidatedInventory,
 };
+use crate::{load_external_lineage_registry, reconcile_external_fixture_lineages};
 
 #[derive(Clone, Debug)]
 pub struct InventoryRepository {
@@ -72,11 +73,30 @@ pub fn discover_inventory(
     }
     validate_global_ids(&raw_ids, &mut diagnostics);
 
-    if !diagnostics.is_empty() {
-        return Err(InventoryErrors::sorted(diagnostics));
-    }
     fixtures.sort_by(|left, right| left.fixture_path().cmp(right.fixture_path()));
-    Ok(ValidatedInventory::validated(fixtures))
+    if diagnostics.is_empty() {
+        let inventory = ValidatedInventory::validated(fixtures);
+        if inventory
+            .fixtures()
+            .iter()
+            .any(|fixture| fixture.source().lineage_id().is_some())
+        {
+            match load_external_lineage_registry(repository.repository_root())
+                .and_then(|registry| reconcile_external_fixture_lineages(&inventory, &registry))
+            {
+                Ok(()) => return Ok(inventory),
+                Err(error) => diagnostics.push(InventoryDiagnostic::new(
+                    "tests/conformance/external/registries.toml",
+                    InventoryDiagnosticKind::ExternalLineageReconciliation {
+                        reason: format!("{error:?}"),
+                    },
+                )),
+            }
+        } else {
+            return Ok(inventory);
+        }
+    }
+    Err(InventoryErrors::sorted(diagnostics))
 }
 
 fn validate_roots(
@@ -527,7 +547,7 @@ fn validate_bundle_descriptor(
 
     if let Some(root) = package_relative_root.as_deref() {
         validate_inside_package("test_path", &test_path, root, &metadata_path, diagnostics);
-        if descriptor.format == FixtureFormat::V3
+        if matches!(descriptor.format, FixtureFormat::V3 | FixtureFormat::V4)
             && let Some(reference) = &reference_path
         {
             validate_inside_package(
@@ -658,8 +678,10 @@ fn validate_bundle_descriptor(
         }
         _ => return,
     };
-    if matches!(descriptor.format, FixtureFormat::V2 | FixtureFormat::V3)
-        && package_relative_root.is_none()
+    if matches!(
+        descriptor.format,
+        FixtureFormat::V2 | FixtureFormat::V3 | FixtureFormat::V4
+    ) && package_relative_root.is_none()
     {
         return;
     }
@@ -671,7 +693,7 @@ fn validate_bundle_descriptor(
         RepositoryPath::validated(metadata_path),
         descriptor.scope,
         descriptor.observation,
-        descriptor.source_kind,
+        descriptor.source,
         reference,
         execution_package,
         descriptor.description,

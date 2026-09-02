@@ -5,14 +5,19 @@
 //! parser output; those responsibilities remain at the canonical fixture
 //! validation and execution boundary.
 
-use ring::digest::{SHA256, digest};
-use serde::{Deserialize, Serialize};
+use external_test_provenance::{
+    Attribution, EXTERNAL_PROVENANCE_FORMAT_V1, ExternalProvenanceV1, ImmutableRevision,
+    LicenseIdentifier, LicenseNotice, Sha256Digest, UpstreamPath, UpstreamProjectId,
+    serialize_external_provenance_v1, sha256,
+};
+use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::fs;
+use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
 
-pub const EXTERNAL_PROVENANCE_FORMAT: &str = "borrowser-external-provenance-v1";
+pub const EXTERNAL_PROVENANCE_FORMAT: &str = EXTERNAL_PROVENANCE_FORMAT_V1;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExternalCapability {
@@ -203,21 +208,6 @@ struct TreeStackFrame {
     depth: usize,
     path: Vec<usize>,
     owns_attributes: bool,
-}
-
-#[derive(Serialize)]
-struct GeneratedExternalProvenance<'a> {
-    format: &'a str,
-    upstream_project: &'a str,
-    upstream_revision: &'a str,
-    upstream_path: &'a str,
-    source_record_ordinal: usize,
-    source_record_sha256: &'a str,
-    source_file_sha256: &'a str,
-    license_identifier: &'a str,
-    license_notice: &'a str,
-    attribution: &'a str,
-    adaptation: &'a str,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -421,49 +411,21 @@ fn validate_allowlist_metadata(allowlist: &AllowlistFile) -> Result<(), External
 }
 
 fn validate_revision(revision: &str) -> Result<(), ExternalAdapterError> {
-    if revision.len() != 40
-        || !revision
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
-        return Err(ExternalAdapterError::InvalidAllowlist(
-            "upstream revision must be a 40-character lowercase hexadecimal commit".to_string(),
-        ));
-    }
-    Ok(())
+    ImmutableRevision::parse_git_commit(revision)
+        .map(|_| ())
+        .map_err(|error| ExternalAdapterError::InvalidAllowlist(error.to_string()))
 }
 
 fn validate_source_path(path: &str) -> Result<(), ExternalAdapterError> {
-    let value = Path::new(path);
-    if path.is_empty()
-        || path.contains('\\')
-        || path.contains(':')
-        || value.is_absolute()
-        || value.components().any(|component| {
-            matches!(
-                component,
-                std::path::Component::ParentDir | std::path::Component::CurDir
-            )
-        })
-    {
-        return Err(ExternalAdapterError::InvalidAllowlist(format!(
-            "external source path is not a portable repository-relative path: {path}"
-        )));
-    }
-    Ok(())
+    UpstreamPath::parse(path)
+        .map(|_| ())
+        .map_err(|error| ExternalAdapterError::InvalidAllowlist(format!("{error}: {path}")))
 }
 
 fn validate_sha256_text(value: &str, label: &str) -> Result<(), ExternalAdapterError> {
-    if value.len() != 64
-        || !value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
-        return Err(ExternalAdapterError::InvalidAllowlist(format!(
-            "{label} SHA-256 must be 64 lowercase hexadecimal characters"
-        )));
-    }
-    Ok(())
+    Sha256Digest::parse(value)
+        .map(|_| ())
+        .map_err(|error| ExternalAdapterError::InvalidAllowlist(format!("{label}: {error}")))
 }
 
 fn read_file(path: &Path) -> Result<Vec<u8>, ExternalAdapterError> {
@@ -486,12 +448,7 @@ fn verify_hash(path: &str, expected: &str, bytes: &[u8]) -> Result<(), ExternalA
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = digest(&SHA256, bytes);
-    let mut output = String::with_capacity(64);
-    for byte in digest.as_ref() {
-        let _ = write!(&mut output, "{byte:02x}");
-    }
-    output
+    sha256(bytes).to_hex()
 }
 
 #[cfg(test)]
@@ -1123,25 +1080,32 @@ fn generate_fixture_files(
     let adaptation = format!(
         "Representation-only translation of the pinned WPT #data, #errors count, and #document tree; no upstream diagnostic text is mapped to Borrowser error identities. Case identity: {case_identity}."
     );
-    let provenance = toml::to_string(&GeneratedExternalProvenance {
-        format: EXTERNAL_PROVENANCE_FORMAT,
-        upstream_project: &allowlist.upstream_project,
-        upstream_revision: &allowlist.upstream_revision,
-        upstream_path: source_path,
-        source_record_ordinal: record.ordinal,
-        source_record_sha256: &source_record_sha256,
-        source_file_sha256,
-        license_identifier: &allowlist.license_identifier,
-        license_notice: &allowlist.license_notice,
-        attribution: &allowlist.attribution,
-        adaptation: &adaptation,
-    })
-    .map_err(|error| {
+    let provenance = ExternalProvenanceV1::new(
+        UpstreamProjectId::parse(&allowlist.upstream_project)
+            .map_err(|error| ExternalAdapterError::InvalidAllowlist(error.to_string()))?,
+        ImmutableRevision::parse_git_commit(&allowlist.upstream_revision)
+            .map_err(|error| ExternalAdapterError::InvalidAllowlist(error.to_string()))?,
+        UpstreamPath::parse(source_path)
+            .map_err(|error| ExternalAdapterError::InvalidAllowlist(error.to_string()))?,
+        NonZeroU64::new(record.ordinal as u64).expect("WPT record ordinals are one-based"),
+        Sha256Digest::parse(&source_record_sha256).expect("computed SHA-256 is valid"),
+        Sha256Digest::parse(source_file_sha256)
+            .map_err(|error| ExternalAdapterError::InvalidAllowlist(error.to_string()))?,
+        LicenseIdentifier::parse(&allowlist.license_identifier)
+            .map_err(|error| ExternalAdapterError::InvalidAllowlist(error.to_string()))?,
+        LicenseNotice::parse(&allowlist.license_notice)
+            .map_err(|error| ExternalAdapterError::InvalidAllowlist(error.to_string()))?,
+        Attribution::parse(&allowlist.attribution)
+            .map_err(|error| ExternalAdapterError::InvalidAllowlist(error.to_string()))?,
+        adaptation,
+    )
+    .map_err(|error| ExternalAdapterError::InvalidAllowlist(error.to_string()))?;
+    let provenance = serialize_external_provenance_v1(&provenance).map_err(|error| {
         ExternalAdapterError::InvalidAllowlist(format!(
             "generated external provenance is not serializable: {error}"
         ))
     })?;
-    let provenance_sha256 = sha256_hex(provenance.as_bytes());
+    let provenance_sha256 = sha256_hex(&provenance);
     let input_sha256 = sha256_hex(&record.input);
     let fixture = format!(
         "format = \"borrowser-html-parser-fixture-v3\"\nid = \"{bundle_name}\"\n\n[source]\nkind = \"external\"\nprovenance_record = \"provenance.toml\"\nprovenance_sha256 = \"{provenance_sha256}\"\n\n[input]\npath = \"input.html\"\nkind = \"utf8-text\"\nsha256 = \"{input_sha256}\"\n\n[execution]\ntarget = {{ kind = \"document\", scripting = \"disabled\" }}\nreference_delivery = \"whole-unicode\"\n[[execution.deliveries]]\nname = \"whole-unicode\"\nunit = \"unicode-scalars\"\nstrategy = \"whole\"\n\n[expectations]\nparse_errors = {{ kind = \"count\", count = {} }}\ntree = \"tree.txt\"\n\n[disposition]\nstatus = \"active\"\n",
@@ -1151,7 +1115,7 @@ fn generate_fixture_files(
     files.insert("fixture.toml".to_string(), fixture.into_bytes());
     files.insert("input.html".to_string(), record.input.clone());
     files.insert("tree.txt".to_string(), tree.into_bytes());
-    files.insert("provenance.toml".to_string(), provenance.into_bytes());
+    files.insert("provenance.toml".to_string(), provenance);
     Ok(files)
 }
 
@@ -1782,7 +1746,7 @@ mod tests {
         let allowlist = AllowlistFile {
             format: "borrowser-wpt-external-allowlist-v1".to_string(),
             upstream_project: "project \"quoted\"".to_string(),
-            upstream_revision: "revision".to_string(),
+            upstream_revision: "2c705104a295c48053eeddf7fe0170d790a4e853".to_string(),
             source_path: "tests1.dat".to_string(),
             source_file_sha256: "a".repeat(64),
             license_identifier: "BSD-3-Clause".to_string(),

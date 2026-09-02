@@ -1,0 +1,2 @@
+format = "borrowser-external-registry-index-v1"
+registries = ["tests/conformance/external/wpt/sources.toml"]

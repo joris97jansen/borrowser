@@ -1,8 +1,11 @@
 use std::fmt;
 
+use crate::HarnessFeatureId;
+
 pub const CONFORMANCE_FIXTURE_FORMAT_V1: &str = "borrowser-conformance-fixture-v1";
 pub const CONFORMANCE_FIXTURE_FORMAT_V2: &str = "borrowser-conformance-fixture-v2";
 pub const CONFORMANCE_FIXTURE_FORMAT_V3: &str = "borrowser-conformance-fixture-v3";
+pub const CONFORMANCE_FIXTURE_FORMAT_V4: &str = "borrowser-conformance-fixture-v4";
 pub const MAX_DESCRIPTOR_BYTES: u64 = 64 * 1024;
 pub const MAX_EXECUTION_SUPPORT_PATHS_V2: usize = 256;
 pub(crate) const MAX_PORTABLE_PATH_COMPONENT_BYTES: usize = 128;
@@ -13,6 +16,7 @@ pub enum FixtureFormat {
     V1,
     V2,
     V3,
+    V4,
 }
 
 impl FixtureFormat {
@@ -21,6 +25,7 @@ impl FixtureFormat {
             Self::V1 => CONFORMANCE_FIXTURE_FORMAT_V1,
             Self::V2 => CONFORMANCE_FIXTURE_FORMAT_V2,
             Self::V3 => CONFORMANCE_FIXTURE_FORMAT_V3,
+            Self::V4 => CONFORMANCE_FIXTURE_FORMAT_V4,
         }
     }
 }
@@ -232,6 +237,7 @@ impl ObservationSurface {
 pub enum SourceKind {
     Native,
     ControlledStaticPage,
+    ExternalDerived,
 }
 
 impl SourceKind {
@@ -239,13 +245,74 @@ impl SourceKind {
         match self {
             Self::Native => "native",
             Self::ControlledStaticPage => "controlled-static-page",
+            Self::ExternalDerived => "external-derived",
         }
     }
+}
 
-    pub(crate) fn parse(value: &str) -> Option<Self> {
-        match value {
-            "native" => Some(Self::Native),
-            "controlled-static-page" => Some(Self::ControlledStaticPage),
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExternalLineageId(String);
+
+impl ExternalLineageId {
+    pub fn parse(value: &str) -> Result<Self, TestIdValidationError> {
+        TestId::parse(value).map(|_| Self(value.to_owned()))
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExternalAdapterVersion(String);
+impl ExternalAdapterVersion {
+    pub fn parse(value: &str) -> Result<Self, TestIdValidationError> {
+        if value.is_empty() || value.len() > 32 || !value.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return Err(TestIdValidationError::InvalidGrammar);
+        }
+        Ok(Self(value.to_owned()))
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FixtureSource {
+    Native,
+    ControlledStaticPage,
+    ExternalDerived {
+        lineage_id: ExternalLineageId,
+        adapter: HarnessFeatureId,
+        adapter_version: ExternalAdapterVersion,
+    },
+}
+
+impl FixtureSource {
+    pub fn kind(&self) -> SourceKind {
+        match self {
+            Self::Native => SourceKind::Native,
+            Self::ControlledStaticPage => SourceKind::ControlledStaticPage,
+            Self::ExternalDerived { .. } => SourceKind::ExternalDerived,
+        }
+    }
+    pub fn lineage_id(&self) -> Option<&ExternalLineageId> {
+        match self {
+            Self::ExternalDerived { lineage_id, .. } => Some(lineage_id),
+            _ => None,
+        }
+    }
+    pub fn adapter(&self) -> Option<&HarnessFeatureId> {
+        match self {
+            Self::ExternalDerived { adapter, .. } => Some(adapter),
+            _ => None,
+        }
+    }
+    pub fn adapter_version(&self) -> Option<&ExternalAdapterVersion> {
+        match self {
+            Self::ExternalDerived {
+                adapter_version, ..
+            } => Some(adapter_version),
             _ => None,
         }
     }
@@ -385,7 +452,7 @@ pub struct ValidatedFixture {
     metadata_path: RepositoryPath,
     scope: InventoryScope,
     observation: ObservationSurface,
-    source_kind: SourceKind,
+    source: FixtureSource,
     reference: Option<ReferenceDeclaration>,
     execution_package: Option<ExecutionPackage>,
     description: String,
@@ -421,7 +488,11 @@ impl ValidatedFixture {
     }
 
     pub fn source_kind(&self) -> SourceKind {
-        self.source_kind
+        self.source.kind()
+    }
+
+    pub fn source(&self) -> &FixtureSource {
+        &self.source
     }
 
     pub fn reference(&self) -> Option<&ReferenceDeclaration> {
@@ -445,7 +516,7 @@ impl ValidatedFixture {
         metadata_path: RepositoryPath,
         scope: InventoryScope,
         observation: ObservationSurface,
-        source_kind: SourceKind,
+        source: FixtureSource,
         reference: Option<ReferenceDeclaration>,
         execution_package: Option<ExecutionPackage>,
         description: String,
@@ -458,7 +529,7 @@ impl ValidatedFixture {
             metadata_path,
             scope,
             observation,
-            source_kind,
+            source,
             reference,
             execution_package,
             description,

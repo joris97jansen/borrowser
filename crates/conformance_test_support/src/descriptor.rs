@@ -1,10 +1,12 @@
 use serde::Deserialize;
 
+use crate::HarnessFeatureId;
 use crate::diagnostic::InventoryDiagnosticKind;
 use crate::model::{
     CONFORMANCE_FIXTURE_FORMAT_V1, CONFORMANCE_FIXTURE_FORMAT_V2, CONFORMANCE_FIXTURE_FORMAT_V3,
-    FixtureFormat, InventoryScope, MAX_EXECUTION_SUPPORT_PATHS_V2, ObservationSurface,
-    ReferenceKind, ReferenceRelation, SourceKind, TestId, TestIdValidationError,
+    CONFORMANCE_FIXTURE_FORMAT_V4, ExternalAdapterVersion, ExternalLineageId, FixtureFormat,
+    FixtureSource, InventoryScope, MAX_EXECUTION_SUPPORT_PATHS_V2, ObservationSurface,
+    ReferenceKind, ReferenceRelation, TestId, TestIdValidationError,
 };
 
 #[derive(Clone, Debug)]
@@ -13,7 +15,7 @@ pub(crate) struct ParsedDescriptor {
     pub test_path: String,
     pub scope: InventoryScope,
     pub observation: ObservationSurface,
-    pub source_kind: SourceKind,
+    pub source: FixtureSource,
     pub reference: Option<ParsedReference>,
     pub description: String,
     pub test_id: TestId,
@@ -76,6 +78,20 @@ struct DescriptorV3 {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct DescriptorV4 {
+    format: String,
+    id: String,
+    scope: String,
+    observation: String,
+    test_path: String,
+    source: SourceV4,
+    reference: ReferenceV3,
+    execution_package: ExecutionPackageV2,
+    metadata: MetadataV1,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ExecutionPackageV2 {
     entry_path: String,
     support_paths: Vec<String>,
@@ -85,6 +101,15 @@ struct ExecutionPackageV2 {
 #[serde(deny_unknown_fields)]
 struct SourceV1 {
     kind: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourceV4 {
+    kind: String,
+    lineage_id: Option<String>,
+    adapter: Option<String>,
+    adapter_version: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -155,6 +180,7 @@ pub(crate) fn parse_descriptor(bytes: &[u8]) -> DescriptorParseResult {
         CONFORMANCE_FIXTURE_FORMAT_V1 => FixtureFormat::V1,
         CONFORMANCE_FIXTURE_FORMAT_V2 => FixtureFormat::V2,
         CONFORMANCE_FIXTURE_FORMAT_V3 => FixtureFormat::V3,
+        CONFORMANCE_FIXTURE_FORMAT_V4 => FixtureFormat::V4,
         _ => {
             return DescriptorParseResult {
                 raw_id,
@@ -188,7 +214,7 @@ pub(crate) fn parse_descriptor(bytes: &[u8]) -> DescriptorParseResult {
                     wire.scope,
                     wire.observation,
                     wire.test_path,
-                    wire.source,
+                    SourceWire::Legacy(wire.source),
                     wire.reference.map(ReferenceWire::Legacy),
                     wire.metadata,
                     None,
@@ -205,7 +231,7 @@ pub(crate) fn parse_descriptor(bytes: &[u8]) -> DescriptorParseResult {
                     wire.scope,
                     wire.observation,
                     wire.test_path,
-                    wire.source,
+                    SourceWire::Legacy(wire.source),
                     wire.reference.map(ReferenceWire::Legacy),
                     wire.metadata,
                     Some(wire.execution_package),
@@ -222,7 +248,24 @@ pub(crate) fn parse_descriptor(bytes: &[u8]) -> DescriptorParseResult {
                     wire.scope,
                     wire.observation,
                     wire.test_path,
-                    wire.source,
+                    SourceWire::Legacy(wire.source),
+                    Some(ReferenceWire::V3(wire.reference)),
+                    wire.metadata,
+                    Some(wire.execution_package),
+                )
+            }
+            Err(_) => invalid_shape(raw_id),
+        },
+        FixtureFormat::V4 => match toml::from_str::<DescriptorV4>(text) {
+            Ok(wire) => {
+                debug_assert_eq!(wire.format, CONFORMANCE_FIXTURE_FORMAT_V4);
+                validate_wire(
+                    FixtureFormat::V4,
+                    wire.id,
+                    wire.scope,
+                    wire.observation,
+                    wire.test_path,
+                    SourceWire::V4(wire.source),
                     Some(ReferenceWire::V3(wire.reference)),
                     wire.metadata,
                     Some(wire.execution_package),
@@ -253,15 +296,23 @@ fn unknown_fields(table: &toml::Table, format: FixtureFormat) -> Vec<String> {
         "reference",
         "metadata",
     ];
-    if matches!(format, FixtureFormat::V2 | FixtureFormat::V3) {
+    if matches!(
+        format,
+        FixtureFormat::V2 | FixtureFormat::V3 | FixtureFormat::V4
+    ) {
         root.push("execution_package");
     }
     collect_unknown(table, "", &root, &mut fields);
     if let Some(source) = table.get("source").and_then(toml::Value::as_table) {
-        collect_unknown(source, "source.", &["kind"], &mut fields);
+        let allowed = if format == FixtureFormat::V4 {
+            &["kind", "lineage_id", "adapter", "adapter_version"][..]
+        } else {
+            &["kind"][..]
+        };
+        collect_unknown(source, "source.", allowed, &mut fields);
     }
     if let Some(reference) = table.get("reference").and_then(toml::Value::as_table) {
-        let allowed = if format == FixtureFormat::V3 {
+        let allowed = if matches!(format, FixtureFormat::V3 | FixtureFormat::V4) {
             &["kind", "relation", "path"][..]
         } else {
             &["kind", "path"][..]
@@ -301,7 +352,7 @@ fn validate_wire(
     scope_value: String,
     observation_value: String,
     test_path: String,
-    source: SourceV1,
+    source: SourceWire,
     reference_value: Option<ReferenceWire>,
     metadata: MetadataV1,
     execution_package: Option<ExecutionPackageV2>,
@@ -341,15 +392,7 @@ fn validate_wire(
             None
         }
     };
-    let source_kind = match SourceKind::parse(&source.kind) {
-        Some(kind) => Some(kind),
-        None => {
-            diagnostics.push(InventoryDiagnosticKind::InvalidSourceKind {
-                value: source.kind.clone(),
-            });
-            None
-        }
-    };
+    let source = validate_source(format, source, &mut diagnostics);
     let reference = reference_value.and_then(|reference| {
         let (kind_value, relation_value, path) = match reference {
             ReferenceWire::Legacy(reference) => (reference.kind, None, reference.path),
@@ -395,16 +438,14 @@ fn validate_wire(
         }
     });
 
-    let descriptor = match (test_id, scope, observation, source_kind) {
-        (Some(test_id), Some(scope), Some(observation), Some(source_kind))
-            if diagnostics.is_empty() =>
-        {
+    let descriptor = match (test_id, scope, observation, source) {
+        (Some(test_id), Some(scope), Some(observation), Some(source)) if diagnostics.is_empty() => {
             Some(ParsedDescriptor {
                 format,
                 test_path,
                 scope,
                 observation,
-                source_kind,
+                source,
                 reference,
                 description: metadata.description,
                 test_id,
@@ -423,6 +464,66 @@ fn validate_wire(
 enum ReferenceWire {
     Legacy(ReferenceV1),
     V3(ReferenceV3),
+}
+
+enum SourceWire {
+    Legacy(SourceV1),
+    V4(SourceV4),
+}
+
+fn validate_source(
+    format: FixtureFormat,
+    source: SourceWire,
+    diagnostics: &mut Vec<InventoryDiagnosticKind>,
+) -> Option<FixtureSource> {
+    let (kind, lineage_id, adapter, adapter_version) = match source {
+        SourceWire::Legacy(value) => (value.kind, None, None, None),
+        SourceWire::V4(value) => (
+            value.kind,
+            value.lineage_id,
+            value.adapter,
+            value.adapter_version,
+        ),
+    };
+    match (format, kind.as_str(), lineage_id, adapter, adapter_version) {
+        (FixtureFormat::V1 | FixtureFormat::V2 | FixtureFormat::V3, "native", None, None, None)
+        | (FixtureFormat::V4, "native", None, None, None) => Some(FixtureSource::Native),
+        (
+            FixtureFormat::V1 | FixtureFormat::V2 | FixtureFormat::V3,
+            "controlled-static-page",
+            None,
+            None,
+            None,
+        )
+        | (FixtureFormat::V4, "controlled-static-page", None, None, None) => {
+            Some(FixtureSource::ControlledStaticPage)
+        }
+        (FixtureFormat::V4, "external-derived", Some(value), Some(adapter), Some(version)) => {
+            match (
+                ExternalLineageId::parse(&value),
+                HarnessFeatureId::parse(&adapter),
+                ExternalAdapterVersion::parse(&version),
+            ) {
+                (Ok(lineage_id), Ok(adapter), Ok(adapter_version)) => {
+                    Some(FixtureSource::ExternalDerived {
+                        lineage_id,
+                        adapter,
+                        adapter_version,
+                    })
+                }
+                _ => {
+                    diagnostics.push(InventoryDiagnosticKind::InvalidSourceKind {
+                        value: format!("external-derived:{value}"),
+                    });
+                    None
+                }
+            }
+        }
+        _ => {
+            diagnostics.push(InventoryDiagnosticKind::InvalidSourceKind { value: kind });
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -522,5 +623,31 @@ description = "A basic tokenizer inventory fixture."
                 value: "different".to_owned(),
             }]
         );
+    }
+
+    #[test]
+    fn v4_external_derived_source_is_lossless_and_legacy_versions_reject_it() {
+        let source = "[source]\nkind = \"external-derived\"\nlineage_id = \"upstream-lineage-v1\"\nadapter = \"rendering-paired-semantic\"\nadapter_version = \"1\"";
+        let v4 = VALID
+            .replace("borrowser-conformance-fixture-v1", "borrowser-conformance-fixture-v4")
+            .replace("test_path = \"test.html\"", "test_path = \"rendering/test.html\"")
+            .replace("[source]\nkind = \"native\"", source)
+            .replace(
+                "[metadata]",
+                concat!(
+                    "[reference]\nkind = \"semantic\"\nrelation = \"match\"\npath = \"rendering/reference.html\"\n\n",
+                    "[execution_package]\nentry_path = \"rendering/fixture.toml\"\nsupport_paths = []\n\n",
+                    "[metadata]",
+                ),
+            );
+        let descriptor = parse_descriptor(v4.as_bytes()).descriptor.unwrap();
+        assert!(
+            matches!(descriptor.source, FixtureSource::ExternalDerived { ref lineage_id, ref adapter, ref adapter_version } if lineage_id.as_str() == "upstream-lineage-v1" && adapter.as_str() == "rendering-paired-semantic" && adapter_version.as_str() == "1")
+        );
+
+        let legacy = VALID.replace("[source]\nkind = \"native\"", source);
+        let result = parse_descriptor(legacy.as_bytes());
+        assert!(result.descriptor.is_none());
+        assert!(result.diagnostics.iter().any(|diagnostic| matches!(diagnostic, InventoryDiagnosticKind::UnknownDescriptorField { field } if field == "source.lineage_id")));
     }
 }

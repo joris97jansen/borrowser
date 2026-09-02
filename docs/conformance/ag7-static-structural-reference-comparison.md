@@ -130,3 +130,13 @@ cross-engine execution. A future raster facility requires a complete viewport
 and font environment, backend capture, image artifacts, tolerance semantics,
 and bounded pixel diagnostics while preserving the capture/oracle/relation/
 policy separation established here.
+
+## AG8 interoperability
+
+AG8 may adapt a pinned WPT reftest only when an existing AG7 observation
+truthfully represents the narrower derived assertion. The upstream WPT match,
+mismatch, multi-reference graph, fuzzy, readiness, automation, resource, and
+raster requirements remain WPT-owned facts. The derived fixture retains a
+lossless external lineage ID in AG2 V4, while AG7 reports only its declared
+structural or semantic relation. No AG7 semantic pass is serialized or counted
+as a WPT raster/pixel pass.

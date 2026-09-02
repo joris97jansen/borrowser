@@ -1,0 +1,23 @@
+format = "borrowser-conformance-fixture-v4"
+id = "wpt-derived-body-background-display-none"
+scope = "static-html-css-no-js"
+observation = "paint-operations"
+test_path = "rendering/test.html"
+
+[source]
+kind = "external-derived"
+lineage_id = "wpt-body-background-display-none-paint-v1"
+adapter = "rendering-paired-semantic"
+adapter_version = "1"
+
+[reference]
+kind = "semantic"
+relation = "match"
+path = "rendering/reference.html"
+
+[execution_package]
+entry_path = "rendering/fixture.toml"
+support_paths = []
+
+[metadata]
+description = "An exact-copy WPT-derived semantic Paint comparison for display:none body suppression; not a WPT raster result."

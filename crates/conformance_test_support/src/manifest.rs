@@ -1,15 +1,17 @@
 use std::fmt::Write;
 
+use crate::HarnessFeatureId;
 use crate::diagnostic::InventoryErrors;
 use crate::discovery::{InventoryRepository, discover_inventory};
 use crate::model::{
-    FixtureFormat, InventoryScope, ObservationSurface, ReferenceKind, ReferenceRelation,
-    RepositoryPath, SourceKind, TestId, ValidatedInventory,
+    ExternalAdapterVersion, ExternalLineageId, FixtureFormat, InventoryScope, ObservationSurface,
+    ReferenceKind, ReferenceRelation, RepositoryPath, SourceKind, TestId, ValidatedInventory,
 };
 
 pub const CONFORMANCE_MANIFEST_FORMAT_V1: &str = "borrowser-conformance-manifest-v1";
 pub const CONFORMANCE_MANIFEST_FORMAT_V2: &str = "borrowser-conformance-manifest-v2";
 pub const CONFORMANCE_MANIFEST_FORMAT_V3: &str = "borrowser-conformance-manifest-v3";
+pub const CONFORMANCE_MANIFEST_FORMAT_V4: &str = "borrowser-conformance-manifest-v4";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConformanceManifest {
@@ -32,6 +34,9 @@ pub struct ManifestEntry {
     scope: InventoryScope,
     observation: ObservationSurface,
     source_kind: SourceKind,
+    source_lineage_id: Option<ExternalLineageId>,
+    source_adapter: Option<HarnessFeatureId>,
+    source_adapter_version: Option<ExternalAdapterVersion>,
     reference: Option<ManifestReference>,
     execution_entry_path: Option<RepositoryPath>,
     execution_support_paths: Vec<RepositoryPath>,
@@ -67,6 +72,9 @@ pub fn build_manifest(inventory: &ValidatedInventory) -> ConformanceManifest {
             scope: fixture.scope(),
             observation: fixture.observation(),
             source_kind: fixture.source_kind(),
+            source_lineage_id: fixture.source().lineage_id().cloned(),
+            source_adapter: fixture.source().adapter().cloned(),
+            source_adapter_version: fixture.source().adapter_version().cloned(),
             reference: fixture.reference().map(|reference| ManifestReference {
                 kind: reference.kind(),
                 relation: reference.relation(),
@@ -94,7 +102,7 @@ pub fn generate_manifest_bytes(
 
 pub fn serialize_manifest(manifest: &ConformanceManifest) -> Vec<u8> {
     let mut output = String::new();
-    write_field(&mut output, "format", CONFORMANCE_MANIFEST_FORMAT_V3);
+    write_field(&mut output, "format", CONFORMANCE_MANIFEST_FORMAT_V4);
     for entry in &manifest.entries {
         output.push_str("\n[[tests]]\n");
         write_field(&mut output, "id", entry.id.as_str());
@@ -105,6 +113,27 @@ pub fn serialize_manifest(manifest: &ConformanceManifest) -> Vec<u8> {
         write_field(&mut output, "scope", entry.scope.as_str());
         write_field(&mut output, "observation", entry.observation.as_str());
         write_field(&mut output, "source_kind", entry.source_kind.as_str());
+        if let Some(lineage_id) = &entry.source_lineage_id {
+            write_field(&mut output, "source_lineage_id", lineage_id.as_str());
+            write_field(
+                &mut output,
+                "source_adapter",
+                entry
+                    .source_adapter
+                    .as_ref()
+                    .expect("external lineage has adapter")
+                    .as_str(),
+            );
+            write_field(
+                &mut output,
+                "source_adapter_version",
+                entry
+                    .source_adapter_version
+                    .as_ref()
+                    .expect("external lineage has adapter version")
+                    .as_str(),
+            );
+        }
         if let Some(reference) = &entry.reference {
             write_field(&mut output, "reference_kind", reference.kind.as_str());
             write_field(

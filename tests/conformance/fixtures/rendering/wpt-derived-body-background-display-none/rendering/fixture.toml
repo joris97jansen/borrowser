@@ -1,0 +1,15 @@
+format = "borrowser-paired-rendering-fixture-v1"
+id = "wpt-derived-body-background-display-none"
+profiles = ["paint-operations"]
+
+[test]
+html = "test.html"
+stylesheets = []
+
+[reference]
+html = "reference.html"
+stylesheets = []
+
+[[variants]]
+environment = "synthetic-text-metrics-v1"
+available_width_css_px = 320

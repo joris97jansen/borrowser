@@ -213,8 +213,9 @@ make safe traversal impossible stop discovery before bundle validation.
 `tests/conformance/manifest.toml` is a generated review artifact. Its only
 source of truth is the set of validated bundle-local `fixture.toml` files.
 AG4 evolved the generated review artifact to Manifest V2 so reviewers could
-see which descriptor version and package files were validated. AG7 evolves the
-checked-in artifact to Manifest V3 so reference polarity is reviewable. The
+see which descriptor version and package files were validated. AG7 evolved it
+to Manifest V3 so reference polarity was reviewable; AG8 evolves the checked-in
+artifact to Manifest V4 so external-derived lineage is truthful. The
 historical V2 header is:
 
 ```toml
@@ -225,7 +226,9 @@ It then contains one `[[tests]]` record per logical ID, ordered bytewise by
 `TestId`. Required fields occur in this exact order: `id`, `fixture_format`, `fixture_path`,
 `test_path`, `metadata_path`, `scope`, `observation`, `source_kind`. Optional
 Manifest V2 places `reference_kind` and `reference_path` in that order;
-Manifest V3 inserts `reference_relation` between them. Executable fixture
+Manifest V3 inserts `reference_relation` between them. Manifest V4 additionally
+places `source_lineage_id`, `source_adapter`, and `source_adapter_version` in
+that order immediately after an external-derived `source_kind`. Executable fixture
 records then contain `execution_entry_path` and the sorted
 `execution_support_paths` array. V1 records omit those two package fields. The
 descriptor path is the metadata path because the outer `fixture.toml` remains
@@ -286,11 +289,43 @@ Manifest `borrowser-conformance-manifest-v3` preserves the deterministic V2
 record, field, path, escaping, and newline rules and adds
 `reference_relation` between `reference_kind` and `reference_path`. Historical
 manifest constants describe their frozen schemas; the checked-in artifact uses
-V3. V1/V2 fixture references serialize their implied `match` into Manifest V3.
+V4. V1/V2 fixture references serialize their implied `match` into Manifest V4.
 
 AG2's generic execution support-path ceiling remains
 `MAX_EXECUTION_SUPPORT_PATHS_V2 = 256`. AG7's paired rendering package adds a
 stricter 64-support-path V1 sublimit; it does not redefine AG2's ceiling.
+
+## AG8 fixture V4 and Manifest V4
+
+AG8 adds `borrowser-conformance-fixture-v4` without changing the accepted V1,
+V2, or V3 wire schemas. V4 retains V3's paired executable/reference envelope
+and makes fixture source lossless:
+
+```toml
+[source]
+kind = "external-derived"
+lineage_id = "stable-external-lineage-id"
+adapter = "subsystem-adapter-id"
+adapter_version = "1"
+```
+
+`FixtureSource` is the authoritative runtime view: `Native`,
+`ControlledStaticPage`, or `ExternalDerived { lineage_id, adapter,
+adapter_version }`. `SourceKind` now also has `ExternalDerived`;
+`source_kind()` therefore remains lossless at the source-kind level, while the
+full `FixtureSource` view preserves its lineage and adapter identity. No API
+projects an external-derived fixture to either legacy source kind. V1–V3 reject
+`external-derived` and every V4 lineage/adapter field, preserving their closed
+schema semantics.
+
+Manifest `borrowser-conformance-manifest-v4` preserves all deterministic V3
+fields and truthfully emits `source_kind = "external-derived"` plus
+`source_lineage_id`, `source_adapter`, and `source_adapter_version`. Repository
+discovery reconciles those fixture declarations against the authoritative
+external lineage registry and rejects missing, duplicate, dangling, TestId-
+mismatched, or adapter-mismatched lineage. The human-authored fixture descriptor
+and external-source registry own lineage truth; the manifest remains generated
+review evidence.
 
 ## Non-claims and deferred work
 
@@ -313,9 +348,9 @@ AG3 adds the separate human-authored
 `tests/conformance/expected-results.toml` registry described by
 [`ag3-expected-results-classification-contract.md`](ag3-expected-results-classification-contract.md).
 It reconciles one record per validated AG2 `TestId`, but it does not place AG3
-fields in any fixture descriptor or manifest version. V1/V2 remain unchanged;
-V3 and Manifest V3 add only generic reference/package review truth and continue
-to reject unknown AG3 fields.
+fields in any fixture descriptor or manifest version. V1–V3 remain unchanged;
+V4 and Manifest V4 add only generic reference/package/source-lineage review
+truth and continue to reject unknown AG3 fields.
 
 AG2 inventory truth supplies stable identity and the sole authoritative
 `ObservationSurface`. AG3 supplies independent classification, capability,

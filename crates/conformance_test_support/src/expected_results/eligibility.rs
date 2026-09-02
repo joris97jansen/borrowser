@@ -204,11 +204,11 @@ mod tests {
     }
 
     fn capability_feature(value: &str) -> CapabilityFeatureId {
-        CapabilityFeatureId::parse(value.to_owned()).expect("test capability feature")
+        CapabilityFeatureId::parse(value).expect("test capability feature")
     }
 
     fn environment_profile(value: &str) -> EnvironmentProfileId {
-        EnvironmentProfileId::parse(value.to_owned()).expect("test environment profile")
+        EnvironmentProfileId::parse(value).expect("test environment profile")
     }
 
     fn environment_requirement(

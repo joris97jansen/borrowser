@@ -285,7 +285,7 @@ pub fn run_repository_rendering_cases(
                         });
                     }
                 }
-                FixtureFormat::V3 => {
+                FixtureFormat::V3 | FixtureFormat::V4 => {
                     let reconciled = reconcile_paired_rendering_package(
                         repository_root,
                         outer,

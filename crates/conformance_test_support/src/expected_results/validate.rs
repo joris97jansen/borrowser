@@ -595,9 +595,9 @@ fn validate_engine(
                     continue;
                 };
                 let feature = match (kind.requires_feature(), item.feature) {
-                    (true, Some(feature)) => match CapabilityFeatureId::parse(feature.clone()) {
-                        Some(feature) => Some(feature),
-                        None => {
+                    (true, Some(feature)) => match CapabilityFeatureId::parse(&feature) {
+                        Ok(feature) => Some(feature),
+                        Err(_) => {
                             valid = false;
                             diagnostics.push(ExpectedResultsDiagnostic::new(
                                 subject,
@@ -789,7 +789,7 @@ fn validate_environment(
             ));
             continue;
         };
-        let Some(profile) = EnvironmentProfileId::parse(requirement.profile.clone()) else {
+        let Ok(profile) = EnvironmentProfileId::parse(&requirement.profile) else {
             valid = false;
             diagnostics.push(ExpectedResultsDiagnostic::new(
                 subject,
@@ -1098,7 +1098,7 @@ mod tests {
         let results =
             load_expected_results(repository_root, &inventory).expect("expected results registry");
 
-        assert_eq!(results.records().len(), 24);
+        assert_eq!(results.records().len(), 25);
         let classified_ids = results
             .records()
             .iter()
@@ -1188,6 +1188,7 @@ mod tests {
                 "paint-reference-intentional-mismatch",
                 "paint-semantic-artifact-ac7",
                 "paint-semantic-reference-basic",
+                "wpt-derived-body-background-display-none",
             ])
         );
 

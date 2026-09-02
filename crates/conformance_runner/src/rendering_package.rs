@@ -258,7 +258,7 @@ pub fn reconcile_paired_rendering_package(
     owner: RenderingObservationOwner,
 ) -> Result<ReconciledPairedRenderingPackage, RenderingPackageReconciliationError> {
     let test_id = outer.id().as_str().to_owned();
-    if outer.format() != FixtureFormat::V3 {
+    if !matches!(outer.format(), FixtureFormat::V3 | FixtureFormat::V4) {
         return Err(RenderingPackageReconciliationError::FixtureV3Required { test_id });
     }
     let reference = outer.reference().ok_or_else(|| {

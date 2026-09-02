@@ -6,7 +6,8 @@ outer AG `fixture.toml` descriptor plus only its explicitly declared files.
 V1 declares one payload and an optional implied-match reference. V2 may
 additionally declare one opaque, default-deny subsystem execution package with
 one entry and a bounded list of support files. V3 requires an executable
-package plus an outer reference kind, match/mismatch relation, and path. See
+package plus an outer reference kind, match/mismatch relation, and path. V4
+adds a lossless `external-derived` lineage without changing V1–V3. See
 [`docs/conformance/ag2-fixture-inventory-manifest-contract.md`](../../docs/conformance/ag2-fixture-inventory-manifest-contract.md)
 for the normative layout, schema, identity, validation, and manifest contract.
 Expected-result and classification metadata lives separately in the
@@ -70,6 +71,12 @@ To add a fixture:
    origin/order/source/namespace stylesheet coordinates. Select only Layout
    profiles for `layout-geometry` or only Paint profiles for
    `paint-operations`. Run `make check-conformance-rendering`.
+10. For the one AG8 derived case, use outer V4 and link it to the authoritative
+    external-source lineage. WPT interpretation and source-record accounting
+    remain in `wpt-test-support`; subsystem adaptation remains in the relevant
+    subsystem test-support crate. Run `make check-conformance-wpt` before the
+    ordinary manifest, expected-results, and rendering checks. A derived AG7
+    semantic result is never a WPT raster pass.
 
 `fixture.toml` is the source of truth. `manifest.toml` is a checked-in,
 deterministically generated review artifact and must not be edited by hand.
@@ -110,7 +117,8 @@ separate rendering lane. Browser/runtime observation, broad WPT/html5lib
 import, WPT reftest execution, pixels, cross-engine execution, JavaScript, DOM
 APIs, events, and dynamic behavior remain outside the current lanes. AG7
 static relations compare subsystem-owned structural bytes and add neither WPT
-source adaptation nor raster support. AG5 CSS execution
+source adaptation nor raster support. AG8 adds controlled source adaptation but
+still adds no raster support. AG5 CSS execution
 ends at `ComputedDocumentStyle`; fragment requests are representable but remain
 capability-unavailable until HTML provides contextual fragment parsing.
 The subsystem-neutral runner has no adapter feature enabled by default;

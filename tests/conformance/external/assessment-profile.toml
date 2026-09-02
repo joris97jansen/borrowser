@@ -1,0 +1,144 @@
+format = "borrowser-external-assessment-profile-v1"
+profile = "repository-static-conformance-v1"
+
+[[production]]
+kind = "javascript-execution"
+state = "unsupported"
+evidence = "Borrowser's current static renderer does not implement JavaScript execution."
+evidence_refs = ["docs/conformance/ag1-conformance-harness-architecture-no-js-scope.md"]
+
+[[production]]
+kind = "browser-runtime-feature"
+feature = "webdriver"
+state = "unsupported"
+evidence = "Borrowser does not expose the WebDriver browser-runtime feature."
+evidence_refs = ["docs/conformance/ag1-conformance-harness-architecture-no-js-scope.md"]
+
+[[production]]
+kind = "paint-feature"
+feature = "display-none-subtree-paint-suppression"
+state = "supported"
+evidence = "Production layout suppresses display:none subtrees before Paint consumes the layout tree."
+evidence_refs = ["crates/layout/src/box_tree/tests/debug.rs", "crates/gfx/src/paint/mod.rs", "docs/rendering/w3-display-to-box-generation-behavior.md"]
+
+[[harness]]
+kind = "subsystem-adapter"
+feature = "testharness-execution"
+state = "unsupported"
+evidence = "The AG harness has no JavaScript testharness execution adapter."
+evidence_refs = ["docs/conformance/ag1-conformance-harness-architecture-no-js-scope.md"]
+
+[[harness]]
+kind = "subsystem-adapter"
+feature = "webdriver-automation"
+state = "unsupported"
+evidence = "The AG harness has no WebDriver automation adapter."
+evidence_refs = ["docs/conformance/ag1-conformance-harness-architecture-no-js-scope.md"]
+
+[[harness]]
+kind = "subsystem-adapter"
+feature = "testdriver-automation"
+state = "unsupported"
+evidence = "The AG harness has no testdriver automation adapter."
+evidence_refs = ["docs/conformance/ag1-conformance-harness-architecture-no-js-scope.md"]
+
+[[harness]]
+kind = "comparison-surface"
+feature = "wpt-raster-comparison"
+state = "unsupported"
+evidence = "AG7 structural and semantic comparisons are not a WPT raster comparison surface."
+evidence_refs = ["docs/conformance/ag7-static-structural-reference-comparison.md"]
+
+[[harness]]
+kind = "subsystem-adapter"
+feature = "rendering-paired-semantic"
+state = "supported"
+evidence = "Rendering test support owns a production-backed paired semantic adapter."
+evidence_refs = ["crates/rendering_test_support/src/paired_fixture.rs", "crates/rendering_test_support/src/execute.rs"]
+
+[[environment]]
+kind = "pixel-capture-environment"
+profile = "deterministic-raster"
+state = "unsupported"
+evidence = "The repository has no deterministic pixel-capture environment profile."
+evidence_refs = ["docs/conformance/ag7-static-structural-reference-comparison.md"]
+
+[[resource]]
+kind = "self-contained"
+state = "supported"
+evidence = "Self-contained source bytes are pinned and integrity checked."
+evidence_refs = ["docs/conformance/ag8-wpt-import-filtering-classification.md"]
+
+[[resource]]
+kind = "pinned-local-static"
+profile = "wpt-css-body-background-display-none"
+state = "supported"
+evidence = "The declared local resource closure is bounded, path confined, and integrity checked."
+evidence_refs = ["tests/conformance/external/wpt/sources.toml"]
+
+[[resource]]
+kind = "pinned-local-static"
+profile = "wpt-css-attr-case-sensitivity-multi-reference"
+state = "supported"
+evidence = "The declared local resource closure is bounded, path confined, and integrity checked."
+evidence_refs = ["tests/conformance/external/wpt/sources.toml"]
+
+[[resource]]
+kind = "pinned-local-static"
+profile = "wpt-css-background-size-local-image"
+state = "supported"
+evidence = "The declared local resource closure is bounded, path confined, and integrity checked."
+evidence_refs = ["tests/conformance/external/wpt/sources.toml"]
+
+[[resource]]
+kind = "pinned-local-static"
+profile = "wpt-css-background-clip-reftest-wait"
+state = "supported"
+evidence = "The declared local resource closure is bounded, path confined, and integrity checked."
+evidence_refs = ["tests/conformance/external/wpt/sources.toml"]
+
+[[resource]]
+kind = "server-behavior"
+profile = "wpt-harness-resources"
+state = "unsupported"
+evidence = "AG8 does not provision WPT harness server resources."
+evidence_refs = ["docs/conformance/ag8-wpt-import-filtering-classification.md"]
+
+[[resource]]
+kind = "server-behavior"
+profile = "wpt-substitution"
+state = "unsupported"
+evidence = "AG8 does not provide WPT substitution behavior."
+evidence_refs = ["docs/conformance/ag8-wpt-import-filtering-classification.md"]
+
+[[resource]]
+kind = "controlled-http"
+profile = "wpt-special-origin-http"
+state = "unsupported"
+evidence = "AG8 does not provision WPT special-origin HTTP and response-pipe behavior."
+evidence_refs = ["docs/conformance/ag8-wpt-import-filtering-classification.md"]
+
+[[representation]]
+kind = "raster-comparison"
+state = "unsupported"
+evidence = "Borrowser has no raster/pixel comparison representation."
+evidence_refs = ["docs/conformance/ag7-static-structural-reference-comparison.md"]
+
+[[representation]]
+kind = "multiple-reference-assertion"
+state = "unsupported"
+evidence = "AG7 cannot represent the upstream multi-reference Boolean raster assertion truthfully."
+evidence_refs = ["docs/conformance/ag7-static-structural-reference-comparison.md"]
+
+[[representation]]
+kind = "dynamic-readiness"
+state = "unsupported"
+evidence = "The static harness cannot satisfy reftest-wait readiness."
+evidence_refs = ["docs/conformance/ag7-static-structural-reference-comparison.md"]
+
+[[representation]]
+kind = "semantic-observation"
+feature = "paint-operations"
+state = "supported"
+evidence = "AG7 supports deterministic semantic Paint-operation comparison without claiming raster equivalence."
+evidence_refs = ["docs/conformance/ag7-static-structural-reference-comparison.md", "crates/rendering_test_support/src/execute.rs"]

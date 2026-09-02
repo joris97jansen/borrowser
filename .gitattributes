@@ -7,5 +7,9 @@
 /tests/conformance/manifest.toml text eol=lf
 /tests/conformance/expected-results.toml text eol=lf
 /tests/conformance/README.md text eol=lf
+/tests/conformance/external/wpt/raw/** -text
+/tests/conformance/external/wpt/*.toml text eol=lf
+/tests/conformance/external/wpt/README.md text eol=lf
 /docs/conformance/ag2-fixture-inventory-manifest-contract.md text eol=lf
 /docs/conformance/ag3-expected-results-classification-contract.md text eol=lf
+/docs/conformance/ag8-wpt-import-filtering-classification.md text eol=lf
