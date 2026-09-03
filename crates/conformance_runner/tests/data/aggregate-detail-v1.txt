@@ -1,0 +1,1329 @@
+format = "borrowser-conformance-aggregate-detail-v1"
+inventory-scope = "static-html-css-no-js"
+aggregate-granularity-contract = "borrowser-conformance-aggregate-granularity-v1"
+named-lane = "normal-ci"
+environment-assessment = "ag9-empty-assessment-v1"
+population-identity-contract = "borrowser-conformance-logical-case-membership-v1"
+logical-case-source-set-digest = "sha256:56ed7a3cf1b4af8158318bf58792c3ca72e3d0d6f5f567bb7f6ea5fbe82530f8"
+headline-counts-overlap = true
+logical-case-population = "logical-case"
+execution-variant-population = "execution-variant"
+accounting-count-field-count = 59
+subsystem-row-count = 5
+observation-row-count = 10
+comparison-row-count = 5
+terminal-row-count = 7
+BEGIN logical-accounting
+total = 25
+pass = 22
+fail = 0
+expected-fail = 0
+unsupported = 2
+skipped = 0
+flaky = 0
+unclassified = 1
+END logical-accounting
+BEGIN execution-variant-accounting
+materialized = 25
+runnable = 23
+not-runnable = 2
+eligibility-not-established = 0
+selected = 23
+excluded = 0
+selection-not-applicable = 2
+attempted = 23
+not-attempted = 2
+END execution-variant-accounting
+BEGIN subsystem
+owner = "html-parser"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 7
+execution-variants = 7
+END subsystem
+BEGIN subsystem
+owner = "css"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 7
+execution-variants = 7
+END subsystem
+BEGIN subsystem
+owner = "layout"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 3
+execution-variants = 4
+END subsystem
+BEGIN subsystem
+owner = "paint"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 7
+execution-variants = 7
+END subsystem
+BEGIN subsystem
+owner = "browser-runtime"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 1
+execution-variants = 0
+END subsystem
+BEGIN observation
+surface = "html-tokenizer"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 2
+execution-variants = 2
+END observation
+BEGIN observation
+surface = "html-tree-construction"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 3
+execution-variants = 3
+END observation
+BEGIN observation
+surface = "dom-tree"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 2
+execution-variants = 2
+END observation
+BEGIN observation
+surface = "css-parsing"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 1
+execution-variants = 1
+END observation
+BEGIN observation
+surface = "css-selectors"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 3
+execution-variants = 3
+END observation
+BEGIN observation
+surface = "css-cascade"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 2
+execution-variants = 2
+END observation
+BEGIN observation
+surface = "computed-style"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 1
+execution-variants = 1
+END observation
+BEGIN observation
+surface = "layout-geometry"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 3
+execution-variants = 4
+END observation
+BEGIN observation
+surface = "paint-operations"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 7
+execution-variants = 7
+END observation
+BEGIN observation
+surface = "browser-runtime-semantic"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 1
+execution-variants = 0
+END observation
+BEGIN comparison
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+execution-variants = 19
+END comparison
+BEGIN comparison
+comparison-kind = "static-document-reference"
+reference-kind = "semantic"
+reference-relation = "match"
+execution-variants = 3
+END comparison
+BEGIN comparison
+comparison-kind = "static-document-reference"
+reference-kind = "semantic"
+reference-relation = "mismatch"
+execution-variants = 1
+END comparison
+BEGIN comparison
+comparison-kind = "static-document-reference"
+reference-kind = "structural"
+reference-relation = "match"
+execution-variants = 2
+END comparison
+BEGIN comparison
+comparison-kind = "static-document-reference"
+reference-kind = "structural"
+reference-relation = "mismatch"
+execution-variants = 0
+END comparison
+BEGIN terminal
+outcome = "semantic-pass"
+attempted-variants = 23
+END terminal
+BEGIN terminal
+outcome = "semantic-fail"
+attempted-variants = 0
+END terminal
+BEGIN terminal
+outcome = "execution-failure"
+attempted-variants = 0
+END terminal
+BEGIN terminal
+outcome = "resource-failure"
+attempted-variants = 0
+END terminal
+BEGIN terminal
+outcome = "incomplete-observation"
+attempted-variants = 0
+END terminal
+BEGIN terminal
+outcome = "invariant-failure"
+attempted-variants = 0
+END terminal
+BEGIN terminal
+outcome = "timeout"
+attempted-variants = 0
+END terminal
+logical-case-detail-count = 25
+BEGIN logical-case
+test-id = "browser-controlled-static-page-basic"
+logical-case-member-digest = "sha256:fc500a811a274719eccd9c519c8b72bd958c8ef7ab9c2dd70df6f920b0d68178"
+source-kind = "controlled-static-page"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "browser-runtime"
+observation-surface = "browser-runtime-semantic"
+classification = "not-yet-classified"
+classification-reason = "The runtime-semantic seed still needs an explicit AG observation contract and truthful viewport, text-measurement, and resource-environment requirements."
+requirements = null
+capability = null
+capability-missing-count = null
+harness = null
+harness-limitation-count = null
+environment-requirement-count = null
+stability = null
+stability-reason = null
+lane-exclusion-count = null
+eligibility = "not-yet-established"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 1
+BEGIN eligibility-fact
+role = "unresolved"
+kind = "classification"
+reason = "The runtime-semantic seed still needs an explicit AG observation contract and truthful viewport, text-measurement, and resource-environment requirements."
+END eligibility-fact
+expectation = "not-established"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 0
+END logical-case
+BEGIN logical-case
+test-id = "computed-style-basic-author-rule"
+logical-case-member-digest = "sha256:e4e6f2a4a2120b02d8cc977037df06b9f5260b45c31ec899a876c1f884f103a2"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "css"
+observation-surface = "computed-style"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-css-feature", "requires-html-parser-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "not-yet-established"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "singleton"
+rendering-environment = null
+available-width-css-px = null
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "css-cascade-basic-author-rule"
+logical-case-member-digest = "sha256:587fc9b32ef9bec4d021980da198836deab422f5e0ac506ac6de7eb1e955d270"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "css"
+observation-surface = "css-cascade"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-css-feature", "requires-html-parser-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "not-yet-established"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "singleton"
+rendering-environment = null
+available-width-css-px = null
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "css-inheritance-wide-keywords"
+logical-case-member-digest = "sha256:3a8fb5f52badc5b687c662deefa1c218ed446ed564f807bd466ecb90dcda8d07"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "css"
+observation-surface = "css-cascade"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-css-feature", "requires-html-parser-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "not-yet-established"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "singleton"
+rendering-environment = null
+available-width-css-px = null
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "css-parsing-basic-stylesheet"
+logical-case-member-digest = "sha256:6f5202a62cfdbc71feb300d278980ebdc2d0b6bde4e6e628ffc9d1eca9b2de95"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "css"
+observation-surface = "css-parsing"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-css-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "not-yet-established"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "singleton"
+rendering-environment = null
+available-width-css-px = null
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "css-selector-matching-parser-dom"
+logical-case-member-digest = "sha256:05a510f05fb805ef99f9494e57d31fb2da94d952f9b3534eaab1e8b68317cdab"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "css"
+observation-surface = "css-selectors"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-css-feature", "requires-html-parser-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "not-yet-established"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "singleton"
+rendering-environment = null
+available-width-css-px = null
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "css-selector-parsing-basic-list"
+logical-case-member-digest = "sha256:c0a6c3ba3cd08fdc3d58704fcc6999af3b1c2d4bbdf09e93bdfe0bb735a372dc"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "css"
+observation-surface = "css-selectors"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-css-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "not-yet-established"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "singleton"
+rendering-environment = null
+available-width-css-px = null
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "css-selector-specificity-list"
+logical-case-member-digest = "sha256:7764eb0558927013a8f0ab48064dda16549c43a5112cc4de74e9f3f6cd83e06c"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "css"
+observation-surface = "css-selectors"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-css-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "not-yet-established"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "singleton"
+rendering-environment = null
+available-width-css-px = null
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "dom-tree-basic-document"
+logical-case-member-digest = "sha256:da577a3884000f7c74b34e3a21a0471c2cde3b1fdad573936ff4c34d21ba5fb9"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "html-parser"
+observation-surface = "dom-tree"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-html-parser-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "not-yet-established"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "singleton"
+rendering-environment = null
+available-width-css-px = null
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "dom-tree-representative-static-document"
+logical-case-member-digest = "sha256:7e361da953b9b79018853f70c46887b2975606a8ddbd136febad1bdf2c1a904f"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "html-parser"
+observation-surface = "dom-tree"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-html-parser-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "not-yet-established"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "singleton"
+rendering-environment = null
+available-width-css-px = null
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "html-tokenizer-basic-document"
+logical-case-member-digest = "sha256:dd79797f04bc10f19d999e74c993da61f5220f0c9acdc516afb9c6c6d6219e37"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "html-parser"
+observation-surface = "html-tokenizer"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-html-parser-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "not-yet-established"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "singleton"
+rendering-environment = null
+available-width-css-px = null
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "html-tokenizer-malformed-eof"
+logical-case-member-digest = "sha256:0dc14a38bc9db38367ce4a50849eefc3a563c776885ce959e0b12c10abed11ca"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "html-parser"
+observation-surface = "html-tokenizer"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-html-parser-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "not-yet-established"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "singleton"
+rendering-environment = null
+available-width-css-px = null
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "html-tree-construction-basic-document"
+logical-case-member-digest = "sha256:e460ac39221406cf98b303bcd6e615e89d9171621447bff8ce1fd4926544a093"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "html-parser"
+observation-surface = "html-tree-construction"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-html-parser-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "not-yet-established"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "singleton"
+rendering-environment = null
+available-width-css-px = null
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "html-tree-construction-malformed-recovery"
+logical-case-member-digest = "sha256:dc720b9974fcd61a277382647a0f66284eb3e9fc4ca940c5013c1304fc9df77c"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "html-parser"
+observation-surface = "html-tree-construction"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-html-parser-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "not-yet-established"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "singleton"
+rendering-environment = null
+available-width-css-px = null
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "html-tree-construction-repeated-body-unavailable"
+logical-case-member-digest = "sha256:f4cf1ef589d45e6ca3876d4d090e2cfe3a8941b554296933f71944649befb4f7"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "html-parser"
+observation-surface = "html-tree-construction"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-html-parser-feature"]
+capability = "unavailable"
+capability-missing-count = 1
+BEGIN capability-missing
+kind = "html-parser-feature"
+feature = "merge-attributes-into-existing-body-element"
+reason = "The selected repeated-body input requires merging previously absent attributes into the existing body element, which AE records as unavailable."
+END capability-missing
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "not-yet-established"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "not-runnable"
+eligibility-blocker-count = 1
+eligibility-unresolved-count = 0
+BEGIN eligibility-fact
+role = "blocker"
+kind = "engine-capability"
+capability-kind = "html-parser-feature"
+feature = "merge-attributes-into-existing-body-element"
+reason = "The selected repeated-body input requires merging previously absent attributes into the existing body element, which AE records as unavailable."
+END eligibility-fact
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "singleton"
+rendering-environment = null
+available-width-css-px = null
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+lane-selection = "not-applicable"
+selection-lane = null
+lane-selection-reason = null
+attempt = "not-attempted"
+not-attempted-reason = "eligibility"
+terminal-outcome = null
+derived-policy = "not-run"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "layout-geometry-basic-block-flow"
+logical-case-member-digest = "sha256:7696a2a1927b62c133cafa348bec948d730543371296e03ef65b176aa5daa8c3"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "layout"
+observation-surface = "layout-geometry"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-css-feature", "requires-html-parser-feature", "requires-layout-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "stable"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 2
+BEGIN execution-variant
+variant-kind = "rendering"
+rendering-environment = "synthetic-text-metrics-v1"
+available-width-css-px = 320
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+BEGIN execution-variant
+variant-kind = "rendering"
+rendering-environment = "synthetic-text-metrics-v1"
+available-width-css-px = 640
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "layout-reference-equivalent-simple"
+logical-case-member-digest = "sha256:77998a25cd23d1f4b458f8133fd263bc918c498cf47323dadfd8d1d9a3b94786"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "layout"
+observation-surface = "layout-geometry"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-css-feature", "requires-html-parser-feature", "requires-layout-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "stable"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "rendering"
+rendering-environment = "synthetic-text-metrics-v1"
+available-width-css-px = 320
+comparison-kind = "static-document-reference"
+reference-kind = "structural"
+reference-relation = "match"
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "layout-reference-grid-unavailable"
+logical-case-member-digest = "sha256:503297fcdd5a689b789365a14581d7731fc1b831c5fed00ad415fbd02f25c3e3"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "layout"
+observation-surface = "layout-geometry"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-css-feature", "requires-html-parser-feature", "requires-layout-feature"]
+capability = "unavailable"
+capability-missing-count = 1
+BEGIN capability-missing
+kind = "layout-feature"
+feature = "css-grid"
+reason = "CSS Grid layout is not implemented, so this static relation is inventory truth but not runnable."
+END capability-missing
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "not-yet-established"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "not-runnable"
+eligibility-blocker-count = 1
+eligibility-unresolved-count = 0
+BEGIN eligibility-fact
+role = "blocker"
+kind = "engine-capability"
+capability-kind = "layout-feature"
+feature = "css-grid"
+reason = "CSS Grid layout is not implemented, so this static relation is inventory truth but not runnable."
+END eligibility-fact
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "rendering"
+rendering-environment = "synthetic-text-metrics-v1"
+available-width-css-px = 320
+comparison-kind = "static-document-reference"
+reference-kind = "structural"
+reference-relation = "match"
+lane-selection = "not-applicable"
+selection-lane = null
+lane-selection-reason = null
+attempt = "not-attempted"
+not-attempted-reason = "eligibility"
+terminal-outcome = null
+derived-policy = "not-run"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "paint-layering-positioned-order"
+logical-case-member-digest = "sha256:106854ca31de3dddd39f4ade6a6c526cbece88479fa5fbacd4cf0045ef721d85"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "paint"
+observation-surface = "paint-operations"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-css-feature", "requires-html-parser-feature", "requires-layout-feature", "requires-paint-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "stable"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "rendering"
+rendering-environment = "synthetic-text-metrics-v1"
+available-width-css-px = 320
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "paint-operations-basic-background"
+logical-case-member-digest = "sha256:b9c315e2766a3fbe5032fd23d866ee42cf7775b712825006da38674e03f1ff7a"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "paint"
+observation-surface = "paint-operations"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-css-feature", "requires-html-parser-feature", "requires-layout-feature", "requires-paint-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "stable"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "rendering"
+rendering-environment = "synthetic-text-metrics-v1"
+available-width-css-px = 320
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "paint-reference-equivalent-cascade"
+logical-case-member-digest = "sha256:6c3184404e00b235992c9244cf63d3f206947342a0276d3a5dd5431ee0295fd7"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "paint"
+observation-surface = "paint-operations"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-css-feature", "requires-html-parser-feature", "requires-layout-feature", "requires-paint-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "stable"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "rendering"
+rendering-environment = "synthetic-text-metrics-v1"
+available-width-css-px = 320
+comparison-kind = "static-document-reference"
+reference-kind = "semantic"
+reference-relation = "match"
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "paint-reference-intentional-mismatch"
+logical-case-member-digest = "sha256:bc5709d815ce01086e427d49e21181df71575558ebf0bc5199d8d53e3c090e4c"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "paint"
+observation-surface = "paint-operations"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-css-feature", "requires-html-parser-feature", "requires-layout-feature", "requires-paint-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "stable"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "rendering"
+rendering-environment = "synthetic-text-metrics-v1"
+available-width-css-px = 320
+comparison-kind = "static-document-reference"
+reference-kind = "semantic"
+reference-relation = "mismatch"
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "paint-semantic-artifact-ac7"
+logical-case-member-digest = "sha256:efac346bdde15445101cc1cf47e6e5d3f038917e565294090aef8c8dc618f8ef"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "paint"
+observation-surface = "paint-operations"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-css-feature", "requires-html-parser-feature", "requires-layout-feature", "requires-paint-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "stable"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "rendering"
+rendering-environment = "synthetic-text-metrics-v1"
+available-width-css-px = 320
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "paint-semantic-reference-basic"
+logical-case-member-digest = "sha256:395cc7d67277da74a8fb86fbdc9e3ad8995e605a636a75d52ce9ad5e22756152"
+source-kind = "native"
+external-source-record = null
+external-lineage = null
+external-adapter = null
+external-adapter-version = null
+subsystem-owner = "paint"
+observation-surface = "paint-operations"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-css-feature", "requires-html-parser-feature", "requires-layout-feature", "requires-paint-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "stable"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "rendering"
+rendering-environment = "synthetic-text-metrics-v1"
+available-width-css-px = 320
+comparison-kind = "static-document-reference"
+reference-kind = "semantic"
+reference-relation = "match"
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case
+BEGIN logical-case
+test-id = "wpt-derived-body-background-display-none"
+logical-case-member-digest = "sha256:0ea3d38ffb6b70a0e29d695fe1e2ec4a858e875b6557100a548de75a9844066a"
+source-kind = "external-derived"
+external-source-record = "wpt-css-body-background-display-none"
+external-lineage = "wpt-body-background-display-none-paint-v1"
+external-adapter = "rendering-paired-semantic"
+external-adapter-version = "1"
+subsystem-owner = "paint"
+observation-surface = "paint-operations"
+classification = "classified"
+classification-reason = null
+requirements = ["no-js", "requires-css-feature", "requires-html-parser-feature", "requires-layout-feature", "requires-paint-feature"]
+capability = "available"
+capability-missing-count = 0
+harness = "ready"
+harness-limitation-count = 0
+environment-requirement-count = 0
+stability = "not-yet-established"
+stability-reason = null
+lane-exclusion-count = 0
+eligibility = "runnable"
+eligibility-blocker-count = 0
+eligibility-unresolved-count = 0
+expectation = "expected-pass"
+expected-failure-kind = null
+expectation-reason = null
+execution-variant-count = 1
+BEGIN execution-variant
+variant-kind = "rendering"
+rendering-environment = "synthetic-text-metrics-v1"
+available-width-css-px = 320
+comparison-kind = "static-document-reference"
+reference-kind = "semantic"
+reference-relation = "match"
+lane-selection = "selected"
+selection-lane = "normal-ci"
+lane-selection-reason = null
+attempt = "attempted"
+not-attempted-reason = null
+terminal-outcome = "semantic-pass"
+derived-policy = "expected-pass"
+END execution-variant
+END logical-case

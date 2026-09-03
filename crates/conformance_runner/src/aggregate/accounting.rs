@@ -438,6 +438,14 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn checked_accounting_arithmetic_rejects_overflow() {
+        assert_eq!(checked_sum([u64::MAX, 1]), Err(AccountingError::Overflow));
+        let mut maximum = u64::MAX;
+        assert_eq!(increment(&mut maximum), Err(AccountingError::Overflow));
+        assert_eq!(maximum, u64::MAX);
+    }
+
     fn ag_state() -> AgCaseState {
         AgCaseState {
             test_id: TestId::parse("synthetic-accounting").unwrap(),

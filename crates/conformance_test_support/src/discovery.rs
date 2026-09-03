@@ -81,9 +81,9 @@ pub fn discover_inventory(
             .iter()
             .any(|fixture| fixture.source().lineage_id().is_some())
         {
-            match load_external_lineage_registry(repository.repository_root())
-                .and_then(|registry| reconcile_external_fixture_lineages(&inventory, &registry))
-            {
+            match load_external_lineage_registry(repository.repository_root()).and_then(
+                |registry| reconcile_external_fixture_lineages(&inventory, &registry).map(|_| ()),
+            ) {
                 Ok(()) => return Ok(inventory),
                 Err(error) => diagnostics.push(InventoryDiagnostic::new(
                     "tests/conformance/external/registries.toml",

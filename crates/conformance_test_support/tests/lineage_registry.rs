@@ -77,7 +77,14 @@ fn every_v4_external_lineage_reconciles_test_and_adapter_exactly() {
         InventoryRepository::new(temp.path(), temp.path().join("tests/conformance/fixtures"));
     let inventory = discover_inventory(&repository).unwrap();
     let registry = load_external_lineage_registry(temp.path()).unwrap();
-    reconcile_external_fixture_lineages(&inventory, &registry).unwrap();
+    let reconciled = reconcile_external_fixture_lineages(&inventory, &registry).unwrap();
+    let declaration = reconciled
+        .declaration_for(&conformance_test_support::TestId::parse("derived-proof").unwrap())
+        .expect("external fixture has one reconciled declaration");
+    assert_eq!(declaration.source_record().as_str(), "source-record");
+    assert_eq!(declaration.id().as_str(), "lineage-proof-v1");
+    assert_eq!(declaration.adapter().as_str(), "rendering-paired-semantic");
+    assert_eq!(declaration.adapter_version().as_str(), "1");
 }
 
 #[test]

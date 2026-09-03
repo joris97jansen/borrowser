@@ -3,16 +3,36 @@
 use std::path::Path;
 
 use conformance_runner::{
-    AggregateComparisonKind, AggregateExecutionRequest, AggregateExecutionVariantId,
-    AggregateSubsystemResult, AggregateTerminalOutcome, LaneSelection, run_repository_aggregate,
+    AggregateComparisonKind, AggregateEnvironmentAssessmentMode, AggregateExecutionRequest,
+    AggregateExecutionVariantId, AggregateSubsystemResult, AggregateTerminalOutcome, LaneSelection,
+    build_aggregate_detail_v1, build_aggregate_summary_v1, run_repository_aggregate,
 };
-use conformance_test_support::{LanePolicyScope, SubsystemOwner};
+use conformance_test_support::{LanePolicyScope, SourceKind, SubsystemOwner};
 
 fn repository_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
         .expect("workspace root")
+}
+
+#[test]
+fn aggregate_v1_reports_have_exact_golden_bytes() {
+    let run = run_repository_aggregate(
+        repository_root(),
+        AggregateExecutionRequest {
+            lane: LanePolicyScope::NormalCi,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        build_aggregate_summary_v1(&run).unwrap(),
+        include_bytes!("data/aggregate-summary-v1.txt")
+    );
+    assert_eq!(
+        build_aggregate_detail_v1(&run).unwrap(),
+        include_bytes!("data/aggregate-detail-v1.txt")
+    );
 }
 
 #[test]
@@ -34,7 +54,15 @@ fn aggregate_run_reconciles_the_complete_inventory_and_keeps_populations_distinc
     assert_eq!(run, repeated);
 
     assert_eq!(run.cases().len(), 25);
+    assert_eq!(
+        run.environment_assessment_mode(),
+        AggregateEnvironmentAssessmentMode::EmptyV1
+    );
     assert_eq!(run.accounting().logical.total_tests, 25);
+    assert_eq!(
+        run.logical_case_source_set_digest().as_sha256().to_hex(),
+        "56ed7a3cf1b4af8158318bf58792c3ca72e3d0d6f5f567bb7f6ea5fbe82530f8"
+    );
     assert!(
         run.cases()
             .windows(2)
@@ -48,6 +76,38 @@ fn aggregate_run_reconciles_the_complete_inventory_and_keeps_populations_distinc
         .expect("Browser/runtime inventory seed");
     assert_eq!(browser.owner, SubsystemOwner::BrowserRuntime);
     assert!(browser.variants.is_empty());
+    assert_eq!(
+        browser.member_digest.as_sha256().to_hex(),
+        "fc500a811a274719eccd9c519c8b72bd958c8ef7ab9c2dd70df6f920b0d68178"
+    );
+
+    let external = run
+        .cases()
+        .iter()
+        .find(|case| case.ag.test_id.as_str() == "wpt-derived-body-background-display-none")
+        .expect("AG8-derived rendering fixture");
+    assert_eq!(
+        external.source_identity.source_kind(),
+        SourceKind::ExternalDerived
+    );
+    let source_record = external.source_identity.source_record().unwrap();
+    let lineage = external.source_identity.lineage().unwrap();
+    let adapter = external.source_identity.adapter().unwrap();
+    let adapter_version = external.source_identity.adapter_version().unwrap();
+    assert_eq!(
+        source_record.as_str(),
+        "wpt-css-body-background-display-none"
+    );
+    assert_eq!(
+        lineage.as_str(),
+        "wpt-body-background-display-none-paint-v1"
+    );
+    assert_eq!(adapter.as_str(), "rendering-paired-semantic");
+    assert_eq!(adapter_version.as_str(), "1");
+    assert_eq!(
+        external.member_digest.as_sha256().to_hex(),
+        "0ea3d38ffb6b70a0e29d695fe1e2ec4a858e875b6557100a548de75a9844066a"
+    );
 
     let rendering = run
         .cases()
@@ -159,10 +219,16 @@ fn aggregate_identity_selection_and_comparison_kind_remain_orthogonal() {
                 AggregateSubsystemResult::Css(result) => {
                     assert_eq!(result.ag.test_id, case.ag.test_id)
                 }
-                AggregateSubsystemResult::Rendering(_) => assert!(matches!(
-                    variant.key.variant,
-                    AggregateExecutionVariantId::Rendering(_)
-                )),
+                AggregateSubsystemResult::Rendering(_) => {
+                    assert_eq!(
+                        case.rendering_evidence().unwrap().originating_ag(),
+                        &case.ag
+                    );
+                    assert!(matches!(
+                        variant.key.variant,
+                        AggregateExecutionVariantId::Rendering(_)
+                    ));
+                }
             }
         }
     }

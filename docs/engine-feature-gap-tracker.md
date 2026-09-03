@@ -497,13 +497,28 @@ Current architecture status:
   emulation, generalized networking, arbitrary resource crawling, screenshots,
   raster/fuzzy comparison, full WPT manifest ingestion, a full checkout, or
   broad WPT execution/compliance.
+- AG9 Stage 1 adds one typed `AggregateRun` over the existing parser, CSS, and
+  rendering adapters. It keeps logical cases and execution variants separate,
+  derives named-lane selection only after eligibility, retains zero-variant
+  Browser/runtime inventory cases, and projects closed terminal outcomes
+  without replacing authoritative subsystem results.
+- AG9a adds deterministic
+  `borrowser-conformance-aggregate-summary-v1` and
+  `borrowser-conformance-aggregate-detail-v1` projections from that same run.
+  Reports retain orthogonal AG3 state, explicit zero-count grouping rows,
+  reserved zero timeout accounting, exact logical-member/source-set identity,
+  a derived 6,073-byte summary ceiling, and a 32 MiB detail bound. Historical
+  parser V1, CSS V1, and rendering V1/V2 report contracts remain unchanged.
+  See `docs/conformance/ag9-cross-engine-comparison-reporting.md`.
+- AG9a is reporting infrastructure, not broad WPT compliance or browser
+  compatibility. It does not add external capture loading/comparison, trend
+  execution, aggregate CLI/CI publication, browser automation, or raster
+  comparison.
 
 Missing or incomplete:
 
-- generic named-lane selection and scheduling
+- aggregate named-lane scheduling and CLI/CI publication
 - Browser/runtime subsystem adapters
-- aggregate cross-subsystem conformance-progress summaries beyond AG3 metadata
-  and AG4 parser-case reports
 - broader pinned external-source adapters beyond the exact AG8 and AE13e proofs
 - cross-engine capture and artifact comparison workflows
 - pixel/raster reference comparison infrastructure

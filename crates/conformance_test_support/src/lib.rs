@@ -52,8 +52,8 @@ pub use external_source::{
 pub use lineage_registry::{
     EXTERNAL_LINEAGE_REGISTRY_FORMAT_V1, EXTERNAL_REGISTRY_INDEX_FORMAT_V1,
     EXTERNAL_REGISTRY_INDEX_PATH, ExternalLineageDeclaration, ExternalLineageRegistryError,
-    ValidatedExternalLineageRegistry, load_external_lineage_registry,
-    reconcile_external_fixture_lineages,
+    ReconciledExternalFixtureLineages, ValidatedExternalLineageRegistry,
+    load_external_lineage_registry, reconcile_external_fixture_lineages,
 };
 pub use manifest::{
     CONFORMANCE_MANIFEST_FORMAT_V1, CONFORMANCE_MANIFEST_FORMAT_V2, CONFORMANCE_MANIFEST_FORMAT_V3,
