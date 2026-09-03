@@ -447,6 +447,7 @@ version = "0.1.0"
 dependencies = [
  "conformance-test-support",
  "css-test-support",
+ "external-test-provenance",
  "html-test-support",
  "rendering-test-support",
  "serde_json",

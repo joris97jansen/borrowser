@@ -8,6 +8,7 @@
 mod metadata;
 mod model;
 mod report;
+mod report_writer;
 
 #[cfg(feature = "aggregate")]
 mod aggregate;
@@ -44,12 +45,20 @@ pub use report::{
 
 #[cfg(feature = "aggregate")]
 pub use aggregate::{
-    AggregateAccounting, AggregateCaseResult, AggregateComparisonKind, AggregateExecutionAttempt,
+    AGGREGATE_DETAIL_FORMAT_V1, AGGREGATE_DETAIL_MAX_BYTES_V1, AGGREGATE_GRANULARITY_CONTRACT_V1,
+    AGGREGATE_LOGICAL_CASE_MEMBER_IDENTITY_V1, AGGREGATE_LOGICAL_CASE_SOURCE_SET_IDENTITY_V1,
+    AGGREGATE_POPULATION_IDENTITY_CONTRACT_V1, AGGREGATE_SUMMARY_FORMAT_V1,
+    AGGREGATE_SUMMARY_MAX_BYTES_V1, AggregateAccounting, AggregateCaseResult,
+    AggregateComparisonKind, AggregateEnvironmentAssessmentMode, AggregateExecutionAttempt,
     AggregateExecutionRequest, AggregateExecutionVariantId, AggregateGroupingAccounting,
-    AggregateNotAttemptedReason, AggregateReconciliationError, AggregateRun, AggregateRunError,
-    AggregateSubsystemResult, AggregateTerminalOutcome, AggregateVariantKey,
-    AggregateVariantPopulationCounts, AggregateVariantResult, LaneSelection, LogicalHeadlineCounts,
-    TerminalOutcomeCounts, run_repository_aggregate,
+    AggregateIdentityError, AggregateLogicalCaseMemberDigest, AggregateLogicalCaseSourceSetDigest,
+    AggregateLogicalSourceIdentity, AggregateNotAttemptedReason, AggregateReconciliationError,
+    AggregateRenderingCaseEvidence, AggregateReportBuildError, AggregateReportPublicationError,
+    AggregateRun, AggregateRunError, AggregateRunInvariantError, AggregateSubsystemResult,
+    AggregateTerminalOutcome, AggregateVariantKey, AggregateVariantPopulationCounts,
+    AggregateVariantResult, LaneSelection, LogicalHeadlineCounts, TerminalOutcomeCounts,
+    build_aggregate_detail_v1, build_aggregate_summary_v1, build_and_write_aggregate_detail_v1,
+    build_and_write_aggregate_summary_v1, run_repository_aggregate,
 };
 
 #[cfg(feature = "html-parser")]

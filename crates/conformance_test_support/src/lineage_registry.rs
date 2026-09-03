@@ -58,6 +58,28 @@ impl ValidatedExternalLineageRegistry {
     }
 }
 
+/// External lineage declarations reconciled against one exact validated
+/// inventory. The private storage prevents callers from treating a merely
+/// schema-valid registry lookup as fixture reconciliation.
+#[derive(Clone, Debug)]
+pub struct ReconciledExternalFixtureLineages<'a> {
+    declarations: Vec<(&'a TestId, &'a ExternalLineageDeclaration)>,
+}
+
+impl<'a> ReconciledExternalFixtureLineages<'a> {
+    pub fn declaration_for(&self, test_id: &TestId) -> Option<&'a ExternalLineageDeclaration> {
+        self.declarations
+            .binary_search_by(|(candidate, _)| {
+                candidate
+                    .as_str()
+                    .as_bytes()
+                    .cmp(test_id.as_str().as_bytes())
+            })
+            .ok()
+            .map(|index| self.declarations[index].1)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExternalLineageRegistryError {
     Io,
@@ -70,6 +92,7 @@ pub enum ExternalLineageRegistryError {
     DanglingFixtureLineage,
     DerivedTestMismatch,
     AdapterMismatch,
+    Allocation,
 }
 
 #[derive(Deserialize)]
@@ -191,10 +214,19 @@ pub fn load_external_lineage_registry(
     Ok(ValidatedExternalLineageRegistry { declarations })
 }
 
-pub fn reconcile_external_fixture_lineages(
-    inventory: &ValidatedInventory,
-    registry: &ValidatedExternalLineageRegistry,
-) -> Result<(), ExternalLineageRegistryError> {
+pub fn reconcile_external_fixture_lineages<'a>(
+    inventory: &'a ValidatedInventory,
+    registry: &'a ValidatedExternalLineageRegistry,
+) -> Result<ReconciledExternalFixtureLineages<'a>, ExternalLineageRegistryError> {
+    let external_count = inventory
+        .fixtures()
+        .iter()
+        .filter(|fixture| matches!(fixture.source(), FixtureSource::ExternalDerived { .. }))
+        .count();
+    let mut declarations = Vec::new();
+    declarations
+        .try_reserve(external_count)
+        .map_err(|_| ExternalLineageRegistryError::Allocation)?;
     for fixture in inventory.fixtures() {
         let FixtureSource::ExternalDerived {
             lineage_id,
@@ -213,8 +245,12 @@ pub fn reconcile_external_fixture_lineages(
         if declaration.adapter() != adapter || declaration.adapter_version() != adapter_version {
             return Err(ExternalLineageRegistryError::AdapterMismatch);
         }
+        declarations.push((fixture.id(), declaration));
     }
-    Ok(())
+    declarations.sort_unstable_by(|(left, _), (right, _)| {
+        left.as_str().as_bytes().cmp(right.as_str().as_bytes())
+    });
+    Ok(ReconciledExternalFixtureLineages { declarations })
 }
 
 fn read_confined(

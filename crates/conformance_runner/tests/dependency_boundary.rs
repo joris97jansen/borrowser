@@ -317,6 +317,30 @@ fn synthetic_workspace_metadata(
     cargo_metadata(&workspace.path().join("Cargo.toml"), false)
 }
 
+fn check_aggregate_identity_probe(source: &str) -> std::process::Output {
+    let workspace = tempfile::tempdir().expect("temporary aggregate API-boundary crate");
+    fs::create_dir_all(workspace.path().join("src")).unwrap();
+    let runner_path = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let escaped_runner_path = runner_path
+        .to_string_lossy()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    fs::write(
+        workspace.path().join("Cargo.toml"),
+        format!(
+            "[package]\nname = \"aggregate-identity-boundary-probe\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[workspace]\n\n[dependencies]\nconformance-runner = {{ path = \"{escaped_runner_path}\", features = [\"aggregate\"] }}\n"
+        ),
+    )
+    .unwrap();
+    fs::write(workspace.path().join("src/main.rs"), source).unwrap();
+    Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+        .args(["check", "--offline", "--manifest-path"])
+        .arg(workspace.path().join("Cargo.toml"))
+        .env("CARGO_TARGET_DIR", workspace.path().join("target"))
+        .output()
+        .expect("aggregate API-boundary cargo check should run")
+}
+
 #[test]
 fn parser_execution_dependency_graph_preserves_ownership_boundaries() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -614,6 +638,7 @@ fn aggregate_feature_composes_only_the_existing_typed_adapter_boundaries() {
             serde_json::Value::String("html-parser".to_owned()),
             serde_json::Value::String("css".to_owned()),
             serde_json::Value::String("rendering".to_owned()),
+            serde_json::Value::String("dep:external-test-provenance".to_owned()),
         ]
     );
     let graph = workspace_graph(&metadata, "conformance-runner", &["default", "aggregate"]);
@@ -622,6 +647,7 @@ fn aggregate_feature_composes_only_the_existing_typed_adapter_boundaries() {
         "html-test-support",
         "css-test-support",
         "rendering-test-support",
+        "external-test-provenance",
     ] {
         assert!(
             graph.contains(required),
@@ -642,6 +668,30 @@ fn aggregate_feature_composes_only_the_existing_typed_adapter_boundaries() {
             "app_api",
         ],
         "aggregate conformance graph",
+    );
+}
+
+#[test]
+fn aggregate_external_source_identity_has_no_unchecked_public_constructor() {
+    let output = check_aggregate_identity_probe(
+        r#"
+use conformance_runner::AggregateLogicalSourceIdentity;
+
+fn main() {
+    let _private_representation = AggregateLogicalSourceIdentity { source: todo!() };
+}
+"#,
+    );
+    assert!(
+        !output.status.success(),
+        "unchecked external identity construction unexpectedly compiled"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("error[E0451]")
+            && stderr.contains("field `source`")
+            && stderr.contains("is private"),
+        "probe must fail at the opaque aggregate source-identity boundary:\n{stderr}"
     );
 }
 

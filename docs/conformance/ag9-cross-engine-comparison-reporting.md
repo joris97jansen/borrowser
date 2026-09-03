@@ -1,17 +1,19 @@
 # AG9 cross-engine comparison and conformance reporting contract
 
-Status: Stage 0 contract and limits freeze; aggregate execution, report
-serialization, external capture loading and comparison, trend execution, and
-CLI/CI publication are not implemented by this document
+Status: Stage 0 contract and limits freeze plus AG9 Stage 1 typed aggregate
+execution/accounting and AG9a deterministic aggregate summary/detail reports;
+external capture loading/comparison, trend execution, and aggregate CLI/CI
+publication remain unimplemented
 
-Last updated: 2026-09-02
+Last updated: 2026-09-03
 
 AG9 defines the future aggregate-accounting, reporting, cross-engine evidence,
 baseline-note, and trend contracts for Borrowser's current static HTML/CSS
-conformance harness. This Stage 0 change is documentation only. It does not
-create an aggregate runner, serialize an AG9 report, load a capture registry,
-run an external browser, compare an external capture, calculate a trend, or
-change a command or CI job.
+conformance harness. Stage 1 adds the typed aggregate runner and accounting
+projection. AG9a adds the two bounded aggregate V1 report projections defined
+below. Neither stage loads an external capture registry, runs an external
+browser, compares an external capture, calculates a trend, or changes a command
+or CI job.
 
 AG1 through AG8 remain authoritative. In particular, AG9 preserves AG1's
 federated ownership and orthogonal state, AG2 logical identity and discovery,
@@ -98,10 +100,56 @@ Cases with no selected variants, including an excluded-only runnable case, are
 neither pass nor fail. An excluded-only runnable logical case contributes to
 `skipped`.
 
+### Authoritative `AggregateRun` sealing
+
+`AggregateRun` is sealed from primary case state only. Its canonical
+construction boundary accepts inventory scope, named request, the typed
+environment-assessment mode, and the complete `AggregateCaseResult`
+population. Callers do not supply `AggregateAccounting` or the root logical
+source-set digest.
+
+Before construction succeeds, sealing validates fixture/case identity and
+scope, observation ownership, source-identity branch consistency, AG3 branch
+shape, unique logical and variant identities, exact member digests, variant
+ownership and subsystem projections, requested-lane selection, and the frozen
+eligibility/selection/attempt relationships. It then calls the existing
+aggregate-accounting owner over those exact cases and the existing identity
+owner over those exact `TestId`/member-digest pairs. Consequently every
+successfully constructed run makes both relationships structural:
+
+```text
+run.accounting() == build_accounting(run.cases())
+
+run.logical_case_source_set_digest()
+    == source_set_digest(
+           run.inventory_scope(),
+           every run case TestId/member-digest pair
+       )
+```
+
+Neither the model nor reporting duplicates subsystem projection, accounting,
+or hashing semantics. Reports receive an immutable sealed run and only project
+its typed state.
+
+Parser and CSS subsystem evidence retain their complete normalized case state.
+Rendering retains the authoritative `AgCaseState` from the originating
+`RenderingCaseResult` exactly once as logical-case evidence, while each
+materialized variant retains its subsystem-owned `RenderingVariantResult`
+losslessly. Sealing first requires that the case-level rendering evidence equal
+the aggregate logical case exactly, then independently validates every variant
+identity, execution, policy, and comparison projection. In particular,
+changing an aggregate rendering expectation cannot preserve old rendering
+evidence or an old expected-pass policy: the changed case must be executed and
+derived again.
+
 ## Eligibility, named-lane selection, and attempts
 
-AG9 aggregate execution uses the existing empty
-`ExecutionEnvironmentAssessment`. AG9 does not expose a caller-constructible
+AG9 aggregate execution seals the applied assessment policy in
+`AggregateRun` as `AggregateEnvironmentAssessmentMode`. AG9a exposes exactly
+one variant, `EmptyV1`. The runner constructs that mode alongside the existing
+`ExecutionEnvironmentAssessment::empty()` used for eligibility evaluation;
+reports project the mode from the completed run rather than supplying run
+context at serialization time. AG9 does not expose a caller-constructible
 general environment-assessment API. A declared environment requirement for
 which the empty assessment has no evidence remains eligibility
 `NotYetEstablished`.
@@ -235,7 +283,7 @@ execution. AG9 does not weaken those boundaries.
 
 ## Aggregate terminal outcomes
 
-The future aggregate terminal vocabulary is:
+The Stage 1 aggregate terminal vocabulary is:
 
 ```rust
 enum AggregateTerminalOutcome {
@@ -846,7 +894,7 @@ The AG9 V1 bounds are:
 | all retained external first differences | 4 MiB | Checked product of 256 captures and 16 KiB per comparison. |
 | aggregate local detail report | 32 MiB | Reuses the existing complete-report ceiling; the aggregate detail contract does not embed complete external capture bodies. |
 | each trend input and trend output | 32 MiB | Uses the versioned aggregate-detail/report ceiling; trend is local-only. |
-| CI summary | exact derived V1 maximum | Its fixed row vocabulary and maximum-width unsigned counts permit an exact formula; Stage 2 must publish that derived constant and proof rather than choose a round ceiling. |
+| CI summary | 6,073 bytes | AG9a derives the exact syntactic V1 ceiling from its fixed row vocabulary, identity fields, longest stable labels, framing, and 59 maximum-width unsigned counts. |
 
 All byte and multiplicity arithmetic is checked. Bounded reads use a sentinel to
 distinguish exact-boundary success from excess. Every fallible allocation is
@@ -868,9 +916,297 @@ raw payload and are explicitly outside those byte sums. Implementations must
 still use fallible reservation and bounded multiplicities; this document does
 not present the raw-payload calculation as an exact resident-memory guarantee.
 
+## Aggregate logical-population identity V1
+
+Source-set domain compatibility and exact population membership are distinct:
+
+```text
+source-set domain compatibility
+    !=
+exact logical-case source-set identity
+```
+
+The compatibility domain remains the tuple of inventory scope,
+aggregate/granularity contract, named lane, and environment-assessment mode.
+Within a compatible domain, unequal exact source-set digests are valid and
+later trend work reports added and removed logical cases.
+
+AG9a defines one member digest per logical case and one digest for the exact
+logical-case population. It does not add an execution-variant population
+digest; detail reports retain each typed variant key directly.
+
+### Common canonical identity framing
+
+Both aggregate identity preimages start with their versioned ASCII domain
+separator terminated by exactly one NUL. Fields follow in explicitly specified
+ascending tag order:
+
+```text
+tag     = unsigned 16-bit big-endian
+length  = unsigned 64-bit big-endian payload byte length
+payload = exactly `length` bytes
+```
+
+All conversions and byte-size arithmetic are checked and all preimage storage
+is fallibly reserved. Strings are their canonical typed UTF-8 bytes; closed
+labels are their contract-defined lowercase ASCII bytes. The implementation
+does not use `Debug`, Serde encoding, delimiters, host formatting, map order,
+filesystem order, paths, timestamps, locale, or implicit Git state.
+
+### `borrowser-conformance-logical-case-member-v1`
+
+The domain separator is:
+
+```text
+borrowser-conformance-logical-case-member-v1\0
+```
+
+| Tag | Payload | Presence |
+| ---: | --- | --- |
+| 1 | `InventoryScope::as_str()` | always |
+| 2 | `TestId::as_str()` | always |
+| 3 | `ObservationSurface::as_str()` | always |
+| 4 | `SourceKind::as_str()` | always |
+| 5 | `SourceRecordId::as_str()` | external-derived only |
+| 6 | `ExternalLineageId::as_str()` | external-derived only |
+| 7 | external adapter `HarnessFeatureId::as_str()` | external-derived only |
+| 8 | `ExternalAdapterVersion::as_str()` | external-derived only |
+
+Native and controlled-static-page members contain exactly tags 1 through 4.
+External-derived members contain exactly tags 1 through 8. Tags 5 through 8
+are absent, not empty, in the first two branches. The tag-4 source-kind
+discriminant makes the branch grammar unambiguous. `SourceRecordId` is accepted
+only from an AG8 lineage registry that was fully validated and reconciled
+against the exact `ValidatedInventory`; `conformance-runner` neither parses AG8
+schema nor performs an unchecked registry lookup.
+
+The Rust `AggregateLogicalSourceIdentity` is opaque. Its native and controlled
+branches are constructed only by the aggregate identity owner from the
+corresponding `ValidatedFixture`. Its external branch additionally requires a
+declaration obtained from `ReconciledExternalFixtureLineages` for that exact
+fixture; the identity owner rechecks the fixture ID, lineage, adapter, and
+adapter version before retaining the declaration's `SourceRecordId`. Public
+access is read-only through source-kind and optional external-field accessors.
+There is no unchecked public branch constructor, and `AggregateRun::try_seal`
+performs no repository I/O.
+
+V1 currently has one typed inventory scope, `static-html-css-no-js`. Identity
+tests prove tag 1 participates by mutating the canonical framed payload
+directly; they do not add a fictitious production `InventoryScope` variant.
+
+The frozen representative SHA-256 values are:
+
+| Member | Digest |
+| --- | --- |
+| native `css-cascade-basic-author-rule` | `587fc9b32ef9bec4d021980da198836deab422f5e0ac506ac6de7eb1e955d270` |
+| controlled static page `browser-controlled-static-page-basic` | `fc500a811a274719eccd9c519c8b72bd958c8ef7ab9c2dd70df6f920b0d68178` |
+| external-derived `wpt-derived-body-background-display-none` | `0ea3d38ffb6b70a0e29d695fe1e2ec4a858e875b6557100a548de75a9844066a` |
+
+### `borrowser-conformance-logical-case-source-set-v1`
+
+The domain separator is:
+
+```text
+borrowser-conformance-logical-case-source-set-v1\0
+```
+
+It has exactly two fields:
+
+| Tag | Payload | Reason |
+| ---: | --- | --- |
+| 1 | `InventoryScope::as_str()` | binds even an empty set to the authoritative inventory scope |
+| 2 | ordered member-digest sequence | identifies exact logical membership without copying report or run-policy fields |
+
+Tag 2 is exactly:
+
+```text
+member_count = unsigned 64-bit big-endian
+
+repeated member_count times:
+    item_length = unsigned 64-bit big-endian, exactly 32
+    item        = raw 32-byte logical-case-member-v1 SHA-256
+```
+
+Members are sorted by unsigned-byte lexicographic comparison of canonical
+`TestId` bytes. Duplicate `TestId` or member-digest values are errors and are
+never deduplicated. Membership changes alter the digest. Lane,
+environment-assessment mode, and aggregate/granularity contract remain domain
+compatibility fields rather than redundant member fields.
+
+For the empty `static-html-css-no-js` population the preimage is exactly 98
+bytes:
+
+```text
+626f72726f777365722d636f6e666f726d616e63652d6c6f676963616c2d636173652d736f757263652d7365742d763100000100000000000000157374617469632d68746d6c2d6373732d6e6f2d6a73000200000000000000080000000000000000
+```
+
+Its frozen SHA-256 is:
+
+```text
+768d27de40c959c7cebd099c1104e668b06a36da11cf367767d990760adb5270
+```
+
+Reports render either digest as `sha256:` followed by exactly 64 lowercase
+hexadecimal characters. Aggregate detail contains the source branch and all
+external identity fields needed to interpret a historical member without
+consulting the current repository or current AG8 registry.
+
+## Aggregate report V1 grammar
+
+Both reports use UTF-8, LF only, and exactly one final LF. They contain no
+empty lines: the first record follows the header immediately and every later
+record follows the preceding field or record immediately. A scalar string is
+`key = "value"`; absence is `key = null`; an unsigned count is unquoted
+canonical decimal with no leading zero except `0`; a Boolean is `true` or
+`false`; and a string list is `[` plus comma-space-separated quoted strings
+plus `]`. Strings preserve Unicode scalar values and escape backslash, quote,
+LF, CR, and tab as `\\`, `\"`, `\n`, `\r`, and `\t`. Other U+0000 through
+U+001F controls use uppercase, shortest-form `\u{HEX}`. No other escaping or
+normalization occurs.
+
+The common header order is:
+
+1. `format`;
+2. `inventory-scope`;
+3. `aggregate-granularity-contract`, exactly
+   `borrowser-conformance-aggregate-granularity-v1`;
+4. `named-lane`;
+5. `environment-assessment`, projected from the sealed
+   `AggregateRun::environment_assessment_mode`; AG9a's only constructible mode
+   is `AggregateEnvironmentAssessmentMode::EmptyV1`, serialized exactly as
+   `ag9-empty-assessment-v1`;
+6. `population-identity-contract`, exactly
+   `borrowser-conformance-logical-case-membership-v1`;
+7. `logical-case-source-set-digest`;
+8. `headline-counts-overlap = true`;
+9. `logical-case-population = "logical-case"`;
+10. `execution-variant-population = "execution-variant"`;
+11. fixed declarations `accounting-count-field-count = 59`,
+    `subsystem-row-count = 5`, `observation-row-count = 10`,
+    `comparison-row-count = 5`, and `terminal-row-count = 7`.
+
+`accounting-count-field-count` counts the run-dependent unsigned count fields:
+8 logical headline counts, 9 execution-variant population counts, 10 owner
+counts, 20 observation counts, 5 comparison counts, and 7 terminal counts. It
+does not count records or the five fixed row-declaration values.
+
+The accounting projection then contains, in order:
+
+- one `BEGIN logical-accounting` record with `total`, `pass`, `fail`,
+  `expected-fail`, `unsupported`, `skipped`, `flaky`, and `unclassified`;
+- one `BEGIN execution-variant-accounting` record with `materialized`,
+  `runnable`, `not-runnable`, `eligibility-not-established`, `selected`,
+  `excluded`, `selection-not-applicable`, `attempted`, and `not-attempted`;
+- five `BEGIN subsystem` records in HTML/parser, CSS, Layout, Paint, and
+  Browser/runtime order. Each contains `owner`,
+  `logical-domain = "logical-case"`,
+  `variant-domain = "execution-variant"`, `logical-cases`, and
+  `execution-variants`;
+- ten equivalent `BEGIN observation` records in the AG2 observation-vocabulary
+  order frozen above, using `surface` instead of `owner`;
+- five `BEGIN comparison` records for authored expected observation, semantic
+  reference match, semantic reference mismatch, structural reference match,
+  and structural reference mismatch. Each mirrors the typed comparison shape:
+  `comparison-kind = "authored-expected-observation"` with both reference
+  fields `null`, or `comparison-kind = "static-document-reference"` with
+  independent `reference-kind` and `reference-relation` fields. Each ends with
+  `execution-variants`;
+- seven `BEGIN terminal` records in semantic pass, semantic fail, execution
+  failure, resource failure, incomplete observation, invariant failure, and
+  timeout order, each with `attempted-variants`.
+
+All owner, observation, comparison, and terminal records are emitted even when
+their count is zero. Sparse accounting maps do not define wire vocabulary.
+Timeout remains reserved and zero for all current adapters.
+
+`borrowser-conformance-aggregate-summary-v1` ends after that common accounting
+projection. Its exact syntactic ceiling is 6,073 bytes. The derivation uses the
+longest named-lane label and 20 digits for each of the 59 run-dependent `u64`
+counts:
+
+| Fixed grammar portion | Maximum bytes |
+| --- | ---: |
+| header and fixed population/count declarations | 708 |
+| logical accounting | 301 |
+| execution-variant accounting | 405 |
+| five subsystem records | 985 |
+| ten observation records | 2,098 |
+| five structured comparison records | 890 |
+| seven terminal records | 686 |
+| **total** | **6,073** |
+
+This is a syntactic envelope; it does not claim one semantically valid
+`AggregateRun` can make every overlapping and reconciling count `u64::MAX`.
+
+`borrowser-conformance-aggregate-detail-v1` writes the identical common
+accounting projection with only the `format` value changed, then
+`logical-case-detail-count`, followed by logical cases sorted by canonical
+`TestId` bytes. Each `BEGIN logical-case` record contains, in this exact order:
+
+1. `test-id`, `logical-case-member-digest`, `source-kind`, and the four
+   `external-*` source fields; the latter are strings for external-derived
+   cases and `null` otherwise;
+2. `subsystem-owner` and `observation-surface`;
+3. the classification branch described below;
+4. eligibility state, blocker/unresolved counts, and typed eligibility facts;
+5. expectation, expected-failure kind, and expectation reason;
+6. `execution-variant-count` and every variant record.
+
+For `classification = "not-yet-classified"`, `classification-reason` is a
+string and `requirements`, `capability`, `capability-missing-count`, `harness`,
+`harness-limitation-count`, `environment-requirement-count`, `stability`,
+`stability-reason`, and `lane-exclusion-count` are all `null`. This means the
+classified dimensions are absent. It does not create capability, harness, or
+stability pseudo-states and does not serialize absent collections as empty.
+
+For `classification = "classified"`, `classification-reason` is `null`;
+`requirements` is an explicitly present sorted list, including `[]` when
+empty; capability and harness use their typed closed labels and explicit
+missing/limitation counts; environment requirements and lane exclusions use
+explicit counts, including zero; and stability uses its typed label plus an
+optional reason. Complex entries are bounded records sorted by their explicit
+typed field keys, not declaration order or derived `Ord`.
+
+The sealed-run boundary enforces both complete AG3 branches:
+`not-yet-classified` requires all classified dimensions to be absent and
+`AgExpectation::NotEstablished`; `classified` requires capability, harness,
+and stability dimensions to be present and an established expected-pass or
+expected-fail expectation. Report construction rechecks this invariant as
+defense in depth.
+
+Eligibility is independently `runnable`, `not-runnable`, or
+`not-yet-established`. Its blocker and unresolved collections remain separate.
+Each `BEGIN eligibility-fact` has a `role`, an explicit fact-kind label, and
+only that typed branch's fields. Expectation is independently `expected-pass`,
+`expected-fail`, or the existing typed `not-established`.
+
+Variant records are sorted by an explicit V1 key: singleton first, then
+rendering by environment label bytes and available width. Each
+`BEGIN execution-variant` contains variant kind and parameters, comparison
+kind and reference fields, actual named-run lane selection plus
+`selection-lane` and optional reason, attempt state plus optional
+not-attempted reason, optional terminal outcome, and derived policy. A logical
+Browser/runtime case with zero variants remains present with
+`execution-variant-count = 0`. Complete subsystem observation/report payloads
+are not embedded.
+
+The detail report has a fixed 32 MiB complete-report bound. Both builders use
+checked count conversion, checked byte arithmetic, fallible reservation, and
+no truncation. They construct and validate the complete byte vector before
+calling a caller-provided `Write`. Build/allocation/validation failure therefore
+publishes zero bytes. Once `Write::write_all` begins, an arbitrary sink may
+accept a prefix before returning an I/O error; AG9a provides no rollback or
+filesystem-atomic publication guarantee.
+
+All AG parser V1, CSS V1, rendering V1/V2, and aggregate V1 text formats use
+one crate-private canonical low-level writer for bounded growth, decimal
+encoding, quoting, escaping, nulls, and lists. Each report module independently
+maps writer failures into its own public error vocabulary; sharing byte grammar
+does not transfer parser-report semantics into aggregate reporting.
+
 ## Deterministic reports and publication boundaries
 
-The future version labels are frozen as:
+The version labels are frozen as:
 
 - `borrowser-conformance-aggregate-summary-v1`;
 - `borrowser-conformance-aggregate-detail-v1`;
@@ -881,12 +1217,12 @@ The future version labels are frozen as:
 The comparable DOM and capture-ID versions remain
 `web-observable-dom-tree-v1` and `borrowser-external-capture-id-v1`.
 
-Future aggregate accounting consumes typed normalized runner results or a
-deliberate typed projection. It must not serialize parser, CSS, or rendering
+AG9a aggregate accounting consumes typed normalized runner results through the
+Stage 1 projection. It does not serialize parser, CSS, or rendering
 reports and parse those bytes back into an aggregate model. Existing detailed
 subsystem reports remain stable and authoritative.
 
-The planned CI-safe summary and local detailed report derive from the same
+The CI-safe summary and local detailed report derive from the same
 typed run. The summary is bounded and fixed-shape. Local detail may retain all
 orthogonal states and bounded evidence but does not make external evidence
 authoritative. Both are fully constructed and validated before the first byte
@@ -974,13 +1310,12 @@ automation, JavaScript engine, DOM bindings, events, timers, CSSOM, dynamic
 mutation, navigation, or production browser behavior. Full cross-browser
 automation and broad WPT/browser compatibility remain explicit non-claims.
 
-## Stage 0 decision
+## Staged decision
 
-Stage 0 is complete when this contract and its documentation index entry are
-reviewable and consistent with AG1 through AG8. It deliberately adds no Rust
-contract primitive: none is required to freeze the terminology, byte grammar,
-hash preimage, limits, or future ownership before Stage 1.
-
-Later AG9 stages must implement this contract incrementally. The existence of
-this document must not be reported as deterministic aggregate reporting,
-working cross-engine comparison, trend support, or completed AG9 infrastructure.
+Stage 0 froze terminology, limits, and future ownership. Stage 1 implements the
+typed `AggregateRun`, subsystem projections, reconciliation, and accounting.
+AG9a implements the deterministic aggregate summary/detail formats and exact
+logical-population identity above. Later AG9 stages remain responsible for
+external captures and comparisons, notes, trend parsing/execution/comparison,
+and aggregate CLI/CI publication. AG9a must not be reported as working
+cross-engine comparison, trend support, or completed AG9 infrastructure.

@@ -1,0 +1,199 @@
+format = "borrowser-conformance-aggregate-summary-v1"
+inventory-scope = "static-html-css-no-js"
+aggregate-granularity-contract = "borrowser-conformance-aggregate-granularity-v1"
+named-lane = "normal-ci"
+environment-assessment = "ag9-empty-assessment-v1"
+population-identity-contract = "borrowser-conformance-logical-case-membership-v1"
+logical-case-source-set-digest = "sha256:56ed7a3cf1b4af8158318bf58792c3ca72e3d0d6f5f567bb7f6ea5fbe82530f8"
+headline-counts-overlap = true
+logical-case-population = "logical-case"
+execution-variant-population = "execution-variant"
+accounting-count-field-count = 59
+subsystem-row-count = 5
+observation-row-count = 10
+comparison-row-count = 5
+terminal-row-count = 7
+BEGIN logical-accounting
+total = 25
+pass = 22
+fail = 0
+expected-fail = 0
+unsupported = 2
+skipped = 0
+flaky = 0
+unclassified = 1
+END logical-accounting
+BEGIN execution-variant-accounting
+materialized = 25
+runnable = 23
+not-runnable = 2
+eligibility-not-established = 0
+selected = 23
+excluded = 0
+selection-not-applicable = 2
+attempted = 23
+not-attempted = 2
+END execution-variant-accounting
+BEGIN subsystem
+owner = "html-parser"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 7
+execution-variants = 7
+END subsystem
+BEGIN subsystem
+owner = "css"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 7
+execution-variants = 7
+END subsystem
+BEGIN subsystem
+owner = "layout"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 3
+execution-variants = 4
+END subsystem
+BEGIN subsystem
+owner = "paint"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 7
+execution-variants = 7
+END subsystem
+BEGIN subsystem
+owner = "browser-runtime"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 1
+execution-variants = 0
+END subsystem
+BEGIN observation
+surface = "html-tokenizer"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 2
+execution-variants = 2
+END observation
+BEGIN observation
+surface = "html-tree-construction"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 3
+execution-variants = 3
+END observation
+BEGIN observation
+surface = "dom-tree"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 2
+execution-variants = 2
+END observation
+BEGIN observation
+surface = "css-parsing"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 1
+execution-variants = 1
+END observation
+BEGIN observation
+surface = "css-selectors"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 3
+execution-variants = 3
+END observation
+BEGIN observation
+surface = "css-cascade"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 2
+execution-variants = 2
+END observation
+BEGIN observation
+surface = "computed-style"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 1
+execution-variants = 1
+END observation
+BEGIN observation
+surface = "layout-geometry"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 3
+execution-variants = 4
+END observation
+BEGIN observation
+surface = "paint-operations"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 7
+execution-variants = 7
+END observation
+BEGIN observation
+surface = "browser-runtime-semantic"
+logical-domain = "logical-case"
+variant-domain = "execution-variant"
+logical-cases = 1
+execution-variants = 0
+END observation
+BEGIN comparison
+comparison-kind = "authored-expected-observation"
+reference-kind = null
+reference-relation = null
+execution-variants = 19
+END comparison
+BEGIN comparison
+comparison-kind = "static-document-reference"
+reference-kind = "semantic"
+reference-relation = "match"
+execution-variants = 3
+END comparison
+BEGIN comparison
+comparison-kind = "static-document-reference"
+reference-kind = "semantic"
+reference-relation = "mismatch"
+execution-variants = 1
+END comparison
+BEGIN comparison
+comparison-kind = "static-document-reference"
+reference-kind = "structural"
+reference-relation = "match"
+execution-variants = 2
+END comparison
+BEGIN comparison
+comparison-kind = "static-document-reference"
+reference-kind = "structural"
+reference-relation = "mismatch"
+execution-variants = 0
+END comparison
+BEGIN terminal
+outcome = "semantic-pass"
+attempted-variants = 23
+END terminal
+BEGIN terminal
+outcome = "semantic-fail"
+attempted-variants = 0
+END terminal
+BEGIN terminal
+outcome = "execution-failure"
+attempted-variants = 0
+END terminal
+BEGIN terminal
+outcome = "resource-failure"
+attempted-variants = 0
+END terminal
+BEGIN terminal
+outcome = "incomplete-observation"
+attempted-variants = 0
+END terminal
+BEGIN terminal
+outcome = "invariant-failure"
+attempted-variants = 0
+END terminal
+BEGIN terminal
+outcome = "timeout"
+attempted-variants = 0
+END terminal

@@ -1,28 +1,35 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use conformance_test_support::{
-    ExecutionEnvironmentAssessment, ExpectedResultView, InventoryRepository, LanePolicyScope,
-    ObservationSurface, SubsystemOwner, TestId, ValidatedExpectedResults, ValidatedFixture,
-    ValidatedInventory, discover_inventory, evaluate_execution_eligibility, load_expected_results,
+    ExecutionEnvironmentAssessment, ExpectedResultView, FixtureSource, InventoryRepository,
+    InventoryScope, LanePolicyScope, ObservationSurface, ReconciledExternalFixtureLineages,
+    SubsystemOwner, TestId, ValidatedExpectedResults, ValidatedFixture, ValidatedInventory,
+    discover_inventory, evaluate_execution_eligibility, load_expected_results,
+    load_external_lineage_registry, reconcile_external_fixture_lineages,
 };
 
-use crate::aggregate::accounting::{AccountingError, build_accounting};
+use crate::aggregate::accounting::AccountingError;
+use crate::aggregate::identity::{member_digest, source_identity};
+use crate::aggregate::model::{
+    AggregateRunSealError, ExpectedLaneSelection, aggregate_variant_result_cmp,
+    expected_lane_selection, owner_for_surface, validate_selection_attempt,
+};
 use crate::aggregate::projection::{
     css_attempt, parser_attempt, rendering_attempt, rendering_comparison_kind,
 };
 use crate::css_runner::{CssCaseResult, CssRunError, run_repository_css_cases_with_inventory};
 use crate::html_parser::{ParserRunError, run_repository_parser_cases_with_inventory};
 use crate::metadata::{ag_expectation, eligibility_facts, metadata_facts};
-use crate::model::{AgCaseState, Eligibility, OrchestrationSelectionMode};
+use crate::model::{AgCaseState, OrchestrationSelectionMode};
 use crate::rendering_runner::{
     RenderingCaseResult, RenderingRunError, run_repository_rendering_cases_with_inventory,
 };
 use crate::{
-    AggregateCaseResult, AggregateComparisonKind, AggregateExecutionAttempt,
-    AggregateExecutionRequest, AggregateExecutionVariantId, AggregateNotAttemptedReason,
-    AggregateRun, AggregateSubsystemResult, AggregateVariantKey, AggregateVariantResult,
-    LaneSelection, NormalizedCaseResult,
+    AggregateCaseResult, AggregateComparisonKind, AggregateEnvironmentAssessmentMode,
+    AggregateExecutionRequest, AggregateExecutionVariantId, AggregateRenderingCaseEvidence,
+    AggregateRun, AggregateRunInvariantError, AggregateSubsystemResult, AggregateVariantKey,
+    AggregateVariantResult, LaneSelection, NormalizedCaseResult,
 };
 
 #[derive(Debug)]
@@ -32,7 +39,10 @@ pub enum AggregateRunError {
     Parser(Box<ParserRunError>),
     Css(Box<CssRunError>),
     Rendering(Box<RenderingRunError>),
+    ExternalLineage(conformance_test_support::ExternalLineageRegistryError),
+    Identity(crate::AggregateIdentityError),
     Reconciliation(AggregateReconciliationError),
+    RunInvariant(AggregateRunInvariantError),
     AccountingOverflow,
     AccountingInvariant(&'static str),
     Allocation {
@@ -43,6 +53,10 @@ pub enum AggregateRunError {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AggregateReconciliationError {
+    WrongInventoryScope {
+        test_id: String,
+        actual: InventoryScope,
+    },
     MissingExpectedResult {
         test_id: String,
     },
@@ -72,17 +86,6 @@ pub enum AggregateReconciliationError {
     AdapterMetadataMismatch {
         test_id: String,
     },
-    DuplicateVariantKey {
-        key: AggregateVariantKey,
-    },
-    DuplicateLaneExclusion {
-        test_id: String,
-        lane: LanePolicyScope,
-    },
-    InvalidSelectionAttempt {
-        key: AggregateVariantKey,
-        problem: &'static str,
-    },
 }
 
 impl std::fmt::Display for AggregateRunError {
@@ -95,11 +98,21 @@ impl std::fmt::Display for AggregateRunError {
             Self::Rendering(error) => {
                 write!(formatter, "aggregate rendering adapter failed: {error}")
             }
+            Self::ExternalLineage(error) => {
+                write!(
+                    formatter,
+                    "aggregate external lineage reconciliation failed: {error:?}"
+                )
+            }
+            Self::Identity(error) => write!(formatter, "aggregate identity failed: {error:?}"),
             Self::Reconciliation(error) => {
                 write!(
                     formatter,
                     "aggregate inventory reconciliation failed: {error:?}"
                 )
+            }
+            Self::RunInvariant(error) => {
+                write!(formatter, "aggregate run invariant failed: {error:?}")
             }
             Self::AccountingOverflow => formatter.write_str("aggregate accounting overflowed"),
             Self::AccountingInvariant(problem) => {
@@ -124,7 +137,10 @@ impl std::error::Error for AggregateRunError {
             Self::Parser(error) => Some(error.as_ref()),
             Self::Css(error) => Some(error.as_ref()),
             Self::Rendering(error) => Some(error.as_ref()),
-            Self::Reconciliation(_)
+            Self::ExternalLineage(_)
+            | Self::Identity(_)
+            | Self::Reconciliation(_)
+            | Self::RunInvariant(_)
             | Self::AccountingOverflow
             | Self::AccountingInvariant(_)
             | Self::Allocation { .. } => None,
@@ -139,6 +155,23 @@ pub fn run_repository_aggregate(
     let fixture_root = repository_root.join("tests/conformance/fixtures");
     let inventory = discover_inventory(&InventoryRepository::new(repository_root, &fixture_root))
         .map_err(AggregateRunError::Inventory)?;
+    let lineage_registry = if inventory
+        .fixtures()
+        .iter()
+        .any(|fixture| matches!(fixture.source(), FixtureSource::ExternalDerived { .. }))
+    {
+        Some(
+            load_external_lineage_registry(repository_root)
+                .map_err(AggregateRunError::ExternalLineage)?,
+        )
+    } else {
+        None
+    };
+    let reconciled_lineages = lineage_registry
+        .as_ref()
+        .map(|registry| reconcile_external_fixture_lineages(&inventory, registry))
+        .transpose()
+        .map_err(AggregateRunError::ExternalLineage)?;
     let expected = load_expected_results(repository_root, &inventory)
         .map_err(AggregateRunError::ExpectedResults)?;
     let selection_mode = OrchestrationSelectionMode::NamedLane(request.lane);
@@ -167,6 +200,7 @@ pub fn run_repository_aggregate(
     reconcile_aggregate_run(
         request,
         &inventory,
+        reconciled_lineages.as_ref(),
         &expected,
         parser.into_cases(),
         css.into_cases(),
@@ -178,6 +212,11 @@ enum AdapterCaseResult {
     Parser(NormalizedCaseResult),
     Css(CssCaseResult),
     Rendering(RenderingCaseResult),
+}
+
+struct ReconciledAdapterCase {
+    rendering_evidence: Option<AggregateRenderingCaseEvidence>,
+    variants: Vec<AggregateVariantResult>,
 }
 
 impl AdapterCaseResult {
@@ -217,6 +256,7 @@ impl AdapterCaseResult {
 fn reconcile_aggregate_run(
     request: AggregateExecutionRequest,
     inventory: &ValidatedInventory,
+    external_lineages: Option<&ReconciledExternalFixtureLineages<'_>>,
     expected: &ValidatedExpectedResults,
     parser_cases: Vec<NormalizedCaseResult>,
     css_cases: Vec<CssCaseResult>,
@@ -233,7 +273,10 @@ fn reconcile_aggregate_run(
         insert_adapter(expected, &mut adapters, AdapterCaseResult::Rendering(case))?;
     }
 
-    let environment = ExecutionEnvironmentAssessment::empty();
+    let environment_assessment_mode = AggregateEnvironmentAssessmentMode::EmptyV1;
+    let environment = match environment_assessment_mode {
+        AggregateEnvironmentAssessmentMode::EmptyV1 => ExecutionEnvironmentAssessment::empty(),
+    };
     let mut fixtures = Vec::new();
     fixtures
         .try_reserve(inventory.fixtures().len())
@@ -242,7 +285,7 @@ fn reconcile_aggregate_run(
             requested: inventory.fixtures().len(),
         })?;
     fixtures.extend(inventory.fixtures());
-    fixtures.sort_by(|left, right| left.id().cmp(right.id()));
+    fixtures.sort_unstable_by(|left, right| left.id().cmp(right.id()));
     let mut cases = Vec::new();
     cases
         .try_reserve(fixtures.len())
@@ -250,9 +293,13 @@ fn reconcile_aggregate_run(
             storage: "logical-case",
             requested: fixtures.len(),
         })?;
-    let mut variant_keys = BTreeSet::new();
-
     for fixture in fixtures {
+        if fixture.scope() != InventoryScope::StaticHtmlCssNoJs {
+            return reconciliation(AggregateReconciliationError::WrongInventoryScope {
+                test_id: fixture.id().as_str().to_owned(),
+                actual: fixture.scope(),
+            });
+        }
         let expected_view = expected.get(fixture.id()).ok_or_else(|| {
             AggregateRunError::Reconciliation(AggregateReconciliationError::MissingExpectedResult {
                 test_id: fixture.id().as_str().to_owned(),
@@ -267,9 +314,19 @@ fn reconcile_aggregate_run(
             });
         }
         let ag = aggregate_ag_state(fixture, expected_view, &environment);
+        let source_identity =
+            source_identity(fixture, external_lineages).map_err(AggregateRunError::Identity)?;
+        let member_digest =
+            member_digest(fixture, &source_identity).map_err(AggregateRunError::Identity)?;
         let adapter = adapters.remove(fixture.id());
-        let mut variants = match (owner, adapter) {
-            (SubsystemOwner::BrowserRuntime, None) => Vec::new(),
+        let ReconciledAdapterCase {
+            rendering_evidence,
+            mut variants,
+        } = match (owner, adapter) {
+            (SubsystemOwner::BrowserRuntime, None) => ReconciledAdapterCase {
+                rendering_evidence: None,
+                variants: Vec::new(),
+            },
             (SubsystemOwner::BrowserRuntime, Some(_)) => {
                 return reconciliation(
                     AggregateReconciliationError::UnexpectedBrowserRuntimeAdapter {
@@ -284,14 +341,17 @@ fn reconcile_aggregate_run(
                 });
             }
             (owner, Some(adapter)) => {
-                reconcile_adapter_case(request, fixture, owner, &ag, adapter, &mut variant_keys)?
+                reconcile_adapter_case(request, fixture, owner, &ag, adapter)?
             }
         };
-        variants.sort_by(|left, right| left.key.cmp(&right.key));
+        variants.sort_unstable_by(aggregate_variant_result_cmp);
         cases.push(AggregateCaseResult {
             fixture: fixture.clone(),
+            source_identity,
+            member_digest,
             owner,
             ag,
+            rendering_evidence,
             variants,
         });
     }
@@ -300,11 +360,13 @@ fn reconcile_aggregate_run(
             test_id: test_id.as_str().to_owned(),
         });
     }
-    let accounting = build_accounting(&cases).map_err(|error| match error {
-        AccountingError::Overflow => AggregateRunError::AccountingOverflow,
-        AccountingError::Invariant(problem) => AggregateRunError::AccountingInvariant(problem),
-    })?;
-    Ok(AggregateRun::validated(request, cases, accounting))
+    AggregateRun::try_seal(
+        InventoryScope::StaticHtmlCssNoJs,
+        request,
+        environment_assessment_mode,
+        cases,
+    )
+    .map_err(map_seal_error)
 }
 
 fn insert_adapter(
@@ -332,8 +394,7 @@ fn reconcile_adapter_case(
     owner: SubsystemOwner,
     ag: &AgCaseState,
     adapter: AdapterCaseResult,
-    variant_keys: &mut BTreeSet<AggregateVariantKey>,
-) -> Result<Vec<AggregateVariantResult>, AggregateRunError> {
+) -> Result<ReconciledAdapterCase, AggregateRunError> {
     if adapter.observation() != fixture.observation() {
         return reconciliation(AggregateReconciliationError::WrongObservationSurface {
             test_id: fixture.id().as_str().to_owned(),
@@ -363,13 +424,8 @@ fn reconcile_adapter_case(
                 observation: case.ag.observation,
                 variant: AggregateExecutionVariantId::Singleton(case.variant.clone()),
             };
-            validate_and_insert_variant(
-                variant_keys,
-                key.clone(),
-                &case.ag.eligibility,
-                &selection,
-                &execution,
-            )?;
+            validate_selection_attempt(&key, &case.ag.eligibility, &selection, &execution)
+                .map_err(AggregateRunError::RunInvariant)?;
             one_variant(AggregateVariantResult {
                 key,
                 selection,
@@ -387,13 +443,8 @@ fn reconcile_adapter_case(
                 observation: case.ag.observation,
                 variant: AggregateExecutionVariantId::Singleton(case.variant.clone()),
             };
-            validate_and_insert_variant(
-                variant_keys,
-                key.clone(),
-                &case.ag.eligibility,
-                &selection,
-                &execution,
-            )?;
+            validate_selection_attempt(&key, &case.ag.eligibility, &selection, &execution)
+                .map_err(AggregateRunError::RunInvariant)?;
             one_variant(AggregateVariantResult {
                 key,
                 selection,
@@ -404,8 +455,12 @@ fn reconcile_adapter_case(
             })
         }
         AdapterCaseResult::Rendering(case) => {
-            let selection = lane_selection(&case.ag, request.lane)?;
-            let requested = case.variants.len();
+            let RenderingCaseResult {
+                ag: originating_ag,
+                variants: rendering_variants,
+            } = case;
+            let selection = lane_selection(&originating_ag, request.lane)?;
+            let requested = rendering_variants.len();
             let mut variants = Vec::new();
             variants
                 .try_reserve(requested)
@@ -413,20 +468,20 @@ fn reconcile_adapter_case(
                     storage: "execution-variant",
                     requested,
                 })?;
-            for variant in case.variants {
+            for variant in rendering_variants {
                 let execution = rendering_attempt(&variant.execution);
                 let key = AggregateVariantKey {
-                    test_id: case.ag.test_id.clone(),
-                    observation: case.ag.observation,
+                    test_id: originating_ag.test_id.clone(),
+                    observation: originating_ag.observation,
                     variant: AggregateExecutionVariantId::Rendering(variant.variant.clone()),
                 };
-                validate_and_insert_variant(
-                    variant_keys,
-                    key.clone(),
-                    &case.ag.eligibility,
+                validate_selection_attempt(
+                    &key,
+                    &originating_ag.eligibility,
                     &selection,
                     &execution,
-                )?;
+                )
+                .map_err(AggregateRunError::RunInvariant)?;
                 variants.push(AggregateVariantResult {
                     key,
                     selection: selection.clone(),
@@ -436,14 +491,17 @@ fn reconcile_adapter_case(
                     subsystem: AggregateSubsystemResult::Rendering(variant),
                 });
             }
-            Ok(variants)
+            Ok(ReconciledAdapterCase {
+                rendering_evidence: Some(AggregateRenderingCaseEvidence::new(originating_ag)),
+                variants,
+            })
         }
     }
 }
 
 fn one_variant(
     variant: AggregateVariantResult,
-) -> Result<Vec<AggregateVariantResult>, AggregateRunError> {
+) -> Result<ReconciledAdapterCase, AggregateRunError> {
     let mut variants = Vec::new();
     variants
         .try_reserve(1)
@@ -452,7 +510,10 @@ fn one_variant(
             requested: 1,
         })?;
     variants.push(variant);
-    Ok(variants)
+    Ok(ReconciledAdapterCase {
+        rendering_evidence: None,
+        variants,
+    })
 }
 
 fn aggregate_ag_state(
@@ -480,88 +541,41 @@ fn lane_selection(
     ag: &AgCaseState,
     lane: LanePolicyScope,
 ) -> Result<LaneSelection, AggregateRunError> {
-    match ag.eligibility {
-        Eligibility::NotRunnable { .. } | Eligibility::NotYetEstablished { .. } => {
-            Ok(LaneSelection::NotApplicable)
-        }
-        Eligibility::Runnable => {
-            let mut matching = ag
-                .lane_exclusions
-                .iter()
-                .filter(|exclusion| exclusion.policy == lane);
-            let first = matching.next();
-            if matching.next().is_some() {
-                return reconciliation(AggregateReconciliationError::DuplicateLaneExclusion {
-                    test_id: ag.test_id.as_str().to_owned(),
-                    lane,
-                });
-            }
-            Ok(match first {
-                Some(exclusion) => LaneSelection::Excluded {
-                    lane,
-                    reason: exclusion.reason.clone(),
-                },
-                None => LaneSelection::Selected { lane },
-            })
-        }
+    match expected_lane_selection(ag, lane) {
+        ExpectedLaneSelection::NotApplicable => Ok(LaneSelection::NotApplicable),
+        ExpectedLaneSelection::Selected => Ok(LaneSelection::Selected { lane }),
+        ExpectedLaneSelection::Excluded { reason } => Ok(LaneSelection::Excluded {
+            lane,
+            reason: try_owned(reason, "lane-selection-reason")?,
+        }),
     }
 }
 
-fn validate_and_insert_variant(
-    variant_keys: &mut BTreeSet<AggregateVariantKey>,
-    key: AggregateVariantKey,
-    eligibility: &Eligibility,
-    selection: &LaneSelection,
-    execution: &AggregateExecutionAttempt,
-) -> Result<(), AggregateRunError> {
-    let valid = matches!(
-        (eligibility, selection, execution),
-        (
-            Eligibility::Runnable,
-            LaneSelection::Selected { .. },
-            AggregateExecutionAttempt::Attempted { .. }
-                | AggregateExecutionAttempt::NotAttempted {
-                    reason: AggregateNotAttemptedReason::ParserPreAttemptEvaluation
-                        | AggregateNotAttemptedReason::CssFragmentCapabilityUnavailable,
-                },
-        ) | (
-            Eligibility::Runnable,
-            LaneSelection::Excluded { .. },
-            AggregateExecutionAttempt::NotAttempted {
-                reason: AggregateNotAttemptedReason::LaneExcluded,
-            },
-        ) | (
-            Eligibility::NotRunnable { .. } | Eligibility::NotYetEstablished { .. },
-            LaneSelection::NotApplicable,
-            AggregateExecutionAttempt::NotAttempted {
-                reason: AggregateNotAttemptedReason::Eligibility,
-            },
-        )
-    );
-    if !valid {
-        return reconciliation(AggregateReconciliationError::InvalidSelectionAttempt {
-            key,
-            problem: "eligibility, lane selection, and execution-attempt state disagree",
-        });
-    }
-    if !variant_keys.insert(key.clone()) {
-        return reconciliation(AggregateReconciliationError::DuplicateVariantKey { key });
-    }
-    Ok(())
+fn try_owned(value: &str, storage: &'static str) -> Result<String, AggregateRunError> {
+    let mut owned = String::new();
+    owned
+        .try_reserve(value.len())
+        .map_err(|_| AggregateRunError::Allocation {
+            storage,
+            requested: value.len(),
+        })?;
+    owned.push_str(value);
+    Ok(owned)
 }
 
-const fn owner_for_surface(surface: ObservationSurface) -> SubsystemOwner {
-    match surface {
-        ObservationSurface::HtmlTokenizer
-        | ObservationSurface::HtmlTreeConstruction
-        | ObservationSurface::DomTree => SubsystemOwner::HtmlParser,
-        ObservationSurface::CssParsing
-        | ObservationSurface::CssSelectors
-        | ObservationSurface::CssCascade
-        | ObservationSurface::ComputedStyle => SubsystemOwner::Css,
-        ObservationSurface::LayoutGeometry => SubsystemOwner::Layout,
-        ObservationSurface::PaintOperations => SubsystemOwner::Paint,
-        ObservationSurface::BrowserRuntimeSemantic => SubsystemOwner::BrowserRuntime,
+fn map_seal_error(error: AggregateRunSealError) -> AggregateRunError {
+    match error {
+        AggregateRunSealError::Invariant(error) => AggregateRunError::RunInvariant(error),
+        AggregateRunSealError::Accounting(AccountingError::Overflow) => {
+            AggregateRunError::AccountingOverflow
+        }
+        AggregateRunSealError::Accounting(AccountingError::Invariant(problem)) => {
+            AggregateRunError::AccountingInvariant(problem)
+        }
+        AggregateRunSealError::Identity(error) => AggregateRunError::Identity(error),
+        AggregateRunSealError::Allocation { storage, requested } => {
+            AggregateRunError::Allocation { storage, requested }
+        }
     }
 }
 
@@ -572,6 +586,7 @@ fn reconciliation<T>(problem: AggregateReconciliationError) -> Result<T, Aggrega
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Eligibility;
 
     fn repository_root() -> &'static Path {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -611,6 +626,26 @@ mod tests {
         }
     }
 
+    fn reconcile_test_inputs(
+        inventory: &ValidatedInventory,
+        expected: &ValidatedExpectedResults,
+        parser: Vec<NormalizedCaseResult>,
+        css: Vec<CssCaseResult>,
+        rendering: Vec<RenderingCaseResult>,
+    ) -> Result<AggregateRun, AggregateRunError> {
+        let registry = load_external_lineage_registry(repository_root()).unwrap();
+        let lineages = reconcile_external_fixture_lineages(inventory, &registry).unwrap();
+        reconcile_aggregate_run(
+            request(),
+            inventory,
+            Some(&lineages),
+            expected,
+            parser,
+            css,
+            rendering,
+        )
+    }
+
     #[test]
     fn reconciliation_rejects_duplicate_missing_unknown_and_wrong_adapter_results() {
         let (inventory, expected, parser, css, rendering) = inputs();
@@ -618,8 +653,7 @@ mod tests {
         let mut duplicate = parser.clone();
         duplicate.push(parser[0].clone());
         assert!(matches!(
-            reconcile_aggregate_run(
-                request(),
+            reconcile_test_inputs(
                 &inventory,
                 &expected,
                 duplicate,
@@ -634,8 +668,7 @@ mod tests {
         let mut missing = parser.clone();
         missing.remove(0);
         assert!(matches!(
-            reconcile_aggregate_run(
-                request(),
+            reconcile_test_inputs(
                 &inventory,
                 &expected,
                 missing,
@@ -650,8 +683,7 @@ mod tests {
         let mut unknown = parser.clone();
         unknown[0].ag.test_id = TestId::parse("unknown-adapter-case").unwrap();
         assert!(matches!(
-            reconcile_aggregate_run(
-                request(),
+            reconcile_test_inputs(
                 &inventory,
                 &expected,
                 unknown,
@@ -666,8 +698,7 @@ mod tests {
         let mut wrong_surface = parser.clone();
         wrong_surface[0].ag.observation = ObservationSurface::CssParsing;
         assert!(matches!(
-            reconcile_aggregate_run(
-                request(),
+            reconcile_test_inputs(
                 &inventory,
                 &expected,
                 wrong_surface,
@@ -686,8 +717,7 @@ mod tests {
         impostor.ag = replaced.ag;
         wrong_owner_css.push(impostor);
         assert!(matches!(
-            reconcile_aggregate_run(
-                request(),
+            reconcile_test_inputs(
                 &inventory,
                 &expected,
                 missing_parser,
@@ -709,11 +739,45 @@ mod tests {
             .expect("repository multi-variant rendering case");
         multi.variants.push(multi.variants[0].clone());
         assert!(matches!(
-            reconcile_aggregate_run(request(), &inventory, &expected, parser, css, rendering),
-            Err(AggregateRunError::Reconciliation(
-                AggregateReconciliationError::DuplicateVariantKey { .. }
+            reconcile_test_inputs(&inventory, &expected, parser, css, rendering),
+            Err(AggregateRunError::RunInvariant(
+                AggregateRunInvariantError::DuplicateVariantKey { .. }
             ))
         ));
+    }
+
+    #[test]
+    fn reconciliation_retains_rendering_case_metadata_once_and_variants_losslessly() {
+        let (inventory, expected, parser, css, rendering) = inputs();
+        let originating = rendering
+            .iter()
+            .find(|case| case.variants.len() > 1)
+            .expect("repository multi-variant rendering case")
+            .clone();
+        let run = reconcile_test_inputs(&inventory, &expected, parser, css, rendering).unwrap();
+        let aggregate = run
+            .cases()
+            .iter()
+            .find(|case| case.ag.test_id == originating.ag.test_id)
+            .unwrap();
+
+        assert_eq!(
+            aggregate
+                .rendering_evidence()
+                .expect("one case-level rendering evidence record")
+                .originating_ag(),
+            &originating.ag
+        );
+        assert_eq!(aggregate.variants.len(), originating.variants.len());
+        for expected_variant in &originating.variants {
+            assert!(aggregate.variants.iter().any(|variant| {
+                matches!(
+                    &variant.subsystem,
+                    AggregateSubsystemResult::Rendering(retained)
+                        if retained == expected_variant
+                )
+            }));
+        }
     }
 
     #[test]

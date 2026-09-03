@@ -1,7 +1,9 @@
-use std::collections::TryReserveError;
 use std::io::Write;
 
 use crate::model::*;
+use crate::report_writer::{CanonicalReportWriter, CanonicalReportWriterFailure};
+
+pub(crate) type BoundedWriter = CanonicalReportWriter<ReportBuildError>;
 
 pub const REPORT_FORMAT_V1: &str = "borrowser-conformance-parser-report-v1";
 
@@ -91,6 +93,16 @@ impl std::fmt::Display for ReportBuildError {
 }
 
 impl std::error::Error for ReportBuildError {}
+
+impl CanonicalReportWriterFailure for ReportBuildError {
+    fn report_too_large(maximum: usize) -> Self {
+        Self::ReportTooLarge { maximum }
+    }
+
+    fn allocation_failure() -> Self {
+        Self::AllocationFailure
+    }
+}
 
 /// Bounds evidence as soon as subsystem observations and mismatch diagnostics
 /// cross into AG. Subsystems retain ownership of any earlier capture limits.
@@ -659,180 +671,9 @@ fn policy_name(value: DerivedPolicyResult) -> &'static str {
     }
 }
 
-pub(crate) struct BoundedWriter {
-    bytes: Vec<u8>,
-    maximum: usize,
-}
-
-impl BoundedWriter {
-    pub(crate) fn new(maximum: usize) -> Result<Self, ReportBuildError> {
-        let initial = maximum.min(64 * 1024);
-        let mut bytes = Vec::new();
-        reserve_bytes(&mut bytes, initial)?;
-        Ok(Self { bytes, maximum })
-    }
-
-    pub(crate) fn finish(self) -> Vec<u8> {
-        self.bytes
-    }
-
-    pub(crate) fn number(&mut self, key: &str, value: usize) -> Result<(), ReportBuildError> {
-        self.raw(key)?;
-        self.raw(" = ")?;
-        self.raw(&value.to_string())?;
-        self.raw("\n")
-    }
-
-    #[cfg(feature = "rendering")]
-    pub(crate) fn u64_number(&mut self, key: &str, value: u64) -> Result<(), ReportBuildError> {
-        self.raw(key)?;
-        self.raw(" = ")?;
-        self.raw(&value.to_string())?;
-        self.raw("\n")
-    }
-
-    pub(crate) fn line(&mut self, key: &str, value: &str) -> Result<(), ReportBuildError> {
-        self.raw(key)?;
-        self.raw(" = \"")?;
-        self.escaped(value)?;
-        self.raw("\"\n")
-    }
-
-    pub(crate) fn optional_line(
-        &mut self,
-        key: &str,
-        value: Option<&str>,
-    ) -> Result<(), ReportBuildError> {
-        match value {
-            Some(value) => self.line(key, value),
-            None => {
-                self.raw(key)?;
-                self.raw(" = null\n")
-            }
-        }
-    }
-
-    fn optional_usize(&mut self, key: &str, value: Option<usize>) -> Result<(), ReportBuildError> {
-        match value {
-            Some(value) => self.number(key, value),
-            None => {
-                self.raw(key)?;
-                self.raw(" = null\n")
-            }
-        }
-    }
-
-    fn optional_u64(&mut self, key: &str, value: Option<u64>) -> Result<(), ReportBuildError> {
-        match value {
-            Some(value) => {
-                self.raw(key)?;
-                self.raw(" = ")?;
-                self.raw(&value.to_string())?;
-                self.raw("\n")
-            }
-            None => {
-                self.raw(key)?;
-                self.raw(" = null\n")
-            }
-        }
-    }
-
-    pub(crate) fn multiline(&mut self, key: &str, value: &str) -> Result<(), ReportBuildError> {
-        self.line(key, value)
-    }
-
-    pub(crate) fn list<'a>(
-        &mut self,
-        key: &str,
-        values: impl Iterator<Item = &'a str>,
-    ) -> Result<(), ReportBuildError> {
-        self.raw(key)?;
-        self.raw(" = [")?;
-        for (index, value) in values.enumerate() {
-            if index != 0 {
-                self.raw(", ")?;
-            }
-            self.raw("\"")?;
-            self.escaped(value)?;
-            self.raw("\"")?;
-        }
-        self.raw("]\n")
-    }
-
-    fn escaped(&mut self, value: &str) -> Result<(), ReportBuildError> {
-        for ch in value.chars() {
-            match ch {
-                '\\' => self.raw("\\\\")?,
-                '"' => self.raw("\\\"")?,
-                '\n' => self.raw("\\n")?,
-                '\r' => self.raw("\\r")?,
-                '\t' => self.raw("\\t")?,
-                ch if ch < ' ' => {
-                    let encoded = format!("\\u{{{:X}}}", ch as u32);
-                    self.raw(&encoded)?;
-                }
-                _ => {
-                    let mut encoded = [0; 4];
-                    self.raw(ch.encode_utf8(&mut encoded))?;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    pub(crate) fn raw(&mut self, value: &str) -> Result<(), ReportBuildError> {
-        let new_len =
-            self.bytes
-                .len()
-                .checked_add(value.len())
-                .ok_or(ReportBuildError::ReportTooLarge {
-                    maximum: self.maximum,
-                })?;
-        if new_len > self.maximum {
-            return Err(ReportBuildError::ReportTooLarge {
-                maximum: self.maximum,
-            });
-        }
-        reserve_bytes(&mut self.bytes, value.len())?;
-        self.bytes.extend_from_slice(value.as_bytes());
-        Ok(())
-    }
-}
-
-fn map_allocation(_: TryReserveError) -> ReportBuildError {
-    ReportBuildError::AllocationFailure
-}
-
-fn reserve_bytes(bytes: &mut Vec<u8>, additional: usize) -> Result<(), ReportBuildError> {
-    #[cfg(test)]
-    if FAIL_ALLOCATION.with(std::cell::Cell::get) {
-        return Err(ReportBuildError::AllocationFailure);
-    }
-    bytes.try_reserve(additional).map_err(map_allocation)
-}
-
-#[cfg(test)]
-thread_local! {
-    static FAIL_ALLOCATION: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-#[cfg(all(test, feature = "rendering"))]
-struct AllocationFailureReset {
-    previous: bool,
-}
-
-#[cfg(all(test, feature = "rendering"))]
-impl Drop for AllocationFailureReset {
-    fn drop(&mut self) {
-        FAIL_ALLOCATION.with(|failure| failure.set(self.previous));
-    }
-}
-
 #[cfg(all(test, feature = "rendering"))]
 pub(crate) fn with_forced_allocation_failure<Output>(operation: impl FnOnce() -> Output) -> Output {
-    let previous = FAIL_ALLOCATION.with(|failure| failure.replace(true));
-    let _reset = AllocationFailureReset { previous };
-    operation()
+    crate::report_writer::with_forced_allocation_failure(operation)
 }
 
 #[cfg(test)]
@@ -1033,15 +874,13 @@ mod tests {
             accepted: 0,
             fail_after: None,
         };
-        FAIL_ALLOCATION.with(|failure| {
-            failure.set(true);
+        crate::report_writer::with_forced_allocation_failure(|| {
             assert!(matches!(
                 build_and_write_report(&[case_with_artifact("small")], &mut output),
                 Err(ReportPublicationError::Build(
                     ReportBuildError::AllocationFailure
                 ))
             ));
-            failure.set(false);
         });
         assert_eq!(output.accepted, 0);
     }
