@@ -476,6 +476,7 @@ mod tests {
         use std::time::Duration;
 
         let root = tempfile::tempdir().unwrap();
+        #[cfg(target_vendor = "apple")]
         let fifo = root.path().join("capture.fifo");
 
         #[cfg(target_vendor = "apple")]
