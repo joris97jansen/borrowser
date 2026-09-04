@@ -1,4 +1,5 @@
 mod accounting;
+mod external_registry;
 mod identity;
 mod model;
 mod projection;
@@ -8,6 +9,16 @@ mod runner;
 pub use accounting::{
     AggregateAccounting, AggregateGroupingAccounting, AggregateVariantPopulationCounts,
     LogicalHeadlineCounts, TerminalOutcomeCounts,
+};
+pub use external_registry::{
+    AdvisoryTrackId, BaselineNoteId, ComparableObservationSurface,
+    ExternalRegistryAttachmentSubjectKey, ExternalRegistryDiagnostic,
+    ExternalRegistryDiagnosticComponent, ExternalRegistryDiagnosticDetail,
+    ExternalRegistryDiagnosticField, ExternalRegistryDiagnosticKind,
+    ExternalRegistryDiagnosticSubjectKey, ExternalRegistryRecordCollection,
+    ExternalRegistryTrackInvariantField, ExternalRegistryValidationPhase, ReconciledBaselineNote,
+    ReconciledExternalAdvisoryEvidence, ReconciledExternalAttachment, StoredValidatedCapture,
+    ValidatedAdvisoryTrack, load_repository_external_advisory_evidence,
 };
 pub use identity::{
     AGGREGATE_LOGICAL_CASE_MEMBER_IDENTITY_V1, AGGREGATE_LOGICAL_CASE_SOURCE_SET_IDENTITY_V1,

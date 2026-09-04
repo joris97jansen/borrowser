@@ -64,8 +64,8 @@ pub use model::{
     CONFORMANCE_FIXTURE_FORMAT_V1, CONFORMANCE_FIXTURE_FORMAT_V2, CONFORMANCE_FIXTURE_FORMAT_V3,
     CONFORMANCE_FIXTURE_FORMAT_V4, ExecutionPackage, ExternalAdapterVersion, ExternalLineageId,
     FixtureFormat, FixtureSource, InventoryScope, MAX_DESCRIPTOR_BYTES,
-    MAX_EXECUTION_SUPPORT_PATHS_V2, ObservationSurface, ReferenceDeclaration, ReferenceKind,
-    ReferenceRelation, RepositoryPath, SourceKind, TestId, TestIdValidationError, ValidatedFixture,
-    ValidatedInventory,
+    MAX_EXECUTION_SUPPORT_PATHS_V2, ObservationSurface, PortablePathComponent,
+    ReferenceDeclaration, ReferenceKind, ReferenceRelation, RepositoryPath, SourceKind, TestId,
+    TestIdValidationError, ValidatedFixture, ValidatedInventory,
 };
 pub use write::{ManifestCheck, ManifestOutputError, check_manifest, update_manifest};

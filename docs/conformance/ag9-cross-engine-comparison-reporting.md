@@ -1,9 +1,10 @@
 # AG9 cross-engine comparison and conformance reporting contract
 
-Status: Stage 0 contract and limits freeze plus AG9 Stage 1 typed aggregate
-execution/accounting and AG9a deterministic aggregate summary/detail reports;
-external capture loading/comparison, trend execution, and aggregate CLI/CI
-publication remain unimplemented
+Status: Stage 0 contract and limits freeze, AG9 Stage 1 typed aggregate
+execution/accounting, AG9a deterministic aggregate summary/detail reports, and
+AG9b source-neutral capture provenance plus runner-owned advisory registry are
+implemented; external capture tooling, external DOM comparison, trend
+execution, and aggregate CLI/CI publication remain unimplemented
 
 Last updated: 2026-09-03
 
@@ -536,8 +537,9 @@ element-prefix input or retained field. `ObservedTreeNode::Element` therefore
 preserves the complete supported element-name value rather than dropping a
 meaningful prefix.
 
-Stage 3 must prove this invariant with representative HTML-, SVG-, and
-MathML-namespace parser-created elements. The external capture algorithm must
+The later comparable-DOM projection/capture stage must prove this invariant
+with representative HTML-, SVG-, and MathML-namespace parser-created elements.
+The external capture algorithm must
 read the standardized `Element.prefix` and reject the capture when it is
 non-null. It must not invent a null value or omit the check merely because
 Borrowser has no prefix field. If a future production parser-created domain
@@ -633,8 +635,73 @@ character data, processing-instruction data, and
 version, configuration, and hashes are capture provenance. An informal manual
 description or unversioned DevTools snippet is insufficient.
 
-Stage 0 defines these boundaries but does not add either serializer or capture
-script.
+Stage 0 defines these boundaries. AG9b adds the complete external-artifact
+validator, but it does not add either serializer/capture script or a
+Borrowser-side comparable-DOM projection.
+
+### AG9b external-artifact validation boundary
+
+For AG9b, verifying the declared `web-observable-dom-tree-v1` format means
+validating the complete bounded artifact grammar and structural rules above.
+Checking only the first `format` line, searching for the format label, or
+accepting arbitrary UTF-8 under a recognized declaration is insufficient. The
+validator consumes the exact artifact bytes and must verify, without recursive
+call-stack traversal:
+
+- the 8 MiB byte ceiling, UTF-8 validity, LF-only physical lines, absence of
+  blank lines, and exactly one final LF;
+- the exact two-line header, field spelling and order, canonical unsigned
+  decimal and string encodings, and complete consumption with no trailing
+  records;
+- exactly one document root, matched node begin/end kinds, counted child,
+  template-child, and attribute records, and the document/template structural
+  rules;
+- the closed node kinds, supported element and attribute namespaces, required
+  namespace/prefix/qualified-name relationships, and canonical attribute
+  ordering; and
+- rejection of duplicate canonical attributes, unsupported states, malformed
+  escapes or Unicode, count overflow, size arithmetic overflow, and fallible
+  allocation failure.
+
+This validation establishes only that the bytes are a canonical instance of
+the independently specified comparable surface. It does not compare them with
+Borrowser, prove that an external browser produced them, or implement the
+external capture algorithm. The capture provenance and its identity-bearing
+algorithm/configuration digests remain the reproducibility claim for how the
+artifact was produced.
+
+### Confined read threat model and verified-byte ownership
+
+AG9 capture and registry inputs do not assume that a repository pathname stays
+bound to the same filesystem object between a metadata check and a later
+open. A local process may concurrently replace a path component or final file.
+The current `external-test-provenance::read_confined_regular_file` first checks
+the pathname and then calls `fs::read` by pathname, so it is not sufficient for
+this stronger boundary.
+
+The AG9b implementation must use a same-opened-object confined read. It opens
+the fixed repository root and traverses each validated relative component
+without following symlinks, opens the final component without following a
+symlink, establishes regular-file status and the bounded length from that
+opened object, and performs the sentinel-bounded read from that same object.
+If the host cannot provide those guarantees, loading fails closed. A path
+replacement after the final object is opened cannot redirect the read.
+
+Concurrent writes to the opened regular file are not treated as trusted
+metadata. Trust attaches only to the exact bounded byte sequence actually
+read: declared length, full format validation, SHA-256, and capture-ID
+recomputation all operate on those same bytes. A validated capture owns that
+exact immutable byte sequence. Downstream comparison must borrow or consume
+those retained bytes; it must never reopen `artifact_path`. Revalidation may
+construct a new validated capture from a new same-object read, but it does not
+change the bytes owned by an existing validated capture.
+
+To make that lifetime compatible with the frozen retained-payload model, one
+loaded registry has an 8 MiB cumulative verified-artifact-byte ceiling in
+addition to the 8 MiB per-artifact ceiling. The loader validates and retains
+all capture bytes before the sealed registry can escape. Thus a valid registry
+may contain up to 256 small captures or one maximum-size capture, but cannot
+silently retain 256 maximum-size artifacts.
 
 ## External capture provenance
 
@@ -798,24 +865,49 @@ Rust `Debug`, map iteration order, filesystem order, TOML order, host integer
 or float formatting, and implicit Serde/library serialization are forbidden as
 identity encodings.
 
-The future loader must validate the typed provenance, read and hash the
+The AG9b loader must validate the typed provenance, read and hash the
 confined artifact, verify format/length/digest, canonicalize unordered fields,
 build the V1 preimage, recompute the capture ID, and compare it with the
 supplied ID. Any failure rejects the complete registry before attachment,
 comparison, or report publication. No partial advisory result is published.
 
-Stage 3 must prove that identical typed captures and identical ordered argument
-vectors produce the same ID independent of registry field order; changing an
-argument changes the ID; reordering two arguments changes the ID; and valid
-repeated arguments remain present and affect the preimage at their exact
-indexes. It must separately prove canonical ordering for the genuinely
-set-like font/resource collections, identity changes for every identity-bearing
-field and artifact digest, storage-path non-identity, and fail-closed supplied-ID
-verification.
+### Construction authority
+
+`ExternalCaptureId` is an opaque computed identity, not a validated spelling
+for an arbitrary caller-supplied digest. Public construction from
+`Sha256Digest`, raw digest bytes, hexadecimal text, Serde deserialization, or
+an unchecked struct literal is forbidden. The only production constructor
+builds the exact domain-separated TLV preimage above from fully validated typed
+capture provenance plus the verified artifact facts and returns the resulting
+identity.
+
+The registry's `capture_id` string is parsed into a distinct untrusted claim
+type. References in attachment and note wire records are likewise unresolved
+claims until registry reconciliation. The loader computes
+`ExternalCaptureId`, compares its exact 32 digest bytes with the supplied
+claim, and rejects a mismatch before exposing either the capture or any
+reference to it. A successfully reconciled public model carries only computed
+`ExternalCaptureId` values or references to validated captures; it cannot turn
+a syntactically valid supplied SHA-256 into trusted identity.
+
+This authority boundary does not alter any Stage 0 identity byte. The domain,
+tags, framing, primitive encodings, optional/applicability encodings, ordered
+argument sequence, and canonical set encodings above remain exact. In
+particular, TOML bytes, Serde output, Rust `Debug`, host formatting, and
+collection iteration never become identity input.
+
+The AG9b implementation must prove that identical typed captures and identical
+ordered argument vectors produce the same ID independent of registry field
+order; changing an argument changes the ID; reordering two arguments changes
+the ID; and valid repeated arguments remain present and affect the preimage at
+their exact indexes. It must separately prove canonical ordering for the
+genuinely set-like font/resource collections, identity changes for every
+identity-bearing field and artifact digest, storage-path non-identity, and
+fail-closed supplied-ID verification.
 
 ## Attachment and baseline-note identity
 
-The future runner-owned attachment is the typed tuple of AG2 `TestId`, AG2
+The AG9b runner-owned attachment is the typed tuple of AG2 `TestId`, AG2
 observation surface, exact aggregate execution variant, and comparable surface
 version. It resolves against materialized aggregate variant keys, not a path or
 free-form string. Initially, external comparison is admitted only for a
@@ -845,7 +937,7 @@ invariant tuple under an existing track ID is likewise incompatible across
 trend baselines. The collection policy is an explicit versioned identity, not
 an inferred channel and never an implicit `latest` browser.
 
-Stage 3 must test successful reconciliation, and rejection for drift in each
+AG9b must test successful reconciliation, and rejection for drift in each
 invariant field. Exact engine version/revision and platform/OS version changes
 must remain admissible when they satisfy the unchanged versioned collection
 policy.
@@ -857,6 +949,470 @@ Borrowser outcome, derived policy, or external comparison verdict.
 Baseline-note and advisory-track IDs use the existing bounded semantic-ID scale
 and the closed lowercase ASCII grammar
 `[a-z0-9][a-z0-9-]{0,127}`; duplicate IDs fail validation.
+
+## Cross-engine comparison registry V1
+
+AG9b freezes one repository-owned registry at exactly:
+
+```text
+tests/conformance/external/cross-engine-comparisons.toml
+```
+
+External artifact files are stored directly below exactly:
+
+```text
+tests/conformance/external/captures/
+```
+
+An `artifact_path` is the full repository-relative spelling
+`tests/conformance/external/captures/<file>`. `<file>` is one AG2 portable path
+component of at most 128 ASCII bytes and ends in
+`.web-observable-dom-tree-v1.txt`. Nested directories, absolute paths,
+backslashes, dot components, parent traversal, symlinks, and alternate capture
+roots are invalid in V1. The filename is storage metadata: it need not contain
+the capture ID and changing it within this layout does not change
+`ExternalCaptureId`.
+
+This path rule reuses the authoritative AG2 portable path-component grammar;
+AG9b must not copy or independently reimplement that grammar in
+`conformance-runner`. Although `PortablePathComponent` is currently
+crate-private, implementation planning must prefer exposing the minimum
+parsing/validation API from its owning `conformance-test-support` crate.
+
+The registry is UTF-8 TOML with exactly these top-level fields:
+
+```toml
+format = "borrowser-cross-engine-comparison-registry-v1"
+captures = []
+attachments = []
+advisory_tracks = []
+baseline_notes = []
+```
+
+All five fields are required. The four collections are TOML arrays; a
+non-empty array may use TOML array-of-tables syntax. Each collection may be
+empty, so the exact empty registry above is valid. TOML field order and array
+declaration order are non-semantic. Unknown top-level, record, or nested-table
+fields; missing fields; duplicate TOML keys; wrong TOML value kinds; and TOML
+datetime or floating-point substitutions are invalid. Optional fields are
+omitted rather than represented by an empty string or sentinel string.
+
+Unless a field below has a narrower grammar, a bounded identity/version value
+is 1 to 128 UTF-8 bytes, has no leading or trailing whitespace or Unicode
+control scalar, and is not Unicode-normalized. A non-applicable reason and
+baseline-note text are 1 to 1,024 UTF-8 bytes under the same whitespace/control
+rule. A SHA-256 wire value is exactly 64 lowercase hexadecimal digits; only a
+`capture_id` claim adds the exact `sha256:` prefix. An immutable revision is 1
+to 256 UTF-8 bytes under the existing source-neutral revision rules.
+
+### `captures`
+
+Each capture record has exactly these fields. Only
+`engine_build_revision` is optional.
+
+| Field | Wire value and rule | Identity role |
+| --- | --- | --- |
+| `capture_id` | `sha256:` plus 64 lowercase hexadecimal digits; an untrusted supplied claim | recomputed result, never direct construction input |
+| `artifact_path` | canonical repository-relative path under the fixed capture root above | storage-only |
+| `provenance_format` | exactly `borrowser-external-capture-provenance-v1` | tag 1 |
+| `engine_product` | bounded identity | tag 2 |
+| `engine_version` | bounded version | tag 3 |
+| `engine_build_revision` | optional bounded identity; omission encodes absence | tag 4 |
+| `platform_os_family` | bounded identity | tag 5 |
+| `platform_os_version` | bounded version | tag 6 |
+| `architecture` | bounded identity | tag 7 |
+| `viewport` | closed applicability table below | tag 8 |
+| `device_scale` | closed applicability table below | tag 9 |
+| `controlled_fonts` | closed applicability table below | tag 10 |
+| `resource_network_policy` | `offline`, `fixture-local-only`, or `recorded-local-closure` | tag 11 |
+| `pinned_resources` | required array of zero to 32 resource records | tag 12 |
+| `fixture_source_project` | bounded identity | tag 13 |
+| `fixture_immutable_revision` | immutable revision | tag 14 |
+| `fixture_content_sha256` | SHA-256 | tag 15 |
+| `capture_mechanism` | bounded identity | tag 16 |
+| `capture_mechanism_version` | bounded version | tag 17 |
+| `capture_algorithm` | bounded identity | first nested tag-18 string |
+| `capture_algorithm_version` | bounded version | second nested tag-18 string |
+| `capture_algorithm_source_sha256` | SHA-256 | tag 19 |
+| `capture_configuration_sha256` | SHA-256 | tag 20 |
+| `invocation_arguments` | required ordered array of zero to 16 UTF-8 strings, each at most 1,024 bytes; empty and repeated arguments are valid | tag 21 |
+| `artifact_format` | exactly `web-observable-dom-tree-v1` | tag 22 |
+| `artifact_utf8_byte_length` | unsigned TOML integer representable as `u64`, no greater than 8,388,608 | tag 23 |
+| `artifact_sha256` | SHA-256 | tag 24 |
+| `target_parser_input_context` | exactly `static-text-html-utf8-scripting-disabled-v1` | tag 25 |
+| `collection_policy` | bounded identity | first nested tag-26 string |
+| `collection_policy_version` | bounded version | second nested tag-26 string |
+
+The three applicability tables are closed tagged unions:
+
+```toml
+viewport = { applicability = "applicable", width_css_px = 1280, height_css_px = 720 }
+viewport = { applicability = "not-applicable", reason = "surface-independent" }
+
+device_scale = { applicability = "applicable", numerator = 1, denominator = 1 }
+device_scale = { applicability = "not-applicable", reason = "surface-independent" }
+
+controlled_fonts = { applicability = "applicable", items = [{ family = "Ahem", face_style = "regular", version = "1", file_sha256 = "0000000000000000000000000000000000000000000000000000000000000000" }] }
+controlled_fonts = { applicability = "not-applicable", reason = "font-independent" }
+```
+
+Applicable viewport dimensions are unsigned TOML integers representable as
+`u32` CSS pixels, including zero. Applicable device-scale numerator and
+denominator are nonzero `u32` values and must already be reduced to lowest
+terms. An applicable font collection contains 1 to 16 items. Font `family`,
+`face_style`, and `version` are bounded identity/version strings;
+`file_sha256` is a SHA-256. Non-applicable branches contain exactly
+`applicability` and `reason`.
+
+Each `pinned_resources` item contains exactly `identity` and
+`content_sha256`; the former is a bounded identity and the latter a SHA-256.
+Font and resource declaration order is non-semantic. Complete canonical item
+bytes are sorted before capture-ID encoding, and duplicate complete canonical
+items fail validation rather than being deduplicated. Invocation argument order
+is semantic, uses the authored array indexes, and preserves duplicates.
+
+`resource_network_policy = "offline"` does not require an empty resource
+array: pinned fixture-local bytes may still be part of the closed input even
+when no network fetch is permitted. None of the three modes permits live or
+undeclared resource access.
+
+### `advisory_tracks`
+
+Each advisory-track record has exactly these required fields:
+
+| Field | Rule |
+| --- | --- |
+| `track_id` | semantic ID matching `[a-z0-9][a-z0-9-]{0,127}` |
+| `engine_product` | bounded identity |
+| `platform_os_family` | bounded identity |
+| `architecture` | bounded identity |
+| `comparable_observation_surface` | exactly `web-observable-dom-tree-v1` |
+| `capture_algorithm` | bounded identity |
+| `capture_algorithm_version` | bounded version |
+| `target_parser_input_context` | exactly `static-text-html-utf8-scripting-disabled-v1` |
+| `collection_policy` | bounded identity |
+| `collection_policy_version` | bounded version |
+
+These fields are exactly the invariant series tuple defined above. Engine
+version/build and platform version deliberately do not occur in a track.
+
+### `attachments`
+
+Each comparison-attachment record has exactly these required fields:
+
+| Field | Rule |
+| --- | --- |
+| `test_id` | parsed by the authoritative AG2 `TestId` type |
+| `observation_surface` | parsed by the authoritative AG2 `ObservationSurface` type; V1 admits only `dom-tree` |
+| `execution_variant` | closed table exactly `{ kind = "singleton" }` |
+| `comparable_observation_surface` | exactly `web-observable-dom-tree-v1` |
+| `track_id` | reference to one validated advisory track |
+| `capture_id` | reference to one computed, validated external capture ID |
+
+The first four fields form the typed comparison attachment. The
+`execution_variant` table decodes directly to the existing runner-owned
+`AggregateExecutionVariantId::Singleton` value. V1 defines no rendering branch
+and no opaque variant string, environment label, width encoding, or duplicate
+rendering-variant grammar. Reconciliation requires an exact matching
+`AggregateVariantKey` in the sealed `AggregateRun`, not merely a matching
+`TestId` or filesystem path.
+
+Likewise, `observation_surface` consumes the authoritative AG2
+`ObservationSurface` vocabulary. AG9b must not duplicate its string parser in
+the runner merely because `ObservationSurface::parse` is currently
+crate-private. Implementation planning must prefer the minimum public parsing
+API from the owning `conformance-test-support` crate.
+
+One registry may contain at most one attachment for the key `(typed comparison
+attachment, track_id)`. Repeating that key is a duplicate even if the records
+name different captures. This gives one exact external observation for one
+track/case/variant/surface point in a baseline. One capture may otherwise be
+referenced by more than one distinct attachment.
+
+### `baseline_notes`
+
+Each baseline-note record has exactly these fields:
+
+| Field | Rule |
+| --- | --- |
+| `note_id` | semantic ID matching `[a-z0-9][a-z0-9-]{0,127}` |
+| `test_id` | authoritative AG2 `TestId` |
+| `observation_surface` | authoritative AG2 surface; V1 admits only `dom-tree` |
+| `execution_variant` | closed table exactly `{ kind = "singleton" }` |
+| `comparable_observation_surface` | exactly `web-observable-dom-tree-v1` |
+| `text` | 1 to 1,024 UTF-8 bytes under the bounded text rule above |
+| `capture_id` | optional reference to one computed, validated external capture; omission means no capture reference |
+
+The four attachment fields use the same typed decoding and exact aggregate
+reconciliation as comparison attachments. A note does not acquire a track or
+comparison verdict. Its optional capture need only exist in the same validated
+registry; the note itself supplies the exact typed case attachment.
+
+Capture, track, and note IDs are unique in their respective collections.
+Unreferenced validated captures and tracks are permitted, but do not
+materialize an advisory comparison. Artifact-path reuse is permitted because
+paths are storage metadata; every capture declaration is still independently
+validated and its ID recomputed. References to missing or invalid captures or
+tracks fail closed. No record is selected by declaration position.
+
+### Capture algorithm and configuration source semantics
+
+AG9b validates the algorithm/configuration identity and version strings and the
+two declared SHA-256 values, and includes them in capture identity exactly as
+tags 18 through 20 require. It does not load, hash, or execute capture
+algorithm or configuration source bytes. V1 has no algorithm-source path,
+configuration-source path, inline script, or executable command field.
+
+The 64 KiB algorithm-source and configuration-source limits are reserved
+ceilings for the later checked-in capture-tool stage. That stage must define
+the source layout and verify those exact bytes against the already
+identity-bearing digests before producing a registry claim. Until then, AG9b
+treats the digests as validated provenance claims, not proof that the omitted
+source is present. Adding source paths or source-byte verification to this
+registry requires an explicit contract amendment; it must not happen through
+an undocumented optional field. AG9b therefore does not accidentally become
+the external capture script or its executor.
+
+## Deterministic registry validation
+
+Registry loading is deterministic fail-fast at one typed diagnostic. It does
+not return a declaration-order-dependent collection of errors. Each phase
+evaluates its bounded candidates, chooses the least diagnostic by the key
+defined below, and stops before the next phase when any candidate exists:
+
+1. fixed registry-path confinement, same-object open, regular-file status,
+   512 KiB sentinel-bounded read, and UTF-8;
+2. TOML syntax, the closed wire shape above, required fields, and exact registry
+   format;
+3. top-level capture, attachment, advisory-track, and baseline-note
+   cardinalities, plus checked declared cumulative artifact length;
+4. record-local typed field validation, per-capture invocation-argument,
+   controlled-font, and pinned-resource cardinalities, and conversion of every
+   individual font/resource item into its canonical typed representation;
+5. uniqueness over the already-valid canonical capture, track, note,
+   font/resource item, and attachment identities;
+6. same-object artifact reads, actual cumulative byte accounting, full
+   `web-observable-dom-tree-v1` validation, declared length/digest checks, and
+   capture-ID recomputation;
+7. internal capture/track references and every advisory-track invariant; and
+8. exact attachment and note reconciliation against the immutable sealed
+   `AggregateRun` population.
+
+Phase 2 maps any TOML syntax failure, duplicate TOML key, missing/unknown field,
+or wrong TOML value kind to one typed `InvalidRegistrySchema` category. Parser
+messages, source spans, and incidental library wording are not stable
+diagnostics. `UnsupportedRegistryFormat` is distinct when the closed shape is
+otherwise available.
+
+Phase 4 does not test collection uniqueness. It establishes that every
+individual field and nested item is valid and canonicalizable. Phase 5 alone
+detects duplicate canonical identities, including controlled fonts and pinned
+resources. Therefore any phase-4 record-local diagnostic takes precedence over
+every phase-5 duplicate diagnostic in the same registry, regardless of subject
+or declaration order.
+
+Within phase 4, storage preparation and record validation proceed in frozen
+subject-kind order: captures, advisory tracks, attachments, then baseline
+notes. For one subject kind, its bounded output-collection reservation is
+attempted first, every authored record of that kind is then validated, and the
+least record diagnostic is selected before the next subject kind is touched.
+Consequently a later-kind allocation failure cannot procedurally outrank an
+earlier-kind record failure. Phase 8 analogously reserves and fully reconciles
+attachments before it attempts baseline-note output storage or note
+reconciliation.
+
+The `artifact_path` spelling and AG2 portable-component grammar are capture
+field validation in phase 4. `ArtifactPathUnsafe` in phase 6 is reserved for a
+same-object confinement/open refusal discovered for an already-valid spelling;
+it must not be used to reclassify a phase-4 wire-path error. Phase 6 accumulates
+actual artifact bytes only after each artifact's actual length equals its
+phase-3-accounted declaration. Consequently actual cumulative bytes cannot
+exceed the validated declared cumulative ceiling; a per-artifact length
+mismatch is `ArtifactLengthMismatch`, not a second cumulative-limit category.
+
+The comparable-surface wire label is also a phase-4 field. A value other than
+`web-observable-dom-tree-v1` is `UnsupportedComparableSurface` in phase 4.
+Phase 8 uses `UnknownObservationSurface` only when the parsed AG2 surface does
+not resolve for the named `TestId`, and `UnknownExecutionVariant` only when the
+parsed singleton variant does not resolve in the sealed aggregate population.
+
+Specialized record-local categories exclusively own their named conditions.
+`InvalidCaptureField`, `InvalidTrackField`, `InvalidAttachmentField`, and
+`InvalidNoteField` are fallbacks only when no more specific phase-4 category
+applies. In particular, capture-ID claim syntax, nested collection ceilings,
+invocation-argument length, track/note ID syntax, comparable-surface support,
+and baseline-note text length produce their dedicated categories exactly once.
+This prevents one invalid field from generating candidates at two diagnostic
+kind ranks.
+
+Within later phases, captures sort by supplied capture-ID claim bytes, tracks
+by raw track-ID bytes, notes by raw note-ID bytes, and attachments by the raw
+tuple `(test_id, observation_surface, execution_variant kind,
+comparable_observation_surface, track_id, capture_id)`. Schema validation
+guarantees these raw keys are present strings/tables before they are used for
+ordering. Font and resource candidates sort by their complete canonical item
+bytes. Invocation-argument diagnostics use the authored argument index because
+that sequence is intentionally ordered. Duplicate identical diagnostics
+collapse to the same typed key.
+
+The stable diagnostic key is:
+
+```text
+(phase rank, subject-kind rank, canonical subject key,
+ diagnostic-kind rank, typed detail key)
+```
+
+Subject-kind order is registry, capture, track, attachment, note, artifact.
+For each capture, track, attachment, note, or artifact family, the collection
+subject sorts before every individual subject in that family. Thus the exact
+relative orders are capture collection before capture by supplied ID, track
+collection before track by track ID, attachment collection before attachment
+by its six-component raw tuple, note collection before note by note ID, and
+artifact collection before artifact by supplied capture ID. Registry has only
+its singleton registry subject.
+
+The typed-detail variant order is exactly:
+
+1. no detail;
+2. field;
+3. record collection;
+4. invocation-argument index;
+5. track-invariant field; and
+6. diagnostic component.
+
+Values within one invocation-argument detail compare by numeric `usize`
+index. The record-collection detail order is captures, attachments, advisory
+tracks, baseline notes. The track-invariant detail order is engine product, OS
+family, architecture, comparable observation surface, capture algorithm,
+capture algorithm version, parser/input context, collection policy, collection
+policy version.
+
+The complete diagnostic-field detail order is:
+
+```text
+allocation
+architecture
+artifact-format
+artifact-length
+artifact-path
+artifact-sha256
+attachment-key
+capture-algorithm
+capture-algorithm-source-sha256
+capture-algorithm-version
+capture-configuration-sha256
+capture-id
+capture-mechanism
+capture-mechanism-version
+collection-policy
+collection-policy-version
+comparable-observation-surface
+controlled-fonts
+controlled-fonts-allocation
+device-scale
+engine-build-revision
+engine-product
+engine-version
+execution-variant
+fixture-content-sha256
+fixture-immutable-revision
+fixture-source-project
+font-canonical
+font-face-style
+font-family
+font-sha256
+font-version
+invocation-arguments
+note-id
+observation-surface
+pinned-resources
+platform-os-family
+platform-os-version
+provenance-format
+format
+resource-canonical
+resource-identity
+resource-network-policy
+resource-sha256
+resources-allocation
+target-parser-input-context
+test-id
+text
+track-id
+viewport
+```
+
+In this field-detail domain, `format` is the registry-format field identity.
+
+The complete diagnostic-component detail order is:
+
+```text
+actual-byte-sum
+artifact-length-sum
+artifact-read
+byte-length
+capture-validation
+closed-schema
+cumulative-length-invariant
+parser-dom-owner
+provenance-invariant
+registry-read
+utf8
+validated-capture-reference
+```
+
+These are closed semantic orders, not alphabetic sorting rules and not Rust
+enum declaration order. Adding or reordering a V1 field, collection,
+track-invariant, component, or detail variant requires a contract amendment.
+
+Diagnostic-kind rank is the order in this closed category table:
+
+| Rank group | Typed diagnostic categories in order |
+| --- | --- |
+| registry read (phase 1) | `RegistryPathUnsafe`, `RegistryMissing`, `RegistrySymlink`, `RegistryNotRegular`, `RegistryTooLarge`, `RegistryReadFailure`, `RegistryInvalidUtf8` |
+| schema/version (phase 2) | `InvalidRegistrySchema`, `UnsupportedRegistryFormat` |
+| top-level multiplicity (phase 3) | `TooManyCaptures`, `TooManyAttachments`, `TooManyAdvisoryTracks`, `TooManyBaselineNotes`, `DeclaredArtifactBytesOverflow`, `CumulativeArtifactBytesExceeded` |
+| record-local (phase 4) | `InvalidCaptureIdClaim`, `InvalidCaptureField`, `TooManyInvocationArguments`, `InvocationArgumentTooLong`, `TooManyControlledFonts`, `TooManyPinnedResources`, `InvalidTrackId`, `InvalidTrackField`, `InvalidAttachmentField`, `UnsupportedComparableSurface`, `InvalidNoteId`, `InvalidNoteField`, `BaselineNoteTextTooLong` |
+| duplicate canonical identity (phase 5) | `DuplicateCaptureId`, `DuplicateControlledFont`, `DuplicatePinnedResource`, `DuplicateTrackId`, `DuplicateAttachmentKey`, `DuplicateNoteId` |
+| artifact/identity (phase 6) | `ArtifactPathUnsafe`, `ArtifactMissing`, `ArtifactSymlink`, `ArtifactNotRegular`, `ArtifactTooLarge`, `ArtifactReadFailure`, `ActualArtifactBytesOverflow`, `ArtifactLengthMismatch`, `ArtifactDigestMismatch`, `ArtifactFormatInvalid`, `CaptureIdMismatch` |
+| internal reconciliation (phase 7) | `UnknownCaptureReference`, `UnknownTrackReference`, `TrackInvariantMismatch` |
+| aggregate reconciliation (phase 8) | `UnknownTestId`, `UnknownObservationSurface`, `UnknownExecutionVariant`, `AggregateAttachmentMismatch` |
+
+Human-readable `Display` text may improve without changing this contract. Rust
+`Debug`, TOML field/declaration order, filesystem enumeration, hash-map order,
+and parser-library error text are neither diagnostic identities nor sorting
+keys. Checked conversion, reservation, or arithmetic failure maps to the typed
+category for the phase/field being processed and fails closed.
+
+No partially parsed, partially verified, or partially reconciled registry is
+public. Only completion of all eight phases can construct the opaque validated
+registry. Invalid captures cannot be skipped to preserve valid ones, and
+attachments or notes cannot escape without the complete capture/track graph
+and exact aggregate population having reconciled.
+
+## Advisory evidence authority separation
+
+The sealed `AggregateRun` remains complete Borrowser truth before the external
+registry is loaded. Registry reconciliation takes an immutable borrow of that
+run and constructs a separate runner-owned advisory-evidence value. The
+advisory value may refer to aggregate variant keys, but it is not stored in or
+permitted to mutate:
+
+- AG3 classification, expectation, stability, capability, harness, or lane
+  metadata;
+- parser, CSS, Layout, Paint, or Browser/runtime subsystem results;
+- aggregate attempt state, terminal outcome, comparison/oracle kind, or
+  derived policy;
+- aggregate accounting, logical member/source-set identity, named-lane
+  selection, or CI verdict.
+
+Changing, moving, adding, or removing only registry captures, tracks,
+attachments, or notes leaves `AggregateRun`, its accounting, its logical-case
+source-set digest, its Borrowser fingerprints, and its existing summary/detail
+bytes unchanged. A future report may project both immutable inputs into
+separate advisory sections, but external fields never enter Borrowser
+fingerprints or pass/fail derivation. AG9b adds neither that publication nor an
+external comparison verdict.
 
 ## Fixed limits and engineering basis
 
@@ -880,18 +1436,22 @@ The AG9 V1 bounds are:
 | --- | ---: | --- |
 | external comparison registry source | 512 KiB | Reuses AG8's lineage-registry ceiling; over 27 times the largest current registry-like artifact and over three times the whole current conformance tree. |
 | captures per registry | 256 | Matches AG8 lineage and AG2 support-path multiplicity, while current AG9 capture population is empty. |
+| typed comparison attachments per registry | 256 | One attachment can consume one capture and later one 16 KiB difference slot; this preserves the existing checked 4 MiB evidence-pool derivation. |
+| advisory tracks per registry | 256 | Matches the capture and reviewable lineage multiplicity while allowing every current-baseline attachment to have an independent series. |
 | baseline notes per registry | 256 | Same reviewable registry multiplicity and stable attachment scale. |
 | note text | 1,024 UTF-8 bytes | Reuses AG3's reason bound; 256 maximum notes retain at most 256 KiB of note text. |
 | semantic identity or portable component | 128 UTF-8 bytes | Reuses AG2/AG8 test, semantic-identity, and path-component bounds. |
 | ordered invocation arguments per capture | 16 | Reuses the AG8 assessment evidence-reference multiplicity while preserving exact invocation order; invocations requiring more arguments are outside V1 rather than truncated. |
 | one invocation argument | 1,024 UTF-8 bytes | Reuses AG3's bounded human-evidence scale while admitting exact option/value tokens; the maximum ordered vector retains 16 KiB. |
 | controlled fonts per applicable capture | 16 | Same bounded controlled-environment evidence scale; not a claim of general system-font capture. |
-| capture algorithm source | 64 KiB | Reuses AG2's reviewable fixture-descriptor ceiling. |
-| capture configuration source | 64 KiB | Same versioned reviewable-source ceiling. |
+| pinned resources per capture | 32 | Reuses AG8's `WPT_MAX_CLOSURE_FILES_PER_RECORD`: a capture resource set is the analogous closed per-input dependency closure, while the current AG8 proof needs only one static resource. |
+| later capture-tool algorithm source | 64 KiB | Reserved for the later checked-in capture-tool stage and reuses AG2's reviewable fixture-descriptor ceiling; AG9b retains only its declared SHA-256. |
+| later capture-tool configuration source | 64 KiB | Reserved for the later capture-tool stage under the same reviewable-source ceiling; AG9b retains only its declared SHA-256. |
 | comparable DOM artifact | 8 MiB | Reuses the AG4-AG7 per-observation transport/report ceiling rather than introducing a second observation-size authority. |
+| cumulative verified external artifact bytes per loaded registry | 8 MiB | Preserves Stage 0's one-artifact-pool retained-memory model while allowing up to 256 small captures and ensuring every validated capture owns the exact bytes later consumed. |
 | first-difference excerpt | 1,024 source bytes per side | Reuses AG7's UTF-8-safe line-evidence ceiling. |
 | serialized first-difference evidence | 16 KiB per comparison | Reuses AG7's reviewed evidence ceiling. |
-| all retained external first differences | 4 MiB | Checked product of 256 captures and 16 KiB per comparison. |
+| all retained external first differences | 4 MiB | Checked product of 256 typed comparison attachments and 16 KiB per comparison. |
 | aggregate local detail report | 32 MiB | Reuses the existing complete-report ceiling; the aggregate detail contract does not embed complete external capture bodies. |
 | each trend input and trend output | 32 MiB | Uses the versioned aggregate-detail/report ceiling; trend is local-only. |
 | CI summary | 6,073 bytes | AG9a derives the exact syntactic V1 ceiling from its fixed row vocabulary, identity fields, longest stable labels, framing, and 59 maximum-width unsigned counts. |
@@ -905,11 +1465,24 @@ The bounds constrain retained raw payload, not all process memory. At the
 existing three independent 32 MiB subsystem evidence ceilings, a future local
 aggregate may retain up to 96 MiB of subsystem evidence. A local external
 detail operation may additionally retain one 8 MiB Borrowser comparable
-observation, one 8 MiB external artifact, the 4 MiB difference pool, 512 KiB
-registry source, 256 KiB note text, and one 32 MiB publication buffer: under
-149 MiB of bounded raw payload. Normal CI has no external artifact or local
-detail buffer and remains bounded by the subsystem evidence plus the exact
-small summary. A local trend admits two 32 MiB inputs and one 32 MiB output.
+observation, one cumulative 8 MiB verified external-artifact pool, the 4 MiB
+difference pool, 512 KiB registry source, 256 KiB note text, and one 32 MiB
+publication buffer: under 149 MiB of bounded raw payload. The 32-resource
+per-capture ceiling does not add another independent retained pool: all
+resource identities and digests are declarations inside the already bounded
+512 KiB registry source, and capture-ID preimages are built and discarded one
+capture at a time with checked arithmetic. Normal CI has no external artifact
+or local detail buffer and remains bounded by the subsystem evidence plus the
+exact small summary. A local trend admits two 32 MiB inputs and one 32 MiB
+output.
+
+At 128 identity bytes, one maximum resource item is 168 canonical bytes: one
+8-byte nested string length, 128 identity bytes, and 32 digest bytes. Tag 12's
+maximum collection payload is therefore exactly
+`4 + 32 * (8 + 168) = 5,636` bytes, including the collection count and each
+outer item length. The tag/length frame adds 10 more bytes to the capture-ID
+preimage. These calculations and the `u32` item count are checked rather than
+inferred from allocation capacity.
 
 Allocator bookkeeping, collection capacity, and typed model overhead are not
 raw payload and are explicitly outside those byte sums. Implementations must
@@ -1312,10 +1885,19 @@ automation and broad WPT/browser compatibility remain explicit non-claims.
 
 ## Staged decision
 
-Stage 0 froze terminology, limits, and future ownership. Stage 1 implements the
-typed `AggregateRun`, subsystem projections, reconciliation, and accounting.
-AG9a implements the deterministic aggregate summary/detail formats and exact
-logical-population identity above. Later AG9 stages remain responsible for
-external captures and comparisons, notes, trend parsing/execution/comparison,
-and aggregate CLI/CI publication. AG9a must not be reported as working
-cross-engine comparison, trend support, or completed AG9 infrastructure.
+Stage 0 froze terminology, limits, and future ownership. AG9b implements the
+frozen registry wire schema, phase-gated deterministic validation, full
+external-artifact validation, same-object confined reads, exact verified-byte
+ownership, explicit resource/cumulative artifact limits, capture-ID
+construction authority, and structural advisory separation. It changes no
+production browser runtime functionality.
+
+Stage 1 implements the typed `AggregateRun`, subsystem projections,
+reconciliation, and accounting. AG9a implements the deterministic aggregate
+summary/detail formats and exact logical-population identity above. AG9b
+implements the frozen source-neutral capture and runner-owned registry
+contracts, but not external DOM comparison or capture tooling. Later AG9 stages
+remain responsible for comparisons, trend
+parsing/execution/comparison, and aggregate CLI/CI publication. Neither AG9a
+nor AG9b may be reported as working cross-engine comparison, trend support, or
+completed AG9 infrastructure.

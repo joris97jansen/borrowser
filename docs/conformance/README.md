@@ -11,8 +11,9 @@
   source-record accounting.
 - AG9 Stage 0: aggregate-reporting, cross-engine evidence, comparable DOM,
   capture-identity, bounds, and trend contracts.
-- AG9 Stage 1 and AG9a: one typed aggregate execution/accounting model plus
-  deterministic bounded aggregate summary/detail report projections.
+- AG9 Stage 1, AG9a, and AG9b: one typed aggregate execution/accounting model,
+  deterministic bounded aggregate summary/detail report projections, and the
+  validated source-neutral external-capture/advisory-registry plane.
 
 AG6 is documented in
 [`ag6-layout-paint-structural-conformance.md`](ag6-layout-paint-structural-conformance.md).
@@ -36,9 +37,15 @@ the typed `AggregateRun` and checked logical/variant accounting. AG9a adds
 `borrowser-conformance-aggregate-detail-v1`, exact logical-member/source-set
 identity, a derived 6,073-byte summary ceiling, and a 32 MiB detail bound. Both
 reports derive from the same typed run; parser V1, CSS V1, and rendering V1/V2
-remain unchanged and authoritative for subsystem evidence.
+remain unchanged and authoritative for subsystem evidence. AG9b implements the
+complete cross-engine registry V1 schema, deterministic validation phases,
+full comparable-artifact validation, same-object confined reads and
+verified-byte lifetime, explicit resource/cumulative artifact bounds, opaque
+capture-ID construction, and the separate advisory evidence plane.
 
-AG9a does not add external capture loading, external browser comparison,
-baseline notes, trend parsing/execution/comparison, aggregate CLI/CI
-publication, filesystem-atomic publication, browser automation, raster
-comparison, WPT-specific aggregate loading, or production runtime behavior.
+AG9b loads and validates checked-in external capture declarations, artifacts,
+advisory tracks, typed aggregate attachments, and baseline notes. It does not
+add external capture tooling, external browser comparison, advisory comparison
+verdicts, trend parsing/execution/comparison, aggregate CLI/CI publication,
+browser automation, raster comparison, WPT-specific aggregate loading, or
+production runtime behavior.
