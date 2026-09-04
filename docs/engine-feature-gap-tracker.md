@@ -510,8 +510,15 @@ Current architecture status:
   a derived 6,073-byte summary ceiling, and a 32 MiB detail bound. Historical
   parser V1, CSS V1, and rendering V1/V2 report contracts remain unchanged.
   See `docs/conformance/ag9-cross-engine-comparison-reporting.md`.
-- AG9a is reporting infrastructure, not broad WPT compliance or browser
-  compatibility. It does not add external capture loading/comparison, trend
+- AG9b adds source-neutral external-capture provenance, opaque reproducible
+  capture identity, complete bounded `web-observable-dom-tree-v1` artifact
+  validation, same-opened-object confined reads, and a strict runner-owned
+  advisory registry reconciled against immutable aggregate identities.
+  Captures, tracks, attachments, and baseline notes remain outside
+  `AggregateRun` and cannot alter Borrowser policy or report bytes.
+- AG9a/AG9b are reporting and advisory-evidence infrastructure, not broad WPT
+  compliance or browser compatibility. They do not add external capture
+  tooling, external DOM comparison, advisory comparison verdicts, trend
   execution, aggregate CLI/CI publication, browser automation, or raster
   comparison.
 
@@ -520,7 +527,7 @@ Missing or incomplete:
 - aggregate named-lane scheduling and CLI/CI publication
 - Browser/runtime subsystem adapters
 - broader pinned external-source adapters beyond the exact AG8 and AE13e proofs
-- cross-engine capture and artifact comparison workflows
+- external capture tooling and cross-engine artifact comparison workflows
 - pixel/raster reference comparison infrastructure
 - JavaScript, DOM API, event-loop, WebDriver, CSSOM, interaction, navigation,
   storage, and other broader browser-platform conformance

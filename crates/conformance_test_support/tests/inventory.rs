@@ -4,9 +4,36 @@ use std::fs;
 
 use conformance_test_support::{
     InventoryDiagnosticKind, InventoryRepository, MAX_DESCRIPTOR_BYTES, ObservationSurface,
-    discover_inventory, generate_manifest_bytes,
+    PortablePathComponent, discover_inventory, generate_manifest_bytes,
 };
 use support::{TestRepository, descriptor, descriptor_v2, descriptor_v3};
+
+#[test]
+fn ag2_owned_parsers_are_available_without_reimplementing_their_vocabularies() {
+    assert!(PortablePathComponent::is_valid(
+        "capture.web-observable-dom-tree-v1.txt"
+    ));
+    assert!(!PortablePathComponent::is_valid("../capture.txt"));
+    let component = PortablePathComponent::parse("capture.web-observable-dom-tree-v1.txt")
+        .expect("portable AG2 component");
+    assert_eq!(component.as_str(), "capture.web-observable-dom-tree-v1.txt");
+    assert!(PortablePathComponent::parse("../capture.txt").is_none());
+
+    for surface in [
+        ObservationSurface::HtmlTokenizer,
+        ObservationSurface::HtmlTreeConstruction,
+        ObservationSurface::DomTree,
+        ObservationSurface::CssParsing,
+        ObservationSurface::CssSelectors,
+        ObservationSurface::CssCascade,
+        ObservationSurface::ComputedStyle,
+        ObservationSurface::LayoutGeometry,
+        ObservationSurface::PaintOperations,
+        ObservationSurface::BrowserRuntimeSemantic,
+    ] {
+        assert_eq!(ObservationSurface::parse(surface.as_str()), Some(surface));
+    }
+}
 
 #[test]
 fn v3_reference_relation_and_package_containment_are_strict() {

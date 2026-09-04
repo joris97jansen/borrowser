@@ -450,8 +450,10 @@ dependencies = [
  "external-test-provenance",
  "html-test-support",
  "rendering-test-support",
+ "serde",
  "serde_json",
  "tempfile",
+ "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]
@@ -817,6 +819,7 @@ name = "external-test-provenance"
 version = "0.1.0"
 dependencies = [
  "ring",
+ "rustix 1.1.2",
  "serde",
  "tempfile",
  "toml 0.9.12+spec-1.1.0",

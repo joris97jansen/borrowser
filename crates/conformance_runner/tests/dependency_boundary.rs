@@ -341,6 +341,33 @@ fn check_aggregate_identity_probe(source: &str) -> std::process::Output {
         .expect("aggregate API-boundary cargo check should run")
 }
 
+fn check_external_capture_identity_probe(source: &str) -> std::process::Output {
+    let workspace = tempfile::tempdir().expect("temporary external-capture API-boundary crate");
+    fs::create_dir_all(workspace.path().join("src")).unwrap();
+    let provenance_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("external_test_provenance");
+    let escaped_path = provenance_path
+        .to_string_lossy()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    fs::write(
+        workspace.path().join("Cargo.toml"),
+        format!(
+            "[package]\nname = \"external-capture-identity-boundary-probe\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[workspace]\n\n[dependencies]\nexternal-test-provenance = {{ path = \"{escaped_path}\" }}\n"
+        ),
+    )
+    .unwrap();
+    fs::write(workspace.path().join("src/main.rs"), source).unwrap();
+    Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+        .args(["check", "--offline", "--manifest-path"])
+        .arg(workspace.path().join("Cargo.toml"))
+        .env("CARGO_TARGET_DIR", workspace.path().join("target"))
+        .output()
+        .expect("external-capture API-boundary cargo check should run")
+}
+
 #[test]
 fn parser_execution_dependency_graph_preserves_ownership_boundaries() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -639,6 +666,8 @@ fn aggregate_feature_composes_only_the_existing_typed_adapter_boundaries() {
             serde_json::Value::String("css".to_owned()),
             serde_json::Value::String("rendering".to_owned()),
             serde_json::Value::String("dep:external-test-provenance".to_owned()),
+            serde_json::Value::String("dep:serde".to_owned()),
+            serde_json::Value::String("dep:toml".to_owned()),
         ]
     );
     let graph = workspace_graph(&metadata, "conformance-runner", &["default", "aggregate"]);
@@ -668,6 +697,79 @@ fn aggregate_feature_composes_only_the_existing_typed_adapter_boundaries() {
             "app_api",
         ],
         "aggregate conformance graph",
+    );
+}
+
+#[test]
+fn trusted_external_capture_id_has_no_unchecked_public_constructor() {
+    let output = check_external_capture_identity_probe(
+        r#"
+use external_test_provenance::{ExternalCaptureId, Sha256Digest};
+
+fn main() {
+    let digest = Sha256Digest::parse(
+        "0000000000000000000000000000000000000000000000000000000000000000",
+    ).unwrap();
+    let _unchecked = ExternalCaptureId(digest);
+}
+"#,
+    );
+    assert!(
+        !output.status.success(),
+        "unchecked trusted capture identity construction unexpectedly compiled"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("private") && stderr.contains("ExternalCaptureId"),
+        "probe must fail at the opaque trusted capture-ID boundary:\n{stderr}"
+    );
+}
+
+#[test]
+fn external_artifact_candidate_has_no_public_raw_byte_constructor() {
+    let output = check_external_capture_identity_probe(
+        r#"
+use external_test_provenance::ExternalArtifactCandidateV1;
+
+fn main() {
+    let _unchecked = ExternalArtifactCandidateV1::from_bytes(Vec::new());
+}
+"#,
+    );
+    assert!(
+        !output.status.success(),
+        "unchecked external artifact candidate construction unexpectedly compiled"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("private")
+            && stderr.contains("ExternalArtifactCandidateV1")
+            && stderr.contains("from_bytes"),
+        "probe must fail at the same-object candidate authority boundary:\n{stderr}"
+    );
+
+    let output = check_external_capture_identity_probe(
+        r#"
+use std::path::Path;
+use external_test_provenance::read_external_artifact_candidate_same_object;
+
+fn main() {
+    let _oversized = read_external_artifact_candidate_same_object(
+        Path::new("."),
+        Path::new("capture.txt"),
+        u64::MAX,
+    );
+}
+"#,
+    );
+    assert!(
+        !output.status.success(),
+        "V1 candidate reader unexpectedly accepted a caller-selected ceiling"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("takes 2 arguments") && stderr.contains("3 arguments"),
+        "probe must fail because the V1 ceiling is owned by the API:\n{stderr}"
     );
 }
 

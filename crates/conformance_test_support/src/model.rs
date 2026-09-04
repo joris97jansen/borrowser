@@ -31,10 +31,12 @@ impl FixtureFormat {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct PortablePathComponent(String);
+pub struct PortablePathComponent(String);
 
 impl PortablePathComponent {
-    pub(crate) fn parse(value: &str) -> Option<Self> {
+    /// Returns whether `value` satisfies the authoritative AG2 portable
+    /// repository path-component grammar without allocating owned storage.
+    pub fn is_valid(value: &str) -> bool {
         let bytes = value.as_bytes();
         if bytes.is_empty()
             || bytes.len() > MAX_PORTABLE_PATH_COMPONENT_BYTES
@@ -49,12 +51,16 @@ impl PortablePathComponent {
             })
             || is_windows_reserved_basename(value)
         {
-            return None;
+            return false;
         }
-        Some(Self(value.to_owned()))
+        true
     }
 
-    pub(crate) fn as_str(&self) -> &str {
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::is_valid(value).then(|| Self(value.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
         &self.0
     }
 }
@@ -103,6 +109,35 @@ mod portable_path_component_tests {
         }
         assert!(PortablePathComponent::parse(&"a".repeat(128)).is_some());
         assert!(PortablePathComponent::parse(&"a".repeat(129)).is_none());
+    }
+
+    #[test]
+    fn borrowed_validity_and_historical_owning_parse_are_equivalent() {
+        for value in [
+            "a",
+            "0",
+            "fixture.toml",
+            "test-file_1.html",
+            "com10",
+            "",
+            ".",
+            "..",
+            ".hidden",
+            "trailing.",
+            "two..dots",
+            "Uppercase",
+            "unicode-é",
+            "control-\n",
+            "contains\\backslash",
+            "con",
+            "lpt9.txt",
+        ] {
+            assert_eq!(
+                PortablePathComponent::is_valid(value),
+                PortablePathComponent::parse(value).is_some(),
+                "{value:?}",
+            );
+        }
     }
 }
 
@@ -216,7 +251,7 @@ impl ObservationSurface {
         }
     }
 
-    pub(crate) fn parse(value: &str) -> Option<Self> {
+    pub fn parse(value: &str) -> Option<Self> {
         match value {
             "html-tokenizer" => Some(Self::HtmlTokenizer),
             "html-tree-construction" => Some(Self::HtmlTreeConstruction),
