@@ -516,18 +516,24 @@ Current architecture status:
   advisory registry reconciled against immutable aggregate identities.
   Captures, tracks, attachments, and baseline notes remain outside
   `AggregateRun` and cannot alter Borrowser policy or report bytes.
-- AG9a/AG9b are reporting and advisory-evidence infrastructure, not broad WPT
-  compliance or browser compatibility. They do not add external capture
-  tooling, external DOM comparison, advisory comparison verdicts, trend
-  execution, aggregate CLI/CI publication, browser automation, or raster
-  comparison.
+- AG9c adds independent Rust/JavaScript `web-observable-dom-tree-v1` producers,
+  shared neutral reviewed contract vectors, bounded selected local operations
+  over the same canonical evaluation, source-byte hash verification, and typed
+  advisory equivalent/different evidence. Operation scope is distinct from the
+  complete external-advisory population. Aggregate semantics and reports stay
+  unchanged. Real capture remains unsupported because no admitted mechanism
+  proves the frozen parser/input context; comparison verdict tests are synthetic.
+  See `docs/conformance/ag9c-external-dom-capture.md`.
+- AG9a/AG9b/AG9c do not establish broad WPT compliance, browser compatibility,
+  browser automation, raster comparison, or AG milestone completion.
 
 Missing or incomplete:
 
 - aggregate named-lane scheduling and CLI/CI publication
 - Browser/runtime subsystem adapters
 - broader pinned external-source adapters beyond the exact AG8 and AE13e proofs
-- external capture tooling and cross-engine artifact comparison workflows
+- proven real-browser capture mechanisms (inspector and selected DOM comparison
+  infrastructure exist; real-capture admission remains unsupported)
 - pixel/raster reference comparison infrastructure
 - JavaScript, DOM API, event-loop, WebDriver, CSSOM, interaction, navigation,
   storage, and other broader browser-platform conformance

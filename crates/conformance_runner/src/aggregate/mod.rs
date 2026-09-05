@@ -1,3 +1,5 @@
+mod advisory;
+pub use advisory::*;
 mod accounting;
 mod external_registry;
 mod identity;

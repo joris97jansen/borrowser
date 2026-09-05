@@ -1,0 +1,5 @@
+format = "web-observable-dom-tree-v1"
+root-count = 1
+node-begin = "document"
+child-count = 0
+node-end = "document"

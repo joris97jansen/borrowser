@@ -489,6 +489,20 @@ impl VerifiedExternalArtifactV1 {
     }
 }
 
+/// A capture whose supplied ID claim has been verified, not just its grammar.
+///
+/// Grammar validation cannot produce this authority:
+/// ```compile_fail
+/// use external_test_provenance::{ValidatedExternalCaptureV1, validate_web_observable_dom_tree_v1};
+/// let capture: ValidatedExternalCaptureV1 = validate_web_observable_dom_tree_v1(b"").unwrap();
+/// ```
+/// A verified artifact and provenance alone cannot seal a capture:
+/// ```compile_fail
+/// use external_test_provenance::{ValidatedExternalCaptureV1, VerifiedExternalArtifactV1, ExternalCaptureProvenanceV1};
+/// fn seal(p: ExternalCaptureProvenanceV1, a: VerifiedExternalArtifactV1) {
+///     ValidatedExternalCaptureV1::from_verified_artifact(p, a);
+/// }
+/// ```
 pub struct ValidatedExternalCaptureV1 {
     id: ExternalCaptureId,
     provenance: ExternalCaptureProvenanceV1,
@@ -496,6 +510,7 @@ pub struct ValidatedExternalCaptureV1 {
 }
 
 impl ValidatedExternalCaptureV1 {
+    /// Validate the supplied claim as well as the retained artifact and provenance.
     pub fn verify(
         provenance: ExternalCaptureProvenanceV1,
         artifact: VerifiedExternalArtifactV1,

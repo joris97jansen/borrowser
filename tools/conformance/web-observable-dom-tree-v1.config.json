@@ -1,0 +1,11 @@
+{
+  "format": "web-observable-dom-tree-v1-inspection-config",
+  "version": "1",
+  "algorithm": "web-observable-dom-tree-v1-inspector",
+  "algorithmVersion": "1",
+  "surface": "web-observable-dom-tree-v1",
+  "targetParserInputContext": "static-text-html-utf8-scripting-disabled-v1",
+  "resourceNetworkPolicy": "offline",
+  "realCaptureSupport": "unsupported",
+  "reason": "No admitted manual mechanism proves exact delivery, disabled scripting, completed parsing and absence of intervening effects."
+}

@@ -80,6 +80,9 @@ pub mod parser_fixture;
 #[cfg(feature = "parser-fixtures")]
 pub mod parser_snapshot;
 
+#[cfg(feature = "parser-fixtures")]
+pub mod web_observable_dom;
+
 #[cfg(feature = "html5")]
 pub mod tokenizer_text_mode;
 

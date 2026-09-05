@@ -2,7 +2,7 @@ mod artifact;
 mod identity;
 mod model;
 
-pub use artifact::ExternalArtifactValidationError;
+pub use artifact::{ExternalArtifactValidationError, validate_web_observable_dom_tree_v1};
 pub use model::{
     ApplicabilityV1, CaptureV1Error, ControlledFontIdentityV1, ExternalArtifactCandidateV1,
     ExternalArtifactFormatV1, ExternalCaptureId, ExternalCaptureIdClaim,

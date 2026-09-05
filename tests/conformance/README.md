@@ -123,3 +123,16 @@ ends at `ComputedDocumentStyle`; fragment requests are representable but remain
 capability-unavailable until HTML provides contextual fragment parsing.
 The subsystem-neutral runner has no adapter feature enabled by default;
 repository commands explicitly enable `html-parser`, `css`, or `rendering`.
+
+## AG9c comparable DOM and selected advisory operations
+
+The independent Rust and JavaScript V1 producers use one neutral reviewed corpus
+in `tests/contract-vectors/web-observable-dom-tree-v1/`, outside AG2 discovery.
+Do not generate expected bytes from either producer. Selected operations retain
+one exact variant's comparable observation from its existing evaluation; they
+are not complete advisory-population reports. External evidence never changes
+Borrowser semantic outcomes, policy, identities, or existing reports.
+
+Real-browser capture remains unsupported until a mechanism proves the frozen
+input context; do not populate the real registry with synthetic results. See
+[AG9c ownership, APIs, capture restrictions, and validation](../../docs/conformance/ag9c-external-dom-capture.md).
