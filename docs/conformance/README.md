@@ -49,3 +49,16 @@ add external capture tooling, external browser comparison, advisory comparison
 verdicts, trend parsing/execution/comparison, aggregate CLI/CI publication,
 browser automation, raster comparison, WPT-specific aggregate loading, or
 production runtime behavior.
+
+## AG9c comparable DOM and selected advisory operations
+
+The independent Rust and JavaScript V1 producers use one neutral reviewed corpus
+in `tests/contract-vectors/web-observable-dom-tree-v1/`, outside AG2 discovery.
+Do not generate expected bytes from either producer. Selected operations retain
+one exact variant's comparable observation from its existing evaluation; they
+are not complete advisory-population reports. External evidence never changes
+Borrowser semantic outcomes, policy, identities, or existing reports.
+
+Real-browser capture remains unsupported until a mechanism proves the frozen
+input context; do not populate the real registry with synthetic results. See
+[AG9c ownership, APIs, capture restrictions, and validation](ag9c-external-dom-capture.md).

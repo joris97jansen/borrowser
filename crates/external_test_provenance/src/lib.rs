@@ -15,10 +15,11 @@ pub use capture_v1::{
     ApplicabilityV1, CaptureV1Error, ControlledFontIdentityV1, ExternalArtifactCandidateV1,
     ExternalArtifactFormatV1, ExternalArtifactValidationError, ExternalCaptureId,
     ExternalCaptureIdClaim, ExternalCaptureProvenanceV1, ExternalCaptureProvenanceV1Input,
-    ExternalIdentityV1, ExternalVersionV1, NonApplicableReasonV1, PinnedResourceIdentityV1,
-    ReducedDeviceScaleV1, ResourceNetworkPolicyV1, TargetParserInputContextV1,
-    ValidatedExternalCaptureV1, VerifiedExternalArtifactV1, ViewportCssPixelsV1,
-    read_external_artifact_candidate_same_object,
+    ExternalIdentityV1, ExternalVersionV1, MAX_WEB_OBSERVABLE_DOM_TREE_BYTES_V1,
+    NonApplicableReasonV1, PinnedResourceIdentityV1, ReducedDeviceScaleV1, ResourceNetworkPolicyV1,
+    TargetParserInputContextV1, ValidatedExternalCaptureV1, VerifiedExternalArtifactV1,
+    ViewportCssPixelsV1, WEB_OBSERVABLE_DOM_TREE_FORMAT_V1,
+    read_external_artifact_candidate_same_object, validate_web_observable_dom_tree_v1,
 };
 pub use confined_file::{
     ConfinedFileError, SameObjectConfinedReadError, read_confined_regular_file,

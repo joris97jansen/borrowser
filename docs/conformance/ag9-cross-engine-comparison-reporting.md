@@ -2,11 +2,12 @@
 
 Status: Stage 0 contract and limits freeze, AG9 Stage 1 typed aggregate
 execution/accounting, AG9a deterministic aggregate summary/detail reports, and
-AG9b source-neutral capture provenance plus runner-owned advisory registry are
-implemented; external capture tooling, external DOM comparison, trend
-execution, and aggregate CLI/CI publication remain unimplemented
+AG9b source-neutral capture provenance plus runner-owned advisory registry, and
+AG9c independent DOM codecs plus selected advisory operations are implemented.
+Real-browser capture remains unsupported; trend execution and aggregate CLI/CI
+publication remain unimplemented
 
-Last updated: 2026-09-03
+Last updated: 2026-09-05
 
 AG9 defines the future aggregate-accounting, reporting, cross-engine evidence,
 baseline-note, and trend contracts for Borrowser's current static HTML/CSS
@@ -395,6 +396,28 @@ computed-style failure semantics to the CSS-owned typed classifier. This avoids
 a second CSS resource taxonomy in rendering while keeping production crates
 independent of AG tooling.
 
+## AG9c implementation and selected-operation boundary
+
+See [AG9c capture and selected-operation contract](ag9c-external-dom-capture.md)
+for the implemented APIs, exact source verification, evidence grammar, and
+unsupported real-capture status. `html-test-support` owns the V1 codec over the
+same `FixtureEvaluation` reference result used by ordinary normalization.
+Production HTML owns semantics, not AG wire formats. No re-evaluation, snapshot
+recovery, or canonical tree retained in `AggregateRun` is introduced.
+
+`SelectedDomAdvisoryOperation` is explicitly a selected local operation, with
+one exact aggregate variant, total/in-scope/outside-scope attachment accounting,
+and results only for matching attachments. Outside-scope attachments are not
+evaluated or classified. One 8 MiB Borrowser observation is a local-operation
+retention limit, not a semantic restriction on the aggregate/advisory population.
+Both independent producers consume the same neutral hand-authored vectors under
+`tests/contract-vectors/web-observable-dom-tree-v1`, outside AG2 discovery.
+
+The inspector and Rust comparison infrastructure are implemented, but no real
+capture mechanism currently proves the frozen input context. Public capture
+admission fails closed. Equivalent/different regression cases are explicitly
+synthetic. This does not alter AG9b registry validation or evidence authority.
+
 ## `web-observable-dom-tree-v1`
 
 `web-observable-dom-tree-v1` is a narrow, independently specified DOM
@@ -537,7 +560,7 @@ element-prefix input or retained field. `ObservedTreeNode::Element` therefore
 preserves the complete supported element-name value rather than dropping a
 meaningful prefix.
 
-The later comparable-DOM projection/capture stage must prove this invariant
+The comparable-DOM projection/inspection implementations must prove this invariant
 with representative HTML-, SVG-, and MathML-namespace parser-created elements.
 The external capture algorithm must
 read the standardized `Element.prefix` and reject the capture when it is
@@ -627,7 +650,7 @@ fixture execution path and its typed `ObservedTree`. It must not parse the HTML
 again, reconstruct a separate DOM model, consume `html5-dom-v3` serialized
 text, or introduce another parser truth path.
 
-The external projection is a future versioned, checked-in capture algorithm
+The external projection is a versioned, checked-in inspection algorithm
 using only standardized externally observable DOM behavior: node type,
 `childNodes`, `DocumentType`, `namespaceURI`, `localName`, attributes,
 character data, processing-instruction data, and
@@ -1163,15 +1186,18 @@ tags 18 through 20 require. It does not load, hash, or execute capture
 algorithm or configuration source bytes. V1 has no algorithm-source path,
 configuration-source path, inline script, or executable command field.
 
-The 64 KiB algorithm-source and configuration-source limits are reserved
-ceilings for the later checked-in capture-tool stage. That stage must define
-the source layout and verify those exact bytes against the already
-identity-bearing digests before producing a registry claim. Until then, AG9b
-treats the digests as validated provenance claims, not proof that the omitted
-source is present. Adding source paths or source-byte verification to this
-registry requires an explicit contract amendment; it must not happen through
-an undocumented optional field. AG9b therefore does not accidentally become
-the external capture script or its executor.
+AG9c applies the frozen 64 KiB per-source ceilings to the checked-in
+`tools/conformance/web-observable-dom-tree-v1.mjs` and
+`tools/conformance/web-observable-dom-tree-v1.config.json`. The selected-operation
+layer performs bounded same-object reads and verifies raw-byte hashes against
+provenance before comparing an in-scope attachment. Reviewed algorithm/version
+identity is also checked against the sources in this tooling build. The registry
+wire schema and AG9b loader remain unchanged: their digests are provenance
+claims, while the separate AG9c operation establishes source-byte agreement.
+Neither source-byte agreement nor a valid capture ID proves historical browser
+context. Real capture remains unsupported. See the AG9c contract for the source
+layout, synthetic tests, and admission boundary. No source-path or inline-command
+fields have been added to registry V1.
 
 ## Deterministic registry validation
 
@@ -1445,8 +1471,8 @@ The AG9 V1 bounds are:
 | one invocation argument | 1,024 UTF-8 bytes | Reuses AG3's bounded human-evidence scale while admitting exact option/value tokens; the maximum ordered vector retains 16 KiB. |
 | controlled fonts per applicable capture | 16 | Same bounded controlled-environment evidence scale; not a claim of general system-font capture. |
 | pinned resources per capture | 32 | Reuses AG8's `WPT_MAX_CLOSURE_FILES_PER_RECORD`: a capture resource set is the analogous closed per-input dependency closure, while the current AG8 proof needs only one static resource. |
-| later capture-tool algorithm source | 64 KiB | Reserved for the later checked-in capture-tool stage and reuses AG2's reviewable fixture-descriptor ceiling; AG9b retains only its declared SHA-256. |
-| later capture-tool configuration source | 64 KiB | Reserved for the later capture-tool stage under the same reviewable-source ceiling; AG9b retains only its declared SHA-256. |
+| capture-tool algorithm source | 64 KiB | AG9c applies the frozen reviewable-source ceiling to exact source reads; AG9b retains the declared SHA-256. |
+| capture-tool configuration source | 64 KiB | AG9c applies the same frozen ceiling to exact configuration reads; AG9b retains the declared SHA-256. |
 | comparable DOM artifact | 8 MiB | Reuses the AG4-AG7 per-observation transport/report ceiling rather than introducing a second observation-size authority. |
 | cumulative verified external artifact bytes per loaded registry | 8 MiB | Preserves Stage 0's one-artifact-pool retained-memory model while allowing up to 256 small captures and ensuring every validated capture owns the exact bytes later consumed. |
 | first-difference excerpt | 1,024 source bytes per side | Reuses AG7's UTF-8-safe line-evidence ceiling. |
@@ -1869,8 +1895,8 @@ source set, and evidence authority.
 
 ## External-browser and CI boundaries
 
-External collection remains a manual, local workflow for AG9. A later stage
-may add a versioned, reviewable DOM-inspection script, but normal CI will not:
+External collection remains a manual, local workflow for AG9. AG9c adds a versioned, reviewable DOM-inspection script but admits no real
+capture mechanism. Normal CI will not:
 
 - install, download, discover, or launch an external browser;
 - add Playwright, WebDriver, or browser-driver dependencies;
@@ -1896,8 +1922,10 @@ Stage 1 implements the typed `AggregateRun`, subsystem projections,
 reconciliation, and accounting. AG9a implements the deterministic aggregate
 summary/detail formats and exact logical-population identity above. AG9b
 implements the frozen source-neutral capture and runner-owned registry
-contracts, but not external DOM comparison or capture tooling. Later AG9 stages
-remain responsible for comparisons, trend
-parsing/execution/comparison, and aggregate CLI/CI publication. Neither AG9a
+contracts, but not external DOM comparison or capture tooling. AG9c now implements
+independent V1 producers and scoped advisory comparison infrastructure with
+synthetic contract tests; real-capture admission remains unsupported. Later AG9
+stages remain responsible for trend parsing/execution/comparison and aggregate
+CLI/CI publication. Neither AG9a
 nor AG9b may be reported as working cross-engine comparison, trend support, or
 completed AG9 infrastructure.

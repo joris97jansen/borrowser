@@ -4343,3 +4343,221 @@ fn adapted_repository_accepts_quarantine_non_active_schema_for_policy_evaluation
     assert_eq!(report.disposition(), DispositionEvaluation::Pass);
     assert!(report.result().is_none());
 }
+
+#[test]
+fn web_observable_uses_produced_reference_despite_authored_mismatch_without_extra_deliveries() {
+    struct CountingProduction {
+        calls: usize,
+    }
+    impl super::runner::ParserObservationExecutor for CountingProduction {
+        fn execute(
+            &mut self,
+            request: ParserObservationRequest<'_>,
+        ) -> Result<CanonicalParserResult, ParserObservationExecutionError> {
+            self.calls += 1;
+            html::conformance::execute_parser_observation(request)
+        }
+    }
+    let repository = TestRepository::new();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = root.join("tests/conformance/fixtures/html/dom-tree-basic/parser");
+    let bundle = repository.fixture_root.join("produced");
+    fs::create_dir_all(&bundle).unwrap();
+    for file in ["fixture.toml", "input.html", "tree.txt"] {
+        fs::copy(source.join(file), bundle.join(file)).unwrap();
+    }
+    rewrite(&bundle.join("fixture.toml"), |s| {
+        s.replace("[expectations]", "[[execution.deliveries]]\nname = \"split\"\nunit = \"unicode-scalars\"\nstrategy = \"boundaries\"\nboundaries = [1]\n\n[expectations]")
+    });
+    // Valid authored snapshot, deliberately disagrees with the produced tree.
+    rewrite(&bundle.join("tree.txt"), |s| {
+        s.replace("ok", "authored-wrong")
+    });
+    let fixture = load_single_native_fixture(&repository);
+    let mut executor = CountingProduction { calls: 0 };
+    let evaluation = super::runner::evaluate_fixture_with_executor_and_access(
+        &fixture,
+        &mut executor,
+        &mut RecordingFileAccess::default(),
+    );
+    assert!(matches!(
+        evaluation.observed_outcome(),
+        FixtureObservedOutcome::ExpectationMismatch { .. }
+    ));
+    let scheduled = match fixture.execution_plan() {
+        ValidatedExecutionPlan::Parity(policy) => policy.strategies().len(),
+        _ => panic!("V2 parity schedule required"),
+    };
+    assert_eq!(
+        executor.calls, scheduled,
+        "all baseline, declared and generated deliveries execute once"
+    );
+    let result = evaluation.serialize_web_observable_dom_tree_v1().unwrap();
+    assert_eq!(
+        result.bytes(),
+        fs::read(
+            root.join("tests/contract-vectors/web-observable-dom-tree-v1/static-document.txt")
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        executor.calls, scheduled,
+        "serialization cannot execute another delivery"
+    );
+}
+
+#[test]
+fn web_observable_production_html_svg_mathml_preserve_prefix_invariant() {
+    let repository = TestRepository::new();
+    let input = b"<!doctype html><svg><foreignObject/></svg><math><mi>x</mi></math>";
+    let bundle = add_fixture_v2(&repository, "namespaces", "namespaces", input);
+    rewrite(&bundle.join("fixture.toml"), |s| {
+        s.replace(
+            "kind = \"standalone-tokenizer\"",
+            "kind = \"document\"\nscripting = \"disabled\"",
+        )
+    });
+    // Token expectation deliberately mismatches; projection must still use the
+    // production result, whose expanded element names have no prefix field.
+    let fixture = load_single_native_fixture(&repository);
+    let evaluation = evaluate_fixture(&fixture);
+    let result = evaluation.serialize_web_observable_dom_tree_v1().unwrap();
+    let text = std::str::from_utf8(result.bytes()).unwrap();
+    for uri in [
+        "http://www.w3.org/1999/xhtml",
+        "http://www.w3.org/2000/svg",
+        "http://www.w3.org/1998/Math/MathML",
+    ] {
+        assert!(text.contains(uri));
+    }
+    assert!(text.contains("local-name = \"foreignObject\""));
+}
+
+#[test]
+fn web_observable_failed_or_absent_evaluation_is_never_a_partial_artifact() {
+    use super::ComparableDomPreparationError as Error;
+    let fixture_id = FixtureId::validated("test".into());
+    let mut invalid_tree = canonical_result();
+    invalid_tree.tree =
+        ObservationState::Captured(html::conformance::ObservedTree { roots: vec![] });
+    for (outcome, expected) in [
+        (
+            FixtureExecutionOutcome::Completed {
+                result: Box::new(invalid_tree),
+            },
+            Error::Serialization(
+                crate::web_observable_dom::WebObservableDomSerializationError::InvalidStructure,
+            ),
+        ),
+        (
+            FixtureExecutionOutcome::NotExecuted {
+                classification: SkipClassification::UnsupportedCapability(
+                    FixtureCapability::FragmentParsing,
+                ),
+            },
+            Error::Unavailable,
+        ),
+        (
+            unsupported_semantics(FixtureCapability::FragmentParsing),
+            Error::UnsupportedContext,
+        ),
+        (
+            FixtureExecutionOutcome::ExecutionFailedV2 {
+                class: ExecutionFailureClass::SnapshotFormat(ExpectationSurface::Tokens),
+                message: String::new(),
+            },
+            Error::ExecutionFailure,
+        ),
+        (
+            FixtureExecutionOutcome::CompletedV2 {
+                deliveries: vec![],
+                reference_delivery: None,
+            },
+            Error::Unavailable,
+        ),
+        (
+            expectation_mismatch(ExpectationSurface::Tree),
+            Error::Unavailable,
+        ),
+        (
+            FixtureExecutionOutcome::ExpectationMismatchV2 {
+                strategy: String::new(),
+                surface: ExpectationSurface::Tree,
+                diff: String::new(),
+                reference_result: None,
+            },
+            Error::Unavailable,
+        ),
+        (
+            FixtureExecutionOutcome::ParityMismatchV2 {
+                strategy: String::new(),
+                surface: ExpectationSurface::Tree,
+                diff: String::new(),
+                reference_result: None,
+            },
+            Error::Unavailable,
+        ),
+        (
+            FixtureExecutionOutcome::FinalInvariantFailedV2 {
+                strategy: String::new(),
+                first_failure: InvariantFailureCode::PendingTableText,
+                failure_count: 1,
+            },
+            Error::Invariant,
+        ),
+        (
+            FixtureExecutionOutcome::IncompleteObservationV2 {
+                strategy: String::new(),
+                surface: ExpectationSurface::Tree,
+                reason: html::conformance::IncompleteObservationReason::StorageLimitExceeded {
+                    retained: 0,
+                    dropped: 1,
+                },
+                retained: 0,
+                dropped: 1,
+            },
+            Error::Incomplete,
+        ),
+        (
+            FixtureExecutionOutcome::ExecutionFailedV2 {
+                class: ExecutionFailureClass::ValidatedFixtureInvariant(
+                    ValidatedFixtureInvariantCode::PlannedReferenceDeliveryMissing,
+                ),
+                message: String::new(),
+            },
+            Error::Invariant,
+        ),
+        (completed_success(), Error::Unavailable),
+        (incomplete_observation(), Error::Incomplete),
+        (invariant_failure(vec![]), Error::Invariant),
+        (
+            unsupported_expectation(ExpectationSurface::Tree),
+            Error::UnsupportedContext,
+        ),
+        (
+            execution_failure(LegacyExecutionFailureClass::TokenizerDriver),
+            Error::ExecutionFailure,
+        ),
+        (
+            FixtureExecutionOutcome::ExecutionFailedV2 {
+                class: ExecutionFailureClass::FixtureExecutionResourceExhaustion(
+                    FixtureExecutionResourceSite::ScalarBoundaryExecutionOffsets,
+                ),
+                message: String::new(),
+            },
+            Error::Resource,
+        ),
+    ] {
+        let evaluation = FixtureEvaluation {
+            fixture_id: fixture_id.clone(),
+            repository_relative_path: "test".into(),
+            attempt: FixtureAttemptState::Attempted,
+            outcome,
+            disposition: Ok(DispositionEvaluation::Pass),
+        };
+        assert_eq!(
+            evaluation.serialize_web_observable_dom_tree_v1(),
+            Err(expected)
+        );
+    }
+}

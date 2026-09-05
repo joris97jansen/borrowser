@@ -43,7 +43,9 @@ impl fmt::Display for ExternalArtifactValidationError {
 
 impl std::error::Error for ExternalArtifactValidationError {}
 
-pub(super) fn validate_web_observable_dom_tree_v1(
+/// Validate only the written V1 byte contract. This does not establish capture
+/// provenance or confer authority to construct a trusted external capture.
+pub fn validate_web_observable_dom_tree_v1(
     bytes: &[u8],
 ) -> Result<(), ExternalArtifactValidationError> {
     validate_web_observable_dom_tree_v1_with_policy(bytes, &mut ProductionReservation)

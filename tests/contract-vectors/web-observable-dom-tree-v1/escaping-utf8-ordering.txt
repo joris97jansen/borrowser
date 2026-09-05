@@ -1,0 +1,29 @@
+format = "web-observable-dom-tree-v1"
+root-count = 1
+node-begin = "document"
+child-count = 2
+node-begin = "text"
+data = "\u0000\u000b\u001f\u007f\r\n\t\"\\é😀  "
+node-end = "text"
+node-begin = "element"
+namespace-uri = "http://www.w3.org/1999/xhtml"
+local-name = "div"
+attribute-count = 2
+attribute-begin = true
+namespace-uri = null
+prefix = null
+local-name = ""
+qualified-name = ""
+value = "first"
+attribute-end = true
+attribute-begin = true
+namespace-uri = null
+prefix = null
+local-name = "𐀀"
+qualified-name = "𐀀"
+value = "second"
+attribute-end = true
+child-count = 0
+template-contents = "absent"
+node-end = "element"
+node-end = "document"

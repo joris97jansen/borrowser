@@ -951,3 +951,25 @@ fn forbidden_dev_build_and_target_dependencies_are_all_visible_to_the_guard() {
         BTreeSet::from(["browser".to_owned(), "css".to_owned(), "layout".to_owned(),])
     );
 }
+
+#[test]
+fn comparable_validation_does_not_create_trusted_capture_authority() {
+    let output = check_external_capture_identity_probe(
+        r#"
+use external_test_provenance::{ExternalCaptureProvenanceV1, ValidatedExternalCaptureV1, validate_web_observable_dom_tree_v1};
+fn main() {
+    let provenance: ExternalCaptureProvenanceV1 = todo!();
+    let bytes = Vec::<u8>::new();
+    let _ = validate_web_observable_dom_tree_v1(&bytes);
+    let claim: external_test_provenance::ExternalCaptureIdClaim = todo!();
+    let _ = ValidatedExternalCaptureV1::verify(provenance, bytes, claim);
+}
+"#,
+    );
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("VerifiedExternalArtifactV1") && stderr.contains("mismatched types"),
+        "{stderr}"
+    );
+}

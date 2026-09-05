@@ -176,7 +176,7 @@ fn run_repository_parser_cases_with_evaluator(
     )
 }
 
-#[cfg(feature = "aggregate")]
+#[cfg(all(feature = "aggregate", test))]
 pub(crate) fn run_repository_parser_cases_with_inventory(
     repository_root: &Path,
     inventory: &ValidatedInventory,
@@ -197,7 +197,44 @@ fn run_repository_parser_cases_with_inventory_and_evaluator(
     inventory: &ValidatedInventory,
     expected: &ValidatedExpectedResults,
     selection_mode: OrchestrationSelectionMode,
+    evaluator: impl FnMut(&ValidatedFixtureSpec) -> FixtureEvaluation,
+) -> Result<ParserRunSummary, ParserRunError> {
+    run_repository_parser_cases_observing(
+        repository_root,
+        inventory,
+        expected,
+        selection_mode,
+        evaluator,
+        &mut IgnoreEvaluation,
+    )
+}
+
+pub(crate) trait ParserEvaluationObserver {
+    fn observe(
+        &mut self,
+        case: &NormalizedCaseResult,
+        fixture: &ValidatedFixtureSpec,
+        evaluation: &FixtureEvaluation,
+    );
+}
+pub(crate) struct IgnoreEvaluation;
+impl ParserEvaluationObserver for IgnoreEvaluation {
+    fn observe(
+        &mut self,
+        _: &NormalizedCaseResult,
+        _: &ValidatedFixtureSpec,
+        _: &FixtureEvaluation,
+    ) {
+    }
+}
+
+pub(crate) fn run_repository_parser_cases_observing(
+    repository_root: &Path,
+    inventory: &ValidatedInventory,
+    expected: &ValidatedExpectedResults,
+    selection_mode: OrchestrationSelectionMode,
     mut evaluator: impl FnMut(&ValidatedFixtureSpec) -> FixtureEvaluation,
+    observer: &mut dyn ParserEvaluationObserver,
 ) -> Result<ParserRunSummary, ParserRunError> {
     let environment = ExecutionEnvironmentAssessment::empty();
     let mut cases = Vec::new();
@@ -271,9 +308,13 @@ fn run_repository_parser_cases_with_inventory_and_evaluator(
                     test_id: result.ag.test_id.as_str().to_owned(),
                     problem: "runnable AG3 result does not have a ready reconciled harness",
                 })?;
-            evaluate_and_normalize_once(&mut result, &mut evidence_budget, || {
-                evaluator(canonical)
-            })?;
+            let evaluation =
+                evaluate_and_normalize_once(&mut result, &mut evidence_budget, || {
+                    evaluator(canonical)
+                })?;
+            // Borrow the SAME evaluation before destruction. The observer cannot
+            // alter normalization, policy, or the AE delivery schedule.
+            observer.observe(&result, canonical, &evaluation);
         }
         result.policy = if matches!(
             execution_decision,
@@ -297,9 +338,10 @@ fn evaluate_and_normalize_once(
     result: &mut NormalizedCaseResult,
     evidence_budget: &mut RetainedEvidenceBudget,
     evaluator: impl FnOnce() -> FixtureEvaluation,
-) -> Result<(), ParserRunError> {
+) -> Result<FixtureEvaluation, ParserRunError> {
     let evaluation = initiate_canonical_evaluation_once(evaluator);
-    apply_evaluation(result, &evaluation, evidence_budget)
+    apply_evaluation(result, &evaluation, evidence_budget)?;
+    Ok(evaluation)
 }
 
 fn initiate_canonical_evaluation_once<T>(evaluator: impl FnOnce() -> T) -> T {

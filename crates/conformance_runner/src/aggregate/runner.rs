@@ -19,7 +19,12 @@ use crate::aggregate::projection::{
     css_attempt, parser_attempt, rendering_attempt, rendering_comparison_kind,
 };
 use crate::css_runner::{CssCaseResult, CssRunError, run_repository_css_cases_with_inventory};
-use crate::html_parser::{ParserRunError, run_repository_parser_cases_with_inventory};
+#[cfg(test)]
+use crate::html_parser::run_repository_parser_cases_with_inventory;
+use crate::html_parser::{
+    IgnoreEvaluation, ParserEvaluationObserver, ParserRunError,
+    run_repository_parser_cases_observing,
+};
 use crate::metadata::{ag_expectation, eligibility_facts, metadata_facts};
 use crate::model::{AgCaseState, OrchestrationSelectionMode};
 use crate::rendering_runner::{
@@ -152,6 +157,14 @@ pub fn run_repository_aggregate(
     repository_root: &Path,
     request: AggregateExecutionRequest,
 ) -> Result<AggregateRun, AggregateRunError> {
+    run_repository_aggregate_observing(repository_root, request, &mut IgnoreEvaluation)
+}
+
+pub(super) fn run_repository_aggregate_observing(
+    repository_root: &Path,
+    request: AggregateExecutionRequest,
+    observer: &mut dyn ParserEvaluationObserver,
+) -> Result<AggregateRun, AggregateRunError> {
     let fixture_root = repository_root.join("tests/conformance/fixtures");
     let inventory = discover_inventory(&InventoryRepository::new(repository_root, &fixture_root))
         .map_err(AggregateRunError::Inventory)?;
@@ -175,11 +188,13 @@ pub fn run_repository_aggregate(
     let expected = load_expected_results(repository_root, &inventory)
         .map_err(AggregateRunError::ExpectedResults)?;
     let selection_mode = OrchestrationSelectionMode::NamedLane(request.lane);
-    let parser = run_repository_parser_cases_with_inventory(
+    let parser = run_repository_parser_cases_observing(
         repository_root,
         &inventory,
         &expected,
         selection_mode,
+        html_test_support::parser_fixture::evaluate_fixture,
+        observer,
     )
     .map_err(|error| AggregateRunError::Parser(Box::new(error)))?;
     let css = run_repository_css_cases_with_inventory(

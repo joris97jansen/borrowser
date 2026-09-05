@@ -117,6 +117,24 @@ impl SerializedParserObservation {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ParserObservationSerializationError;
 
+/// Preparing a produced observation is distinct from encoding its valid tree.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ComparableDomPreparationError {
+    Unavailable,
+    ExecutionFailure,
+    Resource,
+    Incomplete,
+    Invariant,
+    UnsupportedContext,
+    Serialization(crate::web_observable_dom::WebObservableDomSerializationError),
+}
+impl std::fmt::Display for ComparableDomPreparationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "comparable DOM preparation: {self:?}")
+    }
+}
+impl std::error::Error for ComparableDomPreparationError {}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FixtureEvaluation {
     pub(super) fixture_id: super::model::FixtureId,
@@ -127,6 +145,71 @@ pub struct FixtureEvaluation {
 }
 
 impl FixtureEvaluation {
+    /// Serialize the produced canonical reference while this evaluation is alive.
+    /// This never reads an authored expectation and never executes the parser.
+    /// The caller owns admission of the complete, scripting-disabled document
+    /// fixture context; this method owns observation availability and validity.
+    pub fn serialize_web_observable_dom_tree_v1(
+        &self,
+    ) -> Result<crate::web_observable_dom::WebObservableDomTreeV1, ComparableDomPreparationError>
+    {
+        use ComparableDomPreparationError as Error;
+        use html::conformance::ObservationState;
+        // Inspect the closed outcome directly: diagnostic projection may allocate
+        // strings and is not needed to select a canonical observation.
+        match &self.outcome {
+            FixtureExecutionOutcome::InvariantFailed { .. }
+            | FixtureExecutionOutcome::FinalInvariantFailedV2 { .. } => {
+                return Err(Error::Invariant);
+            }
+            FixtureExecutionOutcome::IncompleteObservation { .. }
+            | FixtureExecutionOutcome::IncompleteObservationV2 { .. } => {
+                return Err(Error::Incomplete);
+            }
+            FixtureExecutionOutcome::ExecutionFailedV2 { class, .. } => {
+                return Err(match execution_failure_category(*class) {
+                    FixtureExecutionFailureCategory::FixtureExecutionResourceExhaustion => {
+                        Error::Resource
+                    }
+                    FixtureExecutionFailureCategory::ValidatedFixtureInvariant => Error::Invariant,
+                    FixtureExecutionFailureCategory::SnapshotRead
+                    | FixtureExecutionFailureCategory::SnapshotFormat
+                    | FixtureExecutionFailureCategory::ParserObservation
+                    | FixtureExecutionFailureCategory::LegacyTokenizerDriver => {
+                        Error::ExecutionFailure
+                    }
+                });
+            }
+            FixtureExecutionOutcome::ExecutionFailed { .. } => return Err(Error::ExecutionFailure),
+            FixtureExecutionOutcome::UnsupportedExpectation { .. }
+            | FixtureExecutionOutcome::UnsupportedFixtureSemantics { .. } => {
+                return Err(Error::UnsupportedContext);
+            }
+            FixtureExecutionOutcome::NotExecuted { .. } => return Err(Error::Unavailable),
+            FixtureExecutionOutcome::Completed { .. }
+            | FixtureExecutionOutcome::CompletedV2 { .. }
+            | FixtureExecutionOutcome::ExpectationMismatch { .. }
+            | FixtureExecutionOutcome::ExpectationMismatchV2 { .. }
+            | FixtureExecutionOutcome::ParityMismatchV2 { .. } => {}
+        }
+        let result = reference_result(&self.outcome).ok_or(Error::Unavailable)?;
+        if result.has_failed_final_invariant() {
+            return Err(Error::Invariant);
+        }
+        if !result.is_authoritative() {
+            return Err(Error::Incomplete);
+        }
+        match &result.tree {
+            ObservationState::Captured(tree) => {
+                crate::web_observable_dom::serialize(tree).map_err(Error::Serialization)
+            }
+            ObservationState::Incomplete { .. } => Err(Error::Incomplete),
+            ObservationState::NotRequested | ObservationState::NotApplicable { .. } => {
+                Err(Error::Unavailable)
+            }
+        }
+    }
+
     pub fn fixture_id(&self) -> &super::model::FixtureId {
         &self.fixture_id
     }

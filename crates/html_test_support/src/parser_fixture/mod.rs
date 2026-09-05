@@ -10,9 +10,10 @@ mod schema;
 mod validate;
 
 pub use evaluation::{
-    FixtureAttemptState, FixtureDispositionEvaluation, FixtureEvaluation,
-    FixtureExecutionFailureCategory, FixtureObservedOutcome, IncompleteObservationReason,
-    ParserObservationSerializationError, SerializedParserObservation, StableFixtureIdentity,
+    ComparableDomPreparationError, FixtureAttemptState, FixtureDispositionEvaluation,
+    FixtureEvaluation, FixtureExecutionFailureCategory, FixtureObservedOutcome,
+    IncompleteObservationReason, ParserObservationSerializationError, SerializedParserObservation,
+    StableFixtureIdentity,
 };
 pub use load::{
     DeliveryValidationError, FixtureLoadError, FixtureLoadErrorKind, FixturePlanningInvariant,
