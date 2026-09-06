@@ -43,14 +43,18 @@ pub struct ImmutableRevision(String);
 
 impl ImmutableRevision {
     pub fn parse(value: &str) -> Result<Self, RevisionParseError> {
-        if value.is_empty()
-            || value.len() > 256
-            || value.trim() != value
-            || value.chars().any(char::is_control)
-        {
-            return Err(RevisionParseError::InvalidStableIdentifier);
-        }
+        validate_immutable_revision(value)?;
         Ok(Self(value.to_owned()))
+    }
+
+    pub(crate) fn parse_fallible(value: &str) -> Result<Self, FallibleRevisionParseError> {
+        validate_immutable_revision(value).map_err(FallibleRevisionParseError::Validation)?;
+        let mut owned = String::new();
+        owned
+            .try_reserve_exact(value.len())
+            .map_err(|_| FallibleRevisionParseError::Allocation)?;
+        owned.push_str(value);
+        Ok(Self(owned))
     }
 
     pub fn parse_git_commit(value: &str) -> Result<Self, RevisionParseError> {
@@ -67,6 +71,23 @@ impl ImmutableRevision {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+}
+
+fn validate_immutable_revision(value: &str) -> Result<(), RevisionParseError> {
+    if value.is_empty()
+        || value.len() > 256
+        || value.trim() != value
+        || value.chars().any(char::is_control)
+    {
+        return Err(RevisionParseError::InvalidStableIdentifier);
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FallibleRevisionParseError {
+    Validation(RevisionParseError),
+    Allocation,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

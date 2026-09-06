@@ -9,7 +9,8 @@ use super::model::{
     VerifiedExternalArtifactV1,
 };
 
-const DOMAIN: &[u8] = b"borrowser-external-capture-id-v1\0";
+pub(super) const DOMAIN: &[u8] = b"borrowser-external-capture-id-v1\0";
+pub const MAX_EXTERNAL_CAPTURE_ID_PREIMAGE_BYTES_V1: usize = 33_920;
 
 pub(super) fn canonical_font_bytes(
     family: &ExternalIdentityV1,
@@ -65,9 +66,21 @@ pub(super) fn compute_capture_id(
 ) -> Result<ExternalCaptureId, CaptureV1Error> {
     Ok(ExternalCaptureId(sha256(&preimage_with_policy(
         provenance,
-        artifact,
+        artifact.utf8_byte_length(),
+        artifact.sha256(),
         &mut ProductionReservation,
     )?)))
+}
+
+pub(super) fn canonical_capture_id_preimage(
+    provenance: &ExternalCaptureProvenanceV1,
+) -> Result<Vec<u8>, CaptureV1Error> {
+    preimage_with_policy(
+        provenance,
+        provenance.declared_artifact_utf8_byte_length(),
+        provenance.declared_artifact_sha256(),
+        &mut ProductionReservation,
+    )
 }
 
 #[cfg(test)]
@@ -75,12 +88,18 @@ fn preimage(
     provenance: &ExternalCaptureProvenanceV1,
     artifact: &VerifiedExternalArtifactV1,
 ) -> Result<Vec<u8>, CaptureV1Error> {
-    preimage_with_policy(provenance, artifact, &mut ProductionReservation)
+    preimage_with_policy(
+        provenance,
+        artifact.utf8_byte_length(),
+        artifact.sha256(),
+        &mut ProductionReservation,
+    )
 }
 
 fn preimage_with_policy(
     provenance: &ExternalCaptureProvenanceV1,
-    artifact: &VerifiedExternalArtifactV1,
+    artifact_length: u64,
+    artifact_sha256: Sha256Digest,
     reservation: &mut impl ReservationPolicy,
 ) -> Result<Vec<u8>, CaptureV1Error> {
     let input = &provenance.input;
@@ -240,13 +259,8 @@ fn preimage_with_policy(
         input.artifact_format.as_str().as_bytes(),
         reservation,
     )?;
-    tlv(
-        &mut output,
-        23,
-        &artifact.utf8_byte_length().to_be_bytes(),
-        reservation,
-    )?;
-    tlv(&mut output, 24, artifact.sha256().as_bytes(), reservation)?;
+    tlv(&mut output, 23, &artifact_length.to_be_bytes(), reservation)?;
+    tlv(&mut output, 24, artifact_sha256.as_bytes(), reservation)?;
     tlv(
         &mut output,
         25,
@@ -261,6 +275,9 @@ fn preimage_with_policy(
         reservation,
     )?;
     tlv(&mut output, 26, &policy, reservation)?;
+    if output.len() > MAX_EXTERNAL_CAPTURE_ID_PREIMAGE_BYTES_V1 {
+        return Err(CaptureV1Error::LengthOverflow);
+    }
     Ok(output)
 }
 
@@ -459,10 +476,12 @@ mod tests {
         );
 
         let artifact = b"format = \"web-observable-dom-tree-v1\"\nroot-count = 1\nnode-begin = \"document\"\nchild-count = 0\nnode-end = \"document\"\n";
+        let verified = verified_artifact(artifact);
         assert_eq!(
             preimage_with_policy(
                 &provenance(artifact),
-                &verified_artifact(artifact),
+                verified.utf8_byte_length(),
+                verified.sha256(),
                 &mut RejectReservationAt::new(ReservationSite::CanonicalIdentity),
             ),
             Err(CaptureV1Error::Allocation)

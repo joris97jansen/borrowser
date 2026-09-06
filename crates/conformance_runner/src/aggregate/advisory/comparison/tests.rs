@@ -1,4 +1,5 @@
 use super::*;
+use crate::aggregate::baseline::decode_baseline_v1;
 use crate::*;
 use conformance_test_support::{LanePolicyScope, ObservationSurface, TestId};
 use external_test_provenance::*;
@@ -231,6 +232,12 @@ fn synthetic_comparisons_are_scoped_and_use_retained_bytes() {
         Err(AdvisoryComparisonFailure::UnsupportedCaptureContext)
     )));
     let evidence = load_repository_external_advisory_evidence(tmp.path(), &op.run).unwrap();
+    let unevaluated_evidence =
+        load_repository_external_advisory_evidence(tmp.path(), &op.run).unwrap();
+    let unevaluated = build_baseline_v1(
+        &seal_baseline_without_evaluation(&op.run, &unevaluated_evidence).unwrap(),
+    )
+    .unwrap();
     let wire = fs::read_to_string(
         tmp.path()
             .join("tests/conformance/external/cross-engine-comparisons.toml"),
@@ -278,6 +285,43 @@ fn synthetic_comparisons_are_scoped_and_use_retained_bytes() {
     assert!(matches!(results[0], Ok(AdvisoryVerdict::Equivalent)));
     assert!(matches!(results[1], Ok(AdvisoryVerdict::Different { .. })));
     assert!(compared.retained_difference_bytes() > 0);
+    let selected =
+        build_baseline_v1(&seal_baseline_from_selected_operation(&compared).unwrap()).unwrap();
+    let old = decode_baseline_v1(&unevaluated).unwrap();
+    let new = decode_baseline_v1(&selected).unwrap();
+    assert_eq!(
+        new.advisory_evaluation_scope(),
+        "selected-variant-only/completed"
+    );
+    let trend = crate::aggregate::trend::compare_baselines_v1(&old, &new).unwrap();
+    assert_eq!(
+        trend
+            .population(TrendPopulation::AdvisoryComparisonPoints)
+            .counts()
+            .changed,
+        2
+    );
+    assert_eq!(
+        trend
+            .population(TrendPopulation::AdvisoryComparisonPoints)
+            .counts()
+            .unchanged,
+        1
+    );
+    assert_eq!(
+        trend
+            .population(TrendPopulation::LogicalCases)
+            .counts()
+            .changed,
+        0
+    );
+    assert_eq!(
+        trend
+            .population(TrendPopulation::ExecutionVariants)
+            .counts()
+            .changed,
+        0
+    );
     assert_eq!(op.run, ordinary);
     assert_eq!(summary, build_aggregate_summary_v1(&op.run).unwrap());
     assert_eq!(detail, build_aggregate_detail_v1(&op.run).unwrap());

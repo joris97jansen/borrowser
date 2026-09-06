@@ -95,6 +95,26 @@ pub enum AggregateExecutionAttempt {
     Attempted { outcome: AggregateTerminalOutcome },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AggregateEligibilityProjection {
+    Runnable,
+    NotRunnable,
+    NotYetEstablished,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AggregateSelectionProjection {
+    NotApplicable,
+    Selected,
+    Excluded,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AggregateAttemptProjection {
+    Attempted(AggregateTerminalOutcome),
+    NotAttempted(AggregateNotAttemptedReason),
+}
+
 impl AggregateExecutionAttempt {
     pub const fn terminal_outcome(&self) -> Option<AggregateTerminalOutcome> {
         match self {
@@ -681,29 +701,10 @@ pub(crate) fn validate_selection_attempt(
     selection: &LaneSelection,
     execution: &AggregateExecutionAttempt,
 ) -> Result<(), AggregateRunInvariantError> {
-    let valid = matches!(
-        (eligibility, selection, execution),
-        (
-            crate::Eligibility::Runnable,
-            LaneSelection::Selected { .. },
-            AggregateExecutionAttempt::Attempted { .. }
-                | AggregateExecutionAttempt::NotAttempted {
-                    reason: AggregateNotAttemptedReason::ParserPreAttemptEvaluation
-                        | AggregateNotAttemptedReason::CssFragmentCapabilityUnavailable,
-                },
-        ) | (
-            crate::Eligibility::Runnable,
-            LaneSelection::Excluded { .. },
-            AggregateExecutionAttempt::NotAttempted {
-                reason: AggregateNotAttemptedReason::LaneExcluded,
-            },
-        ) | (
-            crate::Eligibility::NotRunnable { .. } | crate::Eligibility::NotYetEstablished { .. },
-            LaneSelection::NotApplicable,
-            AggregateExecutionAttempt::NotAttempted {
-                reason: AggregateNotAttemptedReason::Eligibility,
-            },
-        )
+    let valid = valid_selection_attempt_projection(
+        eligibility_projection(eligibility),
+        selection_projection(selection),
+        attempt_projection(execution),
     );
     if !valid {
         return Err(AggregateRunInvariantError::InvalidSelectionAttempt {
@@ -712,6 +713,69 @@ pub(crate) fn validate_selection_attempt(
         });
     }
     Ok(())
+}
+
+pub(crate) const fn valid_selection_attempt_projection(
+    eligibility: AggregateEligibilityProjection,
+    selection: AggregateSelectionProjection,
+    execution: AggregateAttemptProjection,
+) -> bool {
+    matches!(
+        (eligibility, selection, execution),
+        (
+            AggregateEligibilityProjection::Runnable,
+            AggregateSelectionProjection::Selected,
+            AggregateAttemptProjection::Attempted(_)
+                | AggregateAttemptProjection::NotAttempted(
+                    AggregateNotAttemptedReason::ParserPreAttemptEvaluation
+                        | AggregateNotAttemptedReason::CssFragmentCapabilityUnavailable
+                ),
+        ) | (
+            AggregateEligibilityProjection::Runnable,
+            AggregateSelectionProjection::Excluded,
+            AggregateAttemptProjection::NotAttempted(AggregateNotAttemptedReason::LaneExcluded),
+        ) | (
+            AggregateEligibilityProjection::NotRunnable
+                | AggregateEligibilityProjection::NotYetEstablished,
+            AggregateSelectionProjection::NotApplicable,
+            AggregateAttemptProjection::NotAttempted(AggregateNotAttemptedReason::Eligibility),
+        )
+    )
+}
+
+pub(crate) const fn eligibility_projection(
+    eligibility: &crate::Eligibility,
+) -> AggregateEligibilityProjection {
+    match eligibility {
+        crate::Eligibility::Runnable => AggregateEligibilityProjection::Runnable,
+        crate::Eligibility::NotRunnable { .. } => AggregateEligibilityProjection::NotRunnable,
+        crate::Eligibility::NotYetEstablished { .. } => {
+            AggregateEligibilityProjection::NotYetEstablished
+        }
+    }
+}
+
+pub(crate) const fn selection_projection(
+    selection: &LaneSelection,
+) -> AggregateSelectionProjection {
+    match selection {
+        LaneSelection::NotApplicable => AggregateSelectionProjection::NotApplicable,
+        LaneSelection::Selected { .. } => AggregateSelectionProjection::Selected,
+        LaneSelection::Excluded { .. } => AggregateSelectionProjection::Excluded,
+    }
+}
+
+pub(crate) const fn attempt_projection(
+    execution: &AggregateExecutionAttempt,
+) -> AggregateAttemptProjection {
+    match execution {
+        AggregateExecutionAttempt::NotAttempted { reason } => {
+            AggregateAttemptProjection::NotAttempted(*reason)
+        }
+        AggregateExecutionAttempt::Attempted { outcome } => {
+            AggregateAttemptProjection::Attempted(*outcome)
+        }
+    }
 }
 
 fn validate_subsystem_projection(

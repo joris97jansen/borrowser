@@ -5,7 +5,7 @@ use external_test_provenance::{
     TargetParserInputContextV1, ValidatedExternalCaptureV1,
 };
 
-use crate::AggregateVariantResult;
+use crate::{AggregateRun, AggregateVariantResult};
 
 use super::diagnostic::ExternalRegistryAttachmentSubjectKey;
 
@@ -14,7 +14,7 @@ macro_rules! semantic_id {
         #[derive(Clone, Debug, PartialEq, Eq)]
         pub struct $name(String);
         impl $name {
-            pub(super) fn is_valid(value: &str) -> bool {
+            pub(crate) fn is_valid(value: &str) -> bool {
                 let bytes = value.as_bytes();
                 bytes.len() <= 128
                     && !bytes.is_empty()
@@ -49,7 +49,7 @@ pub enum ComparableObservationSurface {
 }
 
 impl ComparableObservationSurface {
-    pub(super) fn parse(value: &str) -> Option<Self> {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
         (value == "web-observable-dom-tree-v1").then_some(Self::WebObservableDomTreeV1)
     }
     pub const fn as_str(self) -> &'static str {
@@ -251,6 +251,7 @@ impl<'run> ReconciledBaselineNote<'run> {
 }
 
 pub struct ReconciledExternalAdvisoryEvidence<'run> {
+    pub(super) originating_run: &'run AggregateRun,
     pub(super) captures: Vec<StoredValidatedCapture>,
     pub(super) tracks: Vec<ValidatedAdvisoryTrack>,
     pub(super) attachments: Vec<ReconciledExternalAttachment<'run>>,
@@ -259,6 +260,9 @@ pub struct ReconciledExternalAdvisoryEvidence<'run> {
 }
 
 impl<'run> ReconciledExternalAdvisoryEvidence<'run> {
+    pub(crate) const fn originating_run(&self) -> &'run AggregateRun {
+        self.originating_run
+    }
     pub fn captures(&self) -> &[StoredValidatedCapture] {
         &self.captures
     }

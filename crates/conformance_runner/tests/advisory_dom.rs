@@ -56,6 +56,15 @@ fn selected_operation_preserves_ordinary_run_and_reports() {
     assert_eq!(evidence.in_scope_attachment_count(), 0);
     assert_eq!(evidence.outside_scope_attachment_count(), 0);
     assert_eq!(evidence.evaluated().len(), 0);
+    let sealed = seal_baseline_from_selected_operation(&evidence).unwrap();
+    let baseline = build_baseline_v1(&sealed).unwrap();
+    assert_eq!(
+        baseline,
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/contract-vectors/conformance-baseline-v1/selected-zero.bin"
+        ))
+    );
     assert_eq!(&ordinary, operation.run());
     let parsers = |run: &AggregateRun| {
         run.cases()
@@ -109,6 +118,25 @@ fn selected_operation_preserves_ordinary_run_and_reports() {
         build_rendering_report(&rendering(operation.run())).unwrap()
     );
 }
+
+#[test]
+fn operation_level_failure_produces_no_sealable_completed_evaluation() {
+    let repository = root();
+    let operation = run_repository_aggregate_for_selected_dom_operation(
+        &repository,
+        AggregateExecutionRequest {
+            lane: LanePolicyScope::NormalCi,
+        },
+        request("dom-tree-basic-document", ObservationSurface::DomTree),
+    )
+    .unwrap();
+    let missing_registry = tempfile::tempdir().unwrap();
+    assert!(matches!(
+        operation.compare_external(missing_registry.path()),
+        Err(SelectedDomOperationError::Registry(_))
+    ));
+}
+
 #[test]
 fn unavailable_and_unknown_selections_do_not_change_aggregate_execution() {
     let root = root();

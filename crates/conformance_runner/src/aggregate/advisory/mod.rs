@@ -5,6 +5,7 @@ mod observation;
 mod sources;
 
 pub use comparison::SelectedDomOperationError;
+pub(crate) use difference::validate_first_difference_v1;
 pub use difference::{
     AdvisoryDifferenceLine, AdvisoryFirstDifference, MAX_ADVISORY_DIFFERENCE_BYTES_V1,
     MAX_ADVISORY_DIFFERENCE_POOL_BYTES_V1, MAX_ADVISORY_EXCERPT_BYTES_V1,

@@ -407,6 +407,7 @@ fn reconcile_aggregate<'run>(
         });
     }
     Ok(ReconciledExternalAdvisoryEvidence {
+        originating_run: run,
         captures,
         tracks,
         attachments,

@@ -180,44 +180,82 @@ pub(crate) fn member_digest(
     fixture: &ValidatedFixture,
     source: &AggregateLogicalSourceIdentity,
 ) -> Result<AggregateLogicalCaseMemberDigest, AggregateIdentityError> {
+    historical_member_digest(
+        fixture.scope(),
+        fixture.id().as_str(),
+        fixture.observation(),
+        source.kind_label(),
+        source.source_record().map(SourceRecordId::as_str),
+        source.lineage().map(ExternalLineageId::as_str),
+        source.adapter().map(HarnessFeatureId::as_str),
+        source.adapter_version().map(ExternalAdapterVersion::as_str),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn historical_member_digest(
+    scope: InventoryScope,
+    test_id: &str,
+    observation: conformance_test_support::ObservationSurface,
+    source_kind: &str,
+    source_record: Option<&str>,
+    lineage: Option<&str>,
+    adapter: Option<&str>,
+    adapter_version: Option<&str>,
+) -> Result<AggregateLogicalCaseMemberDigest, AggregateIdentityError> {
     let mut fields = [None; 8];
-    fields[0] = Some(fixture.scope().as_str().as_bytes());
-    fields[1] = Some(fixture.id().as_str().as_bytes());
-    fields[2] = Some(fixture.observation().as_str().as_bytes());
-    fields[3] = Some(source.kind_label().as_bytes());
-    if let AggregateLogicalSource::ExternalDerived {
-        source_record,
-        lineage,
-        adapter,
-        adapter_version,
-    } = &source.source
-    {
-        fields[4] = Some(source_record.as_str().as_bytes());
-        fields[5] = Some(lineage.as_str().as_bytes());
-        fields[6] = Some(adapter.as_str().as_bytes());
-        fields[7] = Some(adapter_version.as_str().as_bytes());
-    }
+    fields[0] = Some(scope.as_str().as_bytes());
+    fields[1] = Some(test_id.as_bytes());
+    fields[2] = Some(observation.as_str().as_bytes());
+    fields[3] = Some(source_kind.as_bytes());
+    fields[4] = source_record.map(str::as_bytes);
+    fields[5] = lineage.map(str::as_bytes);
+    fields[6] = adapter.map(str::as_bytes);
+    fields[7] = adapter_version.map(str::as_bytes);
     let preimage = build_tlv_preimage(MEMBER_DOMAIN, &fields)?;
     Ok(AggregateLogicalCaseMemberDigest(sha256(&preimage)))
+}
+
+impl AggregateLogicalCaseMemberDigest {
+    pub(crate) const fn from_sha256(digest: Sha256Digest) -> Self {
+        Self(digest)
+    }
 }
 
 pub(crate) fn source_set_digest(
     scope: InventoryScope,
     members: &[(&TestId, AggregateLogicalCaseMemberDigest)],
 ) -> Result<AggregateLogicalCaseSourceSetDigest, AggregateIdentityError> {
+    let mut borrowed = Vec::new();
+    borrowed
+        .try_reserve_exact(members.len())
+        .map_err(|_| AggregateIdentityError::AllocationFailure)?;
+    borrowed.extend(
+        members
+            .iter()
+            .map(|(test_id, digest)| (test_id.as_str(), *digest)),
+    );
+    source_set_digest_from_labels(scope, &borrowed)
+}
+
+pub(crate) fn source_set_digest_from_labels(
+    scope: InventoryScope,
+    members: &[(&str, AggregateLogicalCaseMemberDigest)],
+) -> Result<AggregateLogicalCaseSourceSetDigest, AggregateIdentityError> {
     let mut ordered = Vec::new();
     ordered
         .try_reserve(members.len())
         .map_err(|_| AggregateIdentityError::AllocationFailure)?;
     ordered.extend_from_slice(members);
-    ordered.sort_unstable_by(|(left, _), (right, _)| {
-        left.as_str().as_bytes().cmp(right.as_str().as_bytes())
-    });
+    ordered.sort_unstable_by(|(left, _), (right, _)| left.as_bytes().cmp(right.as_bytes()));
     for pair in ordered.windows(2) {
-        if pair[0].0.as_str().as_bytes() == pair[1].0.as_str().as_bytes() {
-            return Err(AggregateIdentityError::DuplicateTestId {
-                test_id: pair[0].0.as_str().to_owned(),
-            });
+        if pair[0].0.as_bytes() == pair[1].0.as_bytes() {
+            let mut test_id = String::new();
+            test_id
+                .try_reserve_exact(pair[0].0.len())
+                .map_err(|_| AggregateIdentityError::AllocationFailure)?;
+            test_id.push_str(pair[0].0);
+            return Err(AggregateIdentityError::DuplicateTestId { test_id });
         }
     }
 

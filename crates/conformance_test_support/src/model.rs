@@ -150,16 +150,25 @@ impl TestId {
     }
 
     pub fn parse(value: &str) -> Result<Self, TestIdValidationError> {
+        Self::validate(value)?;
+        Ok(Self(value.to_owned()))
+    }
+
+    pub fn is_valid(value: &str) -> bool {
+        Self::validate(value).is_ok()
+    }
+
+    fn validate(value: &str) -> Result<(), TestIdValidationError> {
         if value.len() > MAX_TEST_ID_BYTES {
             return Err(TestIdValidationError::TooLong);
         }
-        if value != value.to_ascii_lowercase() {
+        if value.bytes().any(|byte| byte.is_ascii_uppercase()) {
             return Err(TestIdValidationError::CaseUnsafe);
         }
         if !is_kebab_identifier(value) {
             return Err(TestIdValidationError::InvalidGrammar);
         }
-        Ok(Self(value.to_owned()))
+        Ok(())
     }
 }
 
@@ -292,6 +301,9 @@ impl ExternalLineageId {
     pub fn parse(value: &str) -> Result<Self, TestIdValidationError> {
         TestId::parse(value).map(|_| Self(value.to_owned()))
     }
+    pub fn is_valid(value: &str) -> bool {
+        TestId::is_valid(value)
+    }
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -301,11 +313,13 @@ impl ExternalLineageId {
 pub struct ExternalAdapterVersion(String);
 impl ExternalAdapterVersion {
     pub fn parse(value: &str) -> Result<Self, TestIdValidationError> {
-        if value.is_empty() || value.len() > 32 || !value.bytes().all(|byte| byte.is_ascii_digit())
-        {
+        if !Self::is_valid(value) {
             return Err(TestIdValidationError::InvalidGrammar);
         }
         Ok(Self(value.to_owned()))
+    }
+    pub fn is_valid(value: &str) -> bool {
+        !value.is_empty() && value.len() <= 32 && value.bytes().all(|byte| byte.is_ascii_digit())
     }
     pub fn as_str(&self) -> &str {
         &self.0

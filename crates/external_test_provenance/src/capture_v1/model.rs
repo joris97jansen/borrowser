@@ -268,7 +268,7 @@ impl ExternalCaptureProvenanceV1 {
             if fonts.is_empty() || fonts.len() > 16 {
                 return Err(CaptureV1Error::InvalidProvenance);
             }
-            fonts.sort_by(|left, right| left.canonical_bytes.cmp(&right.canonical_bytes));
+            fonts.sort_unstable_by(|left, right| left.canonical_bytes.cmp(&right.canonical_bytes));
             if fonts
                 .windows(2)
                 .any(|pair| pair[0].canonical_bytes == pair[1].canonical_bytes)
@@ -278,7 +278,7 @@ impl ExternalCaptureProvenanceV1 {
         }
         input
             .pinned_resources
-            .sort_by(|left, right| left.canonical_bytes.cmp(&right.canonical_bytes));
+            .sort_unstable_by(|left, right| left.canonical_bytes.cmp(&right.canonical_bytes));
         if input
             .pinned_resources
             .windows(2)
@@ -380,6 +380,9 @@ impl ExternalCaptureProvenanceV1 {
 pub struct ExternalCaptureIdClaim(Sha256Digest);
 
 impl ExternalCaptureIdClaim {
+    pub const fn from_sha256(digest: Sha256Digest) -> Self {
+        Self(digest)
+    }
     pub fn parse(value: &str) -> Result<Self, CaptureV1Error> {
         let digest = value
             .strip_prefix("sha256:")
@@ -559,6 +562,8 @@ pub enum CaptureV1Error {
     CaptureIdMismatch,
     LengthOverflow,
     Allocation,
+    InvalidHistoricalPreimage,
+    NonCanonicalHistoricalPreimage,
 }
 
 impl fmt::Display for CaptureV1Error {

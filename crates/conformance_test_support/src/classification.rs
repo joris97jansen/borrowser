@@ -16,9 +16,13 @@ macro_rules! semantic_identifier {
 
         impl $name {
             pub fn parse(value: &str) -> Result<Self, SemanticIdentifierError> {
-                is_semantic_identifier(value)
+                Self::is_valid(value)
                     .then(|| Self(value.to_owned()))
                     .ok_or(SemanticIdentifierError)
+            }
+
+            pub fn is_valid(value: &str) -> bool {
+                is_semantic_identifier(value)
             }
 
             pub fn as_str(&self) -> &str {
@@ -158,7 +162,7 @@ impl EngineCapabilityKind {
         Self::ALL.into_iter().find(|kind| kind.as_str() == value)
     }
 
-    pub(crate) fn requires_feature(self) -> bool {
+    pub fn requires_feature(self) -> bool {
         !matches!(self, Self::JavaScriptExecution)
     }
 
@@ -215,7 +219,7 @@ impl HarnessLimitationKind {
         }
     }
 
-    pub(crate) fn parse(value: &str) -> Option<Self> {
+    pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|kind| kind.as_str() == value)
     }
 }
@@ -257,7 +261,7 @@ impl EnvironmentRequirementKind {
         }
     }
 
-    pub(crate) fn parse(value: &str) -> Option<Self> {
+    pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|kind| kind.as_str() == value)
     }
 }

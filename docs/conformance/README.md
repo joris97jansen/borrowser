@@ -11,7 +11,7 @@
   source-record accounting.
 - AG9 Stage 0: aggregate-reporting, cross-engine evidence, comparable DOM,
   capture-identity, bounds, and trend contracts.
-- AG9 Stage 1, AG9a, and AG9b: one typed aggregate execution/accounting model,
+- AG9 Stage 1 and AG9a through AG9d: typed aggregate execution/accounting,
   deterministic bounded aggregate summary/detail report projections, and the
   validated source-neutral external-capture/advisory-registry plane.
 
@@ -43,10 +43,20 @@ full comparable-artifact validation, same-object confined reads and
 verified-byte lifetime, explicit resource/cumulative artifact bounds, opaque
 capture-ID construction, and the separate advisory evidence plane.
 
+AG9d adds the binary `borrowser-conformance-baseline-v1` historical envelope
+and deterministic `borrowser-conformance-trend-v1` comparison of exactly two
+digest-verified files. Logical cases, execution variants, advisory comparison
+points, and baseline notes retain separate membership and change accounting.
+Independent reviewed protocol vectors for the baseline, trend, and historical
+capture identity live under `tests/contract-vectors/`; each vector directory
+documents exact section or field offsets and SHA-256 identities.
+See
+[`ag9d-historical-baseline-trend.md`](ag9d-historical-baseline-trend.md).
+
 AG9b loads and validates checked-in external capture declarations, artifacts,
 advisory tracks, typed aggregate attachments, and baseline notes. It does not
 add external capture tooling, external browser comparison, advisory comparison
-verdicts, trend parsing/execution/comparison, aggregate CLI/CI publication,
+verdicts, aggregate CLI/CI publication,
 browser automation, raster comparison, WPT-specific aggregate loading, or
 production runtime behavior.
 

@@ -6,10 +6,20 @@ use crate::{
     AgExpectation, CapabilityAvailability, ClassificationCompleteness, Eligibility, Stability,
 };
 
-use super::{
-    AggregateCaseResult, AggregateComparisonKind, AggregateExecutionAttempt,
-    AggregateTerminalOutcome, LaneSelection,
+use super::model::{
+    AggregateAttemptProjection, AggregateEligibilityProjection, AggregateSelectionProjection,
+    attempt_projection, selection_projection,
 };
+use super::{AggregateCaseResult, AggregateComparisonKind, AggregateTerminalOutcome};
+#[cfg(test)]
+use super::{AggregateExecutionAttempt, LaneSelection};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct LogicalExecutionProjection {
+    pub pass: bool,
+    pub fail: bool,
+    pub excluded_only: bool,
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LogicalHeadlineCounts {
@@ -91,10 +101,37 @@ pub struct AggregateAccounting {
     pub groupings: AggregateGroupingAccounting,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct FixedAggregateAccountingProjection {
+    pub logical: LogicalHeadlineCounts,
+    pub variants: AggregateVariantPopulationCounts,
+    pub terminals: TerminalOutcomeCounts,
+    pub owners: [[u64; 2]; 5],
+    pub surfaces: [[u64; 2]; 10],
+    pub comparisons: [u64; 5],
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum AccountingError {
     Overflow,
     Invariant(&'static str),
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct LogicalCaseAccountingProjection {
+    pub owner: SubsystemOwner,
+    pub observation: ObservationSurface,
+    pub eligibility: AggregateEligibilityProjection,
+    pub expected_fail: bool,
+    pub unsupported: bool,
+    pub flaky: bool,
+    pub unclassified: bool,
+}
+
+pub(crate) struct VariantAccountingProjection {
+    pub comparison: AggregateComparisonKind,
+    pub selection: AggregateSelectionProjection,
+    pub attempt: AggregateAttemptProjection,
 }
 
 pub(crate) fn build_accounting(
@@ -102,83 +139,268 @@ pub(crate) fn build_accounting(
 ) -> Result<AggregateAccounting, AccountingError> {
     let mut accounting = AggregateAccounting::default();
     for case in cases {
-        increment(&mut accounting.logical.total_tests)?;
-        increment_map(
-            &mut accounting.groupings.logical_cases_by_subsystem,
-            case.owner,
+        accumulate_case_projection(
+            &mut accounting,
+            LogicalCaseAccountingProjection {
+                owner: case.owner,
+                observation: case.ag.observation,
+                eligibility: eligibility_projection(&case.ag.eligibility),
+                expected_fail: is_expected_fail(&case.ag),
+                unsupported: is_unsupported(&case.ag),
+                flaky: is_flaky(&case.ag),
+                unclassified: is_unclassified(&case.ag),
+            },
+            case.variants
+                .iter()
+                .map(|variant| VariantAccountingProjection {
+                    comparison: variant.comparison.clone(),
+                    selection: selection_projection(&variant.selection),
+                    attempt: attempt_projection(&variant.execution),
+                }),
         )?;
-        increment_map(
-            &mut accounting.groupings.logical_cases_by_observation,
-            case.ag.observation,
-        )?;
-
-        if logical_pass(case) {
-            increment(&mut accounting.logical.pass_count)?;
-        }
-        if logical_fail(case) {
-            increment(&mut accounting.logical.fail_count)?;
-        }
-        if is_expected_fail(&case.ag) {
-            increment(&mut accounting.logical.expected_fail_count)?;
-        }
-        if is_unsupported(&case.ag) {
-            increment(&mut accounting.logical.unsupported_count)?;
-        }
-        if logical_skipped(case) {
-            increment(&mut accounting.logical.skipped_count)?;
-        }
-        if is_flaky(&case.ag) {
-            increment(&mut accounting.logical.flaky_count)?;
-        }
-        if is_unclassified(&case.ag) {
-            increment(&mut accounting.logical.unclassified_count)?;
-        }
-
-        for variant in &case.variants {
-            increment(&mut accounting.variants.materialized_variants)?;
-            increment_map(&mut accounting.groupings.variants_by_subsystem, case.owner)?;
-            increment_map(
-                &mut accounting.groupings.variants_by_observation,
-                case.ag.observation,
-            )?;
-            increment_map(
-                &mut accounting.groupings.variants_by_comparison,
-                variant.comparison,
-            )?;
-
-            match case.ag.eligibility {
-                Eligibility::Runnable => increment(&mut accounting.variants.runnable_variants)?,
-                Eligibility::NotRunnable { .. } => {
-                    increment(&mut accounting.variants.not_runnable_variants)?
-                }
-                Eligibility::NotYetEstablished { .. } => {
-                    increment(&mut accounting.variants.eligibility_not_established_variants)?
-                }
-            }
-            match variant.selection {
-                LaneSelection::NotApplicable => {
-                    increment(&mut accounting.variants.selection_not_applicable_variants)?
-                }
-                LaneSelection::Selected { .. } => {
-                    increment(&mut accounting.variants.selected_variants)?
-                }
-                LaneSelection::Excluded { .. } => {
-                    increment(&mut accounting.variants.excluded_variants)?
-                }
-            }
-            match variant.execution {
-                AggregateExecutionAttempt::NotAttempted { .. } => {
-                    increment(&mut accounting.variants.not_attempted_variants)?
-                }
-                AggregateExecutionAttempt::Attempted { outcome } => {
-                    increment(&mut accounting.variants.attempted_variants)?;
-                    accounting.terminals.increment(outcome)?;
-                }
-            }
-        }
     }
     validate_accounting(&accounting)?;
     Ok(accounting)
+}
+
+fn eligibility_projection(value: &Eligibility) -> AggregateEligibilityProjection {
+    match value {
+        Eligibility::Runnable => AggregateEligibilityProjection::Runnable,
+        Eligibility::NotRunnable { .. } => AggregateEligibilityProjection::NotRunnable,
+        Eligibility::NotYetEstablished { .. } => AggregateEligibilityProjection::NotYetEstablished,
+    }
+}
+
+pub(crate) fn accumulate_case_projection<T: ProjectionAccountingTarget>(
+    accounting: &mut T,
+    case: LogicalCaseAccountingProjection,
+    variants: impl IntoIterator<Item = VariantAccountingProjection>,
+) -> Result<(), AccountingError> {
+    increment(&mut accounting.logical_mut().total_tests)?;
+    accounting.increment_logical_owner(case.owner)?;
+    accounting.increment_logical_surface(case.observation)?;
+
+    let mut execution = LogicalExecutionAccumulator::default();
+    for variant in variants {
+        execution.observe(variant.selection, variant.attempt);
+        increment(&mut accounting.variants_mut().materialized_variants)?;
+        accounting.increment_variant_owner(case.owner)?;
+        accounting.increment_variant_surface(case.observation)?;
+        accounting.increment_variant_comparison(&variant.comparison)?;
+
+        match case.eligibility {
+            AggregateEligibilityProjection::Runnable => {
+                increment(&mut accounting.variants_mut().runnable_variants)?
+            }
+            AggregateEligibilityProjection::NotRunnable => {
+                increment(&mut accounting.variants_mut().not_runnable_variants)?
+            }
+            AggregateEligibilityProjection::NotYetEstablished => increment(
+                &mut accounting
+                    .variants_mut()
+                    .eligibility_not_established_variants,
+            )?,
+        }
+        match variant.selection {
+            AggregateSelectionProjection::Selected => {
+                increment(&mut accounting.variants_mut().selected_variants)?
+            }
+            AggregateSelectionProjection::Excluded => {
+                increment(&mut accounting.variants_mut().excluded_variants)?
+            }
+            AggregateSelectionProjection::NotApplicable => {
+                increment(&mut accounting.variants_mut().selection_not_applicable_variants)?
+            }
+        }
+        match variant.attempt {
+            AggregateAttemptProjection::Attempted(outcome) => {
+                increment(&mut accounting.variants_mut().attempted_variants)?;
+                accounting.terminals_mut().increment(outcome)?;
+            }
+            AggregateAttemptProjection::NotAttempted(_) => {
+                increment(&mut accounting.variants_mut().not_attempted_variants)?
+            }
+        }
+    }
+    let execution = execution.finish();
+    if execution.pass {
+        increment(&mut accounting.logical_mut().pass_count)?;
+    }
+    if execution.fail {
+        increment(&mut accounting.logical_mut().fail_count)?;
+    }
+    if case.expected_fail {
+        increment(&mut accounting.logical_mut().expected_fail_count)?;
+    }
+    if case.unsupported {
+        increment(&mut accounting.logical_mut().unsupported_count)?;
+    }
+    if case.eligibility == AggregateEligibilityProjection::Runnable && execution.excluded_only {
+        increment(&mut accounting.logical_mut().skipped_count)?;
+    }
+    if case.flaky {
+        increment(&mut accounting.logical_mut().flaky_count)?;
+    }
+    if case.unclassified {
+        increment(&mut accounting.logical_mut().unclassified_count)?;
+    }
+    Ok(())
+}
+
+pub(crate) trait ProjectionAccountingTarget {
+    fn logical_mut(&mut self) -> &mut LogicalHeadlineCounts;
+    fn variants_mut(&mut self) -> &mut AggregateVariantPopulationCounts;
+    fn terminals_mut(&mut self) -> &mut TerminalOutcomeCounts;
+    fn increment_logical_owner(&mut self, owner: SubsystemOwner) -> Result<(), AccountingError>;
+    fn increment_variant_owner(&mut self, owner: SubsystemOwner) -> Result<(), AccountingError>;
+    fn increment_logical_surface(
+        &mut self,
+        surface: ObservationSurface,
+    ) -> Result<(), AccountingError>;
+    fn increment_variant_surface(
+        &mut self,
+        surface: ObservationSurface,
+    ) -> Result<(), AccountingError>;
+    fn increment_variant_comparison(
+        &mut self,
+        comparison: &AggregateComparisonKind,
+    ) -> Result<(), AccountingError>;
+}
+
+impl ProjectionAccountingTarget for AggregateAccounting {
+    fn logical_mut(&mut self) -> &mut LogicalHeadlineCounts {
+        &mut self.logical
+    }
+
+    fn variants_mut(&mut self) -> &mut AggregateVariantPopulationCounts {
+        &mut self.variants
+    }
+
+    fn terminals_mut(&mut self) -> &mut TerminalOutcomeCounts {
+        &mut self.terminals
+    }
+
+    fn increment_logical_owner(&mut self, owner: SubsystemOwner) -> Result<(), AccountingError> {
+        increment_map(&mut self.groupings.logical_cases_by_subsystem, owner)
+    }
+
+    fn increment_variant_owner(&mut self, owner: SubsystemOwner) -> Result<(), AccountingError> {
+        increment_map(&mut self.groupings.variants_by_subsystem, owner)
+    }
+
+    fn increment_logical_surface(
+        &mut self,
+        surface: ObservationSurface,
+    ) -> Result<(), AccountingError> {
+        increment_map(&mut self.groupings.logical_cases_by_observation, surface)
+    }
+
+    fn increment_variant_surface(
+        &mut self,
+        surface: ObservationSurface,
+    ) -> Result<(), AccountingError> {
+        increment_map(&mut self.groupings.variants_by_observation, surface)
+    }
+
+    fn increment_variant_comparison(
+        &mut self,
+        comparison: &AggregateComparisonKind,
+    ) -> Result<(), AccountingError> {
+        increment_map(
+            &mut self.groupings.variants_by_comparison,
+            comparison.clone(),
+        )
+    }
+}
+
+impl ProjectionAccountingTarget for FixedAggregateAccountingProjection {
+    fn logical_mut(&mut self) -> &mut LogicalHeadlineCounts {
+        &mut self.logical
+    }
+
+    fn variants_mut(&mut self) -> &mut AggregateVariantPopulationCounts {
+        &mut self.variants
+    }
+
+    fn terminals_mut(&mut self) -> &mut TerminalOutcomeCounts {
+        &mut self.terminals
+    }
+
+    fn increment_logical_owner(&mut self, owner: SubsystemOwner) -> Result<(), AccountingError> {
+        increment(&mut self.owners[owner_index(owner)][0])
+    }
+
+    fn increment_variant_owner(&mut self, owner: SubsystemOwner) -> Result<(), AccountingError> {
+        increment(&mut self.owners[owner_index(owner)][1])
+    }
+
+    fn increment_logical_surface(
+        &mut self,
+        surface: ObservationSurface,
+    ) -> Result<(), AccountingError> {
+        increment(&mut self.surfaces[surface_index(surface)][0])
+    }
+
+    fn increment_variant_surface(
+        &mut self,
+        surface: ObservationSurface,
+    ) -> Result<(), AccountingError> {
+        increment(&mut self.surfaces[surface_index(surface)][1])
+    }
+
+    fn increment_variant_comparison(
+        &mut self,
+        comparison: &AggregateComparisonKind,
+    ) -> Result<(), AccountingError> {
+        increment(&mut self.comparisons[comparison_index(comparison)])
+    }
+}
+
+const fn owner_index(owner: SubsystemOwner) -> usize {
+    match owner {
+        SubsystemOwner::HtmlParser => 0,
+        SubsystemOwner::Css => 1,
+        SubsystemOwner::Layout => 2,
+        SubsystemOwner::Paint => 3,
+        SubsystemOwner::BrowserRuntime => 4,
+    }
+}
+
+const fn surface_index(surface: ObservationSurface) -> usize {
+    match surface {
+        ObservationSurface::HtmlTokenizer => 0,
+        ObservationSurface::HtmlTreeConstruction => 1,
+        ObservationSurface::DomTree => 2,
+        ObservationSurface::CssParsing => 3,
+        ObservationSurface::CssSelectors => 4,
+        ObservationSurface::CssCascade => 5,
+        ObservationSurface::ComputedStyle => 6,
+        ObservationSurface::LayoutGeometry => 7,
+        ObservationSurface::PaintOperations => 8,
+        ObservationSurface::BrowserRuntimeSemantic => 9,
+    }
+}
+
+const fn comparison_index(comparison: &AggregateComparisonKind) -> usize {
+    match comparison {
+        AggregateComparisonKind::AuthoredExpectedObservation => 0,
+        AggregateComparisonKind::StaticDocumentReference {
+            reference_kind: conformance_test_support::ReferenceKind::Semantic,
+            relation: conformance_test_support::ReferenceRelation::Match,
+        } => 1,
+        AggregateComparisonKind::StaticDocumentReference {
+            reference_kind: conformance_test_support::ReferenceKind::Semantic,
+            relation: conformance_test_support::ReferenceRelation::Mismatch,
+        } => 2,
+        AggregateComparisonKind::StaticDocumentReference {
+            reference_kind: conformance_test_support::ReferenceKind::Structural,
+            relation: conformance_test_support::ReferenceRelation::Match,
+        } => 3,
+        AggregateComparisonKind::StaticDocumentReference {
+            reference_kind: conformance_test_support::ReferenceKind::Structural,
+            relation: conformance_test_support::ReferenceRelation::Mismatch,
+        } => 4,
+    }
 }
 
 fn is_expected_fail(ag: &crate::AgCaseState) -> bool {
@@ -203,119 +425,165 @@ fn is_unclassified(ag: &crate::AgCaseState) -> bool {
     )
 }
 
-fn logical_pass(case: &AggregateCaseResult) -> bool {
-    logical_pass_states(
-        case.variants
-            .iter()
-            .map(|variant| (&variant.selection, &variant.execution)),
-    )
-}
-
-fn logical_fail(case: &AggregateCaseResult) -> bool {
-    logical_fail_states(
-        case.variants
-            .iter()
-            .map(|variant| (&variant.selection, &variant.execution)),
-    )
-}
-
-fn logical_skipped(case: &AggregateCaseResult) -> bool {
-    matches!(case.ag.eligibility, Eligibility::Runnable)
-        && logical_skipped_states(
-            case.variants
-                .iter()
-                .map(|variant| (&variant.selection, &variant.execution)),
-        )
-}
-
+#[cfg(test)]
 fn logical_pass_states<'a>(
     states: impl IntoIterator<Item = (&'a LaneSelection, &'a AggregateExecutionAttempt)>,
 ) -> bool {
-    let mut selected = false;
-    for (selection, execution) in states {
-        if matches!(selection, LaneSelection::Selected { .. }) {
-            selected = true;
-            if !matches!(
-                execution,
-                AggregateExecutionAttempt::Attempted {
-                    outcome: AggregateTerminalOutcome::SemanticPass
-                }
-            ) {
-                return false;
-            }
-        }
-    }
-    selected
+    logical_execution_projection(states.into_iter().map(|(selection, execution)| {
+        (
+            selection_projection(selection),
+            attempt_projection(execution),
+        )
+    }))
+    .pass
 }
 
+#[cfg(test)]
 fn logical_fail_states<'a>(
     states: impl IntoIterator<Item = (&'a LaneSelection, &'a AggregateExecutionAttempt)>,
 ) -> bool {
-    states.into_iter().any(|(selection, execution)| {
-        matches!(selection, LaneSelection::Selected { .. })
-            && matches!(
-                execution,
-                AggregateExecutionAttempt::Attempted {
-                    outcome: AggregateTerminalOutcome::SemanticFail
-                }
-            )
-    })
+    logical_execution_projection(states.into_iter().map(|(selection, execution)| {
+        (
+            selection_projection(selection),
+            attempt_projection(execution),
+        )
+    }))
+    .fail
 }
 
+#[cfg(test)]
 fn logical_skipped_states<'a>(
     states: impl IntoIterator<Item = (&'a LaneSelection, &'a AggregateExecutionAttempt)>,
 ) -> bool {
-    let mut excluded = false;
-    for (selection, _) in states {
-        match selection {
-            LaneSelection::Selected { .. } => return false,
-            LaneSelection::Excluded { .. } => excluded = true,
-            LaneSelection::NotApplicable => {}
-        }
-    }
-    excluded
+    logical_execution_projection(states.into_iter().map(|(selection, execution)| {
+        (
+            selection_projection(selection),
+            attempt_projection(execution),
+        )
+    }))
+    .excluded_only
 }
 
-fn validate_accounting(accounting: &AggregateAccounting) -> Result<(), AccountingError> {
-    if checked_sum([
-        accounting.variants.runnable_variants,
-        accounting.variants.not_runnable_variants,
-        accounting.variants.eligibility_not_established_variants,
-    ])? != accounting.variants.materialized_variants
-    {
+#[cfg(test)]
+pub(crate) fn logical_execution_projection(
+    states: impl IntoIterator<Item = (AggregateSelectionProjection, AggregateAttemptProjection)>,
+) -> LogicalExecutionProjection {
+    let mut accumulator = LogicalExecutionAccumulator::default();
+    for (selection, attempt) in states {
+        accumulator.observe(selection, attempt);
+    }
+    accumulator.finish()
+}
+
+struct LogicalExecutionAccumulator {
+    selected: bool,
+    all_selected_pass: bool,
+    fail: bool,
+    excluded: bool,
+}
+
+impl Default for LogicalExecutionAccumulator {
+    fn default() -> Self {
+        Self {
+            selected: false,
+            all_selected_pass: true,
+            fail: false,
+            excluded: false,
+        }
+    }
+}
+
+impl LogicalExecutionAccumulator {
+    fn observe(
+        &mut self,
+        selection: AggregateSelectionProjection,
+        attempt: AggregateAttemptProjection,
+    ) {
+        match selection {
+            AggregateSelectionProjection::Selected => {
+                self.selected = true;
+                self.all_selected_pass &= matches!(
+                    attempt,
+                    AggregateAttemptProjection::Attempted(AggregateTerminalOutcome::SemanticPass)
+                );
+                self.fail |= matches!(
+                    attempt,
+                    AggregateAttemptProjection::Attempted(AggregateTerminalOutcome::SemanticFail)
+                );
+            }
+            AggregateSelectionProjection::Excluded => self.excluded = true,
+            AggregateSelectionProjection::NotApplicable => {}
+        }
+    }
+
+    fn finish(self) -> LogicalExecutionProjection {
+        LogicalExecutionProjection {
+            pass: self.selected && self.all_selected_pass,
+            fail: self.fail,
+            excluded_only: self.excluded && !self.selected,
+        }
+    }
+}
+
+pub(crate) fn validate_accounting(accounting: &AggregateAccounting) -> Result<(), AccountingError> {
+    validate_count_reconciliation(&accounting.variants, &accounting.terminals)
+}
+
+pub(crate) fn validate_fixed_accounting(
+    accounting: &FixedAggregateAccountingProjection,
+) -> Result<(), AccountingError> {
+    validate_count_reconciliation(&accounting.variants, &accounting.terminals)
+}
+
+fn validate_count_reconciliation(
+    variants: &AggregateVariantPopulationCounts,
+    terminals: &TerminalOutcomeCounts,
+) -> Result<(), AccountingError> {
+    validate_projection_reconciliation(
+        variants.materialized_variants,
+        [
+            variants.runnable_variants,
+            variants.not_runnable_variants,
+            variants.eligibility_not_established_variants,
+        ],
+        [
+            variants.selected_variants,
+            variants.excluded_variants,
+            variants.selection_not_applicable_variants,
+        ],
+        [variants.attempted_variants, variants.not_attempted_variants],
+        terminals.checked_total()?,
+    )
+}
+
+pub(crate) fn validate_projection_reconciliation(
+    materialized: u64,
+    eligibility: [u64; 3],
+    selection: [u64; 3],
+    attempt: [u64; 2],
+    terminal_total: u64,
+) -> Result<(), AccountingError> {
+    if checked_sum(eligibility)? != materialized {
         return Err(AccountingError::Invariant(
             "materialized variants do not reconcile with eligibility populations",
         ));
     }
-    if checked_sum([
-        accounting.variants.selected_variants,
-        accounting.variants.excluded_variants,
-    ])? != accounting.variants.runnable_variants
-    {
+    if checked_sum([selection[0], selection[1]])? != eligibility[0] {
         return Err(AccountingError::Invariant(
             "runnable variants do not reconcile with named-lane selection",
         ));
     }
-    if accounting.variants.selection_not_applicable_variants
-        != checked_sum([
-            accounting.variants.not_runnable_variants,
-            accounting.variants.eligibility_not_established_variants,
-        ])?
-    {
+    if selection[2] != checked_sum([eligibility[1], eligibility[2]])? {
         return Err(AccountingError::Invariant(
             "not-applicable selection does not reconcile with ineligible variants",
         ));
     }
-    if checked_sum([
-        accounting.variants.attempted_variants,
-        accounting.variants.not_attempted_variants,
-    ])? != accounting.variants.materialized_variants
-    {
+    if checked_sum(attempt)? != materialized {
         return Err(AccountingError::Invariant(
             "attempt state does not reconcile with materialized variants",
         ));
     }
-    if accounting.terminals.checked_total()? != accounting.variants.attempted_variants {
+    if terminal_total != attempt[0] {
         return Err(AccountingError::Invariant(
             "terminal outcomes do not reconcile with attempted variants",
         ));
@@ -444,6 +712,63 @@ mod tests {
         let mut maximum = u64::MAX;
         assert_eq!(increment(&mut maximum), Err(AccountingError::Overflow));
         assert_eq!(maximum, u64::MAX);
+    }
+
+    #[test]
+    fn fixed_historical_storage_uses_the_shared_projection_without_heap_fields() {
+        fn case() -> LogicalCaseAccountingProjection {
+            LogicalCaseAccountingProjection {
+                owner: SubsystemOwner::Css,
+                observation: ObservationSurface::CssParsing,
+                eligibility: AggregateEligibilityProjection::Runnable,
+                expected_fail: false,
+                unsupported: false,
+                flaky: false,
+                unclassified: false,
+            }
+        }
+        fn variants() -> [VariantAccountingProjection; 2] {
+            [
+                VariantAccountingProjection {
+                    comparison: AggregateComparisonKind::AuthoredExpectedObservation,
+                    selection: AggregateSelectionProjection::Selected,
+                    attempt: AggregateAttemptProjection::Attempted(
+                        AggregateTerminalOutcome::SemanticPass,
+                    ),
+                },
+                VariantAccountingProjection {
+                    comparison: AggregateComparisonKind::StaticDocumentReference {
+                        reference_kind: conformance_test_support::ReferenceKind::Semantic,
+                        relation: conformance_test_support::ReferenceRelation::Match,
+                    },
+                    selection: AggregateSelectionProjection::Excluded,
+                    attempt: AggregateAttemptProjection::NotAttempted(
+                        crate::AggregateNotAttemptedReason::LaneExcluded,
+                    ),
+                },
+            ]
+        }
+
+        let mut live = AggregateAccounting::default();
+        accumulate_case_projection(&mut live, case(), variants()).unwrap();
+        let mut fixed = FixedAggregateAccountingProjection::default();
+        accumulate_case_projection(&mut fixed, case(), variants()).unwrap();
+
+        assert_eq!(fixed.logical, live.logical);
+        assert_eq!(fixed.variants, live.variants);
+        assert_eq!(fixed.terminals, live.terminals);
+        assert_eq!(fixed.owners[owner_index(SubsystemOwner::Css)], [1, 2]);
+        assert_eq!(
+            fixed.surfaces[surface_index(ObservationSurface::CssParsing)],
+            [1, 2]
+        );
+        assert_eq!(fixed.comparisons, [1, 1, 0, 0, 0]);
+        validate_accounting(&live).unwrap();
+        validate_fixed_accounting(&fixed).unwrap();
+        assert!(
+            !std::mem::needs_drop::<FixedAggregateAccountingProjection>(),
+            "the closed historical accounting projection must not own heap storage"
+        );
     }
 
     fn ag_state() -> AgCaseState {

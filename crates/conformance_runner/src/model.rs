@@ -374,6 +374,22 @@ pub enum ObservedPolicyClass {
     OtherTerminalOutcome,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(any(feature = "html-parser", feature = "css", feature = "rendering", test))]
+pub(crate) enum PolicyExpectationClass {
+    ExpectedPass,
+    ExpectedFailSemanticMismatch,
+    NotEstablished,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(any(feature = "html-parser", feature = "css", feature = "rendering", test))]
+pub(crate) enum PolicyEligibilityClass {
+    Runnable,
+    NotRunnable,
+    NotYetEstablished,
+}
+
 impl DerivedPolicyResult {
     pub const fn is_unexpected(self) -> bool {
         matches!(
@@ -400,51 +416,60 @@ pub(crate) fn derive_policy(
     eligibility: &Eligibility,
     execution: &ExecutionAttempt,
 ) -> DerivedPolicyResult {
-    if !matches!(eligibility, Eligibility::Runnable) {
-        return if matches!(eligibility, Eligibility::NotYetEstablished { .. }) {
-            DerivedPolicyResult::NotYetEstablished
-        } else {
-            DerivedPolicyResult::NotRun
-        };
-    }
-    let ExecutionAttempt::Attempted { outcome } = execution else {
-        return DerivedPolicyResult::UnexpectedOutcome;
-    };
-    derive_policy_from_class(
-        expectation,
-        eligibility,
-        match outcome {
-            ObservedExecutionOutcome::SemanticPass => ObservedPolicyClass::SemanticPass,
-            ObservedExecutionOutcome::ExpectationMismatch { .. }
-            | ObservedExecutionOutcome::ParityMismatch { .. } => {
-                ObservedPolicyClass::SemanticMismatch
-            }
-            ObservedExecutionOutcome::ExecutionFailure { .. }
-            | ObservedExecutionOutcome::IncompleteObservation { .. }
-            | ObservedExecutionOutcome::FinalInvariantFailure { .. } => {
-                ObservedPolicyClass::OtherTerminalOutcome
-            }
+    derive_policy_from_projection(
+        policy_expectation_class(expectation),
+        policy_eligibility_class(eligibility),
+        match execution {
+            ExecutionAttempt::NotAttempted { .. } => None,
+            ExecutionAttempt::Attempted { outcome } => Some(match outcome {
+                ObservedExecutionOutcome::SemanticPass => ObservedPolicyClass::SemanticPass,
+                ObservedExecutionOutcome::ExpectationMismatch { .. }
+                | ObservedExecutionOutcome::ParityMismatch { .. } => {
+                    ObservedPolicyClass::SemanticMismatch
+                }
+                ObservedExecutionOutcome::ExecutionFailure { .. }
+                | ObservedExecutionOutcome::IncompleteObservation { .. }
+                | ObservedExecutionOutcome::FinalInvariantFailure { .. } => {
+                    ObservedPolicyClass::OtherTerminalOutcome
+                }
+            }),
         },
     )
 }
 
-#[cfg(any(feature = "html-parser", feature = "css", feature = "rendering", test))]
+#[cfg(any(feature = "css", feature = "rendering"))]
 pub(crate) fn derive_policy_from_class(
     expectation: &AgExpectation,
     eligibility: &Eligibility,
     observed: ObservedPolicyClass,
 ) -> DerivedPolicyResult {
-    if !matches!(eligibility, Eligibility::Runnable) {
-        return if matches!(eligibility, Eligibility::NotYetEstablished { .. }) {
+    derive_policy_from_projection(
+        policy_expectation_class(expectation),
+        policy_eligibility_class(eligibility),
+        Some(observed),
+    )
+}
+
+#[cfg(any(feature = "html-parser", feature = "css", feature = "rendering", test))]
+pub(crate) fn derive_policy_from_projection(
+    expectation: PolicyExpectationClass,
+    eligibility: PolicyEligibilityClass,
+    observed: Option<ObservedPolicyClass>,
+) -> DerivedPolicyResult {
+    if !matches!(eligibility, PolicyEligibilityClass::Runnable) {
+        return if matches!(eligibility, PolicyEligibilityClass::NotYetEstablished) {
             DerivedPolicyResult::NotYetEstablished
         } else {
             DerivedPolicyResult::NotRun
         };
     }
+    let Some(observed) = observed else {
+        return DerivedPolicyResult::UnexpectedOutcome;
+    };
     let semantic_pass = observed == ObservedPolicyClass::SemanticPass;
     let semantic_mismatch = observed == ObservedPolicyClass::SemanticMismatch;
     match expectation {
-        AgExpectation::ExpectedPass => {
+        PolicyExpectationClass::ExpectedPass => {
             if semantic_pass {
                 DerivedPolicyResult::ExpectedPass
             } else if semantic_mismatch {
@@ -453,18 +478,39 @@ pub(crate) fn derive_policy_from_class(
                 DerivedPolicyResult::UnexpectedOutcome
             }
         }
-        AgExpectation::ExpectedFail { failure, .. } => match failure {
-            ExpectedFailureClassification::SemanticMismatch => {
-                if semantic_mismatch {
-                    DerivedPolicyResult::ExpectedFail
-                } else if semantic_pass {
-                    DerivedPolicyResult::UnexpectedPass
-                } else {
-                    DerivedPolicyResult::UnexpectedOutcome
-                }
+        PolicyExpectationClass::ExpectedFailSemanticMismatch => {
+            if semantic_mismatch {
+                DerivedPolicyResult::ExpectedFail
+            } else if semantic_pass {
+                DerivedPolicyResult::UnexpectedPass
+            } else {
+                DerivedPolicyResult::UnexpectedOutcome
             }
-        },
-        AgExpectation::NotEstablished => DerivedPolicyResult::NotYetEstablished,
+        }
+        PolicyExpectationClass::NotEstablished => DerivedPolicyResult::NotYetEstablished,
+    }
+}
+
+#[cfg(any(feature = "html-parser", feature = "css", feature = "rendering", test))]
+pub(crate) const fn policy_expectation_class(
+    expectation: &AgExpectation,
+) -> PolicyExpectationClass {
+    match expectation {
+        AgExpectation::ExpectedPass => PolicyExpectationClass::ExpectedPass,
+        AgExpectation::ExpectedFail {
+            failure: ExpectedFailureClassification::SemanticMismatch,
+            ..
+        } => PolicyExpectationClass::ExpectedFailSemanticMismatch,
+        AgExpectation::NotEstablished => PolicyExpectationClass::NotEstablished,
+    }
+}
+
+#[cfg(any(feature = "html-parser", feature = "css", feature = "rendering", test))]
+pub(crate) const fn policy_eligibility_class(eligibility: &Eligibility) -> PolicyEligibilityClass {
+    match eligibility {
+        Eligibility::Runnable => PolicyEligibilityClass::Runnable,
+        Eligibility::NotRunnable { .. } => PolicyEligibilityClass::NotRunnable,
+        Eligibility::NotYetEstablished { .. } => PolicyEligibilityClass::NotYetEstablished,
     }
 }
 
