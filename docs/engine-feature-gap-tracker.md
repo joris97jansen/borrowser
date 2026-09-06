@@ -524,7 +524,13 @@ Current architecture status:
   unchanged. Real capture remains unsupported because no admitted mechanism
   proves the frozen parser/input context; comparison verdict tests are synthetic.
   See `docs/conformance/ag9c-external-dom-capture.md`.
-- AG9a/AG9b/AG9c do not establish broad WPT compliance, browser compatibility,
+- AG9d adds explicit versioned historical baselines and deterministic trend
+  comparison for four independent populations. It reads exactly two explicit
+  same-object files with caller-supplied SHA-256 identities. Advisory membership
+  remains independent from evaluation coverage, and historical capture
+  validation does not claim live artifact verification. See
+  `docs/conformance/ag9d-historical-baseline-trend.md`.
+- AG9a/AG9b/AG9c/AG9d do not establish broad WPT compliance, browser compatibility,
   browser automation, raster comparison, or AG milestone completion.
 
 Missing or incomplete:

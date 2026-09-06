@@ -1,8 +1,14 @@
 mod artifact;
+mod historical;
 mod identity;
 mod model;
 
 pub use artifact::{ExternalArtifactValidationError, validate_web_observable_dom_tree_v1};
+pub use historical::{
+    HistoricalCaptureIdentityV1, canonical_capture_id_preimage_v1,
+    validate_historical_capture_identity_v1,
+};
+pub use identity::MAX_EXTERNAL_CAPTURE_ID_PREIMAGE_BYTES_V1;
 pub use model::{
     ApplicabilityV1, CaptureV1Error, ControlledFontIdentityV1, ExternalArtifactCandidateV1,
     ExternalArtifactFormatV1, ExternalCaptureId, ExternalCaptureIdClaim,

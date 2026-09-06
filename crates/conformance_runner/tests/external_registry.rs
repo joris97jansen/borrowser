@@ -4,11 +4,12 @@ use std::fs;
 use std::path::Path;
 
 use conformance_runner::{
-    AggregateExecutionRequest, ExternalRegistryDiagnosticDetail, ExternalRegistryDiagnosticField,
-    ExternalRegistryDiagnosticKind, ExternalRegistryDiagnosticSubjectKey,
-    ExternalRegistryTrackInvariantField, ExternalRegistryValidationPhase,
-    build_aggregate_detail_v1, build_aggregate_summary_v1,
-    load_repository_external_advisory_evidence, run_repository_aggregate,
+    AggregateExecutionRequest, BaselineSealError, ExternalRegistryDiagnosticDetail,
+    ExternalRegistryDiagnosticField, ExternalRegistryDiagnosticKind,
+    ExternalRegistryDiagnosticSubjectKey, ExternalRegistryTrackInvariantField,
+    ExternalRegistryValidationPhase, build_aggregate_detail_v1, build_aggregate_summary_v1,
+    build_baseline_v1, load_repository_external_advisory_evidence, run_repository_aggregate,
+    seal_baseline_without_evaluation,
 };
 use conformance_test_support::LanePolicyScope;
 use external_test_provenance::{TargetParserInputContextV1, sha256};
@@ -151,6 +152,33 @@ fn exact_empty_registry_reconciles_without_changing_aggregate_truth() {
     assert_eq!(run, before);
     assert_eq!(build_aggregate_summary_v1(&run).unwrap(), summary);
     assert_eq!(build_aggregate_detail_v1(&run).unwrap(), detail);
+}
+
+#[test]
+fn baseline_sealing_requires_exact_originating_run_and_preserves_known_empty_evidence() {
+    let run = aggregate();
+    let equal_but_distinct_run = aggregate();
+    assert_eq!(run, equal_but_distinct_run);
+    let evidence = load_repository_external_advisory_evidence(repository_root(), &run).unwrap();
+    assert_eq!(
+        seal_baseline_without_evaluation(&equal_but_distinct_run, &evidence).err(),
+        Some(BaselineSealError::OriginatingRunMismatch)
+    );
+
+    let sealed = seal_baseline_without_evaluation(&run, &evidence).unwrap();
+    let first = build_baseline_v1(&sealed).unwrap();
+    let second = build_baseline_v1(&sealed).unwrap();
+    assert_eq!(first, second);
+}
+
+#[test]
+fn baseline_round_trip_retains_complete_advisory_membership_without_evaluation() {
+    let run = aggregate();
+    let root = populated_repository(&valid_registry(), ARTIFACT);
+    let evidence = load_repository_external_advisory_evidence(root.path(), &run).unwrap();
+    let sealed = seal_baseline_without_evaluation(&run, &evidence).unwrap();
+    let bytes = build_baseline_v1(&sealed).unwrap();
+    assert!(!bytes.is_empty());
 }
 
 #[test]

@@ -22,7 +22,14 @@ macro_rules! identifier {
 
         impl $name {
             pub fn parse(value: &str) -> Result<Self, ExternalSourceModelError> {
-                if value.is_empty()
+                if !Self::is_valid(value) {
+                    return Err(ExternalSourceModelError::InvalidIdentifier);
+                }
+                Ok(Self(value.to_owned()))
+            }
+
+            pub fn is_valid(value: &str) -> bool {
+                !(value.is_empty()
                     || value.len() > MAX_IDENTIFIER_BYTES
                     || !value.bytes().all(|byte| {
                         byte.is_ascii_lowercase()
@@ -32,11 +39,7 @@ macro_rules! identifier {
                     || value.starts_with(['-', '.', '/'])
                     || value.ends_with(['-', '.', '/'])
                     || value.contains("..")
-                    || value.contains("//")
-                {
-                    return Err(ExternalSourceModelError::InvalidIdentifier);
-                }
-                Ok(Self(value.to_owned()))
+                    || value.contains("//"))
             }
 
             pub fn as_str(&self) -> &str {
@@ -55,6 +58,9 @@ macro_rules! semantic_domain_identifier {
         impl $name {
             pub fn parse(value: &str) -> Result<Self, SemanticIdentifierError> {
                 CapabilityFeatureId::parse(value).map(|_| Self(value.to_owned()))
+            }
+            pub fn is_valid(value: &str) -> bool {
+                CapabilityFeatureId::is_valid(value)
             }
             pub fn as_str(&self) -> &str {
                 &self.0

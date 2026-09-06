@@ -5,6 +5,9 @@ use std::fmt;
 pub struct Sha256Digest([u8; 32]);
 
 impl Sha256Digest {
+    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
     pub fn parse(value: &str) -> Result<Self, DigestParseError> {
         if value.len() != 64 {
             return Err(DigestParseError::InvalidLength);

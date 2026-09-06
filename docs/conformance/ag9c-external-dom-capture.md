@@ -181,6 +181,13 @@ External evidence cannot modify AG3, execution/selection/outcomes/policy,
 aggregate identity/accounting, or existing parser/CSS/rendering/aggregate report
 bytes. Normal CI uses ordinary entry points and has no external dependency.
 
+AG9d may passively seal a completed selected operation into a historical
+baseline. The baseline records its actual `selected-variant-only/completed`
+scope and complete separately reconciled declaration membership. It never
+promotes that operation to `all-declared`, even when all declarations happen to
+match the selection. An operation-wide AG9c failure produces no completed value
+and therefore cannot be sealed as evaluated evidence.
+
 ## Validation and remaining scope
 
 Run Rust codec/fixture, runner aggregate/advisory, provenance, feature-boundary,
@@ -193,7 +200,7 @@ node --test tools/conformance/web-observable-dom-tree-v1.test.mjs
 Node is a local test prerequisite, not browser infrastructure. A missing Node
 run is an explicit validation limitation, never an assumed pass.
 
-Real-browser capture admission, trends, aggregate CLI/CI publication, broad WPT,
+Real-browser capture admission, aggregate CLI/CI publication, broad WPT,
 CSSOM, dynamic DOM, browser runtime/automation, and raster/pixel comparison remain
 outside this issue. AG9c does not establish broad browser compatibility, WPT
 compliance, or AG milestone completion.

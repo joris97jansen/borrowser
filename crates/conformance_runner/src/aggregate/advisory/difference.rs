@@ -75,6 +75,159 @@ pub(super) fn first_difference(
 ) -> Result<AdvisoryFirstDifference, Failure> {
     first_difference_with(left, right, &mut || Ok(()))
 }
+
+pub(crate) fn validate_first_difference_v1(bytes: &[u8]) -> Result<(), ()> {
+    if bytes.len() > MAX_ADVISORY_DIFFERENCE_BYTES_V1 {
+        return Err(());
+    }
+    let text = std::str::from_utf8(bytes).map_err(|_| ())?;
+    if !text.ends_with('\n') || text.contains('\r') {
+        return Err(());
+    }
+    let mut lines = text.lines();
+    if lines.next() != Some("format = \"borrowser-advisory-dom-first-difference-v1\"") {
+        return Err(());
+    }
+    let number = |line: &str, key: &str| -> Result<usize, ()> {
+        let v = line
+            .strip_prefix(key)
+            .and_then(|v| v.strip_prefix(" = "))
+            .ok_or(())?;
+        if v.is_empty()
+            || (v.len() > 1 && v.starts_with('0'))
+            || !v.bytes().all(|b| b.is_ascii_digit())
+        {
+            return Err(());
+        }
+        v.parse().map_err(|_| ())
+    };
+    let first = number(lines.next().ok_or(())?, "first-differing-byte")?;
+    let one = number(lines.next().ok_or(())?, "one-based-line")?;
+    let left = number(lines.next().ok_or(())?, "borrowser-byte-length")?;
+    let right = number(lines.next().ok_or(())?, "external-byte-length")?;
+    if one == 0 || first >= left.max(right) {
+        return Err(());
+    }
+    let mut parsed = Vec::new();
+    parsed.try_reserve_exact(2).map_err(|_| ())?;
+    for expected_side in ["side = \"borrowser\"", "side = \"external\""] {
+        if lines.next() != Some(expected_side) {
+            return Err(());
+        }
+        let line = match lines.next().ok_or(())? {
+            "line-state = \"missing\"" => AdvisoryDifferenceLine::Missing,
+            "line-state = \"present\"" => {
+                let original_bytes = number(lines.next().ok_or(())?, "original-line-bytes")?;
+                let excerpt = parse_canonical_quoted(lines.next().ok_or(())?, "excerpt")?;
+                let excerpt_omitted = match lines.next() {
+                    Some("excerpt-omitted = true") => true,
+                    Some("excerpt-omitted = false") => false,
+                    _ => return Err(()),
+                };
+                if excerpt.len() > MAX_ADVISORY_EXCERPT_BYTES_V1
+                    || original_bytes < excerpt.len()
+                    || excerpt_omitted != (original_bytes > excerpt.len())
+                {
+                    return Err(());
+                }
+                AdvisoryDifferenceLine::Present {
+                    original_bytes,
+                    excerpt,
+                    excerpt_omitted,
+                }
+            }
+            _ => return Err(()),
+        };
+        parsed.push(line);
+    }
+    if lines.next().is_some()
+        || matches!(parsed[0], AdvisoryDifferenceLine::Missing) && first < left
+        || matches!(parsed[1], AdvisoryDifferenceLine::Missing) && first < right
+    {
+        return Err(());
+    }
+    let mut writer =
+        CanonicalReportWriter::<Failure>::new(MAX_ADVISORY_DIFFERENCE_BYTES_V1).map_err(|_| ())?;
+    writer
+        .line("format", "borrowser-advisory-dom-first-difference-v1")
+        .map_err(|_| ())?;
+    writer
+        .number("first-differing-byte", first)
+        .map_err(|_| ())?;
+    writer.number("one-based-line", one).map_err(|_| ())?;
+    writer
+        .number("borrowser-byte-length", left)
+        .map_err(|_| ())?;
+    writer
+        .number("external-byte-length", right)
+        .map_err(|_| ())?;
+    write_line(&mut writer, "borrowser", &parsed[0]).map_err(|_| ())?;
+    write_line(&mut writer, "external", &parsed[1]).map_err(|_| ())?;
+    (writer.finish() == bytes).then_some(()).ok_or(())
+}
+
+fn parse_canonical_quoted(line: &str, key: &str) -> Result<String, ()> {
+    let encoded = line
+        .strip_prefix(key)
+        .and_then(|value| value.strip_prefix(" = \""))
+        .and_then(|value| value.strip_suffix('"'))
+        .ok_or(())?;
+    let mut output = String::new();
+    output.try_reserve(encoded.len()).map_err(|_| ())?;
+    let mut chars = encoded.chars();
+    while let Some(character) = chars.next() {
+        if character != '\\' {
+            if character < ' ' || character == '"' {
+                return Err(());
+            }
+            output.push(character);
+            continue;
+        }
+        match chars.next().ok_or(())? {
+            '\\' => output.push('\\'),
+            '"' => output.push('"'),
+            'n' => output.push('\n'),
+            'r' => output.push('\r'),
+            't' => output.push('\t'),
+            'u' => {
+                if chars.next() != Some('{') {
+                    return Err(());
+                }
+                let mut value = 0_u32;
+                let mut digits = 0;
+                let mut leading_zero = false;
+                loop {
+                    let digit = chars.next().ok_or(())?;
+                    if digit == '}' {
+                        break;
+                    }
+                    if !digit.is_ascii_hexdigit() || digit.is_ascii_lowercase() {
+                        return Err(());
+                    }
+                    if digits == 0 {
+                        leading_zero = digit == '0';
+                    }
+                    value = value
+                        .checked_mul(16)
+                        .and_then(|value| value.checked_add(digit.to_digit(16)?))
+                        .ok_or(())?;
+                    digits += 1;
+                }
+                let decoded = char::from_u32(value).ok_or(())?;
+                if digits == 0
+                    || digits > 1 && leading_zero
+                    || decoded >= ' '
+                    || matches!(decoded, '\n' | '\r' | '\t')
+                {
+                    return Err(());
+                }
+                output.push(decoded);
+            }
+            _ => return Err(()),
+        }
+    }
+    Ok(output)
+}
 fn first_difference_with(
     left: &[u8],
     right: &[u8],
@@ -211,6 +364,7 @@ mod tests {
         let l = format!("same\n{}x\n", "é".repeat(600));
         let r = format!("same\n{}y\n", "é".repeat(600));
         let evidence = first_difference(l.as_bytes(), r.as_bytes()).unwrap();
+        validate_first_difference_v1(evidence.serialized_bytes()).unwrap();
         assert_eq!(evidence.first_differing_byte(), 1205);
         assert_eq!(evidence.one_based_line(), 2);
         assert_eq!(
@@ -231,6 +385,12 @@ mod tests {
             Err(Failure::Allocation)
         );
         assert_eq!(first_difference(b"same", b"same"), Err(Failure::Invariant));
+        let noncanonical = evidence
+            .serialized_bytes()
+            .split(|byte| *byte == b'\n')
+            .collect::<Vec<_>>()
+            .join(&b'\r');
+        assert!(validate_first_difference_v1(&noncanonical).is_err());
         let mut budget = DifferenceBudget::default();
         for _ in 0..256 {
             budget.retain(16 * 1024).unwrap();

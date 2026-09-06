@@ -3,11 +3,11 @@
 Status: Stage 0 contract and limits freeze, AG9 Stage 1 typed aggregate
 execution/accounting, AG9a deterministic aggregate summary/detail reports, and
 AG9b source-neutral capture provenance plus runner-owned advisory registry, and
-AG9c independent DOM codecs plus selected advisory operations are implemented.
-Real-browser capture remains unsupported; trend execution and aggregate CLI/CI
-publication remain unimplemented
+AG9c independent DOM codecs plus selected advisory operations and AG9d
+historical baseline/trend comparison are implemented. Real-browser capture
+remains unsupported; aggregate CLI/CI publication remains unimplemented.
 
-Last updated: 2026-09-05
+Last updated: 2026-09-06
 
 AG9 defines the future aggregate-accounting, reporting, cross-engine evidence,
 baseline-note, and trend contracts for Borrowser's current static HTML/CSS
@@ -1479,7 +1479,9 @@ The AG9 V1 bounds are:
 | serialized first-difference evidence | 16 KiB per comparison | Reuses AG7's reviewed evidence ceiling. |
 | all retained external first differences | 4 MiB | Checked product of 256 typed comparison attachments and 16 KiB per comparison. |
 | aggregate local detail report | 32 MiB | Reuses the existing complete-report ceiling; the aggregate detail contract does not embed complete external capture bodies. |
-| each trend input and trend output | 32 MiB | Uses the versioned aggregate-detail/report ceiling; trend is local-only. |
+| canonical capture-ID preimage | 33,920 bytes | Exact maximum of the frozen 26-field V1 preimage. |
+| historical baseline | 47,219,283 bytes | Exact seven-section ceiling including one maximum detail artifact and bounded advisory/note state. |
+| trend output | 74,281,149 bytes | Frozen reviewed seven-section V1 output ceiling. The corrected conservative syntactic proof is at most 74,232,509 bytes, leaving 48,640 bytes of reviewed headroom. |
 | CI summary | 6,073 bytes | AG9a derives the exact syntactic V1 ceiling from its fixed row vocabulary, identity fields, longest stable labels, framing, and 59 maximum-width unsigned counts. |
 
 All byte and multiplicity arithmetic is checked. Bounded reads use a sentinel to
@@ -1499,8 +1501,8 @@ resource identities and digests are declarations inside the already bounded
 512 KiB registry source, and capture-ID preimages are built and discarded one
 capture at a time with checked arithmetic. Normal CI has no external artifact
 or local detail buffer and remains bounded by the subsystem evidence plus the
-exact small summary. A local trend admits two 32 MiB inputs and one 32 MiB
-output.
+exact small summary. A local trend admits two 47,219,283-byte inputs and one
+74,281,149-byte output.
 
 At 128 identity bytes, one maximum resource item is 168 canonical bytes: one
 8-byte nested string length, 128 identity bytes, and 32 digest bytes. Tag 12's
@@ -1809,6 +1811,7 @@ The version labels are frozen as:
 
 - `borrowser-conformance-aggregate-summary-v1`;
 - `borrowser-conformance-aggregate-detail-v1`;
+- `borrowser-conformance-baseline-v1`;
 - `borrowser-conformance-trend-v1`;
 - `borrowser-cross-engine-comparison-registry-v1`; and
 - `borrowser-external-capture-provenance-v1`.
@@ -1835,9 +1838,11 @@ capture registry, or network lookup is required for that summary.
 
 ## Deterministic trend semantics
 
-A trend compares exactly two explicit, deterministic aggregate-detail
-baselines. Both input paths and their SHA-256 identities are explicit. The
-baselines must share:
+A trend compares exactly two explicit, deterministic
+`borrowser-conformance-baseline-v1` artifacts. Each embeds one unchanged
+aggregate-detail V1 artifact and separately retains complete advisory/note
+membership and evaluation state. Both input paths and their SHA-256 identities
+are explicit. The baselines must share:
 
 - the same AG inventory scope, currently `static-html-css-no-js`;
 - the same aggregate/granularity contract version;
@@ -1866,7 +1871,7 @@ unchanged, and changed accounting:
 
 1. logical cases;
 2. execution variants;
-3. external advisory comparisons; and
+3. advisory comparison points; and
 4. baseline notes.
 
 A Borrowser execution-variant fingerprint contains only Borrowser/AG state:
@@ -1881,9 +1886,11 @@ equivalent/different verdict, and baseline-note data are excluded from both
 Borrowser fingerprints. Changing only external evidence or a note cannot make
 a Borrowser logical case or variant appear changed.
 
-External advisory comparisons are keyed by the typed comparison attachment and
-a stable advisory-track ID. Exact capture/provenance or advisory-verdict drift
-is reported only in that population. Notes are keyed by stable note ID; note
+Advisory comparison points are declarations keyed by the typed comparison
+attachment and a stable advisory-track ID. Evaluation is independent: a point
+may be unevaluated or retain one typed result. Exact capture/provenance,
+evaluation-presence, or advisory-verdict drift is reported only in that
+population. Notes are keyed by stable note ID; note
 text, attachment, or optional capture-reference drift is reported only in the
 note population.
 
@@ -1924,8 +1931,9 @@ summary/detail formats and exact logical-population identity above. AG9b
 implements the frozen source-neutral capture and runner-owned registry
 contracts, but not external DOM comparison or capture tooling. AG9c now implements
 independent V1 producers and scoped advisory comparison infrastructure with
-synthetic contract tests; real-capture admission remains unsupported. Later AG9
-stages remain responsible for trend parsing/execution/comparison and aggregate
-CLI/CI publication. Neither AG9a
-nor AG9b may be reported as working cross-engine comparison, trend support, or
-completed AG9 infrastructure.
+synthetic contract tests; real-capture admission remains unsupported. AG9d
+implements passive historical baseline projection and deterministic
+two-baseline trend comparison. Later AG9 stages remain responsible for
+aggregate CLI/CI publication. Neither AG9a
+nor AG9b by itself may be reported as working cross-engine comparison, trend
+support, or completed AG9 infrastructure.
