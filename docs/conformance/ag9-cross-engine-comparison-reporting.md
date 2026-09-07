@@ -5,7 +5,8 @@ execution/accounting, AG9a deterministic aggregate summary/detail reports, and
 AG9b source-neutral capture provenance plus runner-owned advisory registry, and
 AG9c independent DOM codecs plus selected advisory operations and AG9d
 historical baseline/trend comparison are implemented. Real-browser capture
-remains unsupported; aggregate CLI/CI publication remains unimplemented.
+remains unsupported; AG9e exposes aggregate CLI/CI publication and AG9d1
+aligns historical validation with existing named-lane policy.
 
 Last updated: 2026-09-06
 
@@ -375,9 +376,10 @@ css-test-support         -> css, html
 rendering-test-support   -> conformance-test-support, wpt-test-support,
                             css-test-support, html, css, layout, gfx
 
-conformance-runner[aggregate]
+conformance-runner (all feature sets)
     -> conformance-test-support
     -> external-test-provenance
+conformance-runner[aggregate]
     -> html-test-support
     -> css-test-support
     -> rendering-test-support
@@ -1933,7 +1935,98 @@ contracts, but not external DOM comparison or capture tooling. AG9c now implemen
 independent V1 producers and scoped advisory comparison infrastructure with
 synthetic contract tests; real-capture admission remains unsupported. AG9d
 implements passive historical baseline projection and deterministic
-two-baseline trend comparison. Later AG9 stages remain responsible for
-aggregate CLI/CI publication. Neither AG9a
+two-baseline trend comparison. AG9e exposes aggregate CLI/CI publication. Neither AG9a
 nor AG9b by itself may be reported as working cross-engine comparison, trend
 support, or completed AG9 infrastructure.
+
+## AG9e CLI and publication contract
+
+The leading `aggregate` argument selects a typed command family. All other
+invocations retain the direct parser/CSS/rendering argument parser, diagnostics,
+report bytes, and exit mapping. No adapter is enabled by default.
+
+```text
+conformance-runner aggregate summary --lane L [--check]
+conformance-runner aggregate detail --lane L [--check]
+conformance-runner aggregate baseline --lane L --external-evidence repository [--compare-dom-test TEST_ID] [--check]
+conformance-runner aggregate trend --from-root ROOT --from RELATIVE_PATH --from-sha256 SHA256 --to-root ROOT --to RELATIVE_PATH --to-sha256 SHA256
+```
+
+`L` is required and parsed by the existing AG3 `LanePolicyScope::parse`:
+`normal-ci`, `local-extended`, `scheduled-extended`, or `manual-extended`.
+No implicit/default lane, synthetic lane, environment-based lane, or host
+assessment override exists. Duplicate, missing, unknown, and incompatible
+options are rejected before execution. IDs use `TestId::parse`; digests use
+`Sha256Digest::parse` (64 lowercase hexadecimal digits). Syntax validation
+precedes feature availability, including in builds without `aggregate`.
+
+Summary and detail execute the ordinary aggregate runner and use the existing
+bounded V1 builders. These dispatch paths cannot request optional external
+capture registry/source loading. Baseline requires explicit repository evidence
+loading and complete reconciliation against the exact originating run, including
+when the population is empty. Missing or invalid evidence is never empty evidence.
+Baseline V1 is the sole persistent combined aggregate/advisory artifact; there is
+no external-detail format, appended detail section, JSON, or Debug persistence.
+
+The aggregate command exit contract is:
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Complete successful publication without a failing enabled policy check. |
+| 1 | Complete successful publication followed by an enabled check finding existing unexpected Borrowser policy. |
+| 2 | Invalid CLI usage. |
+| 3 | Execution/input/feature/platform operation failure, including evidence preparation, invalid selected identity, and historical input/comparison failure. |
+| 4 | Sealing, report/baseline/trend construction/encoding, or stdout write/flush failure. |
+
+`--check` consults only `DerivedPolicyResult::is_unexpected()` on existing
+aggregate variant policies. Per-variant terminal outcomes are data, not
+operation-wide failures. Advisory verdicts/failures never change Borrowser
+policy or process success. Without `--check`, successful publication returns 0.
+Trend rejects `--check`: historical changes are not a regression-gating policy.
+Trend also rejects a lane override and uses recorded compatibility properties.
+
+Each successful invocation publishes exactly one existing artifact. All bytes
+are completely built and validated before stdout is acquired for publication.
+Arguments, execution, evidence preparation, sealing, and construction failures
+publish zero artifact bytes. Diagnostics use stderr. Write and flush failure
+returns 4 even with a pending policy failure. Exit 1 therefore proves complete
+successful publication. Once writing starts, an OS failure can leave a prefix;
+stdout has no rollback guarantee. Shell redirection can create/truncate a file
+before the command starts and is not atomic file replacement.
+
+### Feature and workflow boundaries
+
+`external-test-provenance` is an unconditional direct runner dependency for
+source-neutral digest argument parsing; `conformance-test-support` already
+included it in the base transitive closure. Aggregate execution, advisory,
+baseline, and trend APIs remain gated by `aggregate`. The no-adapter default and
+subsystem dependency direction remain intact. Feature checks explicitly compile
+`--no-default-features --features aggregate` as well as the existing combinations
+and `--all-features`.
+
+`make check-conformance-aggregate` publishes the bounded `normal-ci --check`
+summary and belongs to normal CI. Local detail/baseline/trend targets remain
+outside that prerequisite chain. Make values are passed through environment
+variables to an argv-based helper, never interpolated into shell commands.
+Recipes and Cargo diagnostics do not contaminate artifact stdout. Make retains
+its own recipe-failure exit behavior; numeric 0–4 semantics describe the binary.
+
+Normal aggregate execution retains required checked-in imported-fixture
+lineage/provenance validation. It never loads optional AG9b/AG9c capture evidence,
+discovers/downloads/installs/launches browsers, or requires runtime live network.
+Checkout, toolchain setup, system packages, and Cargo dependency acquisition are
+outside this runtime assertion. Linux CI runs the prepared binary in a network
+namespace with a minimal environment and traces network/process syscalls. The
+proof fails closed if isolation/tracing is unavailable. It requires exactly the
+prepared executable launch, rejects additional execve/execveat calls, and permits
+clone/clone3 only when flags prove CLONE_THREAD. Fork-like or unclassified process
+creation is rejected. Internet sockets and connect/send operations are rejected
+independently of browser-executable checks; the network namespace also removes
+live-network reachability. These assertions apply only to this AG9e summary path,
+not future Browser process architecture. Rust threads are not helper processes.
+Independent trace-parser tests exercise threads, fork-like clones, extra/wrong
+executables, incomplete traces, and network operations.
+
+Trend root and relative paths retain OS-native path bytes on Unix, including
+non-UTF-8 names. Lane, TestId, and SHA-256 values remain authoritative textual
+grammars and reject invalid UTF-8 before the aggregate feature check.

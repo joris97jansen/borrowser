@@ -64,7 +64,26 @@ check-conformance-runner-features:
 	cargo check -p conformance-runner --no-default-features --features css --locked
 	cargo check -p conformance-runner --no-default-features --features rendering --locked
 	cargo check -p conformance-runner --no-default-features --features html-parser,css --locked
+	cargo check -p conformance-runner --no-default-features --features aggregate --locked
 	cargo check -p conformance-runner --all-features --locked
+
+# Values are exported as data and forwarded by Python as argv, never shell text.
+export LANE TEST_ID FROM_ROOT FROM FROM_SHA256 TO_ROOT TO TO_SHA256
+.PHONY: check-conformance-aggregate conformance-aggregate-detail conformance-aggregate-baseline conformance-aggregate-external-baseline conformance-aggregate-trend
+check-conformance-aggregate:
+	@python3 tools/conformance/aggregate-workflow.py summary
+
+conformance-aggregate-detail:
+	@python3 tools/conformance/aggregate-workflow.py detail
+
+conformance-aggregate-baseline:
+	@python3 tools/conformance/aggregate-workflow.py baseline
+
+conformance-aggregate-external-baseline:
+	@python3 tools/conformance/aggregate-workflow.py external-baseline
+
+conformance-aggregate-trend:
+	@python3 tools/conformance/aggregate-workflow.py trend
 
 # Execute the CI-safe AG4 HTML tokenizer/tree/DOM corpus and require expected policy outcomes.
 check-conformance-parser:
@@ -449,6 +468,8 @@ ci:
 	@$(MAKE) check-conformance-parser
 	@$(MAKE) check-conformance-css
 	@$(MAKE) check-conformance-rendering
+	@$(MAKE) check-conformance-aggregate
+	cargo test -p conformance-runner --no-default-features --features aggregate --locked
 	@$(MAKE) lint
 	@$(MAKE) lint-html5
 	@$(MAKE) lint-html5-hardening

@@ -200,7 +200,30 @@ node --test tools/conformance/web-observable-dom-tree-v1.test.mjs
 Node is a local test prerequisite, not browser infrastructure. A missing Node
 run is an explicit validation limitation, never an assumed pass.
 
-Real-browser capture admission, aggregate CLI/CI publication, broad WPT,
+Real-browser capture admission, broad WPT,
 CSSOM, dynamic DOM, browser runtime/automation, and raster/pixel comparison remain
 outside this issue. AG9c does not establish broad browser compatibility, WPT
 compliance, or AG milestone completion.
+
+## AG9e selected baseline publication
+
+`aggregate baseline --lane L --external-evidence repository --compare-dom-test
+TEST_ID [--check]` publishes existing Baseline V1 with a completed selected
+operation. The ID uses `TestId::parse`. The CLI constructs only `DomTree` plus
+`Singleton(ExecutionVariantId::new(SingletonExecutionVariant::Singleton))`;
+AG9c fixes the comparable surface to `WebObservableDomTreeV1`. There is no
+composite-key syntax, wildcard, rendering selection, or first-match behavior.
+
+The selected observation comes from the existing observer during that exact
+aggregate execution. Typed unknown/unsupported identity failures return exit 3.
+A valid selection that was not attempted due to eligibility/lane state remains
+AG9c observation evidence. Other reviewed per-attachment failures remain evidence,
+not process failure or Borrowser policy. Operation-wide registry/source failures
+produce no baseline. No observation is rerun or recovered.
+
+The CLI seals through `seal_baseline_from_selected_operation`; outside-scope
+membership remains unevaluated, including when there are zero matching points.
+It never promotes selected scope to all-declared. Real capture admission remains
+unsupported. Baseline publication success means artifact success, not proof of
+browser equivalence. Separate external-detail publication would require a new
+reviewed format outside AG9e.

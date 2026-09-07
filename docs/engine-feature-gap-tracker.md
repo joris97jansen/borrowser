@@ -530,12 +530,19 @@ Current architecture status:
   remains independent from evaluation coverage, and historical capture
   validation does not claim live artifact verification. See
   `docs/conformance/ag9d-historical-baseline-trend.md`.
+- AG9e adds typed aggregate summary/detail/baseline/trend commands, explicit
+  named lanes, existing-format publication, checked normal-CI summaries, and
+  local Make workflows. Baseline evidence requires complete reconciliation;
+  selected advisory operations remain partial and real capture admission remains
+  unsupported. AG9d1 corrects historical policy validation to include named-lane
+  selection and all valid attempt states; valid lane-excluded `NotRun` baselines
+  now round-trip without changing live policy or any wire/identity contract.
 - AG9a/AG9b/AG9c/AG9d do not establish broad WPT compliance, browser compatibility,
   browser automation, raster comparison, or AG milestone completion.
 
 Missing or incomplete:
 
-- aggregate named-lane scheduling and CLI/CI publication
+- aggregate scheduling (AG9e adds explicit named-lane CLI/CI publication)
 - Browser/runtime subsystem adapters
 - broader pinned external-source adapters beyond the exact AG8 and AE13e proofs
 - proven real-browser capture mechanisms (inspector and selected DOM comparison

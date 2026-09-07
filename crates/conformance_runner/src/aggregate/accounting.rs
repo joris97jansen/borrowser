@@ -153,7 +153,7 @@ pub(crate) fn build_accounting(
             case.variants
                 .iter()
                 .map(|variant| VariantAccountingProjection {
-                    comparison: variant.comparison.clone(),
+                    comparison: variant.comparison,
                     selection: selection_projection(&variant.selection),
                     attempt: attempt_projection(&variant.execution),
                 }),
@@ -306,10 +306,7 @@ impl ProjectionAccountingTarget for AggregateAccounting {
         &mut self,
         comparison: &AggregateComparisonKind,
     ) -> Result<(), AccountingError> {
-        increment_map(
-            &mut self.groupings.variants_by_comparison,
-            comparison.clone(),
-        )
+        increment_map(&mut self.groupings.variants_by_comparison, *comparison)
     }
 }
 

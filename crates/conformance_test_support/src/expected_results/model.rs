@@ -292,7 +292,8 @@ impl LanePolicyScope {
         }
     }
 
-    pub(crate) fn parse(value: &str) -> Option<Self> {
+    /// Parse exactly the frozen AG3 lane vocabulary.
+    pub fn parse(value: &str) -> Option<Self> {
         Self::ALL
             .into_iter()
             .find(|policy| policy.as_str() == value)
@@ -495,5 +496,28 @@ impl ValidatedExpectedResults {
 impl fmt::Display for SubsystemOwner {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+#[cfg(test)]
+mod lane_cli_contract_tests {
+    use super::LanePolicyScope;
+
+    #[test]
+    fn public_lane_parser_preserves_frozen_vocabulary() {
+        for lane in LanePolicyScope::ALL {
+            assert_eq!(LanePolicyScope::parse(lane.as_str()), Some(lane));
+        }
+        for invalid in [
+            "",
+            "normal_ci",
+            "Normal-CI",
+            "normal-ci ",
+            "all",
+            "legacy",
+            "compatibility",
+        ] {
+            assert_eq!(LanePolicyScope::parse(invalid), None);
+        }
     }
 }

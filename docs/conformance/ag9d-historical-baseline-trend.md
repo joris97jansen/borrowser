@@ -312,3 +312,73 @@ Independent protocol vectors live in
 contents, offsets, and reviewed SHA-256 identities. Tests decode those committed
 bytes independently and separately prove that representative producers match
 the fixed vectors.
+
+## AG9e local baseline and trend workflow
+
+AG9e exposes the reviewed builders through explicit local CLI publication.
+Without comparison, `aggregate baseline --lane L --external-evidence repository`
+runs the exact lane, reconciles the complete repository registry, calls
+`seal_baseline_without_evaluation`, and builds Baseline V1. “Without evaluation”
+does not mean “without registry loading.” Empty membership requires successful
+reconciliation of the valid empty registry. Optional selected DOM comparison uses
+the AG9c operation and `seal_baseline_from_selected_operation` instead.
+
+For example, at each chosen revision, publish to a distinct output file:
+
+```sh
+LANE=local-extended make conformance-aggregate-baseline > from.baseline
+shasum -a 256 from.baseline
+# At the second chosen revision:
+LANE=local-extended make conformance-aggregate-baseline > to.baseline
+shasum -a 256 to.baseline
+```
+
+Check each publication command's exit status before using the file. Record the
+printed digest independently; do not calculate an expected digest implicitly
+inside the trend command from the file being verified. With those recorded
+64-character lowercase SHA-256 values:
+
+```sh
+FROM_ROOT="$PWD" FROM=from.baseline FROM_SHA256="$recorded_from_sha256" \
+TO_ROOT="$PWD" TO=to.baseline TO_SHA256="$recorded_to_sha256" \
+make conformance-aggregate-trend > comparison.trend
+```
+
+Both root/path/digest descriptors are mandatory. The CLI uses
+`compare_baseline_files_v1` followed by `build_trend_v1`. Input reads, digest
+verification, decoding, compatibility, and comparison failures return 3;
+output construction/encoding/write/flush failures return 4. Valid changes return
+0. No `--check`, lane override, current registry, previous/latest lookup, Git
+history, clock, or rerun is involved. The files are the existing binary Baseline
+V1 and Trend V1, with no additional textual headers or footer metadata.
+
+All output is built before stdout publication. Shell redirection may truncate a
+destination before program execution; publication is not atomic file replacement,
+and OS write failure may leave a prefix. Choose distinct output paths and retain
+verified inputs.
+
+### AG9d1 historical policy projection
+
+Historical detail validation consumes the full typed eligibility, selection,
+attempt/reason, expectation, and terminal policy class. It first applies the same
+`valid_selection_attempt_projection` invariant as live aggregate sealing, then
+projects the existing live policy. Invalid tuples remain rejected.
+
+| Valid state | Historical policy |
+| --- | --- |
+| NotRunnable, NotApplicable, NotAttempted(Eligibility) | NotRun |
+| NotYetEstablished, NotApplicable, NotAttempted(Eligibility) | NotYetEstablished |
+| Runnable, Excluded, NotAttempted(LaneExcluded) | NotRun |
+| Runnable, Selected, NotAttempted(ParserPreAttemptEvaluation or CssFragmentCapabilityUnavailable) | UnexpectedOutcome |
+| Runnable, Selected, Attempted | Existing expectation/terminal policy derivation |
+
+For attempted states, semantic pass/mismatch and other terminal outcomes use
+`derive_policy_from_projection`; expectation remains independent. The exhaustive
+typed regression covers all three eligibility states, three selection states,
+four non-attempt reasons, seven terminal outcomes (including reserved timeout),
+and three expectation classes. The baseline/trend integration regression verifies
+that the existing builder's lane-excluded output decodes and compares successfully.
+
+AG9d1 corrects historical validation's previous omission of named-lane selection.
+It changes no live execution/policy, serialized bytes, format versions, identities,
+fingerprints, ordering, or bounds. There is no CLI-specific policy exception.

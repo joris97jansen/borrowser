@@ -197,8 +197,10 @@ adapter feature: `cargo run -p conformance-runner --features html-parser
 --locked -- --check`. The subsystem-neutral crate has no adapter enabled by
 default.
 `--check` exits non-zero for an unexpected
-policy result; report construction/serialization failures exit separately from
-stdout transport failures.
+policy result (exit 1). Existing direct argument, feature, execution, report
+construction/serialization, and stdout transport failures all return exit 2.
+AG9e preserves this direct behavior; its leading `aggregate` family has its own
+explicit 0–4 exit contract.
 
 AG5 factors only the lossless AG metadata mapping and structural
 attempted/not-attempted shape into reusable typed machinery. Parser-specific

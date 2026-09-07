@@ -913,10 +913,12 @@ mod tests {
     fn ag7_and_generic_mismatch_evidence_limits_are_independently_enforced() {
         assert_eq!(REFERENCE_DIFFERENCE_SERIALIZED_BYTES_V1, 16 * 1024);
         assert_eq!(DEFAULT_REPORT_LIMITS.mismatch_diagnostic_bytes, 1024 * 1024);
-        assert!(
-            REFERENCE_DIFFERENCE_SERIALIZED_BYTES_V1
-                < DEFAULT_REPORT_LIMITS.mismatch_diagnostic_bytes
-        );
+        const {
+            assert!(
+                REFERENCE_DIFFERENCE_SERIALIZED_BYTES_V1
+                    < DEFAULT_REPORT_LIMITS.mismatch_diagnostic_bytes
+            );
+        }
 
         let oversized = first_difference(
             "t".repeat(REFERENCE_DIFFERENCE_SERIALIZED_BYTES_V1),

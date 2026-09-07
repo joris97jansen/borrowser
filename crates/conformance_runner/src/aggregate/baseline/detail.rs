@@ -15,12 +15,8 @@ use crate::aggregate::identity::{
 use crate::aggregate::model::{
     AggregateAttemptProjection, AggregateEligibilityProjection, AggregateNotAttemptedReason,
     AggregateSelectionProjection, AggregateTerminalOutcome, owner_for_surface,
-    valid_selection_attempt_projection,
 };
-use crate::model::{
-    DerivedPolicyResult, ObservedPolicyClass, PolicyEligibilityClass, PolicyExpectationClass,
-    derive_policy_from_projection,
-};
+use crate::model::{DerivedPolicyResult, PolicyExpectationClass};
 
 const OWNERS: [&str; 5] = ["html-parser", "css", "layout", "paint", "browser-runtime"];
 const SURFACES: [&str; 10] = [
@@ -557,7 +553,7 @@ fn parse_case(
         },
         variants.iter().map(
             |variant| crate::aggregate::accounting::VariantAccountingProjection {
-                comparison: variant.comparison.clone(),
+                comparison: variant.comparison,
                 selection: variant.selection,
                 attempt: variant.attempt,
             },
@@ -637,29 +633,15 @@ fn parse_variant(
         }
         _ => return Err(HistoricalDetailError::InvalidState),
     };
-    if !valid_selection_attempt_projection(eligibility, selection_projection, attempt_projection) {
-        return Err(HistoricalDetailError::InvalidState);
-    }
-    let policy = p.string("derived-policy")?;
-    let policy = parse_policy(&policy)?;
-    let observed = match attempt_projection {
-        AggregateAttemptProjection::NotAttempted(_) => None,
-        AggregateAttemptProjection::Attempted(AggregateTerminalOutcome::SemanticPass) => {
-            Some(ObservedPolicyClass::SemanticPass)
-        }
-        AggregateAttemptProjection::Attempted(AggregateTerminalOutcome::SemanticFail) => {
-            Some(ObservedPolicyClass::SemanticMismatch)
-        }
-        AggregateAttemptProjection::Attempted(_) => Some(ObservedPolicyClass::OtherTerminalOutcome),
-    };
-    let policy_eligibility = match eligibility {
-        AggregateEligibilityProjection::Runnable => PolicyEligibilityClass::Runnable,
-        AggregateEligibilityProjection::NotRunnable => PolicyEligibilityClass::NotRunnable,
-        AggregateEligibilityProjection::NotYetEstablished => {
-            PolicyEligibilityClass::NotYetEstablished
-        }
-    };
-    if policy != derive_policy_from_projection(expectation, policy_eligibility, observed) {
+    let expected_policy = super::policy::historical_policy(
+        eligibility,
+        selection_projection,
+        attempt_projection,
+        expectation,
+    )
+    .ok_or(HistoricalDetailError::InvalidState)?;
+    let policy = parse_policy(&p.string("derived-policy")?)?;
+    if policy != expected_policy {
         return Err(HistoricalDetailError::InvalidState);
     }
     p.marker("END execution-variant")?;
