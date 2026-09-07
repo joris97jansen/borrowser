@@ -2,6 +2,7 @@ mod decode;
 mod detail;
 mod encode;
 mod model;
+mod policy;
 mod result;
 mod seal;
 

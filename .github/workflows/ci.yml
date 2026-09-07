@@ -43,6 +43,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
+            strace \
             pkg-config \
             libegl1-mesa-dev \
             libgl1-mesa-dev \
@@ -87,6 +88,33 @@ jobs:
 
       - name: Run tests (explicit html5 feature lane)
         run: cargo test --workspace --lib --bins --tests --examples --features html5 --locked
+
+      - name: Compile conformance adapter and aggregate features explicitly
+        run: make check-conformance-runner-features
+
+      - name: Check direct CLI compatibility across adapter features
+        run: |
+          cargo test -p conformance-runner --no-default-features --test cli --locked
+          cargo test -p conformance-runner --no-default-features --features html-parser --test cli --locked
+          cargo test -p conformance-runner --no-default-features --features css --test cli --locked
+          cargo test -p conformance-runner --no-default-features --features rendering --test cli --locked
+
+      - name: Test aggregate conformance tooling and publication workflows
+        run: cargo test -p conformance-runner --no-default-features --features aggregate --locked
+
+      - name: Lint aggregate conformance tooling
+        if: matrix.run_lints
+        run: cargo clippy -p conformance-runner --all-targets --no-default-features --features aggregate --locked -- -D warnings
+
+      - name: Publish bounded normal-ci aggregate summary
+        run: make check-conformance-aggregate
+
+      - name: Test aggregate runtime trace classification
+        run: python3 -B -m unittest discover -s tools/ci -p test_conformance_aggregate_runtime_smoke.py
+
+      - name: Prove prepared aggregate summary runtime isolation
+        if: runner.os == 'Linux'
+        run: python3 tools/ci/conformance_aggregate_runtime_smoke.py target/debug/conformance-runner
 
       - name: Run canonical HTML parser conformance observations
         run: cargo test -p html --test html5_parser_conformance --features parser-conformance --locked

@@ -665,10 +665,19 @@ fn aggregate_feature_composes_only_the_existing_typed_adapter_boundaries() {
             serde_json::Value::String("html-parser".to_owned()),
             serde_json::Value::String("css".to_owned()),
             serde_json::Value::String("rendering".to_owned()),
-            serde_json::Value::String("dep:external-test-provenance".to_owned()),
             serde_json::Value::String("dep:serde".to_owned()),
             serde_json::Value::String("dep:toml".to_owned()),
         ]
+    );
+    let provenance = runner["dependencies"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|dependency| dependency["name"] == "external-test-provenance")
+        .unwrap();
+    assert_eq!(
+        provenance["optional"], false,
+        "authoritative digest parsing precedes aggregate feature availability"
     );
     let graph = workspace_graph(&metadata, "conformance-runner", &["default", "aggregate"]);
     for required in [

@@ -229,20 +229,26 @@ mod tests {
         assert_eq!(TREND_EXTERNAL_POPULATIONS_MAX_V1, 323_072);
         assert_eq!(TREND_FIXED_MAX_V1, 1_967);
         assert_eq!(TREND_CONSERVATIVE_SYNTACTIC_MAX_V1, 74_232_509);
-        assert!(TREND_CONSERVATIVE_SYNTACTIC_MAX_V1 <= super::super::trend::TREND_MAX_BYTES_V1);
+        const {
+            assert!(TREND_CONSERVATIVE_SYNTACTIC_MAX_V1 <= super::super::trend::TREND_MAX_BYTES_V1);
+        }
         assert_eq!(TREND_FROZEN_HEADROOM_V1, 48_640);
     }
 
     #[test]
     fn disjoint_external_membership_is_the_maximum_union_shape() {
-        assert!(
-            TREND_ADVISORY_REMOVED_RECORD_MAX_V1 + TREND_ADVISORY_ADDED_RECORD_MAX_V1
-                > TREND_ADVISORY_UNCHANGED_RECORD_MAX_V1
-        );
-        assert!(
-            TREND_NOTE_REMOVED_RECORD_MAX_V1 + TREND_NOTE_ADDED_RECORD_MAX_V1
-                > TREND_NOTE_UNCHANGED_RECORD_MAX_V1
-        );
+        const {
+            assert!(
+                TREND_ADVISORY_REMOVED_RECORD_MAX_V1 + TREND_ADVISORY_ADDED_RECORD_MAX_V1
+                    > TREND_ADVISORY_UNCHANGED_RECORD_MAX_V1
+            );
+        }
+        const {
+            assert!(
+                TREND_NOTE_REMOVED_RECORD_MAX_V1 + TREND_NOTE_ADDED_RECORD_MAX_V1
+                    > TREND_NOTE_UNCHANGED_RECORD_MAX_V1
+            );
+        }
     }
 
     #[test]

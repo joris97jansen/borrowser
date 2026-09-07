@@ -1,0 +1,62 @@
+# Synthetic test-only declarations from the existing AG9b registry test.
+format = "borrowser-cross-engine-comparison-registry-v1"
+
+[[captures]]
+capture_id = "sha256:4179e64c74adbe3d558f24aeab8ee011cf552ad39c7d467a4a774ee49ed404c8"
+artifact_path = "tests/conformance/external/captures/empty.web-observable-dom-tree-v1.txt"
+provenance_format = "borrowser-external-capture-provenance-v1"
+engine_product = "engine"
+engine_version = "1"
+platform_os_family = "os"
+platform_os_version = "1"
+architecture = "arch"
+viewport = { applicability = "applicable", width_css_px = 800, height_css_px = 600 }
+device_scale = { applicability = "not-applicable", reason = "not-used" }
+controlled_fonts = { applicability = "not-applicable", reason = "font-independent" }
+resource_network_policy = "offline"
+pinned_resources = []
+fixture_source_project = "fixture"
+fixture_immutable_revision = "revision"
+fixture_content_sha256 = "506b85cc1ccf668e6d99a07c6e8657efb43cb513abaa343810f0ad082b407475"
+capture_mechanism = "tool"
+capture_mechanism_version = "1"
+capture_algorithm = "algorithm"
+capture_algorithm_version = "1"
+capture_algorithm_source_sha256 = "506b85cc1ccf668e6d99a07c6e8657efb43cb513abaa343810f0ad082b407475"
+capture_configuration_sha256 = "506b85cc1ccf668e6d99a07c6e8657efb43cb513abaa343810f0ad082b407475"
+invocation_arguments = ["--one", "--one"]
+artifact_format = "web-observable-dom-tree-v1"
+artifact_utf8_byte_length = 115
+artifact_sha256 = "506b85cc1ccf668e6d99a07c6e8657efb43cb513abaa343810f0ad082b407475"
+target_parser_input_context = "static-text-html-utf8-scripting-disabled-v1"
+collection_policy = "stable"
+collection_policy_version = "1"
+
+[[advisory_tracks]]
+track_id = "track"
+engine_product = "engine"
+platform_os_family = "os"
+architecture = "arch"
+comparable_observation_surface = "web-observable-dom-tree-v1"
+capture_algorithm = "algorithm"
+capture_algorithm_version = "1"
+target_parser_input_context = "static-text-html-utf8-scripting-disabled-v1"
+collection_policy = "stable"
+collection_policy_version = "1"
+
+[[attachments]]
+test_id = "dom-tree-basic-document"
+observation_surface = "dom-tree"
+execution_variant = { kind = "singleton" }
+comparable_observation_surface = "web-observable-dom-tree-v1"
+track_id = "track"
+capture_id = "sha256:4179e64c74adbe3d558f24aeab8ee011cf552ad39c7d467a4a774ee49ed404c8"
+
+[[baseline_notes]]
+note_id = "baseline"
+test_id = "dom-tree-basic-document"
+observation_surface = "dom-tree"
+execution_variant = { kind = "singleton" }
+comparable_observation_surface = "web-observable-dom-tree-v1"
+text = "advisory only"
+capture_id = "sha256:4179e64c74adbe3d558f24aeab8ee011cf552ad39c7d467a4a774ee49ed404c8"

@@ -436,7 +436,9 @@ mod tests {
             DEFAULT_REPORT_LIMITS.observation_bytes
         );
         assert_eq!(PAIRED_RENDERING_EXECUTION_SUPPORT_PATHS_V1, 64);
-        assert!(PAIRED_RENDERING_EXECUTION_SUPPORT_PATHS_V1 < MAX_EXECUTION_SUPPORT_PATHS_V2);
+        const {
+            assert!(PAIRED_RENDERING_EXECUTION_SUPPORT_PATHS_V1 < MAX_EXECUTION_SUPPORT_PATHS_V2);
+        }
     }
 
     #[test]

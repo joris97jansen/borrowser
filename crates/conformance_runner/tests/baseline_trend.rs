@@ -167,3 +167,49 @@ fn take_bytes<'a>(bytes: &'a [u8], offset: &mut usize) -> &'a [u8] {
 fn skip_bytes(bytes: &[u8], offset: &mut usize) {
     let _ = take_bytes(bytes, offset);
 }
+
+#[path = "support/mod.rs"]
+mod support;
+
+#[test]
+fn ag9d_lane_excluded_baseline_round_trip() {
+    use conformance_runner::*;
+    let root = support::repository();
+    let metadata = root.path().join("tests/conformance/expected-results.toml");
+    let text = std::fs::read_to_string(&metadata).unwrap();
+    let start = text.find("id = \"dom-tree-basic-document\"").unwrap();
+    let updated = text[start..].replacen(
+        "lane_exclusions = []",
+        "lane_exclusions = [{ policy = \"normal-ci\", reason = \"Explicit test exclusion.\" }]",
+        1,
+    );
+    std::fs::write(metadata, format!("{}{updated}", &text[..start])).unwrap();
+
+    let run = run_repository_aggregate(
+        root.path(),
+        AggregateExecutionRequest {
+            lane: conformance_test_support::LanePolicyScope::NormalCi,
+        },
+    )
+    .unwrap();
+    let variant = &run
+        .cases()
+        .iter()
+        .find(|case| case.ag.test_id.as_str() == "dom-tree-basic-document")
+        .unwrap()
+        .variants[0];
+    assert!(matches!(variant.selection, LaneSelection::Excluded { .. }));
+    assert_eq!(variant.policy, DerivedPolicyResult::NotRun);
+    let evidence = load_repository_external_advisory_evidence(root.path(), &run).unwrap();
+    let sealed = seal_baseline_without_evaluation(&run, &evidence).unwrap();
+    let bytes = build_baseline_v1(&sealed).unwrap();
+    std::fs::write(root.path().join("excluded.bin"), &bytes).unwrap();
+    let input = BaselineFileInputV1 {
+        root: root.path(),
+        relative_path: Path::new("excluded.bin"),
+        expected_sha256: external_test_provenance::sha256(&bytes),
+    };
+    compare_baseline_files_v1(input, input).expect(
+        "AG9d must accept the live lane-excluded NotRun policy without changing lane semantics",
+    );
+}

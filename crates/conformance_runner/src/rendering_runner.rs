@@ -126,6 +126,10 @@ pub enum RenderingReferenceObservedOutcome {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "Keep the reviewed inline outcome representation: boxing reference evidence would add an allocation to bounded observation capture"
+)]
 pub enum RenderingVariantObservedOutcome {
     AuthoredSnapshot(RenderingObservedExecutionOutcome),
     DocumentReference(RenderingReferenceObservedOutcome),
@@ -222,6 +226,10 @@ impl RenderingRunSummary {
     }
 }
 
+#[expect(
+    clippy::result_large_err,
+    reason = "Preserve the inline typed rendering error: reporting resource or invariant failure must not require a new boxed diagnostic allocation"
+)]
 pub fn run_repository_rendering_cases(
     repository_root: &Path,
 ) -> Result<RenderingRunSummary, RenderingRunError> {
@@ -238,6 +246,10 @@ pub fn run_repository_rendering_cases(
     )
 }
 
+#[expect(
+    clippy::result_large_err,
+    reason = "Preserve the inline typed rendering error: reporting resource or invariant failure must not require a new boxed diagnostic allocation"
+)]
 pub(crate) fn run_repository_rendering_cases_with_inventory(
     repository_root: &Path,
     inventory: &ValidatedInventory,
@@ -253,6 +265,10 @@ pub(crate) fn run_repository_rendering_cases_with_inventory(
     )
 }
 
+#[expect(
+    clippy::result_large_err,
+    reason = "Preserve the inline typed rendering error: reporting resource or invariant failure must not require a new boxed diagnostic allocation"
+)]
 fn run_repository_rendering_cases_with_inventory_and_probe(
     repository_root: &Path,
     inventory: &ValidatedInventory,
@@ -434,6 +450,10 @@ fn derive_rendering_policy_for_decision(
     }
 }
 
+#[expect(
+    clippy::result_large_err,
+    reason = "Preserve the inline typed rendering error: reporting resource or invariant failure must not require a new boxed diagnostic allocation"
+)]
 fn retain_snapshot_observations(
     budget: &mut RetainedEvidenceBudget,
     outer: &ValidatedFixture,
@@ -592,6 +612,10 @@ fn summarize_profile_observations(
         .collect()
 }
 
+#[expect(
+    clippy::result_large_err,
+    reason = "Preserve the inline typed rendering error: reporting resource or invariant failure must not require a new boxed diagnostic allocation"
+)]
 fn retain_reference_evidence(
     budget: &mut RetainedEvidenceBudget,
     outer: &ValidatedFixture,
@@ -607,6 +631,10 @@ fn retain_reference_evidence(
     retain_reference_difference(budget, outer.id().as_str(), difference)
 }
 
+#[expect(
+    clippy::result_large_err,
+    reason = "Preserve the inline typed rendering error: reporting resource or invariant failure must not require a new boxed diagnostic allocation"
+)]
 fn retain_reference_difference(
     budget: &mut RetainedEvidenceBudget,
     test_id: &str,

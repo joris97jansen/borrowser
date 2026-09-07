@@ -72,3 +72,27 @@ Borrowser semantic outcomes, policy, identities, or existing reports.
 Real-browser capture remains unsupported until a mechanism proves the frozen
 input context; do not populate the real registry with synthetic results. See
 [AG9c ownership, APIs, capture restrictions, and validation](ag9c-external-dom-capture.md).
+
+## AG9e CLI and local publication
+
+Build/run the binary with `--no-default-features --features aggregate`. The
+[AG9 command/exit contract](ag9-cross-engine-comparison-reporting.md#ag9e-cli-and-publication-contract)
+keeps ordinary summary/detail independent of optional capture evidence.
+
+| Make target | Required environment values | Artifact |
+| --- | --- | --- |
+| `check-conformance-aggregate` | none; explicit normal-ci check | Aggregate summary V1 |
+| `conformance-aggregate-detail` | `LANE` | Aggregate detail V1 |
+| `conformance-aggregate-baseline` | `LANE` | Baseline V1, repository evidence reconciled without evaluation |
+| `conformance-aggregate-external-baseline` | `LANE`, `TEST_ID` | Baseline V1, selected DOM advisory operation |
+| `conformance-aggregate-trend` | `FROM_ROOT`, `FROM`, `FROM_SHA256`, `TO_ROOT`, `TO`, `TO_SHA256` | Trend V1 |
+
+Only the summary belongs to normal publication CI. Local targets use report-only
+policy; use the CLI's optional `--check` for checked local execution. Values are
+forwarded as argv data; prefer environment values for literal shell-sensitive
+paths, since Make command-line assignments also have Make's own expansion rules.
+No browser provisioning is required. See the
+[baseline/checksum/trend workflow](ag9d-historical-baseline-trend.md#ag9e-local-baseline-and-trend-workflow)
+and [selected-operation limits](ag9c-external-dom-capture.md#ag9e-selected-baseline-publication).
+AG9d1 aligns historical validation with existing named-lane policy, including
+valid lane-excluded baseline/trend round trips.
