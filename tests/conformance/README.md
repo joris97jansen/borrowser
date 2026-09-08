@@ -136,3 +136,95 @@ Borrowser semantic outcomes, policy, identities, or existing reports.
 Real-browser capture remains unsupported until a mechanism proves the frozen
 input context; do not populate the real registry with synthetic results. See
 [AG9c ownership, APIs, capture restrictions, and validation](../../docs/conformance/ag9c-external-dom-capture.md).
+
+## Aggregate reports and historical evidence
+
+The `aggregate` feature composes the existing HTML, CSS and rendering adapters.
+From the repository root, use the existing Make targets:
+
+```sh
+make check-conformance-aggregate
+LANE=local-extended make conformance-aggregate-detail > /tmp/ag9-detail.txt
+```
+
+For historical baselines, use the [fresh-artifact publication example](../../docs/conformance/ag9d-historical-baseline-trend.md#ag9e-local-baseline-and-trend-workflow).
+It retains a baseline and its checksum only after successful publication, cleans
+up failed attempts, and never redirects into an existing accepted baseline.
+Shell redirection is outside Borrowser's complete-before-publication guarantee.
+
+Use distinct output paths for separate observations and check each publication's
+exit status before consuming its file. Summary is a checked `normal-ci` run;
+local targets publish report-only results. For checked local execution use the
+CLI's documented optional `--check`. Named lanes are exactly `normal-ci`,
+`local-extended`, `scheduled-extended`, and `manual-extended`; choosing a lane
+does not install a scheduler or establish an execution environment.
+
+Review total/pass/fail at logical-case granularity and keep expectation,
+eligibility, lane exclusion, stability, attempts, and terminal outcomes separate.
+Headline counts overlap; their sum is not a pass percentage. Parser V1, CSS V1,
+and rendering V1/V2 remain the authoritative subsystem reports. See the
+[aggregate command/exit contract](../../docs/conformance/ag9-cross-engine-comparison-reporting.md#ag9e-cli-and-publication-contract).
+
+A baseline without comparison still validates and reconciles the complete
+repository evidence registry. Empty membership must come from the valid empty
+registry, never a swallowed read/validation failure. Selected DOM baseline
+publication is available through `conformance-aggregate-external-baseline` with
+explicit `LANE` and `TEST_ID`; it retains selected-operation scope. Success with
+zero comparison points is not cross-engine agreement. Real capture admission
+remains unsupported; see the [selected-operation limits](../../docs/conformance/ag9c-external-dom-capture.md#ag9e-selected-baseline-publication).
+
+For trends, retain two baseline files and their independently recorded SHA-256
+identities, then follow the [two-input workflow](../../docs/conformance/ag9d-historical-baseline-trend.md#ag9e-local-baseline-and-trend-workflow).
+`FROM_ROOT`, `FROM`, `FROM_SHA256`, `TO_ROOT`, `TO`, and `TO_SHA256` are mandatory.
+There is no implicit latest file, Git-history lookup, rerun, or trend `--check`.
+Compare compatible lanes/domains; membership changes are reported independently
+for cases, variants, advisory points, and notes. Environment values are forwarded
+as argv data; shell redirection can truncate a file before execution and is not
+atomic replacement. Keep inputs and output paths distinct.
+
+## External sources, provenance, tracks, and notes
+
+The currently repeatable external expected-output workflows are the
+[AE13e pinned parser subset](../../docs/html5/ae13e-external-fixture-and-snapshot-workflow.md)
+and the [AG8 bounded WPT-source adaptation](../../docs/conformance/ag8-wpt-import-filtering-classification.md).
+Run `make test-html5-external-fixtures` and `make check-conformance-wpt` to check
+their existing evidence read-only. Do not regenerate sources/expectations as a
+closeout step. An AG8 semantic Paint pass is not an upstream raster pass; AE's
+parser subset is not general browser behavior or AG9 capture evidence.
+
+For AG9 provenance review, use the
+[current contributor workflow](../../docs/conformance/ag9c-external-dom-capture.md#current-contributor-workflow).
+Review fixture bytes/revision, engine/build/platform identity, algorithm and
+configuration hashes, resource policy, and the claimed input context separately
+from byte/identity validation. A valid digest or inspector output cannot prove
+the browser's historical parsing context. There is no admitted real-browser
+collection recipe today. DevTools snippets and ordinary JavaScript-enabled page
+loads are not substitutes, and synthetic vectors must not enter the real registry.
+
+Tracks and notes are reviewer-authored declarations in
+`external/cross-engine-comparisons.toml`, governed by the
+[registry contract](../../docs/conformance/ag9-cross-engine-comparison-reporting.md#cross-engine-comparison-registry-v1).
+Review a track's stable ID and full invariant tuple; do not reuse an ID for a
+different engine family, platform class, format, algorithm, context, or collection
+policy. Exact engine/platform versions remain capture-specific. Attachments must
+name an exact existing singleton DOM variant, track, and validated capture.
+Do not invent an attachment merely to populate an empty report.
+
+Notes carry their own stable ID and explicit case/variant/surface attachment.
+A capture reference is optional; a note without one can describe a limitation
+without pretending a capture occurred. Notes carry no verdict and never change
+expectations or policy. Review bounded text, identity uniqueness, and references;
+validate declarations through baseline publication before using the baseline.
+The current registry is intentionally empty; documenting these schema-supported
+review operations does not authorize synthetic or unproven real captures.
+
+## Closeout evidence
+
+The [AG9f audit index](../../docs/conformance/ag9f-requirement-evidence-closeout.md)
+references stable contracts, implementation and tests. It is non-normative and
+does not assert parent completion. Record run-specific local results in the review
+packet. Standalone Node inspector tests, trace-parser unit tests, actual Linux
+runtime isolation, `make ci`, and exact-revision hosted CI are separate evidence.
+Phase A stops before commit/push with hosted evidence pending; only later Phase B
+can validate the pushed revision. Neither empty external evidence nor an earlier
+revision's hosted pass closes the parent comparison/collection requirement.

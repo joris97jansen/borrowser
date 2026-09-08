@@ -6,17 +6,28 @@ AG9b source-neutral capture provenance plus runner-owned advisory registry, and
 AG9c independent DOM codecs plus selected advisory operations and AG9d
 historical baseline/trend comparison are implemented. Real-browser capture
 remains unsupported; AG9e exposes aggregate CLI/CI publication and AG9d1
-aligns historical validation with existing named-lane policy.
+aligns historical validation with existing named-lane policy. AG9f audits these
+capabilities without asserting parent or milestone completion; see the
+[non-normative requirement/evidence index](ag9f-requirement-evidence-closeout.md).
 
-Last updated: 2026-09-06
+Last updated: 2026-09-08
 
-AG9 defines the future aggregate-accounting, reporting, cross-engine evidence,
+AG9 defines the aggregate-accounting, reporting, cross-engine evidence,
 baseline-note, and trend contracts for Borrowser's current static HTML/CSS
-conformance harness. Stage 1 adds the typed aggregate runner and accounting
-projection. AG9a adds the two bounded aggregate V1 report projections defined
-below. Neither stage loads an external capture registry, runs an external
-browser, compares an external capture, calculates a trend, or changes a command
-or CI job.
+conformance harness. Stage 1 and AG9a implement typed execution/accounting and
+bounded summary/detail projection. AG9b implements the separate validated
+advisory registry; AG9c implements comparable DOM and selected advisory
+operations; AG9d/d1 implement historical baselines and trends; AG9e implements
+CLI/CI publication. Stage-specific exclusions below describe what each stage
+added, not the absence of capabilities supplied by subsequent stages.
+
+Implemented comparison machinery, the admitted evidence population, and future
+browser collection are distinct. The current registry contains no captures,
+tracks, attachments, or notes. Real-browser capture admission remains unsupported.
+AE13e external parser expectations and AG8's derived semantic Paint relation
+provide bounded external-source evidence, not admitted browser captures. The
+parent #1108 collection/comparison requirement remains unresolved in the AG9f
+audit; documentation of a limitation is not acceptance of a deferral.
 
 AG1 through AG8 remain authoritative. In particular, AG9 preserves AG1's
 federated ownership and orthogonal state, AG2 logical identity and discovery,
@@ -1904,8 +1915,11 @@ source set, and evidence authority.
 
 ## External-browser and CI boundaries
 
-External collection remains a manual, local workflow for AG9. AG9c adds a versioned, reviewable DOM-inspection script but admits no real
-capture mechanism. Normal CI will not:
+External collection is scoped to local tooling for AG9; no admitted operational
+real-browser collection path currently exists. AG9c adds a versioned, reviewable
+DOM-inspection script but admits no real capture mechanism. See the
+[current inspection and provenance-review workflow](ag9c-external-dom-capture.md#current-contributor-workflow).
+Normal CI will not:
 
 - install, download, discover, or launch an external browser;
 - add Playwright, WebDriver, or browser-driver dependencies;

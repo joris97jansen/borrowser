@@ -300,10 +300,13 @@ reader, sentinel-bounds reads, retains bytes, verifies both digests, and only
 then decodes those same buffers. It never reopens paths. A platform lacking the
 strong guarantee returns typed `UnsupportedPlatform`.
 
-AG9d adds no automatic discovery, `latest`, persistent storage, dashboard,
-CLI/CI publication, browser capture/automation, complete advisory evaluator,
-selected-operation merger, percentage, broad WPT claim, or production-engine
-behavior.
+AG9d itself did not add CLI/CI publication; AG9e supplies the explicit workflow
+below. Automatic discovery, `latest`, managed historical storage, dashboard,
+browser capture/automation, complete advisory evaluation, selected-operation
+merging, percentage reporting, broad WPT execution, and production-engine
+behavior remain outside this historical comparison facility. AG9f records the
+[remaining gaps and parent assessment](ag9f-requirement-evidence-closeout.md)
+without changing these contracts.
 
 Independent protocol vectors live in
 `tests/contract-vectors/conformance-baseline-v1/`,
@@ -323,24 +326,41 @@ does not mean “without registry loading.” Empty membership requires successf
 reconciliation of the valid empty registry. Optional selected DOM comparison uses
 the AG9c operation and `seal_baseline_from_selected_operation` instead.
 
-For example, at each chosen revision, publish to a distinct output file:
+At each chosen revision, run this example from the repository root. It uses
+`sh`, `mktemp` (available on Linux and macOS), and the existing Python 3
+prerequisite. Each attempt gets a fresh directory under a persistent local
+evidence root; no accepted baseline is overwritten. The subshell cleans up an
+unsuccessful attempt, and the final `baseline` filename is created only after
+publication and checksum generation succeed:
 
 ```sh
-LANE=local-extended make conformance-aggregate-baseline > from.baseline
-shasum -a 256 from.baseline
-# At the second chosen revision:
-LANE=local-extended make conformance-aggregate-baseline > to.baseline
-shasum -a 256 to.baseline
+(
+    umask 077
+    evidence_root=${AG9_EVIDENCE_ROOT:-"$HOME/borrowser-evidence"}
+    mkdir -p "$evidence_root" || exit 1
+    evidence_dir=$(mktemp -d "$evidence_root/baseline.XXXXXX") || exit 1
+    trap 'rm -rf "$evidence_dir"' 0
+    trap 'exit 1' 1 2 3 15
+    LANE=local-extended make conformance-aggregate-baseline \
+        > "$evidence_dir/baseline.partial" || exit 1
+    python3 -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
+        "$evidence_dir/baseline.partial" > "$evidence_dir/baseline.sha256" || exit 1
+    mv "$evidence_dir/baseline.partial" "$evidence_dir/baseline" || exit 1
+    trap - 0 1 2 3 15
+    printf 'Retained baseline and SHA-256 in %s\n' "$evidence_dir"
+)
 ```
 
-Check each publication command's exit status before using the file. Record the
-printed digest independently; do not calculate an expected digest implicitly
-inside the trend command from the file being verified. With those recorded
-64-character lowercase SHA-256 values:
+If forcibly interrupted before cleanup (for example, SIGKILL), a directory with
+only `baseline.partial` is incomplete evidence and must not be consumed. Retain
+the two successful directories as `from_evidence_dir` and `to_evidence_dir`.
+Read their stored, 64-character lowercase checksums into `recorded_from_sha256`
+and `recorded_to_sha256`; do not recompute expected digests implicitly from the
+files inside the trend command:
 
 ```sh
-FROM_ROOT="$PWD" FROM=from.baseline FROM_SHA256="$recorded_from_sha256" \
-TO_ROOT="$PWD" TO=to.baseline TO_SHA256="$recorded_to_sha256" \
+FROM_ROOT="$from_evidence_dir" FROM=baseline FROM_SHA256="$recorded_from_sha256" \
+TO_ROOT="$to_evidence_dir" TO=baseline TO_SHA256="$recorded_to_sha256" \
 make conformance-aggregate-trend > comparison.trend
 ```
 

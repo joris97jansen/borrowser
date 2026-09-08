@@ -537,19 +537,49 @@ Current architecture status:
   unsupported. AG9d1 corrects historical policy validation to include named-lane
   selection and all valid attempt states; valid lane-excluded `NotRun` baselines
   now round-trip without changing live policy or any wire/identity contract.
-- AG9a/AG9b/AG9c/AG9d do not establish broad WPT compliance, browser compatibility,
-  browser automation, raster comparison, or AG milestone completion.
+- AG9f reconciles the implemented Stage 1/AG9a reporting, AG9b/c advisory
+  machinery, AG9d/d1 history, and AG9e publication against parent requirements.
+  These capabilities are implemented, but neither AG9 nor Milestone AG is
+  declared complete. The real registry has zero captures, tracks, attachments,
+  and notes. AE13e's external parser expectations and AG8's semantic adaptation
+  are bounded external-source evidence; neither establishes an admitted
+  external-browser collection workflow. Parent #1108 comparison/collection
+  sufficiency remains unresolved, without an accepted deferral. See
+  `docs/conformance/ag9f-requirement-evidence-closeout.md` for the non-normative
+  requirement matrix, per-gap dispositions, and follow-up draft.
+- No AG9 capability establishes broad WPT compliance, browser compatibility,
+  browser automation, or raster comparison. Completion requires requirement and
+  validation evidence, including later exact-revision hosted CI.
 
 Missing or incomplete:
 
-- aggregate scheduling (AG9e adds explicit named-lane CLI/CI publication)
+- general aggregate scheduling/orchestration (partially addressed by AG9e's
+  explicit named-lane CLI/CI publication; existing parser/performance scheduled
+  jobs are not an aggregate scheduler)
 - Browser/runtime subsystem adapters
 - broader pinned external-source adapters beyond the exact AG8 and AE13e proofs
 - proven real-browser capture mechanisms (inspector and selected DOM comparison
   infrastructure exist; real-capture admission remains unsupported)
 - pixel/raster reference comparison infrastructure
+- broader cross-engine observable surfaces beyond comparable singleton DOM,
+  complete advisory-population evaluation, and selected-operation merging
+- rendering environment/resource coverage beyond available width and synthetic
+  text metrics: viewport height, DPR, platform fonts, resource loading, and WPT
+  server behavior remain gaps; semantic relations are not screenshot evidence
+- broader WPT forms and execution beyond bounded source accounting; AG8's graph
+  interpretation partially addresses relation-link intake but not raster/fuzzy
+  execution, reftest-wait, or broad manifest ingestion
+- automatic historical discovery/latest selection, managed baseline storage,
+  dashboards, percentage or regression-gating policy, and actual timeout detection
+  (AG9's timeout category remains reserved zero)
 - JavaScript, DOM API, event-loop, WebDriver, CSSOM, interaction, navigation,
   storage, and other broader browser-platform conformance
+
+The earlier AG4/AG5/AE limitations above remain valid: contextual fragments,
+parser/expectation representation and byte-payload accounting are not fixed by
+aggregate reporting. AG7 supersedes AG6's lack of structural reference execution;
+AG9e supersedes earlier publication exclusions. Those bounded supersessions do
+not remove the broader runtime, source, capture, or rendering gaps.
 
 ## Layout
 

@@ -118,6 +118,47 @@ JavaScript-enabled page load followed by a DevTools snippet is invalid. No
 browser is downloaded, discovered, launched, or automated by AG9c. Do not add a
 capture to the real registry merely to demonstrate the workflow.
 
+## Current contributor workflow
+
+The supported operations are inspection/codec validation, declaration review,
+and explicit local baseline publication. There is no admitted operational
+real-browser collection path. Keep these three facts separate:
+
+- the Rust/JavaScript comparable-DOM and advisory machinery is implemented;
+- the repository currently declares zero captures, tracks, attachments, and notes;
+- a future real-browser mechanism must establish every admission condition above.
+
+Validate the independent inspector with
+`node --test tools/conformance/web-observable-dom-tree-v1.test.mjs` and Rust
+support with `cargo test -p html-test-support --features parser-fixtures --locked`.
+The shared vectors are independently authored machinery tests, not observations
+collected from named browser versions. Do not add them to the real registry.
+
+Before any future capture is proposed, review original fixture bytes and digest,
+source/revision, engine/build/platform identity, algorithm/configuration hashes,
+invocation and resource policy, and proof of the frozen parser/input context.
+The [provenance fields](ag9-cross-engine-comparison-reporting.md#external-capture-provenance)
+and [registry validation](ag9-cross-engine-comparison-reporting.md#deterministic-registry-validation)
+define byte/identity validation. Passing those checks does not prove delivery,
+scripting state, parser completion, or non-mutation. A DevTools snippet or
+ordinary JavaScript-enabled browser load is not an admitted mechanism.
+
+Reviewer-authored notes may describe limitations with an explicit existing DOM
+attachment and no capture reference. Tracks preserve their invariant series
+tuple; attachments cannot invent a capture or broaden selected scope. See the
+[contributor track/note workflow](../../tests/conformance/README.md#external-sources-provenance-tracks-and-notes).
+Baseline publication validates all declarations even without evaluation. With an
+empty registry a selected baseline can publish without a comparison point;
+publication success is not real-browser equivalence.
+
+[AE13e external parser expectations](../html5/ae13e-external-fixture-and-snapshot-workflow.md)
+and [AG8 source adaptation](ag8-wpt-import-filtering-classification.md) are existing
+provenance-backed external-output workflows. They do not admit browser captures
+under this contract. Their sufficiency for parent #1108's selected comparison and
+external-browser collection goal remains explicitly unresolved in the
+[AG9f audit](ag9f-requirement-evidence-closeout.md#parent-comparison-finding-and-follow-up-draft-f1).
+This records a gap, not an accepted deferral or a reason to loosen admission.
+
 ## Exact source bytes and existing capture authority
 
 `VerifiedCaptureSourcesV1::load` reads both source files using same-opened-object
