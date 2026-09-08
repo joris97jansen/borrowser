@@ -11,9 +11,15 @@
   source-record accounting.
 - AG9 Stage 0: aggregate-reporting, cross-engine evidence, comparable DOM,
   capture-identity, bounds, and trend contracts.
-- AG9 Stage 1 and AG9a through AG9d: typed aggregate execution/accounting,
-  deterministic bounded aggregate summary/detail report projections, and the
-  validated source-neutral external-capture/advisory-registry plane.
+- AG9 Stage 1/AG9a: typed aggregate execution/accounting and bounded reports.
+- AG9b/AG9c: validated advisory registry and comparable-DOM machinery; no
+  admitted real-browser capture mechanism.
+- AG9d/AG9d1: deterministic historical baselines/trends and named-lane validation.
+- AG9e: aggregate CLI/CI publication and local workflows.
+- AG9f: [non-normative requirement/evidence closeout audit](ag9f-requirement-evidence-closeout.md).
+  Parent comparison/collection sufficiency remains unresolved; AG completion is
+  not asserted. Run-specific local and pending hosted evidence is kept separately
+  in the Phase A review packet.
 
 AG6 is documented in
 [`ag6-layout-paint-structural-conformance.md`](ag6-layout-paint-structural-conformance.md).
@@ -54,11 +60,13 @@ See
 [`ag9d-historical-baseline-trend.md`](ag9d-historical-baseline-trend.md).
 
 AG9b loads and validates checked-in external capture declarations, artifacts,
-advisory tracks, typed aggregate attachments, and baseline notes. It does not
-add external capture tooling, external browser comparison, advisory comparison
-verdicts, aggregate CLI/CI publication,
-browser automation, raster comparison, WPT-specific aggregate loading, or
-production runtime behavior.
+advisory tracks, typed aggregate attachments, and baseline notes. AG9c adds
+selected advisory operations and AG9e publication. The checked-in registry has
+zero captures, attachments, tracks, and notes; synthetic vectors are machinery
+tests only. Browser automation, admitted real capture, raster comparison, broader
+external-source loading, and production runtime adapters remain gaps. See the
+[gap reconciliation](ag9f-requirement-evidence-closeout.md#existing-gap-ledger)
+and [contributor workflows](../../tests/conformance/README.md#aggregate-reports-and-historical-evidence).
 
 ## AG9c comparable DOM and selected advisory operations
 

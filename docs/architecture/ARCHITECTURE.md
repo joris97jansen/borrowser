@@ -92,15 +92,31 @@ test/tooling-only `conformance-runner`, which depends on generic AG support and
 `html-test-support`. Its parser route is strictly
 `conformance-runner -> html-test-support -> html::conformance -> production HTML parser`.
 The generic crate does not depend back on HTML, and HTML/test support does not
-depend on AG. AG4 implements only tokenizer, tree-construction, and
-parser-created DOM profiles; CSS, Layout, Paint/GFX, Browser/runtime, JS,
-cross-engine, and raster execution remain unimplemented.
-`conformance-runner` enables no subsystem adapter by default; the parser lane
-selects its optional `html-parser` feature explicitly. Semantic Cargo metadata
-tests resolve package identities through direct aliases, workspace-inherited
-aliases, and target-specific dependencies, then evaluate the default and
-HTML-enabled feature closures separately to keep the dependency direction
-enforceable.
+depend on AG. AG5 delegates CSS observations through `css-test-support`;
+AG6/AG7 delegate structural Layout/Paint observations through
+`rendering-test-support`. Production owners retain parsing, computed style,
+geometry, and paint semantics. Structural reference relations are not pixels.
+
+AG9 composes the existing typed adapters into a sealed aggregate run. Accounting
+and report projection consume that run without parsing subsystem report bytes.
+`external-test-provenance` owns source-neutral identity and confined artifact
+reads; the runner owns exact case/variant attachments, advisory tracks, and notes
+in a separate immutable evidence plane. HTML test support owns comparable DOM;
+external observations cannot alter Borrowser outcomes, identities, or policy.
+Historical baselines and two-input trends retain separate Borrowser, advisory,
+and note populations. AG9e adds explicit CLI/CI publication, not a general
+scheduler or production Browser/runtime adapter.
+
+`conformance-runner` enables no subsystem adapter by default. Its `html-parser`,
+`css`, and `rendering` features are explicit; `aggregate` composes all three.
+Semantic Cargo metadata tests cover feature closures, aliases and target-specific
+dependencies to enforce the one-way ownership boundaries. Browser/runtime
+observation, JavaScript/platform execution, raster comparison, and admitted
+real-browser capture remain unavailable. Independent DOM codecs and synthetic
+comparison tests do not establish real cross-engine conformance. See the
+[AG9 contract](../conformance/ag9-cross-engine-comparison-reporting.md) and
+[non-normative AG9f audit](../conformance/ag9f-requirement-evidence-closeout.md)
+for implementation evidence and unresolved parent requirements.
 
 ---
 
