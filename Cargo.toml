@@ -20,6 +20,7 @@ opt-level = 1
 
 [workspace]
 members = [
+    "crates/external_browser_capture",
     "crates/external_test_provenance",
     "crates/wpt_test_support",
   "crates/conformance_test_support",

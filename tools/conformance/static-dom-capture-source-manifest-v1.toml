@@ -1,0 +1,139 @@
+format = "borrowser-capture-source-manifest-v1"
+[[entries]]
+path = "Cargo.lock"
+sha256 = "3866cce45c7330227bdb91c8b9871ba2ec63a9e5145a88a3798822dac4d2850a"
+[[entries]]
+path = "Cargo.toml"
+sha256 = "7264a482be09b2367b54798711e2cf4d68ee1c6548be6e98b8e2ac219db8e23e"
+[[entries]]
+path = "crates/conformance_runner/Cargo.toml"
+sha256 = "e8b7f3512f691c2086576b50f71c2fb97dc1ea00bd15085e0e895a44c9eba9a8"
+[[entries]]
+path = "crates/conformance_runner/src/bin/conformance_capture.rs"
+sha256 = "4f9ec49c8c2f892c16bb0e626e05eff01bd15836c061b8a20d279c616d1a9745"
+[[entries]]
+path = "crates/external_browser_capture/Cargo.toml"
+sha256 = "73b338279976b9c6c9cf1ffbe80ccd23f2697d124e128f7eed108fcade2dc3ad"
+[[entries]]
+path = "crates/external_browser_capture/src/chromium/delivery.rs"
+sha256 = "361a105407c2bf1f16effe65b82ed2342d6404ea682629c9912380fdf8a63178"
+[[entries]]
+path = "crates/external_browser_capture/src/chromium/events.rs"
+sha256 = "f824e0da360ddb9df7eb367ed0ffbc881fd4f1c0d7a46c6fb52a516ad32dd208"
+[[entries]]
+path = "crates/external_browser_capture/src/chromium/inspection.rs"
+sha256 = "e13052952bc2afc69adf651d6a94f2a85bb67286bfcc7a72a2cfe6db18930001"
+[[entries]]
+path = "crates/external_browser_capture/src/chromium/mod.rs"
+sha256 = "aaf6187baccd3379cfca48c75218683856c9a2bfad55744c15678b29e03f7b7b"
+[[entries]]
+path = "crates/external_browser_capture/src/chromium/protocol.rs"
+sha256 = "ac179e6a7a3844823a8dee7e7906604393f83fb3bad57f5547cf222bfe42eff2"
+[[entries]]
+path = "crates/external_browser_capture/src/chromium/session.rs"
+sha256 = "670e31bcdf4cd411e25c58b1d6831633cead6c02177945ee65088e340bf67d64"
+[[entries]]
+path = "crates/external_browser_capture/src/configuration.rs"
+sha256 = "815e4ff407178b4e14bdb6c80ea2fd4111a10739038f8e8042c2cd5b06e91f64"
+[[entries]]
+path = "crates/external_browser_capture/src/deadline.rs"
+sha256 = "43def5dec9a5c1949f455bb33ade4dad80ca2bbdeb0b36ff9f1ae28d070abca5"
+[[entries]]
+path = "crates/external_browser_capture/src/distribution.rs"
+sha256 = "07046f02cd19a5bf72a56fb123903b8d4112398ca8d7a60f96e787d0024444d3"
+[[entries]]
+path = "crates/external_browser_capture/src/distribution_linux.rs"
+sha256 = "b13cab2544e578c8559821d4d72320d9540cdd7c2d88e82399ad85524c96227a"
+[[entries]]
+path = "crates/external_browser_capture/src/error.rs"
+sha256 = "e707770d2a771207f03c0e48a283173475851c690e1d0177277e4624fe27a2ac"
+[[entries]]
+path = "crates/external_browser_capture/src/isolation/linux.rs"
+sha256 = "c3d6371c51fb24a014f861b528616ef13b6d34aaef8dc6f1308750226ff05aa1"
+[[entries]]
+path = "crates/external_browser_capture/src/isolation/mod.rs"
+sha256 = "361a831c3184101017de0cbe990faeb6be4bb4fbe99f939ecc9b8402cdf83462"
+[[entries]]
+path = "crates/external_browser_capture/src/isolation/population.rs"
+sha256 = "be84b5526a02c2fe0e6e8de1150bbf1056d9f5dc16a59ced1da24c6ddfc03a6b"
+[[entries]]
+path = "crates/external_browser_capture/src/isolation/procfs.rs"
+sha256 = "b54917a2137c3b703c22113ac8e2f266883e16a820080750c7239b9730c307cb"
+[[entries]]
+path = "crates/external_browser_capture/src/isolation/verification.rs"
+sha256 = "7a6f86ebcb20a53171661d0d5ab9c6d377fa6bd33181369f791e52d20f6e4d72"
+[[entries]]
+path = "crates/external_browser_capture/src/lib.rs"
+sha256 = "fcd8afafe4ab7c48fd50bab0092a96d960f0e293c2f53fb14470785b96e6e2f8"
+[[entries]]
+path = "crates/external_browser_capture/src/limits.rs"
+sha256 = "dc26693833f26c28a43b1e66e63e7449db57a2ed3171ab4e6638c604dffd3683"
+[[entries]]
+path = "crates/external_browser_capture/src/linux_mount.rs"
+sha256 = "156bf6ec9e4883e5396db350a052689fddfb1e686c982786a9e2cbbe7885e320"
+[[entries]]
+path = "crates/external_browser_capture/src/packaging.rs"
+sha256 = "aad341c674f10d824235c52d5bdef0da33e84e63785cb8d36ef980ff5b5be60d"
+[[entries]]
+path = "crates/external_browser_capture/src/profile.rs"
+sha256 = "de253b1d04a690a72be276a9d3a74ef9b0a7999ac2c8f89f82f7c94bfe700198"
+[[entries]]
+path = "crates/external_browser_capture/src/qualification.rs"
+sha256 = "3efc20024a601893134ffaf2f6f76e7dbc4c7e6c7cb2ff0018b64e840016e1e1"
+[[entries]]
+path = "crates/external_browser_capture/src/source_identity.rs"
+sha256 = "571baab0015aa46e69eceeee396cf9092c4bf8077586ba1948a86f9f01e4a69e"
+[[entries]]
+path = "crates/external_browser_capture/src/source_set.rs"
+sha256 = "2afde1d6fda7caa6c1191977eed8551b670f091ef8adea8ef9e6e9812075dfaa"
+[[entries]]
+path = "crates/external_browser_capture/src/wire.rs"
+sha256 = "6fdd5b2bd6ea84f8424f45b58925d05102d8c043525012f41dff61b5de33278e"
+[[entries]]
+path = "crates/external_browser_capture/tests/real_chromium.rs"
+sha256 = "d6606362d0c476d214f35e6ed03b76e666a17b9ed4d7ab442cbf36508cab2d3b"
+[[entries]]
+path = "crates/external_test_provenance/Cargo.toml"
+sha256 = "aea81f5f40bffabb5ccd0088d56249af0b3401bba90249f76ddbe676d7c2e2c3"
+[[entries]]
+path = "crates/external_test_provenance/src/allocation.rs"
+sha256 = "787f1e09f456722d05755b3b413f61e74e1c1ded60dbdd84a97bab15f69882e7"
+[[entries]]
+path = "crates/external_test_provenance/src/capture_v1/artifact.rs"
+sha256 = "325e7a8165aad17451f78c1dbec59e61ad484e93b1949439e7cd25ed8091758e"
+[[entries]]
+path = "crates/external_test_provenance/src/capture_v1/historical.rs"
+sha256 = "c0b16245555aa73496c6f0ebfb9bb1fda14030e7c73d76b7de312a2f1140616a"
+[[entries]]
+path = "crates/external_test_provenance/src/capture_v1/identity.rs"
+sha256 = "2b38d27d10b7d4ee66c71ea0838d06f5fb51b50e1d13677d64da7df0b47498cb"
+[[entries]]
+path = "crates/external_test_provenance/src/capture_v1/mod.rs"
+sha256 = "981afce80afbf41d4d14be816c55591195894cdbc7183bd23494fcebc787a053"
+[[entries]]
+path = "crates/external_test_provenance/src/capture_v1/model.rs"
+sha256 = "e63d8d3cae925b9998b490af31756b41c1f04e20dda5fa434d7bdf849de25c78"
+[[entries]]
+path = "crates/external_test_provenance/src/confined_file.rs"
+sha256 = "dd2a55a7da4d711d36459f0597d0a7c2b64c0d1dea0f9efead0af540e01b5824"
+[[entries]]
+path = "crates/external_test_provenance/src/digest.rs"
+sha256 = "b23be7346c32e3d48d2b321ce48252e04c2c0e7fd26681e790a0baa572eb4df4"
+[[entries]]
+path = "crates/external_test_provenance/src/identity.rs"
+sha256 = "0db13a733314b2ae83154f457f2e6a74cb52a58d890200b0d78e5edd29945211"
+[[entries]]
+path = "crates/external_test_provenance/src/lib.rs"
+sha256 = "f110d318962adfef70232706ff2a08fdd0cf7f18ac78f8c6b060c52ae66897d6"
+[[entries]]
+path = "crates/external_test_provenance/src/path.rs"
+sha256 = "2836ced50922e99af13ed6042f11d7cf3b6550620948ab4389b7e685970b8d88"
+[[entries]]
+path = "crates/external_test_provenance/src/provenance_v1.rs"
+sha256 = "4c42be274335167b0efeb766bd337cbdd63f51f78f7ec1975d980afb59ff7763"
+[[entries]]
+path = "rust-toolchain.toml"
+sha256 = "b1a3b7e73653ac88b0ac085c7b6f80901d4d679b1d752f532d38f4ca5b4c6221"
+[[entries]]
+path = "tools/conformance/web-observable-dom-tree-v1.mjs"
+sha256 = "e3fc2de4fae55c4d14e8eae0520362a2d29b0789174858d3f8837c7c4cd5e209"

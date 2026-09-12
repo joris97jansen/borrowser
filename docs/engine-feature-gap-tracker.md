@@ -547,6 +547,12 @@ Current architecture status:
   sufficiency remains unresolved, without an accepted deferral. See
   `docs/conformance/ag9f-requirement-evidence-closeout.md` for the non-normative
   requirement matrix, per-gap dispositions, and follow-up draft.
+- AG9g Stage 0 adds an explicit local Chromium/Linux capture core and frozen
+  qualification contracts. Deterministic transport tests do not establish real
+  browser qualification: the implementation environment is macOS and no pinned
+  Chromium distribution was supplied. Stage 0 remains open; genuine collection,
+  admission, and registry/history integration remain unavailable. See
+  `docs/conformance/ag9g-admitted-static-dom-capture.md`.
 - No AG9 capability establishes broad WPT compliance, browser compatibility,
   browser automation, or raster comparison. Completion requires requirement and
   validation evidence, including later exact-revision hosted CI.
