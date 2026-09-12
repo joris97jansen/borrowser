@@ -146,7 +146,21 @@ pub(super) fn snapshot(
         &File::from(rustix::io::dup(&root).map_err(|_| E::Read)?),
         m.root_mode,
     )?;
-    let temp = tempfile::tempdir().map_err(|_| E::Publication)?;
+    // The enclosing directory is private from creation, independent of umask.
+    // Only its distribution child receives the manifest's root permissions.
+    let temp = tempfile::Builder::new()
+        .permissions(std::fs::Permissions::from_mode(0o700))
+        .tempdir()
+        .map_err(|_| E::Publication)?;
+    let envelope = File::from(
+        open(
+            temp.path(),
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(|_| E::Path)?,
+    );
+    checked_metadata(&envelope, 0o700)?;
     let snapshot_root = temp.path().join("distribution");
     std::fs::create_dir(&snapshot_root).map_err(|_| E::Publication)?;
     // Retain every validated directory object through copying; never resolve a
@@ -383,6 +397,24 @@ mod tests {
         std::fs::write(supplied.path().join("chrome"), b"changed").unwrap();
         assert_eq!(std::fs::read(snapshot.executable()).unwrap(), b"x");
         snapshot.close().unwrap();
+    }
+
+    #[test]
+    fn private_snapshot_is_private_with_permissive_umask() {
+        use std::os::unix::process::CommandExt;
+        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+        command.args([
+            "--exact",
+            "distribution::linux::tests::private_snapshot_keeps_manifest_root_mode_inside_private_envelope",
+        ]);
+        // Change umask only in the subprocess, never in the parallel test runner.
+        unsafe {
+            command.pre_exec(|| {
+                libc::umask(0);
+                Ok(())
+            });
+        }
+        assert!(command.status().unwrap().success());
     }
 }
 

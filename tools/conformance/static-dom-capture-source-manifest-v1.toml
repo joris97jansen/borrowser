@@ -43,7 +43,7 @@ path = "crates/external_browser_capture/src/distribution.rs"
 sha256 = "07046f02cd19a5bf72a56fb123903b8d4112398ca8d7a60f96e787d0024444d3"
 [[entries]]
 path = "crates/external_browser_capture/src/distribution_linux.rs"
-sha256 = "b13cab2544e578c8559821d4d72320d9540cdd7c2d88e82399ad85524c96227a"
+sha256 = "e3a8d22e31d025dae316d46874b8988f11729a6c45da6f61f6603e534b951e10"
 [[entries]]
 path = "crates/external_browser_capture/src/error.rs"
 sha256 = "e707770d2a771207f03c0e48a283173475851c690e1d0177277e4624fe27a2ac"
