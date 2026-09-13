@@ -4,7 +4,7 @@ path = "crates/external_browser_capture/src/qualification.rs"
 sha256 = "3efc20024a601893134ffaf2f6f76e7dbc4c7e6c7cb2ff0018b64e840016e1e1"
 [[entries]]
 path = "tests/contract-vectors/static-dom-capture-qualification-v1/README.md"
-sha256 = "e0800a2559f180892b15653c57267f0c365248ed5de31a17ccc1ee40487e162d"
+sha256 = "733707bceda6607f9c225b9bf9e7563e2a564c5c9ddd75ef87384b7f3a19f83c"
 [[entries]]
 path = "tests/contract-vectors/static-dom-capture-qualification-v1/authored-effects.html"
 sha256 = "517b993d121d18b54a2ec148e71c06d5763dd49647a90fb591da2bdd3f6d94e9"
@@ -13,7 +13,7 @@ path = "tests/contract-vectors/static-dom-capture-qualification-v1/child-frame.h
 sha256 = "b231474c9acd0c4923ce11f31fd7b6a92a1f499120bc07b20efe3a4137ab47c5"
 [[entries]]
 path = "tests/contract-vectors/static-dom-capture-qualification-v1/expected.toml"
-sha256 = "7f87ddb0fa36705cb0313da5a90ed9e582110ea1bcbb88adf6f273fe0b97035c"
+sha256 = "26da523fe0891f87f5ea16dfc8ee4ac5b52f804f5a625e4f4a9790d226625542"
 [[entries]]
 path = "tests/contract-vectors/static-dom-capture-qualification-v1/external-script.js"
 sha256 = "5437dbdd912e9cc3a01de148f3eae6ddd4558578245f5dd284d4e52e7ef6bda7"
