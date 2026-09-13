@@ -1,0 +1,21 @@
+format = "ag9g-static-dom-qualification-assertions-v1"
+[[vectors]]
+path = "noscript.html"
+outcome = "observation"
+required_lines = ["local-name = \"strong\"", "data = \"NOSCRIPT-PARSED\""]
+[[vectors]]
+path = "authored-effects.html"
+outcome = "observation"
+required_lines = ["data = \"STATIC-SENTINEL\""]
+forbidden_lines = ["local-name = \"b\"", "local-name = \"em\""]
+minimum_denied_requests = 1
+[[vectors]]
+path = "utf8.html"
+outcome = "observation"
+required_lines = ["data = \"é水🙂\""]
+[[vectors]]
+path = "redirect.html"
+outcome = "unexpected-navigation-or-target"
+[[vectors]]
+path = "child-frame.html"
+outcome = "unexpected-navigation-or-target"

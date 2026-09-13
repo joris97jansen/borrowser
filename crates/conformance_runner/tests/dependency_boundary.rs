@@ -707,6 +707,11 @@ fn aggregate_feature_composes_only_the_existing_typed_adapter_boundaries() {
         ],
         "aggregate conformance graph",
     );
+    assert_absent(
+        &graph,
+        &["external-browser-capture"],
+        "ordinary aggregate must not link browser collection tooling",
+    );
 }
 
 #[test]

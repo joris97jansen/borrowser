@@ -1,5 +1,9 @@
 # Borrowser conformance contracts
 
+- AG9g Stage 0: [Chromium/Linux mechanism qualification](ag9g-admitted-static-dom-capture.md)
+  and [future evidence/admission contracts](ag9g-collection-evidence-admission-v1.md).
+  Real mechanism feasibility remains unqualified; admission and collection are unavailable.
+
 - AG1: federated ownership, scope, and orthogonal state.
 - AG2: fixture discovery, logical `TestId`, packages, and manifests.
 - AG3: logical-test classification and expected-result metadata.

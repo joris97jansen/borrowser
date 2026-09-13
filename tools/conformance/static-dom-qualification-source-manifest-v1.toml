@@ -1,0 +1,28 @@
+format = "borrowser-capture-source-manifest-v1"
+[[entries]]
+path = "crates/external_browser_capture/src/qualification.rs"
+sha256 = "3efc20024a601893134ffaf2f6f76e7dbc4c7e6c7cb2ff0018b64e840016e1e1"
+[[entries]]
+path = "tests/contract-vectors/static-dom-capture-qualification-v1/README.md"
+sha256 = "e0800a2559f180892b15653c57267f0c365248ed5de31a17ccc1ee40487e162d"
+[[entries]]
+path = "tests/contract-vectors/static-dom-capture-qualification-v1/authored-effects.html"
+sha256 = "517b993d121d18b54a2ec148e71c06d5763dd49647a90fb591da2bdd3f6d94e9"
+[[entries]]
+path = "tests/contract-vectors/static-dom-capture-qualification-v1/child-frame.html"
+sha256 = "b231474c9acd0c4923ce11f31fd7b6a92a1f499120bc07b20efe3a4137ab47c5"
+[[entries]]
+path = "tests/contract-vectors/static-dom-capture-qualification-v1/expected.toml"
+sha256 = "7f87ddb0fa36705cb0313da5a90ed9e582110ea1bcbb88adf6f273fe0b97035c"
+[[entries]]
+path = "tests/contract-vectors/static-dom-capture-qualification-v1/external-script.js"
+sha256 = "5437dbdd912e9cc3a01de148f3eae6ddd4558578245f5dd284d4e52e7ef6bda7"
+[[entries]]
+path = "tests/contract-vectors/static-dom-capture-qualification-v1/noscript.html"
+sha256 = "0d67e709b293c6ad3796c612633784d28ad074e630ddf20d351cdb0cb872064b"
+[[entries]]
+path = "tests/contract-vectors/static-dom-capture-qualification-v1/redirect.html"
+sha256 = "4edba283b2a92fd154d05b81189e8732af578d0c34b32aec726ed5fc60005a3e"
+[[entries]]
+path = "tests/contract-vectors/static-dom-capture-qualification-v1/utf8.html"
+sha256 = "1fd94c9ca713f6a014ca6e1f7a1714ce715a232cdedfcd016fbb560dd96193ce"

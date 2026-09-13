@@ -447,6 +447,7 @@ version = "0.1.0"
 dependencies = [
  "conformance-test-support",
  "css-test-support",
+ "external-browser-capture",
  "external-test-provenance",
  "html-test-support",
  "rendering-test-support",
@@ -813,6 +814,21 @@ name = "error-code"
 version = "3.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dea2df4cf52843e0452895c455a1a2cfbb842a1e7329671acf418fdc53ed4c59"
+
+[[package]]
+name = "external-browser-capture"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "external-test-provenance",
+ "libc",
+ "ring",
+ "rustix 1.1.2",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml 0.9.12+spec-1.1.0",
+]
 
 [[package]]
 name = "external-test-provenance"

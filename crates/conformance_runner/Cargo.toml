@@ -2,15 +2,18 @@
 name = "conformance-runner"
 version = "0.1.0"
 edition = "2024"
+default-run = "conformance-runner"
 
 [features]
 default = []
+external-capture = ["dep:external-browser-capture", "external-browser-capture/chromium-cdp"]
 html-parser = ["dep:html-test-support"]
 css = ["dep:css-test-support"]
 rendering = ["dep:rendering-test-support"]
 aggregate = ["html-parser", "css", "rendering", "dep:serde", "dep:toml"]
 
 [dependencies]
+external-browser-capture = { path = "../external_browser_capture", optional = true }
 conformance-test-support = { path = "../conformance_test_support" }
 html-test-support = { path = "../html_test_support", features = ["parser-fixtures"], optional = true }
 css-test-support = { path = "../css_test_support", optional = true }
@@ -30,3 +33,8 @@ path = "src/lib.rs"
 [[bin]]
 name = "conformance-runner"
 path = "src/bin/conformance_runner.rs"
+
+[[bin]]
+name = "conformance-capture"
+path = "src/bin/conformance_capture.rs"
+required-features = ["external-capture"]

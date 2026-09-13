@@ -1,0 +1,21 @@
+[package]
+name = "external-browser-capture"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+chromium-cdp = []
+
+[dependencies]
+external-test-provenance = { path = "../external_test_provenance" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+ring = "0.17.14"
+base64 = "0.22"
+tempfile = "3"
+libc = "0.2"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1", features = ["fs"] }

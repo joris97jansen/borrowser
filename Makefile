@@ -66,6 +66,7 @@ check-conformance-runner-features:
 	cargo check -p conformance-runner --no-default-features --features html-parser,css --locked
 	cargo check -p conformance-runner --no-default-features --features aggregate --locked
 	cargo check -p conformance-runner --all-features --locked
+	cargo check -p conformance-runner --no-default-features --features external-capture --locked
 
 # Values are exported as data and forwarded by Python as argv, never shell text.
 export LANE TEST_ID FROM_ROOT FROM FROM_SHA256 TO_ROOT TO TO_SHA256
