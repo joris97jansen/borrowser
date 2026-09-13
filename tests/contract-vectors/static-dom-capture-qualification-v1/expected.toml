@@ -15,7 +15,13 @@ outcome = "observation"
 required_lines = ["data = \"é水🙂\""]
 [[vectors]]
 path = "redirect.html"
-outcome = "unexpected-navigation-or-target"
+outcome = "rejected"
+rejection = "MetaRefresh"
+required_nonempty_fields = ["frame", "loader"]
+destination = "http://ag9g.invalid/redirected.html"
 [[vectors]]
 path = "child-frame.html"
-outcome = "unexpected-navigation-or-target"
+outcome = "rejected"
+rejection = "ChildFrame"
+required_nonempty_fields = ["parent", "loader", "child"]
+required_distinct_fields = ["child", "parent"]
