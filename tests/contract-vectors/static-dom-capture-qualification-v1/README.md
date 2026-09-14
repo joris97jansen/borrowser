@@ -4,7 +4,11 @@ These are authored qualification inputs, outside AG discovery. They are not
 captured browser observations, AG fixtures, WPT assertions, or admitted evidence.
 The unchanged external DOM inspector is the only serializer exercised by the
 real qualification command. The same Chromium core handles these documents and
-future selected-fixture collection.
+future selected-fixture collection inside the dedicated collector process.
+Mechanism 17 submits these HTML inputs as one bounded workload retaining one
+verified distribution, with a fresh complete Chromium attempt per input. All
+outcomes remain provisional until shared distribution disposal succeeds. Workload
+limits are mechanism constants independent of this corpus's membership.
 
 `noscript.html` must produce an actual `strong` element and `NOSCRIPT-PARSED`
 text node. Literal noscript source text is insufficient. `authored-effects.html`

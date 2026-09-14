@@ -130,6 +130,47 @@ fn hex(value: &str) -> Result<Vec<u8>> {
         .collect()
 }
 
+// Own partial staging until all trust checks succeed. Retained directory handles
+// allow cleanup to restore access without following substituted paths or depending
+// on manifest permissions. TempDir Drop is only the unwind/emergency fallback.
+struct SnapshotStaging {
+    temp: tempfile::TempDir,
+    directories: Vec<File>,
+}
+impl SnapshotStaging {
+    fn create_directory(&mut self, path: &Path) -> Result<()> {
+        self.directories.try_reserve(1).map_err(|_| E::Allocation)?;
+        std::fs::create_dir(path).map_err(|_| E::Publication)?;
+        let directory = File::from(
+            open(
+                path,
+                OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                Mode::empty(),
+            )
+            .map_err(|_| E::Publication)?,
+        );
+        self.directories.push(directory);
+        Ok(())
+    }
+    fn close(self) -> Result<()> {
+        let mut result = Ok(());
+        for directory in self.directories {
+            if directory
+                .set_permissions(std::fs::Permissions::from_mode(0o700))
+                .is_err()
+            {
+                result = Err(E::Cleanup);
+            }
+        }
+        if self.temp.close().is_err() {
+            result = Err(E::Cleanup);
+        }
+        #[cfg(test)]
+        partial_cleanup_tests::closed(&mut result);
+        result
+    }
+}
+
 pub(super) fn snapshot(
     m: &DistributionManifest,
     supplied: &Path,
@@ -152,179 +193,197 @@ pub(super) fn snapshot(
         .permissions(std::fs::Permissions::from_mode(0o700))
         .tempdir()
         .map_err(|_| E::Publication)?;
-    let envelope = File::from(
-        open(
-            temp.path(),
-            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-            Mode::empty(),
-        )
-        .map_err(|_| E::Path)?,
-    );
-    checked_metadata(&envelope, 0o700)?;
-    let snapshot_root = temp.path().join("distribution");
-    std::fs::create_dir(&snapshot_root).map_err(|_| E::Publication)?;
-    // Retain every validated directory object through copying; never resolve a
-    // checked parent pathname again after a rename/replacement.
-    let mut directories = BTreeMap::<String, OwnedFd>::new();
-    directories.insert(String::new(), root);
-    for d in &m.directories {
-        let (parent, name) = d.path.rsplit_once('/').unwrap_or(("", &d.path));
-        let fd = openat(
-            directories.get(parent).ok_or(E::Path)?,
-            name,
-            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-            Mode::empty(),
-        )
-        .map_err(|_| E::Path)?;
-        directories.insert(d.path.clone(), fd);
-    }
-    let all: BTreeSet<_> = m
-        .directories
-        .iter()
-        .map(|d| d.path.as_str())
-        .chain(m.entries.iter().map(Entry::path))
-        .collect();
-    // Every directory is enumerated through its opened FD; no supplied-path walk.
-    for name in std::iter::once("").chain(m.directories.iter().map(|d| d.path.as_str())) {
-        let fd = directories.get(name).ok_or(E::Path)?;
-        let file = File::from(rustix::io::dup(fd).map_err(|_| E::Read)?);
-        let wanted = if name.is_empty() {
-            m.root_mode
-        } else {
-            m.directories
-                .iter()
-                .find(|d| d.path == name)
-                .ok_or(E::Distribution)?
-                .mode
-        };
-        checked_metadata(&file, wanted)?;
-        let dir = rustix::fs::Dir::read_from(fd).map_err(|_| E::Read)?;
-        let mut count = 0usize;
-        for entry in dir {
-            count += 1;
-            if count > 5122 {
-                return Err(E::Limit);
-            }
-            let entry = entry.map_err(|_| E::Read)?;
-            let n = entry.file_name().to_str().map_err(|_| E::Path)?;
-            if n == "." || n == ".." {
-                continue;
-            }
-            let path = if name.is_empty() {
-                n.to_owned()
-            } else {
-                format!("{name}/{n}")
-            };
-            if !all.contains(path.as_str()) {
-                return Err(E::Distribution);
-            }
-        }
-    }
-    for d in &m.directories {
-        std::fs::create_dir(snapshot_root.join(&d.path)).map_err(|_| E::Publication)?;
-    }
-    let mut files = Vec::new();
-    for e in &m.entries {
-        let (parent, n) = e.path().rsplit_once('/').unwrap_or(("", e.path()));
-        let p = directories.get(parent).ok_or(E::Path)?;
-        match e {
-            Entry::Regular {
-                mode,
-                byte_length,
-                sha256,
-                ..
-            } => {
-                let fd = openat(
-                    p,
-                    n,
-                    OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
-                    Mode::empty(),
-                )
-                .map_err(|_| E::Read)?;
-                let retained = copy_file(
-                    File::from(fd),
-                    &snapshot_root.join(e.path()),
-                    *byte_length,
-                    sha256,
-                    *mode,
-                )?;
-                files.push((e.clone(), retained));
-            }
-            Entry::Symlink { mode, target, .. } => {
-                let fd = openat(
-                    p,
-                    n,
-                    OFlags::PATH | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-                    Mode::empty(),
-                )
-                .map_err(|_| E::Read)?;
-                let f = File::from(fd);
-                let meta = checked_metadata(&f, *mode)?;
-                if !meta.file_type().is_symlink() {
-                    return Err(E::Symlink);
-                }
-                let actual = rustix::fs::readlinkat(&f, "", Vec::new()).map_err(|_| E::Symlink)?;
-                if actual.as_bytes() != target.as_bytes() {
-                    return Err(E::Symlink);
-                }
-                std::os::unix::fs::symlink(target, snapshot_root.join(e.path()))
-                    .map_err(|_| E::Publication)?;
-                let staged = File::from(
-                    open(
-                        snapshot_root.join(e.path()),
-                        OFlags::PATH | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-                        Mode::empty(),
-                    )
-                    .map_err(|_| E::Symlink)?,
-                );
-                if !checked_metadata(&staged, *mode)?.file_type().is_symlink()
-                    || rustix::fs::readlinkat(&staged, "", Vec::new())
-                        .map_err(|_| E::Symlink)?
-                        .as_bytes()
-                        != target.as_bytes()
-                {
-                    return Err(E::Symlink);
-                }
-            }
-        }
-    }
-    let selected = m
-        .entries
-        .iter()
-        .find(|e| e.path() == executable)
-        .ok_or(E::Distribution)?;
-    if !matches!(selected,Entry::Regular{executable:true,sha256,..}if sha256==digest) {
-        return Err(E::Distribution);
-    }
-    for d in m.directories.iter().rev() {
-        std::fs::set_permissions(
-            snapshot_root.join(&d.path),
-            std::fs::Permissions::from_mode(d.mode),
-        )
-        .map_err(|_| E::Mode)?;
-    }
-    std::fs::set_permissions(&snapshot_root, std::fs::Permissions::from_mode(m.root_mode))
-        .map_err(|_| E::Mode)?;
-    for (path, mode) in std::iter::once((snapshot_root.clone(), m.root_mode)).chain(
-        m.directories
-            .iter()
-            .map(|d| (snapshot_root.join(&d.path), d.mode)),
-    ) {
-        let staged = File::from(
+    let mut staging = SnapshotStaging {
+        temp,
+        directories: Vec::new(),
+    };
+    let prepared = (|| {
+        #[cfg(test)]
+        partial_cleanup_tests::checkpoint("acquired", staging.temp.path())?;
+        let envelope = File::from(
             open(
-                path,
+                staging.temp.path(),
                 OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
                 Mode::empty(),
             )
-            .map_err(|_| E::Mode)?,
+            .map_err(|_| E::Path)?,
         );
-        if !checked_metadata(&staged, mode)?.is_dir() {
-            return Err(E::Mode);
+        checked_metadata(&envelope, 0o700)?;
+        let snapshot_root = staging.temp.path().join("distribution");
+        staging.create_directory(&snapshot_root)?;
+        #[cfg(test)]
+        partial_cleanup_tests::checkpoint("object", staging.temp.path())?;
+        // Retain every validated directory object through copying; never resolve a
+        // checked parent pathname again after a rename/replacement.
+        let mut directories = BTreeMap::<String, OwnedFd>::new();
+        directories.insert(String::new(), root);
+        for d in &m.directories {
+            let (parent, name) = d.path.rsplit_once('/').unwrap_or(("", &d.path));
+            let fd = openat(
+                directories.get(parent).ok_or(E::Path)?,
+                name,
+                OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                Mode::empty(),
+            )
+            .map_err(|_| E::Path)?;
+            directories.insert(d.path.clone(), fd);
         }
-    }
-    let executable = snapshot_root.join(executable);
+        let all: BTreeSet<_> = m
+            .directories
+            .iter()
+            .map(|d| d.path.as_str())
+            .chain(m.entries.iter().map(Entry::path))
+            .collect();
+        // Every directory is enumerated through its opened FD; no supplied-path walk.
+        for name in std::iter::once("").chain(m.directories.iter().map(|d| d.path.as_str())) {
+            let fd = directories.get(name).ok_or(E::Path)?;
+            let file = File::from(rustix::io::dup(fd).map_err(|_| E::Read)?);
+            let wanted = if name.is_empty() {
+                m.root_mode
+            } else {
+                m.directories
+                    .iter()
+                    .find(|d| d.path == name)
+                    .ok_or(E::Distribution)?
+                    .mode
+            };
+            checked_metadata(&file, wanted)?;
+            let dir = rustix::fs::Dir::read_from(fd).map_err(|_| E::Read)?;
+            let mut count = 0usize;
+            for entry in dir {
+                count += 1;
+                if count > 5122 {
+                    return Err(E::Limit);
+                }
+                let entry = entry.map_err(|_| E::Read)?;
+                let n = entry.file_name().to_str().map_err(|_| E::Path)?;
+                if n == "." || n == ".." {
+                    continue;
+                }
+                let path = if name.is_empty() {
+                    n.to_owned()
+                } else {
+                    format!("{name}/{n}")
+                };
+                if !all.contains(path.as_str()) {
+                    return Err(E::Distribution);
+                }
+            }
+        }
+        for d in &m.directories {
+            staging.create_directory(&snapshot_root.join(&d.path))?;
+        }
+        let mut files = Vec::new();
+        for e in &m.entries {
+            let (parent, n) = e.path().rsplit_once('/').unwrap_or(("", e.path()));
+            let p = directories.get(parent).ok_or(E::Path)?;
+            match e {
+                Entry::Regular {
+                    mode,
+                    byte_length,
+                    sha256,
+                    ..
+                } => {
+                    let fd = openat(
+                        p,
+                        n,
+                        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+                        Mode::empty(),
+                    )
+                    .map_err(|_| E::Read)?;
+                    let retained = copy_file(
+                        File::from(fd),
+                        &snapshot_root.join(e.path()),
+                        *byte_length,
+                        sha256,
+                        *mode,
+                    )?;
+                    files.push((e.clone(), retained));
+                }
+                Entry::Symlink { mode, target, .. } => {
+                    let fd = openat(
+                        p,
+                        n,
+                        OFlags::PATH | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                        Mode::empty(),
+                    )
+                    .map_err(|_| E::Read)?;
+                    let f = File::from(fd);
+                    let meta = checked_metadata(&f, *mode)?;
+                    if !meta.file_type().is_symlink() {
+                        return Err(E::Symlink);
+                    }
+                    let actual =
+                        rustix::fs::readlinkat(&f, "", Vec::new()).map_err(|_| E::Symlink)?;
+                    if actual.as_bytes() != target.as_bytes() {
+                        return Err(E::Symlink);
+                    }
+                    std::os::unix::fs::symlink(target, snapshot_root.join(e.path()))
+                        .map_err(|_| E::Publication)?;
+                    let staged = File::from(
+                        open(
+                            snapshot_root.join(e.path()),
+                            OFlags::PATH | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                            Mode::empty(),
+                        )
+                        .map_err(|_| E::Symlink)?,
+                    );
+                    if !checked_metadata(&staged, *mode)?.file_type().is_symlink()
+                        || rustix::fs::readlinkat(&staged, "", Vec::new())
+                            .map_err(|_| E::Symlink)?
+                            .as_bytes()
+                            != target.as_bytes()
+                    {
+                        return Err(E::Symlink);
+                    }
+                }
+            }
+        }
+        let selected = m
+            .entries
+            .iter()
+            .find(|e| e.path() == executable)
+            .ok_or(E::Distribution)?;
+        if !matches!(selected,Entry::Regular{executable:true,sha256,..}if sha256==digest) {
+            return Err(E::Distribution);
+        }
+        for d in m.directories.iter().rev() {
+            std::fs::set_permissions(
+                snapshot_root.join(&d.path),
+                std::fs::Permissions::from_mode(d.mode),
+            )
+            .map_err(|_| E::Mode)?;
+        }
+        std::fs::set_permissions(&snapshot_root, std::fs::Permissions::from_mode(m.root_mode))
+            .map_err(|_| E::Mode)?;
+        #[cfg(test)]
+        partial_cleanup_tests::checkpoint("permissions", staging.temp.path())?;
+        for (path, mode) in std::iter::once((snapshot_root.clone(), m.root_mode)).chain(
+            m.directories
+                .iter()
+                .map(|d| (snapshot_root.join(&d.path), d.mode)),
+        ) {
+            let staged = File::from(
+                open(
+                    path,
+                    OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                    Mode::empty(),
+                )
+                .map_err(|_| E::Mode)?,
+            );
+            if !checked_metadata(&staged, mode)?.is_dir() {
+                return Err(E::Mode);
+            }
+        }
+        let executable = snapshot_root.join(executable);
+        Ok((executable, files))
+    })();
+    let (executable, files) = match prepared {
+        Ok(value) => value,
+        Err(error) => return staging.close().and(Err(error)),
+    };
     Ok(VerifiedDistribution {
-        directory: temp,
+        directory: staging.temp,
         executable,
         files,
         manifest: m.clone(),
@@ -595,5 +654,124 @@ mod replacement_tests {
             assert!(std::fs::rename(&path, path.with_extension("old")).is_err());
         }
         assert_eq!(frozen.executable.metadata().unwrap().len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod partial_cleanup_tests {
+    use super::*;
+    #[derive(Default)]
+    struct Fault {
+        stage: &'static str,
+        cleanup_error: bool,
+        path: PathBuf,
+        closes: usize,
+    }
+    thread_local! { static FAULT: std::cell::RefCell<Fault> = Default::default(); }
+    pub(super) fn checkpoint(stage: &str, path: &Path) -> Result<()> {
+        FAULT.with_borrow_mut(|fault| {
+            fault.path = path.to_owned();
+            if fault.stage == stage {
+                Err(E::Digest)
+            } else {
+                Ok(())
+            }
+        })
+    }
+    pub(super) fn closed(result: &mut Result<()>) {
+        FAULT.with_borrow_mut(|fault| {
+            fault.closes += 1;
+            if fault.cleanup_error {
+                *result = Err(E::Cleanup);
+            }
+        });
+    }
+    fn supplied() -> (tempfile::TempDir, DistributionManifest) {
+        let supplied = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(supplied.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::write(supplied.path().join("chrome"), b"x").unwrap();
+        std::fs::set_permissions(
+            supplied.path().join("chrome"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        std::fs::create_dir(supplied.path().join("nested")).unwrap();
+        std::fs::create_dir(supplied.path().join("nested/child")).unwrap();
+        let mut manifest = super::super::tests::manifest();
+        for path in ["nested", "nested/child"] {
+            std::fs::set_permissions(
+                supplied.path().join(path),
+                std::fs::Permissions::from_mode(0o555),
+            )
+            .unwrap();
+            manifest.directories.push(Directory {
+                path: path.into(),
+                mode: 0o555,
+            });
+        }
+        manifest.root_mode = 0o555;
+        std::fs::set_permissions(supplied.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+        (supplied, manifest)
+    }
+    #[test]
+    fn partial_snapshot_cleanup_covers_acquisition_objects_and_restrictive_modes() {
+        let (supplied, manifest) = supplied();
+        for stage in ["acquired", "object", "permissions"] {
+            for cleanup_error in [false, true] {
+                FAULT.set(Fault {
+                    stage,
+                    cleanup_error,
+                    ..Default::default()
+                });
+                let result = snapshot(
+                    &manifest,
+                    supplied.path(),
+                    "chrome",
+                    &sha256(b"x").to_string(),
+                );
+                assert!(
+                    matches!(result, Err(error) if error == if cleanup_error { E::Cleanup } else { E::Digest })
+                );
+                FAULT.with_borrow(|fault| {
+                    assert_eq!(fault.closes, 1);
+                    assert!(!fault.path.exists());
+                });
+            }
+        }
+        FAULT.set(Fault::default());
+        // The test's supplied tree is not owned by the snapshot transaction.
+        for path in [
+            supplied.path().to_owned(),
+            supplied.path().join("nested"),
+            supplied.path().join("nested/child"),
+        ] {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        supplied.close().unwrap();
+    }
+    #[test]
+    fn partial_snapshot_success_transfers_ownership_once() {
+        let (supplied, manifest) = supplied();
+        FAULT.set(Fault::default());
+        let snapshot = snapshot(
+            &manifest,
+            supplied.path(),
+            "chrome",
+            &sha256(b"x").to_string(),
+        )
+        .unwrap();
+        let path = snapshot.root().to_owned();
+        assert!(path.exists());
+        FAULT.with_borrow(|fault| assert_eq!(fault.closes, 0));
+        snapshot.close().unwrap();
+        assert!(!path.exists());
+        for path in [
+            supplied.path().to_owned(),
+            supplied.path().join("nested"),
+            supplied.path().join("nested/child"),
+        ] {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        supplied.close().unwrap();
     }
 }

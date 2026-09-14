@@ -292,9 +292,11 @@ impl VerifiedDistribution {
         }
         self.directory.close().map_err(|_| E::Cleanup)
     }
+    #[cfg(test)]
     pub fn executable(&self) -> &Path {
         &self.executable
     }
+    #[cfg(test)]
     pub fn root(&self) -> &Path {
         self.directory.path()
     }

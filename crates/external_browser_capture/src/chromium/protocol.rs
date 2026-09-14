@@ -26,6 +26,7 @@ pub struct Protocol<T> {
     responses: BTreeMap<u64, Result<Value>>,
 }
 impl<T: Transport> Protocol<T> {
+    #[cfg(test)]
     pub fn new(transport: T) -> Self {
         Self::with_deadline(transport, crate::deadline::AttemptDeadline::new())
     }
@@ -41,9 +42,6 @@ impl<T: Transport> Protocol<T> {
             pending: BTreeMap::new(),
             responses: BTreeMap::new(),
         }
-    }
-    pub fn sequence(&self) -> u64 {
-        self.sequence
     }
     pub fn call(&mut self, session: Option<&str>, method: &str, params: Value) -> Result<Value> {
         let id = self.begin(session, method, params)?;

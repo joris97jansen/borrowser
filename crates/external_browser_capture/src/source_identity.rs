@@ -82,6 +82,17 @@ pub fn verify_manifest(root: &Path, path: &str, expected: &str, set: SourceSet) 
 mod tests {
     use super::*;
     #[test]
+    fn collector_membership_includes_private_transaction() {
+        assert!(reviewed::COLLECTOR.iter().any(|(path, bytes)| *path
+            == "crates/external_browser_capture/src/transaction.rs"
+            && *bytes == include_bytes!("transaction.rs")));
+        assert!(
+            !reviewed::QUALIFICATION
+                .iter()
+                .any(|(path, _)| *path == "crates/external_browser_capture/src/transaction.rs")
+        );
+    }
+    #[test]
     fn checked_in_manifests_match_the_exact_compiled_source_sets() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()

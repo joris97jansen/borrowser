@@ -1,8 +1,5 @@
 //! Mechanism feasibility only. No collection/admission evidence or AG registry writes.
-use crate::{
-    CaptureError as E, Result, configuration::Configuration, packaging::InspectorExpressionV1,
-    source_identity,
-};
+use crate::{CaptureError as E, Result, configuration::Configuration, source_identity};
 use std::path::Path;
 
 const CORPUS: &str = "tests/contract-vectors/static-dom-capture-qualification-v1";
@@ -62,6 +59,9 @@ impl MechanismQualification {
         s
     }
 }
+/// Dedicated single-threaded collector entry point. Fork-based isolation and
+/// watchdog/terminal fail-stop may terminate this process. Never invoke from an
+/// aggregate runner or multithreaded test harness; execute conformance-capture.
 pub fn mechanism(
     root: &Path,
     configuration_path: &str,
@@ -71,21 +71,9 @@ pub fn mechanism(
     let c = Configuration::load(root, configuration_path)?;
     source_identity::verify_manifest(
         root,
-        &c.collector_source_manifest_path,
-        &c.collector_source_manifest_sha256,
-        source_identity::SourceSet::Collector,
-    )?;
-    source_identity::verify_manifest(
-        root,
         &c.qualification_manifest_path,
         &c.qualification_manifest_sha256,
         source_identity::SourceSet::Qualification,
-    )?;
-    let expression = InspectorExpressionV1::load(
-        root,
-        &c.capture_algorithm_source_sha256,
-        &c.packaging_source_sha256,
-        &c.executed_expression_sha256,
     )?;
     for (name, expected) in VECTORS {
         if crate::wire::read(
@@ -99,53 +87,18 @@ pub fn mechanism(
     }
     #[cfg(target_os = "linux")]
     {
-        run_linux(root, c, expression, distribution)
+        run_linux(root, c, distribution)
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (c, expression, distribution);
+        let _ = (c, distribution);
         Err(E::UnsupportedHost)
     }
 }
 
 #[cfg(target_os = "linux")]
-fn run_linux(
-    root: &Path,
-    c: Configuration,
-    expression: InspectorExpressionV1,
-    supplied: &Path,
-) -> Result<MechanismQualification> {
-    use crate::{
-        chromium::{protocol::PipeTransport, session::PreparedSession},
-        distribution::{DistributionManifest, VerifiedDistribution},
-        isolation::IsolatedBrowser,
-    };
+fn run_linux(root: &Path, c: Configuration, supplied: &Path) -> Result<MechanismQualification> {
     use std::io::Read;
-    let release =
-        std::fs::read_to_string("/proc/sys/kernel/osrelease").map_err(|_| E::UnsupportedHost)?;
-    let os = std::fs::read_to_string("/etc/os-release").map_err(|_| E::UnsupportedHost)?;
-    let os_id = os
-        .lines()
-        .find_map(|l| l.strip_prefix("PRETTY_NAME="))
-        .map(|s| s.trim_matches('"'))
-        .ok_or(E::UnsupportedHost)?;
-    if release.trim_end() != c.kernel_release
-        || os_id != c.platform_os_version
-        || std::env::consts::ARCH != c.platform_architecture
-    {
-        return Err(E::UnsupportedHost);
-    }
-    let manifest = DistributionManifest::load(
-        root,
-        &c.browser_distribution_manifest_path,
-        &c.browser_distribution_sha256,
-    )?;
-    let distribution = VerifiedDistribution::create(
-        &manifest,
-        supplied,
-        &c.browser_executable_path,
-        &c.browser_executable_sha256,
-    )?;
     // /proc/self/exe is an intentional kernel handle to the running executable, not repository pathname traversal.
     let mut exe = std::fs::File::open("/proc/self/exe").map_err(|_| E::ProcessIdentity)?;
     let mut digest = ring::digest::Context::new(&ring::digest::SHA256);
@@ -156,7 +109,7 @@ fn run_linux(
         if n == 0 {
             break;
         }
-        size += n as u64;
+        size = size.checked_add(n as u64).ok_or(E::Limit)?;
         if size > 2 * 1024 * 1024 * 1024 {
             return Err(E::Limit);
         }
@@ -168,42 +121,39 @@ fn run_linux(
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
-    let mut observations = Vec::new();
-    for (name, input) in VECTORS
-        .into_iter()
-        .filter(|(name, _)| name.ends_with(".html"))
-    {
-        let deadline = crate::deadline::AttemptDeadline::new();
-        let watchdog = crate::isolation::AttemptWatchdog::arm(deadline)?;
-        let attempt = (|| {
-            let mut browser = IsolatedBrowser::launch(&c, &distribution, deadline)?;
-            let _profile_identity = browser.profile_identity();
-            let prepared = (|| {
-                let transport = PipeTransport::new(browser.transport()?)?;
-                PreparedSession::prepare(transport, &c, deadline)
-            })();
-            let (result, cleanup) = match prepared {
-                Ok(mut session) => {
-                    let result = session.capture(&c, input, &expression);
-                    let cleanup = if result.is_ok() {
-                        browser.finish_with_event_check(|| session.verify_quiescent_events())
-                    } else {
-                        browser.abort()
-                    };
-                    (result, cleanup)
-                }
-                Err(e) => (Err(e), browser.abort()),
-            };
-            // Cleanup failure always takes precedence over the capture failure.
-            cleanup?;
-            qualify_outcome(name, result)
-        })();
-        let watchdog_cleanup = watchdog.finish();
-        watchdog_cleanup?;
-        observations.push((name.into(), attempt?));
+    let configuration = c.sha256()?;
+    let mut vectors = Vec::new();
+    vectors
+        .try_reserve_exact(VECTORS.len())
+        .map_err(|_| E::Allocation)?;
+    vectors.extend(
+        VECTORS
+            .into_iter()
+            .filter(|(name, _)| name.ends_with(".html")),
+    );
+    let mut inputs = Vec::new();
+    inputs
+        .try_reserve_exact(vectors.len())
+        .map_err(|_| E::Allocation)?;
+    inputs.extend(vectors.iter().map(|(_, bytes)| *bytes));
+    let workload = crate::transaction::capture_static_dom_workload(root, c, supplied, &inputs)?;
+    let outcomes = workload.into_outcomes();
+    if outcomes.len() != vectors.len() {
+        return Err(E::Qualification);
     }
-    distribution.close()?;
-    Ok(finalize_mechanism(c.sha256()?, collector, observations))
+    let mut observations = Vec::new();
+    observations
+        .try_reserve_exact(vectors.len())
+        .map_err(|_| E::Allocation)?;
+    for ((name, _), outcome) in vectors.into_iter().zip(outcomes) {
+        let mut retained_name = String::new();
+        retained_name
+            .try_reserve_exact(name.len())
+            .map_err(|_| E::Allocation)?;
+        retained_name.push_str(name);
+        observations.push((retained_name, qualify_outcome(name, Ok(outcome))?));
+    }
+    Ok(finalize_mechanism(configuration, collector, observations))
 }
 // Called only after transaction, final live-population validation and cleanup.
 // Historical Network Service PIDs are intentionally not qualification inputs.

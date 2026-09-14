@@ -25,31 +25,31 @@ path = "crates/external_browser_capture/src/chromium/inspection.rs"
 sha256 = "e13052952bc2afc69adf651d6a94f2a85bb67286bfcc7a72a2cfe6db18930001"
 [[entries]]
 path = "crates/external_browser_capture/src/chromium/mod.rs"
-sha256 = "aaf6187baccd3379cfca48c75218683856c9a2bfad55744c15678b29e03f7b7b"
+sha256 = "6a63a80390e5c2ec8b803a081dcd9a94e2c92cf0091b089975d32eca17aa3941"
 [[entries]]
 path = "crates/external_browser_capture/src/chromium/protocol.rs"
-sha256 = "ac179e6a7a3844823a8dee7e7906604393f83fb3bad57f5547cf222bfe42eff2"
+sha256 = "3ccd6b73b7fb0fadba181f63b73806c777a18421a4f9c052a68dbc14dd25f438"
 [[entries]]
 path = "crates/external_browser_capture/src/chromium/session.rs"
-sha256 = "670e31bcdf4cd411e25c58b1d6831633cead6c02177945ee65088e340bf67d64"
+sha256 = "a5aa0071a194ae2f9a37b9badefde3f11307cd22f52999287a0eac897cf0d787"
 [[entries]]
 path = "crates/external_browser_capture/src/configuration.rs"
-sha256 = "815e4ff407178b4e14bdb6c80ea2fd4111a10739038f8e8042c2cd5b06e91f64"
+sha256 = "4e1936dfcb84f382accaef5152a66900736e88346e88c232802cf3e8b102b8a6"
 [[entries]]
 path = "crates/external_browser_capture/src/deadline.rs"
 sha256 = "43def5dec9a5c1949f455bb33ade4dad80ca2bbdeb0b36ff9f1ae28d070abca5"
 [[entries]]
 path = "crates/external_browser_capture/src/distribution.rs"
-sha256 = "07046f02cd19a5bf72a56fb123903b8d4112398ca8d7a60f96e787d0024444d3"
+sha256 = "0f77be686e59e73acc67dc5fbd0ce8facb2f85488f63ceedfd4e5c19643d999a"
 [[entries]]
 path = "crates/external_browser_capture/src/distribution_linux.rs"
-sha256 = "e3a8d22e31d025dae316d46874b8988f11729a6c45da6f61f6603e534b951e10"
+sha256 = "b6bf64acfd7f5a05d91b28456c25c566a461999ae48a2e7e14e1f84e1452840f"
 [[entries]]
 path = "crates/external_browser_capture/src/error.rs"
 sha256 = "e707770d2a771207f03c0e48a283173475851c690e1d0177277e4624fe27a2ac"
 [[entries]]
 path = "crates/external_browser_capture/src/isolation/linux.rs"
-sha256 = "c3d6371c51fb24a014f861b528616ef13b6d34aaef8dc6f1308750226ff05aa1"
+sha256 = "c2c9b72793720cc85e3294d1f9ce9cb8e1f5dd411ad0f4d72d6c27ded4255c90"
 [[entries]]
 path = "crates/external_browser_capture/src/isolation/mod.rs"
 sha256 = "361a831c3184101017de0cbe990faeb6be4bb4fbe99f939ecc9b8402cdf83462"
@@ -64,28 +64,31 @@ path = "crates/external_browser_capture/src/isolation/verification.rs"
 sha256 = "7a6f86ebcb20a53171661d0d5ab9c6d377fa6bd33181369f791e52d20f6e4d72"
 [[entries]]
 path = "crates/external_browser_capture/src/lib.rs"
-sha256 = "fcd8afafe4ab7c48fd50bab0092a96d960f0e293c2f53fb14470785b96e6e2f8"
+sha256 = "9aa09d31ae3b3be4f1ff7b63d77538ef8ec5c5f9f3eb5906e638da3e86504604"
 [[entries]]
 path = "crates/external_browser_capture/src/limits.rs"
-sha256 = "dc26693833f26c28a43b1e66e63e7449db57a2ed3171ab4e6638c604dffd3683"
+sha256 = "1fb67adf02cb1d4d072a4e1b5e65178ec58d97d54cf34621143479df9cfd9380"
 [[entries]]
 path = "crates/external_browser_capture/src/linux_mount.rs"
 sha256 = "156bf6ec9e4883e5396db350a052689fddfb1e686c982786a9e2cbbe7885e320"
 [[entries]]
 path = "crates/external_browser_capture/src/packaging.rs"
-sha256 = "aad341c674f10d824235c52d5bdef0da33e84e63785cb8d36ef980ff5b5be60d"
+sha256 = "03fb42cb7b6708adc9e40d142b33a8be046c27bd16417ad1316160c810473100"
 [[entries]]
 path = "crates/external_browser_capture/src/profile.rs"
 sha256 = "de253b1d04a690a72be276a9d3a74ef9b0a7999ac2c8f89f82f7c94bfe700198"
 [[entries]]
 path = "crates/external_browser_capture/src/qualification.rs"
-sha256 = "3efc20024a601893134ffaf2f6f76e7dbc4c7e6c7cb2ff0018b64e840016e1e1"
+sha256 = "5898a71979401737f831c3058b2425a530fbf1943bf42921ecce078cba823b6b"
 [[entries]]
 path = "crates/external_browser_capture/src/source_identity.rs"
-sha256 = "571baab0015aa46e69eceeee396cf9092c4bf8077586ba1948a86f9f01e4a69e"
+sha256 = "661888ffde26d9e7d1c36a712075b038ea28a38b253b83fc6cba92becbfdb2ba"
 [[entries]]
 path = "crates/external_browser_capture/src/source_set.rs"
-sha256 = "2afde1d6fda7caa6c1191977eed8551b670f091ef8adea8ef9e6e9812075dfaa"
+sha256 = "6750c03a973eafcb79594aa8ccdd0b0edf45cdc2fc0ba227b758dd1739b4f519"
+[[entries]]
+path = "crates/external_browser_capture/src/transaction.rs"
+sha256 = "e332529f2d7e2957ee1f9d7918f2a93cf887472de293f6930b475cd1ac3692d6"
 [[entries]]
 path = "crates/external_browser_capture/src/wire.rs"
 sha256 = "6fdd5b2bd6ea84f8424f45b58925d05102d8c043525012f41dff61b5de33278e"

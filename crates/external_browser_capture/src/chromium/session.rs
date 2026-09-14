@@ -722,6 +722,35 @@ mod tests {
         )
     }
     #[test]
+    fn independent_sessions_prepare_fresh_context_target_and_controls_after_failure() {
+        let (failed, first_trace) = execute(Fault::InspectionFailure);
+        assert!(failed.is_err());
+        let (completed, second_trace) = execute(Fault::None);
+        assert!(completed.is_ok());
+        assert!(!Rc::ptr_eq(&first_trace, &second_trace));
+        for trace in [first_trace, second_trace] {
+            let trace = trace.borrow();
+            for method in [
+                "Target.createBrowserContext",
+                "Target.createTarget",
+                "Target.attachToTarget",
+            ] {
+                assert_eq!(trace.iter().filter(|v| v["method"] == method).count(), 1);
+            }
+            let navigation = trace
+                .iter()
+                .position(|v| v["method"] == "Page.navigate")
+                .unwrap();
+            assert!(
+                trace[..navigation]
+                    .iter()
+                    .any(|v| v["method"] == "Emulation.setScriptExecutionDisabled"
+                        && v["params"]["value"] == true)
+            );
+        }
+    }
+
+    #[test]
     fn lifecycle_replay_follows_baseline_and_precedes_fixture_navigation() {
         for fault in [
             Fault::None,

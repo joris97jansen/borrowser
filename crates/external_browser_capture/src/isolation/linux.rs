@@ -166,6 +166,65 @@ pub(crate) struct IsolatedBrowser {
     profile: FreshProfile,
     deadline: AttemptDeadline,
 }
+// This scope owns the private workspace until fork establishes process ownership.
+// No fallible operation follows successful fork here; all later cleanup belongs
+// to IsolatedBrowser's supervisor/pidfd lifecycle.
+struct PreparedLaunch {
+    workspace: tempfile::TempDir,
+    control: UnixStream,
+    child_control: UnixStream,
+    transport: UnixStream,
+    child_transport: UnixStream,
+    parent_network: File,
+    outer: i32,
+}
+fn prepare_launch() -> Result<PreparedLaunch> {
+    let workspace = tempfile::tempdir().map_err(|_| E::Launch)?;
+    let prepared = (|| {
+        #[cfg(test)]
+        prelaunch_cleanup_tests::checkpoint("socket", workspace.path())?;
+        let (control, child_control) = UnixStream::pair().map_err(|_| E::Launch)?;
+        let (transport, child_transport) = UnixStream::pair().map_err(|_| E::Launch)?;
+        #[cfg(test)]
+        prelaunch_cleanup_tests::checkpoint("namespace", workspace.path())?;
+        let parent_network = namespace(unsafe { libc::getpid() }, "net")?;
+        #[cfg(test)]
+        prelaunch_cleanup_tests::checkpoint("fork", workspace.path())?;
+        // The production caller verifies single-threaded prerequisites before entry.
+        let outer = unsafe { libc::fork() };
+        if outer < 0 {
+            return Err(E::Launch);
+        }
+        Ok((
+            control,
+            child_control,
+            transport,
+            child_transport,
+            parent_network,
+            outer,
+        ))
+    })();
+    match prepared {
+        Ok((control, child_control, transport, child_transport, parent_network, outer)) => {
+            Ok(PreparedLaunch {
+                workspace,
+                control,
+                child_control,
+                transport,
+                child_transport,
+                parent_network,
+                outer,
+            })
+        }
+        Err(error) => {
+            let cleanup = workspace.close().map_err(|_| E::Cleanup);
+            #[cfg(test)]
+            let cleanup = prelaunch_cleanup_tests::closed(cleanup);
+            cleanup.and(Err(error))
+        }
+    }
+}
+
 impl IsolatedBrowser {
     pub fn launch(
         c: &Configuration,
@@ -174,15 +233,15 @@ impl IsolatedBrowser {
     ) -> Result<Self> {
         deadline.check()?;
         prerequisites()?;
-        let workspace = tempfile::tempdir().map_err(|_| E::Launch)?;
-        let (mut control, child_control) = UnixStream::pair().map_err(|_| E::Launch)?;
-        let (transport, child_transport) = UnixStream::pair().map_err(|_| E::Launch)?;
-        let parent_network = namespace(unsafe { libc::getpid() }, "net")?;
-        // Qualification CLI is verified single-threaded before fork. The child never returns to caller code.
-        let outer = unsafe { libc::fork() };
-        if outer < 0 {
-            return Err(E::Launch);
-        }
+        let PreparedLaunch {
+            workspace,
+            mut control,
+            child_control,
+            transport,
+            child_transport,
+            parent_network,
+            outer,
+        } = prepare_launch()?;
         if outer == 0 {
             drop(control);
             drop(transport);
@@ -1343,5 +1402,68 @@ mod attempt_failure_runtime_tests {
             unsafe { libc::_exit(if result.is_ok() { 0 } else { 125 }) }
         }
         assert_eq!(wait_child(child, deadline).unwrap(), 0);
+    }
+}
+
+#[cfg(test)]
+mod prelaunch_cleanup_tests {
+    use super::*;
+    #[derive(Default)]
+    struct Fault {
+        stage: &'static str,
+        cleanup_error: bool,
+        path: std::path::PathBuf,
+        closes: usize,
+    }
+    thread_local! { static FAULT: std::cell::RefCell<Fault> = Default::default(); }
+    pub(super) fn checkpoint(stage: &str, path: &Path) -> Result<()> {
+        FAULT.with_borrow_mut(|fault| {
+            fault.path = path.to_owned();
+            if fault.stage == stage {
+                Err(if stage == "namespace" {
+                    E::Isolation
+                } else {
+                    E::Launch
+                })
+            } else {
+                Ok(())
+            }
+        })
+    }
+    pub(super) fn closed(result: Result<()>) -> Result<()> {
+        FAULT.with_borrow_mut(|fault| {
+            fault.closes += 1;
+            if fault.cleanup_error {
+                Err(E::Cleanup)
+            } else {
+                result
+            }
+        })
+    }
+    #[test]
+    fn prelaunch_partial_cleanup_covers_socket_namespace_and_fork_failure() {
+        for stage in ["socket", "namespace", "fork"] {
+            for cleanup_error in [false, true] {
+                FAULT.set(Fault {
+                    stage,
+                    cleanup_error,
+                    ..Default::default()
+                });
+                let expected = if cleanup_error {
+                    E::Cleanup
+                } else if stage == "namespace" {
+                    E::Isolation
+                } else {
+                    E::Launch
+                };
+                // Always fails before fork: safe in the multithreaded test harness.
+                assert!(matches!(prepare_launch(), Err(error) if error == expected));
+                FAULT.with_borrow(|fault| {
+                    assert_eq!(fault.closes, 1);
+                    assert!(!fault.path.exists());
+                });
+            }
+        }
+        FAULT.set(Fault::default());
     }
 }

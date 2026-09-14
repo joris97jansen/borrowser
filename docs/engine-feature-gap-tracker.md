@@ -548,7 +548,12 @@ Current architecture status:
   `docs/conformance/ag9f-requirement-evidence-closeout.md` for the non-normative
   requirement matrix, per-gap dispositions, and follow-up draft.
 - AG9g Stage 0 adds an explicit local Chromium/Linux capture core and frozen
-  qualification contracts. Deterministic transport tests do not establish real
+  qualification contracts. Mechanism 17 confines the shared bounded workload to
+  the dedicated single-threaded collector, retaining one verified distribution
+  across fresh browser attempts and checking outer disposal before outcomes escape.
+  Future aggregate integration must cross the collector process boundary so
+  fail-stop remains advisory to the aggregate. No handoff/IPC is implemented.
+  Deterministic transport and workload tests do not establish real
   browser qualification: the implementation environment is macOS and no pinned
   Chromium distribution was supplied. Stage 0 remains open; genuine collection,
   admission, and registry/history integration remain unavailable. See
