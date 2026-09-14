@@ -1,10 +1,10 @@
 format = "borrowser-capture-source-manifest-v1"
 [[entries]]
 path = "crates/external_browser_capture/src/qualification.rs"
-sha256 = "3efc20024a601893134ffaf2f6f76e7dbc4c7e6c7cb2ff0018b64e840016e1e1"
+sha256 = "5898a71979401737f831c3058b2425a530fbf1943bf42921ecce078cba823b6b"
 [[entries]]
 path = "tests/contract-vectors/static-dom-capture-qualification-v1/README.md"
-sha256 = "733707bceda6607f9c225b9bf9e7563e2a564c5c9ddd75ef87384b7f3a19f83c"
+sha256 = "7333bb62b335b1c8d2ae4028ab8064d6805b285a4c68b6c2c73631e59eaa160d"
 [[entries]]
 path = "tests/contract-vectors/static-dom-capture-qualification-v1/authored-effects.html"
 sha256 = "517b993d121d18b54a2ec148e71c06d5763dd49647a90fb591da2bdd3f6d94e9"

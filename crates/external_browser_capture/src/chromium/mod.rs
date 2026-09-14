@@ -9,5 +9,5 @@
 pub(crate) mod delivery;
 mod events;
 mod inspection;
-pub mod protocol;
+pub(crate) mod protocol;
 pub(crate) mod session;

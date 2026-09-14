@@ -18,7 +18,6 @@ const SITES: [&str; 5] = [
 
 pub struct InspectorExpressionV1 {
     text: String,
-    digest: String,
 }
 #[cfg(all(test, feature = "chromium-cdp"))]
 pub(crate) fn specimen() -> InspectorExpressionV1 {
@@ -77,16 +76,14 @@ impl InspectorExpressionV1 {
         if digest != expected_expression {
             return Err(E::Digest);
         }
-        Ok(Self { text, digest })
+        Ok(Self { text })
     }
+    #[cfg(test)]
     pub fn bytes(&self) -> &[u8] {
         self.text.as_bytes()
     }
     pub fn text(&self) -> &str {
         &self.text
-    }
-    pub fn sha256(&self) -> &str {
-        &self.digest
     }
 }
 

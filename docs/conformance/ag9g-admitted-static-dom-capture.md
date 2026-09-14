@@ -19,10 +19,13 @@ aggregate variant, HTML parser, or Borrowser DOM dependency. `conformance-runner
 owns the single `conformance-capture` executable behind `external-capture`.
 Ordinary aggregate execution does not depend on this crate or feature.
 
-The shared consuming `PreparedSession` core performs setup, response fulfillment,
-completion correlation, isolated inspection, and post-observation checks.
-Qualification calls that core; there is no alternative qualification browser path.
-Future stages add fixture handoff and evidence orchestration around it.
+The internal `transaction::capture_static_dom_workload` owns the complete production
+capture workload, including one retained verified distribution and checked outer
+disposal. Its private per-input transaction owns fresh launch through checked
+termination/reaping and watchdog completion; `PreparedSession` is only its private
+CDP component. Qualification calls this workload inside the dedicated collector.
+Future stages add byte handoff across that process boundary, not an in-process
+aggregate call to a fail-stop-capable library service.
 
 The unchanged `tools/conformance/web-observable-dom-tree-v1.mjs` is the single
 authored external serializer. `html-test-support` remains the independent
@@ -84,7 +87,7 @@ provided and verified before a GO verdict. Synthetic test values are not pins.
 | --- | --- |
 | format | `borrowser-static-dom-capture-chromium-linux-v1` |
 | capture_mechanism | `borrowser-chromium-cdp-static-dom` |
-| capture_mechanism_version | `16` |
+| capture_mechanism_version | `17` |
 | browser_product | Actual exact product, never inferred branding |
 | browser_version | Exact actual version |
 | browser_build_revision | Exact exposed revision, optional only if unavailable |
@@ -1068,3 +1071,137 @@ contributes to controlled fixture completion.
 
 The supplied pinned Chromium revision must still confirm the complete V16
 startup behavior. Real mechanism qualification remains NOT ESTABLISHED.
+
+
+## Mechanism 17: dedicated collector, retained environment, bounded workload
+
+Mechanism 17 supersedes mechanism 16 for the production transaction/lifetime
+contract. Qualification suite `ag9g-static-dom-chromium-qualification-v15` remains
+unchanged: its vector assertions, correlated negative outcomes and GO acceptance
+requirements have not changed. CDP V5, isolation V12, inspector/packaging V1 and
+configuration/source-manifest wire V1 are unchanged. Every changed trust-bearing
+source byte nevertheless changes reviewed source digests. Previous source or
+executable qualification cannot apply to this revision.
+
+### Process boundary and ownership
+
+Real capture executes only inside the dedicated single-threaded
+`conformance-capture` collector. Linux prerequisites reject root or multithreaded
+collectors before fork-based setup. Deadline watchdog and unprovable terminal
+cleanup may fail-stop the collector. This process boundary is part of the capture
+mechanism, not a replaceable CLI packaging choice. The public
+`qualification::mechanism` entry exists solely for that binary; it must not be
+called from an aggregate process or the multithreaded Rust test harness. The
+ignored real-browser test continues to execute the dedicated binary.
+
+Only qualification and CLI error/result types are externally exposed.
+Configuration/source loading, packaging, distribution, transaction, deadlines,
+profiles, isolation and Chromium/CDP/session internals are private modules.
+Completed workloads have private construction. No public resource-owning collector,
+caller-managed finish, capture service, callback or browser handle is provided.
+
+`transaction::capture_static_dom_workload` accepts a configuration and exact
+immutable byte slices. It preflights the entire input population, validates host
+and collector sources, loads the reviewed inspector expression, and prepares ONE
+`VerifiedDistribution`. This retained environment survives the complete workload.
+Each input borrows its already-verified distribution objects; supplied distribution
+files are not independently re-read, re-hashed or re-snapshotted per input.
+The existing per-launch private freeze/mount of retained objects is preserved.
+
+Each `capture_attempt` creates a fresh deadline, watchdog, isolated process tree,
+writable profile, browser context, target, transport and session. No mutable
+browser state survives an attempt. Exact byte delivery, scripting-disabled parsing,
+resource denial, correlated completion/realm checks, late-event verification,
+stopped-population/sandbox verification and termination/reaping remain mandatory.
+The 120-second attempt budget begins before per-browser resources and ends after
+attempt cleanup/watchdog completion; no phase renews it. Shared distribution
+preparation/disposal remain outside that per-browser budget, with existing
+manifest/file/population resource bounds. This is not a new whole-workload
+wall-clock deadline.
+
+Qualification alone owns its corpus verification, qualification source membership,
+vector expectations, negative-vector assertions, collector executable identity,
+and final GO formatting. It submits the five HTML inputs as one workload and
+checks outcomes only after shared disposal. The reusable transaction knows no
+qualification filenames, expectations, AG identities or publication identity.
+
+### Workload resources
+
+These mechanism constants are independent of corpus membership; no configuration
+wire fields were added:
+
+| Resource | Maximum |
+| --- | --- |
+| Inputs per workload | 16, nonempty |
+| Fixture bytes per input | 1,048,576 (existing bound) |
+| Total fixture bytes | 16,777,216 |
+| Observation artifact per input | 8,388,608 (existing bound) |
+| Retained outcome payload across workload | 33,554,432 |
+
+Sixteen inputs caps sequential process launches and cumulative attempt work.
+Sixteen MiB bounds input population. The separate 32 MiB retained-output ceiling
+prevents accumulating sixteen maximum-sized DOM artifacts. These are mechanism
+resource choices, not counts derived from the current five qualification vectors.
+Observation document/realm strings and all policy-rejection string data also count
+against retained output payload. Fixed outcome metadata is bounded by input count.
+The current provisional outcome still has the existing per-attempt limits before
+retention accounting; these ceilings are not an exact total-process RSS bound.
+
+All cumulative accounting uses checked arithmetic. Input count, size, total and
+encoding errors reject before environment acquisition. Result slots use fallible
+reservation (`CaptureError::Allocation`). Per-artifact and accumulated payload
+limits are checked before appending a provisional outcome. Failure discards all
+accumulated outcomes and performs applicable checked cleanup. There is no truncation,
+splitting, retry, omission or partial publication.
+
+### Terminal outcomes and cleanup
+
+A correlated policy rejection remains distinct from infrastructure failure and
+must complete the same terminal verification path as an observation. Infrastructure
+failure stops further attempts. No provisional outcome escapes until all attempt
+checks and final shared distribution disposal succeed.
+
+Returned-error precedence, highest first: outer distribution disposal, watchdog
+completion, browser terminal verification/cleanup, capture/preparation/resource
+failure. Within browser finalization, cleanup still overrides verification failure.
+All applicable terminal operations execute before choosing the returned error.
+Explicit outer disposal now also runs after returned workload errors; it cannot be
+skipped by an early `?` from the attempt loop.
+
+Checked cleanup begins at partial acquisition, not only after environment or
+browser preparation succeeds. Snapshot staging owns its private directory until
+ownership transfers exactly once into `VerifiedDistribution`. On returned errors
+it restores owner access through retained handles for created directories before
+explicitly removing the staging tree, including after manifest modes were applied.
+Pre-process launch preparation explicitly removes its workspace on socket,
+namespace or fork failure. Once fork succeeds, the existing supervisor/pidfd
+cleanup and fail-stop lifecycle remains authoritative. In either partial scope,
+cleanup failure returns `CaptureError::Cleanup` over the original operation error;
+successful cleanup preserves that original error. Destructor cleanup is emergency
+fallback only. These corrections implement mechanism 17's existing semantics;
+qualification-suite and other semantic identities remain unchanged. Changed
+source bytes require refreshed source identities and a new real qualification.
+
+An internal unwind boundary retains the shared environment long enough to attempt
+explicit outer disposal and then resumes the panic. It does not convert panics
+into ordinary capture errors. Attempt `Drop` guards remain emergency fallback;
+panic, abort, fail-stop or abnormal exit never proves checked finalization and
+never creates a completed workload or GO. Fail-stop may preclude later disposal
+and leave scratch resources; this remains unsuccessful collector termination.
+
+### Qualification and subsequent stages
+
+Deterministic workload tests, scripted protocol peers, private API compile-fail
+checks and Linux object-retention tests are implementation evidence only. They
+cannot establish mechanism GO. Freeze/review this corrected source and manifest
+set, bind the actual configuration/distribution/executable, then run every vector
+through the dedicated collector on supported Linux with explicitly pinned Chromium.
+Any trust-bearing repair requires updated identities and a complete rerun.
+
+Future AG9g1 must transmit the retained validated AG fixture bytes over a bounded
+controlled pipe/IPC to this dedicated process, without fixture-path rediscovery or
+reopen. The future collector mode will call this same internal workload/attempt.
+The aggregate parent must classify collector crash, timeout, fail-stop or abnormal
+exit as advisory failure and continue ordinary reporting. No IPC, candidate mode,
+AG handoff, publication or admission is implemented here. Real mechanism
+qualification remains **NOT ESTABLISHED**; AG9g0 remains open and AG9g1 blocked.

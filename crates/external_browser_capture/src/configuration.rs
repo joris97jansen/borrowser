@@ -4,8 +4,6 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 pub const FORMAT: &str = "borrowser-static-dom-capture-chromium-linux-v1";
-pub const CONFIGURATION_PATH: &str =
-    "tools/conformance/static-dom-capture-chromium-linux-v1.config.toml";
 
 macro_rules! fields {
     ($($(#[$meta:meta])* $name:ident: $ty:ty),* $(,)?) => {
@@ -95,7 +93,7 @@ impl Configuration {
         for (actual, expected) in [
             (&self.format, FORMAT),
             (&self.capture_mechanism, "borrowser-chromium-cdp-static-dom"),
-            (&self.capture_mechanism_version, "16"),
+            (&self.capture_mechanism_version, "17"),
             (&self.platform_os_family, "linux"),
             (&self.cdp_contract, "ag9g-chromium-cdp-static-dom-v5"),
             (
@@ -248,7 +246,7 @@ pub(crate) fn specimen() -> Configuration {
         *value = "x".into();
     }
     c.capture_mechanism = "borrowser-chromium-cdp-static-dom".into();
-    c.capture_mechanism_version = "16".into();
+    c.capture_mechanism_version = "17".into();
     c.platform_os_family = "linux".into();
     c.cdp_contract = "ag9g-chromium-cdp-static-dom-v5".into();
     c.capture_algorithm = "web-observable-dom-tree-v1-inspector".into();

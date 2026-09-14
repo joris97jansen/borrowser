@@ -29,6 +29,7 @@ pub const COLLECTOR: &[(&str, &[u8])] = &[
     ("crates/external_browser_capture/src/qualification.rs", include_bytes!("qualification.rs")),
     ("crates/external_browser_capture/src/source_identity.rs", include_bytes!("source_identity.rs")),
     ("crates/external_browser_capture/src/source_set.rs", include_bytes!("source_set.rs")),
+    ("crates/external_browser_capture/src/transaction.rs", include_bytes!("transaction.rs")),
     ("crates/external_browser_capture/src/wire.rs", include_bytes!("wire.rs")),
     ("crates/external_browser_capture/tests/real_chromium.rs", include_bytes!("../tests/real_chromium.rs")),
     ("crates/external_test_provenance/Cargo.toml", include_bytes!("../../external_test_provenance/Cargo.toml")),
