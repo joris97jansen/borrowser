@@ -565,6 +565,13 @@ Current architecture status:
   validation remain required; Chromium pinning, sandbox compatibility and genuine
   AG9g0 mechanism qualification are still outstanding. AG9g0a/AG9g0 remain open
   and AG9g1 remains blocked. See `docs/conformance/ag9g0a-linux-host-readiness.md`.
+- AG9g0d Stage 1 adds an independent Hetzner Robot provider-lifecycle workspace,
+  immutable lifecycle journal, explicit allocation/cancellation and conservative
+  reconciliation, reviewed product bindings, durable dispatch capabilities and bounded
+  recovery across reopened obligations. This is provider tooling only; no production controller or real
+  provider lifecycle has been validated by repository tests. AG9g0a remains frozen
+  and independently open pending genuine native Phase B validation. See
+  `docs/conformance/ag9g0d-qualification-host-lifecycle.md`.
 - No AG9 capability establishes broad WPT compliance, browser compatibility,
   browser automation, or raster comparison. Completion requires requirement and
   validation evidence, including later exact-revision hosted CI.
