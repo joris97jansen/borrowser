@@ -1,5 +1,9 @@
 # Borrowser conformance contracts
 
+- AG9g0d Stage 1: [Hetzner provider lifecycle](ag9g0d-qualification-host-lifecycle.md).
+  Independent acquisition/recovery/cancellation tooling; no host qualification.
+  Production controller verification and real provider lifecycle validation remain external prerequisites.
+
 - AG9g Stage 0: [Chromium/Linux mechanism qualification](ag9g-admitted-static-dom-capture.md)
   and [future evidence/admission contracts](ag9g-collection-evidence-admission-v1.md).
   Real mechanism feasibility remains unqualified; admission and collection are unavailable.

@@ -18,6 +18,17 @@ wire artifacts; it neither imports private source nor replaces their verifiers.
 See [helper README](../../tools/conformance/qualification-prep/README.md) for
 commands, schemas, resource bounds, publication and implementation differences.
 
+## Host-readiness prerequisite (AG9g0a)
+
+[AG9g0a host readiness](ag9g0a-linux-host-readiness.md) separates repository-side
+support from actual native host validation. No host is established by Phase A.
+Its host-only proofs compose pinned helper deterministic behavior, the helper's
+basic util-linux namespace smoke, independent host/util-linux prerequisites, and
+frozen collector runtime evidence. They do not exercise the complete helper
+identity path or qualify any Chromium build. Chromium selection and the remaining
+steps below stay downstream. A reviewed committed host-probe source freeze and an
+actual image/snapshot/platform tuple are prerequisites for recorded execution.
+
 ## Three locations
 
 1. Helper checkout/build: independently reviewed preparation source, separate

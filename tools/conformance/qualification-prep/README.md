@@ -321,3 +321,20 @@ watchdog error path uses blocking waitpid. Watchdog expiry remains fail-stop.
 
 See [the preparation procedure](../../../docs/conformance/ag9g0-qualification-preparation.md)
 for selection, independent review, frozen collector build and genuine execution.
+
+## AG9g0a host-only prerequisite evidence
+
+The execution baseline for AG9g0a is the clean reviewed helper source at
+`763159c513e5a0d2c68ceff927b702ca4aa97351`, with its original independent lockfile.
+See [the host-readiness contract](../../../docs/conformance/ag9g0a-linux-host-readiness.md).
+The retained-worker deterministic test proves this helper's executable/FD handling
+across test exec boundaries. The ignored `namespace_prerequisites_runtime` executes
+actual util-linux with `/bin/true` and proves only basic namespace setup. The separate
+host-readiness fixture proves external util-linux descriptor/namespace prerequisites;
+it is not another WorkerExecutable implementation or proof of the full `identity`
+path. Frozen collector runtime tests retain their separate authority.
+
+No native host has been qualified by the repository-side support. Dirty/uncommitted
+host-probe development output cannot become qualification evidence. Host readiness
+requires the reviewed source-freeze handoff and genuine native x86-64 execution;
+Chromium pinning, probing and mechanism qualification remain downstream.
