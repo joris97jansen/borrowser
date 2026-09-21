@@ -271,10 +271,18 @@ pub(crate) struct Credentials {
 impl Credentials {
     #[cfg(test)]
     pub(crate) fn synthetic() -> Self {
+        use base64::Engine;
+        // Deliberately fake loopback-test credentials. Derive the header from
+        // these fields rather than embedding a credential-shaped Base64 literal.
+        let username = Zeroizing::new("synthetic-user".to_owned());
+        let password = Zeroizing::new("synthetic-pass".to_owned());
+        let pair = Zeroizing::new(format!("{}:{}", username.as_str(), password.as_str()));
+        let encoded =
+            Zeroizing::new(base64::engine::general_purpose::STANDARD.encode(pair.as_bytes()));
         Self {
-            basic: Zeroizing::new("Basic c3ludGhldGljLXVzZXI6c3ludGhldGljLXBhc3M=".into()),
-            username: Zeroizing::new("synthetic-user".into()),
-            password: Zeroizing::new("synthetic-pass".into()),
+            basic: Zeroizing::new(format!("Basic {}", encoded.as_str())),
+            username,
+            password,
         }
     }
     pub(crate) fn response_safe(&self, value: &serde_json::Value, depth: usize) -> bool {
