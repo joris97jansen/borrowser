@@ -21,7 +21,26 @@ explicit test selection and a matching `BORROWSER_ROBOT_INTEGRATION` value of
 as a crate-internal test module so its fake store can implement the sealed persistence
 boundary; production builds expose no fake-store or synthetic-capability feature.
 
+The ignored `provider_nonprocessing_order_validation` test (`test-order` gate)
+checks the configured catalogue and sends the allocation form with `test=true`
+through a test-only transport path, with no billable fallback. It provides
+request-shape/catalogue integration preflight only, not production lifecycle
+authority or real allocation acceptance. It does not exercise durable journal
+dispatch, production scheduling, transaction/server reconciliation, cancellation,
+release or AG9g0a readiness. No production CLI preflight command exists; production
+allocation never sends `test`.
+
 ## Installation inputs
+
+Before authorizing any real allocation, verify Robot Webservice ordering is enabled
+for the intended account/user under
+`Administration → Settings → Web Service Settings → Ordering`. Retain a dated,
+reviewed, credential-free activation attestation binding that context to deployment;
+exclude passwords, authentication headers, cookies and other credentials. Read-only
+Robot success does not prove activation. Missing or uncertain activation blocks the
+billable gate. This is an operator prerequisite, not allocation authority; the
+controller does not verify or enable activation. See the authoritative
+[deployment contract](../../../docs/conformance/ag9g0d-qualification-host-lifecycle.md#authority-and-deployment).
 
 An administrator supplies a dedicated local ext4 mount at
 `/var/lib/borrowser-host-lifecycle`, private to a dedicated non-root controller
@@ -59,6 +78,16 @@ not part of the authority, repository, evidence or deployment JSON.
 The reviewed executable must come from clean committed tool source and its own
 lockfile. Dirty development builds cannot write production history. Source review
 and deployment are external responsibilities; this tool does not self-approve.
+
+The journal is authoritative lifecycle state, not the complete acceptance package.
+Retain the externally reviewed build/executable, deployment/product approval,
+account/activation/currency, journal/head and transaction/server bindings required
+by [operational acceptance evidence](../../../docs/conformance/ag9g0d-qualification-host-lifecycle.md#operational-acceptance-evidence).
+Include cancellation/effective release, IPv4/associated-resource disposition and
+separate billing disposition; V1 never asserts `billing_settled`. Preserve typed
+resolution evidence and secret minimization rather than adding raw provider responses
+to the journal. This evidence establishes no host readiness, AG9g0a Phase B,
+Chromium/static DOM qualification or mechanism GO.
 
 ## Commands
 

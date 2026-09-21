@@ -23,7 +23,7 @@ The deployment review must check `GET /order/currency`; catalogue values alone
 do not verify currency. These admission ceilings are not a provider-enforced
 total-spending cap.
 
-No `dist`, `lang`, `authorized_key[]`, password, comment, rescue or boot fields
+No `dist`, `lang`, `arch`, `authorized_key[]`, password, comment, `test`, rescue or boot fields
 are sent. No fallback chooses another product/location, inserts provisioning
 parameters or retries using a different request. An unexpected required provider
 field is an unsupported contract discrepancy requiring review.
@@ -100,6 +100,19 @@ operation facts and account scope; losing the external approval artifact blocks
 new allocation, not emergency cleanup of a known resource.
 
 ## Authority and deployment
+
+Before any real allocation may be authorized, the operator must verify that
+Robot Webservice server ordering is enabled for the intended Webservice
+account/user under `Administration → Settings → Web Service Settings → Ordering`
+([Robot ordering activation](https://robot.hetzner.com/doc/webservice/en.html#activation)).
+Retain a dated, reviewed activation attestation in the external operational
+evidence package, binding the intended account/user context to the deployment
+account scope through non-secret identifiers or reviewed references. Do not retain
+passwords, HTTP authentication headers, cookies or other credentials. Successful
+read-only Robot calls do not establish ordering activation. Missing or uncertain
+activation blocks the operator's billable allocation gate. Activation is a
+deployment prerequisite, not allocation authority: the controller neither verifies
+nor enables it, and explicit allocation authorization remains separately required.
 
 One persistent Linux controller owns `/var/lib/borrowser-host-lifecycle`, a
 dedicated locally backed ext4 filesystem. The filesystem and device must honor
@@ -595,6 +608,51 @@ concurrent-call exclusion, killed-process recovery, external heartbeat alert and
 independent operator access to Robot. This repository implementation alone does
 not establish those operational prerequisites or any qualification result.
 
+## Operational acceptance evidence
+
+The controller journal is authoritative lifecycle state, but it is not the complete
+AG9g0d operational acceptance package. Retain an externally reviewed package that
+binds the following, as applicable to deployment and the completed lifecycle:
+
+- Approved exact source revision and clean-source status; exact deployed executable
+  SHA-256 and retained binary; Cargo/Rust toolchain, linker, build command/profile
+  and build-affecting configuration; the workspace's own lockfile and its digest.
+- Exact deployment configuration bytes/digest and machine/filesystem/account/authority
+  bindings; exact reviewed product-approval bytes/digest matching deployment and
+  the journal's retained catalogue approval.
+- Ordering-activation attestation, credential/account association without credential
+  contents, and dated authenticated account-currency and product observations with
+  reviewer attribution. These external attestations are not supplied by local
+  account labels or inferred from catalogue prices.
+- Retained journal and independently retained head digests, operation identity,
+  allocation authorization/request, exact transaction ID and exact server number,
+  observation/recovery reports, and cancellation authorization and evidence.
+- Reviewed effective release evidence, absence of location reservation, explicit
+  primary IPv4 and other associated resource-obligation disposition, and separate
+  financial/billing disposition, including responsibility for outstanding charges.
+
+Compare the package's source/lockfile identities with the journal's tool provenance;
+the journal does not itself attest the deployed binary digest, full build environment
+or complete deployment configuration. Bind external reviews to the relevant
+account/authority/operation, retained identities and journal heads. Existing typed
+resolutions retain evidence bytes/digests and reviewer/provider references through
+the documented evidence path; do not add arbitrary provider responses or new journal
+fields to represent the external package. All retained material must be credential-free.
+
+Resource inventory and billing review remain operator responsibilities; the controller
+does not automatically inventory or cancel every associated resource. Cancellation
+acknowledgement is not effective release, and release does not establish invoice
+settlement: `billing_settled` remains false in V1. External evidence supplements the
+journal; it does not bypass reviewed release resolution or clear unresolved conflicts.
+Record which operational restart/replay/reconciliation checks actually ran. An
+uneventful run is not evidence for unexercised failure paths, and acceptance does not
+require deliberately causing an ambiguous billable allocation.
+
+Provider allocation, host readiness, AG9g0a Phase B, Chromium qualification, static
+DOM mechanism qualification and mechanism GO remain separate authorities. This
+package establishes only AG9g0d provider-lifecycle acceptance; it does not change
+AG9g0a's frozen revision or include OS/SSH/rescue provisioning, KVM/libvirt or guests.
+
 ## Validation boundary
 
 Normal tests are credential-free. Pure transition/format tests, scripted provider
@@ -605,5 +663,14 @@ do not qualify the container as a production ext4 controller or AG9g0a host.
 
 Real GET integration and nonprocessing `test=true` order validation are ignored,
 explicit opt-in tests with distinct gates. The latter has no billable fallback.
+`provider_nonprocessing_order_validation`, gated by
+`BORROWSER_ROBOT_INTEGRATION=test-order`, checks the configured catalogue and sends
+the allocation form with `test=true` through the test-only transport path. A passing
+run provides request-shape/catalogue integration preflight evidence for the configured
+product in non-processing mode. It does not exercise production lifecycle authority:
+there is no production CLI preflight command, durable journal dispatch or production
+scheduling in this test. It proves no billable allocation, transaction/server
+reconciliation, cancellation, release or AG9g0a readiness. The production allocation
+form remains unchanged and never includes `test`.
 Real allocation/release, operational controller verification and AG9g0a Phase B
 remain unperformed until explicitly authorized on an approved deployment.
