@@ -1,463 +1,201 @@
-use borrowser_host_lifecycle::{
-    approval::*, canonical, identity::*, model::*, mutation::*, provider::*, scheduling::*,
-};
-fn time() -> TimeSample {
-    TimeSample {
-        boot_id: "00000000-0000-0000-0000-000000000001".parse().unwrap(),
-        boottime_ns: 1,
-        realtime_ns: 1,
-        time_namespace: "time:[1]".into(),
-    }
-}
-fn tool() -> ToolIdentityV1 {
-    ToolIdentityV1 {
-        package: "borrowser-host-lifecycle".into(),
-        package_version: "0.1.0".into(),
-        schema_version: 1,
-        source_revision: "1".repeat(40),
-        cargo_lock_sha256: "2".repeat(64),
-        source_clean: true,
-    }
-}
-fn append(s: &mut AccountState, event: Event) {
-    let e = Envelope {
-        account_id: "account".parse().unwrap(),
-        authority: AUTHORITY.into(),
-        authority_id: "controller".parse().unwrap(),
-        event,
-        format: FORMAT.into(),
-        operation_id: if s.sequence == 0 {
-            None
-        } else {
-            Some("operation".parse().unwrap())
-        },
-        previous_sha256: s.head.clone(),
-        schema_version: 1,
-        sequence: s.sequence,
-        time: time(),
-        tool: tool(),
-    };
-    *s = s.apply(&e).unwrap();
-}
-fn prepared() -> AccountState {
-    let mut s = AccountState::default();
-    append(&mut s, Event::AuthorityInitialized);
-    append(
-        &mut s,
-        Event::OperationAuthorized {
-            request: request(),
-            authorization: "approved".into(),
-            deadline: Deadline::after(&time(), 120).unwrap(),
-        },
-    );
-    s
-}
-fn request() -> AllocationRequest {
-    AllocationRequest {
-        product_id: "catalogue-pin".parse().unwrap(),
-        location: "FSN1".into(),
-        addons: vec!["primary_ipv4".into()],
-    }
-}
-fn transaction() -> Transaction {
-    Transaction {
-        id: "B-order".parse().unwrap(),
-        date: "2026-09-19T12:00:00+00:00".into(),
-        status: TransactionStatus::Ready,
-        server_number: Some(42.try_into().unwrap()),
-        product_id: "catalogue-pin".parse().unwrap(),
-        location: Some("FSN1".into()),
-        addons: vec!["primary_ipv4".into()],
-    }
-}
-fn dispatched() -> AccountState {
-    let mut s = prepared();
-    append(
-        &mut s,
-        Event::CatalogueObserved {
-            quote: Box::new(quote("catalogue-pin", "account", "synthetic AX42-1")),
-        },
-    );
-    append(&mut s, Event::BaselineStarted);
-    append(
-        &mut s,
-        Event::BaselineCompleted {
-            transactions: 0,
-            servers: 0,
-        },
-    );
-    append(
-        &mut s,
-        Event::EndpointCharged {
-            endpoint: EndpointClass::Allocation,
-        },
-    );
-    append(
-        &mut s,
-        Event::AllocationDispatchIntent {
-            descriptor: MutationDescriptor::allocation(&request()).unwrap(),
-        },
-    );
-    s
-}
+use borrowser_host_lifecycle::{canonical, deployment::*, model::*};
 #[test]
-fn exact_projection_has_no_provisioning_fields() {
+fn exact_root_marker_and_deployment_vectors() {
+    let bytes = include_bytes!("fixtures/authority-v2.json");
+    let marker: AuthorityRootV2 = canonical::decode(bytes).unwrap();
+    marker.validate().unwrap();
+    assert_eq!(canonical::encode(&marker).unwrap(), bytes);
     assert_eq!(
-        request().form().unwrap(),
-        "product_id=catalogue-pin&location=FSN1&addon%5B%5D=primary_ipv4"
+        canonical::sha256(bytes),
+        include_str!("fixtures/authority-v2.sha256").trim()
     );
+    let bytes = include_bytes!("fixtures/deployment-v2.json");
+    let deployment: DeploymentV2 = canonical::decode(bytes).unwrap();
+    assert_eq!(deployment.marker().unwrap(), marker);
     assert_eq!(
-        CANCELLATION_FORM,
-        "cancellation_date=now&reserve_location=false"
-    );
-    assert!("a&dist=Debian".parse::<ProductId>().is_err());
-    assert!(
-        serde_json::from_str::<AllocationRequest>(
-            r#"{"product_id":"x","location":"FSN1","addons":["primary_ipv4"],"dist":"Debian"}"#
-        )
-        .is_err()
+        canonical::sha256(bytes),
+        include_str!("fixtures/deployment-v2.sha256").trim()
     );
 }
 #[test]
-fn canonical_encoding_is_explicit() {
-    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
-    #[serde(deny_unknown_fields)]
-    struct V {
-        z: u64,
-        a: String,
-    }
-    let v = V {
-        z: 2,
-        a: "é\n\"\\/".into(),
-    };
-    let expected = b"{\"a\":\"\xc3\xa9\\u000a\\\"\\\\/\",\"z\":2}\n";
-    assert_eq!(canonical::encode(&v).unwrap(), expected);
-    assert_eq!(canonical::decode::<V>(expected).unwrap(), v);
-    for b in [
-        b"{\"a\":\"x\",\"z\":2}\n\n".as_slice(),
-        b"{\"a\":\"x\",\"a\":\"x\",\"z\":2}\n",
-        b"{\"z\":2,\"a\":\"x\"}\n",
+fn deployment_rejects_unsupported_generation_and_identity() {
+    let bytes = include_bytes!("fixtures/deployment-v2.json");
+    for (from, to) in [
+        ("schema_version\":2", "schema_version\":1"),
+        ("aws-ec2-deployment", "unknown-deployment"),
+        ("111111111111", "account"),
+        ("eu-central-1", ""),
+        ("11111111111111111111111111111111", "machine"),
+        ("00000000-0000-0000-0000-000000000001", "filesystem"),
     ] {
-        assert!(canonical::decode::<V>(b).is_err());
+        let text = String::from_utf8(bytes.to_vec()).unwrap().replace(from, to);
+        assert!(
+            canonical::decode::<DeploymentV2>(text.as_bytes())
+                .and_then(|d| d.validate())
+                .is_err(),
+            "{from}"
+        );
     }
-    assert_eq!(
-        canonical::sha256(b"abc"),
-        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-    );
-}
-#[test]
-fn unique_candidate_is_not_attribution() {
-    let mut s = dispatched();
-    append(
-        &mut s,
-        Event::TransactionObserved {
-            source: TransactionSource::TransactionHistoryItem,
-            transaction: transaction(),
-        },
-    );
-    let o = s.operation(&"operation".parse().unwrap()).unwrap();
-    assert!(o.transaction.is_none());
-    assert_eq!(o.candidates.len(), 1);
-    assert_eq!(o.phase(), "requires-reconciliation");
-}
-#[test]
-fn acknowledged_is_not_released_and_identity_survives_failure() {
-    let mut s = dispatched();
-    append(
-        &mut s,
-        Event::AllocationResponse {
-            transaction: transaction(),
-        },
-    );
-    append(
-        &mut s,
-        Event::ServerObserved {
-            server_number: 42.try_into().unwrap(),
-            product: "AX42-1".into(),
-            datacenter: "FSN1-DC1".into(),
-            status: ServerStatus::Ready,
-            cancelled: false,
-        },
-    );
-    assert_eq!(
-        s.operation(&"operation".parse().unwrap()).unwrap().phase(),
-        "allocated"
-    );
-    append(
-        &mut s,
-        Event::CancellationAuthorized {
-            server_number: 42.try_into().unwrap(),
-            authorization: "release".into(),
-        },
-    );
-    let mut without_readback_state = s.clone();
-    append(
-        &mut without_readback_state,
-        Event::EndpointCharged {
-            endpoint: EndpointClass::Cancellation,
-        },
-    );
-    let without_readback = Envelope {
-        account_id: "account".parse().unwrap(),
-        authority: AUTHORITY.into(),
-        authority_id: "controller".parse().unwrap(),
-        event: Event::CancellationDispatchIntent {
-            descriptor: MutationDescriptor::cancellation(42.try_into().unwrap()).unwrap(),
-        },
-        format: FORMAT.into(),
-        operation_id: Some("operation".parse().unwrap()),
-        previous_sha256: without_readback_state.head.clone(),
-        schema_version: 1,
-        sequence: without_readback_state.sequence,
-        time: time(),
-        tool: tool(),
-    };
-    assert!(without_readback_state.apply(&without_readback).is_err());
-    append(
-        &mut s,
-        Event::CancellationObserved {
-            readback: true,
-            observation: CancellationObservation {
-                server_number: 42.try_into().unwrap(),
-                cancelled: false,
-                reservation_possible: false,
-                reserved: false,
-                cancellation_date: None,
-            },
-        },
-    );
-    append(
-        &mut s,
-        Event::EndpointCharged {
-            endpoint: EndpointClass::Cancellation,
-        },
-    );
-    append(
-        &mut s,
-        Event::CancellationDispatchIntent {
-            descriptor: MutationDescriptor::cancellation(42.try_into().unwrap()).unwrap(),
-        },
-    );
-    append(
-        &mut s,
-        Event::FailureObserved {
-            endpoint: EndpointClass::Cancellation,
-            failure: ProviderFailure::TransmissionUncertain,
-        },
-    );
-    assert_eq!(
-        s.operation(&"operation".parse().unwrap())
+    for text in [
+        String::from_utf8(bytes.to_vec())
             .unwrap()
-            .server_number,
-        Some(42.try_into().unwrap())
-    );
-    append(
-        &mut s,
-        Event::CancellationObserved {
-            readback: true,
-            observation: CancellationObservation {
-                server_number: 42.try_into().unwrap(),
-                cancelled: true,
-                reservation_possible: false,
-                reserved: false,
-                cancellation_date: Some("2026-09-19".into()),
-            },
-        },
-    );
-    assert_eq!(
-        s.operation(&"operation".parse().unwrap()).unwrap().phase(),
-        "cancellation-pending"
-    );
-    assert!(
-        !s.operation(&"operation".parse().unwrap())
-            .unwrap()
-            .billing_settled
-    );
+            .replace("{", "{\"unknown\":0,"),
+        String::from_utf8(bytes.to_vec()).unwrap().replace(
+            "\"schema_version\":2",
+            "\"schema_version\":2,\"schema_version\":2",
+        ),
+        format!("{} ", std::str::from_utf8(bytes).unwrap()),
+    ] {
+        assert!(canonical::decode::<DeploymentV2>(text.as_bytes()).is_err());
+    }
 }
 #[test]
-fn process_restart_preserves_deadline_and_reboot_expires_it() {
-    let d = Deadline::after(&time(), 10).unwrap();
-    let bytes = canonical::encode(&d).unwrap();
-    let d: Deadline = canonical::decode(&bytes).unwrap();
-    assert!(d.permits(&time()));
-    let mut t = time();
-    t.boot_id = "00000000-0000-0000-0000-000000000002".into();
-    assert!(!d.permits(&t));
-    t = time();
-    t.boottime_ns = d.expires_ns;
-    assert!(!d.permits(&t));
+fn production_event_schema_has_no_storage_test_or_provider_commands() {
+    for kind in [
+        "storage-checkpoint",
+        "storage-recovery",
+        "storage-evidence",
+        "allocation-authorized",
+        "termination-authorized",
+    ] {
+        let bytes = format!("{{\"kind\":\"{kind}\"}}\n");
+        assert!(canonical::decode::<EventV2>(bytes.as_bytes()).is_err());
+    }
+    assert!(canonical::decode::<EventV2>(b"{\"kind\":\"authority-initialized\"}\n").is_ok());
+}
+
+#[test]
+fn canonical_encoding_preserves_control_unicode_and_integer_contract() {
+    let input = serde_json::json!({"z": null, "a": "é\n\t\u{0000}\\\"", "n": u64::MAX});
+    let expected = concat!(
+        r#"{"a":"é\u000a\u0009\u0000\\\"","n":18446744073709551615,"z":null}"#,
+        "\n"
+    )
+    .as_bytes();
+    assert_eq!(canonical::encode(&input).unwrap(), expected);
+    assert!(canonical::encode(&serde_json::json!(-1)).is_err());
+    assert!(canonical::encode(&serde_json::json!(1.5)).is_err());
 }
 #[test]
-fn dispatch_cannot_be_replayed_as_a_second_attempt() {
-    let s = dispatched();
-    let e = Envelope {
-        account_id: "account".parse().unwrap(),
-        authority: AUTHORITY.into(),
-        authority_id: "controller".parse().unwrap(),
-        event: Event::AllocationDispatchIntent {
-            descriptor: MutationDescriptor::allocation(&request()).unwrap(),
-        },
-        format: FORMAT.into(),
-        operation_id: Some("operation".parse().unwrap()),
-        previous_sha256: s.head.clone(),
-        schema_version: 1,
-        sequence: s.sequence,
-        time: time(),
-        tool: tool(),
-    };
-    assert!(s.apply(&e).is_err());
-    let mut wrong = e;
-    wrong.event = Event::TransactionObserved {
-        source: TransactionSource::TransactionHistoryItem,
-        transaction: transaction(),
-    };
-    wrong.previous_sha256 = Some("9".repeat(64).parse().unwrap());
-    assert!(s.apply(&wrong).is_err());
+fn cli_rejects_removed_commands_before_deployment_or_network() {
+    for command in [
+        "allocate",
+        "cancel",
+        "terminate",
+        "reconcile",
+        "watch",
+        "resolve",
+    ] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_borrowser-host-lifecycle"))
+            .arg(command)
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(
+            String::from_utf8(output.stderr)
+                .unwrap()
+                .contains("provider operations unavailable")
+        );
+    }
 }
+
 #[test]
-fn independently_authored_event_digest_vector() {
-    let bytes = include_bytes!("fixtures/genesis-v1.json");
-    let expected = include_str!("fixtures/genesis-v1.sha256").trim();
-    let e: Envelope = canonical::decode(bytes).unwrap();
+fn region_is_bounded_lexical_identity_not_a_catalogue() {
+    use borrowser_host_lifecycle::identity::Region;
+    for valid in [
+        "eu-central-1",
+        "us-gov-west-1",
+        "cn-north-1",
+        "eusc-de-east-1",
+        "a",
+        "7",
+        "future1-zone2",
+        "not-a-real-region",
+    ] {
+        assert_eq!(valid.parse::<Region>().unwrap().as_str(), valid);
+    }
+    assert!("a".repeat(32).parse::<Region>().is_ok());
+    assert!("a".repeat(33).parse::<Region>().is_err());
+    for invalid in [
+        "",
+        "-a",
+        "a-",
+        "a--b",
+        "EU-central-1",
+        " eu-central-1",
+        "eu-central-1\n",
+        "eu_central_1",
+        "eu.central.1",
+        "éu-central-1",
+        "a/b",
+        "a\0b",
+    ] {
+        assert!(invalid.parse::<Region>().is_err(), "{invalid:?}");
+    }
+}
+
+#[test]
+fn independent_genesis_vector_binds_exact_marker_and_replay_head() {
+    let bytes = include_bytes!("fixtures/genesis-v2.json");
+    let expected = include_str!("fixtures/genesis-v2.sha256").trim();
+    let genesis: EnvelopeV2 = canonical::decode(bytes).unwrap();
+    assert_eq!(canonical::encode(&genesis).unwrap(), bytes);
     assert_eq!(canonical::sha256(bytes), expected);
-    assert_eq!(canonical::encode(&e).unwrap(), bytes);
-    let state = AccountState::default().apply(&e).unwrap();
-    assert_eq!(state.head.as_deref(), Some(expected));
-    let mut corrupt = e.clone();
-    corrupt.schema_version = 2;
-    assert!(AccountState::default().apply(&corrupt).is_err());
-    let mut upgraded = e;
-    upgraded.tool.package_version = "0.2.0".into();
-    assert!(AccountState::default().apply(&upgraded).is_ok());
-}
-#[test]
-fn endpoint_limits_are_separate_and_reboot_does_not_reset_them() {
-    assert_eq!(EndpointClass::Allocation.quota().requests, 20);
-    assert_eq!(EndpointClass::Catalogue.quota().requests, 500);
-    assert_eq!(EndpointClass::Cancellation.quota().requests, 200);
-    let mut b = BudgetWindow {
-        endpoint: EndpointClass::Allocation,
-        boot_id: time().boot_id,
-        time_namespace: time().time_namespace,
-        start_ns: 1,
-        spent: 20,
-        charges_ns: vec![1; 20],
-    };
-    assert!(b.charge(&time()).is_err());
-    let mut reboot = time();
-    reboot.boot_id = "00000000-0000-0000-0000-000000000002".into();
-    assert!(b.charge(&reboot).is_err());
-}
-#[test]
-fn exact_money_never_rounds_or_accepts_exponents() {
-    assert_eq!(euro_units("12.3456").unwrap(), 123456);
-    for price in ["12.34567", "-1.0000", "1e3", "12.3", "NaN"] {
-        assert!(euro_units(price).is_err());
-    }
-}
-
-fn approval(product: &str, account: &str, name: &str) -> ProductApproval {
-    ProductApproval {
-        schema_version: 1,
-        account_scope: account.parse().unwrap(),
-        hardware_class: "AX42-1".into(),
-        catalogue: CatalogueIdentity {
-            product_id: product.parse().unwrap(),
-            name: name.into(),
-            description: vec!["synthetic reviewed hardware".into()],
-        },
-        server_product: "AX42-1".into(),
-        location: "FSN1".into(),
-        addon: "primary_ipv4".into(),
-        monthly_gross_ceiling: 1,
-        setup_gross_ceiling: 0,
-        attested_account_currency: "EUR".into(),
-        reviewer: "synthetic-reviewer".into(),
-        provider_reference: "synthetic-catalogue-review".into(),
-    }
-}
-fn quote(product: &str, account: &str, name: &str) -> CatalogueQuote {
-    let approval = approval(product, account, name);
-    CatalogueQuote {
-        catalogue_evidence_sha256: approval.digest().unwrap(),
-        live_identity: approval.catalogue.clone(),
-        approval,
-        available_locations: vec!["FSN1".into()],
-        ipv4: Ipv4Capability {
-            id: "primary_ipv4".parse().unwrap(),
-            minimum: 0,
-            maximum: 1,
-            location: None,
-            price_location: "FSN1".into(),
-        },
-        product_id: product.parse().unwrap(),
-        name: name.into(),
-        location: "FSN1".into(),
-        monthly_gross_units: 1,
-        setup_gross_units: 0,
-        approved_monthly_gross_units: 1,
-        approved_setup_gross_units: 0,
-    }
-}
-
-#[test]
-fn identifiers_validate_once_without_changing_scalar_wire_bytes() {
-    assert!("".parse::<OperationId>().is_err());
-    assert!("account/other".parse::<AccountScopeId>().is_err());
-    assert!("id?query=x".parse::<RobotTransactionId>().is_err());
-    assert!("0".repeat(63).parse::<EventDigest>().is_err());
-    assert!("A".repeat(64).parse::<RequestFingerprint>().is_err());
-    assert!(ServerNumber::try_from(0).is_err());
+    let marker: AuthorityRootV2 =
+        canonical::decode(include_bytes!("fixtures/authority-v2.json")).unwrap();
     assert_eq!(
-        canonical::encode(&"controller".parse::<AuthorityId>().unwrap()).unwrap(),
-        b"\"controller\"\n"
+        genesis.root_sha256.as_str(),
+        include_str!("fixtures/authority-v2.sha256").trim()
     );
-    assert_eq!(
-        canonical::encode(&ServerNumber::try_from(123).unwrap()).unwrap(),
-        b"123\n"
-    );
-    assert!(serde_json::from_str::<ServerNumber>("0").is_err());
-    assert!(serde_json::from_str::<ProductId>("\"bad&field\"").is_err());
+    assert_eq!(genesis.root_sha256, marker.digest().unwrap());
+    let state = AuthorityStateV2::default()
+        .apply(&genesis, &marker)
+        .unwrap();
+    assert_eq!(state.sequence, 1);
+    assert_eq!(state.head.unwrap().as_str(), expected);
 }
 
 #[test]
-fn product_approval_evidence_digest_is_an_active_admission_input() {
-    let a = approval("catalogue-pin", "account", "reviewed catalogue spelling");
-    let bytes = canonical::encode(&a).unwrap();
-    assert_eq!(
-        ProductApproval::verify_bytes(&bytes, &a.digest().unwrap()).unwrap(),
-        a
-    );
-    let mut changed = a.clone();
-    changed.catalogue.description = vec!["different processor".into()];
-    assert!(
-        ProductApproval::verify_bytes(&canonical::encode(&changed).unwrap(), &a.digest().unwrap())
-            .is_err()
-    );
-    changed = a.clone();
-    changed.hardware_class = "another class".into();
-    assert!(changed.validate().is_err());
-}
-
-#[test]
-fn independent_mutation_descriptor_byte_and_digest_goldens() {
-    for (descriptor, bytes, digest) in [
-        (
-            MutationDescriptor::allocation(&request()).unwrap(),
-            include_bytes!("fixtures/allocation-descriptor-v1.json").as_slice(),
-            include_str!("fixtures/allocation-descriptor-v1.sha256"),
-        ),
-        (
-            MutationDescriptor::cancellation(42.try_into().unwrap()).unwrap(),
-            include_bytes!("fixtures/cancellation-descriptor-v1.json").as_slice(),
-            include_str!("fixtures/cancellation-descriptor-v1.sha256"),
-        ),
+fn independent_genesis_rejects_incompatible_facts_and_invalid_provenance() {
+    let original: EnvelopeV2 =
+        canonical::decode(include_bytes!("fixtures/genesis-v2.json")).unwrap();
+    let marker: AuthorityRootV2 =
+        canonical::decode(include_bytes!("fixtures/authority-v2.json")).unwrap();
+    for field in [
+        "authority",
+        "format",
+        "schema",
+        "root",
+        "account",
+        "authority-id",
+        "region",
+        "tool-schema",
+        "tool-package",
+        "dirty",
+        "revision",
+        "lock",
+        "version",
     ] {
-        assert_eq!(canonical::encode(&descriptor).unwrap(), bytes);
-        assert_eq!(descriptor.fingerprint().unwrap().as_str(), digest.trim());
-        assert_eq!(
-            canonical::decode::<MutationDescriptor>(bytes).unwrap(),
-            descriptor
+        let mut e = original.clone();
+        match field {
+            "authority" => e.authority = "unknown".into(),
+            "format" => e.format = "unknown".into(),
+            "schema" => e.schema_version = 1,
+            "root" => e.root_sha256 = "f".repeat(64).parse().unwrap(),
+            "account" => e.account_id = "222222222222".parse().unwrap(),
+            "authority-id" => e.authority_id = "other".parse().unwrap(),
+            "region" => e.region = "eusc-de-east-1".parse().unwrap(),
+            "tool-schema" => e.tool.schema_version = 1,
+            "tool-package" => e.tool.package = "other".into(),
+            "dirty" => e.tool.source_clean = false,
+            "revision" => e.tool.source_revision = "invalid".into(),
+            "lock" => e.tool.cargo_lock_sha256 = "INVALID".into(),
+            _ => e.tool.package_version = "".into(),
+        }
+        assert!(
+            AuthorityStateV2::default().apply(&e, &marker).is_err(),
+            "{field}"
         );
     }
 }

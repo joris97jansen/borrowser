@@ -1,6 +1,6 @@
 # Borrowser conformance contracts
 
-- AG9g0d Stage 1: [Hetzner provider lifecycle](ag9g0d-qualification-host-lifecycle.md).
+- AG9g0d Pass 1: [AWS EC2 authority-generation foundation](ag9g0d-qualification-host-lifecycle.md).
   Independent acquisition/recovery/cancellation tooling; no host qualification.
   Production controller verification and real provider lifecycle validation remain external prerequisites.
 
