@@ -1,9 +1,10 @@
-# AWS EC2 authority foundation and reviewed contracts — Passes 1–2
+# AWS EC2 durable launch authority — Passes 1–3
 
 Independent Rust operational-tooling workspace. Read the
 [contract](../../../docs/conformance/ag9g0d-qualification-host-lifecycle.md).
 Package `0.2.0` exposes generation-2 local bootstrap/status only. Pass 2 adds pure
-reviewed deployment/launch/token/trust data contracts to the library. It contains no
+reviewed deployment/launch/token/trust data contracts to the library. Pass 3 adds
+internal durable authorization, dispatch and attempt state. It contains no
 provider client, credential loader, network transport or resource mutation path.
 AG9g0d remains operationally incomplete; no host readiness or qualification is proven.
 
@@ -52,7 +53,7 @@ rustup run 1.92.0 cargo build --locked --offline --manifest-path tools/conforman
 Dependencies must already be available for offline checks. This standalone workspace
 is not discovered by root engine CI. Linux confinement/mount tests run only on Linux;
 macOS storage tests do not prove Linux production authority. No provider integration
-tests exist in Pass 2. Synthetic storage-only event variants exist solely under
+tests exist in Pass 3. Synthetic storage-only event variants exist solely under
 `cfg(test)` and are rejected by production-schema integration tests.
 
 Allocation, termination, SDKs, identity evidence, S3 publication,
@@ -74,7 +75,7 @@ The [projection policy](../../../docs/conformance/ag9g0d-run-instances-projectio
 classifies fields for the future SDK audit. No SDK projection or provider validation
 is implemented. The collector configuration is non-executable JSON; there is no
 collector binary. Trust checks encoding/digest/metadata only, never X.509 or CMS.
-The local marker/journal and bootstrap/status CLI are unchanged. Additional files
+The local marker/genesis and bootstrap/status CLI are unchanged. Additional files
 cannot make an authority capable of network access or mutation.
 
 Targeted contracts: `cargo test --locked --offline --test contracts` from this
@@ -92,3 +93,45 @@ acceptance package. IAM unique IDs retain 16–128 ASCII letters/digits/undersco
 bytes without prefix inference. EC2 resource suffixes retain their bounded opaque
 lexical rules. Reboot migration is excluded pending the Pass-4 pinned SDK input audit;
 there is no post-launch maintenance mutation fallback.
+
+
+## Pass-3 local dispatch authority
+
+`dispatch.rs` implements one unresolved operation with an explicit human
+`LaunchAuthorizationV2`, one logical dispatch and at most three attempt receipts.
+Before preparation publication, the controller retains all six canonical documents
+in the protected local evidence store. The event holds only typed digest/length
+references and compact bindings. Replay resolves and validates those exact bytes;
+missing or corrupt evidence rejects. Orphans confer no authority and are never
+auto-adopted or deleted. No external mutable source is needed for replay.
+
+The dispatch window is derived as exactly 120 seconds from the preparation
+envelope’s controller clock sample. Human authorization supplies audit metadata,
+never the operational clock, deadline or retry timestamp. Only a durably
+recorded `definitely-not-transmitted` outcome can permit another attempt, after
+2 seconds for attempt 2 or 8 seconds for attempt 3. Pending/uncertain attempts,
+parameter conflict, access failure, throttling hold and unresolved responses block
+transmission. No outcome establishes an EC2 identity. Restart preserves the budget
+and delays; reboot/time-namespace change invalidates remaining retry permission.
+An intent without outcome never recreates a capability after restart.
+
+Private, non-cloneable, non-serializable capability types are created only after
+successful durable append. Raw request/receipt/token objects cannot substitute for
+an attempt capability. The CLI remains bootstrap/status only; these are internal
+library/storage paths with deterministic tests, not operational launch commands.
+Pass 4 owns the future transport boundary and has not started.
+
+Preparation/dispatch/attempt intents require ordinary storage. Outcomes of consumed
+attempts may use protected recovery capacity; this does not let retry intent consume
+cleanup reserves. There is no automatic retry loop, migration, close, replacement,
+provider read/mutation, credential loading or S3 publication.
+
+Targeted checks: `cargo test --locked --offline --test dispatch` and
+`cargo test --locked --offline journal::tests` using an external target directory.
+See the contract for exact timing, outcome and publication rules.
+
+
+Pass-3 artifact/bound hardening keeps all journal shapes below an 8-KiB regression
+budget. Maximum-value valid documents can collectively exceed 65,536 bytes, but
+live as six individually bounded retained artifacts. The largest tested journal
+shape is 4,023 bytes; conservative numeric-width expansion reaches 4,103 bytes.

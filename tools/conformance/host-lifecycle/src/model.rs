@@ -1,4 +1,4 @@
-//! AWS generation 2. Pass 1 admits only local authority initialization.
+//! AWS generation 2: local authority and durable launch sequencing, no transport.
 use crate::{
     Result, canonical, deployment::AuthorityRootV2, identity::*, require, scheduling::TimeSample,
 };
@@ -59,6 +59,10 @@ pub struct EnvelopeV2 {
 )]
 pub enum EventV2 {
     AuthorityInitialized,
+    LaunchPrepared(crate::dispatch::LaunchPreparationV2),
+    LaunchDispatchIntent(crate::dispatch::DispatchIntentV2),
+    LaunchAttemptIntent(crate::dispatch::AttemptIntentV2),
+    LaunchAttemptOutcome(crate::dispatch::AttemptOutcomeV2),
     // Storage fault tests exercise ordinary/recovery publication without adding
     // operational events or commands to the production generation.
     #[cfg(test)]
@@ -84,9 +88,20 @@ impl EventV2 {
 pub struct AuthorityStateV2 {
     pub sequence: u64,
     pub head: Option<EventDigest>,
+    pub operation: Option<crate::dispatch::LaunchOperationV2>,
 }
 impl AuthorityStateV2 {
     pub fn apply(&self, e: &EnvelopeV2, root: &AuthorityRootV2) -> Result<Self> {
+        self.apply_retained(e, root, None)
+    }
+    /// Pure application with resolved canonical artifacts. Journal callers must
+    /// resolve these only from protected local storage, never external sources.
+    pub fn apply_retained(
+        &self,
+        e: &EnvelopeV2,
+        root: &AuthorityRootV2,
+        retained: Option<&crate::dispatch::PreparedLaunchV2>,
+    ) -> Result<Self> {
         root.validate()?;
         e.tool.validate()?;
         e.time.validate()?;
@@ -113,7 +128,9 @@ impl AuthorityStateV2 {
                 "duplicate genesis",
             )?;
         }
+        let operation = crate::dispatch::reduce(&self.operation, e, root, retained)?;
         Ok(Self {
+            operation,
             sequence: self
                 .sequence
                 .checked_add(1)

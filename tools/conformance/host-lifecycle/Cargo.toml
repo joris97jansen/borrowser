@@ -25,3 +25,7 @@ path = "tests/foundation.rs"
 [[test]]
 name = "contracts"
 path = "tests/contracts.rs"
+
+[[test]]
+name = "dispatch"
+path = "tests/dispatch.rs"

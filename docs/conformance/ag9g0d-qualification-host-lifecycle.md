@@ -1,8 +1,9 @@
-# AG9g0d: AWS EC2 authority foundation and reviewed contracts (Passes 1–2)
+# AG9g0d: AWS EC2 durable launch authority (Passes 1–3)
 
 This independent external-conformance operational subsystem establishes a durable
-local AWS lifecycle authority generation plus closed reviewed data contracts. **Pass 2 has no provider clients,
-credentials, network transport, allocation or termination capability.** It supports
+local AWS lifecycle authority, closed reviewed data contracts and durable launch
+authorization/dispatch/attempt state. **Pass 3 has no provider clients, credentials,
+network transport or ability to allocate or terminate resources.** Its CLI supports
 only local bootstrap and status. AG9g0d is operationally incomplete.
 
 ```text
@@ -114,9 +115,10 @@ contains exactly `account_id`, `authority`, `authority_id`, `event`, `format`,
 `AuthorityRootDigest` for that identity and `EventDigest` for previous-event/head
 identities, with no implicit cross-conversion and unchanged SHA-256 wire encoding.
 
-The only production event is `authority-initialized`, at sequence zero with a null
-previous digest. Production rejects further events until later reviewed passes
-introduce actual AWS semantics. Storage tests use compile-time-only test events to
+Genesis remains `authority-initialized`, at sequence zero with a null previous
+digest. Pass 3 adds `launch-prepared`, `launch-dispatch-intent`,
+`launch-attempt-intent` and `launch-attempt-outcome` to the same V2 envelope.
+The frozen genesis/root and all Pass-2 contract bytes remain unchanged. Storage tests use compile-time-only test events to
 exercise multievent chains, publication faults and reserves. Those variants cannot
 be parsed by the production library or reached from its CLI.
 
@@ -145,7 +147,8 @@ The storage bound remains 16,384 events with the last 64 slots protected from
 ordinary publication. Low-byte/inode recovery uses preallocated reserve files,
 claimed by synchronized rename before writing; interruption consumes the reserve
 object but does not fabricate an event. Event-derived classification remains private.
-Passes 1–2 have no production recovery event, command, or caller-selectable reserve flag.
+Pass-3 outcome events are recovery-class; preparation, dispatch and attempt intents
+are ordinary-class. There is no caller-selectable reserve flag or recovery command.
 Provider-independent evidence retention/headroom primitives remain internal and
 covered by storage tests, with no CLI exposure or cloud publication.
 
@@ -170,7 +173,7 @@ its build instructions authorize this generation's operations.
 SDK clients, reconciliation, identity collection/verification, ingress, termination,
 cloud evidence publication and static qualification support remain later passes. Real deployment and separately authorized lifecycle
 acceptance remain mandatory before AG9g0d can close. No allocation or termination
-can be exercised with Pass 2.
+can be exercised with Pass 3.
 
 ## Validation
 
@@ -318,7 +321,8 @@ credentials, ambient configuration or circular token input. Parsing a retained t
 checks its syntax only; final request construction always recomputes and compares it.
 No caller-selected token can override the derived binding. Account/region/AZ identity
 are retained because EC2 subnet-based idempotency is zonal, not globally scoped.
-There is no retry implementation or retained dispatch event in this pass.
+Pass 2 defines only request identity; Pass 3 below adds local dispatch and retry
+eligibility. Neither implements wire attempts.
 
 `RunInstancesRequestV2` (`borrowser-aws-ec2-run-instances-request` / 2) contains explicit
 min/max counts of 1, token, spec digest and the complete spec. Construction/revalidation
@@ -378,3 +382,173 @@ AMI/VPC/subnet/SG/VPC-endpoint/route-table IDs require their exact typed prefix 
 is a permanent V2 naming rule. These bounds protect local representation, not an
 AWS resource catalogue. Safe opaque syntax does not establish existence, ownership,
 relationship or approval; exact deployment/approval bindings still apply.
+
+
+## Pass 3: durable launch authorization and attempts
+
+The implemented boundaries are:
+
+| Pass | Authority implemented |
+| --- | --- |
+| 1 | Durable local generation/root/bootstrap/replay |
+| 2 | Exact reviewed deployment, approval, specification, token and request contracts |
+| 3 | Local human authorization, logical dispatch, attempt receipts and retry eligibility |
+| 4 | Future AWS client, wire projection and transport normalization; not implemented |
+
+There is at most one unresolved acquisition operation. Preparation, dispatch,
+pending attempt, blocked response and even dispatch expiry retain that operation.
+No close/replacement/reset event exists in this pass. Reviewed documents and parsed
+IDs alone never grant an attempt capability. No provider observations, ownership,
+termination, resource closeout or network capabilities are introduced.
+
+### Human authorization and retained artifacts
+
+`LaunchAuthorizationV2` uses format `borrowser-aws-ec2-launch-authorization`, schema 2.
+It binds authority, account, region, AZ ID, operation, deployment/approval/trust/spec/
+request digests, exact ClientToken, expected current journal head, reviewer,
+reference, rationale and human `authorized_at_unix_seconds` audit metadata.
+`LaunchAuthorizationDigest` is distinct from event and request digests. The human
+artifact contains no boot clock, operational deadline or retry timestamp. Future
+operator admission must use the protected controller; no authorization-ingestion
+CLI exists in Pass 3. Reviewer text is not cryptographic reviewer authentication.
+
+`launch-prepared` contains only a compact `LaunchBindingV2` and exactly six typed
+references (`LaunchArtifactRefsV2`). Each field fixes its semantic digest type and
+exact canonical byte length: deployment, launch approval, identity trust,
+specification, final request and authorization. `RetainedArtifactV2<D>` is a storage
+reference, not a capability; there are no implicit conversions between its digest
+types. All six identities remain independently retained, even where request/spec
+content overlaps. No complete reviewed document is embedded in a journal record.
+
+Preparation first validates all reviewed documents, their frozen Pass-2 constructors,
+root identity, authorization/head bindings, review admission and controller time.
+It then retains each exact canonical document under its digest in the protected
+local `evidence/` namespace, verifies all retained bytes, and publishes the compact
+preparation event. Only successful synchronized journal publication establishes
+preparation authority. Partial or complete unreferenced retention creates harmless
+storage orphans: status/replay neither adopts nor removes them. Explicit preparation
+may reuse identical retained bytes only after full validation and a new successful
+journal publication; matching filenames alone never authorize any operation.
+
+Evidence access retains descriptor-relative confinement, private single-link regular
+files, SHA-256 content addressing, exact length/hash checks, no-replace publication,
+idempotence for identical bytes only, aggregate bounds and publication-poisoning
+rules. No external source file, S3 object or network lookup contributes replay
+inputs. Replay resolves all six exact references, checks length/digest, canonical-
+decodes each expected type, re-runs all frozen Pass-2 validators and checks every
+reference against the reconstructed documents and authorization. Missing, malformed,
+wrong-type, wrong-length, noncanonical, corrupt or inconsistent artifacts fail closed.
+Dispatch/attempt capability creation also rechecks the current retained artifacts.
+The pure reducer accepts separately resolved inputs; production journal application
+supplies these solely from confined evidence storage. References alone cannot apply
+preparation. Failed validation cannot partially modify state.
+
+Large artifacts retain their existing individual canonical bounds and the evidence
+store's existing 256-object / 64-MiB aggregate limits. The journal remains bounded
+at 65,536 bytes per event. A maximum-value test uses 128-byte authority/operation IDs,
+32-byte region/AZ identities, maximally escaped bounded text, full SG/tag collections,
+and the maximum 16,384-byte trust-certificate representation. Each document validates
+individually, while encoding their aggregate exceeds the journal ceiling. The compact
+preparation is 2,902 bytes; dispatch is 2,922; attempt is 3,458; the largest outcome is
+4,023. A separate conservative expansion to 20-digit numeric fields yields at most
+4,103 bytes. All shapes must remain below an 8-KiB regression budget, leaving more
+than 56 KiB of structural headroom below the unchanged event ceiling. The numeric
+expansion is an upper-bound calculation, not a claim that all maximum integers can
+coexist in a reachable journal. No normal test regenerates golden vectors.
+
+### Controller-derived operational timing
+
+The preparation envelope's controller `TimeSample` is the sole start of operational
+authority. Reducer state derives `LaunchDispatchDeadline` as exactly that sample's
+`boottime_ns + 120_000_000_000`, with checked arithmetic. Human audit time cannot move
+the start or choose a deadline; future audit timestamps reject. Realtime is used for
+review admission/audit, never for operational deadline/delay arithmetic. The derived
+window is not reset after artifact retention, restart, retry, expiry or reboot.
+
+### One logical dispatch, distinct attempts
+
+`launch-dispatch-intent` binds the authorization digest, preparation sequence/head,
+complete launch binding and controller-derived preparation timing context. Its resulting sequence/head
+and sampled time become `DispatchIdentityV2`. Exactly one dispatch is allowed per
+operation. Retries cannot create another dispatch or change region, AZ/AZ ID,
+subnet, request, specification or token.
+
+`launch-attempt-intent` binds that exact dispatch, an attempt number in 1–3, and the
+envelope timing context. Its sequence/head form the individual attempt receipt.
+`DurableLaunchDispatch` and `DurableLaunchAttempt` have private fields, no public
+constructor and no Clone/Serialize/Deserialize implementation. Only successful
+synchronized journal publication returns a capability; a parsed receipt is data.
+The attempt capability has immutable identity access and is consumed by value when
+recording its outcome. Future transport must likewise consume it by value, and
+recheck its carried deadline/clock immediately before transmission. Pass 3 has no
+transport consumer or request-only mutation interface.
+
+An attempt intent without a durable outcome is already uncertainty. Replay never
+reconstructs a lost attempt capability, even if the process died before handing it
+to transport. This conservative boundary sacrifices a possible retry rather than
+inventing proof that nothing was transmitted. Later reconciliation is required.
+
+### Outcomes and bounded scheduling
+
+| Retained outcome | Retry consequence |
+| --- | --- |
+| `definitely-not-transmitted` | May become eligible after its durable observation plus the minimum delay |
+| `transmission-uncertain` | Blocked pending future reconciliation |
+| `parameter-conflict` | Permanent retry block for this operation; parameters/token cannot be regenerated |
+| `access-blocked` | Blocked; no credential-correction/revalidation transition exists yet |
+| `throttled-held` | Attempt consumed, progress held; no automatic retry/release |
+| `response-unresolved` | Response requires later retention/normalization; no inferred provider identity or retry |
+
+Outcomes bind the exact last pending attempt and can be recorded only once. They
+are authority-relevant categories, not AWS error mappings. A future transport must
+supply trustworthy normalization; callers cannot infer non-transmission from a
+missing response. No response body or credential is retained here.
+
+Eligibility is derived from the authorization, dispatch and bounded attempt history:
+maximum three attempts, within 120 seconds of the controller preparation sample, two seconds
+from outcome 1 before attempt 2, eight seconds from outcome 2 before attempt 3.
+Delays start at the recorded outcome observation, conservatively after attempt
+intent. All arithmetic is checked integer nanoseconds. The deadline is exclusive;
+retry-delay thresholds are inclusive. Preparation/dispatch/attempt clock samples
+cannot move backwards. Elapsed time grants eligibility only, never execution.
+
+The timing domain is boot ID, `CLOCK_BOOTTIME` and time-namespace identity. Reboot
+or namespace change invalidates remaining transmission permission, without resetting
+operation, request, token, attempt count or obligations. Same-boot restart preserves
+the exact deadline and delay. Outcome recovery remains possible after reboot or
+expiry, but cannot restore transmission permission. Realtime clock changes do not
+shorten delays or extend deadlines. There is no `Instant`, background loop, timeout
+cleanup, replacement operation or automatic dispatch.
+
+Only unresolved provider ownership exists in Pass 3; no ownership observation can
+be appended. Future ownership/reconciliation semantics must remain a separate gate
+above retry eligibility. A response, uncertainty or conflict already blocks retry.
+AWS zonal ClientToken idempotency supplements this local authority; it never grants
+cross-AZ permission or justifies changing the exact retained request.
+
+### Recovery classification and test boundary
+
+Preparation, dispatch intent and every attempt intent are ordinary publications.
+They cannot consume the final 64 journal slots or preallocated recovery inodes.
+The internal capability-producing paths also require acquisition headroom.
+An outcome for an already-consumed attempt is recovery-class because losing it can
+lose the only retained account of a possible mutation. All six outcome categories
+receive that treatment, including definitive non-transmission. This classification
+never authorizes another attempt: that requires a separate ordinary publication.
+At most three outcome events can be recorded for the unresolved operation. The
+protected reserve remains principally available for recovery and future cleanup.
+
+Publication failure poisons the writer. Reopen/replay can stabilize a fully renamed
+entry, but cannot synthesize an absent entry, reset a budget, or return its lost
+capability. Independent Pass-3 fixtures in `tests/fixtures/dispatch-v2/` freeze the
+authorization, preparation, dispatch, attempt and six alternative outcome envelopes.
+They were composed independently of the Rust serializer; ordinary tests never
+regenerate them. The preparation vector references the frozen Pass-2 files and the
+independent Pass-3 authorization artifact rather than embedding their contents. Filesystem tests inject failures at write/truncate/file-sync/rename/
+directory-sync boundaries and check low-space, final-slot and restart behavior.
+Retention crash tests cover the first artifact, all six before publication, failed
+journal writes, interrupted directory sync, and missing/corrupt committed evidence.
+Orphans confer no authority and never bypass the one-unresolved-operation gate.
+Compile-fail tests enforce capability construction, copying, deserialization and
+retargeting boundaries. Production-schema and CLI tests continue to reject test-only
+events and unimplemented commands.

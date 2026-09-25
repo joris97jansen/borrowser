@@ -2,6 +2,7 @@
 pub mod canonical;
 pub mod collector_config;
 pub mod deployment;
+pub mod dispatch;
 pub mod identity;
 #[cfg(unix)]
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]

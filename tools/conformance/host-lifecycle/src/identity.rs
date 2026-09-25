@@ -242,3 +242,5 @@ pub(crate) fn arn_binding(s: &str, account: &AwsAccountId, region: Option<&Regio
         "ARN account/region binding",
     )
 }
+
+identity!(LaunchAuthorizationDigest, canonical::digest);

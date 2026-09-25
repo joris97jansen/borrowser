@@ -21,3 +21,14 @@ not masquerade as cryptographic verification coverage; Pass 6 needs independent
 AWS-format signed fixtures and must reject these synthetic certificate bytes.
 Fixture capacity/type, cost, IDs, references, reviews and times have no admission,
 pricing, host-readiness or provider-authenticity authority.
+
+
+`dispatch-v2/` contains independently authored Pass-3 authorization and journal
+vectors with retained SHA-256 digests. The event chain begins at the frozen Pass-1
+genesis; the preparation references the exact frozen Pass-2 synthetic documents by typed
+digest/length, plus the separately retained Pass-3 authorization artifact. Human
+authorization has audit time only; dispatch clocks derive from the preparation
+envelope. The
+six outcome fixtures are alternatives at sequence 4, not consecutive events.
+No Rust serializer generates these fixtures during tests. They are never production
+approvals; reviewer, clock, source provenance and deployed identities are synthetic.

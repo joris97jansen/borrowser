@@ -358,6 +358,28 @@ impl Journal {
         same(&self.staging, &directory(&self.root, "staging")?)?;
         same(&self.reserve, &directory(&self.root, "reserve")?)
     }
+    pub(crate) fn append_launch(
+        &mut self,
+        event: EventV2,
+        time: crate::scheduling::TimeSample,
+        tool: ToolIdentityV2,
+    ) -> Result<EventDigest> {
+        let e = EnvelopeV2 {
+            account_id: self.marker.identity.account_id.clone(),
+            authority: AUTHORITY.into(),
+            authority_id: self.marker.identity.authority_id.clone(),
+            region: self.marker.identity.region.clone(),
+            root_sha256: self.marker.digest()?,
+            event,
+            format: FORMAT.into(),
+            previous_sha256: self.state.head.clone(),
+            schema_version: 2,
+            sequence: self.state.sequence,
+            time,
+            tool,
+        };
+        self.append(&e)
+    }
     pub(crate) fn state(&self) -> &AuthorityStateV2 {
         &self.state
     }
@@ -404,12 +426,16 @@ impl Journal {
             !self.poisoned && !bytes.is_empty() && bytes.len() <= 1_048_576,
             "evidence bound/authority",
         )?;
+        self.check_objects()?;
         canonical::digest(expected)?;
         require(canonical::sha256(bytes) == expected, "evidence digest")?;
         let dir = directory(&self.root, "evidence")?;
         let names = entries(&dir)?;
         if names.iter().any(|n| n == expected) {
-            self.verify_evidence(expected, bytes.len() as u64)?;
+            require(
+                self.read_evidence(expected, bytes.len() as u64)? == bytes,
+                "evidence replacement forbidden",
+            )?;
             io(dir.sync_all())?;
             return Ok(());
         }
@@ -441,6 +467,9 @@ impl Journal {
         result
     }
     fn verify_evidence(&self, digest: &str, length: u64) -> Result<()> {
+        self.read_evidence(digest, length).map(|_| ())
+    }
+    fn read_evidence(&self, digest: &str, length: u64) -> Result<Vec<u8>> {
         canonical::digest(digest)?;
         require(
             length > 0 && length <= 1_048_576,
@@ -458,7 +487,96 @@ impl Journal {
         require(
             bytes.len() as u64 == length && canonical::sha256(&bytes) == digest,
             "retained evidence bytes",
+        )?;
+        same(&f, &open_at(&dir, digest, libc::O_RDONLY)?)?;
+        Ok(bytes)
+    }
+    pub(crate) fn validate_launch_preparation(
+        &self,
+        prepared: &crate::dispatch::PreparedLaunchV2,
+        time: &crate::scheduling::TimeSample,
+    ) -> Result<()> {
+        require(
+            !self.poisoned,
+            "journal requires reopen after publication failure",
+        )?;
+        require(
+            self.state.operation.is_none(),
+            "unresolved acquisition exists",
+        )?;
+        prepared.validate(
+            &self.marker,
+            self.state
+                .head
+                .as_ref()
+                .ok_or(Error("authorization requires head"))?,
+            time,
         )
+    }
+    pub(crate) fn retain_launch_artifacts(
+        &mut self,
+        prepared: &crate::dispatch::PreparedLaunchV2,
+    ) -> Result<()> {
+        let refs = prepared.references()?;
+        // Each artifact retains the established evidence bounds and poison rules.
+        macro_rules! retain {
+            ($field:ident, $doc:ident) => {
+                self.retain_evidence(
+                    &canonical::encode(&prepared.$doc)?,
+                    refs.$field.sha256.as_str(),
+                )?;
+            };
+        }
+        retain!(deployment, deployment);
+        checkpoint("launch-artifact-one")?;
+        retain!(approval, approval);
+        retain!(trust, trust);
+        retain!(specification, specification);
+        retain!(request, request);
+        retain!(authorization, authorization);
+        require(
+            self.resolve_launch_artifacts(&refs)? == *prepared,
+            "retained launch bytes",
+        )?;
+        checkpoint("launch-artifacts-complete")
+    }
+    pub(crate) fn verify_current_launch_artifacts(&self) -> Result<()> {
+        let op = self
+            .state
+            .operation
+            .as_ref()
+            .ok_or(Error("launch preparation required"))?;
+        require(
+            self.resolve_launch_artifacts(&op.prepared.references()?)? == op.prepared,
+            "retained launch artifacts changed",
+        )
+    }
+    fn resolve_launch_artifacts(
+        &self,
+        refs: &crate::dispatch::LaunchArtifactRefsV2,
+    ) -> Result<crate::dispatch::PreparedLaunchV2> {
+        macro_rules! read {
+            ($field:ident) => {
+                canonical::decode(
+                    &self.read_evidence(refs.$field.sha256.as_str(), refs.$field.bytes)?,
+                )?
+            };
+        }
+        Ok(crate::dispatch::PreparedLaunchV2 {
+            deployment: read!(deployment),
+            approval: read!(approval),
+            trust: read!(trust),
+            specification: read!(specification),
+            request: read!(request),
+            authorization: read!(authorization),
+        })
+    }
+    fn apply_event(&self, state: &AuthorityStateV2, e: &EnvelopeV2) -> Result<AuthorityStateV2> {
+        let retained = match &e.event {
+            EventV2::LaunchPrepared(p) => Some(self.resolve_launch_artifacts(&p.artifacts)?),
+            _ => None,
+        };
+        state.apply_retained(e, &self.marker, retained.as_ref())
     }
     fn replay(&mut self) -> Result<()> {
         self.check_objects()?;
@@ -482,7 +600,7 @@ impl Journal {
             if let Some((digest, bytes)) = e.event.evidence() {
                 self.verify_evidence(digest, bytes)?;
             }
-            state = state.apply(&e, &self.marker)?;
+            state = self.apply_event(&state, &e)?;
             same(&f, &open_at(&self.journal, &n, libc::O_RDONLY)?)?;
         }
         require(state.sequence > 0, "missing authority genesis")?;
@@ -507,7 +625,7 @@ impl Journal {
         if let Some((digest, bytes)) = e.event.evidence() {
             self.verify_evidence(digest, bytes)?;
         }
-        let next = self.state.apply(e, &self.marker)?;
+        let next = self.apply_event(&self.state, e)?;
         let bytes = canonical::encode(e)?;
         let (free_bytes, free_inodes) = available(&self.root)?;
         require(
@@ -587,6 +705,453 @@ mod tests {
         e.previous_sha256 = j.state.head.clone();
         e.event = event;
         e
+    }
+    fn launch_vector(name: &str) -> EnvelopeV2 {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/dispatch-v2")
+            .join(format!("{name}.json"));
+        canonical::decode(&std::fs::read(path).unwrap()).unwrap()
+    }
+    fn launch_time(seconds: u64) -> crate::scheduling::TimeSample {
+        let mut t = launch_vector("prepared").time;
+        t.boottime_ns += seconds * 1_000_000_000;
+        t
+    }
+    fn launch_prepare(j: &mut Journal) -> Result<()> {
+        let e = launch_vector("prepared");
+        j.prepare_launch(crate::test_support::launch_documents(), e.time, e.tool)
+    }
+    #[test]
+    fn durable_launch_capabilities_match_independent_receipts_and_restart_state() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        use crate::dispatch::*;
+        let (dir, mut j) = fresh();
+        launch_prepare(&mut j).unwrap();
+        assert_eq!(
+            std::fs::read(dir.path().join("journal/00000000000000000001.json")).unwrap(),
+            canonical::encode(&launch_vector("prepared")).unwrap()
+        );
+        let prepared = j.state.clone();
+        drop(j);
+        let mut j = reopen(dir.path()).unwrap();
+        assert_eq!(j.state, prepared);
+        let dispatch = j.prepare_dispatch(launch_time(0), genesis().tool).unwrap();
+        assert_eq!(
+            dispatch.identity(),
+            j.state
+                .operation
+                .as_ref()
+                .unwrap()
+                .dispatch
+                .as_ref()
+                .unwrap()
+        );
+        let dispatched = j.state.clone();
+        drop(j);
+        let mut j = reopen(dir.path()).unwrap();
+        assert_eq!(j.state, dispatched);
+        let a = j.begin_attempt(launch_time(0), genesis().tool).unwrap();
+        assert_eq!(a.identity().receipt.head, j.state.head.clone().unwrap());
+        assert_eq!(
+            std::fs::read(dir.path().join("journal/00000000000000000003.json")).unwrap(),
+            canonical::encode(&launch_vector("attempt-intent")).unwrap()
+        );
+        j.finish_attempt(
+            a,
+            LaunchAttemptOutcome::DefinitelyNotTransmitted,
+            launch_time(0),
+            genesis().tool,
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read(dir.path().join("journal/00000000000000000004.json")).unwrap(),
+            canonical::encode(&launch_vector("definitely-not-transmitted")).unwrap()
+        );
+        for (early, due) in [(1, 2), (9, 10)] {
+            let retained = j.state.clone();
+            drop(j);
+            j = reopen(dir.path()).unwrap();
+            assert_eq!(j.state, retained);
+            assert!(j.begin_attempt(launch_time(early), genesis().tool).is_err());
+            let a = j.begin_attempt(launch_time(due), genesis().tool).unwrap();
+            j.finish_attempt(
+                a,
+                LaunchAttemptOutcome::DefinitelyNotTransmitted,
+                launch_time(due),
+                genesis().tool,
+            )
+            .unwrap();
+        }
+        let retained = j.state.clone();
+        drop(j);
+        let mut j = reopen(dir.path()).unwrap();
+        assert_eq!(j.state, retained);
+        assert!(j.begin_attempt(launch_time(119), genesis().tool).is_err());
+        assert_eq!(j.state.operation.as_ref().unwrap().attempts.len(), 3);
+    }
+    #[test]
+    fn replay_never_reconstructs_pending_attempt_permission() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, mut j) = fresh();
+        launch_prepare(&mut j).unwrap();
+        j.prepare_dispatch(launch_time(0), genesis().tool).unwrap();
+        let _lost = j.begin_attempt(launch_time(0), genesis().tool).unwrap();
+        let pending = j.state.clone();
+        drop(j);
+        for _ in 0..3 {
+            let mut j = reopen(dir.path()).unwrap();
+            assert_eq!(j.state, pending);
+            assert!(j.begin_attempt(launch_time(10), genesis().tool).is_err());
+            assert!(launch_prepare(&mut j).is_err());
+            assert!(j.prepare_dispatch(launch_time(10), genesis().tool).is_err());
+        }
+    }
+    #[test]
+    fn launch_publication_faults_never_grant_capabilities_and_poison_until_replay() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        for stage in 0..4 {
+            for point in ["write", "truncate", "file-sync", "rename", "directory-sync"] {
+                let (dir, mut j) = fresh();
+                if stage > 0 {
+                    launch_prepare(&mut j).unwrap();
+                }
+                if stage > 1 {
+                    j.prepare_dispatch(launch_time(0), genesis().tool).unwrap();
+                }
+                let attempt = if stage > 2 {
+                    Some(j.begin_attempt(launch_time(0), genesis().tool).unwrap())
+                } else {
+                    None
+                };
+                if stage == 0 {
+                    j.retain_launch_artifacts(&crate::test_support::launch_documents())
+                        .unwrap();
+                }
+                let before = j.state.clone();
+                FAULT.with(|f| f.set(Some(point)));
+                let failed = match stage {
+                    0 => launch_prepare(&mut j),
+                    1 => j
+                        .prepare_dispatch(launch_time(0), genesis().tool)
+                        .map(|_| ()),
+                    2 => j.begin_attempt(launch_time(0), genesis().tool).map(|_| ()),
+                    _ => j.finish_attempt(
+                        attempt.unwrap(),
+                        crate::dispatch::LaunchAttemptOutcome::DefinitelyNotTransmitted,
+                        launch_time(0),
+                        genesis().tool,
+                    ),
+                };
+                assert!(failed.is_err());
+                assert!(j.poisoned);
+                assert_eq!(j.state, before);
+                FAULT.with(|f| f.set(None));
+                assert!(j.begin_attempt(launch_time(10), genesis().tool).is_err());
+                drop(j);
+                let mut recovered = reopen(dir.path()).unwrap();
+                assert_eq!(
+                    recovered.state.sequence,
+                    before.sequence + u64::from(point == "directory-sync")
+                );
+                if stage == 2 && point == "directory-sync"
+                    || stage == 3 && point != "directory-sync"
+                {
+                    assert!(
+                        recovered
+                            .begin_attempt(launch_time(10), genesis().tool)
+                            .is_err()
+                    );
+                }
+                if stage == 3 && point == "directory-sync" {
+                    assert!(
+                        recovered
+                            .begin_attempt(launch_time(1), genesis().tool)
+                            .is_err()
+                    );
+                    assert!(
+                        recovered
+                            .begin_attempt(launch_time(2), genesis().tool)
+                            .is_ok()
+                    );
+                }
+            }
+        }
+    }
+    #[test]
+    fn launch_low_space_is_ordinary_and_consumed_attempt_outcome_is_recovery() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        for stage in 0..3 {
+            let (_dir, mut j) = fresh();
+            if stage > 0 {
+                launch_prepare(&mut j).unwrap();
+            }
+            if stage > 1 {
+                j.prepare_dispatch(launch_time(0), genesis().tool).unwrap();
+            }
+            if stage == 0 {
+                j.retain_launch_artifacts(&crate::test_support::launch_documents())
+                    .unwrap();
+            }
+            let event = launch_vector(["prepared", "dispatch-intent", "attempt-intent"][stage]);
+            let before = j.state.clone();
+            SPACE.with(|s| s.set(Some((0, 0))));
+            assert!(j.append(&event).is_err());
+            assert_eq!(j.state, before);
+            assert_eq!(entries(&j.reserve).unwrap().len(), 64);
+            SPACE.with(|s| s.set(None));
+        }
+        for name in [
+            "definitely-not-transmitted",
+            "transmission-uncertain",
+            "parameter-conflict",
+            "access-blocked",
+            "throttled-held",
+            "response-unresolved",
+        ] {
+            let (dir, mut j) = fresh();
+            launch_prepare(&mut j).unwrap();
+            j.prepare_dispatch(launch_time(0), genesis().tool).unwrap();
+            let _attempt = j.begin_attempt(launch_time(0), genesis().tool).unwrap();
+            SPACE.with(|s| s.set(Some((0, 0))));
+            j.append(&launch_vector(name)).unwrap();
+            assert_eq!(entries(&j.reserve).unwrap().len(), 63);
+            assert!(j.begin_attempt(launch_time(10), genesis().tool).is_err());
+            SPACE.with(|s| s.set(None));
+            drop(j);
+            assert_eq!(reopen(dir.path()).unwrap().state.sequence, 5);
+        }
+    }
+    #[test]
+    fn final_slots_cannot_fund_another_launch_attempt() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let (_dir, mut j) = fresh();
+        launch_prepare(&mut j).unwrap();
+        j.prepare_dispatch(launch_time(0), genesis().tool).unwrap();
+        let attempt = j.begin_attempt(launch_time(0), genesis().tool).unwrap();
+        while j.state.sequence < MAX_EVENTS - RESERVE_SLOTS {
+            j.append(&next(&j, EventV2::StorageCheckpoint)).unwrap();
+        }
+        j.finish_attempt(
+            attempt,
+            crate::dispatch::LaunchAttemptOutcome::DefinitelyNotTransmitted,
+            launch_time(0),
+            genesis().tool,
+        )
+        .unwrap();
+        let intent = j
+            .state
+            .operation
+            .as_ref()
+            .unwrap()
+            .next_attempt(&launch_time(2))
+            .unwrap();
+        let mut event = next(&j, EventV2::LaunchAttemptIntent(intent));
+        event.time = launch_time(2);
+        assert!(j.append(&event).is_err());
+        assert_eq!(j.state.operation.as_ref().unwrap().attempts.len(), 1);
+        assert_eq!(entries(&j.reserve).unwrap().len(), 64);
+    }
+    #[test]
+    fn partial_launch_retention_never_establishes_or_adopts_authority() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        for (point, count) in [("launch-artifact-one", 1), ("launch-artifacts-complete", 6)] {
+            let (dir, mut j) = fresh();
+            FAULT.with(|f| f.set(Some(point)));
+            assert!(launch_prepare(&mut j).is_err());
+            FAULT.with(|f| f.set(None));
+            assert_eq!(j.state.sequence, 1);
+            assert!(j.state.operation.is_none());
+            let files = entries(&directory(&j.root, "evidence").unwrap()).unwrap();
+            assert_eq!(files.len(), count);
+            drop(j);
+            for _ in 0..2 {
+                let mut j = reopen(dir.path()).unwrap();
+                assert!(j.state.operation.is_none());
+                assert_eq!(j.state.sequence, 1);
+                assert!(j.prepare_dispatch(launch_time(0), genesis().tool).is_err());
+                assert!(j.begin_attempt(launch_time(0), genesis().tool).is_err());
+                assert_eq!(
+                    entries(&directory(&j.root, "evidence").unwrap()).unwrap(),
+                    files
+                );
+            }
+            // Explicit preparation may reuse identical bytes, never status/replay.
+            let mut j = reopen(dir.path()).unwrap();
+            launch_prepare(&mut j).unwrap();
+            j.retain_evidence(
+                b"unreferenced extra artifact",
+                &canonical::sha256(b"unreferenced extra artifact"),
+            )
+            .unwrap();
+            drop(j);
+            let mut j = reopen(dir.path()).unwrap();
+            assert!(launch_prepare(&mut j).is_err());
+            assert_eq!(j.state.sequence, 2);
+        }
+    }
+    #[test]
+    fn every_launch_artifact_is_exact_before_publication_and_replay() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let p = crate::test_support::launch_documents();
+        let r = p.references().unwrap();
+        let artifacts = [
+            (
+                canonical::encode(&p.deployment).unwrap(),
+                r.deployment.sha256.as_str(),
+            ),
+            (
+                canonical::encode(&p.approval).unwrap(),
+                r.approval.sha256.as_str(),
+            ),
+            (
+                canonical::encode(&p.trust).unwrap(),
+                r.trust.sha256.as_str(),
+            ),
+            (
+                canonical::encode(&p.specification).unwrap(),
+                r.specification.sha256.as_str(),
+            ),
+            (
+                canonical::encode(&p.request).unwrap(),
+                r.request.sha256.as_str(),
+            ),
+            (
+                canonical::encode(&p.authorization).unwrap(),
+                r.authorization.sha256.as_str(),
+            ),
+        ];
+        for (bytes, digest) in artifacts {
+            for missing in [true, false] {
+                let (dir, mut j) = fresh();
+                launch_prepare(&mut j).unwrap();
+                let path = dir.path().join("evidence").join(digest);
+                assert_eq!(std::fs::read(&path).unwrap(), bytes);
+                if missing {
+                    std::fs::remove_file(&path).unwrap();
+                } else {
+                    let mut corrupt = bytes.clone();
+                    corrupt[0] = b' ';
+                    std::fs::write(&path, corrupt).unwrap();
+                }
+                assert!(j.prepare_dispatch(launch_time(0), genesis().tool).is_err());
+                drop(j);
+                assert!(reopen(dir.path()).is_err());
+                assert!(!missing || !path.exists());
+            }
+        }
+    }
+    #[test]
+    fn retained_reference_lengths_types_canonical_bytes_and_cross_bindings_reject() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        for failure in [
+            "digest",
+            "length",
+            "missing",
+            "type",
+            "noncanonical",
+            "inconsistent",
+        ] {
+            let (dir, mut j) = fresh();
+            let p = crate::test_support::launch_documents();
+            j.retain_launch_artifacts(&p).unwrap();
+            let mut e = launch_vector("prepared");
+            let EventV2::LaunchPrepared(ref mut prepared) = e.event else {
+                panic!()
+            };
+            match failure {
+                "digest" => prepared.artifacts.request.sha256 = "f".repeat(64).parse().unwrap(),
+                "length" => prepared.artifacts.request.bytes += 1,
+                "missing" => std::fs::remove_file(
+                    dir.path()
+                        .join("evidence")
+                        .join(prepared.artifacts.request.sha256.as_str()),
+                )
+                .unwrap(),
+                "type" => {
+                    prepared.artifacts.request.sha256 = prepared
+                        .artifacts
+                        .deployment
+                        .sha256
+                        .as_str()
+                        .parse()
+                        .unwrap();
+                    prepared.artifacts.request.bytes = prepared.artifacts.deployment.bytes;
+                }
+                _ => {
+                    let mut request = p.request.clone();
+                    if failure == "inconsistent" {
+                        request.spec.launch.instance_type = "different.large".parse().unwrap();
+                    }
+                    let mut bytes = canonical::encode(&request).unwrap();
+                    if failure == "noncanonical" {
+                        bytes.push(b' ');
+                    }
+                    let digest = canonical::sha256(&bytes);
+                    j.retain_evidence(&bytes, &digest).unwrap();
+                    prepared.artifacts.request.sha256 = digest.parse().unwrap();
+                    prepared.artifacts.request.bytes = bytes.len() as u64;
+                }
+            }
+            assert!(j.append(&e).is_err(), "{failure}");
+            assert_eq!(j.state.sequence, 1);
+            // Even a forged canonical journal record with a fresh event hash cannot
+            // make malformed/inconsistent retained bytes become preparation authority.
+            let path = dir.path().join("journal/00000000000000000001.json");
+            std::fs::write(&path, canonical::encode(&e).unwrap()).unwrap();
+            std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o600))
+                .unwrap();
+            drop(j);
+            assert!(reopen(dir.path()).is_err(), "{failure}");
+        }
+    }
+    #[test]
+    fn artifact_store_refuses_replacement_and_poisons_failed_retention() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, mut j) = fresh();
+        let p = crate::test_support::launch_documents();
+        let bytes = canonical::encode(&p.deployment).unwrap();
+        let digest = canonical::sha256(&bytes);
+        assert!(j.retain_evidence(&bytes, &"f".repeat(64)).is_err());
+        j.retain_evidence(&bytes, &digest).unwrap();
+        let path = dir.path().join("evidence").join(&digest);
+        let inode = std::fs::metadata(&path).unwrap().ino();
+        j.retain_evidence(&bytes, &digest).unwrap();
+        assert_eq!(std::fs::metadata(&path).unwrap().ino(), inode);
+        std::fs::write(&path, b"wrong").unwrap();
+        assert!(j.retain_evidence(&bytes, &digest).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"wrong");
+        drop(j);
+        let (dir, mut j) = fresh();
+        FAULT.with(|f| f.set(Some("directory-sync")));
+        assert!(launch_prepare(&mut j).is_err());
+        FAULT.with(|f| f.set(None));
+        assert!(j.poisoned);
+        assert!(launch_prepare(&mut j).is_err());
+        drop(j);
+        let j = reopen(dir.path()).unwrap();
+        assert!(j.state.operation.is_none());
+    }
+    #[test]
+    fn retained_launch_documents_are_revalidated_on_replay() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, mut j) = fresh();
+        launch_prepare(&mut j).unwrap();
+        let refs = crate::test_support::launch_documents()
+            .references()
+            .unwrap();
+        assert_eq!(
+            entries(&directory(&j.root, "evidence").unwrap())
+                .unwrap()
+                .len(),
+            6
+        );
+        drop(j);
+        let path = dir
+            .path()
+            .join("evidence")
+            .join(refs.request.sha256.as_str());
+        std::fs::write(path, b"corrupt").unwrap();
+        assert!(reopen(dir.path()).is_err());
     }
     #[test]
     fn fresh_v2_bootstrap_reopen_and_restart_are_deterministic() {

@@ -8,7 +8,13 @@ pub(crate) enum PublicationClass {
 impl EventV2 {
     pub(crate) fn publication_class(&self) -> PublicationClass {
         match self {
-            Self::AuthorityInitialized => PublicationClass::Ordinary,
+            Self::AuthorityInitialized
+            | Self::LaunchPrepared(_)
+            | Self::LaunchDispatchIntent(_)
+            | Self::LaunchAttemptIntent(_) => PublicationClass::Ordinary,
+            // Records an already consumed attempt, never grants another one.
+            // At most three such outcomes per unresolved operation.
+            Self::LaunchAttemptOutcome(_) => PublicationClass::Recovery,
             #[cfg(test)]
             Self::StorageCheckpoint => PublicationClass::Ordinary,
             #[cfg(test)]
