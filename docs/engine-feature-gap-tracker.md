@@ -565,10 +565,12 @@ Current architecture status:
   validation remain required; Chromium pinning, sandbox compatibility and genuine
   AG9g0 mechanism qualification are still outstanding. AG9g0a/AG9g0 remain open
   and AG9g1 remains blocked. See `docs/conformance/ag9g0a-linux-host-readiness.md`.
-- AG9g0d Pass 1 establishes the independent AWS EC2 generation-2 local authority
+- AG9g0d Passes 1–2 establish the independent AWS EC2 generation-2 local authority
   foundation: protected persistent storage, immutable root marker, canonical genesis,
   strict replay and bootstrap/status only. Provider resource operations are unavailable;
   no AWS client, allocation, termination or real lifecycle acceptance is implemented.
+  Pass 2 adds closed deployment/launch/token/trust contracts only; it introduces no
+  provider clients or operational authority.
   AG9g0d remains open. AG9g0a remains independently frozen/open pending native Phase B.
   See `docs/conformance/ag9g0d-qualification-host-lifecycle.md`.
 - No AG9 capability establishes broad WPT compliance, browser compatibility,

@@ -21,3 +21,7 @@ tempfile = "3"
 [[test]]
 name = "foundation"
 path = "tests/foundation.rs"
+
+[[test]]
+name = "contracts"
+path = "tests/contracts.rs"

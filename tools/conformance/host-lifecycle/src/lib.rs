@@ -1,16 +1,20 @@
 //! AWS EC2 lifecycle authority foundation. No provider clients or mutations.
 pub mod canonical;
+pub mod collector_config;
 pub mod deployment;
 pub mod identity;
 #[cfg(unix)]
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) mod journal;
+pub mod launch;
 #[cfg(target_os = "linux")]
 pub(crate) mod linux;
 pub mod model;
 mod publication;
+pub mod review;
 mod runtime;
 pub mod scheduling;
+pub mod trust;
 pub type Result<T> = std::result::Result<T, Error>;
 /// Static diagnostics deliberately cannot contain credentials or provider bodies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
