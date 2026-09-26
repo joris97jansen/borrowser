@@ -1,4 +1,17 @@
-# AG9g0d: AWS EC2 durable launch authority (Passes 1–3)
+# AG9g0d / #1396: lifecycle foundation and non-mutating SDK boundary
+
+Current scope is [GitHub #1396](https://github.com/joris97jansen/borrowser/issues/1396).
+The [pinned SDK boundary audit](ag9g0d-aws-sdk-boundary.md) specifies the current
+explicit credential/configuration, read-only STS/S3 admission and pure EC2 projection.
+Production CLI remains bootstrap/status. No production allocation is reachable.
+#1396 closes after this foundation/SDK boundary is committed and reviewed; provider
+reconciliation, identity evidence, infrastructure deployment, termination and real
+acceptance belong to the subsequent GitHub issues. #1402 has not started.
+
+The following foundation contracts remain frozen. Historical pass labels describe
+those implementation boundaries, not additional roadmap items. The linked SDK audit is the current execution-boundary contract.
+
+## Frozen foundation (historical implementation boundaries 1–3)
 
 This independent external-conformance operational subsystem establishes a durable
 local AWS lifecycle authority, closed reviewed data contracts and durable launch
@@ -170,10 +183,11 @@ must never become this controller. Existing staged infrastructure is not evidenc
 of deployed/reviewed support. Neither its older frozen controller executable nor
 its build instructions authorize this generation's operations.
 
-SDK clients, reconciliation, identity collection/verification, ingress, termination,
-cloud evidence publication and static qualification support remain later passes. Real deployment and separately authorized lifecycle
-acceptance remain mandatory before AG9g0d can close. No allocation or termination
-can be exercised with Pass 3.
+#1396 includes the non-mutating SDK boundary documented in the linked audit.
+Provider reconciliation, identity collection/verification, ingress, termination,
+cloud publication, deployed qualification support and real acceptance belong to the
+subsequent GitHub issues listed in #1396. They are not #1396 closeout prerequisites.
+No allocation or termination can be exercised by this controller.
 
 ## Validation
 
@@ -229,7 +243,7 @@ No moving image lookup, bake, installation, provisioning or host readiness exist
 ## Closed launch policy versus reviewed capacity
 
 The [field-disposition contract](ag9g0d-run-instances-projection-v2.md) is normative
-for the future SDK projection; it does not claim that projection is implemented.
+for the SDK projection audited separately in the #1396 execution-boundary document.
 Every serialized `LaunchPolicyV2` field must equal the fixed V2 policy. This means
 one On-Demand instance, one new primary ENI, private subnet-assigned IPv4 only,
 no public address/IPv6/key pair, and one encrypted delete-on-termination root EBS.
@@ -337,7 +351,7 @@ These documents are data, never sealed mutation capabilities or authorization ev
 account, region, role unique ID, bucket and the fixed principal-derived ingress scheme
 `ag9g0d/aws-ec2-v2/identity-ingress/<aws-userid>`. Its exact canonical UTF-8 bytes,
 including LF, are stored as launch `user_data` and therefore participate in all
-fingerprints. The bound is 1,024 bytes. Future SDK projection encodes these bytes once
+fingerprints. The bound is 1,024 bytes. The SDK projection encodes these bytes once
 as required by its API. No operation identity, script, shell, cloud-init, executable,
 URL, presigned capability or credential field exists. The approved AMI must already
 contain the collector. Its implementation, role permissions and S3 transport remain
@@ -393,7 +407,7 @@ The implemented boundaries are:
 | 1 | Durable local generation/root/bootstrap/replay |
 | 2 | Exact reviewed deployment, approval, specification, token and request contracts |
 | 3 | Local human authorization, logical dispatch, attempt receipts and retry eligibility |
-| 4 | Future AWS client, wire projection and transport normalization; not implemented |
+| #1396 SDK boundary | Explicit clients, pure input projection and error normalization; no allocation transmission |
 
 There is at most one unresolved acquisition operation. Preparation, dispatch,
 pending attempt, blocked response and even dispatch expiry retain that operation.

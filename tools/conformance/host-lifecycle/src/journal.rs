@@ -683,7 +683,7 @@ impl Journal {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     // Process creation can transiently inherit another test thread's flock file
     // description before exec closes it. Serialize storage fixtures with the
@@ -695,6 +695,24 @@ mod tests {
         let j = Journal::bootstrap_verified(File::open(dir.path()).unwrap(), &marker(), &genesis())
             .unwrap();
         (dir, j)
+    }
+    pub(crate) fn with_launch_attempt(
+        f: impl FnOnce(
+            &crate::dispatch::DurableLaunchAttempt,
+            &crate::dispatch::PreparedLaunchV2,
+            &crate::scheduling::TimeSample,
+        ),
+    ) {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let (_dir, mut j) = fresh();
+        launch_prepare(&mut j).unwrap();
+        j.prepare_dispatch(launch_time(0), genesis().tool).unwrap();
+        let attempt = j.begin_attempt(launch_time(0), genesis().tool).unwrap();
+        f(
+            &attempt,
+            &crate::test_support::launch_documents(),
+            &launch_time(0),
+        );
     }
     fn reopen(dir: &std::path::Path) -> Result<Journal> {
         Journal::open_verified(File::open(dir).unwrap(), &marker())

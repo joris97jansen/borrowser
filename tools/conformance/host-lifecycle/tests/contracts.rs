@@ -640,13 +640,18 @@ fn public_contracts_do_not_extend_the_production_event_or_cli_surface() {
                 .contains("provider operations unavailable")
         );
     }
+    // #1396 deliberately adds only the audited service SDKs. Frozen event/CLI
+    // assertions above remain unchanged; provider transmission stays unavailable.
     let manifest = include_str!("../Cargo.toml");
+    for service in ["aws-sdk-ec2", "aws-sdk-sts", "aws-sdk-s3"] {
+        assert!(manifest.contains(service));
+    }
     for dep in [
-        "aws-sdk",
+        "aws-sdk-iam",
+        "aws-sdk-kms",
         "aws-config",
         "reqwest",
         "hyper",
-        "tokio",
         "openssl",
         "x509",
         "cms =",

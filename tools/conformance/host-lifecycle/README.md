@@ -1,12 +1,12 @@
-# AWS EC2 durable launch authority — Passes 1–3
+# AWS EC2 lifecycle foundation and non-mutating SDK boundary — #1396
 
 Independent Rust operational-tooling workspace. Read the
 [contract](../../../docs/conformance/ag9g0d-qualification-host-lifecycle.md).
-Package `0.2.0` exposes generation-2 local bootstrap/status only. Pass 2 adds pure
-reviewed deployment/launch/token/trust data contracts to the library. Pass 3 adds
-internal durable authorization, dispatch and attempt state. It contains no
-provider client, credential loader, network transport or resource mutation path.
-AG9g0d remains operationally incomplete; no host readiness or qualification is proven.
+Package `0.2.0` exposes local bootstrap/status only. #1396 adds a private,
+non-mutating AWS SDK boundary: explicit temporary-session credentials, STS caller
+admission, S3 bucket admission and capability-gated pure EC2 request projection.
+There is no production EC2 allocation or termination path. See the
+[pinned SDK audit](../../../docs/conformance/ag9g0d-aws-sdk-boundary.md).
 
 ## Supported commands
 
@@ -56,7 +56,7 @@ macOS storage tests do not prove Linux production authority. No provider integra
 tests exist in Pass 3. Synthetic storage-only event variants exist solely under
 `cfg(test)` and are rejected by production-schema integration tests.
 
-Allocation, termination, SDKs, identity evidence, S3 publication,
+Allocation, termination, identity evidence, S3 publication,
 and infrastructure deployment are unavailable. Later passes must supply their real
 contracts before enabling operations. AG9g0a remains independently frozen/open at
 `51dd44cafe476581be5f46a6a6fd242197e4e1b0`.
@@ -72,8 +72,8 @@ AMI, type, network/profile IDs, key, tags and ceilings must be exact reviewed va
 No fixture represents production approval or deployed support.
 
 The [projection policy](../../../docs/conformance/ag9g0d-run-instances-projection-v2.md)
-classifies fields for the future SDK audit. No SDK projection or provider validation
-is implemented. The collector configuration is non-executable JSON; there is no
+defines the frozen logical fields. The pinned SDK audit documents their pure
+projection; provider corroboration is not implemented. The collector configuration is non-executable JSON; there is no
 collector binary. Trust checks encoding/digest/metadata only, never X.509 or CMS.
 The local marker/genesis and bootstrap/status CLI are unchanged. Additional files
 cannot make an authority capable of network access or mutation.
@@ -91,7 +91,7 @@ or live pricing are implemented. Planned runtime is not timeout, stop or termina
 authority, nor a spending guarantee. Cleanup ownership belongs to the operational
 acceptance package. IAM unique IDs retain 16–128 ASCII letters/digits/underscore
 bytes without prefix inference. EC2 resource suffixes retain their bounded opaque
-lexical rules. Reboot migration is excluded pending the Pass-4 pinned SDK input audit;
+lexical rules. The pinned maintenance input exposes no reboot-migration field;
 there is no post-launch maintenance mutation fallback.
 
 
@@ -119,12 +119,14 @@ Private, non-cloneable, non-serializable capability types are created only after
 successful durable append. Raw request/receipt/token objects cannot substitute for
 an attempt capability. The CLI remains bootstrap/status only; these are internal
 library/storage paths with deterministic tests, not operational launch commands.
-Pass 4 owns the future transport boundary and has not started.
+The #1396 SDK boundary consumes these identities for pure projection and adds no
+allocation transmission path. #1402 has not started.
 
 Preparation/dispatch/attempt intents require ordinary storage. Outcomes of consumed
 attempts may use protected recovery capacity; this does not let retry intent consume
 cleanup reserves. There is no automatic retry loop, migration, close, replacement,
-provider read/mutation, credential loading or S3 publication.
+provider mutation or S3 publication in this durable state machine. The separate
+SDK boundary supplies explicit credentials only to read-only STS/S3 admission.
 
 Targeted checks: `cargo test --locked --offline --test dispatch` and
 `cargo test --locked --offline journal::tests` using an external target directory.
@@ -135,3 +137,13 @@ Pass-3 artifact/bound hardening keeps all journal shapes below an 8-KiB regressi
 budget. Maximum-value valid documents can collectively exceed 65,536 bytes, but
 live as six individually bounded retained artifacts. The largest tested journal
 shape is 4,023 bytes; conservative numeric-width expansion reaches 4,103 bytes.
+
+
+## #1396 SDK boundary validation
+
+Use Rust 1.92 with an external target directory. Targeted tests are
+`cargo test --locked --offline aws::`; complete tests/build, formatting and Clippy
+remain required. The synthetic HTTP connector never accesses AWS. All service
+versions and 157 audited SDK members are frozen in the linked audit. #1402 is not
+implemented. Historical pass descriptions above describe the frozen foundation;
+current SDK behavior is specified by the #1396 audit.

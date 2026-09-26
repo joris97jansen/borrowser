@@ -1,4 +1,4 @@
-//! AWS EC2 lifecycle authority foundation. No provider clients or mutations.
+//! AWS EC2 lifecycle foundation and non-mutating SDK boundary.
 pub mod canonical;
 pub mod collector_config;
 pub mod deployment;
@@ -34,7 +34,18 @@ pub fn require(ok: bool, message: &'static str) -> Result<()> {
 /// ```compile_fail
 /// use borrowser_host_lifecycle::journal::Journal;
 /// ```
+/// The SDK boundary is internal, not a public transport API.
+/// ```compile_fail
+/// use borrowser_host_lifecycle::aws::projection::ProjectedLaunch;
+/// ```
+/// ```compile_fail
+/// use borrowser_host_lifecycle::aws::AwsSession;
+/// ```
 pub use runtime::run_cli;
 
 #[cfg(test)]
 mod test_support;
+
+#[cfg(unix)]
+#[allow(dead_code)] // Internal boundary; deliberately absent from the production CLI.
+mod aws;
