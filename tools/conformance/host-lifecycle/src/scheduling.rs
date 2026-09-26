@@ -25,108 +25,79 @@ impl TimeSample {
         crate::canonical::text(&self.time_namespace, 128)
     }
 }
+
+impl TimeSample {
+    pub fn same_clock(&self, other: &Self) -> bool {
+        self.boot_id == other.boot_id && self.time_namespace == other.time_namespace
+    }
+}
+/// Exactly 120 seconds from the controller preparation sample, never renewed by retry.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Deadline {
-    pub boot_id: String,
-    pub time_namespace: String,
-    pub expires_ns: u64,
+pub struct LaunchDispatchDeadline {
+    pub boottime_ns: u64,
 }
-impl Deadline {
-    pub fn after(now: &TimeSample, seconds: u64) -> Result<Self> {
-        now.validate()?;
-        let expires_ns = seconds
-            .checked_mul(1_000_000_000)
-            .and_then(|n| now.boottime_ns.checked_add(n))
-            .ok_or(crate::Error("deadline overflow"))?;
+impl LaunchDispatchDeadline {
+    pub fn after(prepared_at: &TimeSample) -> Result<Self> {
+        prepared_at.validate()?;
         Ok(Self {
-            boot_id: now.boot_id.clone(),
-            time_namespace: now.time_namespace.clone(),
-            expires_ns,
+            boottime_ns: prepared_at
+                .boottime_ns
+                .checked_add(120_000_000_000)
+                .ok_or(crate::Error("dispatch deadline overflow"))?,
         })
     }
-    pub fn permits(&self, now: &TimeSample) -> bool {
-        self.boot_id == now.boot_id
-            && self.time_namespace == now.time_namespace
-            && now.boottime_ns < self.expires_ns
+    pub fn validate(&self, prepared_at: &TimeSample) -> Result<()> {
+        require(self == &Self::after(prepared_at)?, "exact dispatch window")
     }
+    pub fn permits(&self, prepared_at: &TimeSample, now: &TimeSample) -> Result<()> {
+        self.validate(prepared_at)?;
+        now.validate()?;
+        require(
+            prepared_at.same_clock(now)
+                && now.boottime_ns >= prepared_at.boottime_ns
+                && now.boottime_ns < self.boottime_ns,
+            "dispatch window/clock",
+        )
+    }
+}
+pub(crate) fn retry_not_before(
+    outcome: &TimeSample,
+    delay_seconds: u64,
+    now: &TimeSample,
+) -> Result<()> {
+    outcome.validate()?;
+    now.validate()?;
+    let deadline = outcome
+        .boottime_ns
+        .checked_add(
+            delay_seconds
+                .checked_mul(1_000_000_000)
+                .ok_or(crate::Error("retry delay overflow"))?,
+        )
+        .ok_or(crate::Error("retry deadline overflow"))?;
+    require(
+        outcome.same_clock(now) && now.boottime_ns >= deadline,
+        "retry delay/clock",
+    )
 }
 
-/// Each endpoint class has its own persisted request accounting. Counts never
-/// authorize a resend; dispatch intent/reconciliation remain separate predicates.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum EndpointClass {
-    Allocation,
-    Cancellation,
-    TransactionHistory,
-    Transaction,
-    Server,
-    CancellationRead,
-    Catalogue,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-pub struct Quota {
-    pub requests: u64,
-    pub interval_seconds: u64,
-}
-impl EndpointClass {
-    /// Robot Webservice reference, reviewed 2026-09-19.
-    pub fn quota(self) -> Quota {
-        match self {
-            Self::Allocation => Quota {
-                requests: 20,
-                interval_seconds: 86400,
-            },
-            Self::TransactionHistory | Self::Transaction | Self::Catalogue => Quota {
-                requests: 500,
-                interval_seconds: 3600,
-            },
-            _ => Quota {
-                requests: 200,
-                interval_seconds: 3600,
-            },
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn derived_retry_arithmetic_never_wraps_or_accepts_a_caller_deadline() {
+        let mut outcome = crate::test_support::genesis().time;
+        outcome.boottime_ns = u64::MAX;
+        assert!(retry_not_before(&outcome, 2, &outcome).is_err());
+        outcome.boottime_ns = 1;
+        assert!(retry_not_before(&outcome, u64::MAX, &outcome).is_err());
+        for delay in [2, 8] {
+            let mut now = outcome.clone();
+            now.boottime_ns += delay * 1_000_000_000 - 1;
+            assert!(retry_not_before(&outcome, delay, &now).is_err());
+            now.boottime_ns += 1;
+            assert!(retry_not_before(&outcome, delay, &now).is_ok());
         }
-    }
-}
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BudgetWindow {
-    pub endpoint: EndpointClass,
-    pub boot_id: String,
-    pub time_namespace: String,
-    pub start_ns: u64,
-    pub spent: u64,
-    pub charges_ns: Vec<u64>,
-}
-impl BudgetWindow {
-    pub fn charge(&mut self, now: &TimeSample) -> Result<()> {
-        self.charge_with(now, self.endpoint.quota())
-    }
-    pub(crate) fn charge_with(&mut self, now: &TimeSample, q: Quota) -> Result<()> {
-        require(
-            self.boot_id == now.boot_id && self.time_namespace == now.time_namespace,
-            "budget reboot hold requires reconciliation",
-        )?;
-        require(now.boottime_ns >= self.start_ns, "clock regression")?;
-        require(
-            self.charges_ns.len() <= self.endpoint.quota().requests as usize
-                && self.charges_ns.windows(2).all(|p| p[0] <= p[1])
-                && self.charges_ns.last().is_none_or(|t| *t <= now.boottime_ns),
-            "request accounting order",
-        )?;
-        let interval_ns = q
-            .interval_seconds
-            .checked_mul(1_000_000_000)
-            .ok_or(crate::Error("quota interval overflow"))?;
-        self.charges_ns
-            .retain(|t| now.boottime_ns - *t < interval_ns);
-        require(
-            self.charges_ns.len() < q.requests as usize,
-            "endpoint budget exhausted",
-        )?;
-        self.charges_ns.push(now.boottime_ns);
-        self.spent = self.charges_ns.len() as u64;
-        Ok(())
     }
 }

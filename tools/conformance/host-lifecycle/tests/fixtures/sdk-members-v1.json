@@ -1,0 +1,787 @@
+[
+  {
+    "type": "RunInstancesInput",
+    "member": "block_device_mappings",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "image_id",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "instance_type",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "ipv6_address_count",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "ipv6_addresses",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "kernel_id",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "key_name",
+    "disposition": "Explicitly fixed omission"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "max_count",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "min_count",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "monitoring",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "placement",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "ramdisk_id",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "security_group_ids",
+    "disposition": "Explicitly fixed omission"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "security_groups",
+    "disposition": "Explicitly fixed omission"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "subnet_id",
+    "disposition": "Explicitly fixed omission"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "user_data",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "elastic_gpu_specification",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "elastic_inference_accelerators",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "tag_specifications",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "launch_template",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "instance_market_options",
+    "disposition": "Explicitly fixed omission"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "credit_specification",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "cpu_options",
+    "disposition": "Explicitly fixed omission"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "capacity_reservation_specification",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "hibernation_options",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "license_specifications",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "metadata_options",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "enclave_options",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "private_dns_name_options",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "maintenance_options",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "disable_api_stop",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "enable_primary_ipv6",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "network_performance_options",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "operator",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "secondary_interfaces",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "dry_run",
+    "disposition": "Explicitly fixed omission"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "disable_api_termination",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "instance_initiated_shutdown_behavior",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "private_ip_address",
+    "disposition": "Explicitly fixed omission"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "client_token",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "additional_info",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "network_interfaces",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "iam_instance_profile",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "RunInstancesInput",
+    "member": "ebs_optimized",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "BlockDeviceMapping",
+    "member": "ebs",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "BlockDeviceMapping",
+    "member": "no_device",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "BlockDeviceMapping",
+    "member": "device_name",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "BlockDeviceMapping",
+    "member": "virtual_name",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceIpv6Address",
+    "member": "ipv6_address",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceIpv6Address",
+    "member": "is_primary_ipv6",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "RunInstancesMonitoringEnabled",
+    "member": "enabled",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "Placement",
+    "member": "availability_zone_id",
+    "disposition": "Explicitly fixed omission"
+  },
+  {
+    "type": "Placement",
+    "member": "affinity",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "Placement",
+    "member": "group_name",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "Placement",
+    "member": "partition_number",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "Placement",
+    "member": "host_id",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "Placement",
+    "member": "tenancy",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "Placement",
+    "member": "spread_domain",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "Placement",
+    "member": "host_resource_group_arn",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "Placement",
+    "member": "group_id",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "Placement",
+    "member": "availability_zone",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "ElasticGpuSpecification",
+    "member": "r#type",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "ElasticInferenceAccelerator",
+    "member": "r#type",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "ElasticInferenceAccelerator",
+    "member": "count",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "TagSpecification",
+    "member": "resource_type",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "TagSpecification",
+    "member": "tags",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "LaunchTemplateSpecification",
+    "member": "launch_template_id",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "LaunchTemplateSpecification",
+    "member": "launch_template_name",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "LaunchTemplateSpecification",
+    "member": "version",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceMarketOptionsRequest",
+    "member": "market_type",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceMarketOptionsRequest",
+    "member": "spot_options",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "CreditSpecificationRequest",
+    "member": "cpu_credits",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "CpuOptionsRequest",
+    "member": "core_count",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "CpuOptionsRequest",
+    "member": "threads_per_core",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "CpuOptionsRequest",
+    "member": "amd_sev_snp",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "CpuOptionsRequest",
+    "member": "nested_virtualization",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "CapacityReservationSpecification",
+    "member": "capacity_reservation_preference",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "CapacityReservationSpecification",
+    "member": "capacity_reservation_target",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "HibernationOptionsRequest",
+    "member": "configured",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "LicenseConfigurationRequest",
+    "member": "license_configuration_arn",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceMetadataOptionsRequest",
+    "member": "http_tokens",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "InstanceMetadataOptionsRequest",
+    "member": "http_put_response_hop_limit",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "InstanceMetadataOptionsRequest",
+    "member": "http_endpoint",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "InstanceMetadataOptionsRequest",
+    "member": "http_protocol_ipv6",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "InstanceMetadataOptionsRequest",
+    "member": "instance_metadata_tags",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "EnclaveOptionsRequest",
+    "member": "enabled",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "PrivateDnsNameOptionsRequest",
+    "member": "hostname_type",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "PrivateDnsNameOptionsRequest",
+    "member": "enable_resource_name_dns_a_record",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "PrivateDnsNameOptionsRequest",
+    "member": "enable_resource_name_dns_aaaa_record",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "InstanceMaintenanceOptionsRequest",
+    "member": "auto_recovery",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "InstanceNetworkPerformanceOptionsRequest",
+    "member": "bandwidth_weighting",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "OperatorRequest",
+    "member": "principal",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceSecondaryInterfaceSpecificationRequest",
+    "member": "delete_on_termination",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceSecondaryInterfaceSpecificationRequest",
+    "member": "device_index",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceSecondaryInterfaceSpecificationRequest",
+    "member": "private_ip_addresses",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceSecondaryInterfaceSpecificationRequest",
+    "member": "private_ip_address_count",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceSecondaryInterfaceSpecificationRequest",
+    "member": "secondary_subnet_id",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceSecondaryInterfaceSpecificationRequest",
+    "member": "interface_type",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceSecondaryInterfaceSpecificationRequest",
+    "member": "network_card_index",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "associate_public_ip_address",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "delete_on_termination",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "description",
+    "disposition": "Explicitly fixed omission"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "device_index",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "groups",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "ipv6_address_count",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "ipv6_addresses",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "network_interface_id",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "private_ip_address",
+    "disposition": "Explicitly fixed omission"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "private_ip_addresses",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "secondary_private_ip_address_count",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "subnet_id",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "associate_carrier_ip_address",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "interface_type",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "network_card_index",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "ipv4_prefixes",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "ipv4_prefix_count",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "ipv6_prefixes",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "ipv6_prefix_count",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "primary_ipv6",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "ena_srd_specification",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "connection_tracking_specification",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceNetworkInterfaceSpecification",
+    "member": "ena_queue_count",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "IamInstanceProfileSpecification",
+    "member": "arn",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "IamInstanceProfileSpecification",
+    "member": "name",
+    "disposition": "Explicitly fixed omission"
+  },
+  {
+    "type": "EbsBlockDevice",
+    "member": "delete_on_termination",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "EbsBlockDevice",
+    "member": "iops",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "EbsBlockDevice",
+    "member": "snapshot_id",
+    "disposition": "Explicitly fixed omission"
+  },
+  {
+    "type": "EbsBlockDevice",
+    "member": "volume_size",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "EbsBlockDevice",
+    "member": "volume_type",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "EbsBlockDevice",
+    "member": "kms_key_id",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "EbsBlockDevice",
+    "member": "throughput",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "EbsBlockDevice",
+    "member": "outpost_arn",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "EbsBlockDevice",
+    "member": "availability_zone",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "EbsBlockDevice",
+    "member": "encrypted",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "EbsBlockDevice",
+    "member": "volume_initialization_rate",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "EbsBlockDevice",
+    "member": "availability_zone_id",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "EbsBlockDevice",
+    "member": "ebs_card_index",
+    "disposition": "Explicitly fixed omission"
+  },
+  {
+    "type": "Tag",
+    "member": "key",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "Tag",
+    "member": "value",
+    "disposition": "Explicitly populated"
+  },
+  {
+    "type": "SpotMarketOptions",
+    "member": "max_price",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "SpotMarketOptions",
+    "member": "spot_instance_type",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "SpotMarketOptions",
+    "member": "block_duration_minutes",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "SpotMarketOptions",
+    "member": "valid_until",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "SpotMarketOptions",
+    "member": "instance_interruption_behavior",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "CapacityReservationTarget",
+    "member": "capacity_reservation_id",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "CapacityReservationTarget",
+    "member": "capacity_reservation_resource_group_arn",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "InstanceSecondaryInterfacePrivateIpAddressRequest",
+    "member": "private_ip_address",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "PrivateIpAddressSpecification",
+    "member": "primary",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "PrivateIpAddressSpecification",
+    "member": "private_ip_address",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "Ipv4PrefixSpecificationRequest",
+    "member": "ipv4_prefix",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "Ipv6PrefixSpecificationRequest",
+    "member": "ipv6_prefix",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "EnaSrdSpecificationRequest",
+    "member": "ena_srd_enabled",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "EnaSrdSpecificationRequest",
+    "member": "ena_srd_udp_specification",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "ConnectionTrackingSpecificationRequest",
+    "member": "tcp_established_timeout",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "ConnectionTrackingSpecificationRequest",
+    "member": "udp_stream_timeout",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "ConnectionTrackingSpecificationRequest",
+    "member": "udp_timeout",
+    "disposition": "Unsupported"
+  },
+  {
+    "type": "EnaSrdUdpSpecificationRequest",
+    "member": "ena_srd_udp_enabled",
+    "disposition": "Unsupported"
+  }
+]

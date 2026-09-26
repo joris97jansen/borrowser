@@ -1,195 +1,149 @@
-# Provider lifecycle only
+# AWS EC2 lifecycle foundation and non-mutating SDK boundary — #1396
 
-Independent Rust workspace for AG9g0d Stage 1. Read the
-[contract](../../../docs/conformance/ag9g0d-qualification-host-lifecycle.md)
-before installation. Provider allocation never proves host readiness.
+Independent Rust operational-tooling workspace. Read the
+[contract](../../../docs/conformance/ag9g0d-qualification-host-lifecycle.md).
+Package `0.2.0` exposes local bootstrap/status only. #1396 adds a private,
+non-mutating AWS SDK boundary: explicit temporary-session credentials, STS caller
+admission, S3 bucket admission and capability-gated pure EC2 request projection.
+There is no production EC2 allocation or termination path. See the
+[pinned SDK audit](../../../docs/conformance/ag9g0d-aws-sdk-boundary.md).
 
-Build/test with Rust 1.92, this lockfile and a separate external target directory:
-
-```sh
-cargo +1.92.0 build --locked --offline --manifest-path tools/conformance/host-lifecycle/Cargo.toml
-cargo +1.92.0 test --locked --offline --manifest-path tools/conformance/host-lifecycle/Cargo.toml
-cargo +1.92.0 clippy --locked --offline --all-targets --manifest-path tools/conformance/host-lifecycle/Cargo.toml -- -D warnings
-cargo +1.92.0 fmt --manifest-path tools/conformance/host-lifecycle/Cargo.toml -- --check
-```
-
-Set `CARGO_TARGET_DIR` outside the repository. Root workspace CI does not discover
-this package. Linux-specific tests require a Linux test environment; never claim
-native qualification from their results. The two ignored provider tests require
-explicit test selection and a matching `BORROWSER_ROBOT_INTEGRATION` value of
-`read-only` or `test-order`. No provider credentials are required by normal tests. `tests/commands.rs` is loaded
-as a crate-internal test module so its fake store can implement the sealed persistence
-boundary; production builds expose no fake-store or synthetic-capability feature.
-
-## Installation inputs
-
-An administrator supplies a dedicated local ext4 mount at
-`/var/lib/borrowser-host-lifecycle`, private to a dedicated non-root controller
-identity, and installs a root-owned non-writable deployment document at
-`/etc/borrowser-host-lifecycle/deployment.json`.
-
-The document uses canonical V1 encoding and exactly these fields:
-`account_id`, `approved_account_currency` (`EUR`), `approved_class` (`AX42-1`), `approved_monthly_gross_units`,
-`approved_setup_gross_units`, `authority_id`, `catalogue_evidence_sha256`,
-`controller_machine_id`, `filesystem_uuid`, `product_id`.
-
-Stage 1 requires an externally reviewed EUR Robot account. Verify its currency
-through Robot `GET /order/currency` during deployment approval; catalogue prices
-are account-currency values and do not themselves attest EUR. Retain that review
-with the catalogue approval. Gross ceilings are integer units of EUR 1/10,000,
-including primary IPv4. Obtain
-the actual Robot product ID from the catalogue; no real ID or price is supplied
-by repository fixtures. Install the reviewed, canonical typed approval artifact at
-`/etc/borrowser-host-lifecycle/product-approval.json`, root-owned and not writable
-by the controller. Its exact SHA-256 must equal `catalogue_evidence_sha256`.
-The [contract](../../../docs/conformance/ag9g0d-qualification-host-lifecycle.md#reviewed-product-and-account-binding)
-defines all fields, including catalogue ID/name/description, reviewed server-product
-spelling, AX42-1 mapping, FSN1/IPv4, ceilings, currency attestation and reviewer/reference.
-The live catalogue must match that binding and validate current addon quantity/location
-capabilities. The binding is retained in the journal. Document the
-account binding and exclusive controller ordering policy; labels are not remote
-account attestations.
-
-The credential file `/etc/borrowser-host-lifecycle/robot.credentials` is a private
-regular single-link file owned by the controller identity. It contains UTF-8
-`username:password` without a trailing newline, at most 8 KiB. Install it through
-the external secret mechanism, never through command-line secret values. It is
-not part of the authority, repository, evidence or deployment JSON.
-
-The reviewed executable must come from clean committed tool source and its own
-lockfile. Dirty development builds cannot write production history. Source review
-and deployment are external responsibilities; this tool does not self-approve.
-
-## Commands
-
-All paths below are external input documents, not credentials. Ordinary input
-documents can use normal JSON whitespace; persisted events cannot.
+## Supported commands
 
 ```text
-host-lifecycle authority bootstrap
-host-lifecycle allocate --request FILE
-host-lifecycle status
-host-lifecycle reconcile --operation OPERATION_ID
-host-lifecycle watch
-host-lifecycle cancel --authorization FILE
-host-lifecycle resolve --resolution FILE
+borrowser-host-lifecycle authority bootstrap
+borrowser-host-lifecycle status
 ```
 
-The installed binary name is `borrowser-host-lifecycle`; `host-lifecycle` above
-denotes that executable. Bootstrap is explicit; a missing root or wrong filesystem
-is never repaired automatically. No root override exists in the production CLI.
+Commands require Linux, a dedicated non-root controller, the protected ext4 mount
+`/var/lib/borrowser-host-lifecycle`, and the root-owned canonical deployment document
+`/etc/borrowser-host-lifecycle/deployment.json`. There are no path overrides.
 
-Allocation input fields: `operation_id`, `authorization`, `request`. The request
-has exactly `product_id`, `location: "FSN1"`, `addons: ["primary_ipv4"]`. Unknown
-fields—including provisioning inputs—reject. Reusing an operation ID cannot
-create another submission.
+Deployment format is `borrowser-aws-ec2-deployment`, schema 2, with an `identity`
+object binding exact `account_id`, `authority_id`, `region`, `controller_machine_id`
+and `filesystem_uuid`. Optional `reviewed_support` binds reviewed static AWS
+identities and is mandatory for launch-contract validation; absence preserves local-only
+Pass-1 documents. See the contract for validation rules. Fixtures are synthetic
+serialization data, never approved deployment inputs.
 
-Cancellation input fields: `operation_id`, `server_number`, `authorization`.
-Use the exact retained server number. A lost response requires readback on a
-later explicit invocation. A negative GET alone cannot authorize a second POST:
-`CancellationRetryResolved` must retain reviewed provider evidence about the prior
-request, followed by a fresh explicit invocation and consistent negative readback.
-Acknowledged, incomplete, reserved or contradictory results never permit retry.
-No schedule performs cancellation.
+Bootstrap requires clean committed compiled provenance and an empty prepared root
+(apart from filesystem `lost+found`). It durably publishes genesis and storage before
+the final immutable `authority.json` marker. Failed/partial bootstrap is never
+silently repaired. Status reopens only a matching completed generation-2 root and
+reports its journal sequence/head. It permits development builds for inspection,
+but does not append events. Exit zero is only local command success.
 
-Resolution input fields: `operation_id`, `expected_head`, `event`, `evidence_path`.
-`event` must be an allowed reviewed resolution variant from `model.rs`; its
-evidence includes `sha256`, `bytes`, `provider_reference`, `reviewer`, `rationale`.
-Evidence must contain no credentials. Original provider evidence is retained by
-digest in the private authority. The operator verifies authenticity and attribution;
-structural validation alone is not that review. There is no force-clear command.
+Earlier/unknown generation markers, deployment documents or journals reject. A new
+marker cannot make historical genesis compatible. No migration or compatibility
+runtime exists. Keep historical evidence externally; prepare a new reviewed authority
+rather than editing old records or deleting its lock file. Protect against simultaneous
+controllers and fence any previous authority before replacement.
 
-Reports preserve identities, state, derived provider phases, obligations and journal head.
-Watch scans at most two due obligations, reports every unresolved/remaining obligation,
-and uses an ordinary-capacity durable cursor. Cursor writes cannot spend the final
-64 journal slots or filesystem cleanup reserve. If ordinary publication is blocked,
-watch reports incomplete work; fairness then requires operator attention.
-An incomplete scan exits one after printing the report/state.
-Recovery and cancellation do not need the external product-approval file.
-Exit zero means command execution completed; callers must inspect the report for
-uncertainty and pending obligations. Exit one means the command failed or was held. An accepted
-command is never qualification success. Pending/uncertain states require follow-up.
+## Validation
 
-## Recovery operator obligations
+Use Rust 1.92.0 and set `CARGO_TARGET_DIR` outside the repository:
 
-Before allocation, demonstrate off-controller missing-heartbeat alert delivery and
-independent Robot access. Keep the product/account approval and cancellation path
-available outside the controller. A process, network, disk or credential failure
-must not silently remove the operator's obligation to locate/release the server.
+```sh
+rustup run 1.92.0 cargo test --locked --offline --manifest-path tools/conformance/host-lifecycle/Cargo.toml
+rustup run 1.92.0 cargo clippy --locked --offline --all-targets --manifest-path tools/conformance/host-lifecycle/Cargo.toml -- -D warnings
+rustup run 1.92.0 cargo fmt --manifest-path tools/conformance/host-lifecycle/Cargo.toml -- --check
+rustup run 1.92.0 cargo build --locked --offline --manifest-path tools/conformance/host-lifecycle/Cargo.toml
+```
 
-Do not delete lock files, edit journal events, restore a backup as a fresh authority,
-or order replacement compute while ownership is unresolved. Fence the previous
-controller before activating a replacement and reconcile potentially missing events.
-Manual emergency cancellation remains available through Robot when durable local
-publication cannot be completed; retain its facts externally for later resolution.
+Dependencies must already be available for offline checks. This standalone workspace
+is not discovered by root engine CI. Linux confinement/mount tests run only on Linux;
+macOS storage tests do not prove Linux production authority. No provider integration
+tests exist in Pass 3. Synthetic storage-only event variants exist solely under
+`cfg(test)` and are rejected by production-schema integration tests.
 
-No OS installation, keys, rescue configuration, KVM, guests, qualification gates,
-Chromium, auction route, automatic destruction or generic provider/storage framework
-is implemented here. Primary IPv4 obligations require explicit release evidence.
+Allocation, termination, identity evidence, S3 publication,
+and infrastructure deployment are unavailable. Later passes must supply their real
+contracts before enabling operations. AG9g0a remains independently frozen/open at
+`51dd44cafe476581be5f46a6a6fd242197e4e1b0`.
 
-## Internal Rust boundary
 
-The binary calls `run_cli()`, the sole supported production entry point. Authority,
-clock/provider assembly, credentials, HTTP constructors and dispatch capabilities
-are crate-private; Controller fields are private. Production construction derives
-and validates compiled tool provenance, never a caller-supplied ToolIdentityV1.
-Pure public serialization types do not authorize operations. Tests inject fakes
-only inside the crate, without a production bypass feature.
+## Pass-2 data contracts
 
-Transaction responses retain allocation/targeted-read/history-item provenance.
-Malformed no-identity history items produce TransactionHistory protocol failures
-and incomplete scans; they do not alter the individual Transaction endpoint's
-failure counters or holds. Partial history IDs remain unattributed candidates.
+The library provides `LaunchApprovalV2`, `LaunchSpecV2`, deterministic `ClientToken`,
+`RunInstancesRequestV2`, `CollectorConfigV2` and `IdentityTrustV2`. Call their explicit
+validators; parsing/hashing alone is never admission or authority. The supported
+launch shape has one private IPv4 primary ENI and one encrypted gp3 root. Capacity,
+AMI, type, network/profile IDs, key, tags and ceilings must be exact reviewed values.
+No fixture represents production approval or deployed support.
 
-Completed allocation baselines constrain all automatic identity binding, including
-late server discovery and partial-ID recovery. A baseline contradiction retains
-facts and blocks ownership/cancellation until an explicit provider-backed
-`BaselineAttributionResolved` review of the exact candidate; established identities
-cannot be replaced. A transaction-only exception never approves a later baseline
-server. History responses coalesce identical same-ID facts and retain conflicting
-normalized/partial facts in canonical order, independent of provider array order.
+The [projection policy](../../../docs/conformance/ag9g0d-run-instances-projection-v2.md)
+defines the frozen logical fields. The pinned SDK audit documents their pure
+projection; provider corroboration is not implemented. The collector configuration is non-executable JSON; there is no
+collector binary. Trust checks encoding/digest/metadata only, never X.509 or CMS.
+The local marker/genesis and bootstrap/status CLI are unchanged. Additional files
+cannot make an authority capable of network access or mutation.
 
-Watch distinguishes not-due work from exhausted automatic recovery. At four
-unknown-history rounds or 576 known-transaction rounds, `requires_operator_recovery`
-is reported and `complete_scan` is false (nonzero CLI exit). Replay and repeated
-watch never renew allowances; other due obligations remain eligible.
+Targeted contracts: `cargo test --locked --offline --test contracts` from this
+workspace with an external target directory. `tests/fixtures/README.md` documents
+the independent synthetic vectors and their non-authoritative trust bytes.
 
-Candidate ambiguity is an ownership constraint independent of pre-submission
-baseline contradictions. `AllocationResolved` requires an exact retained,
-non-disqualified snapshot. With alternatives or blocking conflicts, its reviewed
-event is retained but does not bind ownership. It never discards alternatives.
-For an unowned, uncertain dispatched allocation without a response identity,
-`BaselineCandidateDisqualified` also supports exact recovery-candidate disposition
-when the baseline is empty; its historical event name does not create a baseline
-contradiction. It cannot clear unrelated conflicts or itself supply allocation
-authority. For baseline-free recovery, after dispositions leave one candidate,
-submit a fresh `AllocationResolved`.
-One compatible retained candidate with no blocking conflict can be recovered by
-that explicit review without an artificial `BaselineAttributionResolved` event.
-Normal direct-response attribution keeps its existing strict rules.
 
-Candidate snapshots are retained losslessly across provider observations and rounds.
-The candidate set is historical attribution evidence, not a latest-state cache.
-Exact duplicates coalesce; a newer snapshot never replaces a distinct earlier
-snapshot because transaction or server identity matches. This also applies to
-successive history responses containing only one transaction each. A distinct
-snapshot exceeding the 1,024-candidate bound fails closed without eviction; an
-exact duplicate at capacity remains admissible.
+Pass-2 cost review binds an explicit planned duration of 1–604,800 seconds and a
+checked, rounded-up total hourly estimate (compute + root EBS + applicable other),
+plus fixed operation costs, against the total ceiling. A distinct pricing-evidence
+digest binds the reviewed rates and exact gp3 configuration; no AWS pricing formulas
+or live pricing are implemented. Planned runtime is not timeout, stop or termination
+authority, nor a spending guarantee. Cleanup ownership belongs to the operational
+acceptance package. IAM unique IDs retain 16–128 ASCII letters/digits/underscore
+bytes without prefix inference. EC2 resource suffixes retain their bounded opaque
+lexical rules. The pinned maintenance input exposes no reboot-migration field;
+there is no post-launch maintenance mutation fallback.
 
-Resource attribution identity (transaction ID and optional server) is separate from
-exact candidate snapshot identity (all normalized transaction fields). Reviews and
-viable/disqualified dispositions match the full retained canonical typed snapshot.
-A disposition of T/123/ready does not affect T/123/cancelled. Distinct snapshots
-sharing a resource remain visible and blocking, including unreviewed alternatives;
-V1 does not infer provider progression to discard them. An exact snapshot must have
-been retained before it can be reviewed or disqualified.
 
-Only one exact admissible retained snapshot with its required reviews and no other
-blocking conflict can bind ownership. Canonical ordering makes retained collections
-deterministic; no tie breaker selects ownership. Exact disposition cannot affect
-another snapshot, established ownership, or history/server/cancellation conflicts.
+## Pass-3 local dispatch authority
 
-Allocation and cancellation uncertainty are separate retained domains. The global
-report is their union plus conflicts. Transaction/server reconciliation cannot clear
-a lost cancellation outcome or consume reviewed retry readiness. A fresh explicit
-cancel invocation and consistent readback are still required to dispatch again.
+`dispatch.rs` implements one unresolved operation with an explicit human
+`LaunchAuthorizationV2`, one logical dispatch and at most three attempt receipts.
+Before preparation publication, the controller retains all six canonical documents
+in the protected local evidence store. The event holds only typed digest/length
+references and compact bindings. Replay resolves and validates those exact bytes;
+missing or corrupt evidence rejects. Orphans confer no authority and are never
+auto-adopted or deleted. No external mutable source is needed for replay.
+
+The dispatch window is derived as exactly 120 seconds from the preparation
+envelope’s controller clock sample. Human authorization supplies audit metadata,
+never the operational clock, deadline or retry timestamp. Only a durably
+recorded `definitely-not-transmitted` outcome can permit another attempt, after
+2 seconds for attempt 2 or 8 seconds for attempt 3. Pending/uncertain attempts,
+parameter conflict, access failure, throttling hold and unresolved responses block
+transmission. No outcome establishes an EC2 identity. Restart preserves the budget
+and delays; reboot/time-namespace change invalidates remaining retry permission.
+An intent without outcome never recreates a capability after restart.
+
+Private, non-cloneable, non-serializable capability types are created only after
+successful durable append. Raw request/receipt/token objects cannot substitute for
+an attempt capability. The CLI remains bootstrap/status only; these are internal
+library/storage paths with deterministic tests, not operational launch commands.
+The #1396 SDK boundary consumes these identities for pure projection and adds no
+allocation transmission path. #1402 has not started.
+
+Preparation/dispatch/attempt intents require ordinary storage. Outcomes of consumed
+attempts may use protected recovery capacity; this does not let retry intent consume
+cleanup reserves. There is no automatic retry loop, migration, close, replacement,
+provider mutation or S3 publication in this durable state machine. The separate
+SDK boundary supplies explicit credentials only to read-only STS/S3 admission.
+
+Targeted checks: `cargo test --locked --offline --test dispatch` and
+`cargo test --locked --offline journal::tests` using an external target directory.
+See the contract for exact timing, outcome and publication rules.
+
+
+Pass-3 artifact/bound hardening keeps all journal shapes below an 8-KiB regression
+budget. Maximum-value valid documents can collectively exceed 65,536 bytes, but
+live as six individually bounded retained artifacts. The largest tested journal
+shape is 4,023 bytes; conservative numeric-width expansion reaches 4,103 bytes.
+
+
+## #1396 SDK boundary validation
+
+Use Rust 1.92 with an external target directory. Targeted tests are
+`cargo test --locked --offline aws::`; complete tests/build, formatting and Clippy
+remain required. The synthetic HTTP connector never accesses AWS. All service
+versions and 157 audited SDK members are frozen in the linked audit. #1402 is not
+implemented. Historical pass descriptions above describe the frozen foundation;
+current SDK behavior is specified by the #1396 audit.

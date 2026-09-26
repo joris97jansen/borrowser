@@ -1,4 +1,4 @@
-//! Canonical V1 bytes are owned here, not by serde_json's serialization policy.
+//! Canonical bytes are owned here, not by serde_json's serialization policy.
 use crate::{Error, Result, require};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;

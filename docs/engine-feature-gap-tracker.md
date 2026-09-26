@@ -565,13 +565,17 @@ Current architecture status:
   validation remain required; Chromium pinning, sandbox compatibility and genuine
   AG9g0 mechanism qualification are still outstanding. AG9g0a/AG9g0 remain open
   and AG9g1 remains blocked. See `docs/conformance/ag9g0a-linux-host-readiness.md`.
-- AG9g0d Stage 1 adds an independent Hetzner Robot provider-lifecycle workspace,
-  immutable lifecycle journal, explicit allocation/cancellation and conservative
-  reconciliation, reviewed product bindings, durable dispatch capabilities and bounded
-  recovery across reopened obligations. This is provider tooling only; no production controller or real
-  provider lifecycle has been validated by repository tests. AG9g0a remains frozen
-  and independently open pending genuine native Phase B validation. See
-  `docs/conformance/ag9g0d-qualification-host-lifecycle.md`.
+- AG9g0d Passes 1–3 establish the independent AWS EC2 generation-2 local authority
+  foundation: protected persistent storage, immutable root marker, canonical genesis,
+  strict replay and bootstrap/status only. Provider resource operations are unavailable;
+  #1396 adds a non-mutating SDK boundary (explicit configuration, STS/S3 reads and
+  pure EC2 input projection); allocation, termination and real acceptance remain unavailable.
+  Pass 2 adds closed deployment/launch/token/trust contracts only; it introduces no
+  provider clients or operational authority. Pass 3 adds durable human authorization,
+  dispatch/attempt receipts and replay-derived bounded retry eligibility, with no
+  transmission path or new CLI command.
+  AG9g0d remains open. AG9g0a remains independently frozen/open pending native Phase B.
+  See `docs/conformance/ag9g0d-qualification-host-lifecycle.md`.
 - No AG9 capability establishes broad WPT compliance, browser compatibility,
   browser automation, or raster comparison. Completion requires requirement and
   validation evidence, including later exact-revision hosted CI.

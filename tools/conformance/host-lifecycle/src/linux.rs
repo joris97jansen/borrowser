@@ -1,12 +1,11 @@
 //! Linux controller boundary; never runs on the acquired qualification candidate.
-use crate::identity::*;
+use crate::deployment::DeploymentV2;
 use crate::{
     Error, Result, canonical,
     journal::{Journal, ROOT},
     require,
     scheduling::TimeSample,
 };
-use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
     io::Read,
@@ -15,35 +14,6 @@ use std::{
         unix::fs::MetadataExt,
     },
 };
-use zeroize::Zeroizing;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Deployment {
-    pub(crate) authority_id: AuthorityId,
-    pub(crate) account_id: AccountScopeId,
-    pub(crate) approved_account_currency: String,
-    pub(crate) product_id: ProductId,
-    pub(crate) approved_class: String,
-    pub(crate) catalogue_evidence_sha256: EvidenceDigest,
-    pub(crate) controller_machine_id: String,
-    pub(crate) filesystem_uuid: String,
-    pub(crate) approved_monthly_gross_units: u64,
-    pub(crate) approved_setup_gross_units: u64,
-}
-impl Deployment {
-    pub(crate) fn validate(&self) -> Result<()> {
-        for s in [&self.controller_machine_id, &self.filesystem_uuid] {
-            canonical::text(s, 128)?;
-        }
-        require(self.approved_class == "AX42-1", "unapproved hardware class")?;
-        require(
-            self.approved_account_currency == "EUR",
-            "unsupported account currency approval",
-        )?;
-        canonical::digest(&self.catalogue_evidence_sha256)
-    }
-}
 #[repr(C)]
 struct OpenHow {
     flags: u64,
@@ -81,7 +51,7 @@ fn read_bound(mut f: File, max: u64) -> Result<Vec<u8>> {
     require(bytes.len() as u64 <= max, "file grew")?;
     Ok(bytes)
 }
-pub(crate) fn deployment() -> Result<Deployment> {
+pub(crate) fn deployment() -> Result<DeploymentV2> {
     let root = File::open("/").map_err(|_| Error("system root"))?;
     let file = confined(
         &root,
@@ -94,39 +64,11 @@ pub(crate) fn deployment() -> Result<Deployment> {
         m.uid() == 0 && m.mode() & 0o022 == 0 && m.nlink() == 1,
         "deployment protection",
     )?;
-    let d: Deployment = canonical::decode(&read_bound(file, 16_384)?)?;
+    let d: DeploymentV2 = canonical::decode(&read_bound(file, 16_384)?)?;
     d.validate()?;
     Ok(d)
 }
-pub(crate) fn product_approval(d: &Deployment) -> Result<crate::approval::ProductApproval> {
-    let root = File::open("/").map_err(|_| Error("system root"))?;
-    let f = confined(
-        &root,
-        "etc/borrowser-host-lifecycle/product-approval.json",
-        libc::O_RDONLY,
-        false,
-    )?;
-    let m = f.metadata().map_err(|_| Error("approval metadata"))?;
-    require(
-        m.uid() == 0 && m.mode() & 0o022 == 0 && m.nlink() == 1,
-        "approval protection",
-    )?;
-    let approval = crate::approval::ProductApproval::verify_bytes(
-        &read_bound(f, 16_384)?,
-        &d.catalogue_evidence_sha256,
-    )?;
-    require(
-        approval.account_scope == d.account_id
-            && approval.catalogue.product_id == d.product_id
-            && approval.hardware_class == d.approved_class
-            && approval.attested_account_currency == d.approved_account_currency
-            && approval.monthly_gross_ceiling == d.approved_monthly_gross_units
-            && approval.setup_gross_ceiling == d.approved_setup_gross_units,
-        "deployment/product approval mismatch",
-    )?;
-    Ok(approval)
-}
-fn authority_root(d: &Deployment) -> Result<File> {
+fn authority_root(d: &DeploymentV2) -> Result<File> {
     require(
         unsafe { libc::geteuid() } != 0,
         "controller must use dedicated non-root identity",
@@ -164,17 +106,18 @@ fn authority_root(d: &Deployment) -> Result<File> {
     let machine =
         std::fs::read_to_string("/etc/machine-id").map_err(|_| Error("controller identity"))?;
     require(
-        machine.trim() == d.controller_machine_id,
+        machine.trim() == d.identity.controller_machine_id,
         "wrong controller",
     )?;
     require(
-        d.filesystem_uuid
+        d.identity
+            .filesystem_uuid
             .bytes()
             .all(|b| b.is_ascii_hexdigit() || b == b'-'),
         "filesystem uuid syntax",
     )?;
     // This device symlink is used only for independently checking rdev; never for authority I/O.
-    let device = std::fs::metadata(format!("/dev/disk/by-uuid/{}", d.filesystem_uuid))
+    let device = std::fs::metadata(format!("/dev/disk/by-uuid/{}", d.identity.filesystem_uuid))
         .map_err(|_| Error("filesystem device identity"))?;
     require(device.rdev() == m.dev(), "wrong filesystem")?;
     Ok(root)
@@ -213,12 +156,19 @@ fn validate_mount_inventory(mounts: &str, device: u64, mount_id: u64) -> Result<
     require(found == 1, "missing/ambiguous authority mount")?;
     Ok(())
 }
-pub(crate) fn open_authority(d: &Deployment, bootstrap: bool) -> Result<Journal> {
+pub(crate) fn open_authority(
+    d: &DeploymentV2,
+    bootstrap: bool,
+    tool: crate::model::ToolIdentityV2,
+) -> Result<Journal> {
+    d.validate()?;
     let root = authority_root(d)?;
+    let marker = d.marker()?;
     if bootstrap {
-        Journal::bootstrap_verified(root)
+        let genesis = crate::model::EnvelopeV2::genesis(&marker, now()?, tool)?;
+        Journal::bootstrap_verified(root, &marker, &genesis)
     } else {
-        Journal::open_verified(root)
+        Journal::open_verified(root, &marker)
     }
 }
 pub(crate) fn now() -> Result<TimeSample> {
@@ -262,106 +212,6 @@ pub(crate) fn now() -> Result<TimeSample> {
     t.validate()?;
     Ok(t)
 }
-/// No Debug/Serialize/Display implementation. Secrets never leave transport.
-pub(crate) struct Credentials {
-    pub(crate) basic: Zeroizing<String>,
-    username: Zeroizing<String>,
-    password: Zeroizing<String>,
-}
-impl Credentials {
-    #[cfg(test)]
-    pub(crate) fn synthetic() -> Self {
-        use base64::Engine;
-        // Deliberately fake loopback-test credentials. Derive the header from
-        // these fields rather than embedding a credential-shaped Base64 literal.
-        let username = Zeroizing::new("synthetic-user".to_owned());
-        let password = Zeroizing::new("synthetic-pass".to_owned());
-        let pair = Zeroizing::new(format!("{}:{}", username.as_str(), password.as_str()));
-        let encoded =
-            Zeroizing::new(base64::engine::general_purpose::STANDARD.encode(pair.as_bytes()));
-        Self {
-            basic: Zeroizing::new(format!("Basic {}", encoded.as_str())),
-            username,
-            password,
-        }
-    }
-    pub(crate) fn response_safe(&self, value: &serde_json::Value, depth: usize) -> bool {
-        if depth > 16 {
-            return false;
-        }
-        match value {
-            serde_json::Value::String(s) => {
-                !s.contains(self.username.as_str())
-                    && !s.contains(self.password.as_str())
-                    && !s.contains(self.basic.as_str())
-                    && !s.contains(self.basic.trim_start_matches("Basic "))
-            }
-            serde_json::Value::Array(a) => a.iter().all(|v| self.response_safe(v, depth + 1)),
-            serde_json::Value::Object(m) => m.iter().all(|(k, v)| {
-                !k.contains(self.password.as_str())
-                    && !k.contains(self.username.as_str())
-                    && !k.contains(self.basic.trim_start_matches("Basic "))
-                    && self.response_safe(v, depth + 1)
-            }),
-            _ => true,
-        }
-    }
-    pub(crate) fn load() -> Result<Self> {
-        protect_credentials()?;
-        let system = File::open("/").map_err(|_| Error("system root"))?;
-        let file = confined(
-            &system,
-            "etc/borrowser-host-lifecycle/robot.credentials",
-            libc::O_RDONLY,
-            false,
-        )?;
-        let m = file.metadata().map_err(|_| Error("credential metadata"))?;
-        require(
-            m.uid() == unsafe { libc::geteuid() } && m.mode() & 0o077 == 0 && m.nlink() == 1,
-            "credential protection",
-        )?;
-        let bytes = Zeroizing::new(read_bound(file, 8192)?);
-        require(
-            !bytes.is_empty() && !bytes.contains(&b'\n') && bytes.contains(&b':'),
-            "credential format",
-        )?;
-        let text = std::str::from_utf8(&bytes).map_err(|_| Error("credential encoding"))?;
-        let (username, password) = text.split_once(':').ok_or(Error("credential format"))?;
-        require(
-            !username.is_empty()
-                && !password.is_empty()
-                && username.len() <= 4096
-                && password.len() <= 4096,
-            "credential bounds",
-        )?;
-        let username = Zeroizing::new(username.to_owned());
-        let password = Zeroizing::new(password.to_owned());
-        use base64::Engine;
-        let encoded = Zeroizing::new(base64::engine::general_purpose::STANDARD.encode(&*bytes));
-        Ok(Self {
-            basic: Zeroizing::new(format!("Basic {}", encoded.as_str())),
-            username,
-            password,
-        })
-    }
-}
-
-fn protect_credentials() -> Result<()> {
-    let limit = libc::rlimit {
-        rlim_cur: 0,
-        rlim_max: 0,
-    };
-    require(
-        unsafe { libc::setrlimit(libc::RLIMIT_CORE, &limit) } == 0,
-        "disable core dumps",
-    )?;
-    require(
-        unsafe { libc::prctl(libc::PR_SET_DUMPABLE, 0, 0, 0, 0) } == 0,
-        "disable process dumpability",
-    )?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -395,31 +245,6 @@ mod tests {
         assert_eq!(
             read_bound(confined(&root, "value", libc::O_RDONLY, true).unwrap(), 16).unwrap(),
             b"retained"
-        );
-    }
-    #[test]
-    fn credential_protection_subprocess() {
-        if std::env::var_os("LIFECYCLE_DUMPABILITY_TEST").is_none() {
-            return;
-        }
-        protect_credentials().unwrap();
-        assert_eq!(unsafe { libc::prctl(libc::PR_GET_DUMPABLE, 0, 0, 0, 0) }, 0);
-        let mut limit = libc::rlimit {
-            rlim_cur: 1,
-            rlim_max: 1,
-        };
-        assert_eq!(unsafe { libc::getrlimit(libc::RLIMIT_CORE, &mut limit) }, 0);
-        assert_eq!((limit.rlim_cur, limit.rlim_max), (0, 0));
-    }
-    #[test]
-    fn credentials_disable_dumpability_and_core_dumps() {
-        assert!(
-            std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "linux::tests::credential_protection_subprocess"])
-                .env("LIFECYCLE_DUMPABILITY_TEST", "1")
-                .status()
-                .unwrap()
-                .success()
         );
     }
 }

@@ -1,6 +1,8 @@
 # Borrowser conformance contracts
 
-- AG9g0d Stage 1: [Hetzner provider lifecycle](ag9g0d-qualification-host-lifecycle.md).
+- [AG9g0d / #1396 non-mutating AWS SDK boundary and pinned audit](ag9g0d-aws-sdk-boundary.md).
+
+- AG9g0d Passes 1–3: [AWS EC2 durable authorization and launch contracts](ag9g0d-qualification-host-lifecycle.md).
   Independent acquisition/recovery/cancellation tooling; no host qualification.
   Production controller verification and real provider lifecycle validation remain external prerequisites.
 

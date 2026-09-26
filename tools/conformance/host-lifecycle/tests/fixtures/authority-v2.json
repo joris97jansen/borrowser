@@ -1,0 +1,1 @@
+{"authority":"aws-ec2-lifecycle-only","format":"borrowser-aws-ec2-authority-root","identity":{"account_id":"111111111111","authority_id":"synthetic-authority","controller_machine_id":"11111111111111111111111111111111","filesystem_uuid":"00000000-0000-0000-0000-000000000001","region":"eu-central-1"},"schema_version":2}
