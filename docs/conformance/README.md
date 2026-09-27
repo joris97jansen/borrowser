@@ -114,3 +114,10 @@ No browser provisioning is required. See the
 and [selected-operation limits](ag9c-external-dom-capture.md#ag9e-selected-baseline-publication).
 AG9d1 aligns historical validation with existing named-lane policy, including
 valid lane-excluded baseline/trend round trips.
+
+## AG9g0e1 foundation
+
+- [Versioned reconciliation foundation, budgets and concurrency contract](ag9g0e1-reconciliation-foundation.md).
+- [Reviewed infrastructure manifest V1](ag9g0e-reviewed-infrastructure-v1.md).
+- [Provider evidence vocabulary / A01–A38 inputs](ag9g0e-provider-evidence-matrix-v1.md).
+- [Pinned read SDK audit and bounded pre-deserialization buffering](ag9g0e-read-sdk-boundary.md).

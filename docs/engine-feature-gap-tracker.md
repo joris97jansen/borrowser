@@ -574,8 +574,16 @@ Current architecture status:
   provider clients or operational authority. Pass 3 adds durable human authorization,
   dispatch/attempt receipts and replay-derived bounded retry eligibility, with no
   transmission path or new CLI command.
-  AG9g0d remains open. AG9g0a remains independently frozen/open pending native Phase B.
+  AG9g0d / #1396 is completed. AG9g0a remains independently frozen/open pending native Phase B.
   See `docs/conformance/ag9g0d-qualification-host-lifecycle.md`.
+- AG9g0e1 / #1406 adds closed reviewed-infrastructure, observation, coverage,
+  inventory and immutable-context contracts, audited IAM/KMS pins, and bounded
+  pre-deserialization response buffering. Storage/headroom and optimistic
+  publication rules are explicit; no durable reconciliation representation or
+  behavior is implemented. E2 owns adapters/admission/reconciliation, e3 durable
+  publication/replay, and e4 controller/status integration. Parent #1402 and all
+  provider identity/qualification claims remain incomplete. See
+  `docs/conformance/ag9g0e1-reconciliation-foundation.md`.
 - No AG9 capability establishes broad WPT compliance, browser compatibility,
   browser automation, or raster comparison. Completion requires requirement and
   validation evidence, including later exact-revision hosted CI.

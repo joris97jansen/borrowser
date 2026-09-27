@@ -1,5 +1,17 @@
 # Synthetic V2 contract vectors
 
+`provider-foundation-v1/` contains independently composed Python-json/hashlib
+canonical vectors for the e1 manifest, observation record and immutable context.
+They were authored without the Rust constructors/serializer and include exact LF
+and SHA-256 files. Normal tests never regenerate them. The context references the
+frozen synthetic AG9g0d preparation and its placeholder infrastructure digest; it
+is structural data, not a verified authority capture. The separate manifest test
+supplies its exact digest to a synthetic deployment copy without changing V2 fixtures.
+
+`read-sdk-surface-v1.json` is an independently enumerated closed operation inventory.
+These fixtures define no durable reconciliation envelope, packing, index or layout.
+All values are synthetic; none is an approval, deployed policy or provider observation.
+
 These files freeze reviewed serialization examples, not production approvals.
 `authority-v2`, `deployment-v2` and `genesis-v2` remain byte-identical to Pass 1.
 `reviewed-deployment-v2` adds the static support required by Pass-2 constructors.
@@ -32,3 +44,9 @@ envelope. The
 six outcome fixtures are alternatives at sequence 4, not consecutive events.
 No Rust serializer generates these fixtures during tests. They are never production
 approvals; reviewer, clock, source provenance and deployed identities are synthetic.
+
+`provider-foundation-v1/route-observation.json` and its SHA-256 were authored with
+Python JSON key ordering and hashlib, independently of Rust encoding. They retain
+a synthetic NAT default route with blackhole state, propagated origin and a
+disassociated subnet relationship. Tests preserve those contradictory facts and
+check identity sensitivity; the fixture grants no provider authenticity or approval.

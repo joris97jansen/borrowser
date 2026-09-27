@@ -2,6 +2,11 @@
 
 Scope: non-mutating SDK execution and pure request projection. No production RunInstances transmission.
 
+The additive [AG9g0e1 read audit](ag9g0e-read-sdk-boundary.md) adds exact IAM/KMS
+dependencies and bounded pre-deserialization buffering. The projection, service
+pins and frozen AG9g0d contracts below remain unchanged; the new audit specifies
+the current additional read/transport foundation.
+
 ## Source and dependency identity
 
 Audited EC2 crate: `aws-sdk-ec2 = 1.237.0`, archive SHA-256 `bfe29481f63a118c80f6bbded678711367bfc2b23f59b4351e7dfa6f439c3881`. STS `1.107.0`; S3 `1.137.0`. The lockfile freezes the resolved graph; Rust 1.92 validation is required.

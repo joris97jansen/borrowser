@@ -4,9 +4,10 @@ Current scope is [GitHub #1396](https://github.com/joris97jansen/borrowser/issue
 The [pinned SDK boundary audit](ag9g0d-aws-sdk-boundary.md) specifies the current
 explicit credential/configuration, read-only STS/S3 admission and pure EC2 projection.
 Production CLI remains bootstrap/status. No production allocation is reachable.
-#1396 closes after this foundation/SDK boundary is committed and reviewed; provider
+#1396 is completed. The additive [AG9g0e1 foundation](ag9g0e1-reconciliation-foundation.md)
+defines the subsequent contracts and bounded read transport; provider
 reconciliation, identity evidence, infrastructure deployment, termination and real
-acceptance belong to the subsequent GitHub issues. #1402 has not started.
+acceptance belong to the subsequent GitHub issues. #1402 remains incomplete.
 
 The following foundation contracts remain frozen. Historical pass labels describe
 those implementation boundaries, not additional roadmap items. The linked SDK audit is the current execution-boundary contract.
