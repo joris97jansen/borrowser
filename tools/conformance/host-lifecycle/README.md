@@ -1,4 +1,17 @@
-# AWS EC2 lifecycle foundation and non-mutating SDK boundary — #1396
+# AWS EC2 lifecycle and reconciliation foundation — #1396 / #1406
+
+AG9g0e1 adds [versioned evidence/manifest/context contracts](../../../docs/conformance/ag9g0e1-reconciliation-foundation.md)
+and [bounded pre-deserialization transport](../../../docs/conformance/ag9g0e-read-sdk-boundary.md).
+Exact IAM/KMS clients are private; their generated protocol paths are exercised only
+by synthetic tests. No provider adapters, admission decisions, durable provider state,
+new journal events or reconciliation controller are implemented. CLI remains
+bootstrap/status, with no AWS traffic.
+
+Additional targeted checks are `cargo test --locked --offline --test provider_contracts`,
+`cargo test --locked --offline provider::`, and `cargo test --locked --offline aws::`
+in this standalone workspace using Rust 1.92 and an external target directory.
+The future evidence-object allocation ceiling is opaque complete retained bytes;
+there is no durable envelope or packing representation in e1.
 
 Independent Rust operational-tooling workspace. Read the
 [contract](../../../docs/conformance/ag9g0d-qualification-host-lifecycle.md).
@@ -120,7 +133,7 @@ successful durable append. Raw request/receipt/token objects cannot substitute f
 an attempt capability. The CLI remains bootstrap/status only; these are internal
 library/storage paths with deterministic tests, not operational launch commands.
 The #1396 SDK boundary consumes these identities for pure projection and adds no
-allocation transmission path. #1402 has not started.
+allocation transmission path. #1402 remains incomplete; #1406 establishes its contracts/transport foundation.
 
 Preparation/dispatch/attempt intents require ordinary storage. Outcomes of consumed
 attempts may use protected recovery capacity; this does not let retry intent consume
@@ -146,4 +159,4 @@ Use Rust 1.92 with an external target directory. Targeted tests are
 remain required. The synthetic HTTP connector never accesses AWS. All service
 versions and 157 audited SDK members are frozen in the linked audit. #1402 is not
 implemented. Historical pass descriptions above describe the frozen foundation;
-current SDK behavior is specified by the #1396 audit.
+current SDK behavior is specified by the #1396 audit and additive #1406 read-boundary audit.

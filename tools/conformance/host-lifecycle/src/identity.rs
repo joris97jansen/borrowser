@@ -244,3 +244,43 @@ pub(crate) fn arn_binding(s: &str, account: &AwsAccountId, region: Option<&Regio
 }
 
 identity!(LaunchAuthorizationDigest, canonical::digest);
+
+fn instance(s: &str) -> Result<()> {
+    resource(s, "i-")
+}
+fn eni(s: &str) -> Result<()> {
+    resource(s, "eni-")
+}
+fn volume(s: &str) -> Result<()> {
+    resource(s, "vol-")
+}
+fn snapshot(s: &str) -> Result<()> {
+    resource(s, "snap-")
+}
+fn nacl(s: &str) -> Result<()> {
+    resource(s, "acl-")
+}
+fn dhcp(s: &str) -> Result<()> {
+    resource(s, "dopt-")
+}
+fn prefix_list(s: &str) -> Result<()> {
+    resource(s, "pl-")
+}
+fn attachment(s: &str) -> Result<()> {
+    resource(s, "eni-attach-")
+}
+fn association(s: &str) -> Result<()> {
+    resource(s, "iip-assoc-")
+}
+identity!(InstanceId, instance);
+identity!(NetworkInterfaceId, eni);
+identity!(VolumeId, volume);
+identity!(SnapshotId, snapshot);
+identity!(NetworkAclId, nacl);
+identity!(DhcpOptionsId, dhcp);
+identity!(PrefixListId, prefix_list);
+identity!(EniAttachmentId, attachment);
+identity!(ProfileAssociationId, association);
+identity!(ProviderEvidenceDigest, canonical::digest);
+identity!(ReconciliationContextDigest, canonical::digest);
+identity!(ProviderStateDigest, canonical::digest);

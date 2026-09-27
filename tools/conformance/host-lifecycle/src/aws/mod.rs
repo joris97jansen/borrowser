@@ -1,16 +1,20 @@
-//! Explicit, internal, non-mutating AWS boundary for #1396.
+//! Explicit, internal, non-mutating AWS boundary for #1396 and #1406.
 mod credentials;
 mod errors;
 mod projection;
+mod read_surface;
+mod response_limits;
 use crate::{
     Error, Result,
     deployment::DeploymentV2,
     identity::{AwsAccountId, EvidenceBucketName, Region},
     require,
 };
+#[cfg(test)]
 use aws_smithy_runtime_api::client::http::SharedHttpClient;
 use aws_smithy_types::{retry::RetryConfig, timeout::TimeoutConfig};
 use credentials::SessionSecret;
+use response_limits::{BoundedHttp, ObservationRound};
 use std::{
     path::Path,
     time::{Duration, SystemTime},
@@ -20,8 +24,9 @@ const BEHAVIOR: &str = "2026-01-12";
 fn configuration(
     secret: &SessionSecret,
     region: &Region,
-    http: SharedHttpClient,
+    http: BoundedHttp,
 ) -> Result<aws_types::SdkConfig> {
+    http.round().bind_expiration(secret.expires())?;
     Ok(aws_types::SdkConfig::builder()
         .behavior_version(
             aws_smithy_runtime_api::client::behavior_version::BehaviorVersion::v2026_01_12(),
@@ -40,19 +45,22 @@ fn configuration(
                 .operation_timeout(Duration::from_secs(30))
                 .build(),
         )
-        .http_client(http)
+        .http_client(http.into_shared())
         .sleep_impl(aws_smithy_async::rt::sleep::TokioSleep::new())
         .time_source(aws_smithy_async::time::SystemTimeSource::new())
         .build())
 }
 // The explicit HTTP builder uses disabled proxies; unlike the SDK default client
 // factory, it never calls ProxyConfig::from_env. TLS verification stays enabled.
-fn production_http() -> SharedHttpClient {
-    aws_smithy_http_client::Builder::new()
-        .tls_provider(aws_smithy_http_client::tls::Provider::Rustls(
-            aws_smithy_http_client::tls::rustls_provider::CryptoMode::AwsLc,
-        ))
-        .build_https()
+fn production_http(round: ObservationRound) -> BoundedHttp {
+    BoundedHttp::new(
+        aws_smithy_http_client::Builder::new()
+            .tls_provider(aws_smithy_http_client::tls::Provider::Rustls(
+                aws_smithy_http_client::tls::rustls_provider::CryptoMode::AwsLc,
+            ))
+            .build_https(),
+        round,
+    )
 }
 #[derive(Debug, PartialEq, Eq)]
 struct CallerIdentity {
@@ -111,19 +119,24 @@ struct AwsSession {
     expires: SystemTime,
     ec2: aws_sdk_ec2::Client,
     s3: aws_sdk_s3::Client,
+    iam: aws_sdk_iam::Client,
+    kms: aws_sdk_kms::Client,
+    round: ObservationRound,
 }
 impl AwsSession {
     async fn open(deployment: &DeploymentV2, path: &Path) -> Result<Self> {
         deployment.support()?;
+        let round = ObservationRound::start()?;
         let secret = SessionSecret::load(path, SystemTime::now())?;
-        Self::admit(deployment, secret, production_http()).await
+        Self::admit_bounded(deployment, secret, production_http(round)).await
     }
-    async fn admit(
+    async fn admit_bounded(
         deployment: &DeploymentV2,
         secret: SessionSecret,
-        http: SharedHttpClient,
+        http: BoundedHttp,
     ) -> Result<Self> {
         deployment.support()?;
+        let round = http.round().clone();
         let conf = configuration(&secret, &deployment.identity.region, http)?;
         let sts = aws_sdk_sts::Client::from_conf(aws_sdk_sts::config::Builder::from(&conf).build());
         let result = sts
@@ -139,6 +152,19 @@ impl AwsSession {
         )?;
         require(SystemTime::now() < secret.expires(), "session expired")?;
         Ok(Self {
+            iam: aws_sdk_iam::Client::from_conf(
+                aws_sdk_iam::config::Builder::from(&conf)
+                    .use_fips(false)
+                    .use_dual_stack(false)
+                    .build(),
+            ),
+            kms: aws_sdk_kms::Client::from_conf(
+                aws_sdk_kms::config::Builder::from(&conf)
+                    .use_fips(false)
+                    .use_dual_stack(false)
+                    .build(),
+            ),
+            round,
             caller,
             region: deployment.identity.region.clone(),
             expires: secret.expires(),
@@ -151,6 +177,7 @@ impl AwsSession {
         })
     }
     async fn head_evidence_bucket(&self, deployment: &DeploymentV2) -> Result<BucketIdentity> {
+        self.round.remaining()?;
         let support = deployment.support()?;
         require(
             self.caller.account == deployment.identity.account_id
@@ -179,6 +206,19 @@ impl AwsSession {
             region,
         })
     }
+    #[cfg(test)]
+    async fn admit(
+        deployment: &DeploymentV2,
+        secret: SessionSecret,
+        http: SharedHttpClient,
+    ) -> Result<Self> {
+        Self::admit_bounded(
+            deployment,
+            secret,
+            BoundedHttp::new(http, ObservationRound::test()),
+        )
+        .await
+    }
 }
 
 #[cfg(test)]
@@ -187,6 +227,22 @@ mod tests {
     use aws_smithy_http_client::test_util::{ReplayEvent, StaticReplayClient};
     use aws_smithy_types::body::SdkBody;
     use std::os::unix::fs::PermissionsExt;
+    #[derive(Clone, Debug)]
+    struct ParserEntry(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+    impl aws_smithy_runtime_api::client::interceptors::Intercept for ParserEntry {
+        fn name(&self) -> &'static str {
+            "ParserEntry"
+        }
+        fn read_before_deserialization(
+            &self,
+            _: &aws_smithy_runtime_api::client::interceptors::context::BeforeDeserializationInterceptorContextRef<'_>,
+            _: &aws_smithy_runtime_api::client::runtime_components::RuntimeComponents,
+            _: &mut aws_smithy_types::config_bag::ConfigBag,
+        ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+    }
     fn secret() -> SessionSecret {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().canonicalize().unwrap().join("session");
@@ -254,9 +310,10 @@ mod tests {
         ] {
             assert!(lock.contains(&format!("name = \"{name}\"\nversion = \"{version}\"")));
         }
-        for name in ["aws-config", "aws-sdk-iam", "aws-sdk-kms"] {
-            assert!(!lock.contains(&format!("name = \"{name}\"")));
+        for (name, version) in [("aws-sdk-iam", "1.113.0"), ("aws-sdk-kms", "1.111.0")] {
+            assert!(lock.contains(&format!("name = \"{name}\"\nversion = \"{version}\"")));
         }
+        assert!(!lock.contains("name = \"aws-config\""));
     }
     #[tokio::test]
     async fn explicit_configs_and_synthetic_sts_s3_admission() {
@@ -270,7 +327,10 @@ mod tests {
         let conf = configuration(
             &secret(),
             &d.identity.region,
-            SharedHttpClient::new(connector.clone()),
+            BoundedHttp::new(
+                SharedHttpClient::new(connector.clone()),
+                ObservationRound::test(),
+            ),
         )
         .unwrap();
         macro_rules! check_config {
@@ -293,6 +353,8 @@ mod tests {
             }};
         }
         check_config!(aws_sdk_sts);
+        check_config!(aws_sdk_iam);
+        check_config!(aws_sdk_kms);
         check_config!(aws_sdk_s3);
         check_config!(aws_sdk_ec2);
         assert_eq!(BEHAVIOR, "2026-01-12");
@@ -336,6 +398,249 @@ mod tests {
                 .iter()
                 .any(|r| r.uri().to_string().contains("synthetic.invalid"))
         );
+    }
+    #[tokio::test]
+    async fn iam_kms_pinned_protocol_endpoint_signing_and_no_retry() {
+        for (region, partition, iam_host, signing_region, kms_host) in [
+            (
+                "eu-central-1",
+                "aws",
+                "iam.amazonaws.com",
+                "us-east-1",
+                "kms.eu-central-1.amazonaws.com",
+            ),
+            (
+                "us-gov-west-1",
+                "aws-us-gov",
+                "iam.us-gov.amazonaws.com",
+                "us-gov-west-1",
+                "kms.us-gov-west-1.amazonaws.com",
+            ),
+            (
+                "cn-north-1",
+                "aws-cn",
+                "iam.cn-north-1.amazonaws.com.cn",
+                "cn-north-1",
+                "kms.cn-north-1.amazonaws.com.cn",
+            ),
+        ] {
+            let profile = format!("arn:{partition}:iam::111111111111:instance-profile/synthetic");
+            let key = format!(
+                "arn:{partition}:kms:{region}:111111111111:key/00000000-0000-0000-0000-000000000001"
+            );
+            let xml = format!(
+                "<GetInstanceProfileResponse xmlns=\"https://iam.amazonaws.com/doc/2010-05-08/\"><GetInstanceProfileResult><InstanceProfile><Path>/</Path><InstanceProfileName>synthetic</InstanceProfileName><InstanceProfileId>AIPA00000000000000000</InstanceProfileId><Arn>{profile}</Arn><CreateDate>2020-01-01T00:00:00Z</CreateDate><Roles/></InstanceProfile></GetInstanceProfileResult></GetInstanceProfileResponse>"
+            );
+            let json = format!(
+                r#"{{"KeyMetadata":{{"AWSAccountId":"111111111111","KeyId":"00000000-0000-0000-0000-000000000001","Arn":"{key}","Enabled":true,"KeyUsage":"ENCRYPT_DECRYPT","KeyState":"Enabled","KeyManager":"CUSTOMER","KeySpec":"SYMMETRIC_DEFAULT"}}}}"#
+            );
+            let c = replay(vec![
+                response(200, &xml, None),
+                response(200, &json, None),
+                response(
+                    403,
+                    "<ErrorResponse><Error><Code>AccessDenied</Code></Error></ErrorResponse>",
+                    None,
+                ),
+                response(
+                    400,
+                    r#"{"__type":"AccessDeniedException","message":"synthetic"}"#,
+                    None,
+                ),
+            ]);
+            let conf = configuration(
+                &secret(),
+                &region.parse().unwrap(),
+                BoundedHttp::new(SharedHttpClient::new(c.clone()), ObservationRound::test()),
+            )
+            .unwrap();
+            let iam = aws_sdk_iam::Client::from_conf(
+                aws_sdk_iam::config::Builder::from(&conf)
+                    .use_fips(false)
+                    .use_dual_stack(false)
+                    .build(),
+            );
+            let kms = aws_sdk_kms::Client::from_conf(
+                aws_sdk_kms::config::Builder::from(&conf)
+                    .use_fips(false)
+                    .use_dual_stack(false)
+                    .build(),
+            );
+            // Tests exercise generated protocol parsing only; no provider normalization.
+            assert_eq!(
+                iam.get_instance_profile()
+                    .instance_profile_name("synthetic")
+                    .send()
+                    .await
+                    .unwrap()
+                    .instance_profile()
+                    .unwrap()
+                    .arn(),
+                profile
+            );
+            assert_eq!(
+                kms.describe_key()
+                    .key_id(&key)
+                    .send()
+                    .await
+                    .unwrap()
+                    .key_metadata()
+                    .unwrap()
+                    .arn(),
+                Some(key.as_str())
+            );
+            assert!(
+                iam.get_instance_profile()
+                    .instance_profile_name("synthetic")
+                    .send()
+                    .await
+                    .unwrap_err()
+                    .as_service_error()
+                    .is_some()
+            );
+            assert!(
+                kms.describe_key()
+                    .key_id(&key)
+                    .send()
+                    .await
+                    .unwrap_err()
+                    .as_service_error()
+                    .is_some()
+            );
+            let requests: Vec<_> = c.actual_requests().collect();
+            assert_eq!(requests.len(), 4);
+            assert_eq!(
+                requests[0].uri().to_string(),
+                format!("https://{iam_host}/")
+            );
+            assert!(
+                requests[0]
+                    .headers()
+                    .get("authorization")
+                    .unwrap()
+                    .contains(&format!("/{signing_region}/iam/aws4_request"))
+            );
+            assert!(
+                std::str::from_utf8(requests[0].body().bytes().unwrap())
+                    .unwrap()
+                    .contains("Action=GetInstanceProfile")
+            );
+            assert_eq!(
+                requests[1].uri().to_string(),
+                format!("https://{kms_host}/")
+            );
+            assert!(
+                requests[1]
+                    .headers()
+                    .get("authorization")
+                    .unwrap()
+                    .contains(&format!("/{region}/kms/aws4_request"))
+            );
+            assert_eq!(
+                requests[1].headers().get("x-amz-target"),
+                Some("TrentService.DescribeKey")
+            );
+            let input: serde_json::Value =
+                serde_json::from_slice(requests[1].body().bytes().unwrap()).unwrap();
+            assert_eq!(input, serde_json::json!({"KeyId": key}));
+        }
+    }
+    #[tokio::test]
+    async fn oversized_sdk_success_and_error_never_enter_protocol_deserialization() {
+        use aws_smithy_runtime_api::client::result::SdkError;
+        for status in [200, 403, 500] {
+            for service in ["iam", "kms", "ec2", "sts", "s3"] {
+                let entered = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+                let probe = ParserEntry(entered.clone());
+                let c = replay(vec![response(
+                    status,
+                    &"x".repeat(crate::provider::limits::RESPONSE_BYTES as usize + 1),
+                    None,
+                )]);
+                let conf = configuration(
+                    &secret(),
+                    &"eu-central-1".parse().unwrap(),
+                    BoundedHttp::new(SharedHttpClient::new(c.clone()), ObservationRound::test()),
+                )
+                .unwrap();
+                let dispatch_failure = match service {
+                    "iam" => matches!(aws_sdk_iam::Client::from_conf(aws_sdk_iam::config::Builder::from(&conf).interceptor(probe.clone()).build()).get_instance_profile().instance_profile_name("synthetic").send().await, Err(SdkError::DispatchFailure(_))),
+                    "kms" => matches!(aws_sdk_kms::Client::from_conf(aws_sdk_kms::config::Builder::from(&conf).interceptor(probe.clone()).build()).describe_key().key_id("arn:aws:kms:eu-central-1:111111111111:key/00000000-0000-0000-0000-000000000001").send().await, Err(SdkError::DispatchFailure(_))),
+                    "ec2" => matches!(aws_sdk_ec2::Client::from_conf(aws_sdk_ec2::config::Builder::from(&conf).interceptor(probe.clone()).build()).describe_instances().send().await, Err(SdkError::DispatchFailure(_))),
+                    "sts" => matches!(aws_sdk_sts::Client::from_conf(aws_sdk_sts::config::Builder::from(&conf).interceptor(probe.clone()).build()).get_caller_identity().send().await, Err(SdkError::DispatchFailure(_))),
+                    _ => matches!(aws_sdk_s3::Client::from_conf(aws_sdk_s3::config::Builder::from(&conf).interceptor(probe.clone()).disable_s3_express_session_auth(true).build()).head_bucket().bucket("synthetic-bucket").expected_bucket_owner("111111111111").send().await, Err(SdkError::DispatchFailure(_))),
+                };
+                assert!(
+                    dispatch_failure,
+                    "{service} {status}: must fail at connector, before response parsing"
+                );
+                assert_eq!(c.actual_requests().count(), 1);
+                assert_eq!(entered.load(std::sync::atomic::Ordering::SeqCst), 0);
+            }
+        }
+    }
+    #[tokio::test]
+    async fn parser_probe_observes_only_a_completed_bounded_body() {
+        let c = replay(vec![response(
+            200,
+            &caller_xml("111111111111", "arn:aws:iam::111111111111:user/synthetic"),
+            None,
+        )]);
+        let conf = configuration(
+            &secret(),
+            &"eu-central-1".parse().unwrap(),
+            BoundedHttp::new(SharedHttpClient::new(c), ObservationRound::test()),
+        )
+        .unwrap();
+        let entered = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sts = aws_sdk_sts::Client::from_conf(
+            aws_sdk_sts::config::Builder::from(&conf)
+                .interceptor(ParserEntry(entered.clone()))
+                .build(),
+        );
+        assert!(sts.get_caller_identity().send().await.is_ok());
+        assert_eq!(entered.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+    #[tokio::test]
+    async fn aggregate_budget_is_shared_by_distinct_sdk_service_clients() {
+        use aws_smithy_runtime_api::client::result::SdkError;
+        let body = format!(
+            "{{}}{}",
+            " ".repeat(crate::provider::limits::RESPONSE_BYTES as usize - 2)
+        );
+        let mut responses: Vec<_> = (0..8).map(|_| response(200, &body, None)).collect();
+        responses.push(response(403, "x", None));
+        let c = replay(responses);
+        let conf = configuration(
+            &secret(),
+            &"eu-central-1".parse().unwrap(),
+            BoundedHttp::new(SharedHttpClient::new(c.clone()), ObservationRound::test()),
+        )
+        .unwrap();
+        let entered = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let kms = aws_sdk_kms::Client::from_conf(
+            aws_sdk_kms::config::Builder::from(&conf)
+                .interceptor(ParserEntry(entered.clone()))
+                .build(),
+        );
+        for _ in 0..8 {
+            kms.describe_key().key_id("arn:aws:kms:eu-central-1:111111111111:key/00000000-0000-0000-0000-000000000001")
+                .send().await.unwrap();
+        }
+        let iam = aws_sdk_iam::Client::from_conf(
+            aws_sdk_iam::config::Builder::from(&conf)
+                .interceptor(ParserEntry(entered.clone()))
+                .build(),
+        );
+        assert!(matches!(
+            iam.get_instance_profile()
+                .instance_profile_name("synthetic")
+                .send()
+                .await,
+            Err(SdkError::DispatchFailure(_))
+        ));
+        assert_eq!(c.actual_requests().count(), 9);
+        assert_eq!(entered.load(std::sync::atomic::Ordering::SeqCst), 8);
     }
     #[tokio::test]
     async fn synthetic_failures_do_not_retry_or_admit() {
@@ -443,14 +748,54 @@ mod tests {
             rt.block_on(async {
                 let d = crate::test_support::launch_documents().deployment;
                 let account = d.identity.account_id.as_str();
-                let c = replay(vec![response(
-                    200,
-                    &caller_xml(account, &format!("arn:aws:iam::{account}:user/synthetic")),
-                    None,
-                )]);
-                AwsSession::admit(&d, secret(), SharedHttpClient::new(c.clone()))
+                let c = replay(vec![
+                    response(
+                        200,
+                        &caller_xml(account, &format!("arn:aws:iam::{account}:user/synthetic")),
+                        None,
+                    ),
+                    response(
+                        403,
+                        "<ErrorResponse><Error><Code>AccessDenied</Code></Error></ErrorResponse>",
+                        None,
+                    ),
+                    response(400, r#"{"__type":"AccessDeniedException"}"#, None),
+                ]);
+                let session = AwsSession::admit(&d, secret(), SharedHttpClient::new(c.clone()))
                     .await
                     .unwrap();
+                assert!(
+                    session
+                        .iam
+                        .get_instance_profile()
+                        .instance_profile_name("synthetic")
+                        .send()
+                        .await
+                        .is_err()
+                );
+                assert!(
+                    session
+                        .kms
+                        .describe_key()
+                        .key_id(d.support().unwrap().kms_key_arn.as_str())
+                        .send()
+                        .await
+                        .is_err()
+                );
+                assert_eq!(c.actual_requests().count(), 3);
+                for r in c.actual_requests() {
+                    assert!(!r.uri().to_string().contains("ambient.invalid"));
+                    assert!(
+                        r.headers()
+                            .get("authorization")
+                            .unwrap()
+                            .contains("SYNTHETICACCESS")
+                    );
+                    assert_eq!(
+                        r.headers().get("x-amz-security-token"),
+                        Some("synthetic-token")
+                    );
+                }
                 let r = c.actual_requests().next().unwrap();
                 assert!(!r.uri().to_string().contains("ambient.invalid"));
                 assert!(
@@ -485,6 +830,8 @@ mod tests {
             "AWS_ENDPOINT_URL_STS",
             "AWS_ENDPOINT_URL_EC2",
             "AWS_ENDPOINT_URL_S3",
+            "AWS_ENDPOINT_URL_IAM",
+            "AWS_ENDPOINT_URL_KMS",
             "AWS_CONFIG_FILE",
             "AWS_SHARED_CREDENTIALS_FILE",
             "AWS_MAX_ATTEMPTS",

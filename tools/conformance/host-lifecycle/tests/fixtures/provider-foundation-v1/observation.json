@@ -1,0 +1,1 @@
+{"data":{"kind":"region","name":"eu-central-1","opt_in_status":{"kind":"present","value":"opt-in-not-required"}},"query":{"account":"111111111111","operation":"DescribeRegions","region":"eu-central-1","scope":{"kind":"regional"}},"schema_version":1}

@@ -11,6 +11,7 @@ pub mod launch;
 #[cfg(target_os = "linux")]
 pub(crate) mod linux;
 pub mod model;
+pub mod provider;
 mod publication;
 pub mod review;
 mod runtime;
@@ -40,6 +41,16 @@ pub fn require(ok: bool, message: &'static str) -> Result<()> {
 /// ```
 /// ```compile_fail
 /// use borrowser_host_lifecycle::aws::AwsSession;
+/// ```
+/// Observation data cannot be serialized as a durable reconciliation envelope.
+/// ```compile_fail
+/// use borrowser_host_lifecycle::provider::observation::ProviderObservationV1;
+/// fn persist(value: &ProviderObservationV1) { let _ = serde_json::to_vec(value); }
+/// ```
+/// Immutable context exposes no mutable access.
+/// ```compile_fail
+/// use borrowser_host_lifecycle::provider::context::ReconciliationContextV1;
+/// fn retarget(value: &mut ReconciliationContextV1) { value.fields().next_sequence += 1; }
 /// ```
 pub use runtime::run_cli;
 
