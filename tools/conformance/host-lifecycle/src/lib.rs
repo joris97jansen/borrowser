@@ -52,6 +52,16 @@ pub fn require(ok: bool, message: &'static str) -> Result<()> {
 /// use borrowser_host_lifecycle::provider::context::ReconciliationContextV1;
 /// fn retarget(value: &mut ReconciliationContextV1) { value.fields().next_sequence += 1; }
 /// ```
+/// V2 observations also remain in-memory only.
+/// ```compile_fail
+/// use borrowser_host_lifecycle::provider::observation_v2::ProviderObservationV2;
+/// fn persist(value: &ProviderObservationV2) { let _ = serde_json::to_vec(value); }
+/// ```
+/// V2 contexts expose no mutable fields or authority handles.
+/// ```compile_fail
+/// use borrowser_host_lifecycle::provider::context_v2::ReconciliationContextV2;
+/// fn retarget(value: &mut ReconciliationContextV2) { value.fields().next_sequence += 1; }
+/// ```
 pub use runtime::run_cli;
 
 #[cfg(test)]

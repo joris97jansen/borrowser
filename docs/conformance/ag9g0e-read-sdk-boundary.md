@@ -1,5 +1,10 @@
 # AG9g0e1 bounded read SDK audit
 
+AG9g0e1a adds [pinned EC2 management/delegation protocol regressions and pure field normalization](ag9g0e1a-management-observation-v2.md).
+The pins, read inventory and transport configuration below are unchanged. No current
+AG9g0e1a normalizer emits semantic Absent, including for managed EBS attachments.
+Full service adapters and query execution remain e2-owned.
+
 This extends the [AG9g0d audit](ag9g0d-aws-sdk-boundary.md) without changing its
 RunInstances projection or enabling transmission. E1 adds private clients and
 synthetic protocol tests only; production service adapters belong to e2.

@@ -56,3 +56,7 @@ path = "tests/dispatch.rs"
 [[test]]
 name = "provider_contracts"
 path = "tests/provider_contracts.rs"
+
+[[test]]
+name = "provider_v2_contracts"
+path = "tests/provider_v2_contracts.rs"
