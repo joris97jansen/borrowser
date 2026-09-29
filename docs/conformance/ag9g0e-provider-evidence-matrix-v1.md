@@ -1,5 +1,11 @@
 # AG9g0e provider evidence vocabulary V1
 
+Historical limitation: V1 `managed_operator` cannot preserve independent operator
+management/principal/visibility facts, and its volume attachment requires InstanceId.
+[AG9g0e1a V2](ag9g0e1a-management-observation-v2.md) corrects those representations
+through explicit successor contracts. This V1 matrix and canonical vocabulary remain
+frozen; missing V1 information cannot be reconstructed or relabeled as V2 evidence.
+
 This freezes A01–A38 **inputs and evidence limits**, not an evaluator. E1 defines
 SDK-independent representations; e2 supplies adapters, normalization, required-query
 coverage and policy. E3 supplies durable evidence/publication/replay; e4 coordinates.

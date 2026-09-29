@@ -352,3 +352,59 @@ fn invalid_normalized_record_latches_the_shared_round() {
     assert!(round.request().is_err());
     assert!(round.records(0).is_err());
 }
+
+#[test]
+fn v2_canonical_records_share_bounds_and_latch_without_refund() {
+    use crate::provider::{
+        observation::{Observed, Tag},
+        observation_v2::{ObservationDataV2, ObservationRecordV2},
+    };
+    let valid = ObservationRecordV2::parse(include_bytes!(
+        "../../tests/fixtures/provider-foundation-v2/instance.json"
+    ))
+    .unwrap();
+    let round = ObservationRound::test();
+    assert_eq!(
+        round.canonical_record_v2(&valid).unwrap(),
+        valid.canonical_bytes().unwrap()
+    );
+    let mut invalid = valid.clone();
+    if let ObservationDataV2::Instance { tags, .. } = &mut invalid.data {
+        *tags = Observed::Present(
+            vec![
+                Tag {
+                    key: "x".repeat(2048).try_into().unwrap(),
+                    value: "x".repeat(2048).try_into().unwrap()
+                };
+                4
+            ]
+            .try_into()
+            .unwrap(),
+        );
+    }
+    assert!(round.canonical_record_v2(&invalid).is_err());
+    assert_eq!(
+        round.state.lock().unwrap().accounting.failure(),
+        Some(LimitKind::RecordBytes)
+    );
+    assert!(round.canonical_record_v2(&valid).is_err());
+    assert!(round.records(0).is_err());
+
+    let round = ObservationRound::test();
+    let v1 = crate::provider::observation::ObservationRecordV1::parse(include_bytes!(
+        "../../tests/fixtures/provider-foundation-v1/observation.json"
+    ))
+    .unwrap();
+    round.canonical_record(&v1).unwrap();
+    let remaining = NORMALIZED_BYTES as usize - v1.canonical_bytes().unwrap().len();
+    let count = remaining / valid.canonical_bytes().unwrap().len();
+    for _ in 0..count {
+        round.canonical_record_v2(&valid).unwrap();
+    }
+    assert!(round.canonical_record_v2(&valid).is_err());
+    assert_eq!(
+        round.state.lock().unwrap().accounting.failure(),
+        Some(LimitKind::NormalizedBytes)
+    );
+    assert!(round.canonical_record(&v1).is_err());
+}

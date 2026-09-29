@@ -1,5 +1,10 @@
 # AG9g0e1 / #1406: reconciliation contracts and bounded read foundation
 
+AG9g0e1a adds [explicit V2 management/delegation observation contracts](ag9g0e1a-management-observation-v2.md).
+The V1 representations below remain frozen, including their management-information
+limitations. V2 has separate identities, references, inventory and context containers;
+it does not migrate V1 evidence or add durable provider authority.
+
 This extends the [AG9g0d authority](ag9g0d-qualification-host-lifecycle.md) and
 [SDK audit](ag9g0d-aws-sdk-boundary.md). It establishes inert, SDK-independent
 contracts and bounded transport, not provider admission or durable provider state.

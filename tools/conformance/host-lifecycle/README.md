@@ -1,9 +1,17 @@
 # AWS EC2 lifecycle and reconciliation foundation — #1396 / #1406
 
+AG9g0e1a adds [V2 management/delegation evidence](../../../docs/conformance/ag9g0e1a-management-observation-v2.md)
+without changing V1 canonical contracts. Independent operator/requester fields,
+source-specific EBS attachments, successor references/inventory/context and private
+pure SDK field normalizers are covered by `provider_v2_contracts` and
+`management_observation` protocol tests. No current normalizer emits semantic Absent;
+omitted EBS instance/device fields remain unavailable regardless of management metadata.
+Service adapters, admission and durable provider state remain unimplemented.
+
 AG9g0e1 adds [versioned evidence/manifest/context contracts](../../../docs/conformance/ag9g0e1-reconciliation-foundation.md)
 and [bounded pre-deserialization transport](../../../docs/conformance/ag9g0e-read-sdk-boundary.md).
 Exact IAM/KMS clients are private; their generated protocol paths are exercised only
-by synthetic tests. No provider adapters, admission decisions, durable provider state,
+by synthetic tests. No provider service adapters, admission decisions, durable provider state,
 new journal events or reconciliation controller are implemented. CLI remains
 bootstrap/status, with no AWS traffic.
 

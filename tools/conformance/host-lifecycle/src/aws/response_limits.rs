@@ -77,6 +77,24 @@ impl ObservationRound {
         self.remaining()?;
         Ok(bytes)
     }
+    /// Separate validated successor path; V1 accounting and its validator stay frozen.
+    pub(super) fn canonical_record_v2(
+        &self,
+        record: &crate::provider::observation_v2::ObservationRecordV2,
+    ) -> Result<Vec<u8>> {
+        self.remaining()?;
+        record
+            .canonical_bytes()
+            .inspect_err(|_| self.fail(LimitKind::RecordBytes))?;
+        let bytes = self
+            .state
+            .lock()
+            .map_err(|_| Error("observation state poisoned"))?
+            .accounting
+            .canonical_record(record)?;
+        self.remaining()?;
+        Ok(bytes)
+    }
     pub(super) fn start() -> Result<Self> {
         Self::with_clock(Arc::new(ControllerClock))
     }

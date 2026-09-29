@@ -1,11 +1,16 @@
 //! Versioned inert reconciliation contracts. No provider I/O or durable authority.
 pub mod context;
+pub mod context_v2;
 pub mod coverage;
+pub mod evidence_v2;
 pub mod inventory;
+pub mod inventory_v2;
 pub mod limits;
+pub mod management_observation_v2;
 pub mod manifest;
 pub mod network_observation;
 pub mod observation;
+pub mod observation_v2;
 pub mod storage;
 
 use crate::{Result, canonical, require};

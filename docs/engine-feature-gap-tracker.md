@@ -584,6 +584,14 @@ Current architecture status:
   publication/replay, and e4 controller/status integration. Parent #1402 and all
   provider identity/qualification claims remain incomplete. See
   `docs/conformance/ag9g0e1-reconciliation-foundation.md`.
+- AG9g0e1a corrects the frozen V1 management/delegation evidence gap with explicit
+  V2 observations, identities, references, inventory and immutable-context contracts.
+  Independent operator/requester facts and source-specific EBS attachments preserve
+  omissions, contradictions and duplicates. Pinned SDK protocol tests cover all five
+  operator locations; no current normalizer establishes semantic Absent. V1 bytes,
+  hashes and validators remain frozen. Admission/reconciliation, publication/replay,
+  controller integration and parent #1402 remain incomplete. See
+  `docs/conformance/ag9g0e1a-management-observation-v2.md`.
 - No AG9 capability establishes broad WPT compliance, browser compatibility,
   browser automation, or raster comparison. Completion requires requirement and
   validation evidence, including later exact-revision hosted CI.

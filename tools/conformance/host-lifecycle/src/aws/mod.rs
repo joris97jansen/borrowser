@@ -1,6 +1,9 @@
 //! Explicit, internal, non-mutating AWS boundary for #1396 and #1406.
 mod credentials;
 mod errors;
+mod management_observation;
+#[cfg(test)]
+mod management_observation_tests;
 mod projection;
 mod read_surface;
 mod response_limits;
@@ -243,21 +246,25 @@ mod tests {
             Ok(())
         }
     }
-    fn secret() -> SessionSecret {
+    pub(super) fn secret() -> SessionSecret {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().canonicalize().unwrap().join("session");
         std::fs::write(&path,br#"{"format":"borrowser-aws-operator-session","schema_version":1,"access_key_id":"SYNTHETICACCESS","secret_access_key":"synthetic-secret","session_token":"synthetic-token","expiration_unix_seconds":4102444800}"#).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
         SessionSecret::load(&path, SystemTime::now()).unwrap()
     }
-    fn response(status: u16, body: &str, region: Option<&str>) -> http::Response<SdkBody> {
+    pub(super) fn response(
+        status: u16,
+        body: &str,
+        region: Option<&str>,
+    ) -> http::Response<SdkBody> {
         let mut b = http::Response::builder().status(status);
         if let Some(r) = region {
             b = b.header("x-amz-bucket-region", r);
         }
         b.body(SdkBody::from(body)).unwrap()
     }
-    fn replay(responses: Vec<http::Response<SdkBody>>) -> StaticReplayClient {
+    pub(super) fn replay(responses: Vec<http::Response<SdkBody>>) -> StaticReplayClient {
         StaticReplayClient::new(
             responses
                 .into_iter()
