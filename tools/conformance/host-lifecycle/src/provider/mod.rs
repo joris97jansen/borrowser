@@ -38,3 +38,9 @@ pub(crate) fn canonical_set<T: Serialize>(values: &[T], max: usize) -> Result<()
 
 #[cfg(test)]
 mod tests;
+
+pub mod context_v3;
+pub mod evidence_v3;
+pub mod identity_observation_v3;
+pub mod inventory_v3;
+pub mod observation_v3;

@@ -1,0 +1,1 @@
+{"pages":1,"query":{"account":"111111111111","operation":"GetInstanceProfile","region":"eu-central-1","scope":{"identities":[{"id":"arn:aws:iam::111111111111:instance-profile/reviewed","kind":"profile"}],"kind":"exact"}},"records":4,"requests":1,"required":true,"status":{"kind":"incomplete","reason":{"kind":"malformed"}},"terminal_page":true}

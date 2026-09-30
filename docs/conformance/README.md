@@ -121,3 +121,5 @@ valid lane-excluded baseline/trend round trips.
 - [Reviewed infrastructure manifest V1](ag9g0e-reviewed-infrastructure-v1.md).
 - [Provider evidence vocabulary / A01–A38 inputs](ag9g0e-provider-evidence-matrix-v1.md).
 - [Pinned read SDK audit and bounded pre-deserialization buffering](ag9g0e-read-sdk-boundary.md).
+
+- [V3 partial KMS/IAM identity observations and bounded IAM presence](ag9g0e2a1-partial-identity-observation-v3.md).

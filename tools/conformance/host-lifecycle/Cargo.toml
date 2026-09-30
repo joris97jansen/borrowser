@@ -32,6 +32,8 @@ zeroize = { version = "=1.8.1", features = ["serde"] }
 bytes = "=1.12.1"
 http-body = "=1.1.0"
 http-body-util = "=0.1.5"
+# Already resolved through the pinned Smithy XML stack; structural presence only.
+xmlparser = "=0.13.6"
 tokio = { version = "=1.53.1", features = ["rt", "time"] }
 
 [dev-dependencies]
@@ -60,3 +62,7 @@ path = "tests/provider_contracts.rs"
 [[test]]
 name = "provider_v2_contracts"
 path = "tests/provider_v2_contracts.rs"
+
+[[test]]
+name = "provider_v3_contracts"
+path = "tests/provider_v3_contracts.rs"

@@ -62,6 +62,19 @@ pub fn require(ok: bool, message: &'static str) -> Result<()> {
 /// use borrowser_host_lifecycle::provider::context_v2::ReconciliationContextV2;
 /// fn retarget(value: &mut ReconciliationContextV2) { value.fields().next_sequence += 1; }
 /// ```
+/// V3 aggregates also have no durable representation.
+/// ```compile_fail
+/// use borrowser_host_lifecycle::provider::observation_v3::ProviderObservationV3;
+/// fn persist(v: &ProviderObservationV3) { let _ = serde_json::to_vec(v); }
+/// ```
+/// ```compile_fail
+/// use borrowser_host_lifecycle::provider::context_v3::ReconciliationContextV3;
+/// fn retarget(v: &mut ReconciliationContextV3) { v.fields().next_sequence += 1; }
+/// ```
+/// The presence mechanism is private and cannot be used to issue arbitrary requests.
+/// ```compile_fail
+/// use borrowser_host_lifecycle::aws::iam_presence::capture_instance_profile;
+/// ```
 pub use runtime::run_cli;
 
 #[cfg(test)]

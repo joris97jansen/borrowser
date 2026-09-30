@@ -592,6 +592,13 @@ Current architecture status:
   hashes and validators remain frozen. Admission/reconciliation, publication/replay,
   controller integration and parent #1402 remain incomplete. See
   `docs/conformance/ag9g0e1a-management-observation-v2.md`.
+- AG9g0e2a1 corrects partial IAM/KMS identity evidence through narrow schema-3
+  observations and explicit successor references/containers. Independent members and
+  every role occurrence survive missing/malformed siblings. Private bounded IAM
+  structural presence recovers distinctions erased by the pinned SDK without decoding
+  semantic values. V1/V2 remain frozen; STS/S3/EC2 observations remain V2. #1413 query
+  execution, production adapters, admission/reconciliation and parent #1407 remain
+  incomplete. See `docs/conformance/ag9g0e2a1-partial-identity-observation-v3.md`.
 - No AG9 capability establishes broad WPT compliance, browser compatibility,
   browser automation, or raster comparison. Completion requires requirement and
   validation evidence, including later exact-revision hosted CI.

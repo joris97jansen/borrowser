@@ -1,0 +1,1 @@
+[{"kind":"not-returned"},{"kind":"empty"},{"kind":"present","value":"arn:aws:iam::222222222222:role/contradictory"},{"kind":"malformed","value":"not-an-arn"},{"kind":"unrepresentable","value":"text-bytes"},{"kind":"unrepresentable","value":"contains-nul"},{"kind":"malformed","value":"bad\u000a\"\\value"}]
