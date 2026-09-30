@@ -618,6 +618,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "xmlparser",
  "zeroize",
 ]
 

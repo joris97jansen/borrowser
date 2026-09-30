@@ -353,6 +353,50 @@ fn invalid_normalized_record_latches_the_shared_round() {
     assert!(round.records(0).is_err());
 }
 
+#[tokio::test]
+async fn rejected_iam_attribute_retains_charges_and_cannot_reuse_capture() {
+    use crate::aws::{
+        configuration,
+        iam_presence::capture_instance_profile,
+        identity_observation_tests::iam_xml,
+        tests::{replay, response, secret},
+    };
+    use aws_smithy_runtime_api::client::interceptors::SharedInterceptor;
+    let body =
+        iam_xml("<InstanceProfile><Arn xmlns:x=\"&bogus;\">returned</Arn></InstanceProfile>");
+    let transport = replay(vec![response(200, &body, None)]);
+    let round = ObservationRound::test();
+    let conf = configuration(
+        &secret(),
+        &"eu-central-1".parse().unwrap(),
+        BoundedHttp::new(SharedHttpClient::new(transport.clone()), round.clone()),
+    )
+    .unwrap();
+    let client = aws_sdk_iam::Client::from_conf(aws_sdk_iam::config::Builder::from(&conf).build());
+    let (hook, receiver) = capture_instance_profile(round.clone());
+    let hook = SharedInterceptor::new(hook);
+    for _ in 0..2 {
+        assert!(
+            client
+                .get_instance_profile()
+                .instance_profile_name("reviewed")
+                .customize()
+                .interceptor(hook.clone())
+                .send()
+                .await
+                .is_err()
+        );
+        assert_eq!(transport.actual_requests().count(), 1);
+        let state = round.state.lock().unwrap();
+        assert_eq!(state.accounting.requests(), 1);
+        assert_eq!(state.accounting.response_bytes(), body.len() as u64);
+    }
+    assert!(receiver.take().is_err());
+    let state = round.state.lock().unwrap();
+    assert_eq!(state.accounting.requests(), 1);
+    assert_eq!(state.accounting.response_bytes(), body.len() as u64);
+}
+
 #[test]
 fn v2_canonical_records_share_bounds_and_latch_without_refund() {
     use crate::provider::{
@@ -407,4 +451,49 @@ fn v2_canonical_records_share_bounds_and_latch_without_refund() {
         Some(LimitKind::NormalizedBytes)
     );
     assert!(round.canonical_record(&v1).is_err());
+}
+
+#[test]
+fn v3_canonical_accounting_shares_v1_v2_budgets_and_failure_latches() {
+    use crate::provider::{
+        observation::ObservationRecordV1, observation_v2::ObservationRecordV2,
+        observation_v3::ObservationRecordV3,
+    };
+    let v1 = ObservationRecordV1::parse(include_bytes!(
+        "../../tests/fixtures/provider-foundation-v1/observation.json"
+    ))
+    .unwrap();
+    let v2 = ObservationRecordV2::parse(include_bytes!(
+        "../../tests/fixtures/provider-foundation-v2/instance.json"
+    ))
+    .unwrap();
+    let v3 = ObservationRecordV3::parse(include_bytes!(
+        "../../tests/fixtures/provider-foundation-v3/profile.json"
+    ))
+    .unwrap();
+    let round = ObservationRound::test();
+    let initial =
+        round.canonical_record(&v1).unwrap().len() + round.canonical_record_v2(&v2).unwrap().len();
+    let len = v3.canonical_bytes().unwrap().len();
+    let capacity = (NORMALIZED_BYTES as usize - initial) / len;
+    for _ in 0..capacity {
+        round.canonical_record_v3(&v3).unwrap();
+    }
+    assert!(round.canonical_record_v3(&v3).is_err());
+    assert_eq!(
+        round.state.lock().unwrap().accounting.failure(),
+        Some(LimitKind::NormalizedBytes)
+    );
+    assert!(round.canonical_record(&v1).is_err());
+    assert!(round.canonical_record_v2(&v2).is_err());
+    assert!(round.request().is_err());
+    let round = ObservationRound::test();
+    let mut invalid = v3;
+    invalid.schema_version = 2;
+    assert!(round.canonical_record_v3(&invalid).is_err());
+    assert_eq!(
+        round.state.lock().unwrap().accounting.failure(),
+        Some(LimitKind::RecordBytes)
+    );
+    assert!(round.records(0).is_err());
 }

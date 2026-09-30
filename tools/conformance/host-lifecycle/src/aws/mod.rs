@@ -849,3 +849,8 @@ mod tests {
         assert!(command.status().unwrap().success());
     }
 }
+
+mod iam_presence;
+mod identity_observation;
+#[cfg(test)]
+mod identity_observation_tests;

@@ -1,5 +1,7 @@
 # AG9g0e1 bounded read SDK audit
 
+AG9g0e2a1 adds [narrow V3 partial identity observations and private IAM presence capture](ag9g0e2a1-partial-identity-observation-v3.md). V1/V2 contracts and SDK pins remain unchanged; production adapters and query execution remain #1413 work.
+
 AG9g0e1a adds [pinned EC2 management/delegation protocol regressions and pure field normalization](ag9g0e1a-management-observation-v2.md).
 The pins, read inventory and transport configuration below are unchanged. No current
 AG9g0e1a normalizer emits semantic Absent, including for managed EBS attachments.

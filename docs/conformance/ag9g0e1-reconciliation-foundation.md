@@ -1,5 +1,7 @@
 # AG9g0e1 / #1406: reconciliation contracts and bounded read foundation
 
+AG9g0e2a1 adds [narrow V3 partial identity observations and private IAM presence capture](ag9g0e2a1-partial-identity-observation-v3.md). V1/V2 contracts and SDK pins remain unchanged; production adapters and query execution remain #1413 work.
+
 AG9g0e1a adds [explicit V2 management/delegation observation contracts](ag9g0e1a-management-observation-v2.md).
 The V1 representations below remain frozen, including their management-information
 limitations. V2 has separate identities, references, inventory and context containers;

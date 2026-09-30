@@ -1,5 +1,7 @@
 # AWS EC2 lifecycle and reconciliation foundation — #1396 / #1406
 
+AG9g0e2a1 adds [partial identity-service observations V3](../../../docs/conformance/ag9g0e2a1-partial-identity-observation-v3.md), independent IAM role members and a private bounded structural presence capture for the pinned IAM decoder. Unrelated observations remain V2; all existing V1/V2 contracts and fixtures are unchanged. New `provider_v3_contracts`, `aws::identity_observation_tests` and `aws::iam_presence::tests` regressions use synthetic inputs only. No shared query executor or production IAM/KMS service execution is implemented.
+
 AG9g0e1a adds [V2 management/delegation evidence](../../../docs/conformance/ag9g0e1a-management-observation-v2.md)
 without changing V1 canonical contracts. Independent operator/requester fields,
 source-specific EBS attachments, successor references/inventory/context and private
