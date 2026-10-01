@@ -36,6 +36,8 @@ impl ObservationClock for ControllerClock {
 }
 struct State {
     accounting: ObservationAccounting,
+    query_active: bool,
+    queries: std::collections::BTreeSet<Vec<u8>>,
     last: u64,
     expires: Option<SystemTime>,
 }
@@ -51,6 +53,51 @@ impl fmt::Debug for ObservationRound {
     }
 }
 impl ObservationRound {
+    pub(super) fn failure(&self) -> Option<LimitKind> {
+        self.state
+            .lock()
+            .map_or(Some(LimitKind::Clock), |s| s.accounting.failure())
+    }
+    pub(super) fn requests(&self) -> u64 {
+        // Poisoning forbids further work (remaining/failure fail closed), but
+        // terminal coverage must still report the actual accepted charges.
+        match self.state.lock() {
+            Ok(state) => state.accounting.requests(),
+            Err(poisoned) => poisoned.into_inner().accounting.requests(),
+        }
+    }
+    /// Reserve the maximum terminal coverage encoding before a logical query starts.
+    /// The charge is never refunded, including on cancellation or early failure.
+    pub(super) fn begin_query(
+        &self,
+        reserve: &crate::provider::coverage::ReadCoverageV1,
+    ) -> Result<usize> {
+        self.remaining()?;
+        reserve.validate()?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| Error("observation state poisoned"))?;
+        crate::require(!state.query_active, "concurrent logical query")?;
+        let identity = crate::canonical::encode(&reserve.query)?;
+        crate::require(
+            !state.queries.contains(&identity),
+            "logical query already started",
+        )?;
+        if state.queries.len() == REQUESTS as usize {
+            state.accounting.fail(LimitKind::Requests);
+            return Err(Error("query coverage count bound"));
+        }
+        let bytes = state.accounting.canonical_record(reserve)?;
+        state.queries.insert(identity);
+        state.query_active = true;
+        Ok(bytes.len())
+    }
+    pub(super) fn end_query(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.query_active = false;
+        }
+    }
     /// E2 charges decoded occurrences before filtering/deduplication. No SDK normalization here.
     pub(super) fn records(&self, count: u64) -> Result<()> {
         self.remaining()?;
@@ -127,6 +174,8 @@ impl ObservationRound {
             clock,
             state: Arc::new(Mutex::new(State {
                 accounting: ObservationAccounting::default(),
+                query_active: false,
+                queries: std::collections::BTreeSet::new(),
                 last: start.boottime_ns,
                 expires: None,
             })),
@@ -194,7 +243,7 @@ impl ObservationRound {
             .accounting
             .frame(response_bytes, count)
     }
-    fn fail(&self, failure: LimitKind) {
+    pub(super) fn fail(&self, failure: LimitKind) {
         if let Ok(mut state) = self.state.lock() {
             state.accounting.fail(failure);
         }
@@ -205,6 +254,26 @@ impl ObservationRound {
             .lock()
             .map_err(|_| Error("observation state poisoned"))?;
         Ok(RESPONSE_BYTES.min(ROUND_RESPONSE_BYTES - state.accounting.response_bytes()))
+    }
+    #[cfg(test)]
+    pub(super) fn test_poison(&self) {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = self.state.lock().unwrap();
+            panic!("synthetic accounting poison");
+        }));
+    }
+    #[cfg(test)]
+    pub(super) fn test_response_bytes(&self) -> u64 {
+        self.state.lock().unwrap().accounting.response_bytes()
+    }
+    #[cfg(test)]
+    pub(super) fn test_request(&self, bytes: u64) -> Result<()> {
+        self.request()?;
+        self.frame(0, bytes)
+    }
+    #[cfg(test)]
+    pub(super) fn test_with_clock(clock: Arc<dyn ObservationClock>) -> Self {
+        Self::with_clock(clock).unwrap()
     }
     #[cfg(test)]
     pub(super) fn test() -> Self {

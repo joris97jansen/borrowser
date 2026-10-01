@@ -599,6 +599,12 @@ Current architecture status:
   semantic values. V1/V2 remain frozen; STS/S3/EC2 observations remain V2. #1413 query
   execution, production adapters, admission/reconciliation and parent #1407 remain
   incomplete. See `docs/conformance/ag9g0e2a1-partial-identity-observation-v3.md`.
+- AG9g0e2a / #1413 adds closed STS/S3/IAM/KMS observation adapters and shared
+  bounded logical-query execution: exact reviewed inputs, loss-preserving evidence,
+  V1 coverage, explicit continuation cycles and shared monotonic accounting.
+  Session admission remains separate. EC2 normalization, discovery, reconciliation
+  and controller/publication integration remain incomplete. See
+  `docs/conformance/ag9g0e2a-identity-query-execution.md`.
 - No AG9 capability establishes broad WPT compliance, browser compatibility,
   browser automation, or raster comparison. Completion requires requirement and
   validation evidence, including later exact-revision hosted CI.

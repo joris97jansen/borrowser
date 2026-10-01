@@ -6,7 +6,8 @@ use super::{
 use crate::{
     Error, Result,
     provider::{
-        limits::RESPONSE_BYTES, management_observation_v2::ObservationValueV2,
+        limits::{LimitKind, RESPONSE_BYTES},
+        management_observation_v2::ObservationValueV2,
         observation_v3::ObservationDataV3,
     },
     require,
@@ -63,8 +64,35 @@ fn once(flag: &mut bool) -> Result<()> {
     Ok(())
 }
 
+// A repeated semantic occurrence bound must reach the shared executor as a limit,
+// independently of unsupported structural syntax. No provider values enter this type.
+#[derive(Debug)]
+enum PresenceFailure {
+    Malformed(Error),
+    RoleOccurrences,
+}
+impl From<Error> for PresenceFailure {
+    fn from(error: Error) -> Self {
+        Self::Malformed(error)
+    }
+}
+impl PresenceFailure {
+    fn boundary(self, round: &ObservationRound) -> Error {
+        match self {
+            Self::Malformed(error) => error,
+            Self::RoleOccurrences => {
+                round.fail(LimitKind::Records);
+                Error("IAM role occurrence bound")
+            }
+        }
+    }
+}
+
 /// Private fixed-path scanner. Borrowed tokenizer spans never escape this function.
-fn scan(bytes: &[u8], round: &ObservationRound) -> Result<ProfilePresence> {
+fn scan(
+    bytes: &[u8],
+    round: &ObservationRound,
+) -> std::result::Result<ProfilePresence, PresenceFailure> {
     require(
         bytes.len() as u64 <= RESPONSE_BYTES,
         "IAM presence response bound",
@@ -86,7 +114,7 @@ fn scan(bytes: &[u8], round: &ObservationRound) -> Result<ProfilePresence> {
             Token::ElementStart { prefix, local, .. } => {
                 require(!opening && stack.len() < 128, "IAM presence nesting")?;
                 if stack.last().is_some_and(|f| f.node == Node::Scalar) {
-                    return Err(Error("IAM scalar structure unsupported"));
+                    return Err(Error("IAM scalar structure unsupported").into());
                 }
                 let node = match stack.last().map(|f| f.node) {
                     None => {
@@ -132,7 +160,9 @@ fn scan(bytes: &[u8], round: &ObservationRound) -> Result<ProfilePresence> {
                         _ => Node::Other,
                     },
                     Some(Node::Roles) if local.as_str() == "member" => {
-                        require(output.roles.len() < 128, "IAM role occurrence bound")?;
+                        if output.roles.len() == 128 {
+                            return Err(PresenceFailure::RoleOccurrences);
+                        }
                         let i = output.roles.len();
                         output.roles.push(RolePresence::default());
                         Node::Role(i)
@@ -221,12 +251,12 @@ fn scan(bytes: &[u8], round: &ObservationRound) -> Result<ProfilePresence> {
                 }
             }
             Token::Cdata { .. } if stack.last().is_some_and(|f| f.node != Node::Other) => {
-                return Err(Error("IAM monitored CDATA unsupported"));
+                return Err(Error("IAM monitored CDATA unsupported").into());
             }
             Token::DtdStart { .. }
             | Token::EmptyDtd { .. }
             | Token::EntityDeclaration { .. }
-            | Token::DtdEnd { .. } => return Err(Error("IAM DTD unsupported")),
+            | Token::DtdEnd { .. } => return Err(Error("IAM DTD unsupported").into()),
             Token::Declaration {
                 encoding: Some(encoding),
                 ..
@@ -392,7 +422,9 @@ impl Intercept for IamProfilePresenceInterceptor {
                 .body()
                 .bytes()
                 .ok_or(Error("IAM capture requires bounded completed body"))?;
-            Ok(State::Captured(scan(bytes, &self.round)?))
+            Ok(State::Captured(
+                scan(bytes, &self.round).map_err(|failure| failure.boundary(&self.round))?,
+            ))
         })?;
         Ok(())
     }
