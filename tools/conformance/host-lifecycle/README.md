@@ -170,3 +170,5 @@ remain required. The synthetic HTTP connector never accesses AWS. All service
 versions and 157 audited SDK members are frozen in the linked audit. #1402 is not
 implemented. Historical pass descriptions above describe the frozen foundation;
 current SDK behavior is specified by the #1396 audit and additive #1406 read-boundary audit.
+
+AG9g0e2a / #1413 implements the four closed identity-service observation adapters and shared bounded logical-query mechanics. See the [execution contract](../../../docs/conformance/ag9g0e2a-identity-query-execution.md). Existing session admission, V1/V2/V3 evidence and IAM presence safeguards remain unchanged; no controller or publication integration is added.

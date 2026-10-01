@@ -123,3 +123,5 @@ valid lane-excluded baseline/trend round trips.
 - [Pinned read SDK audit and bounded pre-deserialization buffering](ag9g0e-read-sdk-boundary.md).
 
 - [V3 partial KMS/IAM identity observations and bounded IAM presence](ag9g0e2a1-partial-identity-observation-v3.md).
+
+- [Identity-service observations and shared bounded query execution (#1413)](ag9g0e2a-identity-query-execution.md).
