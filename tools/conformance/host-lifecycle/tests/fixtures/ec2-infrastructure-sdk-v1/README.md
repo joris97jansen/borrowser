@@ -1,0 +1,1 @@
+Synthetic pinned EC2 protocol fixtures. Contradictions, future literals, duplicate policy members and partial child objects are intentional. These are not captured provider data or admission examples.

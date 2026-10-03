@@ -1,0 +1,1 @@
+<DescribePrefixListsResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/"><prefixListSet><item><prefixListId>pl-bbbbbbbb</prefixListId><prefixListName>other</prefixListName><cidrSet><item>10.0.0.0/8</item><item>::/0</item></cidrSet></item></prefixListSet></DescribePrefixListsResponse>

@@ -5,6 +5,11 @@ mechanics. It builds on the frozen e1/e1a contracts and the reviewed
 [V3 partial identity correction](ag9g0e2a1-partial-identity-observation-v3.md).
 It does not rename, migrate or reinterpret historical evidence.
 
+Subsequent [e2b / #1414](ag9g0e2b-ec2-infrastructure-observations.md) composes these
+readers with EC2 using the same session and round. Its V4 mixed carrier replaces the
+private executor carrier without changing the execution rules below; the documented
+VPC-endpoint empty terminal form is interpreted only at that adapter boundary.
+
 ## Ownership and entry boundary
 
 `aws/identity_reads.rs` owns `IdentityObservations` and the closed `IdentityRead`

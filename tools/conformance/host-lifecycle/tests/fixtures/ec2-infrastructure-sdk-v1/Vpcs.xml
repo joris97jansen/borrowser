@@ -1,0 +1,1 @@
+<DescribeVpcsResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/"><vpcSet><item><vpcId>vpc-bbbbbbbb</vpcId><ownerId>222222222222</ownerId><instanceTenancy>dedicated</instanceTenancy><dhcpOptionsId>dopt-cccccccc</dhcpOptionsId></item></vpcSet></DescribeVpcsResponse>

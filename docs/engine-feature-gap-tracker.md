@@ -605,6 +605,15 @@ Current architecture status:
   Session admission remains separate. EC2 normalization, discovery, reconciliation
   and controller/publication integration remain incomplete. See
   `docs/conformance/ag9g0e2a-identity-query-execution.md`.
+- AG9g0e2b / #1414 adds all eleven bounded EC2 infrastructure readers, explicit V4
+  partial/network/policy evidence and a shared identity/EC2 observation session.
+  Nested occurrences, independent association facts, duplicate policy members and
+  DNS provenance survive within existing budgets. Pinned-decoder integrity checks
+  prevent traversal loss from becoming terminal pagination; the documented empty
+  endpoint token is handled only at that adapter boundary. Historical V1/V2/V3
+  contracts remain frozen. Infrastructure admission, allocation-resource discovery,
+  reconciliation, inventory/publication and controller integration remain incomplete.
+  See `docs/conformance/ag9g0e2b-ec2-infrastructure-observations.md`.
 - No AG9 capability establishes broad WPT compliance, browser compatibility,
   browser automation, or raster comparison. Completion requires requirement and
   validation evidence, including later exact-revision hosted CI.

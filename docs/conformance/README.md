@@ -124,4 +124,6 @@ valid lane-excluded baseline/trend round trips.
 
 - [V3 partial KMS/IAM identity observations and bounded IAM presence](ag9g0e2a1-partial-identity-observation-v3.md).
 
+- [Bounded EC2 infrastructure observations, V4 successors and decoder integrity (#1414)](ag9g0e2b-ec2-infrastructure-observations.md).
+
 - [Identity-service observations and shared bounded query execution (#1413)](ag9g0e2a-identity-query-execution.md).

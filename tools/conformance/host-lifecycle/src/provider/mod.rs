@@ -44,3 +44,13 @@ pub mod evidence_v3;
 pub mod identity_observation_v3;
 pub mod inventory_v3;
 pub mod observation_v3;
+
+pub mod ec2_observation_v4;
+
+pub mod network_observation_v4;
+
+pub mod endpoint_policy_observation_v4;
+
+pub mod observation_v4;
+
+pub mod evidence_v4;
