@@ -857,3 +857,22 @@ mod identity_observation_tests;
 
 mod identity_reads;
 mod query_execution;
+
+mod ec2_observation;
+
+mod ec2_network_observation;
+
+mod ec2_endpoint_policy;
+
+mod ec2_decode_integrity;
+
+#[cfg(test)]
+mod ec2_endpoint_policy_tests;
+mod ec2_infrastructure_reads;
+#[cfg(test)]
+mod ec2_infrastructure_reads_tests;
+#[cfg(test)]
+mod ec2_network_observation_tests;
+#[cfg(test)]
+mod ec2_observation_tests;
+mod observation_session;

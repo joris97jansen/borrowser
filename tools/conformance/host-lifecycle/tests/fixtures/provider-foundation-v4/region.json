@@ -1,0 +1,1 @@
+{"data":{"kind":"region","name":{"kind":"not-returned"},"opt_in_status":{"kind":"present","value":"future-state"}},"query":{"account":"111111111111","operation":"DescribeRegions","region":"us-east-1","scope":{"kind":"regional"}},"schema_version":4}

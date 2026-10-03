@@ -101,6 +101,10 @@ pub struct ObservationAccounting {
     failure: Option<LimitKind>,
 }
 impl ObservationAccounting {
+    #[cfg(test)]
+    pub(crate) fn test_evidence_counts(&self) -> (u64, u64) {
+        (self.records, self.normalized_bytes)
+    }
     pub fn failure(&self) -> Option<LimitKind> {
         self.failure
     }

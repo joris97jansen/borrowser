@@ -75,6 +75,11 @@ pub fn require(ok: bool, message: &'static str) -> Result<()> {
 /// ```compile_fail
 /// use borrowser_host_lifecycle::aws::iam_presence::capture_instance_profile;
 /// ```
+/// EC2 successor aggregates remain nonserializable.
+/// ```compile_fail
+/// use borrowser_host_lifecycle::provider::observation_v4::ProviderObservationV4;
+/// fn persist(v: &ProviderObservationV4) { let _ = serde_json::to_vec(v); }
+/// ```
 pub use runtime::run_cli;
 
 #[cfg(test)]

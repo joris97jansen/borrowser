@@ -160,6 +160,24 @@ impl ObservationRound {
         self.remaining()?;
         Ok(bytes)
     }
+    /// Narrow successor path sharing all existing round counters and failure latches.
+    pub(super) fn canonical_record_v4(
+        &self,
+        record: &crate::provider::observation_v4::ObservationRecordV4,
+    ) -> Result<Vec<u8>> {
+        self.remaining()?;
+        record
+            .canonical_bytes()
+            .inspect_err(|_| self.fail(LimitKind::RecordBytes))?;
+        let bytes = self
+            .state
+            .lock()
+            .map_err(|_| Error("observation state poisoned"))?
+            .accounting
+            .canonical_record(record)?;
+        self.remaining()?;
+        Ok(bytes)
+    }
     pub(super) fn start() -> Result<Self> {
         Self::with_clock(Arc::new(ControllerClock))
     }
@@ -261,6 +279,10 @@ impl ObservationRound {
             let _guard = self.state.lock().unwrap();
             panic!("synthetic accounting poison");
         }));
+    }
+    #[cfg(test)]
+    pub(super) fn test_evidence_counts(&self) -> (u64, u64) {
+        self.state.lock().unwrap().accounting.test_evidence_counts()
     }
     #[cfg(test)]
     pub(super) fn test_response_bytes(&self) -> u64 {

@@ -3,7 +3,7 @@
 use super::response_limits::ObservationRound;
 use crate::{
     canonical,
-    provider::{coverage::*, limits::*, observation_v3::ObservationEntryV3},
+    provider::{coverage::*, limits::*, observation_v4::ObservationEntryV4},
 };
 use std::collections::BTreeSet;
 
@@ -95,7 +95,7 @@ pub(super) fn round_failure(round: &ObservationRound, fallback: ReadFailureV1) -
 /// Bounded in-memory result; never a published object or admission capability.
 #[derive(Debug)]
 pub(super) struct QueryResult {
-    pub records: Vec<ObservationEntryV3>,
+    pub records: Vec<ObservationEntryV4>,
     pub coverage: ReadCoverageV1,
 }
 
@@ -105,7 +105,7 @@ pub(super) struct LogicalQuery {
     pagination: Pagination,
     request_start: u64,
     page_start: Option<u64>,
-    records: Vec<ObservationEntryV3>,
+    records: Vec<ObservationEntryV4>,
     occurrences: u64,
     tokens: BTreeSet<String>,
     next: Option<ContinuationToken>,
@@ -224,7 +224,7 @@ impl LogicalQuery {
     /// Page records arrive only from private adapters; this API cannot dispatch a request.
     pub(super) fn page(
         &mut self,
-        records: Vec<ObservationEntryV3>,
+        records: Vec<ObservationEntryV4>,
         occurrences: u64,
         continuation: Option<String>,
         incomplete: Option<ReadFailureV1>,
@@ -257,7 +257,7 @@ impl LogicalQuery {
     }
     fn accept_page(
         &mut self,
-        records: Vec<ObservationEntryV3>,
+        records: Vec<ObservationEntryV4>,
         occurrences: u64,
         continuation: Option<String>,
         incomplete: Option<ReadFailureV1>,
@@ -297,7 +297,7 @@ impl LogicalQuery {
     }
     fn retain_records(
         &mut self,
-        records: Vec<ObservationEntryV3>,
+        records: Vec<ObservationEntryV4>,
         occurrences: u64,
     ) -> ReadResult<()> {
         self.round
@@ -310,8 +310,12 @@ impl LogicalQuery {
                 return Err(ReadFailureV1::Malformed);
             }
             minimum += match record {
-                ObservationEntryV3::V2(_) => 1,
-                ObservationEntryV3::V3(r) => r.data.minimum_occurrences(),
+                ObservationEntryV4::V2(_) => 1,
+                ObservationEntryV4::V3(r) => r.data.minimum_occurrences(),
+                ObservationEntryV4::V4(r) => r
+                    .data
+                    .minimum_occurrences()
+                    .map_err(|_| ReadFailureV1::Malformed)?,
             };
         }
         if minimum > occurrences {
@@ -319,8 +323,9 @@ impl LogicalQuery {
         }
         for record in records {
             let encoded = match &record {
-                ObservationEntryV3::V2(v) => self.round.canonical_record_v2(v),
-                ObservationEntryV3::V3(v) => self.round.canonical_record_v3(v),
+                ObservationEntryV4::V2(v) => self.round.canonical_record_v2(v),
+                ObservationEntryV4::V3(v) => self.round.canonical_record_v3(v),
+                ObservationEntryV4::V4(v) => self.round.canonical_record_v4(v),
             };
             encoded.map_err(|_| round_failure(&self.round, ReadFailureV1::Malformed))?;
             self.records.push(record);
@@ -334,7 +339,7 @@ impl LogicalQuery {
     /// It uses the same occurrence/canonical charges and reserved coverage as a decoded page.
     pub(super) fn failed_page_with_evidence(
         &mut self,
-        records: Vec<ObservationEntryV3>,
+        records: Vec<ObservationEntryV4>,
         occurrences: u64,
         reason: ReadFailureV1,
     ) {

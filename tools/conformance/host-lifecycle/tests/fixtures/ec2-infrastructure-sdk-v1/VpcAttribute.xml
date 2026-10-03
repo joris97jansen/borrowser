@@ -1,0 +1,1 @@
+<DescribeVpcAttributeResponse><vpcId>vpc-bbbbbbbb</vpcId><enableDnsSupport><value>false</value></enableDnsSupport><enableDnsHostnames><value>true</value></enableDnsHostnames></DescribeVpcAttributeResponse>

@@ -1,0 +1,1 @@
+<DescribeRegionsResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/"><regionInfo><item><regionName>us-west-2</regionName><optInStatus>future-state</optInStatus></item></regionInfo></DescribeRegionsResponse>

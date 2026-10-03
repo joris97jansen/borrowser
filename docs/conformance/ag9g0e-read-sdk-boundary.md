@@ -153,3 +153,12 @@ These tests use no real credentials or AWS network. Linux/container tests and na
 tests use the standalone lockfile and Rust 1.92. E3/e4 must separately prove actual
 lock release, fresh replay, stale rejection and end-to-end concurrency. No such
 publication/controller implementation exists in this issue.
+
+## Infrastructure observation successor
+
+[AG9g0e2b / #1414](ag9g0e2b-ec2-infrastructure-observations.md) implements the eleven
+closed infrastructure readers on this bounded transport and e2a execution machinery.
+It adds SDK-independent V4 facts, invocation-scoped EC2 structural correlation and
+shared-session composition. No pins, transport budgets, admission or mutation surface
+change. The linked contract records generated-decoder source evidence separately
+from executed unprotected probes and protected protocol regressions.

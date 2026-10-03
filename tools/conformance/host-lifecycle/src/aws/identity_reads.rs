@@ -20,7 +20,8 @@ use crate::{
         management_observation_v2::ObservationValueV2,
         observation::{Observed, ProviderText},
         observation_v2::{ObservationDataV2, ObservationRecordV2},
-        observation_v3::{ObservationDataV3, ObservationEntryV3, ObservationRecordV3},
+        observation_v3::{ObservationDataV3, ObservationRecordV3},
+        observation_v4::ObservationEntryV4,
     },
 };
 use aws_smithy_runtime_api::client::{orchestrator::HttpResponse, result::SdkError};
@@ -63,6 +64,16 @@ impl IdentityObservations {
         secret: SessionSecret,
         http: BoundedHttp,
     ) -> Result<Self> {
+        deployment.support()?;
+        let round = http.round().clone();
+        let conf = configuration(&secret, &deployment.identity.region, http)?;
+        Self::from_config(deployment, &conf, round)
+    }
+    pub(super) fn from_config(
+        deployment: &DeploymentV2,
+        conf: &aws_types::SdkConfig,
+        round: ObservationRound,
+    ) -> Result<Self> {
         let support = deployment.support()?;
         let profile_name = support
             .instance_profile_arn
@@ -77,8 +88,6 @@ impl IdentityObservations {
                     .all(|b| b.is_ascii_alphanumeric() || b"_+=,.@-".contains(&b)),
             "reviewed profile name",
         )?;
-        let round = http.round().clone();
-        let conf = configuration(&secret, &deployment.identity.region, http)?;
         Ok(Self {
             account: deployment.identity.account_id.clone(),
             region: deployment.identity.region.clone(),
@@ -87,20 +96,20 @@ impl IdentityObservations {
             profile_name: profile_name.to_owned(),
             key: support.kms_key_arn.clone(),
             round,
-            sts: aws_sdk_sts::Client::from_conf(aws_sdk_sts::config::Builder::from(&conf).build()),
+            sts: aws_sdk_sts::Client::from_conf(aws_sdk_sts::config::Builder::from(conf).build()),
             s3: aws_sdk_s3::Client::from_conf(
-                aws_sdk_s3::config::Builder::from(&conf)
+                aws_sdk_s3::config::Builder::from(conf)
                     .disable_s3_express_session_auth(true)
                     .build(),
             ),
             iam: aws_sdk_iam::Client::from_conf(
-                aws_sdk_iam::config::Builder::from(&conf)
+                aws_sdk_iam::config::Builder::from(conf)
                     .use_fips(false)
                     .use_dual_stack(false)
                     .build(),
             ),
             kms: aws_sdk_kms::Client::from_conf(
-                aws_sdk_kms::config::Builder::from(&conf)
+                aws_sdk_kms::config::Builder::from(conf)
                     .use_fips(false)
                     .use_dual_stack(false)
                     .build(),
@@ -157,7 +166,7 @@ impl IdentityObservations {
                         user_id: text(o.user_id(), &mut incomplete),
                     };
                     (
-                        ObservationEntryV3::V2(Box::new(ObservationRecordV2 {
+                        ObservationEntryV4::V2(Box::new(ObservationRecordV2 {
                             schema_version: 2,
                             query: query.query().clone(),
                             data,
@@ -183,7 +192,7 @@ impl IdentityObservations {
                         region: typed(o.bucket_region(), &mut incomplete),
                     };
                     Ok((
-                        ObservationEntryV3::V2(Box::new(ObservationRecordV2 {
+                        ObservationEntryV4::V2(Box::new(ObservationRecordV2 {
                             schema_version: 2,
                             query: query.query().clone(),
                             data,
@@ -201,7 +210,7 @@ impl IdentityObservations {
                         .transpose()
                     {
                         Ok(Some(Some(region))) => {
-                            let record = ObservationEntryV3::V2(Box::new(ObservationRecordV2 {
+                            let record = ObservationEntryV4::V2(Box::new(ObservationRecordV2 {
                                 schema_version: 2,
                                 query: query.query().clone(),
                                 data: ObservationDataV2::Bucket {
@@ -298,10 +307,10 @@ fn text(value: Option<&str>, incomplete: &mut Option<ReadFailureV1>) -> Observed
 fn successor(
     query: &QueryIdentityV1,
     value: super::identity_observation::NormalizedIdentityV3,
-) -> (ObservationEntryV3, u64, Option<ReadFailureV1>) {
+) -> (ObservationEntryV4, u64, Option<ReadFailureV1>) {
     let incomplete = normalization_failure(&value.data);
     (
-        ObservationEntryV3::V3(Box::new(ObservationRecordV3 {
+        ObservationEntryV4::V3(Box::new(ObservationRecordV3 {
             schema_version: 3,
             query: query.clone(),
             data: value.data,
@@ -387,7 +396,9 @@ fn bucket_error_region(
     }
     Ok(first.and_then(|value| value.parse().ok()))
 }
-fn read_failure<E: ProvideErrorMetadata>(error: &SdkError<E, HttpResponse>) -> ReadFailureV1 {
+pub(super) fn read_failure<E: ProvideErrorMetadata>(
+    error: &SdkError<E, HttpResponse>,
+) -> ReadFailureV1 {
     match error {
         // Pinned generated protocol parsers can wrap a malformed successful body
         // in an unhandled service error. HTTP success is not a service rejection.

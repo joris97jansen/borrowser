@@ -70,7 +70,7 @@ async fn exact_requests_and_contradictory_evidence_are_independent_of_admission(
         )
         .is_err()
     );
-    let ObservationEntryV3::V2(r) = &results[0].records[0] else {
+    let ObservationEntryV4::V2(r) = &results[0].records[0] else {
         panic!()
     };
     let ObservationDataV2::Caller {
@@ -83,7 +83,7 @@ async fn exact_requests_and_contradictory_evidence_are_independent_of_admission(
     };
     assert_eq!(account.as_str(), "222222222222");
     assert!(arn.as_str().ends_with(":root"));
-    let ObservationEntryV3::V2(r) = &results[1].records[0] else {
+    let ObservationEntryV4::V2(r) = &results[1].records[0] else {
         panic!()
     };
     let ObservationDataV2::Bucket {
@@ -95,7 +95,7 @@ async fn exact_requests_and_contradictory_evidence_are_independent_of_admission(
     };
     assert_eq!(region.as_str(), "us-west-2");
     assert_eq!(results[2].coverage.records, 4);
-    let ObservationEntryV3::V3(r) = &results[2].records[0] else {
+    let ObservationEntryV4::V3(r) = &results[2].records[0] else {
         panic!()
     };
     let ObservationDataV3::Profile {
@@ -106,7 +106,7 @@ async fn exact_requests_and_contradictory_evidence_are_independent_of_admission(
     };
     assert!(matches!(p.arn, IdentityMemberV3::Present(_)));
     assert_eq!(p.id, IdentityMemberV3::NotReturned);
-    let ObservationEntryV3::V3(r) = &results[3].records[0] else {
+    let ObservationEntryV4::V3(r) = &results[3].records[0] else {
         panic!()
     };
     let ObservationDataV3::Key {
@@ -184,7 +184,7 @@ async fn omitted_malformed_and_empty_members_keep_successful_siblings() {
         r.coverage.status,
         CoverageStatus::Incomplete(ReadFailureV1::Malformed)
     );
-    let ObservationEntryV3::V2(v) = &r.records[0] else {
+    let ObservationEntryV4::V2(v) = &r.records[0] else {
         panic!()
     };
     let ObservationDataV2::Caller {
@@ -209,7 +209,7 @@ async fn omitted_malformed_and_empty_members_keep_successful_siblings() {
     assert!(r.coverage.terminal_page);
     let r = reads.observe(IdentityRead::Profile, true).await.unwrap();
     assert_eq!(r.coverage.status, CoverageStatus::Complete);
-    let ObservationEntryV3::V3(v) = &r.records[0] else {
+    let ObservationEntryV4::V3(v) = &r.records[0] else {
         panic!()
     };
     let ObservationDataV3::Profile {
@@ -222,7 +222,7 @@ async fn omitted_malformed_and_empty_members_keep_successful_siblings() {
     assert_eq!(p.id, IdentityMemberV3::NotReturned);
     let r = reads.observe(IdentityRead::Key, true).await.unwrap();
     assert_eq!(r.coverage.status, CoverageStatus::Complete);
-    let ObservationEntryV3::V3(v) = &r.records[0] else {
+    let ObservationEntryV4::V3(v) = &r.records[0] else {
         panic!()
     };
     let ObservationDataV3::Key {
@@ -415,7 +415,7 @@ async fn review_malformed_kms_identity_retains_contradictory_siblings() {
         None,
     )]);
     let r = reads.observe(IdentityRead::Key, true).await.unwrap();
-    let ObservationEntryV3::V3(v) = &r.records[0] else {
+    let ObservationEntryV4::V3(v) = &r.records[0] else {
         panic!()
     };
     let ObservationDataV3::Key {
@@ -466,7 +466,7 @@ async fn review_malformed_iam_members_preserve_partial_and_duplicate_roles() {
         ));
         let (mut reads, transport) = reader(vec![response(200, &body, None)]);
         let r = reads.observe(IdentityRead::Profile, true).await.unwrap();
-        let ObservationEntryV3::V3(v) = &r.records[0] else {
+        let ObservationEntryV4::V3(v) = &r.records[0] else {
             panic!()
         };
         let ObservationDataV3::Profile {
@@ -513,7 +513,7 @@ async fn failed_bucket_region(status: u16, reason: ReadFailureV1) {
     assert_eq!((r.coverage.requests, r.coverage.pages), (1, 1));
     assert_eq!(r.records.len(), 1);
     assert_eq!(r.coverage.records, 1);
-    let ObservationEntryV3::V2(v) = &r.records[0] else {
+    let ObservationEntryV4::V2(v) = &r.records[0] else {
         panic!()
     };
     let ObservationDataV2::Bucket {
@@ -583,7 +583,7 @@ async fn review_normalization_limit_dominates_malformed_and_unknown_literals_sta
     )]);
     let r = reads.observe(IdentityRead::Key, true).await.unwrap();
     assert_eq!(r.coverage.status, CoverageStatus::Complete);
-    let ObservationEntryV3::V3(v) = &r.records[0] else {
+    let ObservationEntryV4::V3(v) = &r.records[0] else {
         panic!()
     };
     let ObservationDataV3::Key {

@@ -172,3 +172,14 @@ implemented. Historical pass descriptions above describe the frozen foundation;
 current SDK behavior is specified by the #1396 audit and additive #1406 read-boundary audit.
 
 AG9g0e2a / #1413 implements the four closed identity-service observation adapters and shared bounded logical-query mechanics. See the [execution contract](../../../docs/conformance/ag9g0e2a-identity-query-execution.md). Existing session admission, V1/V2/V3 evidence and IAM presence safeguards remain unchanged; no controller or publication integration is added.
+
+## Bounded EC2 infrastructure observations
+
+AG9g0e2b / #1414 delivers [V4 successor EC2/network/policy observations](../../../docs/conformance/ag9g0e2b-ec2-infrastructure-observations.md),
+all eleven closed infrastructure readers, a shared identity/EC2 observation session,
+and successful-response decoder-integrity correlation. V1/V2/V3 schemas and fixtures
+remain frozen. `provider_v4_contracts` and `aws::ec2_` use synthetic pinned-SDK protocol
+inputs, including duplicate policy members and separate VPC DNS queries. The private
+VPC-endpoint terminal-token mapping runs only after successful integrity correlation.
+There is no infrastructure admission, new operation, controller or publication path.
+Use the standalone Rust 1.92.0 locked/offline native and Linux validation lanes.

@@ -1,0 +1,1 @@
+<DescribeAvailabilityZonesResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/"><availabilityZoneInfo><item><zoneName>us-west-2a</zoneName><zoneId>usw2-az1</zoneId><regionName>us-west-2</regionName><zoneState>future</zoneState></item></availabilityZoneInfo></DescribeAvailabilityZonesResponse>
