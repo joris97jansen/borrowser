@@ -23,8 +23,8 @@ fn caller() -> QueryIdentityV1 {
         ..identity()
     }
 }
-fn record(query: &QueryIdentityV1, text: &str) -> ObservationEntryV4 {
-    ObservationEntryV4::V2(Box::new(ObservationRecordV2 {
+fn record(query: &QueryIdentityV1, text: &str) -> ObservationEntryV5 {
+    ObservationEntryV5::V2(Box::new(ObservationRecordV2 {
         schema_version: 2,
         query: query.clone(),
         data: ObservationDataV2::Caller {
@@ -438,7 +438,7 @@ fn review_failed_evidence_uses_shared_occurrence_and_canonical_limits() {
         if limit == LimitKind::Records {
             round.records(RECORDS).unwrap();
         } else {
-            let ObservationEntryV4::V2(v) = &r else {
+            let ObservationEntryV5::V2(v) = &r else {
                 panic!()
             };
             let size = v.canonical_bytes().unwrap().len();

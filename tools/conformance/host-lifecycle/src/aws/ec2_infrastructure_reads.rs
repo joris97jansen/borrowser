@@ -10,12 +10,9 @@ use crate::{
     deployment::DeploymentV2,
     identity::*,
     provider::{
-        coverage::*,
-        ec2_observation_v4::ObservationDataV4,
-        inventory::ResourceIdentity,
-        management_observation_v2::ObservationValueV2,
-        manifest::ReviewedInfrastructureV1,
-        observation_v4::{ObservationEntryV4, ObservationRecordV4},
+        coverage::*, ec2_observation_v4::ObservationDataV4, inventory::ResourceIdentity,
+        management_observation_v2::ObservationValueV2, manifest::ReviewedInfrastructureV1,
+        observation_v4::ObservationRecordV4, observation_v5::ObservationEntryV5,
     },
 };
 use aws_smithy_runtime_api::client::{orchestrator::HttpResponse, result::SdkError};
@@ -317,7 +314,7 @@ impl InfrastructureObservations {
                 .data
                 .into_iter()
                 .map(|data| {
-                    ObservationEntryV4::V4(Box::new(ObservationRecordV4 {
+                    ObservationEntryV5::V4(Box::new(ObservationRecordV4 {
                         schema_version: 4,
                         query: query.query().clone(),
                         data,

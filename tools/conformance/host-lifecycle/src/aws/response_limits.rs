@@ -36,6 +36,7 @@ impl ObservationClock for ControllerClock {
 }
 struct State {
     accounting: ObservationAccounting,
+    retained_outputs: u64,
     query_active: bool,
     queries: std::collections::BTreeSet<Vec<u8>>,
     last: u64,
@@ -53,6 +54,47 @@ impl fmt::Debug for ObservationRound {
     }
 }
 impl ObservationRound {
+    /// Output fan-out has its own shared bound, independent of source occurrences.
+    pub(super) fn output_slot(&self) -> Result<()> {
+        self.remaining()?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| Error("observation state poisoned"))?;
+        if state.retained_outputs >= RECORDS {
+            state.accounting.fail(LimitKind::Records);
+            return Err(Error("retained output bound"));
+        }
+        Ok(())
+    }
+    pub(super) fn retain_output(&self) -> Result<()> {
+        self.remaining()?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| Error("observation state poisoned"))?;
+        if state.retained_outputs >= RECORDS {
+            state.accounting.fail(LimitKind::Records);
+            return Err(Error("retained output bound"));
+        }
+        state.retained_outputs += 1;
+        Ok(())
+    }
+    pub(super) fn canonical_record_v5(
+        &self,
+        record: &crate::provider::observation_v5::ObservationRecordV5,
+    ) -> Result<Vec<u8>> {
+        self.remaining()?;
+        record.validate()?;
+        let bytes = self
+            .state
+            .lock()
+            .map_err(|_| Error("observation state poisoned"))?
+            .accounting
+            .canonical_record(record)?;
+        self.remaining()?;
+        Ok(bytes)
+    }
     pub(super) fn failure(&self) -> Option<LimitKind> {
         self.state
             .lock()
@@ -192,6 +234,7 @@ impl ObservationRound {
             clock,
             state: Arc::new(Mutex::new(State {
                 accounting: ObservationAccounting::default(),
+                retained_outputs: 0,
                 query_active: false,
                 queries: std::collections::BTreeSet::new(),
                 last: start.boottime_ns,

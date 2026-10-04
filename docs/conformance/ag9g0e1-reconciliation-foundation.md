@@ -208,3 +208,13 @@ events/reducers, context capture/freshness enforcement, binding and replay/publi
 faults. E4 owns controller/status integration and complete concurrency/restart tests.
 None of this establishes signed identity, host readiness, Chromium qualification,
 cleanup authority, live allocation or mechanism GO.
+
+## Allocation observation successor (e2c)
+
+[AG9g0e2c / #1415](ag9g0e2c-ec2-allocation-observations.md) implements the eight
+launch/allocation read operations with explicit V5 observations. Frozen V1–V4
+representations remain historical contracts; V5 preserves partial returned IDs,
+independent attachment perspectives, qualified source positions and bounded opaque
+user-data bytes. Its mixed carrier is in-memory only. Source, output and canonical
+byte limits share the existing round; discovery selection, admission, binding and
+durable provider publication remain separate work.

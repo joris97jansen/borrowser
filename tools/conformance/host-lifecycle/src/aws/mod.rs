@@ -866,6 +866,8 @@ mod ec2_endpoint_policy;
 
 mod ec2_decode_integrity;
 
+mod ec2_allocation_observation;
+mod ec2_allocation_reads;
 #[cfg(test)]
 mod ec2_endpoint_policy_tests;
 mod ec2_infrastructure_reads;

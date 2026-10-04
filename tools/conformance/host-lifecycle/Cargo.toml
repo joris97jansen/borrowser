@@ -70,3 +70,7 @@ path = "tests/provider_v3_contracts.rs"
 [[test]]
 name = "provider_v4_contracts"
 path = "tests/provider_v4_contracts.rs"
+
+[[test]]
+name = "provider_v5_contracts"
+path = "tests/provider_v5_contracts.rs"

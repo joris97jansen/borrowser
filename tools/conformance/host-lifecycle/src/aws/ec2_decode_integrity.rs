@@ -15,6 +15,13 @@ use aws_sdk_ec2::operation::{
     describe_subnets as subnets, describe_vpc_attribute as attribute,
     describe_vpc_endpoints as endpoints, describe_vpcs as vpcs,
 };
+use aws_sdk_ec2::operation::{
+    describe_iam_instance_profile_associations as profile_associations, describe_images as images,
+    describe_instance_attribute as instance_attribute,
+    describe_instance_type_offerings as offerings, describe_instance_types as instance_types,
+    describe_instances as instances, describe_network_interfaces as interfaces,
+    describe_volumes as volumes,
+};
 use aws_smithy_runtime_api::client::{
     interceptors::{
         Intercept,
@@ -37,6 +44,8 @@ enum Shape {
     Scalar,
     Object(Vec<(&'static str, Shape)>),
     List(Box<Shape>),
+    /// The pinned inference-device list alone uses `member`, not EC2's usual `item`.
+    MemberList(Box<Shape>),
 }
 #[derive(Debug, PartialEq, Eq)]
 enum Presence {
@@ -49,7 +58,7 @@ impl Shape {
         match self {
             Self::Scalar => Presence::Scalar(false),
             Self::Object(_) => Presence::Object(BTreeMap::new()),
-            Self::List(_) => Presence::List(Vec::new()),
+            Self::List(_) | Self::MemberList(_) => Presence::List(Vec::new()),
         }
     }
 }
@@ -401,7 +410,17 @@ fn scan(
                                 }
                                 (None, Some(item.as_ref()))
                             }
-                            Some(Shape::List(_)) => return Err(Error("EC2 list member")),
+                            Some(Shape::MemberList(item)) if local.as_str() == "member" => {
+                                occurrences += 1;
+                                if occurrences > RECORDS {
+                                    round.fail(LimitKind::Records);
+                                    return Err(Error("EC2 occurrence bound"));
+                                }
+                                (None, Some(item.as_ref()))
+                            }
+                            Some(Shape::List(_) | Shape::MemberList(_)) => {
+                                return Err(Error("EC2 list member"));
+                            }
                             None => (None, None),
                         }
                     }
@@ -493,6 +512,7 @@ fn scan(
 }
 
 pub(super) enum Ec2Output {
+    Allocation(allocation::AllocationOutput),
     Regions(Box<regions::DescribeRegionsOutput>),
     AvailabilityZones(Box<zones::DescribeAvailabilityZonesOutput>),
     Subnets(Box<subnets::DescribeSubnetsOutput>),
@@ -508,6 +528,7 @@ pub(super) enum Ec2Output {
 impl Ec2Output {
     fn presence(&self) -> Presence {
         match self {
+            Self::Allocation(value) => value.presence(),
             Self::Regions(value) => value.presence(),
             Self::AvailabilityZones(value) => value.presence(),
             Self::Subnets(value) => value.presence(),
@@ -642,6 +663,38 @@ impl Intercept for Ec2Integrity {
                     .input()
                     .downcast_ref::<acls::DescribeNetworkAclsInput>()
                     .is_some(),
+                ReadOperationV1::DescribeImages => ctx
+                    .input()
+                    .downcast_ref::<images::DescribeImagesInput>()
+                    .is_some(),
+                ReadOperationV1::DescribeInstanceTypes => ctx
+                    .input()
+                    .downcast_ref::<instance_types::DescribeInstanceTypesInput>()
+                    .is_some(),
+                ReadOperationV1::DescribeInstanceTypeOfferings => ctx
+                    .input()
+                    .downcast_ref::<offerings::DescribeInstanceTypeOfferingsInput>()
+                    .is_some(),
+                ReadOperationV1::DescribeIamInstanceProfileAssociations => ctx
+                    .input()
+                    .downcast_ref::<profile_associations::DescribeIamInstanceProfileAssociationsInput>()
+                    .is_some(),
+                ReadOperationV1::DescribeInstances => ctx
+                    .input()
+                    .downcast_ref::<instances::DescribeInstancesInput>()
+                    .is_some(),
+                ReadOperationV1::DescribeNetworkInterfaces => ctx
+                    .input()
+                    .downcast_ref::<interfaces::DescribeNetworkInterfacesInput>()
+                    .is_some(),
+                ReadOperationV1::DescribeVolumes => ctx
+                    .input()
+                    .downcast_ref::<volumes::DescribeVolumesInput>()
+                    .is_some(),
+                ReadOperationV1::DescribeInstanceAttribute => ctx
+                    .input()
+                    .downcast_ref::<instance_attribute::DescribeInstanceAttributeInput>()
+                    .is_some(),
                 _ => false,
             };
             require(compatible, "EC2 capture operation")?;
@@ -704,6 +757,38 @@ impl Intercept for Ec2Integrity {
                 ReadOperationV1::DescribeNetworkAcls => (
                     "DescribeNetworkAclsResponse",
                     acls::DescribeNetworkAclsOutput::shape(),
+                ),
+                ReadOperationV1::DescribeImages => (
+                    "DescribeImagesResponse",
+                    images::DescribeImagesOutput::shape(),
+                ),
+                ReadOperationV1::DescribeInstanceTypes => (
+                    "DescribeInstanceTypesResponse",
+                    instance_types::DescribeInstanceTypesOutput::shape(),
+                ),
+                ReadOperationV1::DescribeInstanceTypeOfferings => (
+                    "DescribeInstanceTypeOfferingsResponse",
+                    offerings::DescribeInstanceTypeOfferingsOutput::shape(),
+                ),
+                ReadOperationV1::DescribeIamInstanceProfileAssociations => (
+                    "DescribeIamInstanceProfileAssociationsResponse",
+                    profile_associations::DescribeIamInstanceProfileAssociationsOutput::shape(),
+                ),
+                ReadOperationV1::DescribeInstances => (
+                    "DescribeInstancesResponse",
+                    instances::DescribeInstancesOutput::shape(),
+                ),
+                ReadOperationV1::DescribeNetworkInterfaces => (
+                    "DescribeNetworkInterfacesResponse",
+                    interfaces::DescribeNetworkInterfacesOutput::shape(),
+                ),
+                ReadOperationV1::DescribeVolumes => (
+                    "DescribeVolumesResponse",
+                    volumes::DescribeVolumesOutput::shape(),
+                ),
+                ReadOperationV1::DescribeInstanceAttribute => (
+                    "DescribeInstanceAttributeResponse",
+                    instance_attribute::DescribeInstanceAttributeOutput::shape(),
                 ),
                 _ => return Err(Error("EC2 capture operation")),
             };
@@ -799,6 +884,70 @@ impl Intercept for Ec2Integrity {
                         .ok_or(Error("EC2 output type"))?
                         .clone(),
                 )),
+                ReadOperationV1::DescribeImages => {
+                    let output = output
+                        .downcast_ref::<images::DescribeImagesOutput>()
+                        .ok_or(Error("EC2 output type"))?;
+                    Ec2Output::Allocation(allocation::AllocationOutput::Images(
+                        Box::new(output.clone()),
+                    ))
+                },
+                ReadOperationV1::DescribeInstanceTypes => {
+                    let output = output
+                        .downcast_ref::<instance_types::DescribeInstanceTypesOutput>()
+                        .ok_or(Error("EC2 output type"))?;
+                    Ec2Output::Allocation(allocation::AllocationOutput::InstanceTypes(
+                        Box::new(output.clone()),
+                    ))
+                },
+                ReadOperationV1::DescribeInstanceTypeOfferings => {
+                    let output = output
+                        .downcast_ref::<offerings::DescribeInstanceTypeOfferingsOutput>()
+                        .ok_or(Error("EC2 output type"))?;
+                    Ec2Output::Allocation(allocation::AllocationOutput::InstanceTypeOfferings(
+                        Box::new(output.clone()),
+                    ))
+                },
+                ReadOperationV1::DescribeIamInstanceProfileAssociations => {
+                    let output = output
+                        .downcast_ref::<profile_associations::DescribeIamInstanceProfileAssociationsOutput>()
+                        .ok_or(Error("EC2 output type"))?;
+                    Ec2Output::Allocation(allocation::AllocationOutput::IamInstanceProfileAssociations(
+                        Box::new(output.clone()),
+                    ))
+                },
+                ReadOperationV1::DescribeInstances => {
+                    let output = output
+                        .downcast_ref::<instances::DescribeInstancesOutput>()
+                        .ok_or(Error("EC2 output type"))?;
+                    Ec2Output::Allocation(allocation::AllocationOutput::Instances(
+                        Box::new(output.clone()),
+                    ))
+                },
+                ReadOperationV1::DescribeNetworkInterfaces => {
+                    let output = output
+                        .downcast_ref::<interfaces::DescribeNetworkInterfacesOutput>()
+                        .ok_or(Error("EC2 output type"))?;
+                    Ec2Output::Allocation(allocation::AllocationOutput::NetworkInterfaces(
+                        Box::new(output.clone()),
+                    ))
+                },
+                ReadOperationV1::DescribeVolumes => {
+                    let output = output
+                        .downcast_ref::<volumes::DescribeVolumesOutput>()
+                        .ok_or(Error("EC2 output type"))?;
+                    Ec2Output::Allocation(allocation::AllocationOutput::Volumes(
+                        Box::new(output.clone()),
+                    ))
+                },
+                ReadOperationV1::DescribeInstanceAttribute => {
+                    let output = output
+                        .downcast_ref::<instance_attribute::DescribeInstanceAttributeOutput>()
+                        .ok_or(Error("EC2 output type"))?;
+                    Ec2Output::Allocation(allocation::AllocationOutput::InstanceAttribute(
+                        Box::new(output.clone()),
+                    ))
+                },
                 _ => return Err(Error("EC2 capture operation")),
             };
             require(presence == value.presence(), "EC2 output correlation")?;
@@ -828,3 +977,6 @@ impl Intercept for Ec2Integrity {
 #[cfg(test)]
 #[path = "ec2_decode_integrity_tests.rs"]
 mod tests;
+
+pub(super) mod allocation;
+mod allocation_shapes;

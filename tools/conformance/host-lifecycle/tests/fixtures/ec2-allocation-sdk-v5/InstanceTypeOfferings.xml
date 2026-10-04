@@ -1,0 +1,1 @@
+<DescribeInstanceTypeOfferingsResponse><instanceTypeOfferingSet><item><instanceType>m7i.large</instanceType><locationType>future-value</locationType><location>returned-location</location></item></instanceTypeOfferingSet></DescribeInstanceTypeOfferingsResponse>

@@ -162,3 +162,14 @@ It adds SDK-independent V4 facts, invocation-scoped EC2 structural correlation a
 shared-session composition. No pins, transport budgets, admission or mutation surface
 change. The linked contract records generated-decoder source evidence separately
 from executed unprotected probes and protected protocol regressions.
+
+## Allocation observation successor
+
+[AG9g0e2c / #1415](ag9g0e2c-ec2-allocation-observations.md) adds eight closed
+allocation readers, V5 source-specific facts and opaque user-data bytes on the same
+pinned transport/session. Its contract specifies exact request scopes, the 100-name
+instance-type boundary, visibility flags, invocation-qualified positional source
+credit, independent output/byte bounds and the complete owned SDK member inventory.
+The SDK remains the semantic decoder; the userData AttributeValue String receives
+one API Base64 decode at the adapter. No historical schema, SDK pin, shared evidence
+ceiling, launch authority or controller/publication surface changes.

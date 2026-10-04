@@ -1,0 +1,1 @@
+<DescribeInstanceAttributeResponse><instanceId>i-bbbbbbbb</instanceId><userData><value>VFE9PQ==</value></userData><instanceInitiatedShutdownBehavior><value>returned-value</value></instanceInitiatedShutdownBehavior><disableApiTermination><value>false</value></disableApiTermination><disableApiStop><value>false</value></disableApiStop></DescribeInstanceAttributeResponse>

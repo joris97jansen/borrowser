@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     canonical,
-    provider::{coverage::*, limits::*, observation_v4::*},
+    provider::{coverage::*, limits::*, observation_v4::ObservationRecordV4, observation_v5::*},
 };
 use aws_smithy_runtime_api::client::http::SharedHttpClient;
 pub(super) const TOKEN_READS: [I; 8] = [
@@ -80,7 +80,7 @@ pub(super) fn coverage(
     assert!(r.coverage.records >= min);
     for r in &r.records {
         let bytes = r.canonical_bytes().unwrap();
-        if let ObservationEntryV4::V4(record) = r {
+        if let ObservationEntryV5::V4(record) = r {
             assert_eq!(ObservationRecordV4::parse(&bytes).unwrap(), **record);
         }
     }
@@ -178,7 +178,7 @@ async fn all_eleven_requests_and_identity_share_one_round_without_repairing_fact
     );
     let mut records: Vec<_> = results.iter().flat_map(|r| r.records.clone()).collect();
     records.sort_by_key(|r| r.canonical_bytes().unwrap());
-    ProviderObservationV4 {
+    ProviderObservationV5 {
         context: "a".repeat(64).parse().unwrap(),
         records,
         coverage: results.into_iter().map(|r| r.coverage).collect(),
