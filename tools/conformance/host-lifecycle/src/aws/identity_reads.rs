@@ -21,7 +21,7 @@ use crate::{
         observation::{Observed, ProviderText},
         observation_v2::{ObservationDataV2, ObservationRecordV2},
         observation_v3::{ObservationDataV3, ObservationRecordV3},
-        observation_v4::ObservationEntryV4,
+        observation_v5::ObservationEntryV5,
     },
 };
 use aws_smithy_runtime_api::client::{orchestrator::HttpResponse, result::SdkError};
@@ -166,7 +166,7 @@ impl IdentityObservations {
                         user_id: text(o.user_id(), &mut incomplete),
                     };
                     (
-                        ObservationEntryV4::V2(Box::new(ObservationRecordV2 {
+                        ObservationEntryV5::V2(Box::new(ObservationRecordV2 {
                             schema_version: 2,
                             query: query.query().clone(),
                             data,
@@ -192,7 +192,7 @@ impl IdentityObservations {
                         region: typed(o.bucket_region(), &mut incomplete),
                     };
                     Ok((
-                        ObservationEntryV4::V2(Box::new(ObservationRecordV2 {
+                        ObservationEntryV5::V2(Box::new(ObservationRecordV2 {
                             schema_version: 2,
                             query: query.query().clone(),
                             data,
@@ -210,7 +210,7 @@ impl IdentityObservations {
                         .transpose()
                     {
                         Ok(Some(Some(region))) => {
-                            let record = ObservationEntryV4::V2(Box::new(ObservationRecordV2 {
+                            let record = ObservationEntryV5::V2(Box::new(ObservationRecordV2 {
                                 schema_version: 2,
                                 query: query.query().clone(),
                                 data: ObservationDataV2::Bucket {
@@ -307,10 +307,10 @@ fn text(value: Option<&str>, incomplete: &mut Option<ReadFailureV1>) -> Observed
 fn successor(
     query: &QueryIdentityV1,
     value: super::identity_observation::NormalizedIdentityV3,
-) -> (ObservationEntryV4, u64, Option<ReadFailureV1>) {
+) -> (ObservationEntryV5, u64, Option<ReadFailureV1>) {
     let incomplete = normalization_failure(&value.data);
     (
-        ObservationEntryV4::V3(Box::new(ObservationRecordV3 {
+        ObservationEntryV5::V3(Box::new(ObservationRecordV3 {
             schema_version: 3,
             query: query.clone(),
             data: value.data,

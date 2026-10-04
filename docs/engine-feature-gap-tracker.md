@@ -614,6 +614,15 @@ Current architecture status:
   contracts remain frozen. Infrastructure admission, allocation-resource discovery,
   reconciliation, inventory/publication and controller integration remain incomplete.
   See `docs/conformance/ag9g0e2b-ec2-infrastructure-observations.md`.
+- AG9g0e2c / #1415 adds eight bounded EC2 launch/allocation observation readers,
+  explicit V5 partial identities and source-specific attachments, invocation-qualified
+  positional occurrence credit, and exact bounded user-data bytes. Synthetic SDK
+  regressions cover all owned variants and scopes, shared budgets and incomplete
+  evidence; historical V1–V4 contracts and launch authority remain frozen. This is
+  implementation evidence for review, not issue or AG completion. Discovery
+  coordination, admission, A01–A38 evaluation, binding, durable publication/replay and
+  controller integration remain incomplete. See
+  `docs/conformance/ag9g0e2c-ec2-allocation-observations.md`.
 - No AG9 capability establishes broad WPT compliance, browser compatibility,
   browser automation, or raster comparison. Completion requires requirement and
   validation evidence, including later exact-revision hosted CI.

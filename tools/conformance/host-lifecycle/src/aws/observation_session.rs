@@ -2,6 +2,7 @@
 use super::{
     configuration,
     credentials::SessionSecret,
+    ec2_allocation_reads::{AllocationObservations, AllocationRead},
     ec2_infrastructure_reads::{
         InfrastructureObservations, InfrastructureRead, InfrastructureTargets,
     },
@@ -15,8 +16,16 @@ use std::{path::Path, time::SystemTime};
 pub(super) struct ObservationSession {
     identity: IdentityObservations,
     infrastructure: InfrastructureObservations,
+    allocation: AllocationObservations,
 }
 impl ObservationSession {
+    pub(super) async fn allocation(
+        &mut self,
+        read: AllocationRead,
+        required: bool,
+    ) -> std::result::Result<QueryResult, ReadFailureV1> {
+        self.allocation.observe(read, required).await
+    }
     pub(super) async fn open(
         deployment: &DeploymentV2,
         manifest: &[u8],
@@ -37,7 +46,8 @@ impl ObservationSession {
         let conf = configuration(&secret, &deployment.identity.region, http)?;
         Ok(Self {
             identity: IdentityObservations::from_config(deployment, &conf, round.clone())?,
-            infrastructure: InfrastructureObservations::from_config(targets, &conf, round),
+            infrastructure: InfrastructureObservations::from_config(targets, &conf, round.clone()),
+            allocation: AllocationObservations::from_config(deployment, &conf, round),
         })
     }
     #[cfg(test)]

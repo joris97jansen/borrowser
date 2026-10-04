@@ -5,10 +5,10 @@ use super::{
 };
 use crate::provider::{
     coverage::*, ec2_observation_v4::*, management_observation_v2::ObservationValueV2 as V,
-    observation_v4::*,
+    observation_v5::*,
 };
-pub(super) fn data(record: &ObservationEntryV4) -> &ObservationDataV4 {
-    let ObservationEntryV4::V4(r) = record else {
+pub(super) fn data(record: &ObservationEntryV5) -> &ObservationDataV4 {
+    let ObservationEntryV5::V4(r) = record else {
         panic!()
     };
     &r.data

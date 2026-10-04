@@ -134,6 +134,7 @@ pub(super) fn normalize(
         };
     }
     match output {
+        Ec2Output::Allocation(_) => page.incomplete = Some(ReadFailureV1::Unsupported),
         Ec2Output::Regions(o) => records!(o, regions, region),
         Ec2Output::AvailabilityZones(o) => records!(o, availability_zones, zone),
         Ec2Output::Subnets(o) => {

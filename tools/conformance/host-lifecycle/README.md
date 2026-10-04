@@ -183,3 +183,17 @@ inputs, including duplicate policy members and separate VPC DNS queries. The pri
 VPC-endpoint terminal-token mapping runs only after successful integrity correlation.
 There is no infrastructure admission, new operation, controller or publication path.
 Use the standalone Rust 1.92.0 locked/offline native and Linux validation lanes.
+
+## Bounded EC2 launch and allocation observations
+
+AG9g0e2c / #1415 adds [V5 allocation observations](../../../docs/conformance/ag9g0e2c-ec2-allocation-observations.md)
+for Images, InstanceTypes, InstanceTypeOfferings, profile associations, Instances,
+NetworkInterfaces, Volumes and four instance attributes. Closed private selectors
+use the shared identity/infrastructure session and round. Invocation-qualified
+source paths preserve duplicate occurrences and source-specific attachment facts;
+opaque user-data bytes have an 8 KiB observation ceiling and one API Base64 decode.
+The existing 1 KiB collector/launch authority and historical V1–V4 contracts remain
+unchanged. `provider_v5_contracts`, allocation reader/attribute/boundary tests and
+allocation integrity handoff tests use synthetic SDK inputs. Discovery coordination,
+admission, binding, durable publication/replay and controller/CLI integration remain
+outside this issue; implementation alone does not establish AG completion.
