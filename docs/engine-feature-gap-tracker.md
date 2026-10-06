@@ -623,6 +623,23 @@ Current architecture status:
   coordination, admission, A01–A38 evaluation, binding, durable publication/replay and
   controller integration remain incomplete. See
   `docs/conformance/ag9g0e2c-ec2-allocation-observations.md`.
+- AG9g0e2d / #1416 adds bounded independent operation discovery, required-read
+  derivation from A01–A38, conservative relationship attribution, and pure offline
+  recomputation. Discovery-specific representation audits detect missing whole roots,
+  sibling/child projections and nonempty pages without changing frozen validators.
+  The narrow A07 reviewed-subnet route successor shares the original round and
+  accounting; final time/session validation follows report preparation. Scripted
+  transport and omission fixtures retain contradictions and competing InstanceIds.
+  Source-specific ownership/attachment agreement and actual positional parent/child
+  identity agreement gate exclusion. Structural links retain both source perspectives
+  and positive provenance through contradictions; they do not certify attachment.
+  Missing parents/identities and bounded expansion exhaustion stay incomplete. DNS adapter
+  requirements are checked offline. Fixed seed stages precede breadth-first expansion,
+  and one 64 KiB logical allowance bounds combined derived-report metadata.
+  A23/admission verdicts, final inventory, binding/reconciliation, publication/replay,
+  controller capture/integration and cleanup remain incomplete. This does not mark
+  parent AG9g0e2 or Milestone AG complete. See
+  `docs/conformance/ag9g0e2d-operation-discovery.md`.
 - No AG9 capability establishes broad WPT compliance, browser compatibility,
   browser automation, or raster comparison. Completion requires requirement and
   validation evidence, including later exact-revision hosted CI.

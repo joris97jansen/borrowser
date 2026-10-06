@@ -197,3 +197,22 @@ unchanged. `provider_v5_contracts`, allocation reader/attribute/boundary tests a
 allocation integrity handoff tests use synthetic SDK inputs. Discovery coordination,
 admission, binding, durable publication/replay and controller/CLI integration remain
 outside this issue; implementation alone does not establish AG completion.
+
+## Bounded operation discovery
+
+AG9g0e2d / #1416 adds [required-read derivation, independent discovery, relationship
+closure and offline completeness auditing](../../../docs/conformance/ag9g0e2d-operation-discovery.md).
+The private coordinator uses one shared round, retains contradictory resources, and
+performs final time/session validation after report preparation. Frozen aggregate
+validation still accepts partial evidence; the additional structural/counting audit
+prevents omitted roots, projections or nonempty pages from manufacturing completeness.
+The [A07 successor](../../../docs/conformance/ag9g0e2d-reviewed-subnet-route-observation-v1.md)
+adds only the reviewed-subnet route association query and shares all accounting.
+
+Run `provider_discovery`, `--lib operation_discovery`, `--lib query_execution`,
+and `--lib response_limits` targeted tests, then the full standalone locked/offline
+test, Clippy, build and formatting lanes on Rust 1.92. Run the full tests on Linux
+including the production boot-clock and authority/filesystem checks. Root-workspace
+CI does not cover this standalone workspace. A01–A38 admission, A23 cardinality,
+final inventory/binding, publication/replay, controller capture/integration and
+cleanup remain outside #1416; parent AG9g0e2 and Milestone AG remain incomplete.

@@ -878,3 +878,9 @@ mod ec2_network_observation_tests;
 #[cfg(test)]
 mod ec2_observation_tests;
 mod observation_session;
+
+mod operation_discovery;
+#[cfg(test)]
+mod operation_discovery_tests;
+mod query_execution_core;
+mod reviewed_subnet_route_reads;

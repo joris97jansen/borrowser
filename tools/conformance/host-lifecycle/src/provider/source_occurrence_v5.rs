@@ -201,7 +201,7 @@ impl SourcePathV5 {
                 | (Self::InstanceAttribute, P::InstanceAttributes)
         )
     }
-    fn containing_list(self) -> Option<(Option<Self>, SourceListV5, u64)> {
+    pub(crate) fn containing_list(self) -> Option<(Option<Self>, SourceListV5, u64)> {
         use SourceListV5 as L;
         Some(match self {
             Self::Image { image } => (None, L::Images, image.into()),

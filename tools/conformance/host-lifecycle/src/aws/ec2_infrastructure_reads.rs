@@ -101,7 +101,7 @@ impl InfrastructureObservations {
             ),
         }
     }
-    fn query(&self, read: InfrastructureRead) -> QueryIdentityV1 {
+    pub(super) fn query(&self, read: InfrastructureRead) -> QueryIdentityV1 {
         use InfrastructureRead as I;
         use ResourceIdentity as R;
         let ids = match read {

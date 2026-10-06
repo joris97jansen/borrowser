@@ -116,7 +116,7 @@ impl IdentityObservations {
             ),
         })
     }
-    fn query(&self, read: IdentityRead) -> QueryIdentityV1 {
+    pub(super) fn query(&self, read: IdentityRead) -> QueryIdentityV1 {
         let (operation, resource) = match read {
             IdentityRead::Caller => (ReadOperationV1::GetCallerIdentity, None),
             IdentityRead::Bucket => (

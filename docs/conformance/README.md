@@ -127,3 +127,6 @@ valid lane-excluded baseline/trend round trips.
 - [Bounded EC2 infrastructure observations, V4 successors and decoder integrity (#1414)](ag9g0e2b-ec2-infrastructure-observations.md).
 
 - [Identity-service observations and shared bounded query execution (#1413)](ag9g0e2a-identity-query-execution.md).
+
+- [Bounded operation discovery, offline representation auditing and relationship closure (#1416)](ag9g0e2d-operation-discovery.md).
+- [Narrow A07 reviewed-subnet route query and observation successor](ag9g0e2d-reviewed-subnet-route-observation-v1.md).

@@ -442,7 +442,7 @@ fn review_failed_evidence_uses_shared_occurrence_and_canonical_limits() {
                 panic!()
             };
             let size = v.canonical_bytes().unwrap().len();
-            let count = (NORMALIZED_BYTES as usize - q.reservation) / size;
+            let count = (NORMALIZED_BYTES as usize - q.core.reservation) / size;
             for _ in 0..count {
                 round.canonical_record_v2(v).unwrap();
             }

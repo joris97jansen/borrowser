@@ -54,8 +54,10 @@ pub mod endpoint_policy_observation_v4;
 pub mod observation_v4;
 
 pub mod allocation_value_v5;
+pub mod discovery;
 pub mod ec2_allocation_observation_v5;
 pub mod evidence_v4;
 pub mod evidence_v5;
 pub mod observation_v5;
+pub mod reviewed_subnet_routes_v1;
 pub mod source_occurrence_v5;

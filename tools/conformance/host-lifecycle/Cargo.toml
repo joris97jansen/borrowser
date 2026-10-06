@@ -74,3 +74,7 @@ path = "tests/provider_v4_contracts.rs"
 [[test]]
 name = "provider_v5_contracts"
 path = "tests/provider_v5_contracts.rs"
+
+[[test]]
+name = "provider_discovery"
+path = "tests/provider_discovery.rs"

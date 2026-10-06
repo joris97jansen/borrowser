@@ -1,9 +1,11 @@
 //! SDK-independent logical-query mechanics, private to the closed AWS boundary.
 //! No clients, request closures, dispatch, discovery or policy live here.
+use super::query_execution_core::QueryCore;
 use super::response_limits::ObservationRound;
 use super::{
     ec2_decode_integrity::allocation::QualifiedAllocationReceipt, ec2_observation::combine_failure,
 };
+use crate::provider::reviewed_subnet_routes_v1::DiscoveryQuery;
 use crate::provider::{
     ec2_allocation_observation_v5::ObservationDataV5,
     ec2_observation_v4::FactsV4,
@@ -14,7 +16,6 @@ use crate::{
     canonical,
     provider::{coverage::*, limits::*, observation_v5::ObservationEntryV5},
 };
-use std::collections::BTreeSet;
 use std::sync::Arc;
 
 /// An unforgeable query-local attempt. Only a completed integrity receiver can return its receipt.
@@ -124,20 +125,8 @@ pub(super) struct QueryResult {
 }
 
 pub(super) struct LogicalQuery {
-    round: ObservationRound,
-    accounting: QueryAccounting,
-    pagination: Pagination,
-    request_start: u64,
-    page_start: Option<u64>,
+    core: QueryCore,
     records: Vec<ObservationEntryV5>,
-    occurrences: u64,
-    tokens: BTreeSet<String>,
-    next: Option<ContinuationToken>,
-    terminal: bool,
-    failure: Option<ReadFailureV1>,
-    required: bool,
-    reservation: usize,
-    finished: bool,
     allocation_stamp: Option<Arc<()>>,
     source_credit: SourceCreditV5,
     legacy_minimum: u64,
@@ -148,78 +137,19 @@ impl LogicalQuery {
         query: QueryIdentityV1,
         required: bool,
     ) -> ReadResult<Self> {
-        let pagination = pagination(&query)?;
-        // Enumerate the closed failure vocabulary, avoiding a guessed byte allowance.
-        let mut reasons = vec![
-            ReadFailureV1::AccessDenied,
-            ReadFailureV1::NotFound,
-            ReadFailureV1::Service,
-            ReadFailureV1::Transport,
-            ReadFailureV1::SessionExpired,
-            ReadFailureV1::Unsupported,
-            ReadFailureV1::Malformed,
-            ReadFailureV1::PaginationCycle,
-        ];
-        reasons.extend(
-            [
-                LimitKind::Pages,
-                LimitKind::Requests,
-                LimitKind::Records,
-                LimitKind::ResponseBytes,
-                LimitKind::RoundResponseBytes,
-                LimitKind::NormalizedBytes,
-                LimitKind::RecordBytes,
-                LimitKind::Elapsed,
-                LimitKind::Clock,
-                LimitKind::Session,
-                LimitKind::Cancelled,
-                LimitKind::Body,
-            ]
-            .into_iter()
-            .map(ReadFailureV1::Limit),
-        );
-        let reserve = reasons
-            .into_iter()
-            .map(|reason| ReadCoverageV1 {
-                query: query.clone(),
-                required,
-                requests: REQUESTS,
-                pages: PAGES,
-                records: RECORDS,
-                terminal_page: false,
-                status: CoverageStatus::Incomplete(reason),
-            })
-            .max_by_key(|c| {
-                canonical::encode(c)
-                    .expect("closed coverage encoding")
-                    .len()
-            })
-            .expect("nonempty failure vocabulary");
-        let reservation = round
-            .begin_query(&reserve)
-            .map_err(|_| round_failure(&round, ReadFailureV1::Unsupported))?;
         Ok(Self {
-            request_start: round.requests(),
-            round,
-            accounting: QueryAccounting::new(query).expect("validated query"),
-            pagination,
-            page_start: None,
+            core: QueryCore::begin(round, DiscoveryQuery::Existing(query), required)?,
             records: Vec::new(),
-            occurrences: 0,
-            tokens: BTreeSet::new(),
-            next: None,
-            terminal: false,
-            failure: None,
-            required,
-            reservation,
-            finished: false,
             allocation_stamp: None,
             source_credit: SourceCreditV5::default(),
             legacy_minimum: 0,
         })
     }
     pub(super) fn query(&self) -> &QueryIdentityV1 {
-        self.accounting.query()
+        match &self.core.identity {
+            DiscoveryQuery::Existing(v) => v,
+            _ => unreachable!("closed historical frontend"),
+        }
     }
     pub(super) fn start_allocation_page(
         &mut self,
@@ -246,7 +176,7 @@ impl LogicalQuery {
             .filter(|s| s.len() > TOKEN_BYTES)
             .map(|_| ReadFailureV1::Limit(LimitKind::RecordBytes));
         let result = (|| {
-            if let Some(reason) = self.failure {
+            if let Some(reason) = self.core.failure {
                 return Err(reason);
             }
             let stamp = self
@@ -257,14 +187,15 @@ impl LogicalQuery {
                 return Err(ReadFailureV1::Malformed);
             }
             self.account_attempt()?;
-            self.terminal = receipt.continuation().is_none();
-            self.round
+            self.core.terminal = receipt.continuation().is_none();
+            self.core
+                .round
                 .records(receipt.occurrences())
-                .map_err(|_| round_failure(&self.round, ReadFailureV1::Malformed))?;
-            self.occurrences += receipt.occurrences();
+                .map_err(|_| round_failure(&self.core.round, ReadFailureV1::Malformed))?;
+            self.core.occurrences += receipt.occurrences();
             let page = self
-                .accounting
-                .attempted_pages()
+                .core
+                .pages
                 .try_into()
                 .map_err(|_| ReadFailureV1::Malformed)?;
             let mut sink = AllocationPageSink {
@@ -278,67 +209,45 @@ impl LogicalQuery {
                 if value.len() > TOKEN_BYTES {
                     return Err(ReadFailureV1::Limit(LimitKind::RecordBytes));
                 }
-                if self.pagination == Pagination::Singleton {
+                if self.core.pagination == Pagination::Singleton {
                     return Err(ReadFailureV1::Malformed);
                 }
                 let token = ContinuationToken::parse(value.to_owned())
                     .map_err(|_| ReadFailureV1::Malformed)?;
-                if !self.tokens.insert(token.as_str().to_owned()) {
+                if !self.core.tokens.insert(token.as_str().to_owned()) {
                     return Err(ReadFailureV1::PaginationCycle);
                 }
-                self.next = Some(token);
+                self.core.next = Some(token);
             } else {
-                self.next = None;
+                self.core.next = None;
             }
             if let Some(reason) = pending {
                 return Err(reason);
             }
-            self.round
+            self.core
+                .round
                 .remaining()
-                .map_err(|_| round_failure(&self.round, ReadFailureV1::Malformed))?;
+                .map_err(|_| round_failure(&self.core.round, ReadFailureV1::Malformed))?;
             Ok(())
         })();
         if let Some(ReadFailureV1::Limit(limit)) = pending {
-            self.round.fail(limit);
+            self.core.round.fail(limit);
         }
-        let result = if self.round.failure().is_some() {
-            Err(round_failure(&self.round, ReadFailureV1::Malformed))
+        let result = if self.core.round.failure().is_some() {
+            Err(round_failure(&self.core.round, ReadFailureV1::Malformed))
         } else {
             result
         };
         if let Err(reason) = result {
-            self.failure.get_or_insert(reason);
+            self.core.failure.get_or_insert(reason);
         }
         result
     }
-    /// No request is charged here: only a polled connector call charges a request/page attempt.
     pub(super) fn start_page(&mut self) -> ReadResult<Option<&str>> {
-        if self.page_start.is_some() || self.terminal || self.failure.is_some() {
-            return Err(*self.failure.get_or_insert(ReadFailureV1::Malformed));
-        }
-        if self.accounting.attempted_pages() == PAGES {
-            self.round.fail(LimitKind::Pages);
-            self.failure = Some(ReadFailureV1::Limit(LimitKind::Pages));
-            return Err(self.failure.unwrap());
-        }
-        if self.round.remaining().is_err() {
-            let reason = round_failure(&self.round, ReadFailureV1::Transport);
-            self.failure = Some(reason);
-            return Err(reason);
-        }
-        self.page_start = Some(self.round.requests());
-        Ok(self.next.as_ref().map(ContinuationToken::as_str))
+        self.core.start_page()
     }
     fn account_attempt(&mut self) -> ReadResult<()> {
-        let start = self.page_start.take().ok_or(ReadFailureV1::Malformed)?;
-        match self.round.requests().checked_sub(start) {
-            Some(1) => self
-                .accounting
-                .attempt_page()
-                .map_err(|_| ReadFailureV1::Limit(LimitKind::Pages)),
-            Some(0) => Err(round_failure(&self.round, ReadFailureV1::Malformed)),
-            _ => Err(ReadFailureV1::Malformed),
-        }
+        self.core.account_attempt()
     }
     /// Charge every decoded occurrence before checking/retaining normalized records.
     /// Page records arrive only from private adapters; this API cannot dispatch a request.
@@ -358,20 +267,20 @@ impl LogicalQuery {
             }
             _ => None,
         };
-        let result = match self.failure {
+        let result = match self.core.failure {
             Some(reason) => Err(reason),
             None => self.accept_page(records, occurrences, continuation, incomplete),
         };
         if let Some(limit) = limit {
-            self.round.fail(limit);
+            self.core.round.fail(limit);
         }
-        let result = if self.round.failure().is_some() {
-            Err(round_failure(&self.round, ReadFailureV1::Malformed))
+        let result = if self.core.round.failure().is_some() {
+            Err(round_failure(&self.core.round, ReadFailureV1::Malformed))
         } else {
             result
         };
         if let Err(reason) = result {
-            self.failure.get_or_insert(reason);
+            self.core.failure.get_or_insert(reason);
         }
         result
     }
@@ -385,34 +294,16 @@ impl LogicalQuery {
         self.account_attempt()?;
         // A decoded terminal response remains terminal even if normalization exhausts a bound.
         // Completion additionally requires successful normalization and final time checks.
-        self.terminal = continuation.is_none();
+        self.core.terminal = continuation.is_none();
         self.retain_records(records, occurrences)?;
-        match continuation {
-            None => {
-                self.terminal = true;
-                self.next = None;
-            }
-            Some(value) => {
-                if value.len() > TOKEN_BYTES {
-                    return Err(ReadFailureV1::Limit(LimitKind::RecordBytes));
-                }
-                if self.pagination == Pagination::Singleton {
-                    return Err(ReadFailureV1::Malformed);
-                }
-                let token =
-                    ContinuationToken::parse(value).map_err(|_| ReadFailureV1::Malformed)?;
-                if !self.tokens.insert(token.as_str().to_owned()) {
-                    return Err(ReadFailureV1::PaginationCycle);
-                }
-                self.next = Some(token);
-            }
-        }
+        self.core.continuation(continuation)?;
         if let Some(reason) = incomplete {
             return Err(reason);
         }
-        self.round
+        self.core
+            .round
             .remaining()
-            .map_err(|_| round_failure(&self.round, ReadFailureV1::Transport))?;
+            .map_err(|_| round_failure(&self.core.round, ReadFailureV1::Transport))?;
         Ok(())
     }
     fn retain_records(
@@ -420,10 +311,11 @@ impl LogicalQuery {
         records: Vec<ObservationEntryV5>,
         occurrences: u64,
     ) -> ReadResult<()> {
-        self.round
+        self.core
+            .round
             .records(occurrences)
-            .map_err(|_| round_failure(&self.round, ReadFailureV1::Malformed))?;
-        self.occurrences += occurrences;
+            .map_err(|_| round_failure(&self.core.round, ReadFailureV1::Malformed))?;
+        self.core.occurrences += occurrences;
         let mut minimum = 0;
         for record in &records {
             if record.query() != self.query() {
@@ -445,19 +337,21 @@ impl LogicalQuery {
         }
         self.legacy_minimum += minimum;
         for record in records {
-            self.round
+            self.core
+                .round
                 .output_slot()
-                .map_err(|_| round_failure(&self.round, ReadFailureV1::Malformed))?;
+                .map_err(|_| round_failure(&self.core.round, ReadFailureV1::Malformed))?;
             let encoded = match &record {
-                ObservationEntryV5::V2(v) => self.round.canonical_record_v2(v),
-                ObservationEntryV5::V3(v) => self.round.canonical_record_v3(v),
-                ObservationEntryV5::V4(v) => self.round.canonical_record_v4(v),
+                ObservationEntryV5::V2(v) => self.core.round.canonical_record_v2(v),
+                ObservationEntryV5::V3(v) => self.core.round.canonical_record_v3(v),
+                ObservationEntryV5::V4(v) => self.core.round.canonical_record_v4(v),
                 ObservationEntryV5::V5(_) => return Err(ReadFailureV1::Malformed),
             };
-            encoded.map_err(|_| round_failure(&self.round, ReadFailureV1::Malformed))?;
-            self.round
+            encoded.map_err(|_| round_failure(&self.core.round, ReadFailureV1::Malformed))?;
+            self.core
+                .round
                 .retain_output()
-                .map_err(|_| round_failure(&self.round, ReadFailureV1::Malformed))?;
+                .map_err(|_| round_failure(&self.core.round, ReadFailureV1::Malformed))?;
             self.records.push(record);
         }
         Ok(())
@@ -474,16 +368,16 @@ impl LogicalQuery {
         reason: ReadFailureV1,
     ) {
         match reason {
-            ReadFailureV1::SessionExpired => self.round.fail(LimitKind::Session),
-            ReadFailureV1::Limit(limit) => self.round.fail(limit),
+            ReadFailureV1::SessionExpired => self.core.round.fail(LimitKind::Session),
+            ReadFailureV1::Limit(limit) => self.core.round.fail(limit),
             _ => (),
         }
         let attempt = self
             .account_attempt()
             .and_then(|()| self.retain_records(records, occurrences));
-        self.failure.get_or_insert(round_failure(
-            &self.round,
-            if self.round.requests() > self.request_start {
+        self.core.failure.get_or_insert(round_failure(
+            &self.core.round,
+            if self.core.round.requests() > self.core.request_start {
                 attempt.err().unwrap_or(reason)
             } else {
                 reason
@@ -491,24 +385,17 @@ impl LogicalQuery {
         ));
     }
     pub(super) fn finish(mut self) -> QueryResult {
-        if self.page_start.is_some() {
+        if self.core.page_start.is_some() {
             self.failed_page(ReadFailureV1::Malformed);
         }
-        if self.round.remaining().is_err() {
-            self.failure = Some(round_failure(&self.round, ReadFailureV1::Transport));
-        }
-        let status = match self.failure {
-            Some(reason) => CoverageStatus::Incomplete(reason),
-            None if self.terminal => CoverageStatus::Complete,
-            None => CoverageStatus::Incomplete(ReadFailureV1::Malformed),
-        };
+        let status = self.core.finish();
         let coverage = ReadCoverageV1 {
             query: self.query().clone(),
-            required: self.required,
-            requests: self.round.requests() - self.request_start,
-            pages: self.accounting.attempted_pages(),
-            records: self.occurrences,
-            terminal_page: self.terminal,
+            required: self.core.required,
+            requests: self.core.round.requests() - self.core.request_start,
+            pages: self.core.pages,
+            records: self.core.occurrences,
+            terminal_page: self.core.terminal,
             status,
         };
         // Reserved before any I/O, usable after a latch without resetting or bypassing accounting.
@@ -516,10 +403,8 @@ impl LogicalQuery {
             canonical::encode(&coverage)
                 .expect("coverage encoding")
                 .len()
-                <= self.reservation
+                <= self.core.reservation
         );
-        self.finished = true;
-        self.round.end_query();
         QueryResult {
             records: std::mem::take(&mut self.records),
             coverage,
@@ -552,9 +437,10 @@ impl AllocationPageSink<'_> {
     }
     pub(super) fn retain(&mut self, path: SourcePathV5, data: ObservationDataV5) -> ReadResult<()> {
         self.query
+            .core
             .round
             .output_slot()
-            .map_err(|_| round_failure(&self.query.round, ReadFailureV1::Malformed))?;
+            .map_err(|_| round_failure(&self.query.core.round, ReadFailureV1::Malformed))?;
         self.receipt
             .validate_source(path, &data)
             .map_err(|_| ReadFailureV1::Malformed)?;
@@ -583,33 +469,26 @@ impl AllocationPageSink<'_> {
             .map_err(|_| ReadFailureV1::Malformed)?;
         if minimum
             .checked_add(self.query.legacy_minimum)
-            .is_none_or(|n| n > self.query.occurrences)
+            .is_none_or(|n| n > self.query.core.occurrences)
         {
             return Err(ReadFailureV1::Malformed);
         }
         self.query
+            .core
             .round
             .canonical_record_v5(&record)
-            .map_err(|_| round_failure(&self.query.round, ReadFailureV1::Malformed))?;
+            .map_err(|_| round_failure(&self.query.core.round, ReadFailureV1::Malformed))?;
         self.query
+            .core
             .round
             .retain_output()
-            .map_err(|_| round_failure(&self.query.round, ReadFailureV1::Malformed))?;
+            .map_err(|_| round_failure(&self.query.core.round, ReadFailureV1::Malformed))?;
         self.query
             .records
             .push(ObservationEntryV5::V5(Box::new(record)));
         Ok(())
     }
 }
-impl Drop for LogicalQuery {
-    fn drop(&mut self) {
-        if !self.finished {
-            self.round.fail(LimitKind::Cancelled);
-            self.round.end_query();
-        }
-    }
-}
-
 #[cfg(test)]
 #[path = "query_execution_tests.rs"]
 mod tests;

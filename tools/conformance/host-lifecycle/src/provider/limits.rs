@@ -101,6 +101,37 @@ pub struct ObservationAccounting {
     failure: Option<LimitKind>,
 }
 impl ObservationAccounting {
+    pub(crate) fn snapshot(&self, retained_outputs: u64) -> super::discovery::AccountingSnapshot {
+        super::discovery::AccountingSnapshot {
+            requests: self.requests,
+            source_occurrences: self.records,
+            retained_outputs,
+            response_bytes: self.response_bytes,
+            normalized_bytes: self.normalized_bytes,
+            failure: self.failure,
+        }
+    }
+    pub(crate) fn reserve_bytes(&mut self, bytes: usize) -> Result<()> {
+        self.active()?;
+        if bytes > RECORD_BYTES {
+            self.fail(LimitKind::RecordBytes);
+            return Err(Error("canonical record limit"));
+        }
+        match self
+            .normalized_bytes
+            .checked_add(bytes as u64)
+            .filter(|n| *n <= NORMALIZED_BYTES)
+        {
+            Some(n) => {
+                self.normalized_bytes = n;
+                Ok(())
+            }
+            None => {
+                self.fail(LimitKind::NormalizedBytes);
+                Err(Error("normalized evidence limit"))
+            }
+        }
+    }
     #[cfg(test)]
     pub(crate) fn test_evidence_counts(&self) -> (u64, u64) {
         (self.records, self.normalized_bytes)

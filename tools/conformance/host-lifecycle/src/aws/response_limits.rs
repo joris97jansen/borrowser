@@ -20,6 +20,9 @@ use std::{
 
 pub(super) trait ObservationClock: Send + Sync {
     fn sample(&self) -> Result<TimeSample>;
+    fn realtime(&self) -> SystemTime {
+        SystemTime::now()
+    }
 }
 struct ControllerClock;
 impl ObservationClock for ControllerClock {
@@ -54,6 +57,57 @@ impl fmt::Debug for ObservationRound {
     }
 }
 impl ObservationRound {
+    pub(super) fn snapshot(&self) -> crate::provider::discovery::AccountingSnapshot {
+        match self.state.lock() {
+            Ok(state) => state.accounting.snapshot(state.retained_outputs),
+            Err(poisoned) => {
+                let state = poisoned.into_inner();
+                let mut snapshot = state.accounting.snapshot(state.retained_outputs);
+                // Match failure(): poisoning cannot restore a usable round, but
+                // actual accepted counters remain available to offline derivation.
+                snapshot.failure = Some(LimitKind::Clock);
+                snapshot
+            }
+        }
+    }
+    pub(super) fn begin_discovery_query(
+        &self,
+        identity: &crate::provider::reviewed_subnet_routes_v1::DiscoveryQuery,
+        reservation: usize,
+    ) -> Result<()> {
+        self.remaining()?;
+        let key = identity.key()?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| Error("observation state poisoned"))?;
+        crate::require(!state.query_active, "concurrent logical query")?;
+        crate::require(
+            !state.queries.contains(&key),
+            "logical query already started",
+        )?;
+        if state.queries.len() == REQUESTS as usize {
+            state.accounting.fail(LimitKind::Requests);
+            return Err(Error("query coverage count bound"));
+        }
+        state.accounting.reserve_bytes(reservation)?;
+        state.queries.insert(key);
+        state.query_active = true;
+        Ok(())
+    }
+    pub(super) fn canonical_route_record(
+        &self,
+        record: &crate::provider::reviewed_subnet_routes_v1::ReviewedSubnetRouteRecordV1,
+    ) -> Result<()> {
+        self.remaining()?;
+        record.validate()?;
+        self.state
+            .lock()
+            .map_err(|_| Error("observation state poisoned"))?
+            .accounting
+            .canonical_record(record)?;
+        self.remaining().map(|_| ())
+    }
     /// Output fan-out has its own shared bound, independent of source occurrences.
     pub(super) fn output_slot(&self) -> Result<()> {
         self.remaining()?;
@@ -107,33 +161,6 @@ impl ObservationRound {
             Ok(state) => state.accounting.requests(),
             Err(poisoned) => poisoned.into_inner().accounting.requests(),
         }
-    }
-    /// Reserve the maximum terminal coverage encoding before a logical query starts.
-    /// The charge is never refunded, including on cancellation or early failure.
-    pub(super) fn begin_query(
-        &self,
-        reserve: &crate::provider::coverage::ReadCoverageV1,
-    ) -> Result<usize> {
-        self.remaining()?;
-        reserve.validate()?;
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| Error("observation state poisoned"))?;
-        crate::require(!state.query_active, "concurrent logical query")?;
-        let identity = crate::canonical::encode(&reserve.query)?;
-        crate::require(
-            !state.queries.contains(&identity),
-            "logical query already started",
-        )?;
-        if state.queries.len() == REQUESTS as usize {
-            state.accounting.fail(LimitKind::Requests);
-            return Err(Error("query coverage count bound"));
-        }
-        let bytes = state.accounting.canonical_record(reserve)?;
-        state.queries.insert(identity);
-        state.query_active = true;
-        Ok(bytes.len())
     }
     pub(super) fn end_query(&self) {
         if let Ok(mut state) = self.state.lock() {
@@ -272,7 +299,9 @@ impl ObservationRound {
             state.accounting.fail(LimitKind::Elapsed);
         }
         state.last = now.boottime_ns;
-        let session = state.expires.map(|e| e.duration_since(SystemTime::now()));
+        let session = state
+            .expires
+            .map(|e| e.duration_since(self.clock.realtime()));
         if session
             .as_ref()
             .is_some_and(|r| r.as_ref().map_or(true, |d| d.is_zero()))
