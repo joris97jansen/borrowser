@@ -173,3 +173,16 @@ credit, independent output/byte bounds and the complete owned SDK member invento
 The SDK remains the semantic decoder; the userData AttributeValue String receives
 one API Base64 decode at the adapter. No historical schema, SDK pin, shared evidence
 ceiling, launch authority or controller/publication surface changes.
+
+## Operation discovery and A07 association scope
+
+[AG9g0e2d / #1416](ag9g0e2d-operation-discovery.md) coordinates the closed readers,
+derives required observations independently from coverage flags, and audits supplied
+representation before claiming discovery completeness. Shared execution mechanics
+now also serve the [narrow reviewed-subnet route successor](ag9g0e2d-reviewed-subnet-route-observation-v1.md):
+DescribeRouteTables with the sole association.subnet-id filter, MaxResults 10 and
+exact continuation. Its new query/record/coverage provenance is distinct from frozen
+exact-table V1/V4 provenance. Returned route normalization, generated decoder pins,
+transport limits and historical validators are unchanged. Final session/round checks
+run after substantive report preparation; offline derivation uses explicit supplied
+facts. No admission, inventory, publication or controller API is added.

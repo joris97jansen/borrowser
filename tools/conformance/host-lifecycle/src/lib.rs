@@ -48,6 +48,15 @@ pub fn require(ok: bool, message: &'static str) -> Result<()> {
 /// fn persist(value: &ProviderObservationV1) { let _ = serde_json::to_vec(value); }
 /// ```
 /// Immutable context exposes no mutable access.
+/// Discovery carriers and reports also remain in-memory only.
+/// ```compile_fail
+/// use borrowser_host_lifecycle::provider::discovery::DiscoveryEvidence;
+/// fn persist(v: &DiscoveryEvidence) { let _ = serde_json::to_vec(v); }
+/// ```
+/// ```compile_fail
+/// use borrowser_host_lifecycle::provider::discovery::DiscoveryReport;
+/// fn persist(v: &DiscoveryReport) { let _ = serde_json::to_vec(v); }
+/// ```
 /// ```compile_fail
 /// use borrowser_host_lifecycle::provider::context::ReconciliationContextV1;
 /// fn retarget(value: &mut ReconciliationContextV1) { value.fields().next_sequence += 1; }

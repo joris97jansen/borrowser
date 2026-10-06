@@ -1,0 +1,1 @@
+{"schema_version":5,"query":{"operation":"DescribeInstances","account":"111111111111","region":"eu-central-1","scope":{"kind":"operation-tag","operation":"synthetic-operation-1"}},"source":{"page":1,"path":{"kind":"reservation","reservation":0}},"data":{"kind":"reservation","id":{"kind":"not-returned"},"owner":{"kind":"not-returned"},"instances":{"kind":"present","count":0}}}
