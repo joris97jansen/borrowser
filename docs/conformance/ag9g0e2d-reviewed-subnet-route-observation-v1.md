@@ -5,6 +5,11 @@ but that cannot establish whether another table has an explicit association with
 the reviewed subnet. This successor adds only that missing A07 observation. It
 does not reinterpret V1 exact scopes, modify V4 schemas, or traverse other infrastructure.
 
+The [AG9g0e2e0 audit](ag9g0e2e0-authoritative-infrastructure-absence.md) distinguishes
+positive conceptual destination/target witnesses from literal optional-member
+absence. Both route readers preserve competing and partial evidence under their
+separate provenance and coverage. No additional route successor is introduced.
+
 `ReviewedSubnetRouteQueryV1` has schema version 1, operation DescribeRouteTables,
 retained account/region and `association_subnet`, exactly bound to the reviewed
 manifest. The only wire filter is `association.subnet-id=<reviewed subnet>`;

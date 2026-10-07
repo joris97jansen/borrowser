@@ -39,6 +39,14 @@ SG IDs and ARN lists use lexical order. No constructor silently removes duplicat
 NACL ordering is rule-number ordering, not an unordered set or policy evaluation.
 All collection limits also remain subject to the aggregate manifest byte limit.
 
+The [AG9g0e2e0 absence audit](ag9g0e2e0-authoritative-infrastructure-absence.md)
+records a compatibility decision still needed for A10: AWS can return IPv6
+default-deny entries in applicable configurations, while this V1 expectation has
+only IPv4 entries and no IPv6 exception. Observations must retain those entries;
+they must not be filtered or merged by rule number to fit this manifest. A separate
+contract issue must decide whether strict exclusion is intentional or a versioned
+exception is needed. This note changes neither the expectation nor its validator.
+
 ## Endpoint policy representation
 
 At most 16 canonical-order statements; whole typed policy at most 8 KiB. The target

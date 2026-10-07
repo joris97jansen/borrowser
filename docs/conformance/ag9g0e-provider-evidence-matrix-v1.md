@@ -71,6 +71,13 @@ response and incomplete reason. A resource is not unrelated simply because it fa
 admission. Matching token, operation tags, retained identity or attachment linkage must
 not be discarded to manufacture a singleton. These are requirements for e2.
 
+The [AG9g0e2e0 proof audit](ag9g0e2e0-authoritative-infrastructure-absence.md) qualifies
+the A04/A07/A10 negative facts without changing this matrix or its reviewed
+expectations. A04 placement negatives and strict A10 IPv6 absence remain unresolved
+on the audited evidence; A07 has narrow positive-witness conceptual inferences,
+not synthetic member absence. Terminal coverage, `NotReturned`, empty values and
+generic historical absence vocabulary must not be substituted for those proofs.
+
 | Fact | Retained source / required predicate | Abstract observation fields | Audited reads |
 | --- | --- | --- | --- |
 | A01 | D/R account and non-root caller | Caller.account/arn/user_id | STS GetCallerIdentity |

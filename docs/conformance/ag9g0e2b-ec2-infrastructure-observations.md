@@ -6,6 +6,11 @@ It belongs to host-lifecycle tooling under **AG — Web Platform Test Harness an
 Cross-Engine Conformance Infrastructure**. It does not complete AG, establish
 infrastructure admission or change browser-engine behavior.
 
+The [AG9g0e2e0 authoritative-absence audit](ag9g0e2e0-authoritative-infrastructure-absence.md)
+records the service/protocol proof limits for A04/A07/A10. `NotReturned` and `Empty`
+remain distinct observations, never new absence certificates. The audit adds no
+successor, changes no V4 bytes/validators and does not complete admission.
+
 ## Ownership and compatibility
 
 `tools/conformance/host-lifecycle/src/provider/{ec2_observation_v4,

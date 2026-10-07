@@ -7,6 +7,12 @@ evaluate those admission predicates, decide A23 cardinality, build final invento
 bind or reconcile resources, publish/replay evidence, capture controller context,
 or authorize cleanup. Neither parent AG9g0e2 nor Milestone AG is complete.
 
+For A04/A07/A10, the [authoritative-absence audit](ag9g0e2e0-authoritative-infrastructure-absence.md)
+explains why complete execution and retained occurrence accounting do not certify
+semantic infrastructure absence. Missing members/collections, duplicate and
+incompatible observations retain their independent meaning even when representation
+accounting is complete. AG9g0e2e admission remains outstanding.
+
 ## Boundaries and supplied inputs
 
 `provider::discovery::DiscoveryInputs::new` checks retained `PreparedLaunchV2`
