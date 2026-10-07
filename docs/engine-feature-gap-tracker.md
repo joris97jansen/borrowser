@@ -640,6 +640,14 @@ Current architecture status:
   controller capture/integration and cleanup remain incomplete. This does not mark
   parent AG9g0e2 or Milestone AG complete. See
   `docs/conformance/ag9g0e2d-operation-discovery.md`.
+- AG9g0e2e0 audits authoritative absence for A04/A07/A10 and adds pinned-decoder,
+  protected-reader, occurrence-accounting and canonical-compatibility regressions.
+  V4 and reviewed-subnet route contracts remain unchanged. A04 placement negatives
+  and strict A10 IPv6 absence remain unproven; A07 permits only narrow conceptual
+  positive-witness inference, not absent optional members. A separate contract
+  decision must address the reviewed A10 expectation versus AWS IPv6 default-deny
+  entries. AG9g0e2e, full A01–A12 admission and Milestone AG remain incomplete. See
+  `docs/conformance/ag9g0e2e0-authoritative-infrastructure-absence.md`.
 - No AG9 capability establishes broad WPT compliance, browser compatibility,
   browser automation, or raster comparison. Completion requires requirement and
   validation evidence, including later exact-revision hosted CI.

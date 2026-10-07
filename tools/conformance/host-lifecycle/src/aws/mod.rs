@@ -870,6 +870,8 @@ mod ec2_allocation_observation;
 mod ec2_allocation_reads;
 #[cfg(test)]
 mod ec2_endpoint_policy_tests;
+#[cfg(test)]
+mod ec2_infrastructure_absence_tests;
 mod ec2_infrastructure_reads;
 #[cfg(test)]
 mod ec2_infrastructure_reads_tests;

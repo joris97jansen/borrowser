@@ -1,6 +1,208 @@
 use super::*;
 
 #[tokio::test]
+async fn infrastructure_complete_accounting_preserves_unavailable_members_and_collections() {
+    use crate::aws::ec2_infrastructure_absence_tests::{acl, page, record_bytes, subnet, table};
+    use crate::aws::ec2_infrastructure_reads::InfrastructureRead as I;
+    use crate::aws::ec2_observation_tests::{data, present};
+    use crate::provider::{
+        ec2_observation_v4::*, management_observation_v2::ObservationValueV2 as V,
+    };
+    let (p, c) = retained();
+    let inputs = DiscoveryInputs::new(&c, &p, MANIFEST, None).unwrap();
+    for (read, root) in [
+        (I::Subnets, subnet("<customerOwnedIpv4Pool/>")),
+        (I::RouteTables, table(None)),
+        (
+            I::RouteTables,
+            table(Some("<item><destinationIpv6CidrBlock/></item>")),
+        ),
+        (I::NetworkAcls, acl(None)),
+        (I::NetworkAcls, acl(Some("<item><ipv6CidrBlock/></item>"))),
+    ] {
+        let (mut session, _, round) = reader(vec![response(200, &page(read, &root))]);
+        let result = session.infrastructure(read, true).await.unwrap();
+        assert_eq!(result.coverage.status, CoverageStatus::Complete);
+        assert!(result.coverage.terminal_page);
+        let original = result.records[0].clone();
+        let evidence = ingest(&inputs, bundle(c.identity().unwrap(), result)).unwrap();
+        let report = derive_offline(&inputs, &evidence, &facts(&round)).unwrap();
+        assert!(!report.accounting_gap);
+        assert_eq!(report.representation.len(), 1);
+        assert!(report.representation.values().all(|a| a.complete()));
+        // Execution and occurrence representation do not invent semantic facts.
+        assert_eq!(
+            record_bytes(&evidence.evidence().observations.records),
+            record_bytes(std::slice::from_ref(&original))
+        );
+        match data(&original) {
+            ObservationDataV4::Subnet {
+                outpost,
+                customer_owned_pool,
+                ..
+            } => {
+                assert_eq!(*outpost, Ec2MemberV4::NotReturned);
+                assert_eq!(*customer_owned_pool, Ec2MemberV4::Empty);
+            }
+            ObservationDataV4::RouteTable {
+                routes: V::Unavailable(_),
+                ..
+            }
+            | ObservationDataV4::Nacl {
+                entries: V::Unavailable(_),
+                ..
+            } => {}
+            ObservationDataV4::RouteTable { routes, .. } => {
+                let route = &present(routes).as_slice()[0];
+                assert_eq!(route.destinations.ipv6, Ec2MemberV4::Empty);
+                assert_eq!(route.targets.gateway, Ec2MemberV4::NotReturned);
+            }
+            ObservationDataV4::Nacl { entries, .. } => {
+                let entry = &present(entries).as_slice()[0];
+                assert_eq!(entry.ipv6, Ec2MemberV4::Empty);
+                assert!(matches!(entry.number, V::Unavailable(_)));
+            }
+            _ => panic!(),
+        }
+    }
+}
+
+#[tokio::test]
+async fn infrastructure_duplicates_reordering_and_incompatible_repeats_preserve_occurrence_credit()
+{
+    use crate::aws::ec2_infrastructure_absence_tests::{
+        IPV4_DENY, IPV6_DENY, LOCAL_ROUTE, acl, page, record_bytes, subnet, table,
+    };
+    use crate::aws::ec2_infrastructure_reads::InfrastructureRead as I;
+    use crate::aws::ec2_infrastructure_reads_tests::with_token;
+    let (p, c) = retained();
+    let inputs = DiscoveryInputs::new(&c, &p, MANIFEST, None).unwrap();
+    for (read, first, conflicting, sources) in [
+        (
+            I::Subnets,
+            subnet(""),
+            subnet(
+                "<outpostArn>outpost-positive</outpostArn><customerOwnedIpv4Pool>pool-positive</customerOwnedIpv4Pool>",
+            ),
+            3,
+        ),
+        (
+            I::RouteTables,
+            table(Some(LOCAL_ROUTE)),
+            table(Some(
+                "<item><destinationIpv6CidrBlock>::/0</destinationIpv6CidrBlock><natGatewayId>nat-x</natGatewayId></item>",
+            )),
+            6,
+        ),
+        (
+            I::NetworkAcls,
+            acl(Some(IPV4_DENY)),
+            acl(Some(IPV6_DENY)),
+            6,
+        ),
+    ] {
+        let bodies = [
+            with_token(
+                read,
+                &page(read, &format!("{first}{first}")),
+                "<nextToken>next</nextToken>",
+            ),
+            page(read, &conflicting),
+        ];
+        let (mut session, _, round) = reader(bodies.iter().map(|b| response(200, b)).collect());
+        let result = session.infrastructure(read, true).await.unwrap();
+        assert_eq!(result.coverage.status, CoverageStatus::Complete);
+        assert_eq!(
+            (result.coverage.pages, result.coverage.records),
+            (2, sources)
+        );
+        assert_eq!(result.records.len(), 3);
+        let bytes = record_bytes(&result.records);
+        assert_eq!(bytes[0], bytes[1]);
+        assert_ne!(bytes[0], bytes[2]);
+        let mut supplied = bundle(c.identity().unwrap(), result);
+        let valid = ingest(&inputs, supplied.clone()).unwrap();
+        let report = derive_offline(&inputs, &valid, &facts(&round)).unwrap();
+        assert!(report.representation.values().all(|a| a.complete()));
+        assert!(!report.accounting_gap);
+        assert_eq!(valid.evidence().observations.records.len(), 3);
+        supplied.observations.records.reverse();
+        let reordered = ingest(&inputs, supplied.clone()).unwrap();
+        assert_eq!(
+            record_bytes(&valid.evidence().observations.records),
+            record_bytes(&reordered.evidence().observations.records)
+        );
+        assert_eq!(
+            report,
+            derive_offline(&inputs, &reordered, &facts(&round)).unwrap()
+        );
+        // Losing a duplicate or the contradictory observation is still a deficit.
+        for removed in 0..3 {
+            let mut partial = supplied.clone();
+            partial.observations.records.remove(removed);
+            partial
+                .observations
+                .records
+                .sort_by_cached_key(|r| r.canonical_bytes().unwrap());
+            partial.observations.validate().unwrap(); // Frozen V4 permits partial evidence.
+            let valid = ingest(&inputs, partial).unwrap();
+            let report = derive_offline(&inputs, &valid, &facts(&round)).unwrap();
+            assert!(!report.complete);
+            assert!(report.accounting_gap);
+            assert!(report.representation.values().any(|a| {
+                a.gaps
+                    .contains(&representation::RepresentationGap::UnrepresentedSourceOccurrences)
+            }));
+        }
+    }
+}
+
+#[tokio::test]
+async fn nacl_nested_occurrence_deficit_cannot_certify_a_collection() {
+    use crate::aws::ec2_infrastructure_absence_tests::{IPV4_DENY, IPV6_DENY, acl, page};
+    use crate::aws::ec2_infrastructure_reads::InfrastructureRead as I;
+    use crate::provider::{
+        ec2_observation_v4::ObservationDataV4, management_observation_v2::ObservationValueV2 as V,
+    };
+    let (p, c) = retained();
+    let inputs = DiscoveryInputs::new(&c, &p, MANIFEST, None).unwrap();
+    let (mut session, _, round) = reader(vec![response(
+        200,
+        &page(
+            I::NetworkAcls,
+            &acl(Some(&format!("{IPV4_DENY}{IPV6_DENY}{IPV6_DENY}"))),
+        ),
+    )]);
+    let result = session.infrastructure(I::NetworkAcls, true).await.unwrap();
+    assert_eq!(result.coverage.records, 4);
+    let mut partial = bundle(c.identity().unwrap(), result);
+    let ObservationEntryV5::V4(record) = &mut partial.observations.records[0] else {
+        panic!()
+    };
+    let ObservationDataV4::Nacl {
+        entries: V::Present(entries),
+        ..
+    } = &mut record.data
+    else {
+        panic!()
+    };
+    *entries = entries.as_slice()[..2].to_vec().try_into().unwrap();
+    partial.observations.validate().unwrap();
+    let valid = ingest(&inputs, partial).unwrap();
+    let report = derive_offline(&inputs, &valid, &facts(&round)).unwrap();
+    // Top-level output accounting matches; the nested source deficit is independent.
+    assert!(!report.accounting_gap);
+    assert!(!report.complete);
+    let audit = report.representation.values().next().unwrap();
+    assert_eq!(audit.represented_sources, Some(3));
+    assert!(
+        audit
+            .gaps
+            .contains(&representation::RepresentationGap::UnrepresentedSourceOccurrences)
+    );
+}
+
+#[tokio::test]
 async fn whole_resource_omissions_pass_frozen_validation_but_never_complete_representation() {
     let (p, c) = retained();
     let inputs = DiscoveryInputs::new(&c, &p, MANIFEST, None).unwrap();

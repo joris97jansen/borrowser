@@ -130,3 +130,4 @@ valid lane-excluded baseline/trend round trips.
 
 - [Bounded operation discovery, offline representation auditing and relationship closure (#1416)](ag9g0e2d-operation-discovery.md).
 - [Narrow A07 reviewed-subnet route query and observation successor](ag9g0e2d-reviewed-subnet-route-observation-v1.md).
+- [A04/A07/A10 authoritative infrastructure absence proof audit (AG9g0e2e0)](ag9g0e2e0-authoritative-infrastructure-absence.md).

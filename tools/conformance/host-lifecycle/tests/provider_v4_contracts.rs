@@ -170,3 +170,75 @@ fn new_carrier_rejects_superseded_ec2_while_historical_record_stays_valid() {
             .is_err()
     );
 }
+
+#[test]
+fn ipv6_member_states_have_independent_canonical_identity_beside_contradictions() {
+    use borrowser_host_lifecycle::provider::{
+        identity_observation_v3::MemberRepresentationFailureV3 as Failure,
+        management_observation_v2::{ObservationValueV2 as V, UnavailableEvidenceV2},
+        manifest::Ipv4Cidr,
+    };
+    let mut encodings = std::collections::BTreeSet::new();
+    let mut identities = std::collections::BTreeSet::new();
+    for ipv6 in [
+        Ec2MemberV4::NotReturned,
+        Ec2MemberV4::Empty,
+        Ec2MemberV4::Present("::/0".to_owned().try_into().unwrap()),
+        Ec2MemberV4::Malformed("bad".to_owned().try_into().unwrap()),
+        Ec2MemberV4::Unrepresentable(Failure::ContainsNul),
+        Ec2MemberV4::Unrepresentable(Failure::TextBytes),
+    ] {
+        let entry = NaclEntryV4 {
+            number: V::Present(32767.into()),
+            egress: V::Present(false),
+            action: Ec2MemberV4::Present("deny".to_owned().try_into().unwrap()),
+            ipv4: Ec2MemberV4::Present(Ipv4Cidr {
+                network: 0,
+                prefix: 0,
+            }),
+            ipv6,
+            protocol: Ec2MemberV4::Present("-1".to_owned().try_into().unwrap()),
+            ports: V::Unavailable(UnavailableEvidenceV2::NotReturned),
+            icmp: V::Unavailable(UnavailableEvidenceV2::NotReturned),
+        };
+        let mut r = record("nacl");
+        let ObservationDataV4::Nacl { entries, .. } = &mut r.data else {
+            panic!()
+        };
+        *entries = V::Present(vec![entry.clone(), entry].try_into().unwrap());
+        let bytes = r.canonical_bytes().unwrap();
+        assert_eq!(ObservationRecordV4::parse(&bytes).unwrap(), r);
+        assert_eq!(r.data.minimum_occurrences().unwrap(), 5);
+        assert!(encodings.insert(bytes));
+        assert!(identities.insert(r.identity().unwrap().sha256.as_str().to_owned()));
+    }
+}
+
+#[test]
+fn v4_literal_permissiveness_and_missing_versus_empty_collections_stay_frozen() {
+    use borrowser_host_lifecycle::provider::{
+        management_observation_v2::{ObservationValueV2 as V, UnavailableEvidenceV2},
+        observation::ProviderText,
+    };
+    for literal in [" ", "null", "not-an-arn!", "future-target"] {
+        assert_eq!(
+            ProviderText::parse_literal(literal).unwrap().as_str(),
+            literal
+        );
+    }
+    let mut r = record("nacl");
+    let empty = r.canonical_bytes().unwrap();
+    let ObservationDataV4::Nacl { entries, .. } = &mut r.data else {
+        panic!()
+    };
+    *entries = V::Unavailable(UnavailableEvidenceV2::NotReturned);
+    let missing = r.canonical_bytes().unwrap();
+    assert_ne!(empty, missing);
+    assert_eq!(ObservationRecordV4::parse(&missing).unwrap(), r);
+    assert_eq!(r.data.minimum_occurrences().unwrap(), 3);
+    // Existing frozen fixture bytes/hashes are checked above, never regenerated.
+    assert_eq!(
+        record("nacl").canonical_bytes().unwrap(),
+        fixture("nacl", "json")
+    );
+}
