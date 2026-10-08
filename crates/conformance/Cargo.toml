@@ -1,0 +1,12 @@
+[package]
+name = "borrowser-conformance"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+browser = { path = "../browser" }
+bus = { path = "../bus" }
+core_types = { path = "../core_types" }
+runtime_parse = { path = "../runtime_parse" }
+egui = { workspace = true }

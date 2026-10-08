@@ -9,10 +9,19 @@ use core_types::{DomHandle, DomVersion, NetworkResponseInfo, RequestId, Styleshe
 use std::collections::HashMap;
 use std::sync::mpsc;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum DocumentParseStatus {
+    #[default]
+    Pending,
+    Complete,
+    Failed,
+}
+
 #[derive(Clone, Debug, Default)]
 pub(super) struct DocumentLoadState {
     pub(super) response: Option<NetworkResponseInfo>,
     pub(super) bytes_received: usize,
+    pub(super) parse_status: DocumentParseStatus,
 }
 
 #[derive(Clone, Debug)]
@@ -77,6 +86,27 @@ impl Tab {
 
     pub fn set_repaint_handle(&mut self, h: RepaintHandle) {
         self.repaint = Some(h);
+    }
+
+    pub(super) fn update_loading(&mut self) {
+        self.loading = match self.document_load.parse_status {
+            DocumentParseStatus::Pending => true,
+            DocumentParseStatus::Complete => self.page.pending_count() > 0,
+            DocumentParseStatus::Failed => false,
+        };
+    }
+
+    pub(super) fn fail_document(&mut self, status: String) {
+        if self.document_load.parse_status != DocumentParseStatus::Failed {
+            self.document_load.parse_status = DocumentParseStatus::Failed;
+            self.loading = false;
+            self.last_status = Some(status);
+            self.send_cmd(CoreCommand::CancelRequest {
+                tab_id: self.tab_id,
+                request_id: self.nav_gen,
+            });
+            self.poke_redraw();
+        }
     }
 
     pub(super) fn is_current(&self, tab_id: TabId, request_id: RequestId) -> bool {

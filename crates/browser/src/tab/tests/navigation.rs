@@ -9,8 +9,8 @@ use html::{HtmlParseOptions, parse_document};
 #[test]
 fn redirected_document_response_updates_tab_base_url_and_status() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 1;
     let requested = "https://example.com".to_string();
+    tab.navigate_to_new(requested.clone());
     let final_url = "https://example.com/landing".to_string();
     let response = NetworkResponseInfo {
         requested_url: requested,
@@ -25,7 +25,8 @@ fn redirected_document_response_updates_tab_base_url_and_status() {
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
         response: response.clone(),
-    });
+    })
+    .unwrap();
 
     let output = parse_document(
         "<!doctype html><title>Example Domain</title><h1>Example Domain</h1>",
@@ -40,13 +41,25 @@ fn redirected_document_response_updates_tab_base_url_and_status() {
         kind: ResourceKind::Html,
         response,
         bytes_received: 63,
-    });
+    })
+    .unwrap();
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 1,
         publication: no_quirks_patch_publication_from_output(output),
-    });
+    })
+    .unwrap();
 
+    tab.on_core_event(CoreEvent::HtmlParseFinished {
+        tab_id: tab.tab_id,
+        request_id: 1,
+        result: Ok(bus::HtmlParseCompletion {
+            handle: tab.dom_handle.unwrap(),
+            version: tab.dom_version,
+            document_mode: tab.page.document_mode.unwrap(),
+        }),
+    })
+    .unwrap();
     assert_eq!(tab.page.base_url.as_deref(), Some(final_url.as_str()));
     assert!(
         tab.last_status
@@ -74,10 +87,13 @@ fn starting_new_navigation_clears_pending_render_work_and_last_trace() {
         tab_id: tab.tab_id,
         request_id: 32,
         publication: no_quirks_patch_publication_from_output(output),
-    });
+    })
+    .unwrap();
 
     let ctx = Context::default();
-    let _ = ctx.run(egui::RawInput::default(), |ctx| tab.ui_content(ctx));
+    let _ = ctx.run(egui::RawInput::default(), |ctx| {
+        tab.ui_content(ctx).unwrap();
+    });
 
     assert!(tab.pending_render_work.is_empty());
     assert!(

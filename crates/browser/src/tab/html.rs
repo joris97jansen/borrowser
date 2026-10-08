@@ -1,5 +1,5 @@
 use super::Tab;
-use super::state::DocumentLoadState;
+use super::state::DocumentParseStatus;
 use super::status::{format_network_error, response_summary};
 use bus::CoreCommand;
 use core_types::{NetworkErrorKind, NetworkResponseInfo, RequestId};
@@ -10,13 +10,19 @@ impl Tab {
         response: NetworkResponseInfo,
         request_id: RequestId,
     ) {
+        // Networking emits one start for the final response, after redirects.
+        // Only navigation resets the lifecycle; duplicate starts must not clear
+        // a streaming publication or reopen a completed/failed parser session.
+        if self.document_load.parse_status != DocumentParseStatus::Pending
+            || self.document_load.response.is_some()
+        {
+            return;
+        }
         self.dom_store.clear();
         self.dom_handle = None;
         self.dom_version = core_types::DomVersion::INITIAL;
-        self.document_load = DocumentLoadState {
-            response: Some(response.clone()),
-            bytes_received: 0,
-        };
+        self.document_load.response = Some(response.clone());
+        self.document_load.bytes_received = 0;
         self.stylesheet_loads.clear();
         self.url = response.final_url.clone();
         self.page.start_nav(response.display_url());
@@ -34,6 +40,9 @@ impl Tab {
     }
 
     pub(super) fn on_html_network_chunk(&mut self, bytes: Vec<u8>, request_id: RequestId) {
+        if self.document_load.parse_status != DocumentParseStatus::Pending {
+            return;
+        }
         self.document_load.bytes_received = self
             .document_load
             .bytes_received
@@ -51,10 +60,11 @@ impl Tab {
         bytes_received: usize,
         request_id: RequestId,
     ) {
-        self.document_load = DocumentLoadState {
-            response: Some(response.clone()),
-            bytes_received,
-        };
+        if self.document_load.parse_status != DocumentParseStatus::Pending {
+            return;
+        }
+        self.document_load.response = Some(response.clone());
+        self.document_load.bytes_received = bytes_received;
         self.send_cmd(CoreCommand::ParseHtmlDone {
             tab_id: self.tab_id,
             request_id,
@@ -73,14 +83,15 @@ impl Tab {
         status_code: Option<u16>,
         error: String,
     ) {
-        self.loading = false;
-        self.last_status = Some(format_network_error(
+        if self.document_load.parse_status != DocumentParseStatus::Pending {
+            return;
+        }
+        self.fail_document(format_network_error(
             "document",
             &url,
             error_kind,
             status_code,
             &error,
         ));
-        self.poke_redraw();
     }
 }

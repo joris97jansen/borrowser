@@ -728,3 +728,56 @@ Correctness first, shortcuts avoided unless explicitly temporary.
 Everything is designed so future features (layout modes, floats, transforms, JS) can plug in naturally.
 
 ---
+
+## AG1: parser terminal outcomes and focused conformance tooling
+
+`CoreEvent::HtmlParseFinished` carries a typed
+`Result<HtmlParseCompletion, HtmlParseFailure>`. Successful completion identifies
+the last sent publication by DOM handle, version, and parser-selected document
+mode. It follows finalization and all preceding publications on the same event
+channel; it is not a Browser commit acknowledgement or render-ready signal.
+Initialization, execution, finalization, handle exhaustion, mode/preselection,
+and unfinished-input closure failures remain parser/runtime-owned. They are not
+`DocumentPublicationFailure` variants.
+
+Each accepted parser session terminates once unless explicitly cancelled or
+superseded. Fatal errors discard unpublished patches without rolling back prior
+publications. Existing decode-error draining policy is preserved. A failed patch
+send cannot produce successful completion. Receiver loss makes terminal delivery
+impossible; consumers must treat transport loss as failure, never success.
+`CancelRequest` reaches both networking and parsing. Navigation/tab closure,
+document network failure, and Browser commit failure stop the matching work;
+stale tab/request generations remain filtered by Browser.
+
+`Tab::on_core_event` now returns Browser publication/validation failures while
+retaining their visible status. Parser failures stay in the terminal event.
+Browser accepts success only when the terminal handle/version/mode agrees with
+its committed document. Document failure stays latched until navigation resets
+it. Intermediate publications say `Parsing document`; network completion says
+`Document response complete`; only accepted terminal success permits
+`Document parsed`. User-visible loading combines parser state and pending
+stylesheets; stylesheet completion cannot erase a document failure.
+
+Networking emits at most one HTML `NetworkStart` for a request: HTTP redirects
+resolve before that event, which carries the final response URL; file loads emit
+it after opening the file. A response streams chunks and then either completes
+or fails; an early transport/open/cancellation error can occur without a start.
+The network runtime forwards these events without synthesizing response restarts.
+Browser accepts the first start only while parsing is pending and no response
+has been accepted. Repeated starts are ignored, including during streaming,
+without clearing committed publications or restarting parsing. After parser
+completion or document failure, HTML network events cannot alter document state.
+Only a new cross-document navigation or refresh resets this lifecycle and request
+generation; fragment navigation does not. Parser/publication protocol violations
+still report errors, and no same-request event can replace an earlier document
+failure with success or pending state.
+
+`crates/conformance` is separate tooling. It supplies fixed document response
+bytes at the normal resource boundary and uses Tab navigation, parser runtime,
+Browser publication, authored stylesheet reconciliation, and `Tab::ui_content`.
+Its only observation is a guarded opaque canvas-color sample from Browser's
+egui output. The canvas fill derives from production computed style and is
+presented by Browser's CentralPanel; executing Layout/GFX in that frame does not
+make the canvas sample proof of their general correctness. See the
+[conformance README](../../crates/conformance/README.md) for exact environment,
+capture restrictions, reporting, and independently authored expectations.

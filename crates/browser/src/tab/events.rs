@@ -1,4 +1,4 @@
-use super::Tab;
+use super::{Tab, state::DocumentParseStatus};
 use crate::dom_store::{
     DomIdentityResolutionError, DomMutationSnapshotInvariantError, DomMutationSnapshotLimits,
     DomPatchError,
@@ -8,7 +8,9 @@ use bus::{CoreEvent, DocumentPublication, DocumentPublicationFailure, DocumentPu
 use core_types::ResourceKind;
 
 impl Tab {
-    pub fn on_core_event(&mut self, evt: CoreEvent) {
+    /// Apply an event, returning Browser publication/commit failures.
+    /// Parser execution failures remain owned by `HtmlParseFinished`.
+    pub fn on_core_event(&mut self, evt: CoreEvent) -> Result<(), DocumentPublicationFailure> {
         match evt {
             CoreEvent::NetworkStart {
                 tab_id,
@@ -61,18 +63,39 @@ impl Tab {
                 request_id,
                 publication,
             } if self.is_current(tab_id, request_id) => {
+                if self.document_load.parse_status != DocumentParseStatus::Pending {
+                    let failure = DocumentPublicationFailure::InvariantViolation;
+                    self.on_document_publication_failure(failure.clone());
+                    return Err(failure);
+                }
                 if let Err(failure) = self.commit_document_publication(publication, request_id) {
-                    self.on_document_publication_failure(failure);
+                    self.on_document_publication_failure(failure.clone());
+                    return Err(failure);
                 }
             }
-            CoreEvent::DocumentPublicationFailed {
+            CoreEvent::HtmlParseFinished {
                 tab_id,
                 request_id,
-                failure,
-                ..
-            } if self.is_current(tab_id, request_id) => {
-                self.on_document_publication_failure(failure);
-            }
+                result,
+            } if self.is_current(tab_id, request_id) => match result {
+                Err(error) => self.fail_document(format!("Document parsing failed: {error:?}")),
+                Ok(completion) => {
+                    if self.document_load.parse_status != DocumentParseStatus::Pending
+                        || self.dom_handle != Some(completion.handle)
+                        || self.dom_version != completion.version
+                        || self.page.document_mode != Some(completion.document_mode)
+                        || self.page.dom.is_none()
+                    {
+                        let failure = DocumentPublicationFailure::InvariantViolation;
+                        self.on_document_publication_failure(failure.clone());
+                        return Err(failure);
+                    }
+                    self.document_load.parse_status = DocumentParseStatus::Complete;
+                    self.update_loading();
+                    self.update_document_progress();
+                    self.poke_redraw();
+                }
+            },
 
             CoreEvent::NetworkStart {
                 tab_id,
@@ -175,6 +198,7 @@ impl Tab {
 
             _ => {}
         }
+        Ok(())
     }
 }
 
@@ -282,20 +306,8 @@ impl Tab {
             .seed_input_values_from_dom(&mut self.document_input.input_values);
         self.page.update_visible_text_cache();
         self.discover_resources(request_id);
-        let pending = self.page.pending_count();
-        self.loading = pending > 0;
-        let base = if pending > 0 {
-            format!("Document parsed • fetching {pending} stylesheet(s)")
-        } else {
-            "Document parsed".to_string()
-        };
-        self.last_status = Some(match self.document_load.response.as_ref() {
-            Some(response) => format!(
-                "{base} • {}",
-                super::status::response_summary(response, self.document_load.bytes_received)
-            ),
-            None => base,
-        });
+        self.update_loading();
+        self.update_document_progress();
         self.request_dom_publication_render_work(render_work);
         Ok(())
     }
@@ -322,10 +334,29 @@ impl Tab {
         )
     }
 
+    fn update_document_progress(&mut self) {
+        let pending = self.page.pending_count();
+        let phase = if self.document_load.parse_status == DocumentParseStatus::Complete {
+            "Document parsed"
+        } else {
+            "Parsing document"
+        };
+        let base = if pending > 0 {
+            format!("{phase} • fetching {pending} stylesheet(s)")
+        } else {
+            phase.to_string()
+        };
+        self.last_status = Some(match self.document_load.response.as_ref() {
+            Some(response) => format!(
+                "{base} • {}",
+                super::status::response_summary(response, self.document_load.bytes_received)
+            ),
+            None => base,
+        });
+    }
+
     fn on_document_publication_failure(&mut self, failure: DocumentPublicationFailure) {
-        self.loading = false;
-        self.last_status = Some(format!("Document publication failed: {failure:?}"));
-        self.poke_redraw();
+        self.fail_document(format!("Document publication failed: {failure:?}"));
     }
 }
 

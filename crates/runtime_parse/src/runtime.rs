@@ -3,9 +3,9 @@ use std::sync::atomic::Ordering;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 
-use bus::{CoreCommand, CoreEvent};
+use crate::patching::emit_parse_finished;
+use bus::{CoreCommand, CoreEvent, HtmlParseFailure};
 use core_types::{DomHandle, RequestId, TabId};
-use log::error;
 
 use crate::clock::{PreviewClock, SystemClock};
 use crate::driver::{handle_runtime_chunk, handle_runtime_done};
@@ -45,7 +45,11 @@ pub(crate) fn start_parse_runtime_with_policy_and_clock<C: PreviewClock + 'stati
             let now = clock.now();
             match cmd {
                 CoreCommand::ParseHtmlStart { tab_id, request_id } => {
-                    handle_parse_start(&mut htmls, now, patch_buffer_retain, tab_id, request_id);
+                    let state = next_dom_handle(&HANDLE_GEN).and_then(|handle| {
+                        RuntimeState::new(now, patch_buffer_retain, handle)
+                            .map_err(HtmlParseFailure::Initialization)
+                    });
+                    handle_parse_start(&mut htmls, &evt_tx, tab_id, request_id, state);
                 }
                 CoreCommand::ParseHtmlChunk {
                     tab_id,
@@ -59,29 +63,39 @@ pub(crate) fn start_parse_runtime_with_policy_and_clock<C: PreviewClock + 'stati
                 CoreCommand::ParseHtmlDone { tab_id, request_id } => {
                     handle_parse_done(&mut htmls, &evt_tx, tab_id, request_id);
                 }
+                CoreCommand::CancelRequest { tab_id, request_id } => {
+                    htmls.remove(&(tab_id, request_id));
+                }
                 _ => {}
             }
+        }
+        // Input closure is not successful finalization. Cancelled sessions were removed.
+        let mut unfinished: Vec<_> = htmls.into_keys().collect();
+        unfinished.sort_unstable();
+        for (tab_id, request_id) in unfinished {
+            emit_parse_finished(
+                &evt_tx,
+                tab_id,
+                request_id,
+                Err(HtmlParseFailure::InputClosed),
+            );
         }
     });
 }
 
 fn handle_parse_start(
     htmls: &mut HashMap<Key, RuntimeState>,
-    now: std::time::Instant,
-    patch_buffer_retain: usize,
+    evt_tx: &Sender<CoreEvent>,
     tab_id: TabId,
     request_id: RequestId,
+    result: Result<RuntimeState, HtmlParseFailure>,
 ) {
-    let Some(dom_handle) = next_dom_handle(tab_id, request_id) else {
-        return;
-    };
-    let state = match RuntimeState::new(now, patch_buffer_retain, dom_handle) {
+    // A repeated start explicitly supersedes the earlier session for this key.
+    htmls.remove(&(tab_id, request_id));
+    let state = match result {
         Ok(state) => state,
-        Err(err) => {
-            error!(
-                target: "runtime_parse",
-                "failed to initialize html5 parser: {err}"
-            );
+        Err(error) => {
+            emit_parse_finished(evt_tx, tab_id, request_id, Err(error));
             return;
         }
     };
@@ -117,18 +131,46 @@ fn handle_parse_done(
     }
 }
 
-fn next_dom_handle(tab_id: TabId, request_id: RequestId) -> Option<DomHandle> {
-    let prev = match HANDLE_GEN
+fn next_dom_handle(counter: &std::sync::atomic::AtomicU64) -> Result<DomHandle, HtmlParseFailure> {
+    counter
         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| v.checked_add(1))
-    {
-        Ok(prev) => prev,
-        Err(_) => {
-            error!(
-                target: "runtime_parse",
-                "dom handle overflow; dropping ParseHtmlStart tab={tab_id:?} request={request_id:?}"
+        .map(|previous| DomHandle(previous + 1))
+        .map_err(|_| HtmlParseFailure::DomHandleExhausted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicU64;
+
+    #[test]
+    fn rejected_initialization_or_allocation_has_one_terminal_and_no_active_state() {
+        for failure in [
+            HtmlParseFailure::Initialization(html::HtmlParseError::Decode),
+            next_dom_handle(&AtomicU64::new(u64::MAX)).unwrap_err(),
+        ] {
+            let mut states = HashMap::new();
+            let (tx, rx) = std::sync::mpsc::channel();
+            handle_parse_start(&mut states, &tx, 3, 7, Err(failure.clone()));
+            handle_parse_done(&mut states, &tx, 3, 7);
+            assert!(states.is_empty());
+            assert!(
+                matches!(rx.try_recv().unwrap(), CoreEvent::HtmlParseFinished {
+                tab_id: 3, request_id: 7, result: Err(error),
+            } if error == failure)
             );
-            return None;
+            assert!(rx.try_recv().is_err());
         }
-    };
-    Some(DomHandle(prev + 1))
+    }
+
+    #[test]
+    fn handle_exhaustion_never_wraps_or_changes_counter() {
+        let counter = AtomicU64::new(u64::MAX - 1);
+        assert_eq!(next_dom_handle(&counter), Ok(DomHandle(u64::MAX)));
+        assert_eq!(
+            next_dom_handle(&counter),
+            Err(HtmlParseFailure::DomHandleExhausted)
+        );
+        assert_eq!(counter.load(Ordering::Relaxed), u64::MAX);
+    }
 }

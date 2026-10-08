@@ -23,13 +23,34 @@ pub enum DocumentPublicationPayload {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DocumentPublicationFailure {
-    DocumentModeUnavailable,
-    PreSelectionBudgetExceeded,
     DocumentModeChanged,
     GenerationMismatch,
     InvalidPayload,
     MaterializationFailed,
     InvariantViolation,
+}
+
+/// Parser completion identifies the last publication sent, not a Browser commit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HtmlParseCompletion {
+    pub handle: DomHandle,
+    pub version: DomVersion,
+    pub document_mode: html::DocumentMode,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HtmlParseFailure {
+    Initialization(html::HtmlParseError),
+    Execution(html::HtmlParseError),
+    Finalization(html::HtmlParseError),
+    DomHandleExhausted,
+    PreSelectionBudgetExceeded,
+    DocumentModeUnavailable,
+    DocumentModeChanged {
+        expected: html::DocumentMode,
+        actual: html::DocumentMode,
+    },
+    InputClosed,
 }
 
 #[derive(Debug)]
@@ -125,11 +146,10 @@ pub enum CoreEvent {
         request_id: u64,
         publication: DocumentPublication,
     },
-    DocumentPublicationFailed {
+    HtmlParseFinished {
         tab_id: TabId,
         request_id: u64,
-        handle: Option<DomHandle>,
-        failure: DocumentPublicationFailure,
+        result: Result<HtmlParseCompletion, HtmlParseFailure>,
     },
 
     // CSS stylesheet runtime -> UI

@@ -27,6 +27,7 @@ fn follows_redirects_and_reports_final_url() {
     );
 
     assert_eq!(result.start.response.status_code, Some(200));
+    assert_eq!(result.start.response.requested_url, server.url("/redirect"));
     assert_eq!(result.start.response.final_url, server.url("/final"));
     assert_eq!(result.done.bytes_received, b"<p>ok</p>".len());
     assert_eq!(result.body, b"<p>ok</p>");

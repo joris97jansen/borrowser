@@ -937,3 +937,24 @@ When a feature lands:
 1. Remove or narrow the item here.
 2. Link to the relevant contract doc if the behavior is subtle.
 3. Keep this file short; move detailed rules to subsystem docs.
+
+## Focused Conformance Tooling (AG1)
+
+- `crates/conformance` executes two explicitly registered static HTML/CSS fixtures
+  through production Tab navigation, parser runtime, atomic DOM/mode publication,
+  stylesheet reconciliation and rendering.
+- A fixed, guarded opaque canvas-color observation has exact expected-result
+  comparison and deterministic, inspectable reports. Production CSS supplies
+  the background and Browser's CentralPanel presents it. The normal Layout/GFX
+  frame executes, but this observation does not independently validate general
+  Layout/Paint behavior or GPU rasterization.
+- Execution, comparison and known-failure metadata remain distinct. PASS, FAIL,
+  XFAIL, XPASS, UNSUPPORTED, SKIP and ERROR have explicit reporting/exit behavior.
+  Unsupported/skipped classification is manual; arbitrary HTML/CSS classification
+  and broad fixture discovery are not implemented.
+- Parser terminal outcomes distinguish parsing from network completion, Browser
+  commit and frame completion; earlier publication failures cannot become success.
+- This is bounded AG1 tooling, not Chromium comparison, WPT support, broad browser
+  compatibility or complete rendering conformance. Chromium, AWS and broader
+  comparison coverage remain outside this issue. See the
+  [harness README](../crates/conformance/README.md).

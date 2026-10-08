@@ -329,7 +329,8 @@ impl UiApp for ShellApp {
             });
 
         // ---- Page content below ----
-        self.active_tab_mut().ui_content(ctx);
+        // Tab has already presented any style failure in the page UI.
+        let _ = self.active_tab_mut().ui_content(ctx);
     }
 
     fn set_bus_sender(&mut self, tx: mpsc::Sender<CoreCommand>) {
@@ -346,12 +347,13 @@ impl UiApp for ShellApp {
             | CoreEvent::NetworkDone { tab_id, .. }
             | CoreEvent::NetworkError { tab_id, .. }
             | CoreEvent::DomPatchUpdate { tab_id, .. }
-            | CoreEvent::DocumentPublicationFailed { tab_id, .. }
+            | CoreEvent::HtmlParseFinished { tab_id, .. }
             | CoreEvent::CssDecodedBlock { tab_id, .. }
             | CoreEvent::CssSheetDone { tab_id, .. } => *tab_id,
         };
         if let Some(tab) = self.tabs.iter_mut().find(|t| t.tab_id == sid) {
-            tab.on_core_event(evt);
+            // Tab retains and displays publication/parser failures.
+            let _ = tab.on_core_event(evt);
         }
     }
 

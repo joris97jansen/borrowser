@@ -4,6 +4,7 @@ use crate::rendering::{
     OrchestratedFrameOutcome, PendingRenderWork, execute_prepared_page_frame, prepare_page_frame,
 };
 use crate::resources::ResourceManager;
+use crate::tab::PageFrameStatus;
 use egui::{
     Align2, Area, CentralPanel, Color32, Context, CornerRadius, Frame, Id, Margin, Order, RichText,
     Stroke, vec2,
@@ -11,6 +12,7 @@ use egui::{
 pub use gfx::input::PageAction;
 
 pub(crate) struct ViewContentOutcome {
+    pub(crate) status: PageFrameStatus,
     pub(crate) action: Option<PageAction>,
     pub(crate) followup_render_request: Option<crate::rendering::RenderInvalidationRequest>,
     pub(crate) trace: Option<crate::rendering::RenderFrameExecutionTrace>,
@@ -24,7 +26,7 @@ pub(crate) fn content(
     status: Option<&String>,
     loading: bool,
     pending_work: PendingRenderWork,
-) -> ViewContentOutcome {
+) -> Result<ViewContentOutcome, css::ComputedStyleResolutionError> {
     if page.dom.is_none() {
         let visuals = ctx.style().visuals.clone();
         CentralPanel::default()
@@ -37,22 +39,24 @@ pub(crate) fn content(
                     ui.label(s);
                 }
             });
-        return ViewContentOutcome {
+        return Ok(ViewContentOutcome {
+            status: PageFrameStatus::NoDocument,
             action: None,
             followup_render_request: None,
             trace: None,
-        };
+        });
     }
 
     let prepared_frame = match prepare_page_frame(page, pending_work) {
         Ok(Some(prepared_frame)) => prepared_frame,
         Ok(None) => {
             show_status_overlay(ctx, loading, status.map(|status| status.as_str()));
-            return ViewContentOutcome {
+            return Ok(ViewContentOutcome {
+                status: PageFrameStatus::NoDocument,
                 action: None,
                 followup_render_request: None,
                 trace: None,
-            };
+            });
         }
         Err(error) => {
             let visuals = ctx.style().visuals.clone();
@@ -62,11 +66,7 @@ pub(crate) fn content(
                     ui.label(format!("Style computation failed: {error}"));
                 });
             show_status_overlay(ctx, loading, status.map(|status| status.as_str()));
-            return ViewContentOutcome {
-                action: None,
-                followup_render_request: None,
-                trace: None,
-            };
+            return Err(error);
         }
     };
     let base_fill = if let Some((r, g, b, a)) = prepared_frame.page_background {
@@ -94,11 +94,16 @@ pub(crate) fn content(
         page.record_paint_frame_result(retained_paint_result);
     }
     show_status_overlay(ctx, loading, status.map(|status| status.as_str()));
-    ViewContentOutcome {
+    Ok(ViewContentOutcome {
+        status: if action.is_some() || followup_render_request.is_some() {
+            PageFrameStatus::FollowupRequired
+        } else {
+            PageFrameStatus::Rendered
+        },
         action,
         followup_render_request,
         trace: Some(trace),
-    }
+    })
 }
 
 fn show_status_overlay(ctx: &Context, loading: bool, status: Option<&str>) {
