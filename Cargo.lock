@@ -224,6 +224,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "borrowser-conformance"
+version = "0.1.0"
+dependencies = [
+ "browser",
+ "bus",
+ "core_types",
+ "egui",
+ "runtime_parse",
+]
+
+[[package]]
 name = "browser"
 version = "0.1.0"
 dependencies = [

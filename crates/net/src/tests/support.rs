@@ -65,7 +65,10 @@ pub(super) fn collect_fetch(
             .recv_timeout(Duration::from_secs(5))
             .expect("fetch event")
         {
-            NetEvent::Start { response, .. } => start = Some(StartEvent { response }),
+            NetEvent::Start { response, .. } => {
+                assert!(start.is_none(), "a fetch must emit only one response start");
+                start = Some(StartEvent { response });
+            }
             NetEvent::Chunk { chunk, .. } => body.extend_from_slice(&chunk),
             NetEvent::Done {
                 response: _response,

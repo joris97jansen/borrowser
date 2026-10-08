@@ -3,8 +3,19 @@ use crate::rendering::{IntrinsicRenderInvalidationSource, render_intrinsic_inval
 use crate::view::content;
 use egui::Context;
 
+/// Outcome of the current production page-frame attempt, without render internals.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PageFrameStatus {
+    NoDocument,
+    Rendered,
+    FollowupRequired,
+}
+
 impl Tab {
-    pub fn ui_content(&mut self, ctx: &Context) {
+    pub fn ui_content(
+        &mut self,
+        ctx: &Context,
+    ) -> Result<PageFrameStatus, css::ComputedStyleResolutionError> {
         // Drain completed decode jobs and upload textures before painting.
         if self.resources.pump(ctx) {
             self.request_render_work(render_intrinsic_invalidation_request(
@@ -13,6 +24,7 @@ impl Tab {
         }
 
         let pending_work = std::mem::take(&mut self.pending_render_work);
+        self.last_render_trace = None;
         let outcome = content(
             ctx,
             &mut self.page,
@@ -21,7 +33,8 @@ impl Tab {
             self.last_status.as_ref(),
             self.loading,
             pending_work,
-        );
+        )?;
+        let status = outcome.status;
         self.last_render_trace = outcome.trace;
         if let Some(request) = outcome.followup_render_request {
             self.request_render_work(request);
@@ -31,6 +44,7 @@ impl Tab {
                 crate::view::PageAction::Navigate(url) => self.navigate_to_new(url),
             }
         }
+        Ok(status)
     }
 
     /// Derive a human-friendly label from the URL:

@@ -126,10 +126,8 @@ fn run_runtime_parse_stream(
     drop(cmd_tx);
 
     let mut metrics = RuntimeParseMetrics::default();
-    let quiet_window = Duration::from_millis(500);
-    let mut last_event = std::time::Instant::now();
     loop {
-        match evt_rx.recv_timeout(Duration::from_millis(50)) {
+        match evt_rx.recv_timeout(Duration::from_secs(30)) {
             Ok(CoreEvent::DomPatchUpdate { publication, .. }) => {
                 let bus::DocumentPublicationPayload::Patch { patches, .. } = publication.payload;
                 metrics.patch_batches += 1;
@@ -138,15 +136,12 @@ fn run_runtime_parse_stream(
                 metrics.patch_bytes = metrics
                     .patch_bytes
                     .saturating_add(estimated_patch_bytes(&patches));
-                last_event = std::time::Instant::now();
             }
-            Ok(_) => {}
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                if last_event.elapsed() >= quiet_window {
-                    break;
-                }
+            Ok(CoreEvent::HtmlParseFinished { result, .. }) => {
+                result.expect("streaming guard requires successful parser completion");
+                break;
             }
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            other => panic!("streaming guard requires a terminal outcome: {other:?}"),
         }
     }
 

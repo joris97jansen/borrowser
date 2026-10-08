@@ -38,9 +38,8 @@ fn collect_runtime_updates(chunks: &[&[u8]]) -> Vec<RuntimeUpdate> {
         .unwrap();
 
     let mut updates = Vec::new();
-    let mut idle_polls = 0usize;
-    while idle_polls < 5 {
-        match evt_rx.recv_timeout(Duration::from_millis(20)) {
+    loop {
+        match evt_rx.recv_timeout(Duration::from_secs(5)) {
             Ok(CoreEvent::DomPatchUpdate {
                 tab_id: evt_tab,
                 request_id: evt_request,
@@ -54,12 +53,19 @@ fn collect_runtime_updates(chunks: &[&[u8]]) -> Vec<RuntimeUpdate> {
                 assert_ne!(from, to, "expected version bump on patch update");
                 assert!(!patches.is_empty(), "expected non-empty patch updates");
                 updates.push((handle, from, to, patches));
-                idle_polls = 0;
             }
-            Ok(_) => {}
-            Err(_) => {
-                idle_polls += 1;
+            Ok(CoreEvent::HtmlParseFinished {
+                tab_id: actual_tab,
+                request_id: actual_request,
+                result,
+            }) => {
+                assert_eq!((actual_tab, actual_request), (tab_id, request_id));
+                let completion = result.expect("parser completed successfully");
+                let last = updates.last().expect("completion follows publication");
+                assert_eq!((completion.handle, completion.version), (last.0, last.2));
+                break;
             }
+            other => panic!("expected parser publication or terminal: {other:?}"),
         }
     }
 
@@ -245,4 +251,59 @@ fn runtime_flushes_on_tick_without_sleeping() {
     }
 
     let _ = cmd_tx.send(CoreCommand::ParseHtmlDone { tab_id, request_id });
+}
+
+#[test]
+fn terminal_outcomes_distinguish_input_close_cancellation_and_success() {
+    let (cmd_tx, cmd_rx) = mpsc::channel();
+    let (evt_tx, evt_rx) = mpsc::channel();
+    crate::start_parse_runtime(cmd_rx, evt_tx);
+    for request_id in 1..=3 {
+        cmd_tx
+            .send(CoreCommand::ParseHtmlStart {
+                tab_id: 1,
+                request_id,
+            })
+            .unwrap();
+    }
+    cmd_tx
+        .send(CoreCommand::CancelRequest {
+            tab_id: 1,
+            request_id: 1,
+        })
+        .unwrap();
+    // A late Done cannot revive a cancelled session.
+    cmd_tx
+        .send(CoreCommand::ParseHtmlDone {
+            tab_id: 1,
+            request_id: 1,
+        })
+        .unwrap();
+    cmd_tx
+        .send(CoreCommand::ParseHtmlDone {
+            tab_id: 1,
+            request_id: 2,
+        })
+        .unwrap();
+    cmd_tx
+        .send(CoreCommand::ParseHtmlDone {
+            tab_id: 1,
+            request_id: 2,
+        })
+        .unwrap();
+    drop(cmd_tx);
+    let events: Vec<_> = evt_rx.iter().collect();
+    let terminals: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            CoreEvent::HtmlParseFinished {
+                request_id, result, ..
+            } => Some((*request_id, result)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(terminals.len(), 2);
+    assert_eq!(terminals[0].0, 2);
+    assert!(terminals[0].1.is_ok());
+    assert_eq!(terminals[1], (3, &Err(bus::HtmlParseFailure::InputClosed)));
 }

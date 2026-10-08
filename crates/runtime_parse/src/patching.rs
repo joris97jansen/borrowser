@@ -1,6 +1,9 @@
 use std::sync::mpsc::Sender;
 
-use bus::{CoreEvent, DocumentPublication, DocumentPublicationFailure, DocumentPublicationPayload};
+use bus::{
+    CoreEvent, DocumentPublication, DocumentPublicationPayload, HtmlParseCompletion,
+    HtmlParseFailure,
+};
 use core_types::{DomHandle, DomVersion, RequestId, TabId};
 use html::DomPatch;
 use log::error;
@@ -82,21 +85,18 @@ pub(crate) fn estimate_patch_bytes_slice(patches: &[DomPatch]) -> usize {
     })
 }
 
-pub(crate) fn emit_publication_failure(
+pub(crate) fn emit_parse_finished(
     evt_tx: &Sender<CoreEvent>,
     tab_id: TabId,
     request_id: RequestId,
-    handle: Option<DomHandle>,
-    failure: DocumentPublicationFailure,
-) -> bool {
-    evt_tx
-        .send(CoreEvent::DocumentPublicationFailed {
-            tab_id,
-            request_id,
-            handle,
-            failure,
-        })
-        .is_ok()
+    result: Result<HtmlParseCompletion, HtmlParseFailure>,
+) {
+    // If the receiver is gone there is no recipient for a terminal event.
+    let _ = evt_tx.send(CoreEvent::HtmlParseFinished {
+        tab_id,
+        request_id,
+        result,
+    });
 }
 
 #[cfg(feature = "patch-stats")]

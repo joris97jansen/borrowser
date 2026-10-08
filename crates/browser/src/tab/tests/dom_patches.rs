@@ -29,7 +29,8 @@ fn dom_patch_attribute_change_triggers_restyle_through_computed_cache() {
             DomVersion(1),
             initial_patch_document(".hot { color: red; } p { color: black; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
 
     assert!(
         tab.page
@@ -52,7 +53,8 @@ fn dom_patch_attribute_change_triggers_restyle_through_computed_cache() {
                 attributes: vec![html::internal::unqualified_attribute("class", "hot")],
             }],
         ),
-    });
+    })
+    .unwrap();
 
     assert!(
         tab.page.style_dirty(),
@@ -95,7 +97,8 @@ fn same_handle_clear_uses_neutral_replacement_fact_for_retained_identity_boundar
             DomVersion(1),
             initial_patch_document("p { color: red; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
 
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
     let retained_before = tab.page.retained_render_state_debug_snapshot();
@@ -126,7 +129,8 @@ fn same_handle_clear_uses_neutral_replacement_fact_for_retained_identity_boundar
             DomVersion(2),
             initial_patch_document("p { color: blue; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
 
     let facts = tab
         .page
@@ -208,7 +212,8 @@ fn dom_patch_node_insertion_triggers_restyle_for_inserted_subtree() {
             DomVersion(1),
             initial_patch_document("span { color: blue; }", None),
         ),
-    });
+    })
+    .unwrap();
 
     assert!(
         current_element_color_optional(&mut tab, "span").is_none(),
@@ -242,7 +247,8 @@ fn dom_patch_node_insertion_triggers_restyle_for_inserted_subtree() {
                 },
             ],
         ),
-    });
+    })
+    .unwrap();
 
     assert!(
         tab.page.style_dirty(),
@@ -281,7 +287,8 @@ fn dom_patch_node_removal_triggers_restyle_and_removes_styled_node() {
             DomVersion(1),
             initial_patch_document("p { color: red; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
 
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
 
@@ -294,7 +301,8 @@ fn dom_patch_node_removal_triggers_restyle_and_removes_styled_node() {
             DomVersion(2),
             vec![DomPatch::RemoveNode { key: PatchKey(7) }],
         ),
-    });
+    })
+    .unwrap();
 
     assert!(
         tab.page.style_dirty(),
@@ -327,7 +335,8 @@ fn dom_patch_style_text_change_reconciles_stylesheet_slot_and_restyles() {
             DomVersion(1),
             initial_patch_document("p { color: red; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
 
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
     let before = tab.page.style_generations();
@@ -345,7 +354,8 @@ fn dom_patch_style_text_change_reconciles_stylesheet_slot_and_restyles() {
                 text: "p { color: blue; }".to_string(),
             }],
         ),
-    });
+    })
+    .unwrap();
 
     let after = tab.page.style_generations();
     assert_eq!(after.dom, before.dom + 1);
@@ -382,7 +392,8 @@ fn dom_patch_style_text_change_reconciles_stylesheet_slot_and_restyles() {
                 text: "p { display: none; }".to_string(),
             }],
         ),
-    });
+    })
+    .unwrap();
 
     let style_output = tab
         .page
@@ -427,7 +438,8 @@ fn dom_patch_style_media_change_invalidates_stylesheet_generation() {
             DomVersion(1),
             initial_patch_document("p { color: red; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
     let before = tab.page.style_generations();
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
@@ -442,7 +454,8 @@ fn dom_patch_style_media_change_invalidates_stylesheet_generation() {
                 attributes: vec![html::internal::unqualified_attribute("media", "screen")],
             }],
         ),
-    });
+    })
+    .unwrap();
 
     assert_eq!(
         tab.page.style_generations().stylesheets,
@@ -467,7 +480,8 @@ fn dom_patch_attribute_change_incrementally_restyles_following_sibling_suffix() 
             DomVersion(1),
             two_paragraph_patch_document(".hot ~ p { color: blue; } p { color: black; }"),
         ),
-    });
+    })
+    .unwrap();
 
     assert_eq!(current_element_color_by_id(&mut tab, Id(9)), (0, 0, 0, 255));
 
@@ -483,7 +497,8 @@ fn dom_patch_attribute_change_incrementally_restyles_following_sibling_suffix() 
                 attributes: vec![html::internal::unqualified_attribute("class", "hot")],
             }],
         ),
-    });
+    })
+    .unwrap();
 
     {
         let style_output = tab
@@ -535,7 +550,8 @@ fn queued_attribute_mutations_merge_to_earliest_dirty_suffix() {
                 ".hot { color: red; } .cool { color: blue; } p { color: black; }",
             ),
         ),
-    });
+    })
+    .unwrap();
 
     assert_eq!(current_element_color_by_id(&mut tab, Id(7)), (0, 0, 0, 255));
     assert_eq!(current_element_color_by_id(&mut tab, Id(9)), (0, 0, 0, 255));
@@ -552,7 +568,8 @@ fn queued_attribute_mutations_merge_to_earliest_dirty_suffix() {
                 attributes: vec![html::internal::unqualified_attribute("class", "hot")],
             }],
         ),
-    });
+    })
+    .unwrap();
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 27,
@@ -565,7 +582,8 @@ fn queued_attribute_mutations_merge_to_earliest_dirty_suffix() {
                 attributes: vec![html::internal::unqualified_attribute("class", "cool")],
             }],
         ),
-    });
+    })
+    .unwrap();
 
     {
         let style_output = tab
@@ -616,7 +634,8 @@ fn dom_patch_normal_text_change_without_empty_dependency_reuses_style_and_dirtie
             DomVersion(1),
             initial_patch_document("p { color: red; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
 
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
     assert!(!tab.page.style_dirty());
@@ -635,7 +654,8 @@ fn dom_patch_normal_text_change_without_empty_dependency_reuses_style_and_dirtie
                 text: "Goodbye".to_string(),
             }],
         ),
-    });
+    })
+    .unwrap();
 
     let after = tab.page.style_generations();
     assert!(
@@ -679,7 +699,8 @@ fn published_text_mutation_restyles_retained_empty_selector_without_losing_layou
             DomVersion(1),
             initial_patch_document("p { color: black; } p:empty { color: red; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
 
     assert_eq!(current_element_color(&mut tab, "p"), (0, 0, 0, 255));
     let retained_before = tab.page.retained_render_state_debug_snapshot();
@@ -702,7 +723,8 @@ fn published_text_mutation_restyles_retained_empty_selector_without_losing_layou
                 text: String::new(),
             }],
         ),
-    });
+    })
+    .unwrap();
 
     let after = tab.page.style_generations();
     assert_eq!(after.style_inputs, before.style_inputs + 1);
@@ -754,7 +776,8 @@ fn browser_selector_debug_uses_the_bounded_authoritative_css_surface() {
             DomVersion(1),
             initial_patch_document("p, :hover, > p {}", Some("p")),
         ),
-    });
+    })
+    .unwrap();
 
     let diagnostic = tab
         .page
@@ -794,7 +817,8 @@ fn browser_rule_collection_debug_uses_production_handoff_and_bounded_af5_surface
             DomVersion(1),
             initial_patch_document("p { color: red !important; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
 
     let diagnostic = tab
         .page
@@ -853,7 +877,8 @@ fn browser_cascade_debug_uses_the_bounded_css_owned_af6_surface() {
             DomVersion(1),
             initial_patch_document("p { color: red; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
 
     let diagnostic = tab
         .page
@@ -932,7 +957,8 @@ fn mixed_attribute_and_text_publication_preserves_both_identities_and_one_css_au
                 Some("p"),
             ),
         ),
-    });
+    })
+    .unwrap();
     assert_eq!(current_element_color(&mut tab, "p"), (0, 0, 0, 255));
     tab.page.clear_layout_dirty_for_tests();
     let before = tab.page.style_generations();
@@ -955,7 +981,8 @@ fn mixed_attribute_and_text_publication_preserves_both_identities_and_one_css_au
                 },
             ],
         ),
-    });
+    })
+    .unwrap();
 
     let facts = tab
         .page
@@ -1029,7 +1056,8 @@ fn empty_dom_patch_batch_does_not_trigger_restyle() {
             DomVersion(1),
             initial_patch_document("p { color: red; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
 
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
     assert!(!tab.page.style_dirty());
@@ -1040,7 +1068,8 @@ fn empty_dom_patch_batch_does_not_trigger_restyle() {
         tab_id: tab.tab_id,
         request_id: 25,
         publication: no_quirks_patch_publication(handle, DomVersion(1), DomVersion(1), Vec::new()),
-    });
+    })
+    .expect_err("empty non-advancing publication is invalid");
 
     assert_eq!(
         tab.page.style_generations(),
@@ -1074,7 +1103,8 @@ fn invalid_publication_preserves_committed_browser_state_and_reason() {
             DomVersion(1),
             initial_patch_document("p { color: red; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
     let before_dom = tab.page.dom.as_ref().map(|dom| format!("{dom:?}"));
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
@@ -1088,7 +1118,8 @@ fn invalid_publication_preserves_committed_browser_state_and_reason() {
                 attributes: Vec::new(),
             }],
         ),
-    });
+    })
+    .expect_err("invalid publication");
     assert_eq!(tab.dom_handle, Some(handle));
     assert_eq!(tab.dom_version, DomVersion(1));
     assert_eq!(
@@ -1101,6 +1132,21 @@ fn invalid_publication_preserves_committed_browser_state_and_reason() {
             .unwrap_or_default()
             .contains("InvalidPayload")
     );
+    let failed_status = tab.last_status.clone();
+    assert!(
+        tab.on_core_event(CoreEvent::HtmlParseFinished {
+            tab_id: tab.tab_id,
+            request_id: 27,
+            result: Ok(bus::HtmlParseCompletion {
+                handle,
+                version: DomVersion(1),
+                document_mode: html::DocumentMode::NoQuirks,
+            }),
+        })
+        .is_err()
+    );
+    assert_eq!(tab.last_status, failed_status);
+    assert!(!tab.loading);
 }
 
 #[test]
@@ -1118,7 +1164,8 @@ fn staged_identity_resolution_failure_rolls_back_the_complete_publication() {
             DomVersion(1),
             initial_patch_document("p { color: red; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
     let version_before = tab.dom_version;
     let handle_before = tab.dom_handle;
@@ -1171,7 +1218,8 @@ fn same_handle_mode_mismatch_preserves_committed_state() {
             DomVersion(1),
             initial_patch_document("p { color: red; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
         request_id: 28,
@@ -1187,7 +1235,8 @@ fn same_handle_mode_mismatch_preserves_committed_state() {
                 }],
             },
         },
-    });
+    })
+    .expect_err("invalid publication");
     assert_eq!(tab.dom_version, DomVersion(1));
     assert_eq!(tab.page.document_mode, Some(html::DocumentMode::NoQuirks));
     assert!(
@@ -1238,7 +1287,8 @@ fn inert_template_contents_publication_commits_without_restyle() {
             DomVersion(1),
             initial,
         ),
-    });
+    })
+    .unwrap();
     let before = tab.page.style_generations();
     let before_dirty = tab.page.style_dirty();
     tab.on_core_event(CoreEvent::DomPatchUpdate {
@@ -1253,7 +1303,8 @@ fn inert_template_contents_publication_commits_without_restyle() {
                 contents: PatchKey(4),
             }],
         ),
-    });
+    })
+    .unwrap();
     assert_eq!(tab.dom_version, DomVersion(2));
     let after = tab.page.style_generations();
     assert_eq!(after.dom, before.dom + 1);

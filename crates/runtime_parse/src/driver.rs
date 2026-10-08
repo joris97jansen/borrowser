@@ -1,18 +1,19 @@
 use std::sync::mpsc::Sender;
 use std::time::Instant;
 
-use bus::CoreEvent;
+use bus::{CoreEvent, HtmlParseCompletion, HtmlParseFailure};
 use core_types::{RequestId, TabId};
 use html::HtmlParseError;
 use log::error;
 
-use crate::patching::{emit_patch_update, emit_publication_failure, estimate_patch_bytes_slice};
+use crate::patching::{emit_parse_finished, emit_patch_update, estimate_patch_bytes_slice};
 use crate::policy::{PreviewPolicy, maybe_log_large_buffer};
 use crate::state::{PRESELECTION_BYTE_LIMIT, PRESELECTION_PATCH_LIMIT, RuntimeState};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum RuntimeParseFailure {
     Parser(HtmlParseError),
+    SinkClosed,
     PreSelectionBudgetExceeded,
     DocumentModeUnavailable,
     DocumentModeChanged {
@@ -136,6 +137,7 @@ impl RuntimeState {
         self.reset_pending();
         if !ok {
             self.failed = true;
+            return Err(RuntimeParseFailure::SinkClosed);
         }
         Ok(())
     }
@@ -170,52 +172,34 @@ impl RuntimeState {
     }
 }
 
-fn handle_chunk_error(
+fn handle_runtime_failure(
     st: &mut RuntimeState,
     evt_tx: &Sender<CoreEvent>,
     tab_id: TabId,
     request_id: RequestId,
     err: RuntimeParseFailure,
-) -> bool {
-    match &err {
-        RuntimeParseFailure::Parser(parser_error) => {
-            log_runtime_parse_error(tab_id, request_id, parser_error);
-            if parser_error_discards_unpublished(parser_error) {
-                st.discard_unpublished_after_parser_fatal();
-                return true;
-            }
-        }
-        RuntimeParseFailure::PreSelectionBudgetExceeded => {
-            let _ = emit_publication_failure(
-                evt_tx,
-                tab_id,
-                request_id,
-                Some(st.dom_handle),
-                bus::DocumentPublicationFailure::PreSelectionBudgetExceeded,
-            );
-        }
-        RuntimeParseFailure::DocumentModeUnavailable => {
-            let _ = emit_publication_failure(
-                evt_tx,
-                tab_id,
-                request_id,
-                Some(st.dom_handle),
-                bus::DocumentPublicationFailure::DocumentModeUnavailable,
-            );
-        }
-        RuntimeParseFailure::DocumentModeChanged { .. } => {
-            let _ = emit_publication_failure(
-                evt_tx,
-                tab_id,
-                request_id,
-                Some(st.dom_handle),
-                bus::DocumentPublicationFailure::DocumentModeChanged,
-            );
+    parser_failure: fn(HtmlParseError) -> HtmlParseFailure,
+) {
+    if let RuntimeParseFailure::Parser(parser_error) = &err {
+        log_runtime_parse_error(tab_id, request_id, parser_error);
+        if parser_error_discards_unpublished(parser_error) {
+            st.discard_unpublished_after_parser_fatal();
         }
     }
     st.failed = true;
     st.reset_pending();
-    false
+    let failure = match err {
+        RuntimeParseFailure::Parser(error) => parser_failure(error),
+        RuntimeParseFailure::SinkClosed => return,
+        RuntimeParseFailure::PreSelectionBudgetExceeded => {
+            HtmlParseFailure::PreSelectionBudgetExceeded
+        }
+        RuntimeParseFailure::DocumentModeUnavailable => HtmlParseFailure::DocumentModeUnavailable,
+        RuntimeParseFailure::DocumentModeChanged { expected, actual } => {
+            HtmlParseFailure::DocumentModeChanged { expected, actual }
+        }
+    };
+    emit_parse_finished(evt_tx, tab_id, request_id, Err(failure));
 }
 
 pub(crate) fn handle_runtime_chunk(
@@ -234,13 +218,34 @@ pub(crate) fn handle_runtime_chunk(
     st.total_bytes = st.total_bytes.saturating_add(bytes.len());
     st.pending_bytes = st.pending_bytes.saturating_add(bytes.len());
     if let Err(err) = st.parser.push_bytes(bytes) {
-        handle_chunk_error(st, evt_tx, tab_id, request_id, err.into());
+        handle_runtime_failure(
+            st,
+            evt_tx,
+            tab_id,
+            request_id,
+            err.into(),
+            HtmlParseFailure::Execution,
+        );
         return st.failed;
     } else if let Err(err) = st.parser.pump() {
-        handle_chunk_error(st, evt_tx, tab_id, request_id, err.into());
+        handle_runtime_failure(
+            st,
+            evt_tx,
+            tab_id,
+            request_id,
+            err.into(),
+            HtmlParseFailure::Execution,
+        );
         return st.failed;
     } else if let Err(err) = st.drain_patches() {
-        handle_chunk_error(st, evt_tx, tab_id, request_id, err);
+        handle_runtime_failure(
+            st,
+            evt_tx,
+            tab_id,
+            request_id,
+            err,
+            HtmlParseFailure::Execution,
+        );
         return st.failed;
     } else {
         st.update_pending_tokens();
@@ -257,8 +262,15 @@ pub(crate) fn handle_runtime_chunk(
     {
         st.last_emit = now;
         maybe_log_large_buffer(st.total_bytes, &mut st.logged_large_buffer);
-        if st.flush_patch_buffer(evt_tx, tab_id, request_id).is_err() {
-            st.failed = true;
+        if let Err(error) = st.flush_patch_buffer(evt_tx, tab_id, request_id) {
+            handle_runtime_failure(
+                st,
+                evt_tx,
+                tab_id,
+                request_id,
+                error,
+                HtmlParseFailure::Execution,
+            );
         }
         if st.failed {
             return true;
@@ -281,38 +293,73 @@ pub(crate) fn handle_runtime_done(
         log_runtime_parse_error(tab_id, request_id, &err);
         if parser_error_discards_unpublished(&err) {
             st.discard_unpublished_after_parser_fatal();
-            return;
-        }
-        if parser_error_drains_on_completion(&err) {
+        } else if parser_error_drains_on_completion(&err) {
             st.update_pending_tokens();
-            if let Err(failure) = st.drain_patches() {
-                let _ = handle_chunk_error(&mut st, evt_tx, tab_id, request_id, failure);
+            if let Err(failure) = st
+                .drain_patches()
+                .and_then(|()| st.flush_patch_buffer(evt_tx, tab_id, request_id))
+            {
+                handle_runtime_failure(
+                    &mut st,
+                    evt_tx,
+                    tab_id,
+                    request_id,
+                    failure,
+                    HtmlParseFailure::Finalization,
+                );
                 return;
             }
-            if st.flush_patch_buffer(evt_tx, tab_id, request_id).is_err() {
-                st.failed = true;
-            }
         }
-        st.failed = true;
-        st.reset_pending();
+        emit_parse_finished(
+            evt_tx,
+            tab_id,
+            request_id,
+            Err(HtmlParseFailure::Finalization(err)),
+        );
         return;
     }
     st.update_pending_tokens();
     if let Err(err) = st.drain_patches() {
-        let _ = handle_chunk_error(&mut st, evt_tx, tab_id, request_id, err);
+        handle_runtime_failure(
+            &mut st,
+            evt_tx,
+            tab_id,
+            request_id,
+            err,
+            HtmlParseFailure::Finalization,
+        );
         return;
     }
-    if st.document_mode.is_none() {
-        let _ = handle_chunk_error(
+    let Some(document_mode) = st.document_mode else {
+        handle_runtime_failure(
             &mut st,
             evt_tx,
             tab_id,
             request_id,
             RuntimeParseFailure::DocumentModeUnavailable,
+            HtmlParseFailure::Finalization,
+        );
+        return;
+    };
+    if let Err(error) = st.flush_patch_buffer(evt_tx, tab_id, request_id) {
+        handle_runtime_failure(
+            &mut st,
+            evt_tx,
+            tab_id,
+            request_id,
+            error,
+            HtmlParseFailure::Finalization,
         );
         return;
     }
-    if st.flush_patch_buffer(evt_tx, tab_id, request_id).is_err() {
-        st.failed = true;
-    }
+    emit_parse_finished(
+        evt_tx,
+        tab_id,
+        request_id,
+        Ok(HtmlParseCompletion {
+            handle: st.dom_handle,
+            version: st.version,
+            document_mode,
+        }),
+    );
 }

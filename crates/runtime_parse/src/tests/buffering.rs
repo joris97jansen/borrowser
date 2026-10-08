@@ -161,8 +161,8 @@ fn preselection_patch_count_budget_is_typed_and_terminal() {
     assert!(state.failed);
     assert!(matches!(
         evt_rx.try_recv().unwrap(),
-        CoreEvent::DocumentPublicationFailed {
-            failure: bus::DocumentPublicationFailure::PreSelectionBudgetExceeded,
+        CoreEvent::HtmlParseFinished {
+            result: Err(bus::HtmlParseFailure::PreSelectionBudgetExceeded),
             ..
         }
     ));
@@ -187,8 +187,8 @@ fn preselection_byte_budget_is_typed_and_terminal() {
     assert!(state.failed);
     assert!(matches!(
         evt_rx.try_recv().unwrap(),
-        CoreEvent::DocumentPublicationFailed {
-            failure: bus::DocumentPublicationFailure::PreSelectionBudgetExceeded,
+        CoreEvent::HtmlParseFinished {
+            result: Err(bus::HtmlParseFailure::PreSelectionBudgetExceeded),
             ..
         }
     ));
@@ -213,8 +213,8 @@ fn runtime_latches_selected_mode_and_rejects_inconsistent_observation() {
     assert!(state.failed);
     assert!(matches!(
         evt_rx.try_recv().unwrap(),
-        CoreEvent::DocumentPublicationFailed {
-            failure: bus::DocumentPublicationFailure::DocumentModeChanged,
+        CoreEvent::HtmlParseFinished {
+            result: Err(bus::HtmlParseFailure::DocumentModeChanged { .. }),
             ..
         }
     ));
@@ -292,7 +292,24 @@ fn parser_fatal_discards_unpublished_runtime_patch_buffer_before_policy_flush() 
     assert_eq!(state.pending_bytes, 0);
     assert_eq!(state.pending_tokens, 0);
     assert_eq!(state.pending_patch_bytes, 0);
+    assert!(matches!(
+        evt_rx.try_recv().unwrap(),
+        CoreEvent::HtmlParseFinished {
+            result: Err(bus::HtmlParseFailure::Execution(
+                html::HtmlParseError::Fatal(_)
+            )),
+            ..
+        }
+    ));
     assert!(evt_rx.try_recv().is_err());
+    assert!(handle_runtime_chunk(
+        &mut state, b"late", &policy, now, &evt_tx, 1, 1
+    ));
+    handle_runtime_done(Box::new(state), &evt_tx, 1, 1);
+    assert!(
+        evt_rx.try_recv().is_err(),
+        "failed session cannot complete again"
+    );
 }
 
 #[cfg(feature = "parser-failure-injection")]
@@ -310,6 +327,15 @@ fn parser_fatal_during_done_does_not_drain_or_flush() {
 
     handle_runtime_done(Box::new(state), &evt_tx, 1, 1);
 
+    assert!(matches!(
+        evt_rx.try_recv().unwrap(),
+        CoreEvent::HtmlParseFinished {
+            result: Err(bus::HtmlParseFailure::Finalization(
+                html::HtmlParseError::Fatal(_)
+            )),
+            ..
+        }
+    ));
     assert!(evt_rx.try_recv().is_err());
 }
 
@@ -346,6 +372,15 @@ fn parser_fatal_does_not_roll_back_an_already_published_batch() {
         &evt_tx,
         1,
         1,
+    ));
+    assert!(matches!(
+        evt_rx.try_recv().unwrap(),
+        CoreEvent::HtmlParseFinished {
+            result: Err(bus::HtmlParseFailure::Execution(
+                html::HtmlParseError::Fatal(_)
+            )),
+            ..
+        }
     ));
     assert!(evt_rx.try_recv().is_err());
     drop(published);
@@ -520,4 +555,16 @@ fn patch_buffer_retain_capacity_is_bounded_on_flush() {
         cap >= MIN_PATCH_BUFFER_RETAIN,
         "expected retain capacity to be at least the floor, got {cap}"
     );
+}
+
+#[test]
+fn dropped_publication_receiver_is_an_error_without_version_advancement() {
+    let mut state = RuntimeState::new(Instant::now(), 16, DomHandle(1)).unwrap();
+    state.document_mode = Some(html::DocumentMode::NoQuirks);
+    state.patch_buffer.push(DomPatch::Clear);
+    let (tx, rx) = mpsc::channel();
+    drop(rx);
+    assert!(state.flush_patch_buffer(&tx, 1, 1).is_err());
+    assert!(state.failed);
+    assert_eq!(state.version, core_types::DomVersion::INITIAL);
 }

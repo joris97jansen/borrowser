@@ -55,8 +55,13 @@ fn router_thread(
         while let Ok(cmd) = cmd_rx_main.recv() {
             match cmd {
                 // Networking goes to net runtime
-                CoreCommand::FetchStream { .. } | CoreCommand::CancelRequest { .. } => {
+                CoreCommand::FetchStream { .. } => {
                     let _ = net_tx.send(cmd);
+                }
+
+                CoreCommand::CancelRequest { tab_id, request_id } => {
+                    let _ = net_tx.send(CoreCommand::CancelRequest { tab_id, request_id });
+                    let _ = parse_tx.send(CoreCommand::CancelRequest { tab_id, request_id });
                 }
 
                 // HTML parsing commands go to parse runtime
@@ -291,5 +296,36 @@ impl Repaint for PlatformRepaint {
                 let _ = proxy.send_event(UserEvent::Repaint);
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod routing_tests {
+    use super::*;
+
+    #[test]
+    fn cancellation_reaches_network_and_parser_with_identical_identity() {
+        let (tx, rx) = mpsc::channel();
+        let (net_tx, net_rx) = mpsc::channel();
+        let (parse_tx, parse_rx) = mpsc::channel();
+        let (css_tx, css_rx) = mpsc::channel();
+        router_thread(rx, net_tx, parse_tx, css_tx);
+        tx.send(CoreCommand::CancelRequest {
+            tab_id: 7,
+            request_id: 11,
+        })
+        .unwrap();
+        drop(tx);
+        for receiver in [net_rx, parse_rx] {
+            let events: Vec<_> = receiver.iter().collect();
+            assert!(matches!(
+                &events[..],
+                [CoreCommand::CancelRequest {
+                    tab_id: 7,
+                    request_id: 11
+                }]
+            ));
+        }
+        assert_eq!(css_rx.iter().count(), 0);
     }
 }

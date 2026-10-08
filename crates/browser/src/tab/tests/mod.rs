@@ -1,3 +1,4 @@
+mod document_lifecycle;
 mod dom_patches;
 mod navigation;
 mod network;

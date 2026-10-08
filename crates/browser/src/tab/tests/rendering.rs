@@ -23,7 +23,8 @@ fn ui_content_consumes_pending_render_work_through_explicit_orchestration_path()
         tab_id: tab.tab_id,
         request_id: 31,
         publication: no_quirks_patch_publication_from_output(output),
-    });
+    })
+    .unwrap();
 
     assert_eq!(
         tab.pending_render_work
@@ -40,7 +41,9 @@ fn ui_content_consumes_pending_render_work_through_explicit_orchestration_path()
     );
 
     let ctx = Context::default();
-    let _ = ctx.run(egui::RawInput::default(), |ctx| tab.ui_content(ctx));
+    let _ = ctx.run(egui::RawInput::default(), |ctx| {
+        tab.ui_content(ctx).unwrap();
+    });
 
     assert!(tab.pending_render_work.is_empty());
     let trace = tab
@@ -70,4 +73,28 @@ fn ui_content_consumes_pending_render_work_through_explicit_orchestration_path()
             RenderingPhase::Paint,
         ]
     );
+}
+
+#[test]
+fn frame_result_exposes_absent_document_and_style_failure() {
+    use crate::tab::PageFrameStatus;
+    let ctx = Context::default();
+    let mut tab = Tab::new(1);
+    ctx.begin_pass(egui::RawInput::default());
+    assert_eq!(tab.ui_content(&ctx).unwrap(), PageFrameStatus::NoDocument);
+    let _ = ctx.end_pass();
+    // Deliberately violate the production publication invariant in this private
+    // Browser regression test; no such initialization surface is exported.
+    tab.page.dom = Some(Box::new(
+        html::parse_document("<p>ok", HtmlParseOptions::default())
+            .unwrap()
+            .document,
+    ));
+    ctx.begin_pass(egui::RawInput::default());
+    assert!(matches!(
+        tab.ui_content(&ctx),
+        Err(css::ComputedStyleResolutionError::MissingMatchingEnvironment)
+    ));
+    let _ = ctx.end_pass();
+    assert!(tab.last_render_trace.is_none());
 }

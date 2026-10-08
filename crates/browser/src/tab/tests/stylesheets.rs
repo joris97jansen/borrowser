@@ -26,7 +26,8 @@ fn inline_styles_are_attached_and_computed_during_initial_document_load() {
         tab_id: tab.tab_id,
         request_id: 11,
         publication: no_quirks_patch_publication_from_output(output),
-    });
+    })
+    .unwrap();
 
     let dom = tab.page.dom.as_deref().expect("dom installed");
     let styled = build_style_tree_with_stylesheets(
@@ -63,7 +64,8 @@ fn browser_selector_debug_marks_nonempty_media_stylesheet_as_cascade_inactive() 
         tab_id: tab.tab_id,
         request_id: 111,
         publication: no_quirks_patch_publication_from_output(output),
-    });
+    })
+    .unwrap();
 
     let snapshot = tab
         .page
@@ -98,7 +100,8 @@ fn browser_selector_failure_keeps_inactive_condition_and_sparse_source_provenanc
         tab_id: tab.tab_id,
         request_id: 112,
         publication: no_quirks_patch_publication_from_output(output),
-    });
+    })
+    .unwrap();
 
     let diagnostic = tab
         .page
@@ -189,7 +192,8 @@ fn split_text_style_element_is_concatenated_without_synthetic_newlines() {
         tab_id: tab.tab_id,
         request_id: 15,
         publication: no_quirks_patch_publication_from_dom(dom),
-    });
+    })
+    .unwrap();
 
     let dom = tab.page.dom.as_deref().expect("dom installed");
     let styled = build_style_tree_with_stylesheets(
@@ -220,7 +224,8 @@ fn repeated_dom_updates_reconcile_inline_styles_without_duplicate_slots() {
             tab_id: tab.tab_id,
             request_id: 14,
             publication: no_quirks_patch_publication_from_output(output),
-        });
+        })
+        .unwrap();
     }
 
     assert_eq!(
@@ -263,7 +268,8 @@ fn external_stylesheets_keep_document_order_when_network_arrives_out_of_order() 
         tab_id: tab.tab_id,
         request_id: 12,
         publication: no_quirks_patch_publication_from_output(output),
-    });
+    })
+    .unwrap();
 
     let queued = rx.try_iter().collect::<Vec<_>>();
     let mut css_fetches = queued
@@ -299,14 +305,16 @@ fn external_stylesheets_keep_document_order_when_network_arrives_out_of_order() 
         stylesheet_slot_id: b_slot,
         url: b_url.clone(),
         css_block: "p { color: blue; }".to_string(),
-    });
+    })
+    .unwrap();
     tab.on_core_event(CoreEvent::CssDecodedBlock {
         tab_id: tab.tab_id,
         request_id: 12,
         stylesheet_slot_id: a_slot,
         url: a_url.clone(),
         css_block: "p { color: green; }".to_string(),
-    });
+    })
+    .unwrap();
 
     let dom = tab.page.dom.as_deref().expect("dom installed");
     let styled = build_style_tree_with_stylesheets(
@@ -345,7 +353,8 @@ fn duplicate_same_url_stylesheets_keep_distinct_document_slots() {
         tab_id: tab.tab_id,
         request_id: 13,
         publication: no_quirks_patch_publication_from_output(output),
-    });
+    })
+    .unwrap();
 
     let slots = rx
         .try_iter()
@@ -385,7 +394,8 @@ fn duplicate_same_url_stylesheets_participate_as_separate_cascade_slots() {
         tab_id: tab.tab_id,
         request_id: 16,
         publication: no_quirks_patch_publication_from_output(output),
-    });
+    })
+    .unwrap();
 
     let slots = rx
         .try_iter()
@@ -410,14 +420,16 @@ fn duplicate_same_url_stylesheets_participate_as_separate_cascade_slots() {
         stylesheet_slot_id: first_slot,
         url: url.clone(),
         css_block: "p { color: red; }".to_string(),
-    });
+    })
+    .unwrap();
     tab.on_core_event(CoreEvent::CssDecodedBlock {
         tab_id: tab.tab_id,
         request_id: 16,
         stylesheet_slot_id: second_slot,
         url,
         css_block: "p { color: blue; }".to_string(),
-    });
+    })
+    .unwrap();
 
     let dom = tab.page.dom.as_deref().expect("dom installed");
     let styled = build_style_tree_with_stylesheets(
@@ -454,7 +466,8 @@ fn decoded_css_for_removed_stylesheet_slot_is_ignored() {
         tab_id: tab.tab_id,
         request_id: 17,
         publication: no_quirks_patch_publication_from_output(with_link),
-    });
+    })
+    .unwrap();
 
     let (removed_slot, removed_url) = rx
         .try_iter()
@@ -478,7 +491,8 @@ fn decoded_css_for_removed_stylesheet_slot_is_ignored() {
         tab_id: tab.tab_id,
         request_id: 17,
         publication: no_quirks_patch_publication_from_output(without_link),
-    });
+    })
+    .unwrap();
 
     tab.on_core_event(CoreEvent::CssDecodedBlock {
         tab_id: tab.tab_id,
@@ -486,7 +500,8 @@ fn decoded_css_for_removed_stylesheet_slot_is_ignored() {
         stylesheet_slot_id: removed_slot,
         url: removed_url,
         css_block: "p { color: red; }".to_string(),
-    });
+    })
+    .unwrap();
 
     assert!(
         tab.page.css_stylesheets().is_empty(),
@@ -525,7 +540,8 @@ fn external_stylesheet_arrival_invalidates_cached_computed_style() {
         tab_id: tab.tab_id,
         request_id: 24,
         publication: no_quirks_patch_publication_from_output(output),
-    });
+    })
+    .unwrap();
 
     let (slot_id, url) = rx
         .try_iter()
@@ -550,7 +566,8 @@ fn external_stylesheet_arrival_invalidates_cached_computed_style() {
         stylesheet_slot_id: slot_id,
         url,
         css_block: "p { color: red; }".to_string(),
-    });
+    })
+    .unwrap();
 
     let after = tab.page.style_generations();
     assert_eq!(after.stylesheets, before.stylesheets + 1);
@@ -579,7 +596,8 @@ fn loaded_external_media_only_change_preserves_source_without_refetch_and_invali
         tab_id: tab.tab_id,
         request_id: 241,
         publication: no_quirks_patch_publication_from_output(screen),
-    });
+    })
+    .unwrap();
     let (slot_id, url) = rx
         .try_iter()
         .find_map(|command| match command {
@@ -598,7 +616,8 @@ fn loaded_external_media_only_change_preserves_source_without_refetch_and_invali
         stylesheet_slot_id: slot_id,
         url,
         css_block: "p { color: red; }".to_string(),
-    });
+    })
+    .unwrap();
     assert_eq!(current_element_color(&mut tab, "p"), (0, 0, 0, 255));
 
     let source_before = tab
@@ -632,7 +651,8 @@ fn loaded_external_media_only_change_preserves_source_without_refetch_and_invali
         tab_id: tab.tab_id,
         request_id: 241,
         publication: no_quirks_patch_publication_from_output(print),
-    });
+    })
+    .unwrap();
     assert!(
         rx.try_iter().all(|command| !matches!(
             command,

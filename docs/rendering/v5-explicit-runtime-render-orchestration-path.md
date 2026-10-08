@@ -221,3 +221,28 @@ V5 does not introduce:
 
 Those remain later milestones. V5 only replaces the implicit eager rebuild flow
 with an explicit runtime-owned orchestration path.
+
+## AG1: explicit frame operation outcome
+
+`Tab::ui_content` returns
+`Result<PageFrameStatus, css::ComputedStyleResolutionError>`. `NoDocument` means
+no page frame was produced; `Rendered` means the synchronous page-frame attempt
+completed without page follow-up work; `FollowupRequired` retains the existing
+follow-up/navigation behavior. Style errors still render the visible failure UI
+and now also return to the caller. Failed attempts clear the prior trace and
+continue to consume queued work as specified above. The result is an operation
+outcome, not a retained-state or geometry inspection API.
+
+A frame outcome does not establish parser or resource completion. Interactive
+Browser may render streaming previews. The focused conformance harness first
+requires accepted parser terminal completion, successful preceding Browser
+publications, and no subresource work, then requires the current frame to be
+`Rendered` and not discarded by egui. It follows the production renderer's
+`begin_pass`/`end_pass` sequence rather than assuming two frames establish readiness.
+Retained-paint reuse still emits output for the current pass.
+
+The AG1 canvas sample observes the Browser-owned CentralPanel fill derived from
+production computed style. Normal Layout/GFX Paint execute during that frame,
+but the sample does not independently validate general layout, element painting,
+GPU rasterization, or comprehensive rendering conformance. Internal execution
+traces remain diagnostics, not the conformance oracle.

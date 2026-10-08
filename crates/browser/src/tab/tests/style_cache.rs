@@ -29,7 +29,8 @@ fn attribute_mutation_without_existing_style_cache_falls_back_to_full_recompute(
             DomVersion(1),
             initial_patch_document(".hot { color: red; } p { color: black; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
 
     assert_eq!(current_element_color_by_id(&mut tab, Id(7)), (0, 0, 0, 255));
     tab.page.clear_style_cache_for_tests();
@@ -47,7 +48,8 @@ fn attribute_mutation_without_existing_style_cache_falls_back_to_full_recompute(
                 attributes: vec![html::internal::unqualified_attribute("class", "hot")],
             }],
         ),
-    });
+    })
+    .unwrap();
 
     assert_eq!(
         current_element_color_by_id(&mut tab, Id(7)),
@@ -96,7 +98,8 @@ fn keyed_class_id_and_attribute_dependencies_authorize_suffix_recompute() {
                 Some("p"),
             ),
         ),
-    });
+    })
+    .unwrap();
     assert_eq!(current_element_color_by_id(&mut tab, Id(7)), (0, 0, 0, 255));
     let dependencies = tab
         .page
@@ -127,7 +130,8 @@ fn keyed_class_id_and_attribute_dependencies_authorize_suffix_recompute() {
                     attributes: vec![html::internal::unqualified_attribute(name, value)],
                 }],
             ),
-        });
+        })
+        .unwrap();
         assert_eq!(current_element_color_by_id(&mut tab, Id(7)), expected);
         assert!(matches!(
             tab.page.last_style_recalc(),
@@ -157,7 +161,8 @@ fn irrelevant_attribute_change_reuses_computed_style_without_style_generation_ch
             DomVersion(1),
             initial_patch_document(".hot { color: red; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
     assert_eq!(current_element_color_by_id(&mut tab, Id(7)), (0, 0, 0, 255));
     let before = tab.page.style_generations();
 
@@ -173,7 +178,8 @@ fn irrelevant_attribute_change_reuses_computed_style_without_style_generation_ch
                 attributes: vec![html::internal::unqualified_attribute("title", "neutral")],
             }],
         ),
-    });
+    })
+    .unwrap();
 
     assert_eq!(
         tab.page.style_generations().style_inputs,
@@ -206,7 +212,8 @@ fn inline_style_is_a_direct_cascade_dependency_without_style_selector() {
             DomVersion(1),
             initial_patch_document("p { color: black; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
     assert_eq!(current_element_color_by_id(&mut tab, Id(7)), (0, 0, 0, 255));
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
@@ -221,7 +228,8 @@ fn inline_style_is_a_direct_cascade_dependency_without_style_selector() {
                 attributes: vec![html::internal::unqualified_attribute("style", "color: red")],
             }],
         ),
-    });
+    })
+    .unwrap();
 
     assert_eq!(
         current_element_color_by_id(&mut tab, Id(7)),
@@ -252,7 +260,8 @@ fn structural_full_recompute_reuses_compatible_dependency_artifact() {
             DomVersion(1),
             initial_patch_document("body > p:first-child { color: red; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
     assert_eq!(
         current_element_color_by_id(&mut tab, Id(7)),
         (255, 0, 0, 255)
@@ -278,7 +287,8 @@ fn structural_full_recompute_reuses_compatible_dependency_artifact() {
                 },
             ],
         ),
-    });
+    })
+    .unwrap();
     let _ = current_element_color_by_id(&mut tab, Id(7));
     assert!(matches!(
         tab.page.last_style_recalc(),
@@ -309,7 +319,8 @@ fn multiple_attribute_operations_classify_committed_old_to_final_state() {
             DomVersion(1),
             initial_patch_document(".hot { color: red; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
     assert_eq!(current_element_color_by_id(&mut tab, Id(7)), (0, 0, 0, 255));
     let before = tab.page.style_generations();
 
@@ -331,7 +342,8 @@ fn multiple_attribute_operations_classify_committed_old_to_final_state() {
                 },
             ],
         ),
-    });
+    })
+    .unwrap();
 
     assert_eq!(
         tab.page.style_generations().style_inputs,
@@ -364,7 +376,8 @@ fn text_without_empty_dependency_skips_css_style_but_keeps_intrinsic_work() {
             DomVersion(1),
             initial_patch_document("p { color: black; }", Some("p")),
         ),
-    });
+    })
+    .unwrap();
     assert_eq!(current_element_color_by_id(&mut tab, Id(7)), (0, 0, 0, 255));
     let before = tab.page.style_generations();
 
@@ -380,7 +393,8 @@ fn text_without_empty_dependency_skips_css_style_but_keeps_intrinsic_work() {
                 text: "World".to_string(),
             }],
         ),
-    });
+    })
+    .unwrap();
 
     assert_eq!(
         tab.page.style_generations().style_inputs,
@@ -417,7 +431,8 @@ fn clean_style_cache_reuses_computed_document_without_recompute() {
             DomVersion(1),
             two_paragraph_patch_document("p { color: red; }"),
         ),
-    });
+    })
+    .unwrap();
 
     {
         let style_output = tab

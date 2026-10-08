@@ -85,12 +85,14 @@ impl Tab {
             url: url.clone(),
         });
         let remaining = self.page.pending_count();
-        self.loading = remaining > 0;
-        self.last_status = Some(format!(
-            "{} ({} remaining)",
-            format_network_error("stylesheet", &url, error_kind, status_code, &error),
-            remaining
-        ));
+        self.update_loading();
+        if self.document_load.parse_status != super::state::DocumentParseStatus::Failed {
+            self.last_status = Some(format!(
+                "{} ({} remaining)",
+                format_network_error("stylesheet", &url, error_kind, status_code, &error),
+                remaining
+            ));
+        }
         if !self.request_optional_render_work(render_work) {
             self.poke_redraw();
         }
@@ -108,29 +110,31 @@ impl Tab {
     pub(super) fn on_css_sheet_done(&mut self, stylesheet_slot_id: StylesheetSlotId, _url: String) {
         let mut render_work = self.page.mark_css_done(stylesheet_slot_id);
         let remaining = self.page.pending_count();
-        self.loading = remaining > 0;
+        self.update_loading();
         let stylesheet = self.stylesheet_loads.remove(&stylesheet_slot_id);
         if stylesheet.as_ref().is_some_and(|state| !state.accept_body) {
             render_work = render_work.or(self.page.mark_css_failed(stylesheet_slot_id));
         }
-        self.last_status = Some(match stylesheet {
-            Some(state) if !state.accept_body => {
-                let content_type = state
-                    .response
-                    .content_type
-                    .unwrap_or_else(|| "unknown".into());
-                if remaining > 0 {
-                    format!(
-                        "Stylesheet ignored • unexpected content type {content_type} ({} remaining)",
-                        remaining
-                    )
-                } else {
-                    format!("Stylesheet ignored • unexpected content type {content_type}")
+        if self.document_load.parse_status != super::state::DocumentParseStatus::Failed {
+            self.last_status = Some(match stylesheet {
+                Some(state) if !state.accept_body => {
+                    let content_type = state
+                        .response
+                        .content_type
+                        .unwrap_or_else(|| "unknown".into());
+                    if remaining > 0 {
+                        format!(
+                            "Stylesheet ignored • unexpected content type {content_type} ({} remaining)",
+                            remaining
+                        )
+                    } else {
+                        format!("Stylesheet ignored • unexpected content type {content_type}")
+                    }
                 }
-            }
-            _ if remaining > 0 => format!("Stylesheet loaded ({} remaining)", remaining),
-            _ => "All stylesheets loaded".to_string(),
-        });
+                _ if remaining > 0 => format!("Stylesheet loaded ({} remaining)", remaining),
+                _ => "All stylesheets loaded".to_string(),
+            });
+        }
         if !self.request_optional_render_work(render_work) {
             self.poke_redraw();
         }

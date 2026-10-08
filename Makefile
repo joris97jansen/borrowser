@@ -486,3 +486,7 @@ cuc-diff:
 	fi; \
 	pbcopy < "$$tmp"; \
 	echo "Copied unstaged/untracked diff hunks to the clipboard."
+
+.PHONY: conformance
+conformance:
+	cargo run -p borrowser-conformance --locked
