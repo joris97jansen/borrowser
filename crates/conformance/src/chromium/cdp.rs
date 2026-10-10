@@ -42,6 +42,8 @@ pub(super) struct Cdp<'a> {
     pub navigation: Option<Navigation>,
     #[cfg(test)]
     capture_progress: CaptureProgress,
+    #[cfg(test)]
+    pub target_probe: Option<super::target_probe::Resources>,
 }
 
 impl<'a> Cdp<'a> {
@@ -62,6 +64,8 @@ impl<'a> Cdp<'a> {
                 activity: "idle",
                 completed: Default::default(),
             },
+            #[cfg(test)]
+            target_probe: None,
         }
     }
     #[cfg(test)]
@@ -257,6 +261,23 @@ impl<'a> Cdp<'a> {
         }
         if message.get("sessionId").and_then(Value::as_str) == self.session.as_deref() {
             if let Some(nav) = &mut self.navigation {
+                #[cfg(test)]
+                if let Some(probe) = &mut self.target_probe {
+                    use super::target_probe::Action;
+                    match probe.event(method, params, &nav.frame)? {
+                        Action::FixturePolicy => {}
+                        Action::Recorded => return Ok(None),
+                        Action::AbortFavicon(request) => {
+                            self.send(
+                                "Fetch.failRequest",
+                                json!({"requestId":request,"errorReason":"BlockedByClient"}),
+                                deadline,
+                                phase,
+                            )?;
+                            return Ok(None);
+                        }
+                    }
+                }
                 if method == "Fetch.requestPaused" {
                     let request = string(params, "requestId")?.to_owned();
                     let accepted = nav.accept_fetch(params);

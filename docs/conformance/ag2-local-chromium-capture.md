@@ -469,14 +469,113 @@ test`, then executed `cargo run`: compiler markers remained in build storage,
 test/CLI execution used runtime storage, and the empty-directory gate passed.
 A retained-runtime-file negative control failed the literal workflow gate and
 produced no success marker. This is macOS validation of Cargo's execution
-boundary, not Linux acceptance. The corrected tree still requires a separately
-authorized commit/push and another draft-PR qualification run; full CI has not
-been rerun on this correction.
+boundary, not Linux acceptance.
+
+### Hidden-target screenshot investigation
+
+The second Linux run, [38048172848, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/38048172848),
+tested source `b5f594b17d5a2a35c40dcedb028ef55bb2e45700` through merge
+`06602e4ee83e01e90748d3f7d57226a12bd9941f`. The runner was Ubuntu 24.04.5,
+image `20261004.327.1`, kernel `6.17.0-1022-azure`, native x86-64 on a Microsoft
+VM with AMD EPYC 7763 CPUs. Native lifecycle and renderer sandbox tests passed,
+as did the other ten CI jobs. The first `canvas/root` iteration completed
+document readiness, `DOM.getDocument`, URL/mode checks, `Page.getLayoutMetrics`
+and viewport checks. Command 21, `Page.captureScreenshot`, was sent and remained
+pending until `Timeout(Capture)`. Failure observation found `NoExitObserved`
+and an `OpenEmpty` response pipe; cleanup returned no errors. This establishes
+a missing screenshot response, not a measured compositor failure. The bounded
+artifact inventory contained no runtime files, including compiler artifacts;
+the required final empty-directory gate was skipped after the test failure.
+
+Source inspection uses the exact pinned revision
+`3ff7ac5a9224be9156d7f8703a06e22890aafd34` (its `chrome/VERSION` matches
+155.0.8059.39):
+
+- The [Chrome target handler](https://github.com/chromium/chromium/blob/3ff7ac5a9224be9156d7f8703a06e22890aafd34/chrome/browser/devtools/protocol/target_handler.cc)
+  delegates hidden targets to content. The
+  [hidden target manager](https://github.com/chromium/chromium/blob/3ff7ac5a9224be9156d7f8703a06e22890aafd34/content/browser/devtools/protocol/hidden_target_manager.cc)
+  creates plain WebContents, without the normal Chrome tab/window attachment.
+  CDP `hidden: true` does not itself prove that WebContents currently reports
+  `PageVisibilityState::kHidden`.
+- [PageHandler::CaptureScreenshot](https://github.com/chromium/chromium/blob/3ff7ac5a9224be9156d7f8703a06e22890aafd34/content/browser/devtools/protocol/page_handler.cc)
+  holds a capturer with `stay_hidden=true`. WebContents can consequently paint
+  while hidden; this does not establish a presentation-capable native surface.
+  The explicit hidden-page assertion and stall warning in that handler are
+  inside the `kCDPScreenshotNewSurface` feature-enabled branch.
+- That feature is [disabled by default](https://github.com/chromium/chromium/blob/3ff7ac5a9224be9156d7f8703a06e22890aafd34/content/common/features.cc).
+  Without it, [GetSnapshotFromBrowser](https://github.com/chromium/chromium/blob/3ff7ac5a9224be9156d7f8703a06e22890aafd34/content/browser/renderer_host/render_widget_host_impl.cc)
+  requests ForceRedraw. Blink's [WidgetBase::ForceRedraw](https://github.com/chromium/chromium/blob/3ff7ac5a9224be9156d7f8703a06e22890aafd34/third_party/blink/renderer/platform/widget/widget_base.cc)
+  waits for next-frame presentation feedback before invoking the callback that
+  leads to CopyFromSurface and the screenshot response. With the feature enabled,
+  Chromium instead requests a new surface and queues its copy immediately.
+  AG2 supplies no override; the effective runtime feature state has not been
+  measured. Source defaults are not proof of that state.
+- [Aura's compositor lookup](https://github.com/chromium/chromium/blob/3ff7ac5a9224be9156d7f8703a06e22890aafd34/content/browser/renderer_host/render_widget_host_view_aura.cc)
+  needs a window host. [WebContentsViewAura](https://github.com/chromium/chromium/blob/3ff7ac5a9224be9156d7f8703a06e22890aafd34/content/browser/web_contents/web_contents_view_aura.cc)
+  can initially create an unattached window. In contrast,
+  [BrowserCompositorMac::UpdateState](https://github.com/chromium/chromium/blob/3ff7ac5a9224be9156d7f8703a06e22890aafd34/content/browser/renderer_host/browser_compositor_view_mac.mm)
+  can acquire its own compositor when its host is not hidden and no parent
+  compositor exists. These paths explain a plausible platform difference;
+  they do not establish which callback stalled on the Linux runner. The Mac
+  window-snapshot delay is in the non-surface branch and does not explain AG2.
+
+The ignored, test-only
+`chromium::target_probe::real_chromium_target_presentation_experiment` compares
+hidden and ordinary headless page targets for both original fixtures, each in
+an independent process. Both arms retain the pinned browser, startup bootstrap,
+flags/sandbox, fixture bytes/URL, script disabling, readiness checks, five-second
+capture deadline, PNG decoder/sampler and native cleanup. The experiment logs
+each target/fixture and typed failure or validated dimensions/pixel/provenance.
+It attempts all four captures after cleanly handled failures, but fails the test
+if any capture fails; a reproduced hidden-target timeout is not acceptance.
+Unverified cleanup stops the experiment immediately.
+
+The probe's only resource exception is test-only, guarded by exact equality to
+the embedded original fixture bytes. Those bytes contain no authored resource
+or icon. It records the single browser-default favicon request separately,
+requires the main frame, exact `/favicon.ico` URL, GET, Other type and other
+initiator, correlates Network and Fetch IDs, and aborts it at Fetch Request
+stage. Duplicates, redirects, ID mismatches, incomplete interception or an HTTP
+response fail. Other requests go through the unchanged strict fixture policy.
+Unit tests reject altered fixtures, authored-resource signatures and incomplete
+evidence. This is not a production favicon allowlist: an authored icon can use
+the [same favicon helper](https://github.com/chromium/chromium/blob/3ff7ac5a9224be9156d7f8703a06e22890aafd34/components/favicon/content/content_favicon_driver.cc),
+so URL/type/initiator alone cannot justify a production exemption.
+
+```sh
+BORROWSER_CHROMIUM_EXECUTABLE='/path/to/pinned/browser' \
+  cargo test -p borrowser-conformance --bin borrowser-conformance --locked \
+  chromium::target_probe::real_chromium_target_presentation_experiment \
+  -- --exact --ignored --nocapture --test-threads=1
+```
+
+The existing Linux job's `--include-ignored` conformance invocation will execute
+this probe and retain its bounded output in `conformance.log`; no workflow or
+production target fallback is added. Cargo still compiles in build storage and
+executes tests through its runtime-directory runner. Running the new probe on
+GitHub requires a separately authorized commit/push. Native Linux A/B results
+are pending. Until those results exist, production capture remains unchanged
+and hidden-target presentation remains a hypothesis.
+
+Local validation on 2026-10-10, macOS 27.0 arm64 (26A428), passed all four probe
+captures: both targets returned `[18, 52, 86]` for `canvas/root` and
+`[52, 86, 120]` for `canvas/cascade`, through the ordinary validated 640 × 480
+PNG path and verified cleanup. Each ordinary page produced one correlated,
+intercepted and aborted default-favicon request; hidden targets produced none.
+The final complete conformance invocation passed 34 tests (30 unit, two Chromium
+CLI, two AG1 CLI), including the two probe-policy unit tests, the A/B experiment,
+native lifecycle regressions, original three-process fixture repeatability,
+script suppression/positive control, strict resource rejection and independent
+CLI serialization. The dedicated runtime directory was empty afterward.
+Formatting, conformance Clippy, actionlint and all 22 workflow shell blocks'
+syntax checks passed. Full `make ci` was not rerun for this test-only experiment.
+These results validate the probe on macOS and do not establish the Linux cause
+or qualify Linux capture.
 
 | Platform | Evidence / outstanding acceptance |
 | --- | --- |
 | macOS 27.0 arm64, build 26A428 | Passed real fixture/script/resource tests, lifecycle/topology tests and independent CLI serialization tests on 2026-10-09, outside Codex's restrictive sandbox. Normal helpers remain in the root session; two detached Crashpad handlers use the private database. Token permission/generation checks, cancellation, timeout and forced root exit passed; a final process scan found no processes from the test extraction. Other OS builds require requalification. |
-| Linux x86-64 | First hosted run passed native lifecycle and renderer sandbox assertions but failed fixture capture. Screenshot/repeatability/script/resource/CLI qualification and the final cleanup gate remain outstanding. A committed diagnostic correction and another hosted run are required; this is not full platform acceptance. |
+| Linux x86-64 | Both hosted runs passed native lifecycle and renderer sandbox assertions. The second isolated the timeout to a sent surface-screenshot command awaiting its response. Screenshot/repeatability/script/resource/CLI qualification and the final cleanup gate remain outstanding. The test-only hidden/page A/B experiment needs another hosted run before choosing a capture correction; this is not full platform acceptance. |
 | Linux ARM64 Docker host | Earlier offline `cargo check --all-targets` and `cargo clippy -p borrowser-conformance --all-targets --locked --offline -- -D warnings` passed. This historical build evidence was not rerun after the macOS argument-copy correction; capture explicitly rejects this architecture and it does not qualify Linux x86-64. |
 
 AG2 remains one issue. It is not closeable across both intended platforms until

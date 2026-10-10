@@ -3,6 +3,8 @@ mod error;
 mod process;
 mod screenshot;
 #[cfg(test)]
+mod target_probe;
+#[cfg(test)]
 mod tests;
 
 use crate::{
@@ -41,6 +43,8 @@ struct ChromiumConfig {
     shutdown: Duration,
     #[cfg(test)]
     scripts_disabled: bool,
+    #[cfg(test)]
+    target_probe: Option<target_probe::Target>,
 }
 impl ChromiumConfig {
     fn new(executable: PathBuf) -> Self {
@@ -52,6 +56,8 @@ impl ChromiumConfig {
             shutdown: Duration::from_secs(5),
             #[cfg(test)]
             scripts_disabled: true,
+            #[cfg(test)]
+            target_probe: None,
         }
     }
 }
@@ -111,6 +117,13 @@ fn capture_html(
     config: &ChromiumConfig,
     cancel: &Cancellation,
 ) -> Result<ChromiumCapture, Failure> {
+    #[cfg(test)]
+    if config.target_probe.is_some() {
+        target_probe::require_original_fixture(html).map_err(|error| Failure {
+            primary: Some(error),
+            cleanup: vec![],
+        })?;
+    }
     let executable = std::fs::canonicalize(&config.executable).map_err(|e| Failure {
         primary: Some(Error::Configuration(format!(
             "Chromium executable unavailable: {e}"
@@ -120,6 +133,10 @@ fn capture_html(
     let start = Instant::now() + config.startup;
     let mut child = OwnedChromium::launch(&executable, &flags(), start, cancel)?;
     let mut cdp = cdp::Cdp::new(&mut child, cancel);
+    #[cfg(test)]
+    if config.target_probe.is_some() {
+        cdp.target_probe = Some(target_probe::Resources::default());
+    }
     let result = (|| {
         let identity =
             identity(cdp.call("Browser.getVersion", json!({}), start, Phase::Startup)?)?;
@@ -135,9 +152,14 @@ fn capture_html(
         // A hidden CDP target uses WebContents directly, without browser-tab
         // helpers such as automatic favicon fetching. Fixture bytes and strict
         // rejection of every additional request remain unchanged.
+        let hidden = true;
+        #[cfg(test)]
+        let hidden = config
+            .target_probe
+            .map_or(hidden, |target| target == target_probe::Target::Hidden);
         let target = cdp.call(
             "Target.createTarget",
-            json!({"url":"about:blank","hidden":true}),
+            json!({"url":"about:blank","hidden":hidden}),
             start,
             Phase::Startup,
         )?;
@@ -269,6 +291,10 @@ fn capture_html(
             return Err(Error::Navigation(
                 "document changed during screenshot".into(),
             ));
+        }
+        #[cfg(test)]
+        if let Some(probe) = &cdp.target_probe {
+            probe.finish()?;
         }
         #[cfg(test)]
         cdp.capture_operation_completed();
