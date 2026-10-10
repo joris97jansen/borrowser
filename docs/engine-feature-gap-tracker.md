@@ -938,7 +938,7 @@ When a feature lands:
 2. Link to the relevant contract doc if the behavior is subtle.
 3. Keep this file short; move detailed rules to subsystem docs.
 
-## Focused Conformance Tooling (AG1)
+## Focused Conformance Tooling (AG1–AG2)
 
 - `crates/conformance` executes two explicitly registered static HTML/CSS fixtures
   through production Tab navigation, parser runtime, atomic DOM/mode publication,
@@ -954,7 +954,17 @@ When a feature lands:
   and broad fixture discovery are not implemented.
 - Parser terminal outcomes distinguish parsing from network completion, Browser
   commit and frame completion; earlier publication failures cannot become success.
-- This is bounded AG1 tooling, not Chromium comparison, WPT support, broad browser
-  compatibility or complete rendering conformance. Chromium, AWS and broader
-  comparison coverage remain outside this issue. See the
+- AG2 adds an explicit local, pinned Chrome for Testing capture path: private
+  profile, direct CDP pipes, page scripts disabled, exact fixture response,
+  correlated loaded document, and an actual 640 × 480 sRGB screenshot sampled at
+  physical pixel (32, 32). Identity and observations are separate from AG1
+  comparison/reporting; success requires verified process cleanup. This is
+  self-contained page delivery, not an OS-level network-isolation guarantee.
+- macOS arm64 real-browser validation and Linux build evidence are recorded in
+  the [AG2 contract](conformance/ag2-local-chromium-capture.md). Native Linux
+  x86-64 lifecycle and real-browser qualification remain outstanding. A dedicated
+  GitHub-hosted `ubuntu-24.04` CI job is prepared, but has no AG2 execution evidence
+  yet; AG2 is not closed across both intended platforms.
+- Integrated Chromium comparison (AG3), AWS (AG4), WPT support, broad browser
+  compatibility and general rendering conformance remain gaps. See the
   [harness README](../crates/conformance/README.md).

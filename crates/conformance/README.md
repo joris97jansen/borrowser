@@ -1,4 +1,4 @@
-# Focused static conformance harness (AG1)
+# Focused static conformance harness (AG1–AG2)
 
 Run the explicit fixture set:
 
@@ -66,9 +66,9 @@ or transforms. UI decorations are acceptable only outside the sample guard.
 Fresh egui passes drain their own shapes; neither a second frame nor channel
 silence is used as a readiness heuristic.
 
-A future Chromium capture can independently sample the same viewport pixel from
-an sRGB screenshot with the same viewport and device scale. AG1 contains no
-Chromium implementation and makes no `getBoundingClientRect()` equivalence claim.
+The opt-in AG2 Chromium path independently samples that pixel from an sRGB
+screenshot with the same viewport and device scale. Neither path makes a
+`getBoundingClientRect()` equivalence claim.
 
 ## Fixtures and independent expectations
 
@@ -130,6 +130,41 @@ expectation, verify all classifications, reject ambiguous capture, and compare
 stdout/stderr/exit across independent processes. Production runtime tests cover
 terminal outcomes, publication ordering, cancellation and failure ownership.
 
-No Chromium, AWS, WPT import, generalized adapters/providers, broad fixture
-discovery, historical storage, dashboards, flaky-test policy, or new engine
-semantics are included. All implementation parts remain within AG1.
+## Local Chromium capture (AG2)
+
+Provision the exact Chrome for Testing archive in
+[`chromium-reference.json`](chromium-reference.json), verifying its SHA-256 before
+extraction. The harness never downloads a browser, searches PATH, launches your
+existing browser profile, or accepts an arbitrary browser version.
+
+```sh
+export BORROWSER_CHROMIUM_EXECUTABLE='/absolute/path/to/pinned/browser'
+cargo run -p borrowser-conformance --locked -- --chromium
+cargo run -p borrowser-conformance --locked -- --chromium --chromium-executable "$BORROWSER_CHROMIUM_EXECUTABLE" canvas/root
+cargo test -p borrowser-conformance --locked real_chromium_ -- --ignored --nocapture --test-threads=1
+```
+
+On macOS, the executable is `Google Chrome for Testing.app/Contents/MacOS/Google
+Chrome for Testing`; on Linux it is `chrome-linux64/chrome`. A missing or
+incompatible browser is an error, including when an opt-in test is explicitly
+requested. Ordinary AG1 execution and tests require no installed browser.
+
+`--chromium` emits capture-only JSON: fixture identity, observed RGB8 color,
+environment, and exact browser identity. There are no PASS/FAIL classifications,
+expectations or Borrowser comparisons in that report. Success requires verified
+process cleanup; failure emits diagnostics to stderr, no observation to stdout,
+and exits 2. Default invocation retains the AG1 report and exit behavior above.
+
+The native lifecycle tests need normal process-inspection/signaling permissions;
+restrictive execution sandboxes may reject them. The Chromium sandbox stays on.
+Real-browser tests are explicitly ignored until requested; native helper tests
+use isolated subprocesses and no installed browser.
+
+See [the AG2 contract](../../docs/conformance/ag2-local-chromium-capture.md) for
+FD ownership, bounded CDP execution, fixture delivery, process guarantees and the
+platform qualification record. Linux x86-64 qualification is still outstanding;
+Linux compilation on ARM64 does not establish that acceptance criterion.
+
+No integrated cross-engine comparison (AG3), AWS (AG4), WPT import, generalized
+adapters/providers, broad fixture discovery, historical storage, dashboards,
+flaky-test policy, or new engine semantics are included.
