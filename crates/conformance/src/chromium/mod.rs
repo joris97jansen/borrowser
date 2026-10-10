@@ -119,8 +119,8 @@ fn capture_html(
     })?;
     let start = Instant::now() + config.startup;
     let mut child = OwnedChromium::launch(&executable, &flags(), start, cancel)?;
+    let mut cdp = cdp::Cdp::new(&mut child, cancel);
     let result = (|| {
-        let mut cdp = cdp::Cdp::new(&mut child, cancel);
         let identity =
             identity(cdp.call("Browser.getVersion", json!({}), start, Phase::Startup)?)?;
         // This pinned Chrome build requires an existing remote-debugging page
@@ -208,17 +208,23 @@ fn capture_html(
             capture_deadline,
             Phase::Capture,
         )?;
+        #[cfg(test)]
+        cdp.capture_operation("verify document URL/mode");
         if document["root"]["documentURL"] != URL
             || document["root"]["compatibilityMode"] != "NoQuirksMode"
         {
             return Err(Error::Navigation("unexpected document URL or mode".into()));
         }
+        #[cfg(test)]
+        cdp.capture_operation_completed();
         let metrics = cdp.call(
             "Page.getLayoutMetrics",
             json!({}),
             capture_deadline,
             Phase::Capture,
         )?;
+        #[cfg(test)]
+        cdp.capture_operation("verify viewport");
         for name in ["cssLayoutViewport", "cssVisualViewport"] {
             let v = &metrics[name];
             if v["clientWidth"] != WIDTH
@@ -234,13 +240,19 @@ fn capture_html(
         if metrics["cssVisualViewport"]["scale"] != 1 {
             return Err(Error::Capture("unexpected visual scale".into()));
         }
+        #[cfg(test)]
+        cdp.capture_operation_completed();
         let screenshot = cdp.call(
             "Page.captureScreenshot",
             json!({"format":"png","fromSurface":true,"captureBeyondViewport":false}),
             capture_deadline,
             Phase::Capture,
         )?;
+        #[cfg(test)]
+        cdp.capture_operation("decode PNG and sample pixel");
         let color = screenshot::sample(cdp::string(&screenshot, "data")?)?;
+        #[cfg(test)]
+        cdp.capture_operation_completed();
         // A post-capture frame query is a protocol barrier and verifies that
         // the screenshot still belongs to the acknowledged loaded document.
         let tree = cdp.call(
@@ -249,6 +261,8 @@ fn capture_html(
             capture_deadline,
             Phase::Capture,
         )?;
+        #[cfg(test)]
+        cdp.capture_operation("verify frame identity and final capture deadline");
         cdp.navigation.as_ref().unwrap().verify_tree(&tree)?;
         cancel.check(capture_deadline, Phase::Capture)?;
         if !cdp.navigation.as_ref().unwrap().ready() {
@@ -256,6 +270,8 @@ fn capture_html(
                 "document changed during screenshot".into(),
             ));
         }
+        #[cfg(test)]
+        cdp.capture_operation_completed();
         // Closing may disconnect before replying; process cleanup remains the
         // authoritative completion check and gets its own absolute deadline.
         cdp.session = None;
@@ -268,6 +284,11 @@ fn capture_html(
         );
         Ok(ChromiumCapture { color, identity })
     })();
+    #[cfg(test)]
+    if result.is_err() {
+        eprintln!("AG2 capture failure: {}", cdp.failure_diagnostic());
+    }
+    drop(cdp);
     let cleanup = child.finish(config.shutdown);
     let result = result.and_then(|capture| {
         // Cancellation during cleanup still suppresses a success report.

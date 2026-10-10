@@ -960,11 +960,13 @@ When a feature lands:
   physical pixel (32, 32). Identity and observations are separate from AG1
   comparison/reporting; success requires verified process cleanup. This is
   self-contained page delivery, not an OS-level network-isolation guarantee.
-- macOS arm64 real-browser validation and Linux build evidence are recorded in
+- macOS arm64 real-browser validation and Linux execution evidence are recorded in
   the [AG2 contract](conformance/ag2-local-chromium-capture.md). Native Linux
-  x86-64 lifecycle and real-browser qualification remain outstanding. A dedicated
-  GitHub-hosted `ubuntu-24.04` CI job is prepared, but has no AG2 execution evidence
-  yet; AG2 is not closed across both intended platforms.
+  x86-64 lifecycle and renderer sandbox assertions passed in the first hosted
+  `ubuntu-24.04` run, but fixture capture timed out. Real capture, repeatability,
+  script/resource/CLI checks and the final cleanup gate remain outstanding;
+  test-only diagnostics require another run before a capture fix is established.
+  AG2 is not closed across both intended platforms.
 - Integrated Chromium comparison (AG3), AWS (AG4), WPT support, broad browser
   compatibility and general rendering conformance remain gaps. See the
   [harness README](../crates/conformance/README.md).

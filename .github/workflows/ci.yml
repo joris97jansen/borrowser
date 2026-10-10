@@ -36,8 +36,8 @@ jobs:
           set -euo pipefail
           AG2_EVIDENCE="$RUNNER_TEMP/ag2-evidence"
           echo "AG2_EVIDENCE=$AG2_EVIDENCE" >> "$GITHUB_ENV"
-          mkdir -p "$AG2_EVIDENCE" "$RUNNER_TEMP/ag2-profiles"
-          echo "TMPDIR=$RUNNER_TEMP/ag2-profiles" >> "$GITHUB_ENV"
+          mkdir -p "$AG2_EVIDENCE" "$RUNNER_TEMP/ag2-build-tmp" "$RUNNER_TEMP/ag2-profiles"
+          echo "TMPDIR=$RUNNER_TEMP/ag2-build-tmp" >> "$GITHUB_ENV"
           exec > >(tee "$AG2_EVIDENCE/environment.log") 2>&1
           printf 'run=%s/%s/actions/runs/%s attempt=%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
           printf 'workflow_sha=%s head_sha=%s checkout_sha=%s\n' "$GITHUB_SHA" "$AG2_HEAD_SHA" "$(git rev-parse HEAD)"
@@ -116,12 +116,18 @@ jobs:
           cargo clippy -p borrowser-conformance --all-targets --locked -- -D warnings 2>&1 | tee "$AG2_EVIDENCE/clippy.log"
 
       - name: Qualify native launcher and ownership
+        # Cargo/rustc/build scripts retain the build TMPDIR, even on a rebuild.
+        # The target runner sets TMPDIR only for test/CLI execution.
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: env TMPDIR=${{ runner.temp }}/ag2-profiles
         run: |
           set -euo pipefail
           cargo test -p borrowser-conformance --locked native_ -- --nocapture \
             2>&1 | tee "$AG2_EVIDENCE/native.log"
 
       - name: Qualify real Chromium and complete conformance suite
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: env TMPDIR=${{ runner.temp }}/ag2-profiles
         run: |
           set -euo pipefail
           cargo test -p borrowser-conformance --locked -- --include-ignored \
@@ -135,7 +141,7 @@ jobs:
           set -euo pipefail
           # The Rust owner verifies identities, termination and ECHILD before
           # success. This additional check detects retained failure artifacts.
-          find "$TMPDIR" -mindepth 1 -maxdepth 1 -print | tee "$AG2_EVIDENCE/remaining-artifacts.log"
+          find "$RUNNER_TEMP/ag2-profiles" -mindepth 1 -maxdepth 1 -print | tee "$AG2_EVIDENCE/remaining-artifacts.log"
           test ! -s "$AG2_EVIDENCE/remaining-artifacts.log"
           echo 'Native and real-browser tests passed; cleanup verified.' | tee "$AG2_EVIDENCE/result.txt"
 

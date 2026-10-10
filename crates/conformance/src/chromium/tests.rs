@@ -188,6 +188,20 @@ fn native_lifecycle_regressions() {
     run_native_cases(&["arguments-transient", "arguments-persistent"]);
 }
 #[test]
+#[cfg(any(
+    all(target_os = "macos", target_arch = "aarch64"),
+    all(target_os = "linux", target_arch = "x86_64")
+))]
+fn native_capture_failure_diagnostics() {
+    run_native_cases(&[
+        "capture-timeout",
+        "capture-send-timeout",
+        "capture-discovery-timeout",
+        "capture-disconnected",
+        "capture-exited",
+    ]);
+}
+#[test]
 #[cfg(target_os = "macos")]
 fn persistent_argument_eio_requires_activation() {
     use process::fault::{self, Point};
@@ -328,6 +342,102 @@ fn native_case() {
         Err(failure) => panic!("{failure:?}"),
     };
     let artifacts = child.artifact_path().to_path_buf();
+    if scenario.starts_with("capture-") {
+        let mut cdp = cdp::Cdp::new(&mut child, &cancel);
+        cdp.call(
+            "DOM.getDocument",
+            json!({}),
+            Instant::now() + Duration::from_secs(2),
+            Phase::Capture,
+        )
+        .unwrap();
+        if scenario == "capture-exited" {
+            cdp.child.kill_root().unwrap();
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while cdp.child.failure_observation().0 != process::RootObservation::Exited {
+                assert!(Instant::now() < deadline, "killed helper did not exit");
+                std::thread::yield_now();
+            }
+        }
+        if scenario == "capture-discovery-timeout" {
+            process::fault::set(process::fault::Point::Discovery);
+        }
+        let params = if scenario == "capture-send-timeout" {
+            json!({"not_a_real_screenshot": "PRIVATE_PAYLOAD".repeat(65536)})
+        } else {
+            json!({})
+        };
+        let error = cdp
+            .call(
+                "Page.captureScreenshot",
+                params,
+                Instant::now() + Duration::from_millis(300),
+                Phase::Capture,
+            )
+            .unwrap_err();
+        let diagnostic = cdp.failure_diagnostic();
+        assert!(
+            diagnostic.contains("operation: \"Page.captureScreenshot\""),
+            "{diagnostic}"
+        );
+        assert!(diagnostic.contains("command_id: Some(2)"), "{diagnostic}");
+        assert!(
+            diagnostic.contains("completed: [\"DOM.getDocument\"]"),
+            "{diagnostic}"
+        );
+        assert!(!diagnostic.contains("PRIVATE_PAYLOAD"));
+        assert!(diagnostic.len() < 4096);
+        match scenario.as_str() {
+            "capture-exited" => {
+                assert!(matches!(error, Error::BrowserExited));
+                assert!(
+                    diagnostic.contains("root_at_failure=Exited"),
+                    "{diagnostic}"
+                );
+            }
+            "capture-disconnected" => {
+                assert!(matches!(error, Error::Protocol(error::ProtocolError::Eof)));
+                assert!(
+                    diagnostic.contains("response_pipe_at_failure=HangupOrError"),
+                    "{diagnostic}"
+                );
+                assert!(
+                    diagnostic.contains("root_at_failure=NoExitObserved"),
+                    "{diagnostic}"
+                );
+            }
+            _ => {
+                assert!(matches!(error, Error::Timeout(Phase::Capture)));
+                assert!(
+                    diagnostic.contains("root_at_failure=NoExitObserved"),
+                    "{diagnostic}"
+                );
+                assert!(
+                    diagnostic.contains("response_pipe_at_failure=OpenEmpty"),
+                    "{diagnostic}"
+                );
+                if scenario == "capture-discovery-timeout" {
+                    process::fault::assert_consumed();
+                    assert!(
+                        diagnostic.contains("native_check=OwnershipDiscovery"),
+                        "{diagnostic}"
+                    );
+                } else {
+                    let activity = if scenario == "capture-send-timeout" {
+                        "waiting for writable command pipe"
+                    } else {
+                        "waiting for response"
+                    };
+                    assert!(diagnostic.contains(activity), "{diagnostic}");
+                }
+            }
+        }
+        drop(cdp);
+        assert!(child.finish(Duration::from_secs(2)).is_empty());
+        assert!(!artifacts.exists());
+        assert_no_children();
+        return;
+    }
     if scenario == "discovery-runtime"
         || scenario.starts_with("cleanup-")
         || scenario.starts_with("arguments-")
@@ -597,6 +707,18 @@ fn browser_helper() {
             for part in response.as_bytes().chunks(chunk) {
                 write.write_all(part).unwrap();
             }
+            if scenario == "capture-disconnected" {
+                // Close after the second command was delivered, so the failure
+                // unambiguously belongs to that capture command.
+                loop {
+                    let mut byte = [0];
+                    read.read_exact(&mut byte).unwrap();
+                    if byte[0] == 0 {
+                        break;
+                    }
+                }
+                drop(write);
+            }
         }
     }
     loop {
@@ -617,17 +739,31 @@ fn real_chromium_capture_and_scripts() {
             unreachable!()
         };
         let mut previous = None;
-        for _ in 0..3 {
-            let result = capture_html(html, &config, &cancel).unwrap();
+        for iteration in 1..=3 {
+            eprintln!(
+                "AG2 fixture={} iteration={iteration}/3 starting",
+                fixture.id.0
+            );
+            let result = capture_html(html, &config, &cancel).unwrap_or_else(|failure| {
+                panic!(
+                    "fixture={} iteration={iteration}/3: {failure:?}",
+                    fixture.id.0
+                )
+            });
             assert_eq!(result.color, expected);
             let serialized = serde_json::to_string(&(result.color.0, result.identity)).unwrap();
             if let Some(previous) = previous {
                 assert_eq!(serialized, previous);
             }
             previous = Some(serialized);
+            eprintln!(
+                "AG2 fixture={} iteration={iteration}/3 passed",
+                fixture.id.0
+            );
         }
     }
     let scripted = b"<!doctype html><html><head><style>html{background:#123456}body{margin:0}</style><script>document.documentElement.style.backgroundColor='#ff0000'</script></head><body></body></html>";
+    eprintln!("AG2 fixture=script-suppression iteration=1/1");
     assert_eq!(
         capture_html(scripted, &config, &cancel).unwrap().color,
         CanvasColor([18, 52, 86])
@@ -636,6 +772,7 @@ fn real_chromium_capture_and_scripts() {
         scripts_disabled: false,
         ..config
     };
+    eprintln!("AG2 fixture=script-positive-control iteration=1/1");
     assert_eq!(
         capture_html(scripted, &enabled, &cancel).unwrap().color,
         CanvasColor([255, 0, 0])
@@ -644,13 +781,17 @@ fn real_chromium_capture_and_scripts() {
         scripts_disabled: true,
         ..enabled
     };
-    for html in [
+    for (index, html) in [
         b"<!doctype html><link rel=stylesheet href=https://external.invalid/style.css>".as_slice(),
         b"<!doctype html><img src=https://external.invalid/image.png>",
         b"<!doctype html><meta http-equiv=refresh content='0;url=https://external.invalid/'>",
         b"<!doctype html><meta http-equiv=refresh content='10;url=https://external.invalid/'>",
         b"<!doctype html><iframe src=https://external.invalid/>",
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        eprintln!("AG2 fixture=unexpected-resource-{index} iteration=1/1");
         let failure = capture_html(html, &config, &cancel).unwrap_err();
         assert!(
             matches!(failure.primary, Some(Error::Navigation(_))),

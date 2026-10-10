@@ -13,6 +13,24 @@ use std::{
 };
 
 const MAX_FRAME: usize = 4 * 1024 * 1024;
+// Qualification-only progress, never protocol contents or successful reports.
+#[cfg(test)]
+#[derive(Debug)]
+struct CaptureProgress {
+    operation: &'static str,
+    command_id: Option<u64>,
+    activity: &'static str,
+    completed: std::collections::VecDeque<&'static str>,
+}
+#[cfg(test)]
+impl CaptureProgress {
+    fn complete(&mut self) {
+        if self.completed.len() == 16 {
+            self.completed.pop_front();
+        }
+        self.completed.push_back(self.operation);
+    }
+}
 pub(super) struct Cdp<'a> {
     pub child: &'a mut OwnedChromium,
     cancel: &'a Cancellation,
@@ -22,6 +40,8 @@ pub(super) struct Cdp<'a> {
     pub session: Option<String>,
     pub target: Option<String>,
     pub navigation: Option<Navigation>,
+    #[cfg(test)]
+    capture_progress: CaptureProgress,
 }
 
 impl<'a> Cdp<'a> {
@@ -35,7 +55,34 @@ impl<'a> Cdp<'a> {
             session: None,
             target: None,
             navigation: None,
+            #[cfg(test)]
+            capture_progress: CaptureProgress {
+                operation: "capture not started",
+                command_id: None,
+                activity: "idle",
+                completed: Default::default(),
+            },
         }
+    }
+    #[cfg(test)]
+    pub fn capture_operation(&mut self, operation: &'static str) {
+        self.capture_progress.operation = operation;
+        self.capture_progress.command_id = None;
+        self.capture_progress.activity = "local capture operation";
+    }
+    #[cfg(test)]
+    pub fn capture_operation_completed(&mut self) {
+        self.capture_progress.complete();
+    }
+    #[cfg(test)]
+    pub fn failure_diagnostic(&self) -> String {
+        // One non-reaping, nonblocking root observation and a zero-time pipe
+        // poll, before cleanup. No discovery, retry, signal or deadline reset.
+        let (root, pipe) = self.child.failure_observation();
+        format!(
+            "{:?}; native_check={:?}; root_at_failure={root:?}; response_pipe_at_failure={pipe:?}",
+            self.capture_progress, self.child.check_activity
+        )
     }
     fn send(
         &mut self,
@@ -59,6 +106,10 @@ impl<'a> Cdp<'a> {
         let mut written = 0;
         while written < bytes.len() {
             self.child.check(deadline, phase, self.cancel)?;
+            #[cfg(test)]
+            {
+                self.capture_progress.activity = "sending";
+            }
             let pipe = self
                 .child
                 .input
@@ -69,6 +120,10 @@ impl<'a> Cdp<'a> {
                 Ok(n) => written += n,
                 Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    #[cfg(test)]
+                    {
+                        self.capture_progress.activity = "waiting for writable command pipe";
+                    }
                     poll_fd(pipe.as_raw_fd(), libc::POLLOUT, deadline)?
                 }
                 Err(e) => return Err(Error::io("CDP write", e)),
@@ -80,16 +135,30 @@ impl<'a> Cdp<'a> {
     }
     pub fn call(
         &mut self,
-        method: &str,
+        method: &'static str,
         params: Value,
         deadline: Instant,
         phase: Phase,
     ) -> Result<Value, Error> {
+        #[cfg(test)]
+        if phase == Phase::Capture {
+            self.capture_operation(method);
+            self.capture_progress.command_id = Some(self.next_id);
+            self.capture_progress.activity = "preparing command";
+        }
         let id = self.send(method, params, deadline, phase)?;
+        #[cfg(test)]
+        {
+            self.capture_progress.activity = "waiting for response";
+        }
         loop {
             if let Some((response_id, value)) = self.step(deadline, phase)?
                 && response_id == id
             {
+                #[cfg(test)]
+                if phase == Phase::Capture {
+                    self.capture_operation_completed();
+                }
                 return Ok(value);
             }
         }
@@ -104,6 +173,10 @@ impl<'a> Cdp<'a> {
         loop {
             self.child.check(deadline, phase, self.cancel)?;
             if let Some(end) = self.input.iter().position(|b| *b == 0) {
+                #[cfg(test)]
+                {
+                    self.capture_progress.activity = "decoding response/event";
+                }
                 let rest = self.input.split_off(end + 1);
                 self.input.pop();
                 let result = serde_json::from_slice(&self.input)
@@ -116,6 +189,10 @@ impl<'a> Cdp<'a> {
             }
             let mut bytes = [0; 16384];
             let size = bytes.len().min(MAX_FRAME - self.input.len());
+            #[cfg(test)]
+            {
+                self.capture_progress.activity = "receiving";
+            }
             match self.child.output.read(&mut bytes[..size]) {
                 Ok(0) => {
                     return Err(Error::Protocol(if self.input.is_empty() {
@@ -127,6 +204,10 @@ impl<'a> Cdp<'a> {
                 Ok(n) => self.input.extend_from_slice(&bytes[..n]),
                 Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    #[cfg(test)]
+                    {
+                        self.capture_progress.activity = "waiting for response";
+                    }
                     poll_fd(self.child.output.as_raw_fd(), libc::POLLIN, deadline)?
                 }
                 Err(e) => return Err(Error::io("CDP read", e)),
@@ -365,6 +446,28 @@ impl Navigation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn capture_diagnostic_history_is_bounded() {
+        let mut progress = CaptureProgress {
+            operation: "DOM.getDocument",
+            command_id: Some(1),
+            activity: "receiving",
+            completed: Default::default(),
+        };
+        progress.complete();
+        progress.operation = "Page.getLayoutMetrics";
+        for _ in 0..100 {
+            progress.complete();
+        }
+        assert_eq!(progress.completed.len(), 16);
+        assert!(
+            progress
+                .completed
+                .iter()
+                .all(|method| *method == "Page.getLayoutMetrics")
+        );
+        assert!(format!("{progress:?}").len() < 4096);
+    }
     fn request() -> Value {
         json!({"frameId":"f","type":"Document","requestId":"r","loaderId":"l","request":{"url":URL,"method":"GET"}})
     }

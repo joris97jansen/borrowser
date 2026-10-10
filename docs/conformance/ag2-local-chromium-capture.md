@@ -129,6 +129,27 @@ explicit and emergency cleanup by 5 seconds. Browser.close gets at most 250 ms.
 Deadlines bound waiting and never establish success. There are no readiness
 sleeps or success-after-N-retries rules.
 
+Qualification builds (`cfg(test)` only) retain the active capture operation and
+command ID, sending/receiving/response-wait stage, native check stage, and the
+last 16 completed capture-operation labels. The fixture test logs its fixed
+fixture identity and iteration before each capture and includes them on failure.
+Before cleanup, a failed capture prints one progress summary, with no CDP
+payloads, HTML, screenshot bytes, event history or elapsed times. PNG sampling
+and document/viewport/frame verification have explicit local-operation labels.
+Typed primary and cleanup errors are unchanged; successful CLI JSON and stderr
+are unchanged. This is qualification instrumentation, not a production tracing
+interface.
+
+The failure summary samples only the retained direct child with one
+`waitid(WNOHANG | WNOWAIT)` and the response pipe with one zero-time `poll`.
+These diagnostic operations do not reap, discover, signal, retry or reset a
+deadline. Root `NoExitObserved` and pipe state describe the instant failure is
+observed, not historical state at the exact deadline or renderer health. Errors
+(including EINTR) are unavailable evidence, not proof of liveness. Pipe hangup
+can coexist with buffered data. The same kernel non-interruptibility limitation
+as other native calls applies; the snapshot grants no signaling authority and
+never changes the failed result or cleanup verification.
+
 PNG data is bounded to 2 MiB, decoding to 8 MiB. Require 640 × 480 RGB8/RGBA8,
 valid PNG completion/CRC and an opaque sampled alpha. Launch forces sRGB; tagged
 PNG color metadata must agree with sRGB. Untagged output uses that pinned launch
@@ -327,7 +348,7 @@ parser/golden/WPT and fuzz lanes, debug/release builds, benchmark compilation an
 the generated-entity check. Real Chromium tests are opt-in and were covered by
 the separate complete conformance run above. Neither result qualifies Linux.
 
-### GitHub-hosted Linux qualification lane (execution pending)
+### GitHub-hosted Linux qualification lane
 
 The existing `.github/workflows/ci.yml` has a dedicated
 `ag2_linux_chromium` job on `ubuntu-24.04`, separate from the existing Rust and
@@ -343,6 +364,18 @@ verifies its SHA-256 before extraction, and installs it root-owned at
 pinned executable's ELF dependencies. The repository-pinned Rust toolchain builds
 and lints the conformance crate; the existing workspace jobs retain their full
 validation responsibilities.
+
+Temporary storage has three separate purposes: Cargo, rustc and build scripts
+inherit `$RUNNER_TEMP/ag2-build-tmp`; Chromium profiles and crash databases live
+under `$RUNNER_TEMP/ag2-profiles`; records live in `ag2-evidence` and the bounded
+upload directory. Only the two execution steps configure Cargo's
+[target runner](https://doc.rust-lang.org/cargo/reference/config.html#targettriplerunner)
+as `env TMPDIR=.../ag2-profiles`. Cargo applies it to test/CLI executable launches,
+including `cargo run`; it does not apply it to compilation or build scripts.
+Consequently a test target rebuild still uses build temporary storage. Isolated
+test helpers and CLI subprocesses inherit the runtime value. The strict cleanup
+gate explicitly inspects `ag2-profiles`, independently of the shell's build
+`TMPDIR`. No compiler-file exception or pre-verification deletion is permitted.
 
 Ubuntu 24.04 restricts unprivileged user namespaces. Following Chromium's
 [documented per-executable AppArmor approach](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md),
@@ -404,10 +437,46 @@ Before acceptance, record the successful AG2 run URL, exact tested commit and
 image, and its native/browser/sandbox/cleanup results below; all required CI jobs
 must pass on the final PR tree. The existing macOS evidence remains independent.
 
+The first AG2 run, [38025161958, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/38025161958),
+tested source `db2c8d0995fd0e07e81354a7fc9d509ec15751d8` through merge
+`334fe351bcf7b5be1bf298a10b0983d6a3bb1309`. Native regressions and real-browser
+lifecycle/sandbox assertions passed, as did the other workspace CI jobs. The
+fixture loop failed with `Timeout(Capture)` and no cleanup errors (23 unit tests
+passed, one failed). Its log did not identify the operation or iteration. Linux
+fixture repeatability, script/resource checks, CLI records and the final
+directory gate were not completed; these remain acceptance requirements. No
+capture behavior or timeout is changed on the basis of that incomplete evidence.
+The next run must use the test-only progress summary to distinguish a pending
+CDP operation from time consumed by native inspection, before choosing a fix.
+
+That run also retained `rustix_test_can_compile` in the runtime directory because
+the earlier workflow set `TMPDIR` before Cargo ran. The target-runner separation
+above corrects that demonstrated workflow defect without weakening cleanup.
+
+The diagnostic/temp-directory correction was validated locally on macOS 27.0
+arm64 (26A428) on 2026-10-10: the complete pinned-browser conformance invocation
+above passed 31 tests (27 unit, two Chromium CLI, two AG1 CLI), using separate
+build/runtime directories through the macOS Cargo target runner. The actual
+runtime directory was empty afterward. New isolated cases distinguish response
+timeout, blocked send, expiry inside ownership discovery, disconnected pipe and
+exited root; each preserves typed failures, command ID/method and completed
+operation evidence, and verifies cleanup and unrelated-process survival. A unit
+test bounds the completed-operation history. Formatting, conformance Clippy,
+actionlint and AG2 shell syntax checks passed.
+
+A temporary local Cargo probe also forced a build-script rerun during `cargo
+test`, then executed `cargo run`: compiler markers remained in build storage,
+test/CLI execution used runtime storage, and the empty-directory gate passed.
+A retained-runtime-file negative control failed the literal workflow gate and
+produced no success marker. This is macOS validation of Cargo's execution
+boundary, not Linux acceptance. The corrected tree still requires a separately
+authorized commit/push and another draft-PR qualification run; full CI has not
+been rerun on this correction.
+
 | Platform | Evidence / outstanding acceptance |
 | --- | --- |
 | macOS 27.0 arm64, build 26A428 | Passed real fixture/script/resource tests, lifecycle/topology tests and independent CLI serialization tests on 2026-10-09, outside Codex's restrictive sandbox. Normal helpers remain in the root session; two detached Crashpad handlers use the private database. Token permission/generation checks, cancellation, timeout and forced root exit passed; a final process scan found no processes from the test extraction. Other OS builds require requalification. |
-| Linux x86-64 | The `ag2_linux_chromium` job provides a native GitHub-hosted `ubuntu-24.04` qualification path. Actual AG2 execution is pending a committed PR; native lifecycle, sandboxed Chrome startup, screenshots and cleanup remain **unverified acceptance criteria**. |
+| Linux x86-64 | First hosted run passed native lifecycle and renderer sandbox assertions but failed fixture capture. Screenshot/repeatability/script/resource/CLI qualification and the final cleanup gate remain outstanding. A committed diagnostic correction and another hosted run are required; this is not full platform acceptance. |
 | Linux ARM64 Docker host | Earlier offline `cargo check --all-targets` and `cargo clippy -p borrowser-conformance --all-targets --locked --offline -- -D warnings` passed. This historical build evidence was not rerun after the macOS argument-copy correction; capture explicitly rejects this architecture and it does not qualify Linux x86-64. |
 
 AG2 remains one issue. It is not closeable across both intended platforms until

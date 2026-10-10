@@ -227,9 +227,81 @@ pub(super) struct OwnedChromium {
     pub diagnostics: Vec<u8>,
     finished: bool,
     last_scan: Instant,
+    #[cfg(test)]
+    pub check_activity: CheckActivity,
+}
+
+#[cfg(test)]
+#[derive(Debug)]
+pub(super) enum CheckActivity {
+    Budget,
+    Stderr,
+    OwnershipDiscovery,
+    RootExit,
+    Complete,
+}
+#[cfg(test)]
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum RootObservation {
+    NoExitObserved,
+    Exited,
+    Unavailable(i32),
+}
+#[cfg(test)]
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum PipeObservation {
+    OpenEmpty,
+    Readable,
+    HangupOrError,
+    Invalid,
+    Unavailable(i32),
 }
 
 impl OwnedChromium {
+    #[cfg(test)]
+    pub fn failure_observation(&self) -> (RootObservation, PipeObservation) {
+        // SAFETY: the owner retains its unreaped direct child. WNOWAIT does not
+        // consume its identity; WNOHANG/poll(0) never wait for state changes.
+        // Errors (including EINTR) remain unknown evidence, never "alive".
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        let result = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                self.pid as _,
+                &mut info,
+                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+            )
+        };
+        let root = if result != 0 {
+            RootObservation::Unavailable(
+                std::io::Error::last_os_error().raw_os_error().unwrap_or(0),
+            )
+        } else if unsafe { info.si_pid() } == self.pid {
+            RootObservation::Exited
+        } else {
+            RootObservation::NoExitObserved
+        };
+        let mut pipe = libc::pollfd {
+            fd: self.output.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        let result = unsafe { libc::poll(&mut pipe, 1, 0) };
+        let response = if result < 0 {
+            PipeObservation::Unavailable(
+                std::io::Error::last_os_error().raw_os_error().unwrap_or(0),
+            )
+        } else if pipe.revents & libc::POLLNVAL != 0 {
+            PipeObservation::Invalid
+        } else if pipe.revents & (libc::POLLHUP | libc::POLLERR) != 0 {
+            PipeObservation::HangupOrError
+        } else if pipe.revents & libc::POLLIN != 0 {
+            PipeObservation::Readable
+        } else {
+            PipeObservation::OpenEmpty
+        };
+        (root, response)
+    }
     #[cfg(all(test, target_os = "macos"))]
     pub fn topology(&mut self) -> Result<Vec<(String, bool)>, String> {
         self.registry.topology().map_err(|e| e.to_string())
@@ -447,6 +519,8 @@ impl OwnedChromium {
                     diagnostics: Vec::new(),
                     finished: false,
                     last_scan: Instant::now() - Duration::from_secs(1),
+                    #[cfg(test)]
+                    check_activity: CheckActivity::Budget,
                 });
             }
             let restored =
@@ -555,17 +629,33 @@ impl OwnedChromium {
         phase: Phase,
         cancel: &Cancellation,
     ) -> Result<(), Error> {
+        #[cfg(test)]
+        {
+            self.check_activity = CheckActivity::Budget;
+        }
         let budget = OwnershipBudget {
             deadline,
             cancel: Some(cancel),
         };
         budget.check().map_err(|e| e.execution(phase))?;
+        #[cfg(test)]
+        {
+            self.check_activity = CheckActivity::Stderr;
+        }
         self.drain_stderr(&budget).map_err(|e| e.execution(phase))?;
         if self.last_scan.elapsed() >= Duration::from_millis(20) {
+            #[cfg(test)]
+            {
+                self.check_activity = CheckActivity::OwnershipDiscovery;
+            }
             self.registry
                 .discover(&budget)
                 .map_err(|e| e.execution(phase))?;
             self.last_scan = Instant::now();
+        }
+        #[cfg(test)]
+        {
+            self.check_activity = CheckActivity::RootExit;
         }
         if budget
             .observe(|| self.exited())
@@ -573,7 +663,12 @@ impl OwnedChromium {
         {
             return Err(Error::BrowserExited);
         }
-        budget.check().map_err(|e| e.execution(phase))
+        budget.check().map_err(|e| e.execution(phase))?;
+        #[cfg(test)]
+        {
+            self.check_activity = CheckActivity::Complete;
+        }
+        Ok(())
     }
     fn exited(&self) -> Result<bool, Error> {
         let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
