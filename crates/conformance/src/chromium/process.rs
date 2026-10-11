@@ -216,6 +216,29 @@ fn cstring(bytes: &[u8]) -> Result<CString, Error> {
         .map_err(|_| Error::Configuration("NUL in launch argument or environment".into()))
 }
 
+// Pinned CfT's ProcessSingleton uses TMPDIR/org.chromium.Chromium.XXXXXX/
+// SingletonSocket. Linux requires a trailing NUL in sockaddr_un.sun_path.
+// Keep the check available to unit tests on macOS without claiming Linux execution.
+#[cfg(any(target_os = "linux", test))]
+pub(super) fn validate_linux_temporary_path(temporary: &Path) -> Result<(), Error> {
+    const CAPACITY: usize = 108;
+    #[cfg(target_os = "linux")]
+    const _: libc::sockaddr_un = libc::sockaddr_un {
+        sun_family: 0,
+        sun_path: [0; CAPACITY],
+    };
+    let socket = temporary.join("org.chromium.Chromium.XXXXXX/SingletonSocket");
+    let bytes = socket.as_os_str().as_bytes();
+    if !temporary.is_absolute() || bytes.contains(&0) || bytes.len() >= CAPACITY {
+        return Err(Error::Configuration(format!(
+            "Chromium temporary directory requires an absolute singleton socket pathname of at most {} bytes (got {})",
+            CAPACITY - 1,
+            bytes.len()
+        )));
+    }
+    Ok(())
+}
+
 pub(super) struct OwnedChromium {
     pid: libc::pid_t,
     reaped: bool,
@@ -355,16 +378,28 @@ impl OwnedChromium {
         cancel: &Cancellation,
     ) -> Result<Self, super::error::Failure> {
         let mut owner: Option<Self> = None;
+        // Retain pre-fork ownership so returned initialization errors can report
+        // removal failures instead of relying on TempDir's best-effort Drop.
+        let mut directory = None;
         let result = (|| {
             cancel.check(deadline, Phase::Startup)?;
-            let directory = tempfile::Builder::new()
-                .prefix("borrowser-chromium-")
-                .tempdir()
-                .map_err(|e| Error::io("private profile", e))?;
+            // Leave room for Chromium's Linux singleton socket pathname under
+            // the canonical runtime directory. Never fall back to shared /tmp.
+            let prefix = if cfg!(target_os = "linux") {
+                "ag2-"
+            } else {
+                "borrowser-chromium-"
+            };
+            let private = directory.insert(
+                tempfile::Builder::new()
+                    .prefix(prefix)
+                    .tempdir()
+                    .map_err(|e| Error::io("private profile", e))?,
+            );
             // Chromium canonicalizes its database location. Canonicalize the
             // private parent first so /var -> /private/var cannot hide Crashpad
             // from exact ownership matching on macOS.
-            let root = directory
+            let root = private
                 .path()
                 .canonicalize()
                 .map_err(|e| Error::io("canonical private directory", e))?;
@@ -375,7 +410,31 @@ impl OwnedChromium {
             }
             let profile = root.join("profile");
             let crash = root.join("crashes");
+            let temporary = root.join("tmp");
+            #[cfg(target_os = "linux")]
+            validate_linux_temporary_path(&temporary)?;
             std::fs::create_dir(&crash).map_err(|e| Error::io("private crash directory", e))?;
+            std::fs::create_dir(&temporary)
+                .map_err(|e| Error::io("private temporary directory", e))?;
+            #[cfg(test)]
+            {
+                let deny_removal = fault::take(fault::Point::PreForkArtifacts);
+                if deny_removal || fault::take(fault::Point::PreFork) {
+                    use std::os::unix::fs::PermissionsExt;
+                    std::fs::write(temporary.join("retained"), b"pre-fork evidence").unwrap();
+                    if deny_removal {
+                        std::fs::set_permissions(
+                            &temporary,
+                            std::fs::Permissions::from_mode(0o500),
+                        )
+                        .unwrap();
+                    }
+                    return Err(Error::Launch {
+                        stage: "injected pre-fork initialization",
+                        errno: libc::EIO,
+                    });
+                }
+            }
             let exe = cstring(executable.as_os_str().as_bytes())?;
             let mut args = vec![exe.clone()];
             for arg in arguments {
@@ -391,7 +450,7 @@ impl OwnedChromium {
                 .collect();
             let mut env = Vec::new();
             for (key, value) in std::env::vars_os() {
-                if key == "BREAKPAD_DUMP_LOCATION" {
+                if key == "BREAKPAD_DUMP_LOCATION" || key == "TMPDIR" {
                     continue;
                 }
                 let mut bytes = key.as_bytes().to_vec();
@@ -401,6 +460,11 @@ impl OwnedChromium {
             }
             env.push(cstring(
                 format!("BREAKPAD_DUMP_LOCATION={}", crash.display()).as_bytes(),
+            )?);
+            // Only execve's child environment changes. Chromium descendants
+            // inherit this location; Cargo and the parent retain their TMPDIR.
+            env.push(cstring(
+                format!("TMPDIR={}", temporary.display()).as_bytes(),
             )?);
             let envp: Vec<_> = env
                 .iter()
@@ -522,7 +586,7 @@ impl OwnedChromium {
                     output: response_read,
                     stderr: stderr_read,
                     registry: native::Registry::new(pid, profile, crash, executable.to_path_buf()),
-                    directory: Some(directory),
+                    directory: directory.take(),
                     diagnostics: Vec::new(),
                     finished: false,
                     last_scan: Instant::now() - Duration::from_secs(1),
@@ -619,10 +683,21 @@ impl OwnedChromium {
         match result {
             Ok(()) => Ok(owner.unwrap()),
             Err(primary) => {
-                let cleanup = owner
-                    .as_mut()
-                    .map(|p| p.finish(Duration::from_secs(5)))
-                    .unwrap_or_default();
+                let cleanup = if let Some(child) = owner.as_mut() {
+                    // After fork, only authoritative native cleanup may remove
+                    // the directory, including on partial launch failure.
+                    child.finish(Duration::from_secs(5))
+                } else if let Some(dir) = directory.take() {
+                    // No child exists. close() reports removal errors, including
+                    // the private path; removal may have been only partial.
+                    dir.close()
+                        .err()
+                        .map(CleanupError::Artifacts)
+                        .into_iter()
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 Err(super::error::Failure {
                     primary: Some(primary),
                     cleanup,
@@ -908,6 +983,8 @@ pub(super) mod fault {
     use super::*;
     #[derive(Clone, Copy, PartialEq, Eq)]
     pub enum Point {
+        PreFork,
+        PreForkArtifacts,
         Descriptor,
         MaskRestored,
         LaunchStatus,

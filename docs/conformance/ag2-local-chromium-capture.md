@@ -62,6 +62,49 @@ fixed time. No equivalence beyond this static pixel is claimed.
 
 ## Pipes and launch ownership
 
+Each launch owns one private `TempDir` beneath the parent process's temporary
+directory. Its canonical root contains three separate locations: `profile`
+for `--user-data-dir`, `crashes` for `BREAKPAD_DUMP_LOCATION`, and `tmp` for
+Chromium-created temporary files, including POSIX singleton sockets. Before
+fork, the launcher builds the complete child environment, removes inherited
+`TMPDIR` and `BREAKPAD_DUMP_LOCATION` entries, and installs exactly one of each
+with these private paths. Chromium and its descendants inherit them. The Rust
+parent's environment is not changed; Cargo/build scripts and test/CLI target
+runners keep their existing build/runtime separation.
+
+On Linux, the private root uses the short `ag2-` prefix instead of
+`borrowser-chromium-`. The pinned
+[ProcessSingleton implementation](https://github.com/chromium/chromium/blob/3ff7ac5a9224be9156d7f8703a06e22890aafd34/chrome/browser/process_singleton_posix.cc)
+creates `<TMPDIR>/org.chromium.Chromium.XXXXXX/SingletonSocket`: six generated
+ASCII suffix bytes and 45 total pathname bytes after TMPDIR. Its Linux socket
+address must include a NUL within the native 108-byte `sockaddr_un.sun_path`.
+The launcher checks the canonical absolute path's **byte** length before fork:
+the complete socket pathname must be at most 107 bytes, so child TMPDIR can be
+at most 62 bytes. Relative/NUL-containing or excessive paths produce an explicit
+configuration error; no shared-directory fallback is attempted. The runner's
+`/home/runner/work/_temp/ag2-profiles/ag2-XXXXXX/tmp` produces a 96-byte socket
+pathname. Developer paths are checked independently, including multibyte names
+and symlink-expanded canonical parents. The fixed suffix is tied to the pinned
+browser and must be revisited when that pin changes.
+
+Before fork, a local `Option<TempDir>` owns the root independently of fallible
+initialization. A returned initialization error explicitly closes that directory;
+successful removal leaves `Failure.cleanup` empty, while removal failure adds
+`CleanupError::Artifacts` containing the private path. The original error remains
+`Failure.primary` in either case. Removal is not atomic: an error can leave a
+partially removed subtree, which must not be reported as removed.
+
+Immediately after successful fork in the parent, the directory is transferred
+exactly once into `OwnedChromium`. A failed fork leaves it with the pre-fork owner;
+the exec child never runs this Rust cleanup path. After transfer, only the process
+owner handles partial-launch failure and subsequent cleanup.
+
+The process owner recursively removes the entire subtree only after existing native
+identity, termination, direct-child/adopted-child reaping and deadline checks
+succeed. Incomplete verification retains the tree and reports cleanup failure;
+filesystem removal errors remain explicit. No name-based exception, sibling
+scan/removal or pre-verification deletion is used.
+
 The private Unix launcher uses `fork`/`execve`, not a shell or a reusable
 transport framework. Chromium's `--remote-debugging-pipe` contract is:
 
@@ -782,13 +825,145 @@ Full `TMPDIR=/private/tmp/borrowser-ag2-v2-build-tmp make ci` also completed wit
 `/private/tmp/borrowser-ag2-shutdown-ci.log`. This includes workspace builds,
 feature/lint/test lanes, parser/fuzz/golden checks, release and benchmark builds,
 and generated-entity verification. Only the documentation evidence record was
-updated afterward. This is macOS evidence only; production v2 has not executed
-on Linux.
+updated afterward. This is macOS evidence only; the later Linux production-v2
+execution is recorded separately below.
+
+### Linux production-v2 artifact-ownership finding
+
+[Run 38110745639, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/38110745639)
+tested source `93eb3c3904effaa169eed880a65cc52cc4515ee8`, merge
+`a77adafa0de4fa4d31152cb9b78496016c5bb4e4`, on Ubuntu 24.04.5 LTS,
+image `20261004.327.1`, kernel `6.17.0-1022-azure`, native x86-64 AMD EPYC
+7763 in a Microsoft full-virtualization VM. The pinned Linux archive checksum
+matched `55672d1f392fd3e7b7a08621b6e804e6bcb39d40cf155504abb74b3a021ea8ea`.
+
+All 39 applicable conformance tests passed, including both original fixtures
+three times each with exact 640 × 480 PNG pixels, profile v2, favicon abort
+acknowledgment/terminal evidence, DOM/resource rejection, script controls,
+independent CLI serialization and EOF-only shutdown. Each native invocation
+exercised 42 isolated scenarios, including 14 resource/shutdown scenarios;
+unrelated-process survival, pidfd/subreaper behavior and adopted reaping passed.
+Renderer checks reported NoNewPrivs=1, Seccomp=2 and nested PID namespaces.
+The Rust workspace job and all nine fuzz/regression jobs passed.
+
+The strict final runtime-directory gate nevertheless failed on
+`ag2-profiles/org.chromium.Chromium.uSidyz`. The final process snapshot contained
+no Chromium processes. Its bounded inventory included only regular files and
+was empty, so the directory's contents and exact creator were not established.
+The pinned singleton implementation is a supported explanation, not proof of
+that specific artifact's origin. The demonstrated ownership gap was inherited
+shared TMPDIR versus removal of only the private profile/crash subtree.
+
+The per-launch child TMPDIR correction above places those temporary artifacts
+within the existing owner. It does not alter process signaling/reaping, browser
+flags, capture profile, screenshot/resource policy, deadlines or CI's strict
+gate. The corrected launcher still requires a new native Linux run with an
+empty runtime directory and all required jobs passing. This historical run is
+partial v2 evidence, not complete Linux qualification.
+
+### Temporary-containment correction: local validation
+
+On 2026-10-11, macOS 27.0 arm64 (26A428, Darwin 27.0.0), the registered
+socket-path boundary test passed, and the new native parent passed five isolated
+scenarios: `temp-clean`, `temp-exit`, `temp-cancel`, `temp-incomplete`, and
+`temp-remove-failure`. A real exec child reported exactly one private TMPDIR;
+its exec descendant inherited it and created evidence in the same subtree.
+Files, nested directories and a symlink were removed after verified cleanup;
+the parent environment and unrelated sibling directory/process survived.
+Injected discovery expiry retained artifacts and reported timeout; a real
+directory-permission denial reported artifact-removal failure after reaping.
+Test-only recovery removed deliberately retained fixtures after these assertions.
+
+The native group passed six registered tests (48 isolated scenarios); the full
+applicable suite passed **42 tests** (38 unit/native/real-browser, two Chromium
+CLI, two AG1 CLI). Both original fixtures again passed three independent captures
+with exact pixels, v2 provenance, favicon evidence and EOF shutdown. Script/
+resource/DOM controls and independent CLI serialization passed unchanged.
+The unchanged mac-arm64 archive checksum was reverified against the manifest.
+The dedicated runtime directory was empty afterward without any cleanup-gate
+exclusion or pre-verification removal. An isolated control of the exact CI gate
+accepted an empty directory and rejected a retained hidden directory with exit 1.
+
+Commands used the pinned executable and separated build/target-runner TMPDIR:
+
+```sh
+cargo test -p borrowser-conformance --locked -- --list
+cargo test -p borrowser-conformance --locked \
+  chromium::tests::linux_temporary_socket_path_uses_bytes_and_reserves_nul \
+  -- --exact --nocapture
+cargo test -p borrowser-conformance --locked \
+  chromium::tests::native_temporary_artifact_containment \
+  -- --exact --nocapture --test-threads=1
+cargo test -p borrowser-conformance --locked native_ -- --nocapture
+cargo test -p borrowser-conformance --locked -- --include-ignored \
+  --skip chromium::tests::native_case --skip chromium::tests::browser_helper \
+  --test-threads=1 --nocapture
+cargo fmt --all -- --check
+cargo clippy -p borrowser-conformance --all-targets --locked -- -D warnings
+cargo build -p borrowser-conformance --locked
+```
+
+All passed. Cargo used `/private/tmp/ag2-temp-build`; the macOS target runner was
+`env TMPDIR=/private/tmp/ag2-temp-runtime`. Native execution used the required
+host inspection permissions, without disabling Chromium's sandbox. Logs are
+`/private/tmp/borrowser-ag2-temp-{registration,path,targeted,native,conformance,clippy,build}.log`.
+The byte-boundary unit test on macOS does not qualify Linux. The Linux-only
+excessive-path launch case and actual singleton-socket containment assertion
+remain pending hosted execution, as does the unchanged final runtime gate.
+
+Full `TMPDIR=/private/tmp/ag2-temp-build make ci` completed with **exit 0**;
+the execution log is `/private/tmp/borrowser-ag2-temp-ci.log`. Workspace
+feature/lint/test lanes, parser performance/fuzz/golden checks, debug/release
+builds, benchmark compilation and generated-entity checks passed. Existing
+release warnings outside conformance were not changed. This remains macOS
+evidence, not acceptance of the pending native Linux correction.
+
+### Explicit pre-fork cleanup: local validation
+
+The subsequent review found that pre-fork initialization still relied on
+`TempDir::drop`, which discards removal errors. The explicit pre-fork ownership
+described above now preserves those errors independently of the primary failure.
+On the same macOS 27.0 arm64 host, `native_prefork_artifact_cleanup` was registered
+and executed both `prefork-clean` and `prefork-remove-failure`. Each injected
+failure occurs after real directory/file creation and must be consumed. Both
+retain the identical launch stage and EIO primary error. The first proves the
+private directory was removed; the second uses actual directory permissions to
+deny removal and asserts `CleanupError::Artifacts`, its private path, and the
+retained file before test-only recovery. Both assert ECHILD, unchanged parent
+TMPDIR and unrelated sibling-file/process survival.
+
+The targeted parent passed one test/two isolated scenarios. The native group
+passed seven tests with **50 isolated scenarios**. The complete pinned-Chromium
+suite passed **43 tests** (39 unit/native/browser, two Chromium CLI and two AG1
+CLI), including both fixtures three times with unchanged pixels, profile v2,
+favicon/DOM/script controls, EOF shutdown and independent CLI serialization.
+The dedicated runtime directory was empty after execution. Formatting,
+warnings-denied conformance Clippy, normal production build and the socket-path
+boundary test passed. The mac-arm64 archive checksum still matched the manifest.
+
+The commands above were rerun using Cargo TMPDIR `/private/tmp/ag2-prefork-build`
+and target runner `env TMPDIR=/private/tmp/ag2-prefork-runtime`; the additional
+targeted invocation was:
+
+```sh
+cargo test -p borrowser-conformance --locked \
+  chromium::tests::native_prefork_artifact_cleanup \
+  -- --exact --nocapture --test-threads=1
+```
+
+Execution logs are
+`/private/tmp/borrowser-ag2-prefork-{registration,targeted,path,native,conformance,clippy,build}.log`.
+Full `TMPDIR=/private/tmp/ag2-prefork-build make ci` then completed with **exit 0**;
+its log is `/private/tmp/borrowser-ag2-prefork-ci.log`. Workspace lint/test,
+feature, parser/fuzz/golden, WPT-style fixture, debug/release, benchmark and
+generated-entity checks passed. Only documentation evidence was updated afterward.
+The Linux-only cases and final hosted artifact gate remain unqualified by this
+macOS evidence.
 
 | Platform | Evidence / outstanding acceptance |
 | --- | --- |
-| macOS 27.0 arm64, build 26A428 | Production v2: the 40-test local suite and empty runtime-directory check above passed on 2026-10-10. Historical v1: passed real fixture/script/resource tests, lifecycle/topology tests and independent CLI serialization tests on 2026-10-09, outside Codex's restrictive sandbox. Normal helpers remain in the root session; two detached Crashpad handlers use the private database. Token permission/generation checks, cancellation, timeout and forced root exit passed; a final process scan found no processes from the test extraction. Other OS builds require requalification. |
-| Linux x86-64 | Historical v1 native lifecycle/sandbox tests passed. Run 38075849398 proved both ordinary-target pixels and both hidden-target timeouts in the controlled A/B test. Production v2 repeatability, parsed-document/resource policy, scripts, CLI serialization, final cleanup gate and final-tree CI still require a separately authorized hosted run. |
+| macOS 27.0 arm64, build 26A428 | Production v2: explicit pre-fork cleanup passed the 43-test suite, 50 isolated native scenarios, empty runtime check and full local CI on 2026-10-11; prior 42-test containment and 40-test shutdown evidence is retained above. Historical v1: passed real fixture/script/resource tests, lifecycle/topology tests and independent CLI serialization tests on 2026-10-09, outside Codex's restrictive sandbox. Normal helpers remain in the root session; two detached Crashpad handlers use the private database. Token permission/generation checks, cancellation, timeout and forced root exit passed; a final process scan found no processes from the test extraction. Other OS builds require requalification. |
+| Linux x86-64 | Historical v1/A/B evidence remains separate. Production-v2 run 38110745639 passed capture/repeatability, resource/DOM/script/CLI/EOF, native lifecycle and sandbox tests, but failed the strict artifact gate. The child-TMPDIR correction, new Linux launch/socket regressions, empty runtime storage and complete final-tree CI require a separately authorized hosted run. |
 | Linux ARM64 Docker host | Earlier offline `cargo check --all-targets` and `cargo clippy -p borrowser-conformance --all-targets --locked --offline -- -D warnings` passed. This historical build evidence was not rerun after the macOS argument-copy correction; capture explicitly rejects this architecture and it does not qualify Linux x86-64. |
 
 AG2 remains one issue. It is not closeable across both intended platforms until

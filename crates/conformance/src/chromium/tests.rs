@@ -1,6 +1,7 @@
 use super::*;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use std::os::fd::FromRawFd;
+use std::path::Path;
 #[cfg(any(
     all(target_os = "macos", target_arch = "aarch64"),
     all(target_os = "linux", target_arch = "x86_64")
@@ -189,6 +190,57 @@ fn native_lifecycle_regressions() {
     run_native_cases(&["arguments-transient", "arguments-persistent"]);
 }
 #[test]
+fn linux_temporary_socket_path_uses_bytes_and_reserves_nul() {
+    use std::os::unix::ffi::OsStrExt;
+    let suffix = "/org.chromium.Chromium.XXXXXX/SingletonSocket";
+    let longest = format!("/{}", "a".repeat(107 - suffix.len() - 1));
+    assert_eq!(longest.len() + suffix.len(), 107);
+    assert!(process::validate_linux_temporary_path(Path::new(&longest)).is_ok());
+    for invalid in [
+        format!("{longest}a"),
+        format!("{longest}é"),
+        "relative".into(),
+        "/tmp/\0bad".into(),
+    ] {
+        assert!(matches!(
+            process::validate_linux_temporary_path(Path::new(&invalid)),
+            Err(Error::Configuration(_))
+        ));
+    }
+    // Equal character counts can cross the boundary with a multibyte pathname.
+    let unicode = longest.replacen('a', "é", 1);
+    assert_eq!(unicode.chars().count(), longest.chars().count());
+    assert_eq!(unicode.len() + suffix.len(), 108);
+    assert!(process::validate_linux_temporary_path(Path::new(&unicode)).is_err());
+    let ci = Path::new("/home/runner/work/_temp/ag2-profiles/ag2-XXXXXX/tmp");
+    assert!(process::validate_linux_temporary_path(ci).is_ok());
+    assert_eq!(ci.as_os_str().as_bytes().len() + suffix.len(), 96);
+}
+#[test]
+#[cfg(any(
+    all(target_os = "macos", target_arch = "aarch64"),
+    all(target_os = "linux", target_arch = "x86_64")
+))]
+fn native_temporary_artifact_containment() {
+    run_native_cases(&[
+        "temp-clean",
+        "temp-exit",
+        "temp-cancel",
+        "temp-incomplete",
+        "temp-remove-failure",
+    ]);
+    #[cfg(target_os = "linux")]
+    run_native_cases(&["temp-path-too-long"]);
+}
+#[test]
+#[cfg(any(
+    all(target_os = "macos", target_arch = "aarch64"),
+    all(target_os = "linux", target_arch = "x86_64")
+))]
+fn native_prefork_artifact_cleanup() {
+    run_native_cases(&["prefork-clean", "prefork-remove-failure"]);
+}
+#[test]
 #[cfg(any(
     all(target_os = "macos", target_arch = "aarch64"),
     all(target_os = "linux", target_arch = "x86_64")
@@ -253,7 +305,25 @@ fn run_native_cases(scenarios: &[&str]) {
         .spawn()
         .unwrap();
     for scenario in scenarios {
-        let output = Command::new(std::env::current_exe().unwrap())
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        // Set only the isolated process's environment, never that of the outer
+        // multithreaded test harness. Pre-fork cases inspect their entire parent.
+        let isolated_parent = if scenario.starts_with("prefork-") {
+            // Nine additional pathname bytes fit the pinned Linux socket bound
+            // under the existing CI runtime directory.
+            let parent = tempfile::Builder::new().prefix("p-").tempdir().unwrap();
+            command.env("TMPDIR", parent.path());
+            Some(parent)
+        } else if *scenario == "temp-path-too-long" {
+            let parent = tempfile::tempdir().unwrap();
+            let long = parent.path().join("x".repeat(80));
+            std::fs::create_dir(&long).unwrap();
+            command.env("TMPDIR", long);
+            Some(parent)
+        } else {
+            None
+        };
+        let output = command
             .args([
                 "--exact",
                 "chromium::tests::native_case",
@@ -274,6 +344,7 @@ fn run_native_cases(scenarios: &[&str]) {
             "terminated unrelated sibling"
         );
         eprintln!("native scenario {scenario}: passed; unrelated sibling survived");
+        drop(isolated_parent);
     }
     drop(unrelated.stdin.take());
     assert!(unrelated.wait().unwrap().success());
@@ -290,6 +361,7 @@ fn native_case() {
         .collect();
     let _keep_occupied = occupied;
     let cancel = Cancellation::default();
+    let parent_tmpdir = std::env::var_os("TMPDIR");
     let exe = if scenario == "exec-error" {
         PathBuf::from("/nonexistent/ag2")
     } else {
@@ -304,6 +376,74 @@ fn native_case() {
     ]
     .map(str::to_owned);
     let start = Instant::now();
+    if scenario.starts_with("prefork-") {
+        use process::fault::{self, Point};
+        use std::os::unix::fs::PermissionsExt;
+        let parent = std::env::temp_dir();
+        assert_eq!(std::fs::read_dir(&parent).unwrap().count(), 0);
+        let sentinel = parent.join("unrelated");
+        std::fs::write(&sentinel, b"preserve").unwrap();
+        fault::set(if scenario == "prefork-clean" {
+            Point::PreFork
+        } else {
+            Point::PreForkArtifacts
+        });
+        let failure =
+            process::OwnedChromium::launch(&exe, &args, start + Duration::from_secs(2), &cancel)
+                .err()
+                .expect("pre-fork failure must not become successful launch");
+        // Consumption proves initialization created the root and its evidence
+        // file before returning the exact same primary error in both cases.
+        fault::assert_consumed();
+        assert!(matches!(
+            failure.primary,
+            Some(Error::Launch {
+                stage: "injected pre-fork initialization",
+                errno: libc::EIO,
+            })
+        ));
+        assert_no_children();
+        let remaining: Vec<_> = std::fs::read_dir(&parent)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path != &sentinel)
+            .collect();
+        if scenario == "prefork-clean" {
+            assert!(failure.cleanup.is_empty(), "{failure:?}");
+            assert!(
+                remaining.is_empty(),
+                "private directory survived: {remaining:?}"
+            );
+        } else {
+            assert_eq!(remaining.len(), 1, "{remaining:?}");
+            let artifacts = &remaining[0];
+            let [error::CleanupError::Artifacts(error)] = failure.cleanup.as_slice() else {
+                panic!("expected independent artifact error: {failure:?}");
+            };
+            assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+            assert!(
+                error.to_string().contains(artifacts.to_str().unwrap()),
+                "{error}"
+            );
+            assert_eq!(
+                std::fs::read(artifacts.join("tmp/retained")).unwrap(),
+                b"pre-fork evidence"
+            );
+            // Recovery is test-only, after proving the failed removal and path
+            // diagnostic. Production reports the retained, possibly partial tree.
+            std::fs::set_permissions(
+                artifacts.join("tmp"),
+                std::fs::Permissions::from_mode(0o700),
+            )
+            .unwrap();
+            std::fs::remove_dir_all(artifacts).unwrap();
+            assert!(!artifacts.exists());
+        }
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"preserve");
+        assert_eq!(std::env::var_os("TMPDIR"), parent_tmpdir);
+        assert_no_children();
+        return;
+    }
     if scenario.starts_with("partial-") {
         let fd_directory = if cfg!(target_os = "linux") {
             "/proc/self/fd"
@@ -351,6 +491,19 @@ fn native_case() {
     }
     let result =
         process::OwnedChromium::launch(&exe, &args, start + Duration::from_secs(2), &cancel);
+    if scenario == "temp-path-too-long" {
+        let failure = result
+            .err()
+            .expect("excessive socket path must fail before fork");
+        assert!(
+            matches!(failure.primary, Some(Error::Configuration(ref message)) if message.contains("singleton socket pathname"))
+        );
+        assert!(failure.cleanup.is_empty());
+        assert_eq!(std::fs::read_dir(std::env::temp_dir()).unwrap().count(), 0);
+        assert_eq!(std::env::var_os("TMPDIR"), parent_tmpdir);
+        assert_no_children();
+        return;
+    }
     if scenario == "exec-error" {
         let failure = result.err().expect("exec must fail");
         assert!(matches!(failure.primary, Some(Error::Launch { .. })));
@@ -366,6 +519,88 @@ fn native_case() {
         Err(failure) => panic!("{failure:?}"),
     };
     let artifacts = child.artifact_path().to_path_buf();
+    if scenario.starts_with("temp-") {
+        let sibling = tempfile::tempdir().unwrap();
+        let sentinel = sibling.path().join("unrelated");
+        std::fs::write(&sentinel, b"preserve").unwrap();
+        let response = cdp::Cdp::new(&mut child, &cancel)
+            .call(
+                "Browser.getVersion",
+                json!({}),
+                Instant::now() + Duration::from_secs(2),
+                Phase::Startup,
+            )
+            .unwrap();
+        let temporary = artifacts.canonicalize().unwrap().join("tmp");
+        assert_eq!(response["tmpdir"], temporary.to_str().unwrap());
+        assert_eq!(response["tmpdir_entries"], 1);
+        assert_eq!(std::env::var_os("TMPDIR"), parent_tmpdir);
+        let created = temporary.join("child/nested/evidence.txt");
+        assert_eq!(std::fs::read(&created).unwrap(), b"child temporary data");
+        assert_eq!(
+            std::fs::read(temporary.join("child/descendant.txt")).unwrap(),
+            b"inherited"
+        );
+        assert!(
+            std::fs::symlink_metadata(temporary.join("child/nested/link"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        if scenario == "temp-cancel" {
+            cancel.cancel();
+            assert!(matches!(
+                child.test_discover(Instant::now() + Duration::from_secs(1), &cancel),
+                Err(Error::Cancelled)
+            ));
+        } else if scenario == "temp-exit" {
+            child.kill_root().unwrap();
+        }
+        if scenario == "temp-incomplete" {
+            process::fault::set(process::fault::Point::Discovery);
+            let errors = child.finish(Duration::from_millis(100));
+            process::fault::assert_consumed();
+            assert!(
+                errors
+                    .iter()
+                    .any(|e| matches!(e, error::CleanupError::Timeout)),
+                "{errors:?}"
+            );
+            assert!(
+                created.exists(),
+                "incomplete verification removed child artifacts"
+            );
+            assert!(!child.finish(Duration::from_secs(1)).is_empty());
+            assert!(child.recover_test_children().is_empty());
+            // Test-only recovery occurs after the deliberately failed cleanup;
+            // production retains the entire tree and reports the failure.
+            std::fs::remove_dir_all(&artifacts).unwrap();
+        } else if scenario == "temp-remove-failure" {
+            use std::os::unix::fs::PermissionsExt;
+            let nested = created.parent().unwrap();
+            std::fs::set_permissions(nested, std::fs::Permissions::from_mode(0o500)).unwrap();
+            let errors = child.finish(Duration::from_secs(2));
+            assert!(
+                errors
+                    .iter()
+                    .any(|e| matches!(e, error::CleanupError::Artifacts(_))),
+                "{errors:?}"
+            );
+            assert!(created.exists());
+            assert!(!child.finish(Duration::from_secs(1)).is_empty());
+            assert_no_children();
+            std::fs::set_permissions(nested, std::fs::Permissions::from_mode(0o700)).unwrap();
+            std::fs::remove_dir_all(&artifacts).unwrap();
+        } else {
+            let errors = child.finish(Duration::from_secs(2));
+            assert!(errors.is_empty(), "{errors:?}");
+        }
+        assert!(!artifacts.exists());
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"preserve");
+        assert_eq!(std::env::var_os("TMPDIR"), parent_tmpdir);
+        assert_no_children();
+        return;
+    }
     if scenario.starts_with("resource-") {
         let result = cdp::Cdp::new(&mut child, &cancel).resource_regression(&scenario);
         match scenario.as_str() {
@@ -685,6 +920,14 @@ fn assert_no_children() {
 fn browser_helper() {
     use std::io::Read;
     let scenario = std::env::var("AG2_NATIVE_CASE").unwrap();
+    if scenario == "temp-descendant" {
+        std::fs::write(
+            std::env::temp_dir().join("child/descendant.txt"),
+            b"inherited",
+        )
+        .unwrap();
+        return;
+    }
     if scenario == "unrelated" {
         let mut bytes = Vec::new();
         std::io::stdin().read_to_end(&mut bytes).unwrap();
@@ -741,6 +984,41 @@ fn browser_helper() {
         request.push(byte[0]);
     }
     let mut write = unsafe { std::fs::File::from_raw_fd(4) };
+    if scenario.starts_with("temp-") {
+        let temporary = std::env::temp_dir();
+        let crashes = PathBuf::from(std::env::var_os("BREAKPAD_DUMP_LOCATION").unwrap());
+        assert_eq!(temporary, crashes.parent().unwrap().join("tmp"));
+        let nested = temporary.join("child/nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join("evidence.txt"), b"child temporary data").unwrap();
+        std::os::unix::fs::symlink("evidence.txt", nested.join("link")).unwrap();
+        assert!(
+            Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "chromium::tests::browser_helper", "--ignored"])
+                .env("AG2_NATIVE_CASE", "temp-descendant")
+                .status()
+                .unwrap()
+                .success()
+        );
+        let value: Value = serde_json::from_slice(&request).unwrap();
+        let entries = std::env::vars_os()
+            .filter(|(key, _)| key == "TMPDIR")
+            .count();
+        write
+            .write_all(
+                format!(
+                    "{}\0",
+                    json!({"id":value["id"],"result":{"tmpdir":temporary,"tmpdir_entries":entries}})
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+        // Graceful command EOF, cancellation, and forced root exit all leave
+        // artifact removal to the owner's post-verification cleanup.
+        let mut byte = [0];
+        assert_eq!(read.read(&mut byte).unwrap(), 0);
+        return;
+    }
     if scenario.starts_with("resource-") {
         resource_protocol_helper(&scenario, &request, &mut read, &mut write);
         drop(write);
@@ -1193,6 +1471,17 @@ fn real_chromium_lifecycle_and_topology() {
                     .iter()
                     .any(|(exe, detached)| exe == "chrome_crashpad_handler" && *detached)
             );
+        }
+        #[cfg(target_os = "linux")]
+        {
+            // Exercise the actual pinned singleton socket, not a name-based
+            // cleanup exception. This path conveys no process signal authority.
+            let socket = std::fs::read_link(artifacts.join("profile/SingletonSocket")).unwrap();
+            assert!(
+                socket.starts_with(artifacts.canonicalize().unwrap().join("tmp")),
+                "{socket:?}"
+            );
+            assert!(socket.exists());
         }
         if scenario == "cancel" {
             cancel.cancel();

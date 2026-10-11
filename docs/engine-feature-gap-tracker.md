@@ -974,12 +974,27 @@ When a feature lands:
   evidence kept distinct. The macOS v2 suite passed 40 tests, including both
   fixtures three times, favicon/DOM policy, scripts, independent CLI records and
   native cleanup; runtime storage was empty and full local `make ci` exited 0.
-  Native Linux lifecycle and renderer
-  sandbox tests passed; hosted run `38075849398` captured both expected pixels with ordinary
-  targets while both hidden arms timed out. That A/B result justified the target
-  correction, but the production v2 resource policy, repeated captures, script/
-  CLI checks, final cleanup gate and final-tree Linux CI remain unqualified.
-  AG2 is not closed across both intended platforms.
+  Historical hosted A/B run `38075849398` justified ordinary targets. Production-v2
+  run `38110745639` passed all 39 applicable tests: exact repeated pixels,
+  resource/DOM/script/CLI/EOF checks, native lifecycle and renderer sandboxing.
+  Its strict artifact gate failed on a Chromium temporary directory outside
+  the launch owner's subtree. The correction gives only the Chromium child a
+  private inherited TMPDIR alongside profile/crash storage, checks Linux socket
+  pathname capacity before launch, and preserves authoritative cleanup and the
+  unchanged strict gate. Pre-fork initialization explicitly owns and closes the
+  private root, preserving the original launch error and separately reporting
+  artifact-removal failure with its path; post-fork removal remains conditional
+  on authoritative process verification and reaping.
+  The initial corrected macOS suite passed 42 tests and 48
+  isolated native scenarios with empty runtime storage, including child/descendant
+  temporary containment and retained-artifact/removal-failure regressions; full
+  local `make ci` exited 0. The explicit pre-fork cleanup correction subsequently
+  passed 43 macOS tests and 50 isolated native scenarios, including actual
+  pre-fork removal success/failure with preserved primary errors and artifact
+  paths. Runtime storage was empty and full local `make ci` again exited 0.
+  A new hosted run must qualify this correction and pass
+  the artifact gate and complete final-tree CI. AG2 remains unqualified across
+  both intended platforms.
 - Integrated Chromium comparison (AG3), AWS (AG4), WPT support, broad browser
   compatibility and general rendering conformance remain gaps. See the
   [harness README](../crates/conformance/README.md).
