@@ -341,6 +341,13 @@ impl OwnedChromium {
         self.last_scan = Instant::now() - Duration::from_secs(1);
         self.check(deadline, Phase::Capture, cancel)
     }
+    #[cfg(test)]
+    pub fn test_expire_next_discovery(&mut self) {
+        // Exercise the next real native check with pending CDP input, without
+        // depending on the periodic-discovery interval or scheduling sleeps.
+        self.last_scan = Instant::now() - Duration::from_secs(1);
+        fault::set(fault::Point::Discovery);
+    }
     pub fn launch(
         executable: &Path,
         arguments: &[String],

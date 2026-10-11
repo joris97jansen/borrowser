@@ -52,6 +52,10 @@ fn real_chromium_cli_has_stable_independent_observations() {
             serde_json::json!([52, 86, 120])
         );
         for observation in observations {
+            assert_eq!(
+                observation["browser"]["capture_profile"],
+                "ag2-canvas-srgb-v2"
+            );
             assert!(observation.get("expected").is_none());
             assert!(observation.get("status").is_none());
         }

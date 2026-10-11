@@ -960,14 +960,25 @@ When a feature lands:
   physical pixel (32, 32). Identity and observations are separate from AG1
   comparison/reporting; success requires verified process cleanup. This is
   self-contained page delivery, not an OS-level network-isolation guarantee.
-- macOS arm64 real-browser validation and Linux execution evidence are recorded in
-  the [AG2 contract](conformance/ag2-local-chromium-capture.md). Native Linux
-  x86-64 lifecycle and renderer sandbox assertions passed in both hosted
-  `ubuntu-24.04` runs. The second isolated the timeout to `Page.captureScreenshot`
-  awaiting its response. Real capture, repeatability, script/resource/CLI checks
-  and the final cleanup gate remain outstanding. Pinned source inspection
-  motivates a test-only hidden/page target experiment; native Linux A/B evidence
-  is still required before a capture fix is established.
+- The `ag2-canvas-srgb-v2` profile uses one ordinary headless target. Parsed-DOM
+  eligibility rejects every live-document `link` element within the current
+  inline-only scope. Default-favicon candidates are aborted before network and
+  require paired request IDs, actual abort acknowledgment and failed-load
+  completion; authored resources and incomplete evidence remain errors.
+  Shutdown additionally requires verified response-stream EOF after complete
+  event dispatch; root exit, close acknowledgment and timeout cannot substitute
+  for incoming evidence. The corrected macOS suite passed 40 tests, including
+  14 isolated resource/shutdown scenarios and 43 native scenarios in total.
+- macOS arm64 validation and Linux execution evidence are recorded in the
+  [AG2 contract](conformance/ag2-local-chromium-capture.md), with historical v1
+  evidence kept distinct. The macOS v2 suite passed 40 tests, including both
+  fixtures three times, favicon/DOM policy, scripts, independent CLI records and
+  native cleanup; runtime storage was empty and full local `make ci` exited 0.
+  Native Linux lifecycle and renderer
+  sandbox tests passed; hosted run `38075849398` captured both expected pixels with ordinary
+  targets while both hidden arms timed out. That A/B result justified the target
+  correction, but the production v2 resource policy, repeated captures, script/
+  CLI checks, final cleanup gate and final-tree Linux CI remain unqualified.
   AG2 is not closed across both intended platforms.
 - Integrated Chromium comparison (AG3), AWS (AG4), WPT support, broad browser
   compatibility and general rendering conformance remain gaps. See the

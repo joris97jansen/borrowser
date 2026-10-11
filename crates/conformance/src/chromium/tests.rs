@@ -104,6 +104,7 @@ fn exact_identity_is_required() {
     let mut version = json!({"product":format!("Chrome/{}",pin["version"].as_str().unwrap()),
         "revision":pin["revision"],"protocolVersion":pin["protocol_version"]});
     let actual = identity(version.clone()).unwrap();
+    assert_eq!(actual.capture_profile, "ag2-canvas-srgb-v2");
     assert_eq!(
         actual,
         serde_json::from_str::<BrowserIdentity>(&serde_json::to_string(&actual).unwrap()).unwrap()
@@ -199,6 +200,29 @@ fn native_capture_failure_diagnostics() {
         "capture-discovery-timeout",
         "capture-disconnected",
         "capture-exited",
+    ]);
+}
+#[test]
+#[cfg(any(
+    all(target_os = "macos", target_arch = "aarch64"),
+    all(target_os = "linux", target_arch = "x86_64")
+))]
+fn native_resource_completion_and_shutdown() {
+    run_native_cases(&[
+        "resource-rejected-abort",
+        "resource-missing-ack",
+        "resource-missing-terminal",
+        "resource-shutdown-valid",
+        "resource-shutdown-incomplete",
+        "resource-shutdown-after-ack",
+        "resource-shutdown-invalidated",
+        "resource-shutdown-root-invalidated",
+        "resource-shutdown-root-clean",
+        "resource-shutdown-buffered-deadline",
+        "resource-shutdown-partial-timeout",
+        "resource-shutdown-truncated",
+        "resource-shutdown-clean",
+        "resource-shutdown-invalidated-after-ack",
     ]);
 }
 #[test]
@@ -342,6 +366,48 @@ fn native_case() {
         Err(failure) => panic!("{failure:?}"),
     };
     let artifacts = child.artifact_path().to_path_buf();
+    if scenario.starts_with("resource-") {
+        let result = cdp::Cdp::new(&mut child, &cancel).resource_regression(&scenario);
+        match scenario.as_str() {
+            "resource-shutdown-valid"
+            | "resource-shutdown-clean"
+            | "resource-shutdown-root-clean" => result.unwrap(),
+            "resource-shutdown-buffered-deadline" | "resource-shutdown-partial-timeout" => {
+                assert!(
+                    matches!(result, Err(Error::Timeout(Phase::Shutdown))),
+                    "{result:?}"
+                );
+            }
+            "resource-shutdown-truncated" => assert!(
+                matches!(
+                    result,
+                    Err(Error::Protocol(error::ProtocolError::Truncated))
+                ),
+                "{result:?}"
+            ),
+            "resource-rejected-abort" => assert!(
+                matches!(result, Err(Error::Protocol(error::ProtocolError::Remote { ref method, .. })) if method == "Fetch.failRequest"),
+                "{result:?}"
+            ),
+            "resource-missing-ack" | "resource-missing-terminal" => assert!(
+                matches!(result, Err(Error::Timeout(Phase::Capture))),
+                "{result:?}"
+            ),
+            "resource-shutdown-incomplete"
+            | "resource-shutdown-after-ack"
+            | "resource-shutdown-invalidated"
+            | "resource-shutdown-invalidated-after-ack"
+            | "resource-shutdown-root-invalidated" => {
+                assert!(matches!(result, Err(Error::Navigation(_))), "{result:?}")
+            }
+            _ => unreachable!(),
+        }
+        let errors = child.finish(Duration::from_secs(2));
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(!artifacts.exists());
+        assert_no_children();
+        return;
+    }
     if scenario.starts_with("capture-") {
         let mut cdp = cdp::Cdp::new(&mut child, &cancel);
         cdp.call(
@@ -675,6 +741,13 @@ fn browser_helper() {
         request.push(byte[0]);
     }
     let mut write = unsafe { std::fs::File::from_raw_fd(4) };
+    if scenario.starts_with("resource-") {
+        resource_protocol_helper(&scenario, &request, &mut read, &mut write);
+        drop(write);
+        loop {
+            std::thread::park_timeout(Duration::from_secs(1));
+        }
+    }
     match scenario.as_str() {
         "eof" => drop(write),
         "malformed" => {
@@ -726,6 +799,188 @@ fn browser_helper() {
     }
 }
 
+// Fixed scripted responses exercise the real pipe, dispatcher and shutdown path.
+// This helper neither inspects nor authorizes process identities.
+fn resource_protocol_helper(
+    scenario: &str,
+    request: &[u8],
+    read: &mut std::fs::File,
+    write: &mut std::fs::File,
+) {
+    use std::io::Read;
+    fn emit(write: &mut std::fs::File, value: Value) {
+        write
+            .write_all(&serde_json::to_vec(&value).unwrap())
+            .unwrap();
+        write.write_all(&[0]).unwrap();
+    }
+    fn event(write: &mut std::fs::File, method: &str, params: Value) {
+        emit(
+            write,
+            json!({"sessionId":"fixture-session","method":method,"params":params}),
+        );
+    }
+    let command: Value = serde_json::from_slice(request).unwrap();
+    if matches!(
+        scenario,
+        "resource-shutdown-root-invalidated"
+            | "resource-shutdown-root-clean"
+            | "resource-shutdown-buffered-deadline"
+    ) {
+        assert_eq!(command["method"], "Page.getLayoutMetrics");
+        emit(
+            write,
+            json!({"id":command["id"],"sessionId":"fixture-session","result":{}}),
+        );
+        if scenario != "resource-shutdown-root-clean" {
+            event(write, "DOM.documentUpdated", json!({}));
+        }
+        return;
+    }
+    let shutdown = scenario.starts_with("resource-shutdown-");
+    assert_eq!(
+        command["method"],
+        if shutdown {
+            "Browser.close"
+        } else {
+            "Page.getLayoutMetrics"
+        }
+    );
+    if shutdown {
+        assert!(command.get("sessionId").is_none());
+    }
+    let mut response = json!({"id":command["id"],"result":{}});
+    if !shutdown {
+        response["sessionId"] = json!("fixture-session");
+    }
+    if matches!(
+        scenario,
+        "resource-shutdown-partial-timeout" | "resource-shutdown-truncated"
+    ) {
+        emit(write, response);
+        // No NUL delimiter: neither an acknowledgment nor previously complete
+        // navigation evidence may excuse this unfinished incoming frame.
+        write
+            .write_all(
+                br#"{"sessionId":"fixture-session","method":"DOM.documentUpdated","params":{}}"#,
+            )
+            .unwrap();
+        if scenario == "resource-shutdown-partial-timeout" {
+            loop {
+                std::thread::park_timeout(Duration::from_secs(1));
+            }
+        }
+        return;
+    }
+    if scenario == "resource-shutdown-clean" {
+        emit(write, response);
+        return;
+    }
+    if scenario == "resource-shutdown-after-ack" {
+        emit(write, response);
+        event(
+            write,
+            "Network.requestWillBeSent",
+            json!({"frameId":"f","type":"Image","requestId":"authored","request":{"url":"https://external.invalid/image.png","method":"GET"}}),
+        );
+        return;
+    }
+    if matches!(
+        scenario,
+        "resource-shutdown-invalidated" | "resource-shutdown-invalidated-after-ack"
+    ) {
+        if scenario == "resource-shutdown-invalidated-after-ack" {
+            emit(write, response);
+        }
+        event(write, "DOM.documentUpdated", json!({}));
+        return;
+    }
+    event(
+        write,
+        "Network.requestWillBeSent",
+        json!({"frameId":"f","type":"Other","requestId":"icon","initiator":{"type":"other"},"request":{"url":"https://borrowser.invalid/favicon.ico","method":"GET"}}),
+    );
+    event(
+        write,
+        "Fetch.requestPaused",
+        json!({"frameId":"f","resourceType":"Other","requestId":"icon-fetch","networkId":"icon","request":{"url":"https://borrowser.invalid/favicon.ico","method":"GET"}}),
+    );
+    let mut bytes = Vec::new();
+    loop {
+        let mut byte = [0];
+        read.read_exact(&mut byte).unwrap();
+        if byte[0] == 0 {
+            break;
+        }
+        bytes.push(byte[0]);
+        assert!(bytes.len() < 1024);
+    }
+    let abort: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(abort["method"], "Fetch.failRequest");
+    assert_eq!(abort["sessionId"], "fixture-session");
+    assert_eq!(
+        abort["params"],
+        json!({"requestId":"icon-fetch","errorReason":"BlockedByClient"})
+    );
+    if scenario == "resource-rejected-abort" {
+        emit(
+            write,
+            json!({"id":abort["id"],"sessionId":"fixture-session","error":{"code":-32000,"message":"injected abort rejection"}}),
+        );
+        return;
+    }
+    if scenario != "resource-missing-ack" {
+        emit(
+            write,
+            json!({"id":abort["id"],"sessionId":"fixture-session","result":{}}),
+        );
+    }
+    if !matches!(
+        scenario,
+        "resource-missing-terminal" | "resource-shutdown-incomplete"
+    ) {
+        event(
+            write,
+            "Network.loadingFailed",
+            json!({"requestId":"icon","type":"Other","errorText":"net::ERR_BLOCKED_BY_CLIENT.Inspector"}),
+        );
+    }
+    emit(write, response);
+    if !shutdown {
+        // Keep the pipe open for the missing-evidence timeout cases.
+        loop {
+            std::thread::park_timeout(Duration::from_secs(1));
+        }
+    }
+}
+
+// The only script-enabled input: its script changes color, never resource or
+// DOM structure. A snapshot cannot authorize arbitrary create/remove-icon scripts.
+pub(super) const SCRIPT_POSITIVE_CONTROL: &[u8] = b"<!doctype html><html><head><style>html{background:#123456}body{margin:0}</style><script>document.documentElement.style.backgroundColor='#ff0000'</script></head><body></body></html>";
+pub(super) fn require_script_positive_control(html: &[u8]) -> Result<(), Error> {
+    if html != SCRIPT_POSITIVE_CONTROL {
+        return Err(Error::Configuration(
+            "script-enabled test requires the exact color positive control".into(),
+        ));
+    }
+    Ok(())
+}
+#[test]
+fn script_positive_control_rejects_untrusted_input_before_launch() {
+    require_script_positive_control(SCRIPT_POSITIVE_CONTROL).unwrap();
+    let mut altered = SCRIPT_POSITIVE_CONTROL.to_vec();
+    altered.extend_from_slice(b"<script>let i=document.createElement('link');i.rel='icon';i.href='/favicon.ico';document.head.append(i);i.remove()</script>");
+    let config = ChromiumConfig {
+        scripts_disabled: false,
+        ..ChromiumConfig::new(PathBuf::from("/nonexistent"))
+    };
+    let failure = capture_html(&altered, &config, &Cancellation::default()).unwrap_err();
+    assert!(
+        matches!(failure.primary, Some(Error::Configuration(ref s)) if s.contains("exact color positive control"))
+    );
+    assert!(failure.cleanup.is_empty());
+}
+
 #[test]
 #[ignore = "requires the configured pinned real Chromium; run with --test-threads=1"]
 fn real_chromium_capture_and_scripts() {
@@ -751,6 +1006,15 @@ fn real_chromium_capture_and_scripts() {
                 )
             });
             assert_eq!(result.color, expected);
+            assert!(
+                result.default_favicon_aborted,
+                "qualified ordinary target did not exercise default favicon interception"
+            );
+            assert_eq!(result.identity.capture_profile, "ag2-canvas-srgb-v2");
+            eprintln!(
+                "AG2 fixture={} iteration={iteration}/3 screenshot=640x480 rgb8={:?} profile={} default_favicon=correlated-aborted-acknowledged-terminal cleanup=verified",
+                fixture.id.0, result.color.0, result.identity.capture_profile
+            );
             let serialized = serde_json::to_string(&(result.color.0, result.identity)).unwrap();
             if let Some(previous) = previous {
                 assert_eq!(serialized, previous);
@@ -762,7 +1026,27 @@ fn real_chromium_capture_and_scripts() {
             );
         }
     }
-    let scripted = b"<!doctype html><html><head><style>html{background:#123456}body{margin:0}</style><script>document.documentElement.style.backgroundColor='#ff0000'</script></head><body></body></html>";
+    // Markup lookalikes are not live link elements. The script is disabled;
+    // comments and raw text are interpreted by Chromium, never scanned as HTML.
+    for (index, suffix) in [
+        b"<!-- <link rel=icon href=/favicon.ico> -->".as_slice(),
+        b"<script>const text='<link rel=icon href=/favicon.ico>';</script>",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let FixtureKind::Runnable { html, expected, .. } = crate::fixtures::FIXTURES[0].kind else {
+            unreachable!()
+        };
+        let mut input = html.to_vec();
+        input.extend_from_slice(suffix);
+        eprintln!("AG2 fixture=markup-lookalike-{index} iteration=1/1");
+        assert_eq!(
+            capture_html(&input, &config, &cancel).unwrap().color,
+            expected
+        );
+    }
+    let scripted = SCRIPT_POSITIVE_CONTROL;
     eprintln!("AG2 fixture=script-suppression iteration=1/1");
     assert_eq!(
         capture_html(scripted, &config, &cancel).unwrap().color,
@@ -787,6 +1071,14 @@ fn real_chromium_capture_and_scripts() {
         b"<!doctype html><meta http-equiv=refresh content='0;url=https://external.invalid/'>",
         b"<!doctype html><meta http-equiv=refresh content='10;url=https://external.invalid/'>",
         b"<!doctype html><iframe src=https://external.invalid/>",
+        b"<!doctype html><link rel=icon href=/favicon.ico>",
+        b"<!doctype html><LINK REL=ICON HREF=/favicon.ico>",
+        b"<!doctype html><link rel='shortcut ICON' href=/favicon.ico>",
+        b"<!doctype html><link rel='&#105;con' href=/favicon.ico>",
+        b"<!doctype html><link rel='shortcut&#9;IcOn' href=/favicon.ico>",
+        b"<!doctype html><body><p><link rel=icon href=/favicon.ico>",
+        b"<!doctype html><link rel=canonical href=/inert>",
+        b"<!doctype html><link>",
     ]
     .into_iter()
     .enumerate()

@@ -3,8 +3,6 @@ mod error;
 mod process;
 mod screenshot;
 #[cfg(test)]
-mod target_probe;
-#[cfg(test)]
 mod tests;
 
 use crate::{
@@ -34,6 +32,8 @@ pub(super) struct BrowserIdentity {
 pub(super) struct ChromiumCapture {
     color: CanvasColor,
     identity: BrowserIdentity,
+    #[cfg(test)]
+    default_favicon_aborted: bool,
 }
 struct ChromiumConfig {
     executable: PathBuf,
@@ -43,8 +43,6 @@ struct ChromiumConfig {
     shutdown: Duration,
     #[cfg(test)]
     scripts_disabled: bool,
-    #[cfg(test)]
-    target_probe: Option<target_probe::Target>,
 }
 impl ChromiumConfig {
     fn new(executable: PathBuf) -> Self {
@@ -56,8 +54,6 @@ impl ChromiumConfig {
             shutdown: Duration::from_secs(5),
             #[cfg(test)]
             scripts_disabled: true,
-            #[cfg(test)]
-            target_probe: None,
         }
     }
 }
@@ -118,8 +114,8 @@ fn capture_html(
     cancel: &Cancellation,
 ) -> Result<ChromiumCapture, Failure> {
     #[cfg(test)]
-    if config.target_probe.is_some() {
-        target_probe::require_original_fixture(html).map_err(|error| Failure {
+    if !config.scripts_disabled {
+        tests::require_script_positive_control(html).map_err(|error| Failure {
             primary: Some(error),
             cleanup: vec![],
         })?;
@@ -133,43 +129,18 @@ fn capture_html(
     let start = Instant::now() + config.startup;
     let mut child = OwnedChromium::launch(&executable, &flags(), start, cancel)?;
     let mut cdp = cdp::Cdp::new(&mut child, cancel);
-    #[cfg(test)]
-    if config.target_probe.is_some() {
-        cdp.target_probe = Some(target_probe::Resources::default());
-    }
     let result = (|| {
         let identity =
             identity(cdp.call("Browser.getVersion", json!({}), start, Phase::Startup)?)?;
-        // This pinned Chrome build requires an existing remote-debugging page
-        // before creating a hidden target. The bootstrap stays about:blank and
-        // is closed before any fixture navigation.
-        let bootstrap = cdp.call(
+        // An ordinary headless page has the presentation path qualified by the
+        // Linux A/B run. It needs no bootstrap; there is no hidden-target fallback.
+        let target = cdp.call(
             "Target.createTarget",
             json!({"url":"about:blank"}),
             start,
             Phase::Startup,
         )?;
-        // A hidden CDP target uses WebContents directly, without browser-tab
-        // helpers such as automatic favicon fetching. Fixture bytes and strict
-        // rejection of every additional request remain unchanged.
-        let hidden = true;
-        #[cfg(test)]
-        let hidden = config
-            .target_probe
-            .map_or(hidden, |target| target == target_probe::Target::Hidden);
-        let target = cdp.call(
-            "Target.createTarget",
-            json!({"url":"about:blank","hidden":hidden}),
-            start,
-            Phase::Startup,
-        )?;
         cdp.target = Some(cdp::string(&target, "targetId")?.into());
-        cdp.call(
-            "Target.closeTarget",
-            json!({"targetId":cdp::string(&bootstrap,"targetId")?}),
-            start,
-            Phase::Startup,
-        )?;
         cdp.call(
             "Target.setDiscoverTargets",
             // Observe page/frame targets. Browser-owned background workers
@@ -232,13 +203,31 @@ fn capture_html(
         )?;
         #[cfg(test)]
         cdp.capture_operation("verify document URL/mode");
-        if document["root"]["documentURL"] != URL
-            || document["root"]["compatibilityMode"] != "NoQuirksMode"
-        {
-            return Err(Error::Navigation("unexpected document URL or mode".into()));
-        }
+        let document_node = cdp
+            .navigation
+            .as_mut()
+            .unwrap()
+            .inspect_document(&document)?;
         #[cfg(test)]
         cdp.capture_operation_completed();
+        // Query Chromium's parsed live document; do not parse HTML or rel tokens
+        // in the harness. Even inert link elements are outside this narrow profile.
+        let links = cdp.call(
+            "DOM.querySelector",
+            json!({"nodeId":document_node,"selector":"link"}),
+            capture_deadline,
+            Phase::Capture,
+        )?;
+        let tree = cdp.call(
+            "Page.getFrameTree",
+            json!({}),
+            capture_deadline,
+            Phase::Capture,
+        )?;
+        cdp.navigation
+            .as_mut()
+            .unwrap()
+            .verify_document_policy(&links, &tree)?;
         let metrics = cdp.call(
             "Page.getLayoutMetrics",
             json!({}),
@@ -292,23 +281,26 @@ fn capture_html(
                 "document changed during screenshot".into(),
             ));
         }
-        #[cfg(test)]
-        if let Some(probe) = &cdp.target_probe {
-            probe.finish()?;
-        }
+        cdp.wait_resource_completion(capture_deadline)?;
+        // Resource completion may consume more events. Recheck the document
+        // after it, and finish any candidate first observed by this final barrier.
+        let tree = cdp.call(
+            "Page.getFrameTree",
+            json!({}),
+            capture_deadline,
+            Phase::Capture,
+        )?;
+        cdp.navigation.as_ref().unwrap().verify_tree(&tree)?;
+        cdp.wait_resource_completion(capture_deadline)?;
         #[cfg(test)]
         cdp.capture_operation_completed();
-        // Closing may disconnect before replying; process cleanup remains the
-        // authoritative completion check and gets its own absolute deadline.
-        cdp.session = None;
-        cdp.navigation = None;
-        let _ = cdp.call(
-            "Browser.close",
-            json!({}),
-            Instant::now() + Duration::from_millis(250),
-            Phase::Shutdown,
-        );
-        Ok(ChromiumCapture { color, identity })
+        cdp.close_browser(capture_deadline)?;
+        Ok(ChromiumCapture {
+            color,
+            identity,
+            #[cfg(test)]
+            default_favicon_aborted: cdp.navigation.as_ref().unwrap().verified_favicon(),
+        })
     })();
     #[cfg(test)]
     if result.is_err() {

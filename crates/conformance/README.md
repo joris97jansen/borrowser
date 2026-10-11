@@ -149,6 +149,14 @@ Chrome for Testing`; on Linux it is `chrome-linux64/chrome`. A missing or
 incompatible browser is an error, including when an opt-in test is explicitly
 requested. Ordinary AG1 execution and tests require no installed browser.
 
+The `ag2-canvas-srgb-v2` profile uses one ordinary headless page. Read-only CDP
+DOM inspection requires no live-document `link` elements, including inert links,
+for these inline-only fixtures. A browser-default favicon candidate is aborted
+before network delivery and accepted only after document eligibility, paired
+Network/Fetch identities, an abort acknowledgment and its failed-load terminal
+are verified. An aborted authored resource still fails capture. No HTML bytes,
+fixture expectations or Chromium sandbox settings are changed.
+
 `--chromium` emits capture-only JSON: fixture identity, observed RGB8 color,
 environment, and exact browser identity. There are no PASS/FAIL classifications,
 expectations or Borrowser comparisons in that report. Success requires verified

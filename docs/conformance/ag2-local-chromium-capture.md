@@ -11,6 +11,11 @@ Use the full **Chrome for Testing 155.0.8059.39** distribution, revision
 `@3ff7ac5a9224be9156d7f8703a06e22890aafd34`, CDP protocol `1.3`.
 [`chromium-reference.json`](../../crates/conformance/chromium-reference.json)
 records versioned archive URLs and SHA-256 hashes for mac-arm64 and linux64.
+The current capture profile is **`ag2-canvas-srgb-v2`**: one ordinary headless
+page and the parsed-document resource policy below. The browser pin, archive
+checksums, fixture expectations and `borrowser.chromium-canvas.v1` JSON schema
+are unchanged. Earlier hidden-target and A/B evidence retains its historical v1
+identity; it is not retroactively v2 qualification.
 Download and verify the selected archive before extracting it to a trusted local
 directory. `--chromium-executable PATH` takes precedence over
 `BORROWSER_CHROMIUM_EXECUTABLE`. There is no implicit executable discovery,
@@ -44,8 +49,9 @@ empty stdout. Default invocation retains AG1's execution/report behavior.
 | Observation | Physical screenshot pixel (32, 32), CSS center (32.5, 32.5) |
 | Color | Opaque sRGB RGB8, copied into the existing `CanvasColor` |
 
-The screenshot is the sole color source. DOM inspection checks only the document
-URL/mode; layout metrics check only the viewport. CSS declarations, computed
+The screenshot is the sole color source. Read-only DOM inspection checks the
+document identity/URL/mode and absence of live-document `link` elements for resource
+eligibility; it is not a DOM observation inventory. Layout metrics check only the viewport. CSS declarations, computed
 styles and DOM geometry are not alternative observations. No JavaScript is
 evaluated by the harness. A wrong color remains an observation.
 
@@ -98,34 +104,45 @@ limit, and explicit EOF, truncated-frame, malformed-response and remote errors.
 
 ## CDP ordering and readiness
 
-1. Verify the browser identity. Create an `about:blank` bootstrap target, create
-   a hidden `about:blank` target, close the bootstrap, discover page/frame targets,
-   and attach to the hidden target with a flattened session.
+1. Verify browser identity. Create exactly one ordinary `about:blank` target
+   with `Target.createTarget({"url":"about:blank"})`, discover page/frame targets,
+   and attach with a flattened session. There is no bootstrap or hidden fallback.
 2. Enable Page lifecycle and Network events. Disable cache; bypass service
    workers. Disable page script execution **before navigation**, then set viewport,
    device scale and page scale. Enable Fetch interception for all request types
-   at the request stage in this target session.
-3. Obtain the main frame ID, initialize its navigation state, and navigate to
-   the fixed fixture URL. Fulfill exactly one matching main-frame Document GET.
+   at Request stage in this target session.
+3. Obtain the main frame ID, initialize navigation state, and navigate to the
+   fixed fixture URL. Fulfill exactly one matching main-frame Document GET.
 4. Correlate Fetch `networkId`, Network request ID/loader ID, `Page.navigate`
-   frame/loader acknowledgement, committed frame URL/origin/loader, HTTP 200 HTML
-   response and the **same loader's** load lifecycle event. An unrelated load,
-   navigation acknowledgement alone or silence never establishes readiness.
-5. Verify document mode/URL and viewport. Request an actual surface PNG screenshot
-   without capture beyond the viewport. Decode/sample it, then query the frame
-   tree again to verify the loaded document identity across capture.
-6. Request `Browser.close` briefly; verified native cleanup is authoritative.
+   frame/loader acknowledgment, committed frame URL/origin/loader, HTTP 200 HTML
+   response and the **same loader's** load event. An unrelated load, navigation
+   acknowledgment alone or silence never establishes readiness.
+5. Obtain a valid document node with `DOM.getDocument(depth:0)`. Check URL/mode,
+   query `DOM.querySelector(nodeId, "link")`, require integer node ID zero, and
+   verify the same frame/loader. No page JavaScript is evaluated. Document
+   replacement invalidates this evidence; a second scan cannot erase the failure.
+6. Verify the viewport. Request the unchanged surface PNG screenshot without
+   capture beyond the viewport. Decode/sample it and verify the frame tree again.
+7. Finish every observed favicon candidate and document-fulfillment acknowledgment
+   within the same absolute capture deadline; check the frame tree and resource
+   state again. No expected color is available to this execution path.
+8. Send browser-scoped `Browser.close` while retaining fixture-session routing.
+   Continue processing events after its acknowledgment until verified response-pipe
+   EOF, after all complete frames have been dispatched. Root exit or a broken
+   command pipe still requires this incoming-stream inspection. Expiry before
+   EOF, truncated framing, late policy violations and incomplete resource evidence
+   remain failures. Native termination/reaping/artifact verification is independently
+   mandatory before an observation can be returned.
 
-The hidden target is a supported pinned-CDP mechanism, chosen because ordinary
-browser tabs autonomously request `/favicon.ico`. Its plain WebContents avoids
-that UI helper without altering HTML or allowing extra requests. This pinned
-build needs an existing remote-debugging page before hidden-target creation;
-the bootstrap never loads fixture content. See Chromium's
-[Chrome target handler](https://github.com/chromium/chromium/blob/155.0.8059.39/chrome/browser/devtools/protocol/target_handler.cc)
-and [content target handler](https://github.com/chromium/chromium/blob/155.0.8059.39/content/browser/devtools/protocol/target_handler.cc).
+The ordinary target uses Chrome's presentation-capable tab/window path. The
+pinned [Chrome target handler](https://github.com/chromium/chromium/blob/3ff7ac5a9224be9156d7f8703a06e22890aafd34/chrome/browser/devtools/protocol/target_handler.cc)
+can create the first window itself. The old requirement for an existing debugging
+page belongs only to hidden-target creation. The historical Linux A/B evidence
+below established the target-dependent screenshot behavior, not a measured
+compositor callback failure.
 
 Startup is bounded by 10 seconds; navigation and capture by 5 seconds each;
-explicit and emergency cleanup by 5 seconds. Browser.close gets at most 250 ms.
+explicit and emergency cleanup by 5 seconds. Browser.close gets at most 250 ms, capped by the remaining capture budget.
 Deadlines bound waiting and never establish success. There are no readiness
 sleeps or success-after-N-retries rules.
 
@@ -160,12 +177,77 @@ is performed.
 
 ## Resource policy and network limits
 
-Fetch covers requests intercepted in the attached fixture page session, at the
-request stage, for all resource types. The exact frame, URL, GET method and
-Document type identify the one permitted request. Duplicate requests, redirects,
-external stylesheets/images, extra frames, new page targets, same-document
-navigation and a changed committed document fail capture. Unexpected Fetch
-requests are aborted where the current deadline permits; failure stays latched.
+Fetch covers requests intercepted in the attached fixture page session, at
+Request stage, for all resource types. The exact frame, URL, GET method and
+Document type identify the sole fulfilled request. Its actual fulfillment
+acknowledgment is required. Request identities cannot be shared between the
+document and favicon. Unexpected Fetch requests are aborted where the current
+deadline permits; their failure stays latched.
+
+An exact main-frame GET for `https://borrowser.invalid/favicon.ico`, Network
+`Other`/initiator `other` and Fetch `Other`, is only a provisional candidate.
+URL/type/initiator alone cannot distinguish authored icons from browser-default
+activity. The candidate is aborted immediately at Fetch Request stage, even if
+the parsed-document check is pending. It is never continued or fulfilled.
+
+For the current inline-only fixture profile, `DOM.querySelector(document, "link")`
+must find no live-document link element. This deliberately rejects even inert
+links. Chromium owns HTML parsing, character-reference decoding, case handling,
+relation tokens and malformed-markup repair; the harness performs no raw text
+scan or second parse. Comments and raw text are not elements. Inert template
+content is not an active icon declaration, and disabled page scripts cannot
+activate it. This is a restriction of AG2's static fixture scope, not a universal
+safety claim for arbitrary HTML. The pinned
+[document icon selection](https://github.com/chromium/chromium/blob/3ff7ac5a9224be9156d7f8703a06e22890aafd34/third_party/blink/renderer/core/dom/document.cc)
+uses authored HTML link candidates or synthesizes the default icon.
+
+The no-link result becomes authoritative only after the intended loader's load,
+valid document URL/mode/node identity, query result and unchanged frame/loader
+verification. Production scripts remain disabled. The private script-enabled
+positive control accepts only the exact existing color-changing input, checked
+before launch. Arbitrary scripts could create and remove an icon before a DOM
+snapshot, so altered inputs are configuration errors even if their final DOM
+would have no links. The same original control remains blue with scripts disabled
+and red with scripts enabled. This exception exists only in test builds.
+
+| Activity/evidence | Decision |
+| --- | --- |
+| One exact fixture Document GET | Fulfill original bytes; require successful command and navigation correlation |
+| First favicon-shaped request, policy pending | Abort at Request stage; retain one bounded candidate, not an exemption |
+| No-link policy plus matching Network/Fetch IDs, abort acknowledgment and failed-load terminal | Accept as intercepted default activity |
+| Authored link, including an icon using `/favicon.ico` | Fail, even if its request was aborted |
+| Duplicate, redirected, conflicting, malformed or foreign-session request | Fail |
+| Candidate response or successful transfer | Fail |
+| Missing request pairing, abort acknowledgment or terminal failure | Never succeed; deadline or incomplete-evidence failure |
+| Other resource, frame/target or navigation | Fail |
+| No favicon observed | No exemption needed; still require document eligibility |
+
+The candidate's Fetch interception ID, Network ID and abort command ID are kept
+separately, with bounded nonempty request IDs (128 bytes). Both Network/Fetch
+orders and both acknowledgment/terminal orders are supported. Completion requires
+`Fetch.failRequest(BlockedByClient)` to succeed and the same request's unique
+`Network.loadingFailed`, type `Other`, with the pinned Inspector abort reason
+`net::ERR_BLOCKED_BY_CLIENT.Inspector`. This exact reason was observed in the
+macOS v2 run; generic network failures do not satisfy the contract. A browser
+favicon download is correlated through its actual frame/session and request IDs,
+not an invented document-loader identity. Optional auxiliary events confer no
+classification authority. There is no unbounded event collection.
+
+Document readiness is separate from favicon completion, avoiding a paused-request
+readiness cycle. All policy work uses the existing capture deadline. During
+shutdown, close-command delivery is separate from response-stream validation.
+Root exit or command-side disconnection does not skip incoming event processing
+and grants no signaling or reaping authority. Success requires actual response-pipe
+EOF with no partial frame, all preceding complete frames dispatched, complete
+resource evidence, and unexpired shutdown and capture budgets. A close
+acknowledgment, empty local buffer, zero-time poll or root exit is not a substitute
+for EOF. Shutdown expiry remains `Timeout(Shutdown)`; EOF inside a frame remains
+`Protocol(Truncated)`. Policy and other protocol errors propagate unchanged.
+The existing 250 ms limit remains capped by the remaining capture deadline;
+there is no timeout extension or fallback to native cleanup as protocol evidence.
+No favicon observed is not a promise of future silence:
+interception remains installed until teardown, and no network-idle heuristic or
+fixed delay authorizes capture.
 
 A fresh profile prevents prior cache/service-worker state. Network cache is also
 disabled and service workers bypassed. Page scripts remain disabled through
@@ -446,7 +528,7 @@ passed, one failed). Its log did not identify the operation or iteration. Linux
 fixture repeatability, script/resource checks, CLI records and the final
 directory gate were not completed; these remain acceptance requirements. No
 capture behavior or timeout is changed on the basis of that incomplete evidence.
-The next run must use the test-only progress summary to distinguish a pending
+The diagnostic correction required the next run to distinguish a pending
 CDP operation from time consumed by native inspection, before choosing a fix.
 
 That run also retained `rustix_test_can_compile` in the runtime directory because
@@ -519,43 +601,48 @@ Source inspection uses the exact pinned revision
   they do not establish which callback stalled on the Linux runner. The Mac
   window-snapshot delay is in the non-surface branch and does not explain AG2.
 
-The ignored, test-only
-`chromium::target_probe::real_chromium_target_presentation_experiment` compares
+The historical ignored, test-only
+`chromium::target_probe::real_chromium_target_presentation_experiment` compared
 hidden and ordinary headless page targets for both original fixtures, each in
-an independent process. Both arms retain the pinned browser, startup bootstrap,
+an independent process. Both arms retained the pinned browser, startup bootstrap,
 flags/sandbox, fixture bytes/URL, script disabling, readiness checks, five-second
-capture deadline, PNG decoder/sampler and native cleanup. The experiment logs
+capture deadline, PNG decoder/sampler and native cleanup. The experiment logged
 each target/fixture and typed failure or validated dimensions/pixel/provenance.
-It attempts all four captures after cleanly handled failures, but fails the test
-if any capture fails; a reproduced hidden-target timeout is not acceptance.
-Unverified cleanup stops the experiment immediately.
+It attempted all four captures after cleanly handled failures, but failed the test
+if any capture failed; a reproduced hidden-target timeout is not acceptance.
+Unverified cleanup stopped the experiment immediately.
 
-The probe's only resource exception is test-only, guarded by exact equality to
+The probe's only resource exception was test-only, guarded by exact equality to
 the embedded original fixture bytes. Those bytes contain no authored resource
-or icon. It records the single browser-default favicon request separately,
-requires the main frame, exact `/favicon.ico` URL, GET, Other type and other
-initiator, correlates Network and Fetch IDs, and aborts it at Fetch Request
+or icon. It recorded the single browser-default favicon request separately,
+required the main frame, exact `/favicon.ico` URL, GET, Other type and other
+initiator, correlated Network and Fetch IDs, and aborted it at Fetch Request
 stage. Duplicates, redirects, ID mismatches, incomplete interception or an HTTP
-response fail. Other requests go through the unchanged strict fixture policy.
-Unit tests reject altered fixtures, authored-resource signatures and incomplete
+response failed. Other requests went through the unchanged strict fixture policy.
+Unit tests rejected altered fixtures, authored-resource signatures and incomplete
 evidence. This is not a production favicon allowlist: an authored icon can use
 the [same favicon helper](https://github.com/chromium/chromium/blob/3ff7ac5a9224be9156d7f8703a06e22890aafd34/components/favicon/content/content_favicon_driver.cc),
 so URL/type/initiator alone cannot justify a production exemption.
 
-```sh
-BORROWSER_CHROMIUM_EXECUTABLE='/path/to/pinned/browser' \
-  cargo test -p borrowser-conformance --bin borrowser-conformance --locked \
-  chromium::target_probe::real_chromium_target_presentation_experiment \
-  -- --exact --ignored --nocapture --test-threads=1
-```
+The probe was executed by the existing Linux job in
+[run 38075849398](https://github.com/joris97jansen/borrowser/actions/runs/38075849398),
+source `3d8eb34027d014b504b8e1ab98cbf9a8153c1811`, tested merge
+`084e6b40eded27303a3f012d5b742a8502168e58`. Both hidden arms completed document
+readiness and timed out awaiting `Page.captureScreenshot`. Both ordinary arms
+returned valid 640 × 480 PNGs, sampled `[18,52,86]` and `[52,86,120]`, and verified
+native cleanup. Each ordinary arm correlated and aborted one default favicon.
+Native lifecycle and renderer sandbox assertions passed. The experiment correctly
+failed on the hidden arms; production hidden capture also failed, leaving the
+final strict runtime-directory gate skipped. These results established the
+behavioral difference and justified the approved ordinary-target correction;
+they did not constitute complete Linux acceptance or identify the precise
+stalled compositor callback.
 
-The existing Linux job's `--include-ignored` conformance invocation will execute
-this probe and retain its bounded output in `conformance.log`; no workflow or
-production target fallback is added. Cargo still compiles in build storage and
-executes tests through its runtime-directory runner. Running the new probe on
-GitHub requires a separately authorized commit/push. Native Linux A/B results
-are pending. Until those results exist, production capture remains unchanged
-and hidden-target presentation remains a hypothesis.
+The v2 implementation deletes the temporary module, target-selection hooks and
+probe policy after transferring correlation coverage into permanent tests. There
+is no intentionally failing hidden-target test or expected-timeout success in
+the final suite. The existing `--include-ignored` job, build/runtime directory
+separation, diagnostic retention and strict cleanup gate remain unchanged.
 
 Local validation on 2026-10-10, macOS 27.0 arm64 (26A428), passed all four probe
 captures: both targets returned `[18, 52, 86]` for `canvas/root` and
@@ -572,10 +659,136 @@ syntax checks passed. Full `make ci` was not rerun for this test-only experiment
 These results validate the probe on macOS and do not establish the Linux cause
 or qualify Linux capture.
 
+### Production v2 local validation
+
+On 2026-10-10, macOS 27.0 arm64 (build 26A428, Darwin 27.0.0), the corrected
+production path passed the complete applicable conformance suite: **40 passed**
+(36 unit/native/real-browser tests, two Chromium CLI tests, two AG1 CLI tests),
+with only the two private subprocess entry points excluded from direct selection.
+Those helpers were exercised by their registered native parent tests. The focused
+CDP policy group passed all ten tests. Registration was checked with `--list`.
+The mac-arm64 archive SHA-256 was rechecked against the unchanged manifest:
+`529a71bd61aaa2ef266a4d4bd300ae9572ba6a3468a8d55c3023ffeffb5b6b4e`.
+Every real capture checked the browser product/version/revision/protocol through
+its actual CDP connection.
+
+Each original fixture passed three independent 640 × 480 surface-PNG captures:
+`canvas/root` `[18,52,86]`, `canvas/cascade` `[52,86,120]`. Each asserted a
+correlated favicon, actual abort acknowledgment, matching failed-load terminal,
+profile `ag2-canvas-srgb-v2` and verified native cleanup. Independent CLI runs
+produced identical complete capture JSON with the unchanged report schema.
+The original script suppression and red positive control passed. Authored icons,
+encoded/case-varied/token-list relations, malformed placement and inert links
+failed; comment/raw-text lookalikes passed. Stylesheet/image/iframe and immediate/
+delayed meta-refresh rejection remained intact.
+
+Seven new isolated native resource scenarios passed: rejected abort, missing
+abort acknowledgment, missing terminal event, valid shutdown interception,
+incomplete shutdown interception, an authored resource after the close
+acknowledgment, and document invalidation during shutdown. Each verified profile
+removal, complete child reaping and unrelated-sibling survival. Existing launch,
+partial initialization, cancellation, deadline, EIO and native identity tests
+also passed; macOS real-browser topology/cancellation/timeout/forced-exit checks
+passed with the same native ownership mechanism and sandbox-enabled flags.
+
+The first development run exposed the pinned terminal spelling
+`net::ERR_BLOCKED_BY_CLIENT.Inspector`; a bare `net::ERR_BLOCKED_BY_CLIENT`
+check correctly failed closed with successful cleanup. The permanent check and
+regressions require the observed Inspector reason rather than accepting generic
+network failure.
+
+Validation commands used the pinned executable through
+`BORROWSER_CHROMIUM_EXECUTABLE`:
+
+```sh
+cargo test -p borrowser-conformance --locked -- --list
+cargo test -p borrowser-conformance --locked chromium::cdp::tests -- --nocapture
+cargo build -p borrowser-conformance --locked
+cargo fmt --all -- --check
+cargo clippy -p borrowser-conformance --all-targets --locked -- -D warnings
+cargo test -p borrowser-conformance --locked -- --include-ignored \
+  --skip chromium::tests::native_case --skip chromium::tests::browser_helper \
+  --test-threads=1 --nocapture
+git diff --check
+```
+
+These commands passed. Native/real-browser tests ran outside the restrictive
+execution sandbox so the required macOS inspection and audit-token permissions
+were available; Chromium's own sandbox was not disabled. Cargo used
+`/private/tmp/borrowser-ag2-v2-build-tmp`; its macOS target runner set test/CLI
+`TMPDIR=/private/tmp/borrowser-ag2-v2-profiles`. The runtime directory was empty
+after the suite, with no deletion or filename exclusions before verification.
+Logs are local execution evidence, not stable report content. This macOS v2
+result does not qualify Linux.
+
+Full local `TMPDIR=/private/tmp/borrowser-ag2-v2-build-tmp make ci` completed with
+**exit 0** on the corrected implementation. This covered workspace lint/test
+lanes, parser/fuzz/golden checks, debug/release builds, benchmark compilation and
+the generated-entity check. Existing HTML/CSS release-build warnings remained;
+no production-engine files were changed to suppress them. The evidence-record
+update is documentation-only. This passing local CI is macOS evidence, not a
+GitHub-hosted Linux qualification result.
+
+### Shutdown stream-boundary correction
+
+The subsequent independent review found two shutdown paths that could accept
+undispatched input: failed close-command delivery after root exit skipped the
+read loop, and the brief shutdown timeout could excuse a partial or buffered
+frame. `close_browser` now continues incoming inspection after expected
+command-side disconnection and accepts only verified response-stream EOF. Native
+cleanup still runs on every outcome and cannot convert a protocol failure into
+an observation.
+
+On the same macOS 27.0 arm64 environment, the corrected tree passed all ten
+focused CDP tests, the registered resource/shutdown parent with **14 isolated
+scenarios**, and the complete **40-test** conformance suite. The full suite
+exercised **43 isolated native scenarios**, each checking unrelated-sibling
+survival. The seven additional resource scenarios cover root exit with a queued
+document invalidation or clean stream, native discovery expiry with a complete
+buffered invalidation, partial framing held open through shutdown expiry,
+truncated EOF, clean acknowledged EOF, and invalidation after the close
+acknowledgment. Existing late authored-resource and incomplete-favicon cases
+remain required. Resource scenarios verify profile removal and reaping through
+`ECHILD` after both successful and failed protocol inspection.
+
+The buffered-deadline scenario forces the next real native discovery through the
+existing test-only deadline injection; it checks that the fault fired, discovery
+was the active native operation, and the complete event remained undispatched
+while previously verified resource state stayed complete. The partial-timeout
+case similarly requires actual nonempty, unterminated incoming bytes. These
+conditions prevent an unrelated timeout or a zero-test selection from counting
+as the intended regression. No fault hook is present in production builds.
+
+Both original fixtures again passed three independent captures with the same
+pixels and `ag2-canvas-srgb-v2` provenance. Favicon acknowledgments and terminal
+events, script suppression/positive control, authored-resource rejection,
+stable CLI serialization and real native cleanup passed. Each successful
+capture now also requires actual response-stream EOF within the unchanged
+shutdown budget. The dedicated `/private/tmp/borrowser-ag2-shutdown-profiles`
+directory was empty after execution; no files were removed to obtain that result.
+The unchanged mac-arm64 archive checksum was reverified. Formatting and
+warnings-denied conformance Clippy passed. Logs are retained locally as
+`/private/tmp/borrowser-ag2-shutdown-{registration,native,policy,conformance,clippy}.log`.
+The focused native invocation was:
+
+```sh
+cargo test -p borrowser-conformance --locked \
+  chromium::tests::native_resource_completion_and_shutdown \
+  -- --exact --nocapture --test-threads=1
+```
+
+Full `TMPDIR=/private/tmp/borrowser-ag2-v2-build-tmp make ci` also completed with
+**exit 0** on the corrected Rust tree; the execution log is
+`/private/tmp/borrowser-ag2-shutdown-ci.log`. This includes workspace builds,
+feature/lint/test lanes, parser/fuzz/golden checks, release and benchmark builds,
+and generated-entity verification. Only the documentation evidence record was
+updated afterward. This is macOS evidence only; production v2 has not executed
+on Linux.
+
 | Platform | Evidence / outstanding acceptance |
 | --- | --- |
-| macOS 27.0 arm64, build 26A428 | Passed real fixture/script/resource tests, lifecycle/topology tests and independent CLI serialization tests on 2026-10-09, outside Codex's restrictive sandbox. Normal helpers remain in the root session; two detached Crashpad handlers use the private database. Token permission/generation checks, cancellation, timeout and forced root exit passed; a final process scan found no processes from the test extraction. Other OS builds require requalification. |
-| Linux x86-64 | Both hosted runs passed native lifecycle and renderer sandbox assertions. The second isolated the timeout to a sent surface-screenshot command awaiting its response. Screenshot/repeatability/script/resource/CLI qualification and the final cleanup gate remain outstanding. The test-only hidden/page A/B experiment needs another hosted run before choosing a capture correction; this is not full platform acceptance. |
+| macOS 27.0 arm64, build 26A428 | Production v2: the 40-test local suite and empty runtime-directory check above passed on 2026-10-10. Historical v1: passed real fixture/script/resource tests, lifecycle/topology tests and independent CLI serialization tests on 2026-10-09, outside Codex's restrictive sandbox. Normal helpers remain in the root session; two detached Crashpad handlers use the private database. Token permission/generation checks, cancellation, timeout and forced root exit passed; a final process scan found no processes from the test extraction. Other OS builds require requalification. |
+| Linux x86-64 | Historical v1 native lifecycle/sandbox tests passed. Run 38075849398 proved both ordinary-target pixels and both hidden-target timeouts in the controlled A/B test. Production v2 repeatability, parsed-document/resource policy, scripts, CLI serialization, final cleanup gate and final-tree CI still require a separately authorized hosted run. |
 | Linux ARM64 Docker host | Earlier offline `cargo check --all-targets` and `cargo clippy -p borrowser-conformance --all-targets --locked --offline -- -D warnings` passed. This historical build evidence was not rerun after the macOS argument-copy correction; capture explicitly rejects this architecture and it does not qualify Linux x86-64. |
 
 AG2 remains one issue. It is not closeable across both intended platforms until
