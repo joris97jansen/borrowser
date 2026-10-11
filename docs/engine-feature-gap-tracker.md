@@ -992,9 +992,22 @@ When a feature lands:
   passed 43 macOS tests and 50 isolated native scenarios, including actual
   pre-fork removal success/failure with preserved primary errors and artifact
   paths. Runtime storage was empty and full local `make ci` again exited 0.
-  A new hosted run must qualify this correction and pass
-  the artifact gate and complete final-tree CI. AG2 remains unqualified across
-  both intended platforms.
+  Native Linux production-v2 qualification then passed in
+  [run 38115362998, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/38115362998):
+  source `665412b82c9c8edff5ac94a90580304f63b1c95b`, tested merge
+  `5d39575921b5a18d1ce622345c3fdfa3a65f06e1`, Ubuntu 24.04.5 x86-64 VM,
+  image `20261004.327.1`, kernel `6.17.0-1022-azure`, with the unchanged
+  checksum-verified Chrome for Testing 155.0.8059.39 pin. All 42 applicable
+  conformance tests and 50 distinct isolated native scenarios passed, including
+  pre-fork removal success/failure, actual singleton-socket containment,
+  excessive-path rejection, pidfd/subreaper/reaping and unrelated-process
+  survival. Both fixtures passed three exact-pixel captures; sandbox assertions,
+  favicon/DOM/script policy, stable CLI serialization and EOF-only shutdown passed.
+  The unchanged strict runtime-directory gate passed with no retained entries;
+  all 11 CI jobs and GitGuardian passed. The contract records exact Chromium
+  provenance and evidence boundaries. Both intended platforms are now qualified
+  for the corrected implementation; subsequent commits still require final-tree
+  CI and final integration review before AG2 closure.
 - Integrated Chromium comparison (AG3), AWS (AG4), WPT support, broad browser
   compatibility and general rendering conformance remain gaps. See the
   [harness README](../crates/conformance/README.md).

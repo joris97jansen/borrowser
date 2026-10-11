@@ -341,7 +341,7 @@ removal itself returns late, already removed files cannot be restored, but no
 successful observation is reported. No incomplete scan substitutes for full
 ownership verification.
 
-### Linux x86-64 (runtime qualification outstanding)
+### Linux x86-64
 
 The standalone capture process sets `PR_SET_CHILD_SUBREAPER`; the ordinary AG1
 path does not. `pidfd_open`/`pidfd_send_signal` availability is probed. `/proc`
@@ -557,7 +557,8 @@ This workflow currently runs for pull requests and pushes to `master`. Running
 the new job therefore requires committing/pushing the complete AG2 change and
 opening a (possibly draft) PR. A PR run normally checks out the synthetic merge
 commit, so both that SHA and the source head are recorded. The existing passing
-AG1 runs only establish runner availability. **No AG2 Linux run has passed yet.**
+AG1 runs only establish runner availability. The passing production-v2 run is
+recorded below; historical failures remain separate evidence.
 Before acceptance, record the successful AG2 run URL, exact tested commit and
 image, and its native/browser/sandbox/cleanup results below; all required CI jobs
 must pass on the final PR tree. The existing macOS evidence remains independent.
@@ -960,12 +961,105 @@ generated-entity checks passed. Only documentation evidence was updated afterwar
 The Linux-only cases and final hosted artifact gate remain unqualified by this
 macOS evidence.
 
+### Linux production-v2: temporary containment and pre-fork cleanup qualified
+
+On 2026-10-11,
+[run 38115362998, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/38115362998)
+passed all 11 CI jobs on source
+`665412b82c9c8edff5ac94a90580304f63b1c95b`, tested merge
+`5d39575921b5a18d1ce622345c3fdfa3a65f06e1`. The
+[AG2 job](https://github.com/joris97jansen/borrowser/actions/runs/38115362998/job/114399080148)
+ran the complete containment/pre-fork correction, not the earlier A/B experiment.
+
+| Provenance | Observed value |
+| --- | --- |
+| Runner | GitHub-hosted `ubuntu-24.04`, image `ubuntu24` / `20261004.327.1` |
+| OS / kernel | Ubuntu 24.04.5 LTS / `6.17.0-1022-azure` |
+| CPU / execution | Native x86-64 AMD EPYC 7763, Microsoft full-virtualization VM; container detection returned `none` |
+| User | Non-root runner UID 1001 |
+| Browser | Chrome for Testing `155.0.8059.39`, ELF x86-64 |
+| CDP identity | `Chrome/155.0.8059.39`, revision `@3ff7ac5a9224be9156d7f8703a06e22890aafd34`, protocol `1.3` |
+| Linux archive SHA-256 | `55672d1f392fd3e7b7a08621b6e804e6bcb39d40cf155504abb74b3a021ea8ea`, verified before extraction |
+| Capture / report | `ag2-canvas-srgb-v2` / unchanged `borrowser.chromium-canvas.v1` schema |
+
+Build and warnings-denied conformance Clippy passed. The native invocation passed
+seven registered tests and **50 distinct isolated scenarios**. The complete
+conformance invocation passed **42 tests**: 38 unit/native/real-browser tests,
+two Chromium CLI tests and two AG1 CLI tests. It independently repeated all 50
+native scenarios. The two private helper entry points were excluded; required
+real-browser tests were included. The actual commands were:
+
+```sh
+cargo build -p borrowser-conformance --locked
+cargo clippy -p borrowser-conformance --all-targets --locked -- -D warnings
+cargo test -p borrowser-conformance --locked native_ -- --nocapture
+cargo test -p borrowser-conformance --locked -- --include-ignored \
+  --skip chromium::tests::native_case --skip chromium::tests::browser_helper \
+  --test-threads=1 --nocapture
+cargo run -p borrowser-conformance --locked -- --chromium
+```
+
+Cargo/build scripts used `/home/runner/work/_temp/ag2-build-tmp`; the execution
+steps used target runner `env TMPDIR=/home/runner/work/_temp/ag2-profiles`.
+Real child/descendant tests verified exactly one private child TMPDIR, unchanged
+parent environment, nested artifacts and unrelated sibling survival. Both
+`prefork-clean` and `prefork-remove-failure` executed: the original launch error
+was preserved, successful removal left no cleanup errors, and actual permission
+denial retained inspectable evidence with a separate artifact-removal error.
+Forced exit, cancellation, incomplete discovery, post-fork removal failure and
+excessive-path rejection also passed. Deliberate failure fixtures were recovered
+only after the tests verified their failure and retention contracts.
+
+The Linux real-browser lifecycle test read each actual `profile/SingletonSocket`
+symlink, required its target to exist beneath that launch's canonical `tmp`
+directory, and passed for cancellation, timeout and forced-exit scenarios.
+The randomized socket paths were asserted in-process, not printed in the log.
+The checked runner prefix gives a 96-byte pathname with the pinned six-byte
+suffix, within Linux's 107-byte pathname limit. The 107/108-byte boundary test
+and the Linux-only pre-fork excessive-path regression both passed; there was no
+shared temporary-directory fallback.
+
+Both original fixtures passed **three independent captures each**, all with
+640 × 480 surface PNGs: `canvas/root` produced `[18,52,86]`, and
+`canvas/cascade` produced `[52,86,120]`. Every iteration logged profile v2,
+correlated/aborted/acknowledged/terminal default-favicon evidence and verified
+cleanup. Parsed-document eligibility, authored-icon/resource/navigation rejection,
+script suppression and the exact red positive control passed. Independent CLI
+serialization and the additional capture JSON agreed with the pinned provenance.
+Successful captures passed the production EOF-only shutdown path; all 14 isolated
+resource/shutdown scenarios also passed, including late events, partial framing,
+root exit before close delivery and deadline expiry.
+
+Runtime renderer assertions reported `NoNewPrivs=1`, `Seccomp=2` and nested PID
+namespaces for all three lifecycle scenarios. The executable-specific AppArmor
+user-namespace permission was installed; no sandbox-disabling flag or global
+security relaxation was used. pidfd signaling, subreaper adoption, detached and
+early-exiting descendants, adopted reaping through ECHILD, cleanup deadlines and
+unrelated-process survival passed the native regressions.
+
+The unchanged **Verify private profile cleanup** step passed. Its
+`remaining-artifacts.log` was zero bytes and `result.txt` recorded
+`Native and real-browser tests passed; cleanup verified.` The bounded artifact
+inventory was also empty, and the final process summary contained no Chromium
+entries. No compiler-file exclusion, name exception or pre-gate deletion was
+used. Native termination/reaping and private-subtree removal remained the
+authoritative cleanup checks.
+
+The Rust workspace job and all nine HTML/CSS fuzz/regression jobs passed, as did
+the separate GitGuardian check. The bounded artifact
+`ag2-linux-x86-64-5d39575921b5a18d1ce622345c3fdfa3a65f06e1-1` contains environment,
+manifest/checksum, build/lint/native/conformance logs, capture JSON and cleanup
+summaries under the workflow's 14-day retention policy. No raw browser state was
+uploaded. This qualifies the recorded implementation and environment; the
+subsequent documentation commit must still pass final-tree CI before integration.
+
 | Platform | Evidence / outstanding acceptance |
 | --- | --- |
 | macOS 27.0 arm64, build 26A428 | Production v2: explicit pre-fork cleanup passed the 43-test suite, 50 isolated native scenarios, empty runtime check and full local CI on 2026-10-11; prior 42-test containment and 40-test shutdown evidence is retained above. Historical v1: passed real fixture/script/resource tests, lifecycle/topology tests and independent CLI serialization tests on 2026-10-09, outside Codex's restrictive sandbox. Normal helpers remain in the root session; two detached Crashpad handlers use the private database. Token permission/generation checks, cancellation, timeout and forced root exit passed; a final process scan found no processes from the test extraction. Other OS builds require requalification. |
-| Linux x86-64 | Historical v1/A/B evidence remains separate. Production-v2 run 38110745639 passed capture/repeatability, resource/DOM/script/CLI/EOF, native lifecycle and sandbox tests, but failed the strict artifact gate. The child-TMPDIR correction, new Linux launch/socket regressions, empty runtime storage and complete final-tree CI require a separately authorized hosted run. |
+| Linux x86-64 | Production-v2 run 38115362998, attempt 1, passed 42 conformance tests, 50 distinct native scenarios per invocation, real singleton-socket containment, pre-fork cleanup, sandbox/resource/script/CLI/EOF checks and the unchanged empty-runtime gate. All 11 CI jobs passed on source `665412b82c9c8edff5ac94a90580304f63b1c95b`, merge `5d39575921b5a18d1ce622345c3fdfa3a65f06e1`. Final-tree CI and integration review remain required for subsequent commits. Historical v1/A/B and the failed artifact-gate run remain separate records above. |
 | Linux ARM64 Docker host | Earlier offline `cargo check --all-targets` and `cargo clippy -p borrowser-conformance --all-targets --locked --offline -- -D warnings` passed. This historical build evidence was not rerun after the macOS argument-copy correction; capture explicitly rejects this architecture and it does not qualify Linux x86-64. |
 
-AG2 remains one issue. It is not closeable across both intended platforms until
-the Linux x86-64 row is qualified. No AG3/AG4 functionality or new GitHub issues
-are introduced by the implementation phases or these acceptance checks.
+AG2 remains one issue. Both intended platforms now have implementation and
+runtime-qualification evidence for this correction. Final-tree CI and final
+integration review remain required before merge or issue closure. No AG3/AG4
+functionality or new GitHub issues are introduced by these acceptance checks.
