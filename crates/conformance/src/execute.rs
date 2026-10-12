@@ -6,13 +6,13 @@ use bus::{CoreCommand, CoreEvent, HtmlParseFailure};
 use core_types::{NetworkResponseInfo, ResourceKind};
 use egui::{Color32, FullOutput, RawInput, Rect, Shape, pos2, vec2};
 
+use crate::environment::{CONTENT_TYPE, HEIGHT, URL, WIDTH};
 use crate::model::{CanvasColor, HarnessError};
 
-const URL: &str = "https://borrowser.invalid/ag1/fixture.html";
 const DEADLINE: Duration = Duration::from_secs(5);
 
 fn viewport() -> Rect {
-    Rect::from_min_size(pos2(0.0, 0.0), vec2(640.0, 480.0))
+    Rect::from_min_size(pos2(0.0, 0.0), vec2(WIDTH as f32, HEIGHT as f32))
 }
 
 fn forward_commands(
@@ -96,7 +96,7 @@ pub(crate) fn execute_html(html: &[u8]) -> Result<CanvasColor, HarnessError> {
         requested_url: URL.into(),
         final_url: URL.into(),
         status_code: Some(200),
-        content_type: Some("text/html; charset=utf-8".into()),
+        content_type: Some(CONTENT_TYPE.into()),
     };
     apply(
         &mut tab,

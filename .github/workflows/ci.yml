@@ -11,6 +11,208 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  ag2_linux_chromium:
+    name: AG2 Chromium (Linux x86-64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      RUST_BACKTRACE: 1
+      BORROWSER_CHROMIUM_EXECUTABLE: /opt/borrowser-ag2/chrome-linux64/chrome
+      AG2_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Record and verify native runner environment
+        run: |
+          set -euo pipefail
+          AG2_EVIDENCE="$RUNNER_TEMP/ag2-evidence"
+          echo "AG2_EVIDENCE=$AG2_EVIDENCE" >> "$GITHUB_ENV"
+          mkdir -p "$AG2_EVIDENCE" "$RUNNER_TEMP/ag2-build-tmp" "$RUNNER_TEMP/ag2-profiles"
+          echo "TMPDIR=$RUNNER_TEMP/ag2-build-tmp" >> "$GITHUB_ENV"
+          exec > >(tee "$AG2_EVIDENCE/environment.log") 2>&1
+          printf 'run=%s/%s/actions/runs/%s attempt=%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+          printf 'workflow_sha=%s head_sha=%s checkout_sha=%s\n' "$GITHUB_SHA" "$AG2_HEAD_SHA" "$(git rev-parse HEAD)"
+          printf 'runner_os=%s runner_arch=%s image=%s image_version=%s\n' "$RUNNER_OS" "$RUNNER_ARCH" "$ImageOS" "$ImageVersion"
+          uname -a
+          cat /etc/os-release
+          lscpu
+          id
+          test "$RUNNER_OS" = Linux
+          test "$RUNNER_ARCH" = X64
+          test "$(uname -m)" = x86_64
+          test "$(id -u)" -ne 0
+          . /etc/os-release
+          test "$ID" = ubuntu && test "$VERSION_ID" = 24.04
+          # A GitHub-hosted VM is intentional; containers/emulation are not this lane.
+          systemd-detect-virt --vm
+          if systemd-detect-virt --container; then exit 1; fi
+          findmnt -no OPTIONS /proc
+          sysctl user.max_user_namespaces kernel.apparmor_restrict_unprivileged_userns kernel.yama.ptrace_scope
+
+      - name: Install pinned Chromium runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            apparmor libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 \
+            libatspi2.0-0t64 libcairo2 libcups2t64 libdbus-1-3 libexpat1 \
+            libgbm1 libglib2.0-0t64 libnspr4 libnss3 libpango-1.0-0 libudev1 \
+            libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 \
+            libxkbcommon0 libxrandr2
+
+      - name: Verify and install the reference archive
+        run: |
+          set -euo pipefail
+          exec > >(tee "$AG2_EVIDENCE/browser-install.log") 2>&1
+          manifest=crates/conformance/chromium-reference.json
+          cp "$manifest" "$AG2_EVIDENCE/chromium-reference.json"
+          version=$(jq -er '.version' "$manifest")
+          url=$(jq -er '.archives.linux64.url' "$manifest")
+          checksum=$(jq -er '.archives.linux64.sha256' "$manifest")
+          test "$url" = "https://storage.googleapis.com/chrome-for-testing-public/$version/linux64/chrome-linux64.zip"
+          archive="$RUNNER_TEMP/ag2-chrome-linux64.zip"
+          curl --fail --location --proto '=https' --proto-redir '=https' \
+            --connect-timeout 15 --max-time 180 --retry 2 --output "$archive" "$url"
+          printf '%s  %s\n' "$checksum" "$archive" | sha256sum --check --strict
+          sha256sum "$archive" | tee "$AG2_EVIDENCE/archive.sha256"
+          # Root-owned installation; no arbitrary system browser or setuid helper.
+          sudo mkdir /opt/borrowser-ag2
+          sudo unzip -q "$archive" -d /opt/borrowser-ag2
+          file "$BORROWSER_CHROMIUM_EXECUTABLE"
+          "$BORROWSER_CHROMIUM_EXECUTABLE" --version
+          # Ubuntu 24.04 restricts unprivileged user namespaces. Permit only
+          # this exact pinned executable, without changing global sysctls.
+          sudo tee /etc/apparmor.d/borrowser-ag2-chromium > /dev/null <<'PROFILE'
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile borrowser-ag2-chromium /opt/borrowser-ag2/chrome-linux64/chrome flags=(unconfined) {
+            userns,
+          }
+          PROFILE
+          sudo apparmor_parser -r /etc/apparmor.d/borrowser-ag2-chromium
+          cat /etc/apparmor.d/borrowser-ag2-chromium
+          sudo grep -F 'borrowser-ag2-chromium ' /sys/kernel/security/apparmor/profiles
+
+      - name: Install repository-pinned Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ag2-linux-chromium
+
+      - name: Build and lint conformance tooling
+        run: |
+          set -euo pipefail
+          cargo build -p borrowser-conformance --locked 2>&1 | tee "$AG2_EVIDENCE/build.log"
+          cargo clippy -p borrowser-conformance --all-targets --locked -- -D warnings 2>&1 | tee "$AG2_EVIDENCE/clippy.log"
+
+      - name: Qualify native launcher and ownership
+        # Cargo/rustc/build scripts retain the build TMPDIR, even on a rebuild.
+        # The target runner sets TMPDIR only for test/CLI execution.
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: env TMPDIR=${{ runner.temp }}/ag2-profiles
+        run: |
+          set -euo pipefail
+          cargo test -p borrowser-conformance --locked native_ -- --nocapture \
+            2>&1 | tee "$AG2_EVIDENCE/native.log"
+
+      - name: Qualify real Chromium and complete conformance suite
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: env TMPDIR=${{ runner.temp }}/ag2-profiles
+        run: |
+          set -euo pipefail
+          cargo test -p borrowser-conformance --locked -- --include-ignored \
+            --skip chromium::tests::native_case --skip chromium::tests::browser_helper \
+            --test-threads=1 --nocapture 2>&1 | tee "$AG2_EVIDENCE/conformance.log"
+          cargo run -p borrowser-conformance --locked -- --chromium \
+            > "$AG2_EVIDENCE/captures.json" 2> "$AG2_EVIDENCE/capture.stderr"
+
+      - name: Verify private profile cleanup
+        run: |
+          set -euo pipefail
+          # The Rust owner verifies identities, termination and ECHILD before
+          # success. This additional check detects retained failure artifacts.
+          find "$RUNNER_TEMP/ag2-profiles" -mindepth 1 -maxdepth 1 -print | tee "$AG2_EVIDENCE/remaining-artifacts.log"
+          test ! -s "$AG2_EVIDENCE/remaining-artifacts.log"
+          echo 'Native and real-browser tests passed; cleanup verified.' | tee "$AG2_EVIDENCE/result.txt"
+
+      - name: Collect native failure diagnostics
+        if: always()
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          AG2_EVIDENCE="$RUNNER_TEMP/ag2-evidence"
+          mkdir -p "$AG2_EVIDENCE"
+          printf 'Optional summaries: 10 seconds plus 1-second kill grace, 64 KiB each; inventory depth 3.\n' > "$AG2_EVIDENCE/diagnostics.log"
+          # Only optional diagnostics are handled here. Required qualification
+          # and cleanup steps keep their ordinary failing exit status.
+          if timeout --kill-after=1s 10s ps -eo pid,ppid,sid,stat,comm 2>&1 | head -c 65536 > "$AG2_EVIDENCE/processes.txt"; then
+            :
+          else
+            printf 'Process summary unavailable or truncated (exit %s); see processes.txt.\n' "$?" >> "$AG2_EVIDENCE/diagnostics.log"
+          fi
+          if timeout --kill-after=1s 10s sudo -n journalctl -k --no-pager -n 200 2>&1 | head -c 65536 > "$AG2_EVIDENCE/kernel.log"; then
+            :
+          else
+            printf 'Kernel journal unavailable or truncated (exit %s); see kernel.log.\n' "$?" >> "$AG2_EVIDENCE/diagnostics.log"
+          fi
+          if test -d "$RUNNER_TEMP/ag2-profiles"; then
+            if timeout --kill-after=1s 10s find "$RUNNER_TEMP/ag2-profiles" -maxdepth 3 -type f -printf '%P %s bytes\n' 2>&1 | head -c 65536 > "$AG2_EVIDENCE/profile-files.txt"; then
+              :
+            else
+              printf 'Retained-artifact inventory unavailable or truncated (exit %s); see profile-files.txt.\n' "$?" >> "$AG2_EVIDENCE/diagnostics.log"
+            fi
+          else
+            echo 'No qualification temporary directory exists.' > "$AG2_EVIDENCE/profile-files.txt"
+          fi
+          # Export only known qualification records. Never copy browser profiles,
+          # databases, dumps or other browser-created contents, including hidden files.
+          mkdir -p "$RUNNER_TEMP/ag2-upload"
+          for name in environment.log browser-install.log chromium-reference.json archive.sha256 \
+            build.log clippy.log native.log conformance.log captures.json capture.stderr \
+            remaining-artifacts.log result.txt processes.txt kernel.log profile-files.txt; do
+            if test -f "$AG2_EVIDENCE/$name"; then
+              size=$(wc -c < "$AG2_EVIDENCE/$name")
+              case "$name" in
+                processes.txt|kernel.log|profile-files.txt)
+                  if test "$size" -ge 65536; then
+                    printf '%s reached the 64-KiB diagnostic limit; may be truncated.\n' "$name" >> "$AG2_EVIDENCE/diagnostics.log"
+                  fi ;;
+              esac
+              if test "$size" -gt 1048576; then
+                printf '%s truncated for upload: retained final 1 MiB of %s bytes.\n' "$name" "$size" >> "$AG2_EVIDENCE/diagnostics.log"
+              fi
+              # A fixed-size read also bounds logs still growing after cancellation.
+              python3 - "$AG2_EVIDENCE/$name" "$RUNNER_TEMP/ag2-upload/$name" <<'PY'
+          import os
+          import sys
+          with open(sys.argv[1], "rb") as source:
+              source.seek(max(0, os.fstat(source.fileno()).st_size - 1048576))
+              data = source.read(1048576)
+          with open(sys.argv[2], "wb") as destination:
+              destination.write(data)
+          PY
+            fi
+          done
+          cp "$AG2_EVIDENCE/diagnostics.log" "$RUNNER_TEMP/ag2-upload/diagnostics.log"
+
+      - name: Upload AG2 qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ag2-linux-x86-64-${{ github.sha }}-${{ github.run_attempt }}
+          retention-days: 14
+          path: ${{ runner.temp }}/ag2-upload/
+
   rust:
     name: Rust (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

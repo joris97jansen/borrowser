@@ -1,3 +1,6 @@
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod chromium;
+mod environment;
 mod execute;
 mod fixtures;
 mod model;
@@ -23,10 +26,21 @@ fn run_fixture(fixture: &Fixture) -> Execution {
 }
 
 fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
+    if args.first().map(String::as_str) == Some("--chromium") {
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        return chromium::run(&args[1..], out);
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        {
+            eprintln!(
+                "ERROR chromium.platform: local capture requires Linux x86-64 or macOS arm64"
+            );
+            return Ok(2);
+        }
+    }
     if args == ["--help"] {
         writeln!(
             out,
-            "Usage: borrowser-conformance [TEST_ID]\nRun the explicit fixture set, or one exact test identity."
+            "Usage: borrowser-conformance [TEST_ID]\nRun the explicit fixture set, or one exact test identity.\n       borrowser-conformance --chromium [--chromium-executable PATH] [TEST_ID]\nCapture only, using the pinned Chrome for Testing (or BORROWSER_CHROMIUM_EXECUTABLE)."
         )?;
         return Ok(0);
     }

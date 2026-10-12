@@ -1,0 +1,1545 @@
+use super::*;
+use base64::{Engine, engine::general_purpose::STANDARD};
+use std::os::fd::FromRawFd;
+use std::path::Path;
+#[cfg(any(
+    all(target_os = "macos", target_arch = "aarch64"),
+    all(target_os = "linux", target_arch = "x86_64")
+))]
+use std::process::Command;
+
+fn png_bytes(width: u32, height: u32, color: png::ColorType, data: &[u8]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut bytes, width, height);
+        encoder.set_color(color);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_image_data(data).unwrap();
+    }
+    bytes
+}
+#[test]
+fn screenshot_samples_exact_pixel_and_rejects_alpha() {
+    let mut pixels = vec![0_u8; WIDTH as usize * HEIGHT as usize * 4];
+    let offset = (32 * WIDTH as usize + 32) * 4;
+    pixels[offset..offset + 4].copy_from_slice(&[18, 52, 86, 255]);
+    let encoded = STANDARD.encode(png_bytes(WIDTH, HEIGHT, png::ColorType::Rgba, &pixels));
+    assert_eq!(
+        screenshot::sample(&encoded).unwrap(),
+        CanvasColor([18, 52, 86])
+    );
+    pixels[offset + 3] = 254;
+    assert!(matches!(
+        screenshot::sample(&STANDARD.encode(png_bytes(
+            WIDTH,
+            HEIGHT,
+            png::ColorType::Rgba,
+            &pixels
+        ))),
+        Err(Error::Capture(_))
+    ));
+}
+#[test]
+fn screenshot_rejects_malformed_wrong_size_and_non_rgb() {
+    for encoded in [
+        "!".into(),
+        STANDARD.encode(b"not PNG"),
+        STANDARD.encode(png_bytes(1, 1, png::ColorType::Rgb, &[1, 2, 3])),
+        STANDARD.encode(png_bytes(
+            WIDTH,
+            HEIGHT,
+            png::ColorType::Grayscale,
+            &vec![0; WIDTH as usize * HEIGHT as usize],
+        )),
+        "A".repeat(3 * 1024 * 1024),
+    ] {
+        assert!(matches!(
+            screenshot::sample(&encoded),
+            Err(Error::Capture(_))
+        ));
+    }
+    let mut bytes = png_bytes(
+        WIDTH,
+        HEIGHT,
+        png::ColorType::Rgb,
+        &vec![0; WIDTH as usize * HEIGHT as usize * 3],
+    );
+    bytes.truncate(bytes.len() - 4);
+    assert!(screenshot::sample(&STANDARD.encode(bytes)).is_err());
+}
+#[test]
+fn screenshot_rejects_conflicting_color_metadata_without_normalization() {
+    for (gamma, duplicate, accepted) in [
+        (45455_u32, false, true),
+        (50000, false, false),
+        (45455, true, false),
+    ] {
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut bytes, WIDTH, HEIGHT);
+            encoder.set_color(png::ColorType::Rgb);
+            encoder.set_source_srgb(png::SrgbRenderingIntent::Perceptual);
+            let mut writer = encoder.write_header().unwrap();
+            writer
+                .write_chunk(png::chunk::gAMA, &gamma.to_be_bytes())
+                .unwrap();
+            if duplicate {
+                writer.write_chunk(png::chunk::sRGB, &[0]).unwrap();
+            }
+            writer
+                .write_image_data(&vec![52; WIDTH as usize * HEIGHT as usize * 3])
+                .unwrap();
+        }
+        let result = screenshot::sample(&STANDARD.encode(&bytes));
+        if accepted {
+            assert_eq!(result.unwrap(), CanvasColor([52, 52, 52]));
+        } else {
+            assert!(matches!(result, Err(Error::Capture(_))));
+        }
+    }
+}
+#[test]
+fn exact_identity_is_required() {
+    let pin: Value = serde_json::from_str(include_str!("../../chromium-reference.json")).unwrap();
+    let mut version = json!({"product":format!("Chrome/{}",pin["version"].as_str().unwrap()),
+        "revision":pin["revision"],"protocolVersion":pin["protocol_version"]});
+    let actual = identity(version.clone()).unwrap();
+    assert_eq!(actual.capture_profile, "ag2-canvas-srgb-v2");
+    assert_eq!(
+        actual,
+        serde_json::from_str::<BrowserIdentity>(&serde_json::to_string(&actual).unwrap()).unwrap()
+    );
+    for field in ["product", "revision", "protocolVersion"] {
+        let saved = version[field].clone();
+        version[field] = json!("different");
+        assert!(matches!(
+            identity(version.clone()),
+            Err(Error::IncompatibleBrowser(_))
+        ));
+        version[field] = saved;
+    }
+}
+#[test]
+fn missing_executable_and_cancelled_start_do_not_observe() {
+    let config = ChromiumConfig::new(PathBuf::from("/nonexistent/borrowser-cft"));
+    assert!(matches!(
+        capture_html(b"", &config, &Cancellation::default())
+            .unwrap_err()
+            .primary,
+        Some(Error::Configuration(_))
+    ));
+    let cancel = Cancellation::default();
+    cancel.cancel();
+    let error = process::OwnedChromium::launch(
+        &std::env::current_exe().unwrap(),
+        &[],
+        Instant::now() + Duration::from_secs(1),
+        &cancel,
+    )
+    .err()
+    .unwrap();
+    assert!(matches!(error.primary, Some(Error::Cancelled)));
+    assert!(error.cleanup.is_empty());
+}
+
+// Native tests are explicit subprocesses: subreaper/handlers/fork belong only
+// to the standalone path, never to the multithreaded outer Rust test runner.
+#[test]
+#[cfg(any(
+    all(target_os = "macos", target_arch = "aarch64"),
+    all(target_os = "linux", target_arch = "x86_64")
+))]
+fn native_process_and_pipe_contract() {
+    run_native_cases(&[
+        "exec-error",
+        "eof",
+        "malformed",
+        "oversized",
+        "hang",
+        "detached",
+        "early-exit",
+        "cancel",
+        "truncated",
+        "wrong-id",
+        "wrong-session",
+        "fragmented",
+        "drop",
+    ]);
+}
+#[test]
+#[cfg(any(
+    all(target_os = "macos", target_arch = "aarch64"),
+    all(target_os = "linux", target_arch = "x86_64")
+))]
+fn native_lifecycle_regressions() {
+    run_native_cases(&[
+        "partial-descriptor",
+        "partial-mask",
+        "partial-status",
+        "partial-cancel",
+        "partial-drop",
+        "discovery-runtime",
+        "cleanup-discovery",
+        "cleanup-verification",
+        "cleanup-reap",
+    ]);
+    #[cfg(target_os = "linux")]
+    run_native_cases(&["adopted-reap"]);
+    #[cfg(target_os = "macos")]
+    run_native_cases(&["arguments-transient", "arguments-persistent"]);
+}
+#[test]
+fn linux_temporary_socket_path_uses_bytes_and_reserves_nul() {
+    use std::os::unix::ffi::OsStrExt;
+    let suffix = "/org.chromium.Chromium.XXXXXX/SingletonSocket";
+    let longest = format!("/{}", "a".repeat(107 - suffix.len() - 1));
+    assert_eq!(longest.len() + suffix.len(), 107);
+    assert!(process::validate_linux_temporary_path(Path::new(&longest)).is_ok());
+    for invalid in [
+        format!("{longest}a"),
+        format!("{longest}é"),
+        "relative".into(),
+        "/tmp/\0bad".into(),
+    ] {
+        assert!(matches!(
+            process::validate_linux_temporary_path(Path::new(&invalid)),
+            Err(Error::Configuration(_))
+        ));
+    }
+    // Equal character counts can cross the boundary with a multibyte pathname.
+    let unicode = longest.replacen('a', "é", 1);
+    assert_eq!(unicode.chars().count(), longest.chars().count());
+    assert_eq!(unicode.len() + suffix.len(), 108);
+    assert!(process::validate_linux_temporary_path(Path::new(&unicode)).is_err());
+    let ci = Path::new("/home/runner/work/_temp/ag2-profiles/ag2-XXXXXX/tmp");
+    assert!(process::validate_linux_temporary_path(ci).is_ok());
+    assert_eq!(ci.as_os_str().as_bytes().len() + suffix.len(), 96);
+}
+#[test]
+#[cfg(any(
+    all(target_os = "macos", target_arch = "aarch64"),
+    all(target_os = "linux", target_arch = "x86_64")
+))]
+fn native_temporary_artifact_containment() {
+    run_native_cases(&[
+        "temp-clean",
+        "temp-exit",
+        "temp-cancel",
+        "temp-incomplete",
+        "temp-remove-failure",
+    ]);
+    #[cfg(target_os = "linux")]
+    run_native_cases(&["temp-path-too-long"]);
+}
+#[test]
+#[cfg(any(
+    all(target_os = "macos", target_arch = "aarch64"),
+    all(target_os = "linux", target_arch = "x86_64")
+))]
+fn native_prefork_artifact_cleanup() {
+    run_native_cases(&["prefork-clean", "prefork-remove-failure"]);
+}
+#[test]
+#[cfg(any(
+    all(target_os = "macos", target_arch = "aarch64"),
+    all(target_os = "linux", target_arch = "x86_64")
+))]
+fn native_capture_failure_diagnostics() {
+    run_native_cases(&[
+        "capture-timeout",
+        "capture-send-timeout",
+        "capture-discovery-timeout",
+        "capture-disconnected",
+        "capture-exited",
+    ]);
+}
+#[test]
+#[cfg(any(
+    all(target_os = "macos", target_arch = "aarch64"),
+    all(target_os = "linux", target_arch = "x86_64")
+))]
+fn native_resource_completion_and_shutdown() {
+    run_native_cases(&[
+        "resource-rejected-abort",
+        "resource-missing-ack",
+        "resource-missing-terminal",
+        "resource-shutdown-valid",
+        "resource-shutdown-incomplete",
+        "resource-shutdown-after-ack",
+        "resource-shutdown-invalidated",
+        "resource-shutdown-root-invalidated",
+        "resource-shutdown-root-clean",
+        "resource-shutdown-buffered-deadline",
+        "resource-shutdown-partial-timeout",
+        "resource-shutdown-truncated",
+        "resource-shutdown-clean",
+        "resource-shutdown-invalidated-after-ack",
+    ]);
+}
+#[test]
+#[cfg(target_os = "macos")]
+fn persistent_argument_eio_requires_activation() {
+    use process::fault::{self, Point};
+    fault::reset_persistent_argument_eio_activations();
+    fault::set(Point::ArgumentsUnavailablePersistent);
+    // An armed but unreached injection must fail the same assertion used by
+    // the native regression, even if some other operation exhausts its budget.
+    let assertion = std::panic::catch_unwind(|| fault::assert_persistent_argument_eio_since(0));
+    assert!(assertion.is_err());
+    assert!(fault::take(Point::ArgumentsUnavailablePersistent));
+    fault::assert_consumed();
+}
+#[cfg(any(
+    all(target_os = "macos", target_arch = "aarch64"),
+    all(target_os = "linux", target_arch = "x86_64")
+))]
+fn run_native_cases(scenarios: &[&str]) {
+    // A sibling of each isolated capture process is outside its ownership,
+    // despite using exactly the same executable as the browser test helper.
+    let mut unrelated = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "chromium::tests::browser_helper", "--ignored"])
+        .env("AG2_NATIVE_CASE", "unrelated")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    for scenario in scenarios {
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        // Set only the isolated process's environment, never that of the outer
+        // multithreaded test harness. Pre-fork cases inspect their entire parent.
+        let isolated_parent = if scenario.starts_with("prefork-") {
+            // Nine additional pathname bytes fit the pinned Linux socket bound
+            // under the existing CI runtime directory.
+            let parent = tempfile::Builder::new().prefix("p-").tempdir().unwrap();
+            command.env("TMPDIR", parent.path());
+            Some(parent)
+        } else if *scenario == "temp-path-too-long" {
+            let parent = tempfile::tempdir().unwrap();
+            let long = parent.path().join("x".repeat(80));
+            std::fs::create_dir(&long).unwrap();
+            command.env("TMPDIR", long);
+            Some(parent)
+        } else {
+            None
+        };
+        let output = command
+            .args([
+                "--exact",
+                "chromium::tests::native_case",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env("AG2_NATIVE_CASE", scenario)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{scenario}: {} {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            unrelated.try_wait().unwrap().is_none(),
+            "terminated unrelated sibling"
+        );
+        eprintln!("native scenario {scenario}: passed; unrelated sibling survived");
+        drop(isolated_parent);
+    }
+    drop(unrelated.stdin.take());
+    assert!(unrelated.wait().unwrap().success());
+}
+#[test]
+#[ignore = "private isolated-process entry; native_process_and_pipe_contract invokes it"]
+fn native_case() {
+    let scenario = std::env::var("AG2_NATIVE_CASE").expect("private native scenario");
+    let _standalone = process::Standalone::enter().unwrap();
+    // Exercise FD3/4 collisions: launch must replace them and close all the
+    // other ambient copies in the exec child without changing the parent.
+    let occupied: Vec<_> = (0..16)
+        .map(|_| std::fs::File::open("/dev/null").unwrap())
+        .collect();
+    let _keep_occupied = occupied;
+    let cancel = Cancellation::default();
+    let parent_tmpdir = std::env::var_os("TMPDIR");
+    let exe = if scenario == "exec-error" {
+        PathBuf::from("/nonexistent/ag2")
+    } else {
+        std::env::current_exe().unwrap()
+    };
+    let args = [
+        "--exact",
+        "chromium::tests::browser_helper",
+        "--ignored",
+        "--nocapture",
+        "--",
+    ]
+    .map(str::to_owned);
+    let start = Instant::now();
+    if scenario.starts_with("prefork-") {
+        use process::fault::{self, Point};
+        use std::os::unix::fs::PermissionsExt;
+        let parent = std::env::temp_dir();
+        assert_eq!(std::fs::read_dir(&parent).unwrap().count(), 0);
+        let sentinel = parent.join("unrelated");
+        std::fs::write(&sentinel, b"preserve").unwrap();
+        fault::set(if scenario == "prefork-clean" {
+            Point::PreFork
+        } else {
+            Point::PreForkArtifacts
+        });
+        let failure =
+            process::OwnedChromium::launch(&exe, &args, start + Duration::from_secs(2), &cancel)
+                .err()
+                .expect("pre-fork failure must not become successful launch");
+        // Consumption proves initialization created the root and its evidence
+        // file before returning the exact same primary error in both cases.
+        fault::assert_consumed();
+        assert!(matches!(
+            failure.primary,
+            Some(Error::Launch {
+                stage: "injected pre-fork initialization",
+                errno: libc::EIO,
+            })
+        ));
+        assert_no_children();
+        let remaining: Vec<_> = std::fs::read_dir(&parent)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path != &sentinel)
+            .collect();
+        if scenario == "prefork-clean" {
+            assert!(failure.cleanup.is_empty(), "{failure:?}");
+            assert!(
+                remaining.is_empty(),
+                "private directory survived: {remaining:?}"
+            );
+        } else {
+            assert_eq!(remaining.len(), 1, "{remaining:?}");
+            let artifacts = &remaining[0];
+            let [error::CleanupError::Artifacts(error)] = failure.cleanup.as_slice() else {
+                panic!("expected independent artifact error: {failure:?}");
+            };
+            assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+            assert!(
+                error.to_string().contains(artifacts.to_str().unwrap()),
+                "{error}"
+            );
+            assert_eq!(
+                std::fs::read(artifacts.join("tmp/retained")).unwrap(),
+                b"pre-fork evidence"
+            );
+            // Recovery is test-only, after proving the failed removal and path
+            // diagnostic. Production reports the retained, possibly partial tree.
+            std::fs::set_permissions(
+                artifacts.join("tmp"),
+                std::fs::Permissions::from_mode(0o700),
+            )
+            .unwrap();
+            std::fs::remove_dir_all(artifacts).unwrap();
+            assert!(!artifacts.exists());
+        }
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"preserve");
+        assert_eq!(std::env::var_os("TMPDIR"), parent_tmpdir);
+        assert_no_children();
+        return;
+    }
+    if scenario.starts_with("partial-") {
+        let fd_directory = if cfg!(target_os = "linux") {
+            "/proc/self/fd"
+        } else {
+            "/dev/fd"
+        };
+        let descriptor_count = || std::fs::read_dir(fd_directory).unwrap().count();
+        let original_descriptors = descriptor_count();
+        use process::fault::{self, Point};
+        let point = match scenario.as_str() {
+            "partial-descriptor" => Point::Descriptor,
+            "partial-mask" => Point::MaskRestored,
+            "partial-status" => Point::LaunchStatus,
+            "partial-cancel" => Point::CancelStartup,
+            "partial-drop" => Point::DropPartial,
+            _ => unreachable!(),
+        };
+        fault::set(point);
+        let launch = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            process::OwnedChromium::launch(&exe, &args, start + Duration::from_secs(2), &cancel)
+        }));
+        fault::assert_consumed();
+        if scenario == "partial-drop" {
+            assert!(launch.is_err());
+        } else {
+            let failure = launch.unwrap().err().expect("injected startup failure");
+            if scenario == "partial-cancel" {
+                assert!(matches!(failure.primary, Some(Error::Cancelled)));
+            } else {
+                assert!(matches!(failure.primary, Some(Error::Launch { .. })));
+            }
+            assert!(failure.cleanup.is_empty(), "{failure:?}");
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(6),
+            "silent stderr blocked cleanup"
+        );
+        assert_no_children();
+        assert_eq!(
+            descriptor_count(),
+            original_descriptors,
+            "partial launch leaked a descriptor"
+        );
+        return;
+    }
+    let result =
+        process::OwnedChromium::launch(&exe, &args, start + Duration::from_secs(2), &cancel);
+    if scenario == "temp-path-too-long" {
+        let failure = result
+            .err()
+            .expect("excessive socket path must fail before fork");
+        assert!(
+            matches!(failure.primary, Some(Error::Configuration(ref message)) if message.contains("singleton socket pathname"))
+        );
+        assert!(failure.cleanup.is_empty());
+        assert_eq!(std::fs::read_dir(std::env::temp_dir()).unwrap().count(), 0);
+        assert_eq!(std::env::var_os("TMPDIR"), parent_tmpdir);
+        assert_no_children();
+        return;
+    }
+    if scenario == "exec-error" {
+        let failure = result.err().expect("exec must fail");
+        assert!(matches!(failure.primary, Some(Error::Launch { .. })));
+        assert!(failure.cleanup.is_empty(), "{failure:?}");
+        return;
+    }
+    let mut child = match result {
+        Ok(child) => child,
+        Err(failure) if scenario == "early-exit" => {
+            assert!(failure.cleanup.is_empty(), "{failure:?}");
+            return;
+        }
+        Err(failure) => panic!("{failure:?}"),
+    };
+    let artifacts = child.artifact_path().to_path_buf();
+    if scenario.starts_with("temp-") {
+        let sibling = tempfile::tempdir().unwrap();
+        let sentinel = sibling.path().join("unrelated");
+        std::fs::write(&sentinel, b"preserve").unwrap();
+        let response = cdp::Cdp::new(&mut child, &cancel)
+            .call(
+                "Browser.getVersion",
+                json!({}),
+                Instant::now() + Duration::from_secs(2),
+                Phase::Startup,
+            )
+            .unwrap();
+        let temporary = artifacts.canonicalize().unwrap().join("tmp");
+        assert_eq!(response["tmpdir"], temporary.to_str().unwrap());
+        assert_eq!(response["tmpdir_entries"], 1);
+        assert_eq!(std::env::var_os("TMPDIR"), parent_tmpdir);
+        let created = temporary.join("child/nested/evidence.txt");
+        assert_eq!(std::fs::read(&created).unwrap(), b"child temporary data");
+        assert_eq!(
+            std::fs::read(temporary.join("child/descendant.txt")).unwrap(),
+            b"inherited"
+        );
+        assert!(
+            std::fs::symlink_metadata(temporary.join("child/nested/link"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        if scenario == "temp-cancel" {
+            cancel.cancel();
+            assert!(matches!(
+                child.test_discover(Instant::now() + Duration::from_secs(1), &cancel),
+                Err(Error::Cancelled)
+            ));
+        } else if scenario == "temp-exit" {
+            child.kill_root().unwrap();
+        }
+        if scenario == "temp-incomplete" {
+            process::fault::set(process::fault::Point::Discovery);
+            let errors = child.finish(Duration::from_millis(100));
+            process::fault::assert_consumed();
+            assert!(
+                errors
+                    .iter()
+                    .any(|e| matches!(e, error::CleanupError::Timeout)),
+                "{errors:?}"
+            );
+            assert!(
+                created.exists(),
+                "incomplete verification removed child artifacts"
+            );
+            assert!(!child.finish(Duration::from_secs(1)).is_empty());
+            assert!(child.recover_test_children().is_empty());
+            // Test-only recovery occurs after the deliberately failed cleanup;
+            // production retains the entire tree and reports the failure.
+            std::fs::remove_dir_all(&artifacts).unwrap();
+        } else if scenario == "temp-remove-failure" {
+            use std::os::unix::fs::PermissionsExt;
+            let nested = created.parent().unwrap();
+            std::fs::set_permissions(nested, std::fs::Permissions::from_mode(0o500)).unwrap();
+            let errors = child.finish(Duration::from_secs(2));
+            assert!(
+                errors
+                    .iter()
+                    .any(|e| matches!(e, error::CleanupError::Artifacts(_))),
+                "{errors:?}"
+            );
+            assert!(created.exists());
+            assert!(!child.finish(Duration::from_secs(1)).is_empty());
+            assert_no_children();
+            std::fs::set_permissions(nested, std::fs::Permissions::from_mode(0o700)).unwrap();
+            std::fs::remove_dir_all(&artifacts).unwrap();
+        } else {
+            let errors = child.finish(Duration::from_secs(2));
+            assert!(errors.is_empty(), "{errors:?}");
+        }
+        assert!(!artifacts.exists());
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"preserve");
+        assert_eq!(std::env::var_os("TMPDIR"), parent_tmpdir);
+        assert_no_children();
+        return;
+    }
+    if scenario.starts_with("resource-") {
+        let result = cdp::Cdp::new(&mut child, &cancel).resource_regression(&scenario);
+        match scenario.as_str() {
+            "resource-shutdown-valid"
+            | "resource-shutdown-clean"
+            | "resource-shutdown-root-clean" => result.unwrap(),
+            "resource-shutdown-buffered-deadline" | "resource-shutdown-partial-timeout" => {
+                assert!(
+                    matches!(result, Err(Error::Timeout(Phase::Shutdown))),
+                    "{result:?}"
+                );
+            }
+            "resource-shutdown-truncated" => assert!(
+                matches!(
+                    result,
+                    Err(Error::Protocol(error::ProtocolError::Truncated))
+                ),
+                "{result:?}"
+            ),
+            "resource-rejected-abort" => assert!(
+                matches!(result, Err(Error::Protocol(error::ProtocolError::Remote { ref method, .. })) if method == "Fetch.failRequest"),
+                "{result:?}"
+            ),
+            "resource-missing-ack" | "resource-missing-terminal" => assert!(
+                matches!(result, Err(Error::Timeout(Phase::Capture))),
+                "{result:?}"
+            ),
+            "resource-shutdown-incomplete"
+            | "resource-shutdown-after-ack"
+            | "resource-shutdown-invalidated"
+            | "resource-shutdown-invalidated-after-ack"
+            | "resource-shutdown-root-invalidated" => {
+                assert!(matches!(result, Err(Error::Navigation(_))), "{result:?}")
+            }
+            _ => unreachable!(),
+        }
+        let errors = child.finish(Duration::from_secs(2));
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(!artifacts.exists());
+        assert_no_children();
+        return;
+    }
+    if scenario.starts_with("capture-") {
+        let mut cdp = cdp::Cdp::new(&mut child, &cancel);
+        cdp.call(
+            "DOM.getDocument",
+            json!({}),
+            Instant::now() + Duration::from_secs(2),
+            Phase::Capture,
+        )
+        .unwrap();
+        if scenario == "capture-exited" {
+            cdp.child.kill_root().unwrap();
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while cdp.child.failure_observation().0 != process::RootObservation::Exited {
+                assert!(Instant::now() < deadline, "killed helper did not exit");
+                std::thread::yield_now();
+            }
+        }
+        if scenario == "capture-discovery-timeout" {
+            process::fault::set(process::fault::Point::Discovery);
+        }
+        let params = if scenario == "capture-send-timeout" {
+            json!({"not_a_real_screenshot": "PRIVATE_PAYLOAD".repeat(65536)})
+        } else {
+            json!({})
+        };
+        let error = cdp
+            .call(
+                "Page.captureScreenshot",
+                params,
+                Instant::now() + Duration::from_millis(300),
+                Phase::Capture,
+            )
+            .unwrap_err();
+        let diagnostic = cdp.failure_diagnostic();
+        assert!(
+            diagnostic.contains("operation: \"Page.captureScreenshot\""),
+            "{diagnostic}"
+        );
+        assert!(diagnostic.contains("command_id: Some(2)"), "{diagnostic}");
+        assert!(
+            diagnostic.contains("completed: [\"DOM.getDocument\"]"),
+            "{diagnostic}"
+        );
+        assert!(!diagnostic.contains("PRIVATE_PAYLOAD"));
+        assert!(diagnostic.len() < 4096);
+        match scenario.as_str() {
+            "capture-exited" => {
+                assert!(matches!(error, Error::BrowserExited));
+                assert!(
+                    diagnostic.contains("root_at_failure=Exited"),
+                    "{diagnostic}"
+                );
+            }
+            "capture-disconnected" => {
+                assert!(matches!(error, Error::Protocol(error::ProtocolError::Eof)));
+                assert!(
+                    diagnostic.contains("response_pipe_at_failure=HangupOrError"),
+                    "{diagnostic}"
+                );
+                assert!(
+                    diagnostic.contains("root_at_failure=NoExitObserved"),
+                    "{diagnostic}"
+                );
+            }
+            _ => {
+                assert!(matches!(error, Error::Timeout(Phase::Capture)));
+                assert!(
+                    diagnostic.contains("root_at_failure=NoExitObserved"),
+                    "{diagnostic}"
+                );
+                assert!(
+                    diagnostic.contains("response_pipe_at_failure=OpenEmpty"),
+                    "{diagnostic}"
+                );
+                if scenario == "capture-discovery-timeout" {
+                    process::fault::assert_consumed();
+                    assert!(
+                        diagnostic.contains("native_check=OwnershipDiscovery"),
+                        "{diagnostic}"
+                    );
+                } else {
+                    let activity = if scenario == "capture-send-timeout" {
+                        "waiting for writable command pipe"
+                    } else {
+                        "waiting for response"
+                    };
+                    assert!(diagnostic.contains(activity), "{diagnostic}");
+                }
+            }
+        }
+        drop(cdp);
+        assert!(child.finish(Duration::from_secs(2)).is_empty());
+        assert!(!artifacts.exists());
+        assert_no_children();
+        return;
+    }
+    if scenario == "discovery-runtime"
+        || scenario.starts_with("cleanup-")
+        || scenario.starts_with("arguments-")
+        || scenario == "adopted-reap"
+    {
+        // First establish the helper's actual pipe and retained native identity.
+        cdp::Cdp::new(&mut child, &cancel)
+            .call(
+                "Browser.getVersion",
+                json!({}),
+                Instant::now() + Duration::from_secs(2),
+                Phase::Startup,
+            )
+            .unwrap();
+        use process::fault::{self, Point};
+        let point = match scenario.as_str() {
+            "discovery-runtime" | "cleanup-discovery" => Point::Discovery,
+            "cleanup-verification" => Point::Verification,
+            "cleanup-reap" => Point::Reap,
+            #[cfg(target_os = "macos")]
+            "arguments-transient" => Point::ArgumentsUnavailable,
+            #[cfg(target_os = "macos")]
+            "arguments-persistent" => Point::ArgumentsUnavailablePersistent,
+            #[cfg(target_os = "linux")]
+            "adopted-reap" => Point::AdoptedReap,
+            _ => unreachable!(),
+        };
+        #[cfg(target_os = "macos")]
+        if scenario == "arguments-persistent" {
+            fault::reset_persistent_argument_eio_activations();
+        }
+        fault::set(point);
+        if scenario == "arguments-transient" {
+            // An argument-memory copy failure leaves discovery incomplete;
+            // a fresh full scan must recover before cleanup can succeed.
+            child
+                .test_discover(Instant::now() + Duration::from_secs(1), &cancel)
+                .unwrap();
+            fault::assert_consumed();
+            assert!(child.finish(Duration::from_secs(2)).is_empty());
+            assert!(!artifacts.exists());
+        } else if scenario == "discovery-runtime" {
+            // Force the next ownership check, independent of its scan throttle.
+            let error = child
+                .test_discover(Instant::now() + Duration::from_millis(100), &cancel)
+                .unwrap_err();
+            fault::assert_consumed();
+            assert!(matches!(error, Error::Timeout(Phase::Capture)));
+            assert!(child.finish(Duration::from_secs(2)).is_empty());
+            assert!(!artifacts.exists());
+        } else {
+            #[cfg(target_os = "macos")]
+            let previous_activations = if scenario == "arguments-persistent" {
+                // Force one scan, then require another activation during
+                // cleanup itself. No timing-dependent minimum retry count.
+                child
+                    .test_discover(Instant::now() + Duration::from_secs(1), &cancel)
+                    .unwrap();
+                fault::assert_persistent_argument_eio_since(0)
+            } else {
+                0
+            };
+            let deadline_start = Instant::now();
+            let errors = child.finish(Duration::from_secs(1));
+            #[cfg(target_os = "macos")]
+            if scenario == "arguments-persistent" {
+                fault::assert_persistent_argument_eio_since(previous_activations);
+                assert!(fault::take(Point::ArgumentsUnavailablePersistent));
+            }
+            fault::assert_consumed();
+            assert!(
+                errors
+                    .iter()
+                    .any(|e| matches!(e, error::CleanupError::Timeout)),
+                "{errors:?}"
+            );
+            assert!(deadline_start.elapsed() < Duration::from_secs(2));
+            assert!(artifacts.exists(), "unverified cleanup discarded artifacts");
+            assert!(
+                !child.finish(Duration::from_secs(1)).is_empty(),
+                "failed cleanup became success on a second call"
+            );
+            // The test must clean up its deliberately interrupted fixture with
+            // retained ownership; production never retries using unchecked PIDs.
+            assert!(child.recover_test_children().is_empty());
+            std::fs::remove_dir_all(&artifacts).unwrap();
+        }
+        assert_no_children();
+        return;
+    }
+    if matches!(
+        scenario.as_str(),
+        "eof"
+            | "malformed"
+            | "oversized"
+            | "hang"
+            | "cancel"
+            | "truncated"
+            | "wrong-id"
+            | "wrong-session"
+    ) {
+        if scenario == "cancel" {
+            cancel.cancel();
+        }
+        let mut cdp = cdp::Cdp::new(&mut child, &cancel);
+        let budget = if scenario == "oversized" {
+            Duration::from_secs(3)
+        } else {
+            Duration::from_millis(300)
+        };
+        let error = cdp
+            .call(
+                "Browser.getVersion",
+                json!({}),
+                Instant::now() + budget,
+                Phase::Startup,
+            )
+            .unwrap_err();
+        match scenario.as_str() {
+            "cancel" => assert!(matches!(error, Error::Cancelled)),
+            "hang" => assert!(matches!(error, Error::Timeout(Phase::Startup))),
+            "eof" => assert!(matches!(error, Error::Protocol(error::ProtocolError::Eof))),
+            "malformed" => assert!(matches!(
+                error,
+                Error::Protocol(error::ProtocolError::Malformed(_))
+            )),
+            "oversized" => assert!(matches!(
+                error,
+                Error::Protocol(error::ProtocolError::Oversized)
+            )),
+            "truncated" => assert!(matches!(
+                error,
+                Error::Protocol(error::ProtocolError::Truncated)
+            )),
+            "wrong-id" | "wrong-session" => assert!(matches!(
+                error,
+                Error::Protocol(error::ProtocolError::UnexpectedResponse)
+            )),
+            _ => unreachable!(),
+        }
+    } else {
+        // Readiness is the helper's pipe record, not a scheduling sleep.
+        let mut cdp = cdp::Cdp::new(&mut child, &cancel);
+        let result = cdp.call(
+            "Browser.getVersion",
+            json!({}),
+            Instant::now() + Duration::from_secs(2),
+            Phase::Startup,
+        );
+        if scenario != "early-exit" {
+            assert!(result.is_ok(), "{result:?}");
+        }
+    }
+    if scenario == "drop" {
+        drop(child);
+        assert!(
+            !artifacts.exists(),
+            "Drop cleanup did not verify termination/remove artifacts"
+        );
+        return;
+    }
+    let errors = child.finish(Duration::from_secs(2));
+    assert!(errors.is_empty(), "{errors:?}");
+    assert!(!artifacts.exists());
+    assert!(start.elapsed() < Duration::from_secs(6));
+}
+
+fn assert_no_children() {
+    let mut status = 0;
+    assert_eq!(unsafe { libc::waitpid(-1, &mut status, libc::WNOHANG) }, -1);
+    assert_eq!(
+        std::io::Error::last_os_error().raw_os_error(),
+        Some(libc::ECHILD)
+    );
+}
+
+#[test]
+#[ignore = "private process fixture; only native_case invokes this"]
+fn browser_helper() {
+    use std::io::Read;
+    let scenario = std::env::var("AG2_NATIVE_CASE").unwrap();
+    if scenario == "temp-descendant" {
+        std::fs::write(
+            std::env::temp_dir().join("child/descendant.txt"),
+            b"inherited",
+        )
+        .unwrap();
+        return;
+    }
+    if scenario == "unrelated" {
+        let mut bytes = Vec::new();
+        std::io::stdin().read_to_end(&mut bytes).unwrap();
+        return;
+    }
+    for (fd, direction) in [(3, libc::O_RDONLY), (4, libc::O_WRONLY)] {
+        assert_eq!(
+            unsafe { libc::fcntl(fd, libc::F_GETFD) } & libc::FD_CLOEXEC,
+            0
+        );
+        assert_eq!(
+            unsafe { libc::fcntl(fd, libc::F_GETFL) } & libc::O_ACCMODE,
+            direction
+        );
+        assert_eq!(
+            unsafe { libc::fcntl(fd, libc::F_GETFL) } & libc::O_NONBLOCK,
+            0
+        );
+    }
+    unsafe {
+        libc::signal(libc::SIGTERM, libc::SIG_IGN);
+    }
+    if scenario.starts_with("partial-") {
+        // Keep stderr open and silent, including after the command pipe closes.
+        loop {
+            std::thread::park_timeout(Duration::from_secs(1));
+        }
+    }
+    if scenario == "detached" || scenario == "early-exit" || scenario == "adopted-reap" {
+        let child = unsafe { libc::fork() };
+        assert!(child >= 0);
+        if child == 0 {
+            unsafe {
+                libc::setsid();
+                libc::close(3);
+                libc::close(4);
+            }
+            loop {
+                std::thread::park_timeout(Duration::from_secs(1));
+            }
+        }
+        if scenario == "early-exit" {
+            std::process::exit(0);
+        }
+    }
+    let mut read = unsafe { std::fs::File::from_raw_fd(3) };
+    let mut request = Vec::new();
+    loop {
+        let mut byte = [0];
+        read.read_exact(&mut byte).unwrap();
+        if byte[0] == 0 {
+            break;
+        }
+        request.push(byte[0]);
+    }
+    let mut write = unsafe { std::fs::File::from_raw_fd(4) };
+    if scenario.starts_with("temp-") {
+        let temporary = std::env::temp_dir();
+        let crashes = PathBuf::from(std::env::var_os("BREAKPAD_DUMP_LOCATION").unwrap());
+        assert_eq!(temporary, crashes.parent().unwrap().join("tmp"));
+        let nested = temporary.join("child/nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join("evidence.txt"), b"child temporary data").unwrap();
+        std::os::unix::fs::symlink("evidence.txt", nested.join("link")).unwrap();
+        assert!(
+            Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "chromium::tests::browser_helper", "--ignored"])
+                .env("AG2_NATIVE_CASE", "temp-descendant")
+                .status()
+                .unwrap()
+                .success()
+        );
+        let value: Value = serde_json::from_slice(&request).unwrap();
+        let entries = std::env::vars_os()
+            .filter(|(key, _)| key == "TMPDIR")
+            .count();
+        write
+            .write_all(
+                format!(
+                    "{}\0",
+                    json!({"id":value["id"],"result":{"tmpdir":temporary,"tmpdir_entries":entries}})
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+        // Graceful command EOF, cancellation, and forced root exit all leave
+        // artifact removal to the owner's post-verification cleanup.
+        let mut byte = [0];
+        assert_eq!(read.read(&mut byte).unwrap(), 0);
+        return;
+    }
+    if scenario.starts_with("resource-") {
+        resource_protocol_helper(&scenario, &request, &mut read, &mut write);
+        drop(write);
+        loop {
+            std::thread::park_timeout(Duration::from_secs(1));
+        }
+    }
+    match scenario.as_str() {
+        "eof" => drop(write),
+        "malformed" => {
+            write.write_all(b"garbage\0").unwrap();
+        }
+        "truncated" => {
+            write.write_all(b"{\"id\":").unwrap();
+            drop(write);
+        }
+        "wrong-id" => {
+            write.write_all(b"{\"id\":999,\"result\":{}}\0").unwrap();
+        }
+        "wrong-session" => {
+            write
+                .write_all(b"{\"id\":1,\"sessionId\":\"other\",\"result\":{}}\0")
+                .unwrap();
+        }
+        "oversized" => {
+            let _ = write.write_all(&vec![b'x'; 4 * 1024 * 1024]);
+        }
+        "hang" | "cancel" => {}
+        _ => {
+            let value: Value = serde_json::from_slice(&request).unwrap();
+            let response = format!("{}\0", json!({"id":value["id"],"result":{}}));
+            let chunk = if scenario == "fragmented" {
+                1
+            } else {
+                response.len()
+            };
+            for part in response.as_bytes().chunks(chunk) {
+                write.write_all(part).unwrap();
+            }
+            if scenario == "capture-disconnected" {
+                // Close after the second command was delivered, so the failure
+                // unambiguously belongs to that capture command.
+                loop {
+                    let mut byte = [0];
+                    read.read_exact(&mut byte).unwrap();
+                    if byte[0] == 0 {
+                        break;
+                    }
+                }
+                drop(write);
+            }
+        }
+    }
+    loop {
+        std::thread::park_timeout(Duration::from_secs(1));
+    }
+}
+
+// Fixed scripted responses exercise the real pipe, dispatcher and shutdown path.
+// This helper neither inspects nor authorizes process identities.
+fn resource_protocol_helper(
+    scenario: &str,
+    request: &[u8],
+    read: &mut std::fs::File,
+    write: &mut std::fs::File,
+) {
+    use std::io::Read;
+    fn emit(write: &mut std::fs::File, value: Value) {
+        write
+            .write_all(&serde_json::to_vec(&value).unwrap())
+            .unwrap();
+        write.write_all(&[0]).unwrap();
+    }
+    fn event(write: &mut std::fs::File, method: &str, params: Value) {
+        emit(
+            write,
+            json!({"sessionId":"fixture-session","method":method,"params":params}),
+        );
+    }
+    let command: Value = serde_json::from_slice(request).unwrap();
+    if matches!(
+        scenario,
+        "resource-shutdown-root-invalidated"
+            | "resource-shutdown-root-clean"
+            | "resource-shutdown-buffered-deadline"
+    ) {
+        assert_eq!(command["method"], "Page.getLayoutMetrics");
+        emit(
+            write,
+            json!({"id":command["id"],"sessionId":"fixture-session","result":{}}),
+        );
+        if scenario != "resource-shutdown-root-clean" {
+            event(write, "DOM.documentUpdated", json!({}));
+        }
+        return;
+    }
+    let shutdown = scenario.starts_with("resource-shutdown-");
+    assert_eq!(
+        command["method"],
+        if shutdown {
+            "Browser.close"
+        } else {
+            "Page.getLayoutMetrics"
+        }
+    );
+    if shutdown {
+        assert!(command.get("sessionId").is_none());
+    }
+    let mut response = json!({"id":command["id"],"result":{}});
+    if !shutdown {
+        response["sessionId"] = json!("fixture-session");
+    }
+    if matches!(
+        scenario,
+        "resource-shutdown-partial-timeout" | "resource-shutdown-truncated"
+    ) {
+        emit(write, response);
+        // No NUL delimiter: neither an acknowledgment nor previously complete
+        // navigation evidence may excuse this unfinished incoming frame.
+        write
+            .write_all(
+                br#"{"sessionId":"fixture-session","method":"DOM.documentUpdated","params":{}}"#,
+            )
+            .unwrap();
+        if scenario == "resource-shutdown-partial-timeout" {
+            loop {
+                std::thread::park_timeout(Duration::from_secs(1));
+            }
+        }
+        return;
+    }
+    if scenario == "resource-shutdown-clean" {
+        emit(write, response);
+        return;
+    }
+    if scenario == "resource-shutdown-after-ack" {
+        emit(write, response);
+        event(
+            write,
+            "Network.requestWillBeSent",
+            json!({"frameId":"f","type":"Image","requestId":"authored","request":{"url":"https://external.invalid/image.png","method":"GET"}}),
+        );
+        return;
+    }
+    if matches!(
+        scenario,
+        "resource-shutdown-invalidated" | "resource-shutdown-invalidated-after-ack"
+    ) {
+        if scenario == "resource-shutdown-invalidated-after-ack" {
+            emit(write, response);
+        }
+        event(write, "DOM.documentUpdated", json!({}));
+        return;
+    }
+    event(
+        write,
+        "Network.requestWillBeSent",
+        json!({"frameId":"f","type":"Other","requestId":"icon","initiator":{"type":"other"},"request":{"url":"https://borrowser.invalid/favicon.ico","method":"GET"}}),
+    );
+    event(
+        write,
+        "Fetch.requestPaused",
+        json!({"frameId":"f","resourceType":"Other","requestId":"icon-fetch","networkId":"icon","request":{"url":"https://borrowser.invalid/favicon.ico","method":"GET"}}),
+    );
+    let mut bytes = Vec::new();
+    loop {
+        let mut byte = [0];
+        read.read_exact(&mut byte).unwrap();
+        if byte[0] == 0 {
+            break;
+        }
+        bytes.push(byte[0]);
+        assert!(bytes.len() < 1024);
+    }
+    let abort: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(abort["method"], "Fetch.failRequest");
+    assert_eq!(abort["sessionId"], "fixture-session");
+    assert_eq!(
+        abort["params"],
+        json!({"requestId":"icon-fetch","errorReason":"BlockedByClient"})
+    );
+    if scenario == "resource-rejected-abort" {
+        emit(
+            write,
+            json!({"id":abort["id"],"sessionId":"fixture-session","error":{"code":-32000,"message":"injected abort rejection"}}),
+        );
+        return;
+    }
+    if scenario != "resource-missing-ack" {
+        emit(
+            write,
+            json!({"id":abort["id"],"sessionId":"fixture-session","result":{}}),
+        );
+    }
+    if !matches!(
+        scenario,
+        "resource-missing-terminal" | "resource-shutdown-incomplete"
+    ) {
+        event(
+            write,
+            "Network.loadingFailed",
+            json!({"requestId":"icon","type":"Other","errorText":"net::ERR_BLOCKED_BY_CLIENT.Inspector"}),
+        );
+    }
+    emit(write, response);
+    if !shutdown {
+        // Keep the pipe open for the missing-evidence timeout cases.
+        loop {
+            std::thread::park_timeout(Duration::from_secs(1));
+        }
+    }
+}
+
+// The only script-enabled input: its script changes color, never resource or
+// DOM structure. A snapshot cannot authorize arbitrary create/remove-icon scripts.
+pub(super) const SCRIPT_POSITIVE_CONTROL: &[u8] = b"<!doctype html><html><head><style>html{background:#123456}body{margin:0}</style><script>document.documentElement.style.backgroundColor='#ff0000'</script></head><body></body></html>";
+pub(super) fn require_script_positive_control(html: &[u8]) -> Result<(), Error> {
+    if html != SCRIPT_POSITIVE_CONTROL {
+        return Err(Error::Configuration(
+            "script-enabled test requires the exact color positive control".into(),
+        ));
+    }
+    Ok(())
+}
+#[test]
+fn script_positive_control_rejects_untrusted_input_before_launch() {
+    require_script_positive_control(SCRIPT_POSITIVE_CONTROL).unwrap();
+    let mut altered = SCRIPT_POSITIVE_CONTROL.to_vec();
+    altered.extend_from_slice(b"<script>let i=document.createElement('link');i.rel='icon';i.href='/favicon.ico';document.head.append(i);i.remove()</script>");
+    let config = ChromiumConfig {
+        scripts_disabled: false,
+        ..ChromiumConfig::new(PathBuf::from("/nonexistent"))
+    };
+    let failure = capture_html(&altered, &config, &Cancellation::default()).unwrap_err();
+    assert!(
+        matches!(failure.primary, Some(Error::Configuration(ref s)) if s.contains("exact color positive control"))
+    );
+    assert!(failure.cleanup.is_empty());
+}
+
+#[test]
+#[ignore = "requires the configured pinned real Chromium; run with --test-threads=1"]
+fn real_chromium_capture_and_scripts() {
+    let path = std::env::var_os("BORROWSER_CHROMIUM_EXECUTABLE")
+        .expect("explicit real Chromium test requires BORROWSER_CHROMIUM_EXECUTABLE");
+    let _standalone = process::Standalone::enter().unwrap();
+    let config = ChromiumConfig::new(PathBuf::from(path));
+    let cancel = Cancellation::default();
+    for fixture in crate::fixtures::FIXTURES {
+        let FixtureKind::Runnable { html, expected, .. } = fixture.kind else {
+            unreachable!()
+        };
+        let mut previous = None;
+        for iteration in 1..=3 {
+            eprintln!(
+                "AG2 fixture={} iteration={iteration}/3 starting",
+                fixture.id.0
+            );
+            let result = capture_html(html, &config, &cancel).unwrap_or_else(|failure| {
+                panic!(
+                    "fixture={} iteration={iteration}/3: {failure:?}",
+                    fixture.id.0
+                )
+            });
+            assert_eq!(result.color, expected);
+            assert!(
+                result.default_favicon_aborted,
+                "qualified ordinary target did not exercise default favicon interception"
+            );
+            assert_eq!(result.identity.capture_profile, "ag2-canvas-srgb-v2");
+            eprintln!(
+                "AG2 fixture={} iteration={iteration}/3 screenshot=640x480 rgb8={:?} profile={} default_favicon=correlated-aborted-acknowledged-terminal cleanup=verified",
+                fixture.id.0, result.color.0, result.identity.capture_profile
+            );
+            let serialized = serde_json::to_string(&(result.color.0, result.identity)).unwrap();
+            if let Some(previous) = previous {
+                assert_eq!(serialized, previous);
+            }
+            previous = Some(serialized);
+            eprintln!(
+                "AG2 fixture={} iteration={iteration}/3 passed",
+                fixture.id.0
+            );
+        }
+    }
+    // Markup lookalikes are not live link elements. The script is disabled;
+    // comments and raw text are interpreted by Chromium, never scanned as HTML.
+    for (index, suffix) in [
+        b"<!-- <link rel=icon href=/favicon.ico> -->".as_slice(),
+        b"<script>const text='<link rel=icon href=/favicon.ico>';</script>",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let FixtureKind::Runnable { html, expected, .. } = crate::fixtures::FIXTURES[0].kind else {
+            unreachable!()
+        };
+        let mut input = html.to_vec();
+        input.extend_from_slice(suffix);
+        eprintln!("AG2 fixture=markup-lookalike-{index} iteration=1/1");
+        assert_eq!(
+            capture_html(&input, &config, &cancel).unwrap().color,
+            expected
+        );
+    }
+    let scripted = SCRIPT_POSITIVE_CONTROL;
+    eprintln!("AG2 fixture=script-suppression iteration=1/1");
+    assert_eq!(
+        capture_html(scripted, &config, &cancel).unwrap().color,
+        CanvasColor([18, 52, 86])
+    );
+    let enabled = ChromiumConfig {
+        scripts_disabled: false,
+        ..config
+    };
+    eprintln!("AG2 fixture=script-positive-control iteration=1/1");
+    assert_eq!(
+        capture_html(scripted, &enabled, &cancel).unwrap().color,
+        CanvasColor([255, 0, 0])
+    );
+    let config = ChromiumConfig {
+        scripts_disabled: true,
+        ..enabled
+    };
+    for (index, html) in [
+        b"<!doctype html><link rel=stylesheet href=https://external.invalid/style.css>".as_slice(),
+        b"<!doctype html><img src=https://external.invalid/image.png>",
+        b"<!doctype html><meta http-equiv=refresh content='0;url=https://external.invalid/'>",
+        b"<!doctype html><meta http-equiv=refresh content='10;url=https://external.invalid/'>",
+        b"<!doctype html><iframe src=https://external.invalid/>",
+        b"<!doctype html><link rel=icon href=/favicon.ico>",
+        b"<!doctype html><LINK REL=ICON HREF=/favicon.ico>",
+        b"<!doctype html><link rel='shortcut ICON' href=/favicon.ico>",
+        b"<!doctype html><link rel='&#105;con' href=/favicon.ico>",
+        b"<!doctype html><link rel='shortcut&#9;IcOn' href=/favicon.ico>",
+        b"<!doctype html><body><p><link rel=icon href=/favicon.ico>",
+        b"<!doctype html><link rel=canonical href=/inert>",
+        b"<!doctype html><link>",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        eprintln!("AG2 fixture=unexpected-resource-{index} iteration=1/1");
+        let failure = capture_html(html, &config, &cancel).unwrap_err();
+        assert!(
+            matches!(failure.primary, Some(Error::Navigation(_))),
+            "{failure:?}"
+        );
+        assert!(failure.cleanup.is_empty(), "{failure:?}");
+    }
+}
+
+#[test]
+#[ignore = "requires pinned Chromium and native lifecycle permissions; run with --test-threads=1"]
+fn real_chromium_lifecycle_and_topology() {
+    let executable = PathBuf::from(
+        std::env::var_os("BORROWSER_CHROMIUM_EXECUTABLE")
+            .expect("explicit real test requires Chromium"),
+    );
+    let _standalone = process::Standalone::enter().unwrap();
+    for scenario in ["cancel", "timeout", "exit"] {
+        let cancel = Cancellation::default();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut child = OwnedChromium::launch(&executable, &flags(), deadline, &cancel).unwrap();
+        let artifacts = child.artifact_path().to_path_buf();
+        {
+            let mut cdp = cdp::Cdp::new(&mut child, &cancel);
+            identity(
+                cdp.call("Browser.getVersion", json!({}), deadline, Phase::Startup)
+                    .unwrap(),
+            )
+            .unwrap();
+            let target = cdp
+                .call(
+                    "Target.createTarget",
+                    json!({"url":"about:blank"}),
+                    deadline,
+                    Phase::Startup,
+                )
+                .unwrap();
+            if cfg!(target_os = "linux") {
+                use std::io::Read;
+                let attached = cdp
+                    .call(
+                        "Target.attachToTarget",
+                        json!({"targetId":target["targetId"],"flatten":true}),
+                        deadline,
+                        Phase::Startup,
+                    )
+                    .unwrap();
+                cdp.session = Some(cdp::string(&attached, "sessionId").unwrap().into());
+                // A renderer command establishes that the blank target has a
+                // live renderer; no sleeps or page JavaScript are needed.
+                cdp.call("Page.getLayoutMetrics", json!({}), deadline, Phase::Startup)
+                    .unwrap();
+                cdp.session = None;
+                let processes = cdp
+                    .call(
+                        "SystemInfo.getProcessInfo",
+                        json!({}),
+                        deadline,
+                        Phase::Startup,
+                    )
+                    .unwrap();
+                let mut renderers = 0;
+                for process in processes["processInfo"].as_array().unwrap() {
+                    if process["type"] != "renderer" {
+                        continue;
+                    }
+                    cancel.check(deadline, Phase::Startup).unwrap();
+                    let pid = sandbox_renderer_pid(process)
+                        .expect("CDP renderer ID must be a positive native integer PID");
+                    // Read-only diagnostic identities never authorize signals.
+                    // The existing native owner remains responsible for cleanup.
+                    let mut status = String::new();
+                    std::fs::File::open(format!("/proc/{pid}/status"))
+                        .unwrap()
+                        .take(65537)
+                        .read_to_string(&mut status)
+                        .unwrap();
+                    cancel.check(deadline, Phase::Startup).unwrap();
+                    assert!(status.len() <= 65536);
+                    let field = |name| {
+                        status
+                            .lines()
+                            .find_map(|line| line.strip_prefix(name))
+                            .unwrap()
+                            .trim()
+                    };
+                    assert_eq!(field("NoNewPrivs:"), "1", "{status}");
+                    assert_eq!(field("Seccomp:"), "2", "{status}");
+                    assert!(field("NSpid:").split_whitespace().count() > 1, "{status}");
+                    eprintln!(
+                        "Linux renderer {pid}: NoNewPrivs={} Seccomp={} NSpid={}",
+                        field("NoNewPrivs:"),
+                        field("Seccomp:"),
+                        field("NSpid:")
+                    );
+                    renderers += 1;
+                }
+                assert!(renderers > 0, "no renderer sandbox evidence: {processes}");
+            }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let topology = child.topology().unwrap();
+            eprintln!("macOS owned topology (executable, detached session): {topology:?}");
+            assert!(
+                topology
+                    .iter()
+                    .any(|(exe, detached)| exe == "chrome_crashpad_handler" && *detached)
+            );
+        }
+        #[cfg(target_os = "linux")]
+        {
+            // Exercise the actual pinned singleton socket, not a name-based
+            // cleanup exception. This path conveys no process signal authority.
+            let socket = std::fs::read_link(artifacts.join("profile/SingletonSocket")).unwrap();
+            assert!(
+                socket.starts_with(artifacts.canonicalize().unwrap().join("tmp")),
+                "{socket:?}"
+            );
+            assert!(socket.exists());
+        }
+        if scenario == "cancel" {
+            cancel.cancel();
+        }
+        if scenario == "exit" {
+            child.kill_root().unwrap();
+        }
+        let deadline = if scenario == "timeout" {
+            Instant::now()
+        } else {
+            deadline
+        };
+        let error = cdp::Cdp::new(&mut child, &cancel)
+            .call("Browser.getVersion", json!({}), deadline, Phase::Capture)
+            .unwrap_err();
+        match scenario {
+            "cancel" => assert!(matches!(error, Error::Cancelled)),
+            "timeout" => assert!(matches!(error, Error::Timeout(Phase::Capture))),
+            "exit" => assert!(matches!(
+                error,
+                Error::BrowserExited
+                    | Error::Protocol(error::ProtocolError::Eof)
+                    | Error::Io { .. }
+            )),
+            _ => unreachable!(),
+        }
+        assert!(child.finish(Duration::from_secs(5)).is_empty());
+        assert!(!artifacts.exists());
+    }
+}
+
+// Read-only sandbox evidence; this decode confers no signaling authority.
+fn sandbox_renderer_pid(process: &Value) -> Option<libc::pid_t> {
+    libc::pid_t::try_from(process.get("id")?.as_i64()?)
+        .ok()
+        .filter(|pid| *pid > 0)
+}
+
+#[test]
+fn sandbox_renderer_pid_requires_positive_native_integer() {
+    assert_eq!(sandbox_renderer_pid(&json!({"id":1})), Some(1));
+    assert_eq!(
+        sandbox_renderer_pid(&json!({"id":libc::pid_t::MAX})),
+        Some(libc::pid_t::MAX)
+    );
+    for process in [
+        json!({}),
+        json!({"id":null}),
+        json!({"id":"123"}),
+        json!({"id":true}),
+        json!({"id":[]}),
+        json!({"id":1.0}),
+        json!({"id":1.5}),
+        json!({"id":0}),
+        json!({"id":-1}),
+        json!({"id":i64::from(libc::pid_t::MAX) + 1}),
+        json!({"id":u64::MAX}),
+    ] {
+        assert_eq!(sandbox_renderer_pid(&process), None, "{process}");
+    }
+}

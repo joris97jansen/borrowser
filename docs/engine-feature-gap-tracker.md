@@ -938,7 +938,7 @@ When a feature lands:
 2. Link to the relevant contract doc if the behavior is subtle.
 3. Keep this file short; move detailed rules to subsystem docs.
 
-## Focused Conformance Tooling (AG1)
+## Focused Conformance Tooling (AG1–AG2)
 
 - `crates/conformance` executes two explicitly registered static HTML/CSS fixtures
   through production Tab navigation, parser runtime, atomic DOM/mode publication,
@@ -954,7 +954,60 @@ When a feature lands:
   and broad fixture discovery are not implemented.
 - Parser terminal outcomes distinguish parsing from network completion, Browser
   commit and frame completion; earlier publication failures cannot become success.
-- This is bounded AG1 tooling, not Chromium comparison, WPT support, broad browser
-  compatibility or complete rendering conformance. Chromium, AWS and broader
-  comparison coverage remain outside this issue. See the
+- AG2 adds an explicit local, pinned Chrome for Testing capture path: private
+  profile, direct CDP pipes, page scripts disabled, exact fixture response,
+  correlated loaded document, and an actual 640 × 480 sRGB screenshot sampled at
+  physical pixel (32, 32). Identity and observations are separate from AG1
+  comparison/reporting; success requires verified process cleanup. This is
+  self-contained page delivery, not an OS-level network-isolation guarantee.
+- The `ag2-canvas-srgb-v2` profile uses one ordinary headless target. Parsed-DOM
+  eligibility rejects every live-document `link` element within the current
+  inline-only scope. Default-favicon candidates are aborted before network and
+  require paired request IDs, actual abort acknowledgment and failed-load
+  completion; authored resources and incomplete evidence remain errors.
+  Shutdown additionally requires verified response-stream EOF after complete
+  event dispatch; root exit, close acknowledgment and timeout cannot substitute
+  for incoming evidence. The corrected macOS suite passed 40 tests, including
+  14 isolated resource/shutdown scenarios and 43 native scenarios in total.
+- macOS arm64 validation and Linux execution evidence are recorded in the
+  [AG2 contract](conformance/ag2-local-chromium-capture.md), with historical v1
+  evidence kept distinct. The macOS v2 suite passed 40 tests, including both
+  fixtures three times, favicon/DOM policy, scripts, independent CLI records and
+  native cleanup; runtime storage was empty and full local `make ci` exited 0.
+  Historical hosted A/B run `38075849398` justified ordinary targets. Production-v2
+  run `38110745639` passed all 39 applicable tests: exact repeated pixels,
+  resource/DOM/script/CLI/EOF checks, native lifecycle and renderer sandboxing.
+  Its strict artifact gate failed on a Chromium temporary directory outside
+  the launch owner's subtree. The correction gives only the Chromium child a
+  private inherited TMPDIR alongside profile/crash storage, checks Linux socket
+  pathname capacity before launch, and preserves authoritative cleanup and the
+  unchanged strict gate. Pre-fork initialization explicitly owns and closes the
+  private root, preserving the original launch error and separately reporting
+  artifact-removal failure with its path; post-fork removal remains conditional
+  on authoritative process verification and reaping.
+  The initial corrected macOS suite passed 42 tests and 48
+  isolated native scenarios with empty runtime storage, including child/descendant
+  temporary containment and retained-artifact/removal-failure regressions; full
+  local `make ci` exited 0. The explicit pre-fork cleanup correction subsequently
+  passed 43 macOS tests and 50 isolated native scenarios, including actual
+  pre-fork removal success/failure with preserved primary errors and artifact
+  paths. Runtime storage was empty and full local `make ci` again exited 0.
+  Native Linux production-v2 qualification then passed in
+  [run 38115362998, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/38115362998):
+  source `665412b82c9c8edff5ac94a90580304f63b1c95b`, tested merge
+  `5d39575921b5a18d1ce622345c3fdfa3a65f06e1`, Ubuntu 24.04.5 x86-64 VM,
+  image `20261004.327.1`, kernel `6.17.0-1022-azure`, with the unchanged
+  checksum-verified Chrome for Testing 155.0.8059.39 pin. All 42 applicable
+  conformance tests and 50 distinct isolated native scenarios passed, including
+  pre-fork removal success/failure, actual singleton-socket containment,
+  excessive-path rejection, pidfd/subreaper/reaping and unrelated-process
+  survival. Both fixtures passed three exact-pixel captures; sandbox assertions,
+  favicon/DOM/script policy, stable CLI serialization and EOF-only shutdown passed.
+  The unchanged strict runtime-directory gate passed with no retained entries;
+  all 11 CI jobs and GitGuardian passed. The contract records exact Chromium
+  provenance and evidence boundaries. Both intended platforms are now qualified
+  for the corrected implementation; subsequent commits still require final-tree
+  CI and final integration review before AG2 closure.
+- Integrated Chromium comparison (AG3), AWS (AG4), WPT support, broad browser
+  compatibility and general rendering conformance remain gaps. See the
   [harness README](../crates/conformance/README.md).

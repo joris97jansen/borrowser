@@ -227,11 +227,17 @@ dependencies = [
 name = "borrowser-conformance"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "browser",
  "bus",
  "core_types",
  "egui",
+ "libc",
+ "png",
  "runtime_parse",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

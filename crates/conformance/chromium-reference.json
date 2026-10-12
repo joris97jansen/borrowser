@@ -1,0 +1,17 @@
+{
+  "distribution": "Chrome for Testing",
+  "version": "155.0.8059.39",
+  "revision": "@3ff7ac5a9224be9156d7f8703a06e22890aafd34",
+  "protocol_version": "1.3",
+  "capture_profile": "ag2-canvas-srgb-v2",
+  "archives": {
+    "mac-arm64": {
+      "url": "https://storage.googleapis.com/chrome-for-testing-public/155.0.8059.39/mac-arm64/chrome-mac-arm64.zip",
+      "sha256": "529a71bd61aaa2ef266a4d4bd300ae9572ba6a3468a8d55c3023ffeffb5b6b4e"
+    },
+    "linux64": {
+      "url": "https://storage.googleapis.com/chrome-for-testing-public/155.0.8059.39/linux64/chrome-linux64.zip",
+      "sha256": "55672d1f392fd3e7b7a08621b6e804e6bcb39d40cf155504abb74b3a021ea8ea"
+    }
+  }
+}
