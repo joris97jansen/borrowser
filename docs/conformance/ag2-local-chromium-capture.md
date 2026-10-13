@@ -3,7 +3,13 @@
 AG2 belongs entirely to `crates/conformance`. It independently renders the AG1
 fixture bytes and returns `CanvasColor` plus Chromium provenance. It does not
 execute Borrowser, compare engines, change expectations, or alter production
-Browser/HTML/CSS/Layout/Paint behavior. AG3 owns integrated comparison.
+Browser/HTML/CSS/Layout/Paint behavior. AG3 owns integrated comparison through
+the shared crate-local `capture_batch` entry; see the [AG3 contract in the harness README](../../crates/conformance/README.md#integrated-cross-engine-comparison-ag3--1395).
+
+Current status: AG2 is integrated, with recorded production-v2 qualification on
+macOS arm64 and native Linux x86-64. Dated evidence below preserves the conditions
+and outstanding work at the time of each run; those historical integration
+requirements are not current AG2 blockers.
 
 ## Reference and invocation
 
@@ -137,8 +143,11 @@ record. Interrupted writes are retried; truncated status is a launch error.
 INT/TERM are blocked across fork until the parent installs its owner. Any
 fallible operation after fork retains that owner and runs cleanup on error.
 
-The standalone path has no concurrent launcher, unrelated child or competing
-reaper. Default SIGCHLD disposition is required to retain a waitable root.
+The standalone capture phase has no existing parser/runtime workers, concurrent
+descriptor openers, unrelated child or competing reaper. AG3 completes every
+selected capture and verified cleanup before starting any Borrowser worker; no
+native launcher operation follows that phase. Default SIGCHLD disposition is
+required to retain a waitable root.
 SIGINT/TERM set a cancellation atomic; SIGPIPE becomes an I/O error. Parent pipe
 ends are nonblocking. Partial reads/writes and EINTR retain their deadline;
 polling checks cancellation at most every 20 ms between native operations.
@@ -1056,10 +1065,11 @@ subsequent documentation commit must still pass final-tree CI before integration
 | Platform | Evidence / outstanding acceptance |
 | --- | --- |
 | macOS 27.0 arm64, build 26A428 | Production v2: explicit pre-fork cleanup passed the 43-test suite, 50 isolated native scenarios, empty runtime check and full local CI on 2026-10-11; prior 42-test containment and 40-test shutdown evidence is retained above. Historical v1: passed real fixture/script/resource tests, lifecycle/topology tests and independent CLI serialization tests on 2026-10-09, outside Codex's restrictive sandbox. Normal helpers remain in the root session; two detached Crashpad handlers use the private database. Token permission/generation checks, cancellation, timeout and forced root exit passed; a final process scan found no processes from the test extraction. Other OS builds require requalification. |
-| Linux x86-64 | Production-v2 run 38115362998, attempt 1, passed 42 conformance tests, 50 distinct native scenarios per invocation, real singleton-socket containment, pre-fork cleanup, sandbox/resource/script/CLI/EOF checks and the unchanged empty-runtime gate. All 11 CI jobs passed on source `665412b82c9c8edff5ac94a90580304f63b1c95b`, merge `5d39575921b5a18d1ce622345c3fdfa3a65f06e1`. Final-tree CI and integration review remain required for subsequent commits. Historical v1/A/B and the failed artifact-gate run remain separate records above. |
+| Linux x86-64 | Production-v2 run 38115362998, attempt 1, passed 42 conformance tests, 50 distinct native scenarios per invocation, real singleton-socket containment, pre-fork cleanup, sandbox/resource/script/CLI/EOF checks and the unchanged empty-runtime gate. All 11 CI jobs passed on source `665412b82c9c8edff5ac94a90580304f63b1c95b`, merge `5d39575921b5a18d1ce622345c3fdfa3a65f06e1`. That run qualified the recorded tree; AG2 is now integrated. Historical v1/A/B and the failed artifact-gate run remain separate records above. |
 | Linux ARM64 Docker host | Earlier offline `cargo check --all-targets` and `cargo clippy -p borrowser-conformance --all-targets --locked --offline -- -D warnings` passed. This historical build evidence was not rerun after the macOS argument-copy correction; capture explicitly rejects this architecture and it does not qualify Linux x86-64. |
 
-AG2 remains one issue. Both intended platforms now have implementation and
-runtime-qualification evidence for this correction. Final-tree CI and final
-integration review remain required before merge or issue closure. No AG3/AG4
-functionality or new GitHub issues are introduced by these acceptance checks.
+AG2 is integrated as one issue. Both intended platforms have recorded
+implementation and runtime-qualification evidence. New AG3 composition changes
+require their own final-tree validation; they do not erase or extend the scope
+of the historical AG2 qualification. No AG4 functionality or new GitHub issues
+are introduced.

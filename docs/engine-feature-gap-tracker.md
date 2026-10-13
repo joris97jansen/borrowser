@@ -938,7 +938,7 @@ When a feature lands:
 2. Link to the relevant contract doc if the behavior is subtle.
 3. Keep this file short; move detailed rules to subsystem docs.
 
-## Focused Conformance Tooling (AG1–AG2)
+## Focused Conformance Tooling (AG1–AG3)
 
 - `crates/conformance` executes two explicitly registered static HTML/CSS fixtures
   through production Tab navigation, parser runtime, atomic DOM/mode publication,
@@ -1006,8 +1006,21 @@ When a feature lands:
   The unchanged strict runtime-directory gate passed with no retained entries;
   all 11 CI jobs and GitGuardian passed. The contract records exact Chromium
   provenance and evidence boundaries. Both intended platforms are now qualified
-  for the corrected implementation; subsequent commits still require final-tree
-  CI and final integration review before AG2 closure.
-- Integrated Chromium comparison (AG3), AWS (AG4), WPT support, broad browser
-  compatibility and general rendering conformance remain gaps. See the
+  for the corrected implementation. AG2 is integrated; the dated qualification
+  records remain historical evidence for those exact trees.
+- AG3 adds one integrated `--compare` invocation: all Chromium captures and
+  verified cleanup precede any Borrowser parser worker. Both engines receive
+  identical fixture bytes. The bounded projection is exact opaque sRGB RGB8 at
+  physical pixel (32, 32), with separate engine captures/provenance and independent
+  authored AG1 expectations. Equal/different/unsupported selected fields, skips,
+  missing-data errors and publication failures have explicit reporting semantics;
+  empty comparison cannot count as equality. It adds no direct DOM/computed-style,
+  geometry, Borrowser GPU-rasterization or full screenshot comparison.
+- AG3 macOS arm64 qualification passed 52 applicable tests, including all six
+  isolated composition scenarios, repeated combined CLI runs and an empty
+  runtime-directory check; full local `make ci` also passed. Native AG3 Linux x86-64 qualification remains pending;
+  historical AG2 evidence and the available ARM64 Docker host do not establish it.
+  See the harness README for the exact scope and qualification record.
+- AWS (AG4), WPT support, broad browser compatibility and general rendering
+  conformance remain gaps. See the
   [harness README](../crates/conformance/README.md).

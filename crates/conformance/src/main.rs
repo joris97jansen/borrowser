@@ -1,5 +1,7 @@
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod chromium;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod comparison;
 mod environment;
 mod execute;
 mod fixtures;
@@ -26,21 +28,34 @@ fn run_fixture(fixture: &Fixture) -> Execution {
 }
 
 fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
+    if args.first().map(String::as_str) == Some("--compare") {
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        return comparison::run(&args[1..], out, &mut io::stderr().lock());
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        {
+            writeln!(
+                io::stderr().lock(),
+                "ERROR chromium.platform: local comparison requires Linux x86-64 or macOS arm64"
+            )?;
+            return Ok(2);
+        }
+    }
     if args.first().map(String::as_str) == Some("--chromium") {
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         return chromium::run(&args[1..], out);
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         {
-            eprintln!(
+            writeln!(
+                io::stderr().lock(),
                 "ERROR chromium.platform: local capture requires Linux x86-64 or macOS arm64"
-            );
+            )?;
             return Ok(2);
         }
     }
     if args == ["--help"] {
         writeln!(
             out,
-            "Usage: borrowser-conformance [TEST_ID]\nRun the explicit fixture set, or one exact test identity.\n       borrowser-conformance --chromium [--chromium-executable PATH] [TEST_ID]\nCapture only, using the pinned Chrome for Testing (or BORROWSER_CHROMIUM_EXECUTABLE)."
+            "Usage: borrowser-conformance [TEST_ID]\nRun the explicit fixture set, or one exact test identity.\n       borrowser-conformance --chromium [--chromium-executable PATH] [TEST_ID]\nCapture only, using the pinned Chrome for Testing (or BORROWSER_CHROMIUM_EXECUTABLE).\n       borrowser-conformance --compare [--chromium-executable PATH] [TEST_ID]\nCompare both engines using the bounded canvas sample."
         )?;
         return Ok(0);
     }
@@ -74,14 +89,24 @@ fn main() -> ExitCode {
     let result = match args {
         Ok(args) => run(&args, &mut io::stdout().lock()),
         Err(_) => {
-            eprintln!("ERROR command: test identity must be UTF-8");
+            // Terminal diagnostics are best effort; failed stderr must not
+            // replace the required error exit with a panic.
+            let _ = writeln!(
+                io::stderr().lock(),
+                "ERROR command: test identity must be UTF-8"
+            );
             return ExitCode::from(2);
         }
     };
     match result {
         Ok(code) => ExitCode::from(code),
         Err(_) => {
-            eprintln!("ERROR report.write: unable to write report");
+            // Inner helpers remain fallible. At this final boundary, preserve
+            // exit 2 even when the diagnostic destination has also failed.
+            let _ = writeln!(
+                io::stderr().lock(),
+                "ERROR report.write: unable to write report"
+            );
             ExitCode::from(2)
         }
     }

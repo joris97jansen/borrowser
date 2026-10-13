@@ -1,7 +1,7 @@
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Phase {
+pub(crate) enum Phase {
     Startup,
     Navigation,
     Capture,
@@ -9,7 +9,7 @@ pub(super) enum Phase {
 }
 
 #[derive(Debug)]
-pub(super) enum Error {
+pub(crate) enum Error {
     Configuration(String),
     UnsupportedPlatform(String),
     IncompatibleBrowser(String),
@@ -30,7 +30,7 @@ pub(super) enum Error {
 }
 
 #[derive(Debug)]
-pub(super) enum ProtocolError {
+pub(crate) enum ProtocolError {
     Eof,
     Truncated,
     Oversized,
@@ -44,7 +44,7 @@ pub(super) enum ProtocolError {
 }
 
 #[derive(Debug)]
-pub(super) enum CleanupError {
+pub(crate) enum CleanupError {
     Identity(String),
     Signal(String),
     Reap(String),
@@ -53,7 +53,7 @@ pub(super) enum CleanupError {
 }
 
 #[derive(Debug)]
-pub(super) struct Failure {
+pub(crate) struct Failure {
     pub primary: Option<Error>,
     pub cleanup: Vec<CleanupError>,
 }
@@ -125,5 +125,17 @@ impl fmt::Display for CleanupError {
             ),
             Self::Artifacts(e) => write!(f, "artifact removal: {e}"),
         }
+    }
+}
+
+impl Failure {
+    pub(crate) fn write_diagnostics(&self, out: &mut impl std::io::Write) -> std::io::Result<()> {
+        if let Some(error) = &self.primary {
+            writeln!(out, "ERROR chromium.{}: {error}", error.code())?;
+        }
+        for error in &self.cleanup {
+            writeln!(out, "ERROR chromium.cleanup: {error}")?;
+        }
+        Ok(())
     }
 }

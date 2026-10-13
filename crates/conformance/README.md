@@ -1,4 +1,4 @@
-# Focused static conformance harness (AG1–AG2)
+# Focused static conformance harness (AG1–AG3)
 
 Run the explicit fixture set:
 
@@ -170,9 +170,205 @@ use isolated subprocesses and no installed browser.
 
 See [the AG2 contract](../../docs/conformance/ag2-local-chromium-capture.md) for
 FD ownership, bounded CDP execution, fixture delivery, process guarantees and the
-platform qualification record. Linux x86-64 qualification is still outstanding;
-Linux compilation on ARM64 does not establish that acceptance criterion.
+platform qualification record. AG2 is integrated; both macOS arm64 and native
+Linux x86-64 have recorded production-v2 qualification. Compilation on Linux
+ARM64 does not establish runtime qualification.
 
-No integrated cross-engine comparison (AG3), AWS (AG4), WPT import, generalized
-adapters/providers, broad fixture discovery, historical storage, dashboards,
+No AWS (AG4), WPT import, generalized adapters/providers, broad fixture discovery,
+historical storage, dashboards,
 flaky-test policy, or new engine semantics are included.
+
+## Integrated cross-engine comparison (AG3 / #1395)
+
+After the existing pinned-browser installation, one command performs the entire
+comparison without collecting or copying reports:
+
+```sh
+cargo run -p borrowser-conformance --locked -- --compare --chromium-executable "$BORROWSER_CHROMIUM_EXECUTABLE" canvas/cascade
+cargo run -p borrowser-conformance --locked -- --compare
+```
+
+The first command is the acceptance case; the second selects both registered
+fixtures in registry order (`canvas/root`, `canvas/cascade`). The executable
+option overrides the environment variable. Exactly one test ID or no ID is
+accepted. Unknown/duplicate selections, extra options and missing required
+configuration are errors. This does not provision a browser.
+
+The sole selected field is `canvas_color_rgb8`: opaque sRGB RGB8 at physical
+pixel `(32, 32)`, CSS center `(32.5, 32.5)`. All existing viewport, scale, URL,
+response, inline-only fixture and observation restrictions above apply unchanged.
+The cascade fixture exercises an ID selector beating a later less-specific
+selector, whose background reaches the observed canvas through each engine's
+production path. This is a useful, deliberately bounded cross-engine fact. It
+is not a direct computed-style or DOM observation, general layout test,
+Borrowser GPU-rasterization test, or full screenshot comparison.
+
+### Capture and projection boundary
+
+Selection supplies exactly the same embedded HTML bytes to both engines.
+`chromium::CaptureInput` contains only fixture identity, source and bytes: no
+expected color or expectation metadata. The shared crate-local `capture_batch`
+entry is used by both `--chromium` and `--compare`. It returns each identity,
+source, observed `CanvasColor` and existing Chromium `BrowserIdentity` only after
+verified cleanup. Borrowser's existing `execute_html` returns `CanvasColor`
+after normal parser, Browser publication and frame/capture validation.
+
+Engine-specific capture records remain under `captures`. Chromium records its
+observed product/version/revision/protocol/platform/profile; Borrowser records
+its `guarded-egui-canvas` observation method and observed color. Egui shapes,
+PNG pixels and CDP responses are validated transiently, then discarded; there
+are no raw screenshot archives or retained protocol logs. These capture records
+are distinct from the common `fields` projection. Provenance is inspectable but
+is not compared as a semantic field.
+
+The projection uses the existing `CanvasColor([u8; 3])`, with red, green and blue
+in that order. Both observed samples are compared exactly, without tolerance,
+rounding or CSS re-interpretation. Required capture count, identity, source and
+order are checked before pairing or starting Borrowser. Missing, extra,
+duplicate or mismatched captures are errors, never omitted comparisons.
+
+### Whole-invocation lifecycle
+
+The standalone capture entry requires no existing parser/runtime workers,
+concurrent descriptor openers, unrelated children or competing reapers. It is
+not a general concurrent library launcher.
+
+Every selected runnable fixture is captured in Chromium, sequentially, with
+verified process/artifact cleanup before the next launch. After the final
+capture and cancellation check, the standalone signal guard is released. Only
+then does the harness start any Borrowser parser worker. There is no
+Chromium/Borrowser per-fixture interleaving, even for multiple fixtures. The
+Borrowser phase performs no child-process launches or native launcher/reaper
+operations. All AG2 deadlines, cancellation, sandbox and ownership rules remain.
+
+A parser terminal publication or return from `execute_html` does not establish
+worker termination. Dropping its command sender eventually closes the worker's
+input, but AG3 does not wait heuristically or rely on that shutdown to make a
+later launch safe: there is no later launch. Linux's existing process-global
+subreaper setting persists until invocation exit; the Borrowser phase creates
+no child processes. Restored signal dispositions apply after the capture phase.
+
+### Report and failure semantics
+
+`--compare` emits pretty JSON, schema `borrowser.cross-engine-canvas.v1`, followed
+by one newline. Member order is fixed by typed serialization; case order is
+fixture registry order; engine order is Borrowser then Chromium. Each case has
+one `canvas_color_rgb8` field with both observed arrays, its `equal`/`different`
+status, and red/green/blue channel statuses in that order. For `canvas/cascade`,
+both arrays should be `[52, 86, 120]` and every channel should be `equal`.
+
+`borrowser_expectation` separately reports the independently authored expected
+RGB8, expectation metadata, optional known-failure reason and existing AG1
+classification. It reuses the same successful Borrowser observation, without a
+second execution. Equal engine observations can still produce an expectation
+`FAIL`; Chromium never supplies or blesses expected values. `XFAIL` does not
+suppress a cross-engine difference.
+
+Explicitly unsupported fixture metadata makes the selected field unavailable
+with a reason; unsupported fields have no channel comparisons. Explicit skips
+remain skips. Neither classification executes an engine. Fields outside this
+projection have no placeholder rows. An adapter error, missing sample,
+unsupported runtime platform or unavailable executable is an error, not an
+unsupported field. Shipped fixtures currently support the selected field on
+both engines. Zero comparable observations never mean successful equality.
+
+The summary counts equal/different/unsupported fields, skipped cases, and
+independent expectation failures/unexpected passes. Exit precedence is:
+
+| Exit | Meaning |
+| --- | --- |
+| 2 | Configuration, execution, capture, required-data, cleanup, serialization or output error |
+| 1 | Cross-engine difference or independent AG1 FAIL/XPASS |
+| 3 | Otherwise incomplete: unsupported/skipped selection or no comparable observations |
+| 0 | All selected cases compared equally, without independent expectation failure |
+
+Exit 3 is specific to `--compare`. Existing AG1 and AG2 exit/report behavior is
+preserved. Capture/execution failures suppress the entire comparison report,
+including earlier successful cases. Chromium primary and cleanup failures remain
+separate stderr diagnostics. Execution, validation, report construction and JSON
+serialization finish before stdout publication. Writes and flush are checked;
+publication failure exits 2, but bytes already written cannot be retracted.
+Diagnostic helpers propagate I/O failures to the terminal CLI boundary, which
+preserves exit 2 without panicking if stderr also fails. Diagnostics may then
+be unavailable or partial; they are never redirected into comparison stdout.
+Native cleanup retains its directory before attempting the retention diagnostic.
+Retention and emergency-cleanup diagnostics use non-panicking writes: failed
+stderr cannot interrupt the finished bookkeeping, trigger another cleanup
+attempt, change cleanup errors or add a panic during an existing unwind. An
+unrelated original panic remains a panic, rather than being mapped to exit 2.
+Successful reports exclude process IDs, temporary paths, timing and diagnostic
+ordering. Platform provenance is retained, so byte stability is claimed for the
+same inputs and pinned environment, not across different platforms.
+
+### AG3 validation
+
+Pure tests cover exact equality/differences, unsupported availability, ordering,
+missing captures, independent expectations, exit precedence and write/flush
+failures (including partial output and failed diagnostics). CLI regressions close
+stderr's pipe reader before spawning the binary and require exit 2 with empty
+stdout for configuration and invalid-UTF-8 errors. These checks and existing
+Borrowser execution run without Chromium. Native lifecycle helpers remain
+isolated subprocesses.
+
+`native_cleanup_diagnostic_failures` uses the existing isolated native wrapper
+to exercise explicit finish, emergency Drop and Drop during an existing unwind,
+each with writable and closed-pipe stderr. A test-only deadline fault fires
+after actual native reaping, while directory ownership is still retained.
+Instrumentation checks the diagnostic results and exactly one completed cleanup
+attempt. Tests verify returned errors or the original unwind payload, retained
+evidence and absence of children before removing only their own directory.
+
+```sh
+cargo test -p borrowser-conformance --locked comparison::tests::unit_
+cargo test -p borrowser-conformance --locked --test comparison_cli
+cargo test -p borrowser-conformance --locked
+cargo test -p borrowser-conformance --locked real_chromium_ -- --ignored --nocapture --test-threads=1
+```
+
+Explicit real-browser tests require `BORROWSER_CHROMIUM_EXECUTABLE` and fail if it
+is missing. They include repeated independent combined CLI executions, multiple
+fixtures, real authored-CSS sensitivity through both paths, and isolated
+composition failures. Test-only instrumentation records capture start, verified
+cleanup, standalone release and the actual parser-worker startup call. The
+outer composition wrapper invokes every isolated scenario; private entries are
+not standalone test selections:
+
+```sh
+cargo test -p borrowser-conformance --locked -- --include-ignored \
+  --skip chromium::tests::native_case --skip chromium::tests::browser_helper \
+  --skip comparison::tests::isolated_case --test-threads=1 --nocapture
+```
+
+The existing Linux pinned-browser lane includes combined execution and retains
+its strict empty-runtime-directory gate. Local `make ci` does not replace real
+Chromium/native platform qualification. AG3 adds no DOM/style/geometry coverage,
+WPT integration, remote execution or engine behavior.
+
+
+On 2026-10-12, macOS 27.0 arm64 (26A428) qualification with the unchanged pinned
+Chrome for Testing 155.0.8059.39/profile v2 passed all **52** applicable tests in
+the complete configured-browser invocation above. The three private entry points
+were excluded from direct selection; their outer wrappers executed **50** AG2
+native scenarios and all **six** AG3 composition scenarios. Repeated combined CLI
+runs passed for both exact `canvas/cascade` selection and the full registry.
+The acceptance command returned exit 0 with Borrowser and Chromium both observing
+`[52,86,120]`, one equal field, and independent AG1 `PASS`. All-fixture comparison
+returned two equal fields. Separate default AG1 and capture-only AG2 commands
+retained their existing reports. The dedicated runtime directory was empty after
+qualification. A sandbox-restricted native attempt could not obtain macOS process
+ownership authority; qualification used normal native permissions, and its
+verified test-only leftovers were removed.
+
+Targeted tests, the ordinary conformance suite (47 passed, eight explicit
+ignores), warnings-denied conformance Clippy, build/format checks and full local
+`make ci` also passed on 2026-10-12. The full CI exit was 0; existing release/bench
+warnings in unchanged HTML/CSS code were not expanded into this issue.
+
+Native **AG3 Linux x86-64 qualification is pending**. The available local Docker
+host is Linux ARM64 and cannot establish that result. The updated existing native
+Linux CI lane must qualify this new composition; historical AG2 Linux evidence
+is preserved but does not qualify AG3.
+
+The 2026-10-12 results above predate the terminal and native-cleanup diagnostic-I/O
+corrections and remain historical evidence. They do not qualify the corrected source; native
+Linux qualification and final-tree CI/integration validation remain required.

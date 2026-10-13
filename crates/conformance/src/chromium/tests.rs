@@ -245,6 +245,21 @@ fn native_prefork_artifact_cleanup() {
     all(target_os = "macos", target_arch = "aarch64"),
     all(target_os = "linux", target_arch = "x86_64")
 ))]
+fn native_cleanup_diagnostic_failures() {
+    run_native_cases(&[
+        "diagnostic-finish-writable",
+        "diagnostic-finish-closed",
+        "diagnostic-drop-writable",
+        "diagnostic-drop-closed",
+        "diagnostic-unwind-writable",
+        "diagnostic-unwind-closed",
+    ]);
+}
+#[test]
+#[cfg(any(
+    all(target_os = "macos", target_arch = "aarch64"),
+    all(target_os = "linux", target_arch = "x86_64")
+))]
 fn native_capture_failure_diagnostics() {
     run_native_cases(&[
         "capture-timeout",
@@ -339,6 +354,23 @@ fn run_native_cases(scenarios: &[&str]) {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+        if scenario.starts_with("diagnostic-") {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let writable = scenario.ends_with("-writable");
+            assert_eq!(
+                stderr
+                    .matches("Chromium cleanup incomplete; artifacts: ")
+                    .count(),
+                usize::from(writable),
+                "{scenario}: {stderr}"
+            );
+            assert_eq!(
+                stderr.matches("Chromium emergency cleanup: owned process termination could not be verified before deadline").count(),
+                usize::from(writable && !scenario.starts_with("diagnostic-finish-")),
+                "{scenario}: {stderr}"
+            );
+            assert!(!String::from_utf8_lossy(&output.stdout).contains("Chromium cleanup"));
+        }
         assert!(
             unrelated.try_wait().unwrap().is_none(),
             "terminated unrelated sibling"
@@ -519,6 +551,10 @@ fn native_case() {
         Err(failure) => panic!("{failure:?}"),
     };
     let artifacts = child.artifact_path().to_path_buf();
+    if scenario.starts_with("diagnostic-") {
+        cleanup_diagnostic_case(child, &scenario);
+        return;
+    }
     if scenario.starts_with("temp-") {
         let sibling = tempfile::tempdir().unwrap();
         let sentinel = sibling.path().join("unrelated");
@@ -904,6 +940,102 @@ fn native_case() {
     assert!(errors.is_empty(), "{errors:?}");
     assert!(!artifacts.exists());
     assert!(start.elapsed() < Duration::from_secs(6));
+}
+
+// Called only through native_case in its isolated process. stderr is redirected
+// after startup and restored before assertions or libtest's result reporting.
+fn cleanup_diagnostic_case(mut child: OwnedChromium, scenario: &str) {
+    use process::fault::{self, CleanupEvent, Point};
+    use std::os::fd::{AsRawFd, OwnedFd};
+    let cancel = Cancellation::default();
+    cdp::Cdp::new(&mut child, &cancel)
+        .call(
+            "Browser.getVersion",
+            json!({}),
+            Instant::now() + Duration::from_secs(2),
+            Phase::Startup,
+        )
+        .unwrap();
+    let artifacts = child.artifact_path().to_owned();
+    let evidence = artifacts.join("retained-evidence");
+    std::fs::write(&evidence, b"retain even if stderr fails").unwrap();
+    let unrelated = tempfile::tempdir().unwrap();
+    let sentinel = unrelated.path().join("unrelated");
+    std::fs::write(&sentinel, b"preserve").unwrap();
+
+    let closed = scenario.ends_with("-closed");
+    let saved_stderr = if closed {
+        // This process has no other test. Never alter the outer runner's FDs,
+        // signal dispositions or panic hook. The only pipe reader closes first.
+        let saved = unsafe { libc::fcntl(2, libc::F_DUPFD_CLOEXEC, 5) };
+        assert!(saved >= 0);
+        let saved = unsafe { OwnedFd::from_raw_fd(saved) };
+        let (reader, writer) = std::io::pipe().unwrap();
+        drop(reader);
+        assert_eq!(unsafe { libc::dup2(writer.as_raw_fd(), 2) }, 2);
+        Some(saved)
+    } else {
+        None
+    };
+    fault::begin_cleanup_trace();
+    // Expire only after real termination and reaping. Unlike a dir.close()
+    // failure, this leaves directory ownership for the retained-path branch.
+    fault::set(Point::AfterReap);
+    let finishing = scenario.starts_with("diagnostic-finish-");
+    let unwinding = scenario.starts_with("diagnostic-unwind-");
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        if finishing {
+            let errors = child.finish(Duration::from_secs(2));
+            drop(child);
+            Some(errors)
+        } else if unwinding {
+            let _owned = child;
+            // Test an already-existing unwind without invoking a diagnostic
+            // panic hook first and masking the production Drop branch.
+            std::panic::resume_unwind(Box::new("original native test unwind"));
+        } else {
+            drop(child);
+            None
+        }
+    }));
+    if let Some(saved) = saved_stderr {
+        assert_eq!(unsafe { libc::dup2(saved.as_raw_fd(), 2) }, 2);
+    }
+    fault::assert_consumed();
+    let mut expected = vec![
+        CleanupEvent::Started,
+        CleanupEvent::RetainedDiagnostic { failed: closed },
+        CleanupEvent::Finished,
+    ];
+    if !finishing {
+        expected.push(CleanupEvent::EmergencyDiagnostic { failed: closed });
+    }
+    assert_eq!(fault::take_cleanup_trace(), expected);
+    if unwinding {
+        assert_eq!(
+            result.unwrap_err().downcast_ref::<&str>(),
+            Some(&"original native test unwind")
+        );
+    } else if finishing {
+        let errors = result.unwrap().unwrap();
+        assert!(
+            matches!(errors.as_slice(), [error::CleanupError::Timeout]),
+            "{errors:?}"
+        );
+    } else {
+        assert!(result.unwrap().is_none());
+    }
+    assert_eq!(
+        std::fs::read(&evidence).unwrap(),
+        b"retain even if stderr fails"
+    );
+    assert_eq!(std::fs::read(&sentinel).unwrap(), b"preserve");
+    // After proving errors, retained evidence and a single finished attempt,
+    // recover only this recorded directory. Native reaping preceded the fault.
+    assert_no_children();
+    std::fs::remove_dir_all(&artifacts).unwrap();
+    assert!(!artifacts.exists());
+    assert_eq!(std::fs::read(&sentinel).unwrap(), b"preserve");
 }
 
 fn assert_no_children() {
@@ -1542,4 +1674,77 @@ fn sandbox_renderer_pid_requires_positive_native_integer() {
     ] {
         assert_eq!(sandbox_renderer_pid(&process), None, "{process}");
     }
+}
+
+// AG3-only controls, available exclusively in an isolated test process.
+thread_local! {
+    static COMPARISON_CLEANUP_FAULT: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+    static COMPARISON_RETAINED_PATH: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+pub(crate) fn controlled_capture(color: CanvasColor) -> ChromiumCapture {
+    let pin: Value = serde_json::from_str(include_str!("../../chromium-reference.json")).unwrap();
+    ChromiumCapture {
+        color,
+        identity: identity(json!({
+            "product": format!("Chrome/{}", pin["version"].as_str().unwrap()),
+            "revision": pin["revision"], "protocolVersion": pin["protocol_version"],
+        }))
+        .unwrap(),
+        default_favicon_aborted: false,
+    }
+}
+pub(crate) fn arm_comparison_cleanup_failure(cancel: bool) {
+    COMPARISON_CLEANUP_FAULT.with(|fault| {
+        assert_eq!(fault.replace(if cancel { 2 } else { 1 }), 0);
+    });
+}
+pub(super) fn comparison_before_cleanup(child: &OwnedChromium, cancel: &Cancellation) {
+    use std::os::unix::fs::PermissionsExt;
+    match COMPARISON_CLEANUP_FAULT.with(|fault| fault.replace(0)) {
+        0 => {}
+        1 => {
+            let root = child.artifact_path().to_owned();
+            let locked = root.join("ag3-removal");
+            std::fs::create_dir(&locked).unwrap();
+            std::fs::write(locked.join("retained"), b"cleanup must fail").unwrap();
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o500)).unwrap();
+            COMPARISON_RETAINED_PATH.with(|path| *path.borrow_mut() = Some(root));
+        }
+        2 => cancel.cancel(),
+        _ => unreachable!(),
+    }
+}
+pub(crate) fn recover_comparison_cleanup_failure() {
+    use std::os::unix::fs::PermissionsExt;
+    COMPARISON_CLEANUP_FAULT.with(|fault| assert_eq!(fault.get(), 0, "fault never activated"));
+    let root = COMPARISON_RETAINED_PATH
+        .with(|path| path.borrow_mut().take())
+        .unwrap();
+    assert!(root.join("ag3-removal/retained").exists());
+    assert_no_children();
+    std::fs::set_permissions(
+        root.join("ag3-removal"),
+        std::fs::Permissions::from_mode(0o700),
+    )
+    .unwrap();
+    std::fs::remove_dir_all(&root).unwrap();
+}
+pub(crate) fn controlled_comparison_failure() -> Failure {
+    Failure {
+        primary: Some(Error::Capture("original primary".into())),
+        cleanup: vec![error::CleanupError::Identity("verification failed".into())],
+    }
+}
+pub(crate) fn assert_comparison_cleanup_failure(failure: &Failure) {
+    assert!(
+        failure.primary.is_none(),
+        "capture should have succeeded: {failure:?}"
+    );
+    assert!(
+        failure
+            .cleanup
+            .iter()
+            .any(|e| matches!(e, error::CleanupError::Artifacts(_))),
+        "{failure:?}"
+    );
 }

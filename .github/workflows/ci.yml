@@ -132,9 +132,12 @@ jobs:
           set -euo pipefail
           cargo test -p borrowser-conformance --locked -- --include-ignored \
             --skip chromium::tests::native_case --skip chromium::tests::browser_helper \
+            --skip comparison::tests::isolated_case \
             --test-threads=1 --nocapture 2>&1 | tee "$AG2_EVIDENCE/conformance.log"
           cargo run -p borrowser-conformance --locked -- --chromium \
             > "$AG2_EVIDENCE/captures.json" 2> "$AG2_EVIDENCE/capture.stderr"
+          cargo run -p borrowser-conformance --locked -- --compare canvas/cascade \
+            > "$AG2_EVIDENCE/comparison.json" 2> "$AG2_EVIDENCE/comparison.stderr"
 
       - name: Verify private profile cleanup
         run: |
@@ -178,7 +181,7 @@ jobs:
           # databases, dumps or other browser-created contents, including hidden files.
           mkdir -p "$RUNNER_TEMP/ag2-upload"
           for name in environment.log browser-install.log chromium-reference.json archive.sha256 \
-            build.log clippy.log native.log conformance.log captures.json capture.stderr \
+            build.log clippy.log native.log conformance.log captures.json capture.stderr comparison.json comparison.stderr \
             remaining-artifacts.log result.txt processes.txt kernel.log profile-files.txt; do
             if test -f "$AG2_EVIDENCE/$name"; then
               size=$(wc -c < "$AG2_EVIDENCE/$name")
