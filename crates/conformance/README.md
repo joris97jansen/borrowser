@@ -344,6 +344,7 @@ its strict empty-runtime-directory gate. Local `make ci` does not replace real
 Chromium/native platform qualification. AG3 adds no DOM/style/geometry coverage,
 WPT integration, remote execution or engine behavior.
 
+### Historical AG3 qualification: 2026-10-12
 
 On 2026-10-12, macOS 27.0 arm64 (26A428) qualification with the unchanged pinned
 Chrome for Testing 155.0.8059.39/profile v2 passed all **52** applicable tests in
@@ -364,11 +365,84 @@ ignores), warnings-denied conformance Clippy, build/format checks and full local
 `make ci` also passed on 2026-10-12. The full CI exit was 0; existing release/bench
 warnings in unchanged HTML/CSS code were not expanded into this issue.
 
-Native **AG3 Linux x86-64 qualification is pending**. The available local Docker
-host is Linux ARM64 and cannot establish that result. The updated existing native
-Linux CI lane must qualify this new composition; historical AG2 Linux evidence
-is preserved but does not qualify AG3.
+At that checkpoint, native AG3 Linux x86-64 qualification was pending. The
+available local Docker host was Linux ARM64 and could not establish that result;
+historical AG2 Linux evidence did not qualify AG3.
 
 The 2026-10-12 results above predate the terminal and native-cleanup diagnostic-I/O
-corrections and remain historical evidence. They do not qualify the corrected source; native
-Linux qualification and final-tree CI/integration validation remain required.
+corrections and remain historical evidence. They do not qualify the corrected
+source. The following record supersedes that checkpoint's pending qualification.
+
+### Corrected AG3 implementation qualification: 2026-10-13
+
+Implementation commit `c0f0a3fe5a386a90cc777ec339971e4c5670920a`, tree
+`cda41beb94d11cceff9ebf302bc09e1caaca5861`, passed qualification on both intended
+native platforms. The [AG3 PR qualification record](https://github.com/joris97jansen/borrowser/pull/1432)
+records the local commands and exits; [CI run 38349078438, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/38349078438)
+and its [native qualification artifact](https://github.com/joris97jansen/borrowser/actions/runs/38349078438/artifacts/11790930071)
+provide the Linux logs, environment, captures, comparison and cleanup evidence.
+
+- macOS 27.0 arm64, build 26A428: the configured-browser command above passed
+  **57 top-level tests**. Targeted comparison/publication, terminal-diagnostic and
+  native cleanup-diagnostic tests, warnings-denied conformance Clippy,
+  `make fmt-check`, `git diff HEAD --check` and full local `make ci` exited 0.
+- Native Ubuntu 24.04.5 x86-64 VM, image `20261004.327.1`, kernel
+  `6.17.0-1022-azure`, non-root runner: the configured suite passed **56 top-level
+  tests**. The existing environment checks and browser sandbox policy were
+  unchanged. All 11 CI jobs passed, as did GitGuardian;
+  `gh run watch --exit-status` returned 0.
+- Both used checksum-verified Chrome for Testing **155.0.8059.39**, revision
+  `@3ff7ac5a9224be9156d7f8703a06e22890aafd34`, capture profile
+  `ag2-canvas-srgb-v2`, with the existing platform-specific archive pins.
+
+On each platform, outer wrappers exercised **56 distinct native helper
+scenarios**, including the six cleanup-diagnostic scenarios, and **six AG3
+real-Chromium composition scenarios**. These nested scenario counts are not
+additional top-level tests; the platform-specific top-level totals need not
+match. Excluding the three private helper entries from direct selection did not
+exclude their wrappers. Terminal closed-stderr, partial-write/flush and failed
+diagnostic regressions passed, together with real authored-CSS sensitivity and
+three independent combined CLI runs for each of `canvas/cascade` and the full
+registry.
+
+The explicit macOS acceptance command and Linux CI acceptance step both returned
+exit 0: Borrowser and Chromium observed `[52,86,120]` for `canvas/cascade`, with
+one equal field and independent AG1 `PASS`. Full-registry comparison returned two
+equal fields and two independent `PASS` results: `canvas/root` `[18,52,86]` and
+`canvas/cascade` `[52,86,120]`. This was checked by the explicit macOS command and
+the repeated CLI regression on both platforms. Default AG1 and capture-only AG2
+retained their reports; all four explicit macOS CLI commands exited 0, and the
+Linux configured CLI regressions and capture/compare step passed.
+
+Build temporary storage and conformance runtime storage were separate in the
+successful runs. The final macOS configured suite and each explicit CLI command
+left the dedicated runtime directory empty. Linux's strict cleanup step passed;
+`remaining-artifacts.log` was empty and `result.txt` recorded cleanup verification.
+These results include the retained-directory and emergency-Drop diagnostic fixes,
+including Drop during an existing unwind.
+
+An initial local `make ci` exited 0, but its subsequent directory gate **failed**:
+the conformance target-runner override had mistakenly been applied to the entire
+workspace, so the unchanged HTML API-boundary test put nested Cargo builds in
+runtime storage. The failed gate's logs and directory were retained. Full CI was
+rerun with build-only `TMPDIR`, then the complete configured suite and all four
+CLI commands were rerun in a fresh runtime directory; their exits and cleanup
+checks passed. No source, cleanup assertion or artifact exclusion changed.
+
+The inspected native and main Rust checkout logs establish this exact tested
+integration for run 38349078438, attempt 1:
+
+- Source head: `c0f0a3fe5a386a90cc777ec339971e4c5670920a`.
+- Base (`master`): `f6574c421f165119227f16af72c497a3fc9e0965`.
+- Actual checkout/test commit: `d7479758bf5281707f774abb76698de232de5d2f`, whose
+  parents are that base and source head.
+- Tested tree: `cda41beb94d11cceff9ebf302bc09e1caaca5861`, identical to the
+  qualified implementation tree.
+
+Implementation qualification passed. At this documentation checkpoint, the
+documentation update and its resulting integration candidate still require final
+CI and read-only integration review; their subsequent status is recorded in the PR.
+The original macOS run qualifies the
+unchanged implementation, not a later documentation commit. This record does not
+claim that the PR is merged or AG3 is closed, or extend coverage beyond the
+approved exact canvas sample.

@@ -1016,11 +1016,33 @@ When a feature lands:
   missing-data errors and publication failures have explicit reporting semantics;
   empty comparison cannot count as equality. It adds no direct DOM/computed-style,
   geometry, Borrowser GPU-rasterization or full screenshot comparison.
-- AG3 macOS arm64 qualification passed 52 applicable tests, including all six
-  isolated composition scenarios, repeated combined CLI runs and an empty
-  runtime-directory check; full local `make ci` also passed. Native AG3 Linux x86-64 qualification remains pending;
-  historical AG2 evidence and the available ARM64 Docker host do not establish it.
-  See the harness README for the exact scope and qualification record.
+- Historical AG3 qualification on 2026-10-12 passed 52 macOS arm64 tests, including
+  all six isolated composition scenarios, repeated combined CLI runs and an empty
+  runtime-directory check; full local `make ci` also passed. Native AG3 Linux x86-64
+  qualification was pending at that checkpoint. Those results predate the terminal
+  and cleanup diagnostic corrections; historical AG2 evidence and ARM64 Docker
+  did not qualify the corrected AG3 implementation.
+- Corrected AG3 implementation qualification passed on 2026-10-13 for commit
+  `c0f0a3fe5a386a90cc777ec339971e4c5670920a`, tree
+  `cda41beb94d11cceff9ebf302bc09e1caaca5861`: **57 top-level tests** on macOS 27.0
+  arm64 and **56 top-level tests** on native Ubuntu 24.04.5 x86-64, using the
+  unchanged pinned Chrome for Testing 155.0.8059.39/profile v2. Each platform's
+  wrappers exercised **56 native helper scenarios** and **six AG3 composition
+  scenarios**, not extra top-level tests. Diagnostic failures, real authored-CSS
+  sensitivity, independent combined CLI stability, default AG1 and capture-only
+  AG2 checks passed. `canvas/cascade` compared equal at `[52,86,120]` with independent
+  AG1 `PASS`; the full registry produced two equal fields and two `PASS` results.
+  Successful runs passed the empty-runtime-directory gates; an earlier local
+  environment-override mistake and diagnosed rerun remain recorded in the
+  [harness qualification record](../crates/conformance/README.md#corrected-ag3-implementation-qualification-2026-10-13).
+  [CI run 38349078438, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/38349078438)
+  passed all 11 jobs against integration `d7479758bf5281707f774abb76698de232de5d2f`,
+  with the same qualified tree. At this documentation checkpoint, implementation
+  qualification is complete; final documentation-candidate CI and integration
+  review remain required, with subsequent status tracked in
+  [draft PR #1432](https://github.com/joris97jansen/borrowser/pull/1432).
+  This records only the bounded canvas comparison; it does not claim merge or
+  issue closure.
 - AWS (AG4), WPT support, broad browser compatibility and general rendering
   conformance remain gaps. See the
   [harness README](../crates/conformance/README.md).
