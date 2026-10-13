@@ -72,6 +72,8 @@ pub(crate) fn execute_html(html: &[u8]) -> Result<CanvasColor, HarnessError> {
     let (commands, command_rx) = mpsc::channel();
     let (parser, parser_rx) = mpsc::channel();
     let (events, event_rx) = mpsc::channel();
+    #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+    crate::comparison::tests::record(crate::comparison::tests::Event::WorkerStarted);
     runtime_parse::start_parse_runtime(parser_rx, events);
     let mut tab = Tab::new(1);
     tab.set_bus_sender(commands);

@@ -3,19 +3,20 @@ mod error;
 mod process;
 mod screenshot;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use crate::{
     environment::{HEIGHT, SAMPLE, URL, WIDTH},
-    model::{CanvasColor, FixtureKind},
+    model::{CanvasColor, Fixture, FixtureKind, TestId},
 };
-use error::{Error, Failure, Phase};
+pub(crate) use error::Failure;
+use error::{Error, Phase};
 use process::{Cancellation, OwnedChromium};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     io::{self, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 
@@ -30,8 +31,8 @@ pub(super) struct BrowserIdentity {
 }
 #[derive(Debug)]
 pub(super) struct ChromiumCapture {
-    color: CanvasColor,
-    identity: BrowserIdentity,
+    pub(crate) color: CanvasColor,
+    pub(crate) identity: BrowserIdentity,
     #[cfg(test)]
     default_favicon_aborted: bool,
 }
@@ -307,6 +308,8 @@ fn capture_html(
         eprintln!("AG2 capture failure: {}", cdp.failure_diagnostic());
     }
     drop(cdp);
+    #[cfg(test)]
+    tests::comparison_before_cleanup(&child, cancel);
     let cleanup = child.finish(config.shutdown);
     let result = result.and_then(|capture| {
         // Cancellation during cleanup still suppresses a success report.
@@ -338,55 +341,134 @@ struct CaptureReport<'a> {
     sample_pixel: [u32; 2],
     observations: Vec<Observation<'a>>,
 }
-pub(crate) fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
-    let execute = || -> Result<CaptureReport<'_>, Failure> {
-        let error = |s: &str| Failure {
-            primary: Some(Error::Configuration(s.into())),
-            cleanup: vec![],
-        };
-        let mut executable = std::env::var_os("BORROWSER_CHROMIUM_EXECUTABLE").map(PathBuf::from);
-        let mut id = None;
-        let mut args = args.iter();
-        while let Some(arg) = args.next() {
-            if arg == "--chromium-executable" {
-                executable =
-                    Some(PathBuf::from(args.next().ok_or_else(|| {
-                        error("--chromium-executable requires a path")
-                    })?));
-            } else if arg.starts_with('-') || id.replace(arg.as_str()).is_some() {
-                return Err(error(
-                    "expected --chromium-executable PATH and at most one fixture ID",
-                ));
-            }
+/// Only fixture bytes and identity cross the capture boundary, never expectations.
+pub(crate) struct CaptureInput<'a> {
+    pub(crate) id: TestId,
+    pub(crate) source: &'a str,
+    pub(crate) html: &'a [u8],
+}
+#[derive(Debug)]
+pub(crate) struct CapturedFixture {
+    pub(crate) id: TestId,
+    pub(crate) source: String,
+    pub(crate) capture: ChromiumCapture,
+}
+
+pub(crate) fn configuration(detail: &str) -> Failure {
+    Failure {
+        primary: Some(Error::Configuration(detail.into())),
+        cleanup: vec![],
+    }
+}
+
+pub(crate) struct Options<'a> {
+    pub(crate) executable: Option<PathBuf>,
+    test_id: Option<&'a str>,
+}
+
+pub(crate) fn options(args: &[String]) -> Result<Options<'_>, Failure> {
+    let mut executable = std::env::var_os("BORROWSER_CHROMIUM_EXECUTABLE").map(PathBuf::from);
+    let mut id = None;
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        if arg == "--chromium-executable" {
+            executable =
+                Some(PathBuf::from(args.next().ok_or_else(|| {
+                    configuration("--chromium-executable requires a path")
+                })?));
+        } else if arg.starts_with('-') || id.replace(arg.as_str()).is_some() {
+            return Err(configuration(
+                "expected --chromium-executable PATH and at most one fixture ID",
+            ));
         }
-        let executable = executable
-            .ok_or_else(|| error("set BORROWSER_CHROMIUM_EXECUTABLE or --chromium-executable"))?;
+    }
+    Ok(Options {
+        executable,
+        test_id: id,
+    })
+}
+impl Options<'_> {
+    pub(crate) fn select_fixtures(&self) -> Result<Vec<&'static Fixture>, Failure> {
         let fixtures: Vec<_> = crate::fixtures::FIXTURES
             .iter()
-            .filter(|f| id.is_none_or(|id| id == f.id.0))
+            .filter(|f| self.test_id.is_none_or(|id| id == f.id.0))
             .collect();
         if fixtures.is_empty() {
-            return Err(error("unknown fixture ID"));
+            return Err(configuration("unknown fixture ID"));
         }
-        let _standalone = process::Standalone::enter().map_err(|e| Failure {
-            primary: Some(e),
-            cleanup: vec![],
+        Ok(fixtures)
+    }
+}
+
+/// Standalone startup phase only: no parser/runtime workers, concurrent FD
+/// openers, unrelated children, or competing reapers may exist in this process.
+/// Complete the entire selected batch before starting Borrowser. Each capture
+/// verifies cleanup before the next launch. No native operations may follow
+/// the later Borrowser phase. This is not a general-purpose library launcher.
+pub(crate) fn capture_batch(
+    inputs: &[CaptureInput<'_>],
+    executable: &Path,
+) -> Result<Vec<CapturedFixture>, Failure> {
+    let standalone = process::Standalone::enter().map_err(|error| Failure {
+        primary: Some(error),
+        cleanup: vec![],
+    })?;
+    let config = ChromiumConfig::new(executable.to_owned());
+    let cancel = Cancellation::default();
+    let mut captures = Vec::with_capacity(inputs.len());
+    for input in inputs {
+        #[cfg(test)]
+        crate::comparison::tests::record(crate::comparison::tests::Event::CaptureStarted(input.id));
+        let capture = capture_html(input.html, &config, &cancel)?;
+        #[cfg(test)]
+        crate::comparison::tests::record(crate::comparison::tests::Event::CaptureCleaned(input.id));
+        captures.push(CapturedFixture {
+            id: input.id,
+            source: input.source.into(),
+            capture,
+        });
+    }
+    cancel.check_cancelled().map_err(|error| Failure {
+        primary: Some(error),
+        cleanup: vec![],
+    })?;
+    drop(standalone);
+    #[cfg(test)]
+    crate::comparison::tests::record(crate::comparison::tests::Event::StandaloneReleased);
+    Ok(captures)
+}
+
+pub(crate) fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
+    let execute = || -> Result<CaptureReport<'_>, Failure> {
+        let options = options(args)?;
+        let executable = options.executable.as_deref().ok_or_else(|| {
+            configuration("set BORROWSER_CHROMIUM_EXECUTABLE or --chromium-executable")
         })?;
-        let config = ChromiumConfig::new(executable);
-        let cancel = Cancellation::default();
-        let mut observations = Vec::new();
-        for fixture in fixtures {
-            let FixtureKind::Runnable { html, .. } = fixture.kind else {
-                return Err(error("fixture is not runnable"));
-            };
-            let capture = capture_html(html, &config, &cancel)?;
-            observations.push(Observation {
-                test_id: fixture.id.0,
-                source: fixture.source,
-                canvas_color_rgb8: capture.color.0,
-                browser: capture.identity,
-            });
-        }
+        let fixtures = options.select_fixtures()?;
+        let inputs = fixtures
+            .iter()
+            .map(|fixture| {
+                let FixtureKind::Runnable { html, .. } = fixture.kind else {
+                    return Err(configuration("fixture is not runnable"));
+                };
+                Ok(CaptureInput {
+                    id: fixture.id,
+                    source: fixture.source,
+                    html,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let captures = capture_batch(&inputs, executable)?;
+        let observations = inputs
+            .iter()
+            .zip(captures)
+            .map(|(input, capture)| Observation {
+                test_id: input.id.0,
+                source: input.source,
+                canvas_color_rgb8: capture.capture.color.0,
+                browser: capture.capture.identity,
+            })
+            .collect();
         Ok(CaptureReport {
             schema: "borrowser.chromium-canvas.v1",
             document_url: URL,
@@ -403,12 +485,7 @@ pub(crate) fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
             Ok(0)
         }
         Err(failure) => {
-            if let Some(error) = failure.primary {
-                eprintln!("ERROR chromium.{}: {error}", error.code());
-            }
-            for error in failure.cleanup {
-                eprintln!("ERROR chromium.cleanup: {error}");
-            }
+            failure.write_diagnostics(&mut io::stderr().lock())?;
             Ok(2)
         }
     }

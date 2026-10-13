@@ -4,7 +4,7 @@ use super::error::{CleanupError, Error, Phase};
 use std::{
     ffi::CString,
     fs::File,
-    io::Read,
+    io::{Read, Write},
     os::{
         fd::{AsRawFd, FromRawFd, OwnedFd},
         unix::ffi::OsStrExt,
@@ -119,7 +119,8 @@ impl OwnershipBudget<'_> {
     }
 }
 
-/// Installed only by the standalone Chromium CLI (and isolated native tests).
+/// Installed only during the standalone Chromium phase (and isolated native tests).
+/// AG3 completes the whole capture batch before creating any parser workers.
 pub(super) struct Standalone {
     handlers: Vec<(i32, libc::sigaction)>,
 }
@@ -785,6 +786,8 @@ impl OwnedChromium {
         budget.check()
     }
     pub fn finish(&mut self, duration: Duration) -> Vec<CleanupError> {
+        #[cfg(test)]
+        fault::record_cleanup(fault::CleanupEvent::Started);
         if self.finished {
             return vec![CleanupError::Identity("cleanup already attempted".into())];
         }
@@ -893,6 +896,8 @@ impl OwnedChromium {
                     .reap_adopted(&budget)
                     .map_err(|e| e.cleanup(CleanupError::Reap))?;
             }
+            #[cfg(test)]
+            fault::expire(fault::Point::AfterReap, budget.deadline);
             budget.check().map_err(|e| e.cleanup(CleanupError::Reap))
         })();
         if let Err(e) = reaping {
@@ -915,12 +920,23 @@ impl OwnedChromium {
             errors.push(CleanupError::Timeout);
         }
         if let Some(dir) = self.directory.take() {
-            eprintln!(
+            // Retention is independent of diagnostic delivery. A failed stderr
+            // must not interrupt bookkeeping or re-enter cleanup through Drop.
+            let retained = dir.keep();
+            let diagnostic = writeln!(
+                std::io::stderr().lock(),
                 "Chromium cleanup incomplete; artifacts: {}",
-                dir.keep().display()
+                retained.display()
             );
+            #[cfg(test)]
+            fault::record_cleanup(fault::CleanupEvent::RetainedDiagnostic {
+                failed: diagnostic.is_err(),
+            });
+            let _ = diagnostic;
         }
         self.finished = true;
+        #[cfg(test)]
+        fault::record_cleanup(fault::CleanupEvent::Finished);
         errors
     }
 }
@@ -928,7 +944,17 @@ impl Drop for OwnedChromium {
     fn drop(&mut self) {
         if !self.finished {
             for error in self.finish(Duration::from_secs(5)) {
-                eprintln!("Chromium emergency cleanup: {error}");
+                // Drop also runs during unwinding; diagnostic I/O must not add
+                // a second panic or hide the original cleanup failure.
+                let diagnostic = writeln!(
+                    std::io::stderr().lock(),
+                    "Chromium emergency cleanup: {error}"
+                );
+                #[cfg(test)]
+                fault::record_cleanup(fault::CleanupEvent::EmergencyDiagnostic {
+                    failed: diagnostic.is_err(),
+                });
+                let _ = diagnostic;
             }
         }
     }
@@ -993,6 +1019,7 @@ pub(super) mod fault {
         Discovery,
         Verification,
         Reap,
+        AfterReap,
         #[cfg(target_os = "macos")]
         ArgumentsUnavailable,
         #[cfg(target_os = "macos")]
@@ -1001,6 +1028,29 @@ pub(super) mod fault {
         AdoptedReap,
     }
     thread_local! { static POINT: std::cell::Cell<Option<Point>> = const { std::cell::Cell::new(None) }; }
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum CleanupEvent {
+        Started,
+        RetainedDiagnostic { failed: bool },
+        Finished,
+        EmergencyDiagnostic { failed: bool },
+    }
+    thread_local! {
+        static CLEANUP_TRACE: std::cell::RefCell<Option<Vec<CleanupEvent>>> = const { std::cell::RefCell::new(None) };
+    }
+    pub fn begin_cleanup_trace() {
+        CLEANUP_TRACE.with(|trace| *trace.borrow_mut() = Some(vec![]));
+    }
+    pub fn record_cleanup(event: CleanupEvent) {
+        CLEANUP_TRACE.with(|trace| {
+            if let Some(events) = trace.borrow_mut().as_mut() {
+                events.push(event);
+            }
+        });
+    }
+    pub fn take_cleanup_trace() -> Vec<CleanupEvent> {
+        CLEANUP_TRACE.with(|trace| trace.borrow_mut().take().unwrap())
+    }
     #[cfg(target_os = "macos")]
     thread_local! {
         // Arming/rearming a persistent fault is not evidence that it fired.
