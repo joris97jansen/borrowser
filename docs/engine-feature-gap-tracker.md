@@ -1043,6 +1043,31 @@ When a feature lands:
   [draft PR #1432](https://github.com/joris97jansen/borrowser/pull/1432).
   This records only the bounded canvas comparison; it does not claim merge or
   issue closure.
-- AWS (AG4), WPT support, broad browser compatibility and general rendering
+- AG4 implements the optional Python-CDK/CloudFormation disposable-host path,
+  plus a shared networking/service-role/EICE CDK stack (eleven resources),
+  ordinary SSH through a verified private EICE target, strict capture ingestion into AG3,
+  durable operation identity, conservative cleanup-only recovery and bounded
+  controller subprocess ownership. This introduces no engine semantics or new
+  comparison fields. The reviewed Canonical AMI/package snapshot are pinned;
+  AMI declarations are distinguished from effective storage on the fixed EBS-only
+  instance type. EICE adds a private ephemeral fixed-argv helper, executable
+  identity checks, authentication-safe diagnostics and bounded proxy shutdown;
+  controller IAM remains external. Authentic historical direct-SSH templates
+  retain deletion authority without EICE/current configuration. The reviewed
+  shared EICE update, corporate WebSocket/TLS qualification, first normal
+  `canvas/cascade` EICE run, native Linux controller qualification and broader
+  AWS acceptance remain gaps. The 40-ms post-TERM-grace reserve is unqualified;
+  replacing it requires native macOS and Linux escalation/reaping measurements
+  within the existing five-second authority. A narrow native Ubuntu 24.04 x64
+  timing job in the existing CI workflow awaits explicit source publication/run
+  authorization. Linux evidence and the next final review snapshot remain
+  pending; the macOS forced-path maximum of 4.996157 seconds does not establish
+  scheduling margin. The
+  two native Chromium `BrowserExited` observations also remain unresolved;
+  they reproduced with the retained pre-EICE controller and are not attributed
+  to EICE. The implementation stays inside AG4; AG still
+  has nine issues and AG4 is not complete. See the
+  [AG4 contract](conformance/ag4-disposable-aws-chromium-runner.md).
+- WPT support, broad browser compatibility and general rendering
   conformance remain gaps. See the
   [harness README](../crates/conformance/README.md).

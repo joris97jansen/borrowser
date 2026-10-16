@@ -1,4 +1,26 @@
-# Focused static conformance harness (AG1–AG3)
+# Focused static conformance harness (AG1–AG4)
+
+AG4 adds the optional `--compare-aws` and artifact-independent `--aws-cleanup`
+paths. Its two-resource Python CDK capture stack, shared eleven-resource
+networking/service-role/EICE stack, ordinary SSH through the endpoint, strict capture
+ingestion, operation recovery and qualification gates are documented in the
+[AG4 contract](../../docs/conformance/ag4-disposable-aws-chromium-runner.md).
+The run keeps its own SG and instance; shared EICE/SGs are never run cleanup
+targets. Live configuration binds the exact shared StackId and canonical template
+digest, derives physical IDs, and rejects obsolete `controller_cidr` fields.
+Historical cleanup-only remains independent of EICE/current operator configuration.
+The reviewed AMI/package snapshot are pinned. The shared EICE update, corporate
+TLS qualification, first normal EICE run and broader AG4 acceptance remain
+pending; earlier direct-SSH lifecycle evidence does not qualify EICE. The DNS
+contract requires the authenticated `ec2-instance-connect-endpoint.eu-west-1.amazonaws.com`
+hostname. The current 40-ms cleanup reserve remains an unqualified defect;
+replacement requires native escalation/reaping measurements on both supported
+platforms before the next final review snapshot. A narrow native Ubuntu 24.04 x64
+timing job in the existing CI workflow awaits explicit source publication/run
+authorization; Linux timing evidence is still pending. The two native Chromium `BrowserExited`
+observations, also reproduced with the pre-EICE controller, remain unresolved.
+Ordinary local commands below remain independent of AWS configuration,
+credentials and artifact preparation.
 
 Run the explicit fixture set:
 
