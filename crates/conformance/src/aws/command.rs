@@ -22,8 +22,98 @@ mod tests;
 static INTERRUPTS: AtomicUsize = AtomicUsize::new(0);
 #[cfg(test)]
 static FAIL_OBSERVATION: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+#[cfg(test)]
+static EXHAUST_OBSERVATION_ONCE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+#[cfg(test)]
+static FAIL_TERM_ONCE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 extern "C" fn interrupt(_: libc::c_int) {
     INTERRUPTS.fetch_add(1, Ordering::Relaxed);
+}
+
+const CLEANUP_LIMIT: Duration = Duration::from_secs(5);
+const NATURAL_LIMIT: Duration = Duration::from_secs(2);
+const TERM_LIMIT: Duration = Duration::from_secs(1);
+const FORCED_ALLOCATION: Duration = Duration::from_secs(2);
+const POLL_INTERVAL: Duration = Duration::from_millis(20);
+
+// Candidate AG4 budgets: native qualification must establish one second of
+// headroom. These are not a scheduler or a promise about OS scheduling latency.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CleanupPhase {
+    Natural { until: Instant },
+    TermPending,
+    TermGrace { until: Instant },
+    Forced,
+    Finalization,
+}
+struct Cleanup {
+    hard_end: Instant,
+    force_by: Instant,
+    phase: CleanupPhase,
+}
+impl Cleanup {
+    fn new(start: Instant, natural: bool) -> Self {
+        debug_assert_eq!(
+            NATURAL_LIMIT + TERM_LIMIT + FORCED_ALLOCATION,
+            CLEANUP_LIMIT
+        );
+        Self {
+            hard_end: start + CLEANUP_LIMIT,
+            force_by: start + NATURAL_LIMIT + TERM_LIMIT,
+            phase: if natural {
+                CleanupPhase::Natural {
+                    until: start + NATURAL_LIMIT,
+                }
+            } else {
+                CleanupPhase::TermPending
+            },
+        }
+    }
+    fn end_natural(&mut self, now: Instant, failed: bool) -> bool {
+        if matches!(self.phase, CleanupPhase::Natural { until } if failed || now >= until) {
+            self.phase = CleanupPhase::TermPending;
+            return true;
+        }
+        false
+    }
+    fn term_dispatched(&mut self, now: Instant) {
+        debug_assert_eq!(self.phase, CleanupPhase::TermPending);
+        self.phase = CleanupPhase::TermGrace {
+            until: (now + TERM_LIMIT).min(self.force_by),
+        };
+    }
+    fn kill_due(&self, now: Instant) -> bool {
+        matches!(self.phase, CleanupPhase::TermGrace { until } if now >= until)
+    }
+    fn boundary(&self) -> Instant {
+        match self.phase {
+            CleanupPhase::Natural { until } | CleanupPhase::TermGrace { until } => until,
+            CleanupPhase::TermPending => self.force_by,
+            CleanupPhase::Forced | CleanupPhase::Finalization => self.hard_end,
+        }
+    }
+    fn check_deadline(&self, now: Instant) -> Result<(), String> {
+        if now >= self.hard_end {
+            Err("command cleanup deadline exceeded".into())
+        } else {
+            Ok(())
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GroupObservation {
+    Executing,
+    // A complete scan, while the unreaped root reserves PGID identity. This
+    // does not assert that the numeric group has disappeared.
+    NoExecuting,
+    DeadlineReached,
+}
+fn poll_timeout(now: Instant, boundary: Instant) -> i32 {
+    // Floor sub-millisecond waits instead of knowingly crossing a boundary.
+    POLL_INTERVAL
+        .min(boundary.saturating_duration_since(now))
+        .as_millis() as i32
 }
 
 pub(super) struct Spec {
@@ -252,6 +342,13 @@ fn group_signal_result(signal: &str, error: Option<std::io::Error>) -> Result<()
     }
 }
 fn signal_group(pid: i32, signal: i32) -> Result<(), String> {
+    #[cfg(test)]
+    if signal == libc::SIGTERM && FAIL_TERM_ONCE.swap(false, Ordering::Relaxed) {
+        return group_signal_result(
+            "SIGTERM",
+            Some(std::io::Error::from_raw_os_error(libc::EPERM)),
+        );
+    }
     let rc = unsafe { libc::kill(-pid, signal) };
     let error = (rc < 0).then(std::io::Error::last_os_error);
     let name = match signal {
@@ -329,9 +426,8 @@ impl Commands for Owner {
             stderr = None;
         }
         let deadline = Instant::now() + spec.timeout;
-        let mut finish_deadline = None;
-        let mut term_at = None;
-        let mut killed = false;
+        let mut cleanup: Option<Cleanup> = None;
+        let mut observed_group = GroupObservation::DeadlineReached;
         let mut out = vec![];
         let mut err = vec![];
         let mut stderr_overflow = false;
@@ -364,12 +460,22 @@ impl Commands for Owner {
             if root_exited && written < spec.input.len() {
                 primary.get_or_insert("command exited before accepting its complete input".into());
             }
-            if root_exited || primary.is_some() {
+            if (root_exited || primary.is_some()) && cleanup.is_none() {
+                let start = Instant::now();
+                let natural = spec.eice_proxy
+                    && root_exited
+                    && primary.is_none()
+                    && match root_succeeded(pid) {
+                        Ok(success) => success,
+                        Err(error) => {
+                            primary.get_or_insert(error.clone());
+                            cleanup_error.get_or_insert(error);
+                            false
+                        }
+                    };
                 #[cfg(test)]
-                if finish_deadline.is_none() {
-                    self.timing.push(("cleanup_started", now));
-                }
-                finish_deadline.get_or_insert(now + Duration::from_secs(5));
+                self.timing.push(("cleanup_started", start));
+                cleanup = Some(Cleanup::new(start, natural));
                 input = None;
             }
             if primary.is_none()
@@ -413,79 +519,119 @@ impl Commands for Owner {
                     self.timing.push((name, Instant::now()));
                 }
             }
-            if root_exited || primary.is_some() {
-                let group_deadline = *finish_deadline.get_or_insert(now + Duration::from_secs(5));
-                let observed = native::group_running(pid, group_deadline);
+            // A pipe error can be the first failure in this iteration.
+            if primary.is_some() && cleanup.is_none() {
+                let start = Instant::now();
+                #[cfg(test)]
+                self.timing.push(("cleanup_started", start));
+                cleanup = Some(Cleanup::new(start, false));
+                input = None;
+            }
+            if let Some(state) = &mut cleanup {
+                if state.end_natural(Instant::now(), primary.is_some()) {
+                    #[cfg(test)]
+                    self.timing.push(("natural_phase_ended", Instant::now()));
+                    primary.get_or_insert("command left running descendants".into());
+                }
+                // An overdue transition precedes another scan. The last complete
+                // NoExecuting observation remains valid while the root is held:
+                // no executing group member remains to create more members.
+                if state.kill_due(Instant::now()) {
+                    if observed_group != GroupObservation::NoExecuting {
+                        #[cfg(test)]
+                        self.timing.push(("kill_sent", Instant::now()));
+                        if let Err(error) = signal_group(pid, libc::SIGKILL) {
+                            signal_errors.push(error);
+                        }
+                    }
+                    state.phase = CleanupPhase::Forced;
+                }
+                if let Err(error) = state.check_deadline(Instant::now()) {
+                    cleanup_error.get_or_insert(error);
+                    break;
+                }
+                #[cfg(test)]
+                self.timing.push(("group_observation", Instant::now()));
+                #[cfg(test)]
+                if EXHAUST_OBSERVATION_ONCE.swap(false, Ordering::Relaxed) {
+                    std::thread::sleep(state.boundary().saturating_duration_since(Instant::now()));
+                }
+                let observed = native::group_running(pid, state.boundary());
                 #[cfg(test)]
                 let observed = if FAIL_OBSERVATION.load(Ordering::Relaxed) {
                     Err("injected process observation failure".into())
                 } else {
                     observed
                 };
-                // A complete observation of no running members needs no
-                // signal. Keep the leader unreaped until exit/pipe checks also
-                // finish; errors/unknown observations still attempt cleanup.
-                let signal_needed = !matches!(observed, Ok(false));
-                #[cfg(test)]
-                if !signal_needed
-                    && !self
-                        .timing
-                        .iter()
-                        .any(|(event, _)| *event == "group_not_running")
-                {
-                    self.timing.push(("group_not_running", Instant::now()));
+                observed_group = match observed {
+                    Ok(observation) => observation,
+                    Err(error) => {
+                        primary.get_or_insert(error.clone());
+                        cleanup_error.get_or_insert(error);
+                        GroupObservation::DeadlineReached
+                    }
+                };
+                // Observation may have consumed the current phase. Never use
+                // the timestamp from before the scan for escalation/completion.
+                if state.end_natural(Instant::now(), primary.is_some()) {
+                    #[cfg(test)]
+                    self.timing.push(("natural_phase_ended", Instant::now()));
+                    primary.get_or_insert("command left running descendants".into());
                 }
-                match observed {
-                    Ok(false) if root_exited && stdout.is_none() && stderr.is_none() => break,
-                    Ok(true) if root_exited => {
-                        // waitid keeps root identity reserved. The 40-ms reserve
-                        // below remains a known, unqualified defect pending
-                        // native macOS AND Linux escalation/reaping measurements.
-                        // Do not replace it with another guessed number or expand
-                        // the five-second outer authority. See the AG4 contract.
-                        let natural = spec.eice_proxy
-                            && match root_succeeded(pid) {
-                                Ok(success) => success,
-                                Err(e) => {
-                                    primary.get_or_insert(e.clone());
-                                    cleanup_error = Some(e);
-                                    false
-                                }
-                            };
-                        let escalation =
-                            group_deadline - Duration::from_secs(1) - Duration::from_millis(40);
-                        if !natural || now >= escalation {
-                            primary.get_or_insert("command left running descendants".into());
+                if let Err(error) = state.check_deadline(Instant::now()) {
+                    cleanup_error.get_or_insert(error);
+                    break;
+                }
+                if observed_group == GroupObservation::NoExecuting
+                    && root_exited
+                    && stdout.is_none()
+                    && stderr.is_none()
+                {
+                    #[cfg(test)]
+                    {
+                        self.timing
+                            .push(("group_quiescence_confirmed", Instant::now()));
+                        if matches!(state.phase, CleanupPhase::Natural { .. }) {
+                            self.timing.push(("natural_phase_ended", Instant::now()));
+                        }
+                        self.timing.push(("signaling_complete", Instant::now()));
+                    }
+                    // Irreversible boundary: after root reap, no PGID lookup or
+                    // signal can authorize success. Only kernel child ownership
+                    // remains available to the native reaper.
+                    state.phase = CleanupPhase::Finalization;
+                    break;
+                }
+                if observed_group == GroupObservation::Executing
+                    && root_exited
+                    && !matches!(state.phase, CleanupPhase::Natural { .. })
+                {
+                    primary.get_or_insert("command left running descendants".into());
+                }
+                if state.phase == CleanupPhase::TermPending {
+                    if observed_group != GroupObservation::NoExecuting {
+                        let sent = Instant::now();
+                        #[cfg(test)]
+                        self.timing.push(("term_sent", sent));
+                        if let Err(error) = signal_group(pid, libc::SIGTERM) {
+                            signal_errors.push(error);
+                        }
+                        state.term_dispatched(sent);
+                    } else {
+                        // No group signal is needed; unresolved pipes still
+                        // have only the original hard cleanup authority.
+                        state.phase = CleanupPhase::Forced;
+                    }
+                }
+                if state.kill_due(Instant::now()) {
+                    if observed_group != GroupObservation::NoExecuting {
+                        #[cfg(test)]
+                        self.timing.push(("kill_sent", Instant::now()));
+                        if let Err(error) = signal_group(pid, libc::SIGKILL) {
+                            signal_errors.push(error);
                         }
                     }
-                    Ok(_) => {}
-                    Err(e) => {
-                        primary.get_or_insert(e.clone());
-                        cleanup_error = Some(e);
-                    }
-                }
-                if signal_needed && primary.is_some() && term_at.is_none() {
-                    #[cfg(test)]
-                    self.timing.push(("term_sent", Instant::now()));
-                    if let Err(error) = signal_group(pid, libc::SIGTERM) {
-                        signal_errors.push(error);
-                    }
-                    term_at = Some(now);
-                }
-                if signal_needed
-                    && term_at.is_some_and(|at| now.duration_since(at) >= Duration::from_secs(1))
-                    && !killed
-                {
-                    #[cfg(test)]
-                    self.timing.push(("kill_sent", Instant::now()));
-                    if let Err(error) = signal_group(pid, libc::SIGKILL) {
-                        signal_errors.push(error);
-                    }
-                    killed = true;
-                }
-                if now >= group_deadline {
-                    cleanup_error = Some("command cleanup deadline exceeded".into());
-                    break;
+                    state.phase = CleanupPhase::Forced;
                 }
             }
             let mut polls = Vec::with_capacity(3);
@@ -510,50 +656,74 @@ impl Commands for Owner {
                     revents: 0,
                 });
             }
-            if unsafe { libc::poll(polls.as_mut_ptr(), polls.len() as _, 20) } < 0
-                && std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted
-            {
-                primary.get_or_insert("command pipe polling failed".into());
+            let boundary = cleanup.as_ref().map_or(deadline, Cleanup::boundary);
+            let wait = poll_timeout(Instant::now(), boundary);
+            // EINTR returns to the loop: observations and absolute deadlines are
+            // recomputed, including when the poll set is empty.
+            if unsafe { libc::poll(polls.as_mut_ptr(), polls.len() as _, wait) } < 0 {
+                let error = std::io::Error::last_os_error();
+                if error.kind() == std::io::ErrorKind::Interrupted {
+                    #[cfg(test)]
+                    self.timing.push(("poll_interrupted", Instant::now()));
+                } else {
+                    primary.get_or_insert("command pipe polling failed".into());
+                }
             }
         }
-        // No blocking wait: root identity stays reserved until all signaling ends.
-        let status = if root_exited {
-            match child.try_wait() {
-                Ok(Some(s)) => {
-                    #[cfg(test)]
-                    self.timing.push(("root_reaped", Instant::now()));
-                    Some(s)
+        let mut status = None;
+        if let Some(state) = cleanup
+            .as_ref()
+            .filter(|s| s.phase == CleanupPhase::Finalization)
+        {
+            // No blocking wait. All authoritative PGID work ended above while
+            // the root was unreaped; nothing below may look up or signal PGID.
+            match state.check_deadline(Instant::now()) {
+                Err(error) => {
+                    cleanup_error.get_or_insert(error);
                 }
-                _ => {
-                    cleanup_error = Some("command root could not be reaped".into());
-                    None
+                Ok(()) => match child.try_wait() {
+                    Ok(Some(s)) => {
+                        #[cfg(test)]
+                        self.timing.push(("root_reaped", Instant::now()));
+                        status = Some(s);
+                    }
+                    _ => {
+                        cleanup_error.get_or_insert("command root could not be reaped".into());
+                    }
+                },
+            }
+            if status.is_some() {
+                #[cfg(test)]
+                self.timing
+                    .push(("descendant_reap_started", Instant::now()));
+                if let Err(error) = self.native.reap(state.hard_end) {
+                    cleanup_error.get_or_insert(error);
+                } else {
+                    #[cfg(test)]
+                    self.timing.push(("descendants_reaped", Instant::now()));
                 }
             }
+            let completed = Instant::now();
+            if let Err(error) = state.check_deadline(completed) {
+                cleanup_error.get_or_insert(error);
+            }
+            #[cfg(test)]
+            if cleanup_error.is_none() && signal_errors.is_empty() {
+                self.timing.push(("owner_quiescent", completed));
+            }
         } else {
-            None
-        };
-        // No raw transport output enters Failure, Output or qualification logs.
-        let err = super::config::sanitize(&spec.env, &err, stderr_overflow).into_bytes();
+            cleanup_error.get_or_insert("command ownership unresolved".into());
+        }
         if !signal_errors.is_empty() {
             if let Some(error) = cleanup_error.take() {
                 signal_errors.push(error);
             }
             cleanup_error = Some(signal_errors.join("; "));
         }
-        if cleanup_error.is_none() {
-            #[cfg(test)]
-            self.timing
-                .push(("descendant_reap_started", Instant::now()));
-            if let Err(e) = self
-                .native
-                .reap(finish_deadline.unwrap_or_else(Instant::now))
-            {
-                cleanup_error = Some(e);
-            } else {
-                #[cfg(test)]
-                self.timing.push(("descendants_reaped", Instant::now()));
-            }
-        }
+        // Ownership finalization precedes string processing. No raw transport
+        // output enters Failure, Output or qualification logs: sanitization still
+        // precedes every diagnostic excerpt and persistence boundary.
+        let err = super::config::sanitize(&spec.env, &err, stderr_overflow).into_bytes();
         if cleanup_error.is_some() {
             self.poisoned = true;
         }

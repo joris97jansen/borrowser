@@ -736,7 +736,7 @@ mod tests {
                 let reaped = owner
                     .timing
                     .iter()
-                    .find(|(name, _)| *name == "descendants_reaped")
+                    .find(|(name, _)| *name == "owner_quiescent")
                     .unwrap()
                     .1;
                 eprintln!(

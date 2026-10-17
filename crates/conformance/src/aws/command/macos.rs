@@ -1,11 +1,19 @@
+use super::GroupObservation;
 use std::time::Instant;
 pub(super) struct Scope;
 impl Scope {
     pub fn enter() -> Result<Self, String> {
         Ok(Self)
     }
-    pub fn reap(&self, _deadline: Instant) -> Result<(), String> {
-        self.quiescent()
+    pub fn reap(&self, deadline: Instant) -> Result<(), String> {
+        if Instant::now() >= deadline {
+            return Err("AG4 direct child unresolved before cleanup deadline".into());
+        }
+        self.quiescent()?;
+        if Instant::now() >= deadline {
+            return Err("AG4 direct child unresolved before cleanup deadline".into());
+        }
+        Ok(())
     }
     pub fn quiescent(&self) -> Result<(), String> {
         let rc = unsafe { libc::waitpid(-1, std::ptr::null_mut(), libc::WNOHANG) };
@@ -16,7 +24,10 @@ impl Scope {
         }
     }
 }
-pub(super) fn group_running(group: i32, deadline: Instant) -> Result<bool, String> {
+pub(super) fn group_running(group: i32, deadline: Instant) -> Result<GroupObservation, String> {
+    if Instant::now() >= deadline {
+        return Ok(GroupObservation::DeadlineReached);
+    }
     // PROC_PGRP_ONLY, from the public libproc headers. One extra slot detects overflow.
     let mut pids = [0_i32; 65];
     let bytes = unsafe {
@@ -40,7 +51,7 @@ pub(super) fn group_running(group: i32, deadline: Instant) -> Result<bool, Strin
         .filter(|pid| *pid > 0)
     {
         if Instant::now() >= deadline {
-            return Err("process observation deadline".into());
+            return Ok(GroupObservation::DeadlineReached);
         }
         let mut info = unsafe { std::mem::zeroed::<libc::proc_bsdinfo>() };
         let rc = unsafe {
@@ -65,5 +76,11 @@ pub(super) fn group_running(group: i32, deadline: Instant) -> Result<bool, Strin
             running = true;
         }
     }
-    Ok(running)
+    Ok(if Instant::now() >= deadline {
+        GroupObservation::DeadlineReached
+    } else if running {
+        GroupObservation::Executing
+    } else {
+        GroupObservation::NoExecuting
+    })
 }

@@ -1,6 +1,111 @@
 use super::*;
 use std::process::Command;
 
+#[test]
+fn cleanup_phase_deadlines() {
+    let start = Instant::now();
+    let mut state = Cleanup::new(start, true);
+    assert_eq!(state.boundary(), start + Duration::from_secs(2));
+    assert_eq!(state.force_by, start + Duration::from_secs(3));
+    assert_eq!(state.hard_end, start + Duration::from_secs(5));
+    assert!(!state.end_natural(start + Duration::from_millis(1999), false));
+    assert!(state.end_natural(start + Duration::from_secs(2), false));
+    assert!(!state.end_natural(start + Duration::from_secs(2), true));
+    state.term_dispatched(start + Duration::from_millis(2400));
+    assert_eq!(state.boundary(), start + Duration::from_secs(3));
+    assert!(!state.kill_due(start + Duration::from_millis(2999)));
+    assert!(state.kill_due(start + Duration::from_secs(3)));
+    assert_eq!(state.hard_end, start + Duration::from_secs(5));
+    assert!(
+        state
+            .check_deadline(start + Duration::from_millis(4999))
+            .is_ok()
+    );
+    assert!(
+        state
+            .check_deadline(start + Duration::from_secs(5))
+            .is_err()
+    );
+    assert!(
+        state
+            .check_deadline(start + Duration::from_secs(6))
+            .is_err()
+    );
+
+    let mut early = Cleanup::new(start, false);
+    assert_eq!(early.phase, CleanupPhase::TermPending);
+    early.term_dispatched(start + Duration::from_millis(10));
+    assert_eq!(early.boundary(), start + Duration::from_millis(1010));
+    let mut failed = Cleanup::new(start, true);
+    assert!(failed.end_natural(start + Duration::from_millis(10), true));
+    failed.term_dispatched(start + Duration::from_secs(4));
+    assert!(failed.kill_due(start + Duration::from_secs(4)));
+    assert_eq!(failed.hard_end, start + Duration::from_secs(5));
+}
+
+#[test]
+fn cleanup_poll_boundaries() {
+    let start = Instant::now();
+    assert_eq!(poll_timeout(start, start + Duration::from_secs(2)), 20);
+    assert_eq!(poll_timeout(start, start + Duration::from_millis(7)), 7);
+    assert_eq!(poll_timeout(start, start + Duration::from_micros(999)), 0);
+    assert_eq!(poll_timeout(start, start), 0);
+    // Recompute after work/EINTR; an old wait must not cross the new boundary.
+    let boundary = start + Duration::from_millis(20);
+    assert_eq!(poll_timeout(start + Duration::from_millis(18), boundary), 2);
+    assert_eq!(poll_timeout(start + Duration::from_millis(25), boundary), 0);
+    // libc permits an empty set, but it must use exactly the same bounded wait.
+    assert_eq!(
+        unsafe { libc::poll(std::ptr::null_mut(), 0, poll_timeout(start, start)) },
+        0
+    );
+}
+
+#[test]
+fn cleanup_observation_deadline_is_not_quiescence() {
+    assert_eq!(
+        native::group_running(unsafe { libc::getpgrp() }, Instant::now()).unwrap(),
+        GroupObservation::DeadlineReached
+    );
+}
+
+fn assert_authority_order(owner: &Owner) {
+    assert_eq!(
+        owner
+            .timing
+            .iter()
+            .filter(|(name, _)| *name == "cleanup_started")
+            .count(),
+        1
+    );
+    for signal in ["term_sent", "kill_sent"] {
+        assert!(
+            owner
+                .timing
+                .iter()
+                .filter(|(name, _)| *name == signal)
+                .count()
+                <= 1
+        );
+    }
+    let event = |name| owner.timing.iter().find(|(n, _)| *n == name).unwrap().1;
+    let confirmed = event("group_quiescence_confirmed");
+    let signals_done = event("signaling_complete");
+    let root_reaped = event("root_reaped");
+    assert!(confirmed <= signals_done && signals_done <= root_reaped);
+    for (name, at) in &owner.timing {
+        if matches!(*name, "group_observation" | "term_sent" | "kill_sent") {
+            assert!(
+                *at <= confirmed && *at <= root_reaped,
+                "post-ownership authority: {name}"
+            );
+        }
+    }
+    assert!(root_reaped <= event("descendant_reap_started"));
+    assert!(event("descendants_reaped") <= event("owner_quiescent"));
+    assert!(event("owner_quiescent") < event("cleanup_started") + CLEANUP_LIMIT);
+}
+
 // Each command owner runs in an isolated process: no test-harness child/reaper races.
 #[test]
 fn native_command_owner() {
@@ -13,18 +118,26 @@ fn native_command_owner() {
         "timeout-stderr",
         "pipe-descendant",
         "closed-descendant",
+        "stdout-closed-descendant",
+        "stderr-closed-descendant",
         "cancel",
         "second-cancel",
         "blocked-input",
         "closed-input",
         "exiting-input",
         "inspection-failure",
+        "signal-failure",
         "aws-environment",
         "proxy-natural",
         "proxy-delayed",
         "proxy-survivor",
+        "proxy-observation-deadline",
         "proxy-late-secret",
+        "expired-native-reap",
+        "poll-eintr",
+        "reserved-root",
     ] {
+        eprintln!("AG4_OWNER_SCENARIO start {mode}");
         let mut child = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
@@ -65,6 +178,7 @@ fn native_command_owner() {
             std::thread::sleep(Duration::from_millis(20));
         };
         assert!(status.success(), "scenario {mode}");
+        eprintln!("AG4_OWNER_SCENARIO passed {mode}");
     }
 }
 #[test]
@@ -74,6 +188,72 @@ fn isolated_owner() {
         return;
     };
     let mut owner = Owner::enter().unwrap();
+    if mode == "expired-native-reap" {
+        assert!(owner.native.reap(Instant::now()).is_err());
+        owner.finish().unwrap();
+        return;
+    }
+    if mode == "poll-eintr" {
+        // Actual native empty-set poll interrupted on this thread. Repeated
+        // directed signals avoid relying on a single sleep/startup race.
+        let done = std::sync::atomic::AtomicBool::new(false);
+        let target = unsafe { libc::pthread_self() } as usize;
+        let end = Instant::now() + Duration::from_secs(1);
+        let interrupted = std::thread::scope(|scope| {
+            scope.spawn(|| {
+                while !done.load(Ordering::Relaxed) && Instant::now() < end {
+                    std::thread::sleep(Duration::from_millis(1));
+                    unsafe { libc::pthread_kill(target as libc::pthread_t, libc::SIGINT) };
+                }
+            });
+            let mut observed = false;
+            while Instant::now() < end {
+                let rc = unsafe {
+                    libc::poll(std::ptr::null_mut(), 0, poll_timeout(Instant::now(), end))
+                };
+                if rc < 0 {
+                    assert_eq!(
+                        std::io::Error::last_os_error().kind(),
+                        std::io::ErrorKind::Interrupted
+                    );
+                    observed = true;
+                    break;
+                }
+            }
+            done.store(true, Ordering::Relaxed);
+            observed
+        });
+        assert!(interrupted);
+        assert!(owner.finish().is_err());
+        return;
+    }
+    if mode == "reserved-root" {
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", "exit 0"])
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pid = child.id() as i32;
+        let end = Instant::now() + Duration::from_secs(1);
+        while !exited(pid).unwrap() {
+            assert!(Instant::now() < end);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(root_succeeded(pid).unwrap());
+        assert_eq!(
+            native::group_running(pid, end).unwrap(),
+            GroupObservation::NoExecuting
+        );
+        assert!(
+            exited(pid).unwrap(),
+            "group observation must not reap the root"
+        );
+        assert!(child.try_wait().unwrap().unwrap().success());
+        // No numeric identity checks follow this reap.
+        owner.native.reap(end).unwrap();
+        owner.finish().unwrap();
+        return;
+    }
     if mode == "proxy-timing" {
         proxy_cleanup_timing(owner);
         return;
@@ -127,6 +307,12 @@ fn isolated_owner() {
     if mode == "inspection-failure" {
         FAIL_OBSERVATION.store(true, Ordering::Relaxed);
     }
+    if mode == "proxy-observation-deadline" {
+        EXHAUST_OBSERVATION_ONCE.store(true, Ordering::Relaxed);
+    }
+    if mode == "signal-failure" {
+        FAIL_TERM_ONCE.store(true, Ordering::Relaxed);
+    }
     let mut spec = Spec::new(
         "/bin/sh",
         [
@@ -140,7 +326,9 @@ fn isolated_owner() {
                 "stderr-overflow" => {
                     "while :; do printf '012345678901234567890123456789' >&2; done"
                 }
-                "timeout" | "blocked-input" => "trap '' TERM; while :; do sleep 1; done",
+                "timeout" | "blocked-input" | "signal-failure" => {
+                    "trap '' TERM; while :; do sleep 1; done"
+                }
                 // Input acceptance synchronizes closure; stopping instead of
                 // naturally exiting leaves termination entirely to the owner.
                 "closed-input" => {
@@ -152,9 +340,13 @@ fn isolated_owner() {
                 }
                 "pipe-descendant" => "sleep 30 & exit 0",
                 "closed-descendant" => "sleep 30 </dev/null >/dev/null 2>&1 & exit 0",
+                "stdout-closed-descendant" => "sleep 30 >/dev/null & exit 0",
+                "stderr-closed-descendant" => "sleep 30 2>/dev/null & exit 0",
                 "proxy-natural" => "(printf late-proxy >&2) & printf ok; exit 0",
                 "proxy-delayed" => "(sleep 1.2; printf late-proxy >&2) & printf ok; exit 0",
-                "proxy-survivor" => "(trap '' TERM; sleep 30) & exit 0",
+                "proxy-survivor" | "proxy-observation-deadline" => {
+                    "(trap '' TERM; sleep 30) & exit 0"
+                }
                 "proxy-late-secret" => {
                     "(sleep 0.2; printf 'banner failure synthe' >&2; sleep 0.05; printf 'tic-secret\nprocess-shutdown error\nX-Amz-Signature=AUTH_SENTINEL\nunindented-auth-continuation' >&2) & printf ok; exit 0"
                 }
@@ -185,6 +377,12 @@ fn isolated_owner() {
     let start = Instant::now();
     let result = owner.run(spec);
     assert!(start.elapsed() < Duration::from_secs(7));
+    if result
+        .as_ref()
+        .map_or_else(|failure| failure.cleanup.is_none(), |_| true)
+    {
+        assert_authority_order(&owner);
+    }
     if mode == "normal"
         || mode == "both"
         || matches!(
@@ -239,12 +437,81 @@ fn isolated_owner() {
         if mode == "timeout-stderr" {
             assert!(failure.primary.contains("bounded SSH context"));
         }
+        if mode == "signal-failure" {
+            let error = failure.cleanup.as_ref().unwrap();
+            assert!(error.contains("SIGTERM") && error.contains("raw errno=Some(1)"));
+            assert!(!FAIL_TERM_ONCE.load(Ordering::Relaxed));
+            assert!(owner.poisoned);
+            assert!(!owner.timing.iter().any(|(n, _)| *n == "owner_quiescent"));
+
+            // The failed TERM remains an authority error even though the real
+            // KILL and native reaping can still complete bounded safe cleanup.
+            let event = |name| owner.timing.iter().find(|(n, _)| *n == name).unwrap().1;
+            let confirmed = event("group_quiescence_confirmed");
+            let root_reaped = event("root_reaped");
+            assert!(event("term_sent") <= event("kill_sent"));
+            assert!(event("kill_sent") <= confirmed);
+            assert!(event("stdout_eof") <= confirmed && event("stderr_eof") <= confirmed);
+            assert!(confirmed <= event("signaling_complete"));
+            assert!(event("signaling_complete") <= root_reaped);
+            assert!(root_reaped <= event("descendant_reap_started"));
+            assert!(event("descendant_reap_started") <= event("descendants_reaped"));
+            assert!(event("descendants_reaped") < event("cleanup_started") + CLEANUP_LIMIT);
+            for name in ["cleanup_started", "term_sent", "kill_sent", "root_reaped"] {
+                assert_eq!(owner.timing.iter().filter(|(n, _)| *n == name).count(), 1);
+            }
+            for (name, at) in &owner.timing {
+                if matches!(*name, "group_observation" | "term_sent" | "kill_sent") {
+                    assert!(*at <= confirmed && *at <= root_reaped);
+                }
+            }
+            // Only the kernel child relationship is inspected after root reap.
+            // Its later completion must not clear the earlier signaling error.
+            owner.native.quiescent().unwrap();
+            assert!(owner.poisoned);
+            assert_eq!(
+                owner.quiescent().unwrap_err(),
+                "controller command cleanup unresolved"
+            );
+            for cleanup in [false, true] {
+                let mut next = Spec::new("/bin/sh", ["-c", "exit 0"]);
+                next.cleanup = cleanup;
+                let rejected = owner.run(next).unwrap_err();
+                assert_eq!(rejected.primary, "command unavailable or interrupted");
+                assert_eq!(
+                    rejected.cleanup.as_deref(),
+                    Some("previous command unresolved")
+                );
+                assert!(owner.poisoned);
+                assert!(owner.timing.is_empty(), "poisoned owner must not spawn");
+            }
+            assert_eq!(
+                owner.finish().unwrap_err(),
+                "controller command cleanup unresolved"
+            );
+            eprintln!(
+                "signal-failure: injected SIGTERM EPERM retained; KILL/EOF/pre-reap group confirmation/root/native reaping completed within cleanup authority; no owner_quiescent; later native completion did not clear poison; ordinary and cleanup commands rejected before spawn"
+            );
+            return;
+        }
         if mode == "inspection-failure" {
+            // An incomplete observation never authorizes root finalization.
+            // This differs from the completed reaping with sticky signal error.
             assert!(failure.cleanup.is_some());
+            assert!(owner.poisoned);
+            assert!(!owner.timing.iter().any(|(n, _)| *n == "root_reaped"));
+            assert!(!owner.timing.iter().any(|(n, _)| *n == "owner_quiescent"));
             let mut cleanup = Spec::new("/bin/sh", ["-c", "exit 0"]);
             cleanup.cleanup = true;
-            assert!(owner.run(cleanup).is_err());
+            assert_eq!(
+                owner.run(cleanup).unwrap_err().cleanup.as_deref(),
+                Some("previous command unresolved")
+            );
+            assert!(owner.timing.is_empty());
             assert!(owner.finish().is_err());
+            eprintln!(
+                "inspection-failure: incomplete group observation did not authorize root reap or owner_quiescent; cleanup command rejected by poisoned owner"
+            );
             return;
         }
         assert!(failure.cleanup.is_none(), "{failure}");
@@ -259,6 +526,9 @@ fn isolated_owner() {
             assert!(owner.run(cleanup).is_err());
             assert!(owner.finish().is_err());
         } else {
+            let mut next = Spec::new("/bin/sh", ["-c", "printf cleanup"]);
+            next.cleanup = true;
+            assert_eq!(owner.run(next).unwrap().stdout, b"cleanup");
             owner.finish().unwrap();
         }
     }
@@ -321,6 +591,7 @@ fn proxy_cleanup_timing(mut owner: Owner) {
                 assert!(failure.primary.contains("running descendants"), "{failure}");
                 assert!(failure.cleanup.is_none(), "{failure}");
             }
+            assert_authority_order(&owner);
             owner.quiescent().unwrap();
             let event = |name| {
                 owner
@@ -330,15 +601,21 @@ fn proxy_cleanup_timing(mut owner: Owner) {
                     .map(|(_, at)| *at)
             };
             let root_exit = event("root_exit_observed").unwrap();
-            let end = event("descendants_reaped").unwrap();
-            let deadline = event("cleanup_started").unwrap() + Duration::from_secs(5);
-            assert!(end <= deadline, "cleanup exceeded its original authority");
+            let end = event("owner_quiescent").unwrap();
+            let deadline = origin + CLEANUP_LIMIT;
+            assert!(
+                end <= origin + Duration::from_secs(4),
+                "qualification needs one second of headroom"
+            );
             for name in [
+                "natural_phase_ended",
                 "stdout_eof",
                 "stderr_eof",
-                "group_not_running",
+                "group_quiescence_confirmed",
+                "signaling_complete",
                 "root_reaped",
                 "descendant_reap_started",
+                "descendants_reaped",
             ] {
                 assert!(event(name).unwrap() <= end, "missing {name}");
             }
@@ -347,11 +624,17 @@ fn proxy_cleanup_timing(mut owner: Owner) {
                 matches!(mode, "term" | "kill")
             );
             assert_eq!(event("kill_sent").is_some(), mode == "kill");
+            if let Some(term) = event("term_sent") {
+                assert!(term >= origin + NATURAL_LIMIT);
+                assert!(event("natural_phase_ended").unwrap() <= term);
+            }
+            // The planned maximum grace is enforced by the absolute phase
+            // deadline tests. Actual dispatch lateness is evidence, not another
+            // full second of grace or a guessed scheduling tolerance.
+            let grace_deadline = event("term_sent")
+                .map(|at| (at + TERM_LIMIT).min(origin + NATURAL_LIMIT + TERM_LIMIT));
             if mode == "kill" {
-                assert!(
-                    event("kill_sent").unwrap() - event("term_sent").unwrap()
-                        >= Duration::from_secs(1)
-                );
+                assert!(event("kill_sent").unwrap() >= grace_deadline.unwrap());
             }
             let ids: Vec<i32> = std::fs::read_to_string(&identities)
                 .unwrap()
@@ -359,52 +642,47 @@ fn proxy_cleanup_timing(mut owner: Owner) {
                 .map(|v| v.parse().unwrap())
                 .collect();
             assert_eq!(ids.len(), 2);
-            // Linux's subreaper owns adopted descendants. Darwin delegates
-            // orphan reaping to the OS; measure actual disappearance separately
-            // rather than claiming Scope::reap reaps Darwin grandchildren.
-            let mut absence = Vec::new();
+            // Supplementary only: after root reap these numeric identifiers no
+            // longer carry authority. A present identifier may have been reused.
+            // Never use these observations to decide production correctness.
+            let mut supplementary = std::collections::BTreeMap::new();
             for (name, pid) in [
-                ("group_absent", -ids[0]),
-                ("root_absent", ids[0]),
-                ("descendant_absent", ids[1]),
+                ("group", -ids[0]),
+                ("root", ids[0]),
+                ("descendant_or_orphan", ids[1]),
             ] {
-                loop {
+                let observation = loop {
                     let rc = unsafe { libc::kill(pid, 0) };
-                    let errno = (rc < 0).then(std::io::Error::last_os_error);
-                    if errno.as_ref().and_then(std::io::Error::raw_os_error) == Some(libc::ESRCH) {
-                        let observed = Instant::now();
-                        eprintln!(
-                            "AG4_PROXY_ABSENCE {mode} sample={sample} {name}: {}us from cleanup start",
-                            observed.duration_since(origin).as_micros()
-                        );
-                        assert!(
-                            observed <= deadline,
-                            "{mode}: {name} observation exceeded five seconds"
-                        );
-                        absence.push((name, observed));
-                        break;
+                    let error = (rc < 0).then(std::io::Error::last_os_error);
+                    let now = Instant::now();
+                    if error.as_ref().and_then(std::io::Error::raw_os_error) == Some(libc::ESRCH)
+                        && now < deadline
+                    {
+                        break serde_json::json!({"status":"numeric_identifier_absent",
+                            "microseconds_from_cleanup_start":now.duration_since(origin).as_micros()});
                     }
-                    assert!(
-                        errno.is_none(),
-                        "unexpected presence observation: {errno:?}"
+                    if error.is_some() || now >= deadline {
+                        break serde_json::json!({"status":"unavailable",
+                            "reason":"post-ownership identity ambiguous or observation bound exhausted"});
+                    }
+                    std::thread::sleep(
+                        Duration::from_millis(1).min(deadline.saturating_duration_since(now)),
                     );
-                    assert!(
-                        Instant::now() < deadline,
-                        "{mode}: {name} unresolved inside five seconds"
-                    );
-                    std::thread::sleep(Duration::from_millis(1));
-                }
+                };
+                supplementary.insert(name, observation);
             }
             let offsets = owner
                 .timing
                 .iter()
-                .chain(absence.iter())
                 .filter(|(_, at)| *at >= root_exit)
                 .map(|(name, at)| (*name, at.duration_since(root_exit).as_micros()))
                 .collect::<std::collections::BTreeMap<_, _>>();
             eprintln!(
                 "AG4_PROXY_TIMING {}",
-                serde_json::json!({"os":std::env::consts::OS,"arch":std::env::consts::ARCH,"sample":sample,"mode":mode,"microseconds_from_root_exit_observation":offsets})
+                serde_json::json!({"os":std::env::consts::OS,"arch":std::env::consts::ARCH,
+                    "sample":sample,"mode":mode,"microseconds_from_root_exit_observation":offsets,
+                    "term_grace_deadline_us_from_cleanup_start":grace_deadline.map(|at| at.duration_since(origin).as_micros()),
+                    "qualification_only_non_authoritative":supplementary})
             );
             std::fs::remove_file(ready).unwrap();
             std::fs::remove_file(identities).unwrap();

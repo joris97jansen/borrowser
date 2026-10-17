@@ -1056,16 +1056,17 @@ When a feature lands:
   retain deletion authority without EICE/current configuration. The reviewed
   shared EICE update, corporate WebSocket/TLS qualification, first normal
   `canvas/cascade` EICE run, native Linux controller qualification and broader
-  AWS acceptance remain gaps. The 40-ms post-TERM-grace reserve is unqualified;
-  replacing it requires native macOS and Linux escalation/reaping measurements
-  within the existing five-second authority. A narrow native Ubuntu 24.04 x64
-  timing job in the existing CI workflow awaits explicit source publication/run
-  authorization. Linux evidence and the next final review snapshot remain
-  pending; the macOS forced-path maximum of 4.996157 seconds does not establish
-  scheduling margin. The
-  two native Chromium `BrowserExited` observations also remain unresolved;
-  they reproduced with the retained pre-EICE controller and are not attributed
-  to EICE. The implementation stays inside AG4; AG still
+  AWS acceptance remain gaps. Command cleanup implements candidate absolute
+  2-second natural / at-most-1-second TERM / 2-second forced-finalization budgets
+  within five seconds. All authoritative PGID work ends before root reaping;
+  afterward only kernel-owned child reaping can establish completion. Fresh
+  native macOS/Linux evidence must meet a four-second qualification target and
+  remain durable under `~/.local/share/borrowser/reviews/ag4/`. The old Linux
+  qualification (38957426608/1) failed and is retained; new-tree Linux publication
+  requires separate authorization. Cross-platform qualification remains pending.
+  Lost historical macOS timing/Chromium raw logs are summaries only. The two
+  `BrowserExited` observations and reported pre-EICE reproduction remain unresolved
+  and are not established EICE regressions. The implementation stays inside AG4; AG still
   has nine issues and AG4 is not complete. See the
   [AG4 contract](conformance/ag4-disposable-aws-chromium-runner.md).
 - WPT support, broad browser compatibility and general rendering

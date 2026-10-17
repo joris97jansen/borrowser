@@ -13,12 +13,18 @@ The reviewed AMI/package snapshot are pinned. The shared EICE update, corporate
 TLS qualification, first normal EICE run and broader AG4 acceptance remain
 pending; earlier direct-SSH lifecycle evidence does not qualify EICE. The DNS
 contract requires the authenticated `ec2-instance-connect-endpoint.eu-west-1.amazonaws.com`
-hostname. The current 40-ms cleanup reserve remains an unqualified defect;
-replacement requires native escalation/reaping measurements on both supported
-platforms before the next final review snapshot. A narrow native Ubuntu 24.04 x64
-timing job in the existing CI workflow awaits explicit source publication/run
-authorization; Linux timing evidence is still pending. The two native Chromium `BrowserExited`
-observations, also reproduced with the pre-EICE controller, remain unresolved.
+hostname. Command cleanup now uses candidate absolute phases: two seconds for
+natural proxy shutdown, at most one second for TERM, and two seconds reserved for
+forced cleanup/finalization within the unchanged five-second authority. All
+PGID authority ends before root reap; only kernel-owned native child obligations
+remain afterward. Fresh native macOS/Linux qualification requires complete
+ownership finalization by four seconds, with evidence preserved durably under
+`~/.local/share/borrowser/reviews/ag4/`. Results are bound to each frozen source.
+The old Linux run 38957426608/1 failed; its durable evidence is retained. A new
+Linux tree-bound publication/run requires separate authorization. Earlier lost
+macOS logs, including two `BrowserExited` observations and their reported
+pre-EICE reproduction, remain historical summaries only. The Chromium observations
+are unresolved and are not established EICE regressions.
 Ordinary local commands below remain independent of AWS configuration,
 credentials and artifact preparation.
 

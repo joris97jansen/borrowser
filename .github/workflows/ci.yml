@@ -104,6 +104,30 @@ jobs:
               assert len(samples) == 32, (prefix, "incomplete sample count")
               assert {(s["mode"], s["sample"]) for s in samples} == expected, (prefix, "missing/duplicate samples")
               assert all(s["os"] == "linux" and s["arch"] == "x86_64" for s in samples)
+              for sample in samples:
+                  key = "microseconds_from_cleanup_start" if prefix == "AG4_PROXY_OWNER_TIMING" else "microseconds_from_root_exit_observation"
+                  events = sample[key]
+                  required = ("cleanup_started", "natural_phase_ended", "stdout_eof", "stderr_eof", "group_quiescence_confirmed",
+                              "signaling_complete", "root_reaped", "descendant_reap_started",
+                              "descendants_reaped", "owner_quiescent")
+                  assert all(name in events for name in required), (prefix, "incomplete authority record")
+                  assert all(type(value) is int and value >= 0 for value in events.values())
+                  assert events["owner_quiescent"] - events["cleanup_started"] <= 4_000_000, "missing one-second qualification headroom"
+                  assert max(events["stdout_eof"], events["stderr_eof"]) <= events["group_quiescence_confirmed"]
+                  assert events["group_quiescence_confirmed"] <= events["signaling_complete"] <= events["root_reaped"]
+                  assert events["root_reaped"] <= events["descendant_reap_started"] <= events["descendants_reaped"] <= events["owner_quiescent"]
+                  assert ("term_sent" in events) == (sample["mode"] in ("term", "kill"))
+                  assert ("kill_sent" in events) == (sample["mode"] == "kill")
+                  for name in ("group_observation", "term_sent", "kill_sent"):
+                      if name in events:
+                          assert events[name] <= events["group_quiescence_confirmed"], "post-reap numeric authority"
+                  if prefix == "AG4_PROXY_TIMING":
+                      assert "root_exit_observed" in events
+                      # These are supplementary numeric observations after ownership;
+                      # unavailable/reused IDs cannot invalidate production authority.
+                      observations = sample["qualification_only_non_authoritative"]
+                      assert set(observations) == {"group", "root", "descendant_or_orphan"}
+                      assert all(v["status"] in ("numeric_identifier_absent", "unavailable") for v in observations.values())
               records[prefix] = samples
           (evidence / "records.json").write_text(json.dumps(records, indent=2) + "\n")
           PY

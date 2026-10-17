@@ -473,22 +473,49 @@ The process tree is `Owner → OpenSSH → ProxyCommand shell → helper → exe
 CLI → CRT/WebSocket workers`. All inherit the owned process group; the helper
 creates no detached session or listener. OpenSSH sends SIGHUP to its proxy
 without waiting. Successful root exit therefore starts observation, not command
-completion. Natural group/pipe quiescence can preserve success under the existing
-five-second cleanup deadline. The existing one-second TERM grace must leave
-qualified time for KILL, EOF, group disappearance and all applicable reaping.
-**Correction pending:** the current additional 40-ms reserve is unqualified;
-it must not be treated as an approved timing composition. Native measurements
-on both supported controller platforms are required before replacing it. The
-existing Ubuntu 24.04 x64 GitHub-hosted VM can supply native Linux evidence;
-the narrowly gated CI timing job is prepared but its source publication/run
-requires separate authorization. macOS results or emulated Linux cannot supply
-the missing qualification. This blocks the next final diff-summary/architecture-review snapshot. The outer
-deadline must not reset or expand to accommodate the correction.
-Forced descendant cleanup makes apparent SSH success an execution
-failure; unresolved observation/signaling/EOF/reaping poisons the owner. Native
-platform ownership code is unchanged. No parser/comparison starts with unresolved
-owned processes or pipes. CloudFormation cleanup needs no EICE tunnel and can
+completion. The command owner implements a candidate phase composition within
+one five-second monotonic cleanup authority, starting once at root exit/failure:
+
+| Boundary | Absolute deadline |
+| --- | --- |
+| Successful EICE natural-shutdown opportunity | T0 + 2 seconds |
+| Latest planned KILL transition | T0 + 3 seconds |
+| TERM grace | min(actual TERM dispatch + 1 second, T0 + 3 seconds) |
+| Hard completion authority | T0 + 5 seconds |
+
+The two-second forced/finalization allocation is explicit; it is not a residual
+post-TERM tail. Earlier failure bypasses natural waiting. Late TERM gets shorter
+grace, never a reset deadline. Poll waits are clamped to the next phase/command
+boundary, with fresh monotonic observations after I/O and native group scans.
+A phase-bounded scan reports executing members, complete no-executing-members
+observation, or intermediate-deadline exhaustion. An incomplete scan never proves
+quiescence. Malformed/conflicting observations and signaling errors remain failures.
+
+All authoritative PGID observation and signaling finish while the exited root
+remains unreaped and reserves its identity. Required pipe EOF and a complete
+observation of no executing group members precede finalization. Only then is the
+root reaped. No production PGID lookup or signal follows root reaping. Linux
+finishes adopted-child reaping through its kernel subreaper relationship;
+macOS verifies only its kernel-owned direct children. Both check the original
+hard deadline before accepting completion. No production decision depends on
+post-ownership bare PID/PGID disappearance. Authentication sanitization and
+final diagnostic formatting follow ownership finalization.
+
+Forced descendant cleanup makes apparent SSH success an execution failure;
+unresolved observation/signaling/EOF/reaping poisons the owner. Later numeric
+absence cannot repair an earlier ownership error. No parser/comparison starts
+with unresolved ownership. CloudFormation cleanup needs no EICE tunnel and can
 proceed after an ordinary transport failure once the owner is quiescent.
+
+The 2/1/2 composition is a candidate, not a cross-platform qualification claim.
+Fresh native macOS arm64 and Ubuntu 24.04 x86-64 evidence must demonstrate complete
+production ownership finalization by T0 + 4 seconds, retaining one second of
+headroom. This acceptance target is not a production timeout. It reserves half
+the forced allocation against scheduling, observation and reaping variation;
+passing just below five seconds is insufficient. The delayed 1.2-second natural
+scenario fits the candidate natural window, but historical measurements do not
+qualify the changed source. If the margin fails, retain the failure and review
+it without expanding the five-second authority.
 
 ### Authentication-safe transport diagnostics
 
@@ -1093,28 +1120,47 @@ cargo test -p borrowser-conformance --locked --bin borrowser-conformance \
 
 The timing command takes eight samples each of natural, 1.2-second delayed,
 TERM-responsive and TERM-ignoring proxy descendants using the actual owner.
-It records monotonic root-exit, TERM/KILL, stdout/stderr EOF, group quiescence,
-root reaping and native reaping completion; it separately checks group/root/
-descendant disappearance without extending the cleanup deadline. Linux reaps
-adopted descendants; Darwin checks its direct children and relies on OS orphan
-reaping, whose disappearance is measured separately. These are test-only
-observations, not a production diagnostic stream or deadline scheduler.
+Test-only authoritative milestones distinguish cleanup start, root-exit observation,
+natural phase end, TERM/KILL, each pipe EOF, last pre-reap group-quiescence
+confirmation, signaling complete, root reaping, native kernel-owned reaping and
+complete owner quiescence. Both record families must contain 32 unique samples.
+The acceptance test requires all complete production finalizations by T0 + 4 seconds.
+The TERM deadline is a maximum, not a requirement to wait a whole second after a
+late dispatch. Record actual dispatch lateness separately from that planned bound.
 
-The retained macOS arm64 qualification contains eight samples per mode. Maximum
-root-exit-observation durations, in milliseconds, were:
+Supplementary numeric group/root/descendant disappearance measurements are labeled
+`qualification_only_non_authoritative`. They occur after ownership and never
+establish production correctness. A present numeric identifier can be reused;
+an ambiguous or bounded-out observation is unavailable, not proof of an owned
+survivor. Linux kernel-owned adopted-child reaping and macOS direct-child checks
+remain separate authoritative events. No PID inventory/lifetime abstraction is used.
 
-| Mode | Owner reaping complete | Group/root/descendant absence observed |
-| --- | ---: | ---: |
-| Natural | 79.654 | 172.400 |
-| 1.2-second delayed natural | 1198.257 | 1209.466 |
-| TERM-responsive | 4050.825 | 4052.818 |
-| KILL-required | 4990.708 | 4996.157 |
+Historical failure: qualification commit `2a708c74c6f33a57abfac0451cab9b1a3373181b`,
+tree `8f7029b68d9c7da8f7f73c4aa804000c88c758da`, GitHub Actions run
+`38957426608`, attempt 1, failed during KILL sample 2. From cleanup start, TERM
+was 3.979651 s, KILL 4.997921 s, stdout/stderr EOF 4.998172/4.998173 s, and root
+reaping 5.020282 s. Group/native reaping was unresolved. Twelve OWNER and eleven
+complete records were retained; this was not a successful 32+32 qualification.
+The original artifact SHA-256 is
+`c0b9807797ffae2346d4bbb4d513ac817f3045f155c6faa3663647d059ce1b81`.
+The durable record is under
+`~/.local/share/borrowser/reviews/ag4/native-proxy-timing-8f7029b68d9c7da8f7f73c4aa804000c88c758da/`.
+Do not rerun that source. It demonstrates invalid internal composition, not that
+five seconds is inherently impossible.
 
-These observations retain the current defect; 4996.157 ms leaves essentially no
-demonstrated scheduling margin under five seconds. They do not qualify the
-40-ms reserve. Select a replacement only after native Linux evidence also
-exists, using both platforms' natural, signal, EOF, disappearance and reaping
-measurements plus a justified scheduling margin inside the unchanged deadline.
+The earlier macOS raw timing and Chromium logs were lost from temporary storage.
+Their previously reported timing maxima (natural 0.172400 s, delayed 1.209466 s,
+TERM 4.052818 s, KILL 4.996157 s for supplementary absence) are historical summaries
+only, not reverified evidence. Likewise retain the two historical `BrowserExited`
+observations and reported pre-EICE reproduction without attributing them to EICE.
+Fresh Chromium qualification is separate AG4 work after timing correction.
+
+For each changed frozen source, run native macOS qualification first and preserve
+its exact source/tool/platform identity and raw/parsed evidence. A new native
+Linux publication/run requires separate authorization and a new tree-bound ref.
+Neither historical summary nor one platform's passing result establishes the
+other platform's qualification. Current results belong to the durable per-tree
+review record; the new Linux run and broader live acceptance remain pending.
 
 The existing `CI` workflow has one explicit `ag4_proxy_timing` job for pushes matching
 `qualification/ag4-native-proxy-timing-*`. All other jobs in that workflow skip only
@@ -1129,14 +1175,15 @@ a self-reference. The job requires a
 GitHub-hosted Ubuntu 24.04 Linux x86-64 VM, rejects containers and target-runner
 overrides, records the exact checkout commit/tree and Rust 1.92.0 host identity,
 and runs only the timing command above after its native test build. It uses no
-AWS credentials, AWS calls or Chromium capture. The unchanged Linux owner uses
+AWS credentials, AWS calls or Chromium capture. The Linux owner uses
 its actual subreaper/adopted-descendant path. Raw logs are uploaded even on
-failure; success additionally requires both sets of 32 unique timing records.
+failure; success additionally requires both sets of 32 unique timing records,
+complete authoritative milestone ordering and the T0 + 4-second margin.
 The artifact `ag4-proxy-timing-linux-x86-64-<commit>-<attempt>` retains environment,
 source tree, toolchain, build, raw timing and parsed complete records for 14 days.
 
 Immediately after the separately authorized run, download and preserve the evidence
-outside GitHub Actions in the private AG4 qualification record. Preserve the original
+under `~/.local/share/borrowser/reviews/ag4/<qualification-id>/`. Preserve the original
 downloaded artifact archive and its SHA-256, plus `environment.log`, `source-tree.txt`,
 `toolchain.log`, `build.log`, `timing.log` and `records.json`; record the workflow run
 ID, attempt, commit SHA and exact tree SHA alongside them. Verify these identities
@@ -1146,13 +1193,21 @@ files explicitly; do not manufacture complete records or accept partial qualific
 The bounded GitHub artifact is transport, not long-term AG4 authority. Do not defer
 preservation until its retention period expires.
 
-This qualification is pending, not an executed or passing run. Publication must
+Local qualification must write evidence durably from the start, under the same
+review-store root. Retain environment/platform identity, Rust 1.92.0 native host,
+source/commit/tree identity, binary SHA-256, exact command lines and exit statuses,
+build/raw timing logs, parsed summaries and a file-hash manifest. Reject translation
+and target-runner overrides. Temporary execution directories and CI artifacts are
+transport only. If losing a file would retract a qualification claim, it must not
+exist only in `/tmp`, `/private/tmp`, `$RUNNER_TEMP` or temporary GitHub storage.
+
+The new-source Linux qualification is pending; the old failed run remains evidence. Publication must
 use the exact reviewed source snapshot: compare the published commit's Git tree
 with the frozen snapshot tree and derive the qualification branch from that tree
 before the single authorized push, then compare
 the retained checkout/tree evidence with it. Do not substitute an older committed
 source, open a PR to trigger unrelated capture jobs, or rerun a failure without
-review. No production timing change is authorized by merely preparing this lane.
+review. Do not publish or rerun a changed source without separate authorization.
 
 The SSH command uses pinned OpenSSH 10.2p1 and the production helper with a test-only
 argv-checking local stream server instead of AWS, the current local account
