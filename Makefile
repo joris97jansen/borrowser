@@ -490,3 +490,9 @@ cuc-diff:
 .PHONY: conformance
 conformance:
 	cargo run -p borrowser-conformance --locked
+
+.PHONY: test-ag4
+test-ag4:
+	cargo test -p borrowser-conformance --locked
+	python3 -m unittest discover -s tools/conformance/tests -v
+	python3 -m unittest discover -s crates/conformance/aws/tests -v

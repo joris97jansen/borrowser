@@ -1,0 +1,22 @@
+{
+  "account": "REQUIRED_12_DIGIT_ACCOUNT",
+  "vpc_id": "REQUIRED_EXISTING_VPC",
+  "subnet_id": "REQUIRED_PUBLIC_SUBNET_IN_EU_WEST_1",
+  "cloudformation_role_arn": "REQUIRED_EXISTING_ROLE_ARN",
+  "aws_cli": "/absolute/path/to/pinned/aws",
+  "ssh": "/absolute/path/to/pinned/ssh",
+  "ssh_keygen": "/absolute/path/to/pinned/ssh-keygen",
+  "python": "/absolute/path/to/pinned/venv/bin/python",
+  "node": "/absolute/path/to/pinned/node",
+  "cdk_app": "/absolute/path/to/snapshot/crates/conformance/aws/app.py",
+  "prices": {
+    "reviewed_utc": "REQUIRED_YYYY-MM-DD",
+    "compute_hour_usd_micros": 0,
+    "gp3_gib_month_usd_micros": 0,
+    "ipv4_hour_usd_micros": 0,
+    "egress_gib_usd_micros": 0,
+    "request_allowance_usd_micros": 0
+  },
+  "shared_stack_id": "arn:aws:cloudformation:eu-west-1:123456789012:stack/borrowser-ag4-shared/01234567-89ab-cdef-0123-456789abcdef",
+  "shared_template_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+}

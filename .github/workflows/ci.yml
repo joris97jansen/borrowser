@@ -5,13 +5,170 @@ on:
   push:
     branches:
       - master
+      - 'qualification/ag4-native-proxy-timing-*'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  ag4_proxy_timing:
+    name: AG4 native Linux proxy cleanup timing
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      AWS_EC2_METADATA_DISABLED: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify native Ubuntu x86-64 and source identity
+        env:
+          AG4_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          AG4_TIMING_EVIDENCE="$RUNNER_TEMP/ag4-proxy-timing"
+          CARGO_HOME="$RUNNER_TEMP/ag4-proxy-cargo"
+          printf 'AG4_TIMING_EVIDENCE=%s\nCARGO_HOME=%s\n' "$AG4_TIMING_EVIDENCE" "$CARGO_HOME" >> "$GITHUB_ENV"
+          mkdir -p "$AG4_TIMING_EVIDENCE" "$CARGO_HOME"
+          exec > >(tee "$AG4_TIMING_EVIDENCE/environment.log") 2>&1
+          printf 'run=%s/%s/actions/runs/%s attempt=%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+          printf 'ref=%s event_sha=%s checkout_sha=%s\n' "$GITHUB_REF" "$GITHUB_SHA" "$(git rev-parse HEAD)"
+          printf 'runner=%s os=%s arch=%s image=%s image_version=%s\n' "$AG4_RUNNER_ENVIRONMENT" "$RUNNER_OS" "$RUNNER_ARCH" "$ImageOS" "$ImageVersion"
+          uname -a
+          cat /etc/os-release
+          lscpu
+          test "$AG4_RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = Linux
+          test "$RUNNER_ARCH" = X64
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = x86_64
+          test "$(id -u)" -ne 0
+          . /etc/os-release
+          test "$ID" = ubuntu && test "$VERSION_ID" = 24.04
+          # Run directly on the existing hosted VM, never in a container/runner wrapper.
+          systemd-detect-virt --vm
+          if systemd-detect-virt --container; then exit 1; fi
+          test ! -e /.dockerenv && test ! -e /run/.containerenv
+          test -z "${CARGO_BUILD_TARGET:-}${CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER:-}"
+          test ! -e .cargo/config && test ! -e .cargo/config.toml
+          test ! -e "$CARGO_HOME/config" && test ! -e "$CARGO_HOME/config.toml"
+          test -z "${AWS_ACCESS_KEY_ID:-}${AWS_SECRET_ACCESS_KEY:-}${AWS_SESSION_TOKEN:-}"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          AG4_SOURCE_TREE="$(git rev-parse 'HEAD^{tree}')"
+          printf '%s\n' "$AG4_SOURCE_TREE" | tee "$AG4_TIMING_EVIDENCE/source-tree.txt"
+          test "$GITHUB_REF_NAME" = "qualification/ag4-native-proxy-timing-$AG4_SOURCE_TREE"
+          printf 'BORROWSER_AG4_SOURCE_TREE=%s\n' "$AG4_SOURCE_TREE" >> "$GITHUB_ENV"
+
+      - name: Build the pinned native command-owner test binary
+        run: |
+          set -euo pipefail
+          rustup show active-toolchain | tee "$AG4_TIMING_EVIDENCE/toolchain.log"
+          rustc -vV | tee -a "$AG4_TIMING_EVIDENCE/toolchain.log"
+          cargo -vV | tee -a "$AG4_TIMING_EVIDENCE/toolchain.log"
+          test "$(rustc -vV | sed -n 's/^release: //p')" = 1.92.0
+          test "$(rustc -vV | sed -n 's/^host: //p')" = x86_64-unknown-linux-gnu
+          cargo test -p borrowser-conformance --locked --bin borrowser-conformance --no-run \
+            2>&1 | tee "$AG4_TIMING_EVIDENCE/build.log"
+
+      - name: Measure the existing native proxy timing scenario
+        timeout-minutes: 5
+        env:
+          BORROWSER_AG4_COMMAND_SCENARIO: proxy-timing
+        run: |
+          set -euo pipefail
+          cargo test -p borrowser-conformance --locked --bin borrowser-conformance \
+            aws::command::tests::isolated_owner \
+            -- --exact --ignored --nocapture --test-threads=1 \
+            2>&1 | tee "$AG4_TIMING_EVIDENCE/timing.log"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          evidence = Path(os.environ["AG4_TIMING_EVIDENCE"])
+          expected = {(mode, sample) for mode in ("natural", "delayed", "term", "kill") for sample in range(8)}
+          records = {}
+          lines = (evidence / "timing.log").read_text().splitlines()
+          for prefix in ("AG4_PROXY_OWNER_TIMING", "AG4_PROXY_TIMING"):
+              samples = [json.loads(line.split(prefix + " ", 1)[1]) for line in lines if prefix + " " in line]
+              assert len(samples) == 32, (prefix, "incomplete sample count")
+              assert {(s["mode"], s["sample"]) for s in samples} == expected, (prefix, "missing/duplicate samples")
+              assert all(s["os"] == "linux" and s["arch"] == "x86_64" for s in samples)
+              for sample in samples:
+                  key = "microseconds_from_cleanup_start" if prefix == "AG4_PROXY_OWNER_TIMING" else "microseconds_from_root_exit_observation"
+                  events = sample[key]
+                  required = ("cleanup_started", "natural_phase_ended", "stdout_eof", "stderr_eof", "group_quiescence_confirmed",
+                              "signaling_complete", "root_reaped", "descendant_reap_started",
+                              "descendants_reaped", "owner_quiescent")
+                  assert all(name in events for name in required), (prefix, "incomplete authority record")
+                  assert all(type(value) is int and value >= 0 for value in events.values())
+                  assert events["owner_quiescent"] - events["cleanup_started"] <= 4_000_000, "missing one-second qualification headroom"
+                  assert max(events["stdout_eof"], events["stderr_eof"]) <= events["group_quiescence_confirmed"]
+                  assert events["group_quiescence_confirmed"] <= events["signaling_complete"] <= events["root_reaped"]
+                  assert events["root_reaped"] <= events["descendant_reap_started"] <= events["descendants_reaped"] <= events["owner_quiescent"]
+                  assert ("term_sent" in events) == (sample["mode"] in ("term", "kill"))
+                  assert ("kill_sent" in events) == (sample["mode"] == "kill")
+                  for name in ("group_observation", "term_sent", "kill_sent"):
+                      if name in events:
+                          assert events[name] <= events["group_quiescence_confirmed"], "post-reap numeric authority"
+                  if prefix == "AG4_PROXY_TIMING":
+                      assert "root_exit_observed" in events
+                      # These are supplementary numeric observations after ownership;
+                      # unavailable/reused IDs cannot invalidate production authority.
+                      observations = sample["qualification_only_non_authoritative"]
+                      assert set(observations) == {"group", "root", "descendant_or_orphan"}
+                      assert all(v["status"] in ("numeric_identifier_absent", "unavailable") for v in observations.values())
+              records[prefix] = samples
+          (evidence / "records.json").write_text(json.dumps(records, indent=2) + "\n")
+          PY
+
+      - name: Retain native timing and platform evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ag4-proxy-timing-linux-x86-64-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ag4-proxy-timing/
+          if-no-files-found: error
+          retention-days: 14
+
+  ag4_nonbillable:
+    if: ${{ !startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-') }}
+    name: AG4 credential-free synthesis and snapshots
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      AWS_EC2_METADATA_DISABLED: 'true'
+      AWS_ACCESS_KEY_ID: invalid-nonbillable-test
+      AWS_SECRET_ACCESS_KEY: invalid-nonbillable-test
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.15'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.3'
+      - run: python -m pip install --require-hashes -r crates/conformance/aws/requirements.lock
+      - run: python -m unittest discover -s crates/conformance/aws/tests -v
+      - run: python -m unittest discover -s tools/conformance/tests -v
+
   ag2_linux_chromium:
+    if: ${{ !startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-') }}
     name: AG2 Chromium (Linux x86-64)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -133,6 +290,7 @@ jobs:
           cargo test -p borrowser-conformance --locked -- --include-ignored \
             --skip chromium::tests::native_case --skip chromium::tests::browser_helper \
             --skip comparison::tests::isolated_case \
+            --skip aws::command::tests::isolated_owner \
             --test-threads=1 --nocapture 2>&1 | tee "$AG2_EVIDENCE/conformance.log"
           cargo run -p borrowser-conformance --locked -- --chromium \
             > "$AG2_EVIDENCE/captures.json" 2> "$AG2_EVIDENCE/capture.stderr"
@@ -217,6 +375,7 @@ jobs:
           path: ${{ runner.temp }}/ag2-upload/
 
   rust:
+    if: ${{ !startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-') }}
     name: Rust (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -336,6 +495,7 @@ jobs:
         run: make html-entities-check
 
   html5_tokenizer_fuzz_smoke:
+    if: ${{ !startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-') }}
     name: HTML5 tokenizer fuzz smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -374,6 +534,7 @@ jobs:
             ci_artifacts/html5_tokenizer_fuzz_failure
 
   html5_tokenizer_script_data_fuzz_smoke:
+    if: ${{ !startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-') }}
     name: HTML5 tokenizer script-data fuzz smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -412,6 +573,7 @@ jobs:
             ci_artifacts/html5_tokenizer_script_data_fuzz_failure
 
   html5_tokenizer_rawtext_fuzz_smoke:
+    if: ${{ !startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-') }}
     name: HTML5 tokenizer rawtext fuzz smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -450,6 +612,7 @@ jobs:
             ci_artifacts/html5_tokenizer_rawtext_fuzz_failure
 
   html5_tokenizer_rcdata_fuzz_smoke:
+    if: ${{ !startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-') }}
     name: HTML5 tokenizer rcdata fuzz smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -488,6 +651,7 @@ jobs:
             ci_artifacts/html5_tokenizer_rcdata_fuzz_failure
 
   html5_tree_builder_token_fuzz_smoke:
+    if: ${{ !startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-') }}
     name: HTML5 tree-builder token fuzz smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -526,6 +690,7 @@ jobs:
             ci_artifacts/html5_tree_builder_token_fuzz_failure
 
   html5_pipeline_fuzz_smoke:
+    if: ${{ !startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-') }}
     name: HTML5 pipeline fuzz smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -564,6 +729,7 @@ jobs:
             ci_artifacts/html5_pipeline_fuzz_failure
 
   css_fuzz_regressions:
+    if: ${{ !startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-') }}
     name: CSS fuzz regressions
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -597,6 +763,7 @@ jobs:
           path: ci_artifacts/css_fuzz_regressions.log
 
   css_syntax_fuzz_smoke:
+    if: ${{ !startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-') }}
     name: CSS syntax fuzz smoke
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -648,6 +815,7 @@ jobs:
             ci_artifacts/css_parser_fuzz_failure
 
   css_pipeline_fuzz_smoke:
+    if: ${{ !startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-') }}
     name: CSS pipeline fuzz smoke
     runs-on: ubuntu-latest
     timeout-minutes: 20

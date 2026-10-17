@@ -128,6 +128,26 @@ fn execute_selected(
         })?;
         chromium::capture_batch(&inputs, executable)?
     };
+    compare_captured(fixtures, captures)
+}
+
+// Both backends enter here only after their complete capture/runtime cleanup.
+fn compare_captured(
+    fixtures: &[&Fixture],
+    captures: Vec<CapturedFixture>,
+) -> Result<report::Report, Failure> {
+    validate_selection(fixtures)?;
+    let inputs: Vec<_> = fixtures
+        .iter()
+        .filter_map(|fixture| match fixture.kind {
+            FixtureKind::Runnable { html, .. } => Some(CaptureInput {
+                id: fixture.id,
+                source: fixture.source,
+                html,
+            }),
+            _ => None,
+        })
+        .collect();
     validate_captures(&inputs, &captures)?;
     let mut captures = captures.into_iter();
     let mut cases = Vec::with_capacity(fixtures.len());
@@ -147,6 +167,15 @@ fn execute_selected(
         cases.push(case);
     }
     Ok(report::Report::new(cases))
+}
+
+pub(crate) fn publish_captured(
+    fixtures: &[&Fixture],
+    captures: Vec<CapturedFixture>,
+    out: &mut impl Write,
+    diagnostics: &mut impl Write,
+) -> io::Result<u8> {
+    publish(compare_captured(fixtures, captures), out, diagnostics)
 }
 
 // Execution, correspondence checks, construction and serialization all finish

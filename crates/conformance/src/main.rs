@@ -1,4 +1,6 @@
 #[cfg(any(target_os = "linux", target_os = "macos"))]
+mod aws;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 mod chromium;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod comparison;
@@ -28,6 +30,14 @@ fn run_fixture(fixture: &Fixture) -> Execution {
 }
 
 fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    match args.first().map(String::as_str) {
+        Some("--ag4-eice-proxy") => return aws::eice_proxy(&args[1..]),
+        Some("--compare-aws") => return aws::run(&args[1..], out, &mut io::stderr().lock()),
+        Some("--aws-cleanup") => return aws::cleanup(&args[1..], &mut io::stderr().lock()),
+        Some("--ag4-artifact-info") if args.len() == 1 => return aws::artifact_info(out),
+        _ => {}
+    }
     if args.first().map(String::as_str) == Some("--compare") {
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         return comparison::run(&args[1..], out, &mut io::stderr().lock());
@@ -55,7 +65,7 @@ fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
     if args == ["--help"] {
         writeln!(
             out,
-            "Usage: borrowser-conformance [TEST_ID]\nRun the explicit fixture set, or one exact test identity.\n       borrowser-conformance --chromium [--chromium-executable PATH] [TEST_ID]\nCapture only, using the pinned Chrome for Testing (or BORROWSER_CHROMIUM_EXECUTABLE).\n       borrowser-conformance --compare [--chromium-executable PATH] [TEST_ID]\nCompare both engines using the bounded canvas sample."
+            "Usage: borrowser-conformance [TEST_ID]\nRun the explicit fixture set, or one exact test identity.\n       borrowser-conformance --chromium [--chromium-executable PATH] [TEST_ID]\nCapture only, using the pinned Chrome for Testing (or BORROWSER_CHROMIUM_EXECUTABLE).\n       borrowser-conformance --compare [--chromium-executable PATH] [TEST_ID]\nCompare both engines using the bounded canvas sample.\n       borrowser-conformance --compare-aws --config PATH --artifact-dir PATH --state-dir PATH [TEST_ID]\n       borrowser-conformance --aws-cleanup --operation PATH --aws-cli PATH\nSee docs/conformance/ag4-disposable-aws-chromium-runner.md for AG4 prerequisites and qualification."
         )?;
         return Ok(0);
     }

@@ -1,4 +1,52 @@
-# Focused static conformance harness (AG1–AG3)
+# Focused static conformance harness (AG1–AG4)
+
+AG4 adds the optional `--compare-aws` and artifact-independent `--aws-cleanup`
+paths. Its two-resource Python CDK capture stack, shared eleven-resource
+networking/service-role/EICE stack, ordinary SSH through the endpoint, strict capture
+ingestion, operation recovery and qualification gates are documented in the
+[AG4 contract](../../docs/conformance/ag4-disposable-aws-chromium-runner.md).
+The run keeps its own SG and instance; shared EICE/SGs are never run cleanup
+targets. Live configuration binds the exact shared StackId and canonical template
+digest, derives physical IDs, and rejects obsolete `controller_cidr` fields.
+Historical cleanup-only remains independent of EICE/current operator configuration.
+The reviewed AMI/package snapshot are pinned. The shared EICE update, corporate
+TLS qualification, first normal EICE run and broader AG4 acceptance remain
+pending; earlier direct-SSH lifecycle evidence does not qualify EICE. The DNS
+contract requires the authenticated `ec2-instance-connect-endpoint.eu-west-1.amazonaws.com`
+hostname. Command cleanup uses absolute phases: a two-second natural-shutdown
+opportunity, at most one second for TERM, the latest planned forced transition
+at T0+3, and forced cleanup/finalization through the unchanged T0+5 authority. All
+PGID authority ends before root reap; only kernel-owned native child obligations
+remain afterward. This composition qualified on native macOS arm64 and Ubuntu
+24.04 x86-64 for exact tree `ffb82ab09cfa1eb8ea7e9ec5ed4f0ba9c1bbcd23`.
+Both platforms met the T0+4 qualification target with complete 32+32 timing
+records; minimum cross-platform headroom was 0.997243 s to that target and
+1.997243 s to the hard deadline. Linux run 39017456664/1 succeeded. See the
+[retained timing qualification](../../docs/conformance/ag4-disposable-aws-chromium-runner.md#native-cleanup-timing-qualification-2026-10-17)
+for measurements and durable evidence under `~/.local/share/borrowser/reviews/ag4/`.
+
+This documentation-only update reports that exact qualified tree; its resulting
+Git tree is different and is not a new qualification identity. Later executable,
+test, CI-semantic or timing-source changes require review of whether fresh
+qualification is necessary. Final live artifacts receive fresh source/artifact
+identities.
+
+The old Linux run 38957426608/1 failed; its durable evidence is retained. Future
+Linux qualification publications/runs require separate authorization. Earlier lost
+macOS logs, including two `BrowserExited` observations and their reported
+pre-EICE reproduction, remain historical summaries only. The Chromium observations
+are unresolved and are not established EICE regressions.
+
+AG4 is not closeable: formal architecture review, final-source validation / `make ci`,
+appropriate native regressions, fresh Chromium/guest-wrapper qualification and
+live-stage source/controller/Linux artifact identities remain required, along with
+corporate EICE WebSocket/TLS qualification, authorized shared-stack change-set
+deployment and verification, external controller-permission qualification, the
+first real EICE `canvas/cascade` capture/comparison with confirmed cleanup, broader AG4
+acceptance and final closeability review. These stages remain inside AG4.
+
+Ordinary local commands below remain independent of AWS configuration,
+credentials and artifact preparation.
 
 Run the explicit fixture set:
 

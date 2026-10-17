@@ -1,0 +1,18 @@
+{
+  "region": "eu-west-1",
+  "image": {
+    "id": "ami-00bf3d24573e7276a",
+    "name": "ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-20260923",
+    "root_snapshot": "snap-0f8dbea1d46057399",
+    "source_root_gib": 8
+  },
+  "image_owner": "099720109477",
+  "architecture": "x86_64",
+  "ubuntu_snapshot": "20261013T000000Z",
+  "instance_type": "c6i.large",
+  "root_gib": 16,
+  "gp3_iops": 3000,
+  "gp3_throughput_mib": 125,
+  "guest_stop_minutes": 45,
+  "cost_admission_usd_micros": 500000
+}

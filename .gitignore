@@ -1,4 +1,7 @@
 /target
+/crates/conformance/aws/cdk.out/
+__pycache__/
 /fuzz/target
 /fuzz/artifacts
 WORKFLOW.md
+.env
