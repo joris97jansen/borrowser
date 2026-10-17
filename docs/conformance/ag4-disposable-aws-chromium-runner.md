@@ -473,8 +473,8 @@ The process tree is `Owner → OpenSSH → ProxyCommand shell → helper → exe
 CLI → CRT/WebSocket workers`. All inherit the owned process group; the helper
 creates no detached session or listener. OpenSSH sends SIGHUP to its proxy
 without waiting. Successful root exit therefore starts observation, not command
-completion. The command owner implements a candidate phase composition within
-one five-second monotonic cleanup authority, starting once at root exit/failure:
+completion. The command owner implements the following absolute phase composition
+within one five-second monotonic cleanup authority, starting once at root exit/failure:
 
 | Boundary | Absolute deadline |
 | --- | --- |
@@ -507,15 +507,17 @@ absence cannot repair an earlier ownership error. No parser/comparison starts
 with unresolved ownership. CloudFormation cleanup needs no EICE tunnel and can
 proceed after an ordinary transport failure once the owner is quiescent.
 
-The 2/1/2 composition is a candidate, not a cross-platform qualification claim.
-Fresh native macOS arm64 and Ubuntu 24.04 x86-64 evidence must demonstrate complete
-production ownership finalization by T0 + 4 seconds, retaining one second of
-headroom. This acceptance target is not a production timeout. It reserves half
-the forced allocation against scheduling, observation and reaping variation;
-passing just below five seconds is insufficient. The delayed 1.2-second natural
-scenario fits the candidate natural window, but historical measurements do not
-qualify the changed source. If the margin fails, retain the failure and review
-it without expanding the five-second authority.
+The 2/1/2 composition successfully qualified on native macOS arm64 and Ubuntu
+24.04 x86-64 for exact tree `ffb82ab09cfa1eb8ea7e9ec5ed4f0ba9c1bbcd23`;
+see the [retained timing qualification](#native-cleanup-timing-qualification-2026-10-17).
+Qualification requires complete production ownership finalization by T0 + 4
+seconds, retaining one second of headroom. This acceptance target is not a
+production timeout. It reserves half the forced allocation against scheduling,
+observation and reaping variation; passing just below five seconds is insufficient.
+Both platforms passed, including the delayed 1.2-second natural scenario. Later
+source changes require review of whether fresh qualification is necessary. If a
+future qualification misses the margin, retain the failure and review it without
+expanding the five-second authority.
 
 ### Authentication-safe transport diagnostics
 
@@ -1135,6 +1137,61 @@ an ambiguous or bounded-out observation is unavailable, not proof of an owned
 survivor. Linux kernel-owned adopted-child reaping and macOS direct-child checks
 remain separate authoritative events. No PID inventory/lifetime abstraction is used.
 
+### Native cleanup timing qualification: 2026-10-17
+
+The candidate 2-second natural / at-most-1-second TERM / 2-second forced-finalization
+composition successfully qualified across both supported native controller
+platforms for exact Git tree `ffb82ab09cfa1eb8ea7e9ec5ed4f0ba9c1bbcd23`.
+The latest planned forced transition remains T0+3, the hard production authority
+remains T0+5, and every sample met the separate T0+4 qualification acceptance
+target. Each platform's two timing-record families contained exactly 32 unique
+samples: eight natural, eight delayed-natural, eight TERM-responsive and eight
+KILL-required. The results below measure complete authoritative production
+ownership finalization, not supplementary numeric PID/PGID disappearance.
+
+| Maximum finalization from cleanup start | Native macOS arm64 | Native Ubuntu 24.04 x86-64 |
+| --- | ---: | ---: |
+| Natural | 0.053021 s | 0.037318 s |
+| Delayed-natural | 1.202297 s | 1.187306 s |
+| TERM-responsive | 2.004482 s | 2.007185 s |
+| KILL-required | 3.002463 s | 3.002757 s |
+
+Minimum cross-platform headroom was **0.997243 s to T0+4** and **1.997243 s to
+T0+5**. This qualifies the composition for the tested scenarios on both supported
+controller platforms for that exact tree; it does not qualify corporate EICE TLS,
+Chromium guest execution or AWS acceptance.
+
+The native Linux publication and successful run were:
+
+- Commit: `3d84ec93640d44f1bab0eaae414cdb7988dca99a`.
+- Tree: `ffb82ab09cfa1eb8ea7e9ec5ed4f0ba9c1bbcd23`.
+- Ref: `qualification/ag4-native-proxy-timing-ffb82ab09cfa1eb8ea7e9ec5ed4f0ba9c1bbcd23`.
+- Workflow: [39017456664](https://github.com/joris97jansen/borrowser/actions/runs/39017456664),
+  attempt 1, conclusion **success**.
+- Original artifact archive SHA-256:
+  `aa1eb2b42fef16dd967099fd52e97b0c7be52928026c4662c4fb47737dbf5b03`.
+
+Raw and parsed evidence, source/tool/platform identities and hash manifests are
+retained durably in the AG4 review store:
+
+- macOS:
+  `~/.local/share/borrowser/reviews/ag4/owner-poison-20261017T080142Z/macos-ffb82ab09cfa1eb8ea7e9ec5ed4f0ba9c1bbcd23/`.
+- Linux, including the original downloaded artifact archive and cross-platform comparison:
+  `~/.local/share/borrowser/reviews/ag4/linux-proxy-timing-ffb82ab09cfa1eb8ea7e9ec5ed4f0ba9c1bbcd23-20261017T082707Z/`.
+
+The Linux lane executed only the timing scenario. Its binary includes the
+signal-failure and inspection-failure regressions, but that run did not execute
+them. Their explicit same-tree macOS results passed; no Linux runtime pass for
+those separate scenarios is claimed.
+
+`ffb82ab09cfa1eb8ea7e9ec5ed4f0ba9c1bbcd23` is the exact source tree on which this
+qualification was performed. Subsequent documentation-only changes report this
+retained qualification and produce a different Git tree; they do not create a
+new qualification identity or make the documentation tree equal to the qualified
+tree. Later executable, test, CI-semantic or timing-source changes require review
+of whether fresh qualification is necessary. Final live artifacts receive their
+own fresh source/controller/Linux artifact identities.
+
 Historical failure: qualification commit `2a708c74c6f33a57abfac0451cab9b1a3373181b`,
 tree `8f7029b68d9c7da8f7f73c4aa804000c88c758da`, GitHub Actions run
 `38957426608`, attempt 1, failed during KILL sample 2. From cleanup start, TERM
@@ -1151,16 +1208,18 @@ five seconds is inherently impossible.
 The earlier macOS raw timing and Chromium logs were lost from temporary storage.
 Their previously reported timing maxima (natural 0.172400 s, delayed 1.209466 s,
 TERM 4.052818 s, KILL 4.996157 s for supplementary absence) are historical summaries
-only, not reverified evidence. Likewise retain the two historical `BrowserExited`
-observations and reported pre-EICE reproduction without attributing them to EICE.
-Fresh Chromium qualification is separate AG4 work after timing correction.
+only, not reverified evidence. The two historical `BrowserExited` observations and
+their reported pre-EICE reproduction remain unresolved historical summaries, not
+established EICE regressions. Fresh Chromium/guest-wrapper qualification remains
+separate AG4 work on the eventual final source.
 
-For each changed frozen source, run native macOS qualification first and preserve
-its exact source/tool/platform identity and raw/parsed evidence. A new native
-Linux publication/run requires separate authorization and a new tree-bound ref.
-Neither historical summary nor one platform's passing result establishes the
-other platform's qualification. Current results belong to the durable per-tree
-review record; the new Linux run and broader live acceptance remain pending.
+When source review requires fresh timing qualification, run native macOS first
+and preserve its exact source/tool/platform identity and raw/parsed evidence. A
+new native Linux publication/run requires separate authorization and a new
+tree-bound ref. Neither a historical summary nor one platform's passing result
+establishes the other platform's qualification. The successful results above
+belong to their durable per-tree review record; broader live acceptance remains
+pending.
 
 The existing `CI` workflow has one explicit `ag4_proxy_timing` job for pushes matching
 `qualification/ag4-native-proxy-timing-*`. All other jobs in that workflow skip only
@@ -1201,8 +1260,9 @@ and target-runner overrides. Temporary execution directories and CI artifacts ar
 transport only. If losing a file would retract a qualification claim, it must not
 exist only in `/tmp`, `/private/tmp`, `$RUNNER_TEMP` or temporary GitHub storage.
 
-The new-source Linux qualification is pending; the old failed run remains evidence. Publication must
-use the exact reviewed source snapshot: compare the published commit's Git tree
+The successful Linux run above does not authorize another publication; the old
+failed run remains evidence. Any future qualification publication must use the
+exact reviewed source snapshot: compare the published commit's Git tree
 with the frozen snapshot tree and derive the qualification branch from that tree
 before the single authorized push, then compare
 the retained checkout/tree evidence with it. Do not substitute an older committed
@@ -1341,6 +1401,21 @@ deleted without another creation, and retain the targeted terminal observations.
 Also interrupt deletion and repeat cleanup. Missing ownership authority must
 refuse deletion. No mocked check substitutes for these live observations.
 
-AG4 is not complete until the actual final source/artifact snapshot has the
-required native-platform and AWS acceptance evidence. Tests, documentation,
-hardening and qualification remain inside AG4.
+Cross-platform command-owner timing qualification does not make AG4 closeable.
+The remaining gates are:
+
+1. Formal architecture review.
+2. Final-source validation / `make ci`.
+3. Appropriate native regression execution.
+4. Fresh Chromium/guest-wrapper qualification on the eventual final source.
+5. Fresh live-stage source/controller/Linux artifact identities.
+6. Corporate EICE WebSocket/TLS qualification.
+7. Authorized shared-stack change-set deployment and verification.
+8. External controller-permission qualification.
+9. The first real EICE `canvas/cascade` capture/comparison with confirmed cleanup.
+10. Broader existing AG4 acceptance.
+11. Final closeability review.
+
+These are stages inside AG4, not new issues or milestones. AG remains at its
+existing nine issues. AG4 is not complete until the final source/artifact snapshot
+has the required validation and acceptance evidence.

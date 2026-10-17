@@ -1053,21 +1053,34 @@ When a feature lands:
   instance type. EICE adds a private ephemeral fixed-argv helper, executable
   identity checks, authentication-safe diagnostics and bounded proxy shutdown;
   controller IAM remains external. Authentic historical direct-SSH templates
-  retain deletion authority without EICE/current configuration. The reviewed
-  shared EICE update, corporate WebSocket/TLS qualification, first normal
-  `canvas/cascade` EICE run, native Linux controller qualification and broader
-  AWS acceptance remain gaps. Command cleanup implements candidate absolute
-  2-second natural / at-most-1-second TERM / 2-second forced-finalization budgets
-  within five seconds. All authoritative PGID work ends before root reaping;
-  afterward only kernel-owned child reaping can establish completion. Fresh
-  native macOS/Linux evidence must meet a four-second qualification target and
-  remain durable under `~/.local/share/borrowser/reviews/ag4/`. The old Linux
-  qualification (38957426608/1) failed and is retained; new-tree Linux publication
-  requires separate authorization. Cross-platform qualification remains pending.
+  retain deletion authority without EICE/current configuration. Command cleanup's
+  2-second natural / at-most-1-second TERM / 2-second forced-finalization composition
+  qualified on native macOS arm64 and Ubuntu 24.04 x86-64 for exact tree
+  `ffb82ab09cfa1eb8ea7e9ec5ed4f0ba9c1bbcd23`. The latest planned forced transition
+  is T0+3, with authority through T0+5. Both platforms met the T0+4 qualification
+  target with complete 32+32 records; minimum cross-platform headroom was
+  0.997243 s to that target and 1.997243 s to the hard deadline. All authoritative
+  PGID work ends before root reaping; afterward only kernel-owned child reaping
+  can establish completion. Linux run 39017456664/1 succeeded; the
+  [retained qualification record](conformance/ag4-disposable-aws-chromium-runner.md#native-cleanup-timing-qualification-2026-10-17)
+  gives provenance and durable evidence under `~/.local/share/borrowser/reviews/ag4/`.
+  This documentation-only reconciliation produces a different Git tree and reports
+  the retained qualification, not a new qualified identity. Later executable, test,
+  CI-semantic or timing-source changes require review of whether fresh qualification
+  is necessary; final live artifacts receive fresh source/artifact identities.
+  The failed historical Linux qualification (38957426608/1) remains documented.
+  Future Linux qualification publication requires separate authorization.
   Lost historical macOS timing/Chromium raw logs are summaries only. The two
   `BrowserExited` observations and reported pre-EICE reproduction remain unresolved
-  and are not established EICE regressions. The implementation stays inside AG4; AG still
-  has nine issues and AG4 is not complete. See the
+  and are not established EICE regressions. Formal architecture review, final-source
+  validation / `make ci`, appropriate native regressions, fresh Chromium/guest-wrapper
+  qualification and live-stage source/controller/Linux artifact identities remain
+  required. Corporate EICE WebSocket/TLS qualification, authorized shared-stack
+  change-set deployment and verification, external controller-permission qualification,
+  the first real EICE `canvas/cascade` capture/comparison with confirmed cleanup,
+  broader AG4 acceptance and final closeability review also remain gates.
+  The implementation stays inside AG4; AG still has nine issues and AG4 is not
+  closeable or complete. See the
   [AG4 contract](conformance/ag4-disposable-aws-chromium-runner.md).
 - WPT support, broad browser compatibility and general rendering
   conformance remain gaps. See the
