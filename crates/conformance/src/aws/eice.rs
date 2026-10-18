@@ -372,7 +372,7 @@ pub(super) fn verify_shared<C: Commands>(
         || eni["VpcId"] != c.vpc_id
         || eni["SubnetId"] != c.subnet_id
         || eni["AvailabilityZone"] != az
-        || eni["RequesterManaged"] != true
+        || eni["InterfaceType"] != "ec2_instance_connect_endpoint"
         || eni["Status"] != "in-use"
         || !array(eni, "Ipv6Addresses")?.is_empty()
     {

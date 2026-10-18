@@ -362,7 +362,8 @@ fn shared_responses() -> Vec<(&'static str, Value)> {
         (
             "describe-network-interfaces",
             json!({"NetworkInterfaces":[{"NetworkInterfaceId":"eni-11111111111111111","OwnerId":c.account,
-            "VpcId":c.vpc_id,"SubnetId":c.subnet_id,"AvailabilityZone":e.az,"RequesterManaged":true,"Status":"in-use",
+            "VpcId":c.vpc_id,"SubnetId":c.subnet_id,"AvailabilityZone":e.az,"RequesterManaged":false,
+            "InterfaceType":"ec2_instance_connect_endpoint","Status":"in-use",
             "Ipv6Addresses":[],"PrivateIpAddress":"10.77.0.5","Groups":[{"GroupId":e.endpoint_sg_id}]}]}),
         ),
         (
@@ -382,6 +383,35 @@ fn shared_responses() -> Vec<(&'static str, Value)> {
             ),
         ),
     ]
+}
+
+#[test]
+fn endpoint_reported_eice_interface_accepts_real_shape_without_requester_managed_authority() {
+    // The deployed EICE reported RequesterManaged=false. Its authenticated ENI
+    // relationship and EICE interface type bind it, not RequesterManaged.
+    for requester_managed in [Some(false), Some(true), None] {
+        let mut observations = shared_responses();
+        let eni = &mut observations[5].1["NetworkInterfaces"][0];
+        assert_eq!(eni["RequesterManaged"], false);
+        assert_eq!(eni["InterfaceType"], "ec2_instance_connect_endpoint");
+        if let Some(value) = requester_managed {
+            eni["RequesterManaged"] = json!(value);
+        } else {
+            eni.as_object_mut().unwrap().remove("RequesterManaged");
+        }
+        let mut script = Script::default();
+        for (action, value) in observations {
+            script.push(action, value);
+        }
+        let verified = verify_shared(&mut aws::tests::aws(&mut script), &config()).unwrap();
+        assert_eq!(verified.endpoint_eni, "eni-11111111111111111");
+        assert!(
+            script.arguments[5].windows(2).any(|pair| {
+                pair == ["--network-interface-ids", verified.endpoint_eni.as_str()]
+            })
+        );
+        assert!(script.steps.is_empty());
+    }
 }
 
 #[test]
@@ -509,7 +539,66 @@ fn shared_authority_derives_ids_and_rejects_conflicting_or_incomplete_observatio
             "/InstanceConnectEndpoints/0/SecurityGroupIds",
             json!(["sg-33333333333333333"]),
         ),
+        (
+            4,
+            "/InstanceConnectEndpoints/0/NetworkInterfaceIds",
+            json!([]),
+        ),
+        (
+            4,
+            "/InstanceConnectEndpoints/0/NetworkInterfaceIds",
+            json!(["eni-11111111111111111", "eni-33333333333333333"]),
+        ),
+        (
+            4,
+            "/InstanceConnectEndpoints/0/NetworkInterfaceIds",
+            json!(["eni-invalid"]),
+        ),
+        (
+            4,
+            "/InstanceConnectEndpoints/0/NetworkInterfaceIds",
+            json!(["eni-33333333333333333"]),
+        ),
+        (5, "/NetworkInterfaces/0/InterfaceType", json!("interface")),
+        (5, "/NetworkInterfaces/0/InterfaceType", Value::Null),
+        (
+            5,
+            "/NetworkInterfaces/0/NetworkInterfaceId",
+            json!("eni-33333333333333333"),
+        ),
+        (5, "/NetworkInterfaces/0/OwnerId", json!("123456789013")),
+        (
+            5,
+            "/NetworkInterfaces/0/VpcId",
+            json!("vpc-33333333333333333"),
+        ),
+        (
+            5,
+            "/NetworkInterfaces/0/SubnetId",
+            json!("subnet-33333333333333333"),
+        ),
+        (
+            5,
+            "/NetworkInterfaces/0/AvailabilityZone",
+            json!("eu-west-1b"),
+        ),
+        (5, "/NetworkInterfaces/0/Status", json!("available")),
+        (
+            5,
+            "/NetworkInterfaces/0/Ipv6Addresses",
+            json!([{"Ipv6Address":"2001:db8::1"}]),
+        ),
         (5, "/NetworkInterfaces/0/Groups", json!([])),
+        (
+            5,
+            "/NetworkInterfaces/0/Groups",
+            json!([{"GroupId":"sg-33333333333333333"}]),
+        ),
+        (
+            5,
+            "/NetworkInterfaces/0/Groups",
+            json!([{"GroupId":"sg-11111111111111111"},{"GroupId":"sg-33333333333333333"}]),
+        ),
         (
             5,
             "/NetworkInterfaces/0/PrivateIpAddress",
