@@ -3,6 +3,183 @@ use command::{Commands, Failure, Output, Spec};
 use state::{Cleanup, Creation, Record, Store};
 use std::collections::VecDeque;
 
+fn price_review_date(day_offset: i64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let seconds = libc::time_t::try_from(i64::try_from(now).unwrap() + day_offset * 86400).unwrap();
+    let mut utc = unsafe { std::mem::zeroed::<libc::tm>() };
+    assert!(!unsafe { libc::gmtime_r(&seconds, &mut utc) }.is_null());
+    format!(
+        "{:04}-{:02}-{:02}",
+        utc.tm_year + 1900,
+        utc.tm_mon + 1,
+        utc.tm_mday
+    )
+}
+
+fn cost_config() -> config::Config {
+    let mut c: config::Config =
+        serde_json::from_slice(include_bytes!("../../aws/operator.example.json")).unwrap();
+    // Synthetic arithmetic inputs, not regional price evidence or a billing ceiling.
+    // Call the private admission calculation directly; no tools or AWS are needed.
+    c.prices = config::Prices {
+        reviewed_utc: price_review_date(0),
+        compute_hour_usd_micros: 100_000,
+        gp3_gib_month_usd_micros: 730,
+        ipv4_hour_usd_micros: 5_000,
+        egress_gib_usd_micros: 20_000,
+        request_allowance_usd_micros: 100,
+    };
+    c
+}
+
+#[test]
+fn cost_admission_accepts_today_recent_and_thirtieth_utc_day() {
+    // A date-only review remains valid throughout its thirtieth UTC calendar day.
+    // Generate dates for each run, including the exact inclusive boundary.
+    for day_offset in [0, -7, -30] {
+        let mut c = cost_config();
+        c.prices.reviewed_utc = price_review_date(day_offset);
+        assert_eq!(c.admit_cost(), Ok(220_232), "day offset {day_offset}");
+    }
+}
+
+#[test]
+fn cost_admission_rejects_each_zero_price_component() {
+    for index in 0..5 {
+        let mut c = cost_config();
+        let components = [
+            &mut c.prices.compute_hour_usd_micros,
+            &mut c.prices.gp3_gib_month_usd_micros,
+            &mut c.prices.ipv4_hour_usd_micros,
+            &mut c.prices.egress_gib_usd_micros,
+            &mut c.prices.request_allowance_usd_micros,
+        ];
+        *components[index] = 0;
+        assert_eq!(
+            c.admit_cost().unwrap_err(),
+            "positive reviewed regional price inputs required",
+            "component {index}"
+        );
+    }
+}
+
+#[test]
+fn cost_admission_rejects_each_price_at_or_above_input_bound() {
+    for index in 0..5 {
+        for invalid in [100_000_000, 100_000_001, u64::MAX] {
+            let mut c = cost_config();
+            let components = [
+                &mut c.prices.compute_hour_usd_micros,
+                &mut c.prices.gp3_gib_month_usd_micros,
+                &mut c.prices.ipv4_hour_usd_micros,
+                &mut c.prices.egress_gib_usd_micros,
+                &mut c.prices.request_allowance_usd_micros,
+            ];
+            *components[index] = invalid;
+            assert_eq!(
+                c.admit_cost().unwrap_err(),
+                "positive reviewed regional price inputs required",
+                "component {index}, value {invalid}"
+            );
+        }
+    }
+}
+
+#[test]
+fn cost_admission_rejects_malformed_review_dates() {
+    let current = price_review_date(0);
+    for malformed in [
+        String::new(),
+        "not-a-date".into(),
+        current.replace('-', "/"),
+        format!("{current}T00:00:00Z"),
+        format!("{}-1-01", &current[..4]),
+        format!("{}-xx-01", &current[..4]),
+    ] {
+        let mut c = cost_config();
+        c.prices.reviewed_utc = malformed.clone();
+        let error = c.admit_cost().unwrap_err();
+        assert!(
+            matches!(
+                error.as_str(),
+                "price review date required" | "invalid price date"
+            ),
+            "{malformed:?}: {error}"
+        );
+    }
+}
+
+#[test]
+fn cost_admission_rejects_invalid_calendar_dates() {
+    let current = price_review_date(0);
+    for suffix in ["02-30", "04-31", "00-01", "13-01", "01-00"] {
+        let mut c = cost_config();
+        c.prices.reviewed_utc = format!("{}-{suffix}", &current[..4]);
+        // Assert calendar rejection, rather than accidentally passing on staleness.
+        assert_eq!(c.admit_cost().unwrap_err(), "invalid price review date");
+    }
+}
+
+#[test]
+fn cost_admission_rejects_tomorrow_utc() {
+    let mut c = cost_config();
+    c.prices.reviewed_utc = price_review_date(1);
+    assert_eq!(
+        c.admit_cost().unwrap_err(),
+        "regional prices must be reviewed within 30 days"
+    );
+}
+
+#[test]
+fn cost_admission_rejects_thirty_first_utc_day() {
+    let mut c = cost_config();
+    c.prices.reviewed_utc = price_review_date(-31);
+    assert_eq!(
+        c.admit_cost().unwrap_err(),
+        "regional prices must be reviewed within 30 days"
+    );
+}
+
+#[test]
+fn cost_admission_enforces_inclusive_half_dollar_estimate_limit() {
+    let mut c = cost_config();
+    // Other components sum to 10,116 micro-USD before the 2x admission margin.
+    for (compute, estimate) in [(239_883, 499_998), (239_884, 500_000)] {
+        c.prices.compute_hour_usd_micros = compute;
+        assert_eq!(c.admit_cost(), Ok(estimate));
+    }
+    c.prices.compute_hour_usd_micros = 239_885;
+    assert_eq!(
+        c.admit_cost().unwrap_err(),
+        "cost admission refused: estimate 500002 micro-USD exceeds 500000"
+    );
+}
+
+#[test]
+fn cost_admission_uses_730_hour_gp3_month() {
+    let mut c = cost_config();
+    c.prices.gp3_gib_month_usd_micros = 45_625;
+    // 16 * 45,625 / 730 = 1,000 exactly; the obsolete /720 would give 1,014
+    // after rounding. Include every other component and the 2x margin.
+    assert_eq!(c.admit_cost(), Ok(222_200));
+}
+
+#[test]
+fn cost_admission_rounds_storage_and_quarter_gib_egress_up() {
+    let mut c = cost_config();
+    c.prices.compute_hour_usd_micros = 1;
+    c.prices.ipv4_hour_usd_micros = 1;
+    c.prices.request_allowance_usd_micros = 1;
+    for (gp3, egress, estimate) in [(730, 4, 40), (731, 4, 42), (730, 5, 42), (731, 5, 44)] {
+        c.prices.gp3_gib_month_usd_micros = gp3;
+        c.prices.egress_gib_usd_micros = egress;
+        assert_eq!(c.admit_cost(), Ok(estimate), "gp3 {gp3}, egress {egress}");
+    }
+}
+
 fn template() -> Value {
     template::json(include_bytes!("../../aws/tests/synthesized.json")).unwrap()
 }

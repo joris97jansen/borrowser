@@ -442,7 +442,13 @@ impl Config {
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| e.to_string())?
             .as_secs();
-        if seconds < 0 || seconds as u64 > now || now - seconds as u64 > 30 * 86400 {
+        // reviewed_utc is date-only: the entire thirtieth UTC calendar day is valid.
+        let current_utc_day = now / 86400;
+        let reviewed_utc_day = seconds as u64 / 86400;
+        if seconds < 0
+            || reviewed_utc_day > current_utc_day
+            || current_utc_day - reviewed_utc_day > 30
+        {
             return Err("regional prices must be reviewed within 30 days".into());
         }
         let estimate = 2
