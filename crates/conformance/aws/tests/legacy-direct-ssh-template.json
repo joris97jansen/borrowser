@@ -1,0 +1,135 @@
+{
+  "Metadata": {
+    "BorrowserAg4Operation": {
+      "account": "123456789012",
+      "disable_rollback": false,
+      "region": "eu-west-1",
+      "role_arn": "arn:aws:iam::123456789012:role/ag4",
+      "run_id": "0123456789abcdef0123456789abcdef",
+      "stack_name": "borrowser-ag4-0123456789abcdef0123456789abcdef",
+      "tags": {
+        "borrowser:purpose": "ag4",
+        "borrowser:run-id": "0123456789abcdef0123456789abcdef"
+      },
+      "termination_protection": false,
+      "timeout_minutes": 10
+    }
+  },
+  "Resources": {
+    "Runner": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/sda1",
+            "Ebs": {
+              "DeleteOnTermination": true,
+              "Encrypted": true,
+              "Iops": 3000,
+              "KmsKeyId": "alias/aws/ebs",
+              "VolumeSize": 16,
+              "VolumeType": "gp3"
+            }
+          }
+        ],
+        "DisableApiTermination": false,
+        "ImageId": "ami-0123456789abcdef0",
+        "InstanceInitiatedShutdownBehavior": "stop",
+        "InstanceType": "c6i.large",
+        "MetadataOptions": {
+          "HttpPutResponseHopLimit": 1,
+          "HttpTokens": "required"
+        },
+        "Monitoring": false,
+        "NetworkInterfaces": [
+          {
+            "AssociatePublicIpAddress": true,
+            "DeleteOnTermination": true,
+            "Description": "Borrowser Chromium comparison capture 0123456789abcdef0123456789abcdef",
+            "DeviceIndex": "0",
+            "GroupSet": [
+              {
+                "Fn::GetAtt": [
+                  "RunnerSecurityGroup",
+                  "GroupId"
+                ]
+              }
+            ],
+            "SubnetId": "subnet-0123456789abcdef0"
+          }
+        ],
+        "PropagateTagsToVolumeOnCreation": true,
+        "Tags": [
+          {
+            "Key": "borrowser:purpose",
+            "Value": "ag4"
+          },
+          {
+            "Key": "borrowser:run-id",
+            "Value": "0123456789abcdef0123456789abcdef"
+          },
+          {
+            "Key": "borrowser:stack-id",
+            "Value": {
+              "Ref": "AWS::StackId"
+            }
+          },
+          {
+            "Key": "Name",
+            "Value": "borrowser-chromium-comparison-runner-0123456789abcdef0123456789abcdef"
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": "#!/bin/bash\nset -euo pipefail\numask 077\nexport DEBIAN_FRONTEND=noninteractive\n\nrun_phase() {\n  local phase=\"$1\" seconds=\"$2\" status\n  # One bound covers the whole phase, including retries and service commands.\n  if timeout --kill-after=5 \"$seconds\" /bin/bash -euo pipefail -c \"$phase\"; then\n    return 0\n  else\n    status=$?\n  fi\n  # Preserve timeout/command status even if console reporting itself fails.\n  printf '\\nBORROWSER_AG4_BOOTSTRAP_FAILED 0123456789abcdef0123456789abcdef %s %d\\n' \"$phase\" \"$status\" >/dev/console || true\n  exit \"$status\"\n}\n\nsetup() {\n# Supplementary stop only. CloudFormation deletion is still required for cleanup.\nsystemd-run --unit=borrowser-ag4-lifetime --on-active=45m /usr/sbin/poweroff\n# Keep package resolution on the reviewed snapshot throughout this disposable boot.\nsystemctl mask --now apt-daily.service apt-daily-upgrade.service apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service\ncat >/etc/apt/sources.list.d/ubuntu.sources <<'SOURCES'\nTypes: deb\nURIs: https://snapshot.ubuntu.com/ubuntu/20261001T000000Z/\nSuites: noble noble-updates noble-security\nComponents: main universe\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\nSOURCES\nrm -f /etc/apt/sources.list\n}\napt_update() {\napt-get -o Acquire::Retries=2 -o Acquire::https::Timeout=20 update\n}\napt_install() {\napt-get -o Acquire::Retries=2 -o Acquire::https::Timeout=20 install -y --no-install-recommends \\\n  curl unzip apparmor python3 libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 \\\n  libatspi2.0-0t64 libcairo2 libcups2t64 libdbus-1-3 libexpat1 libgbm1 \\\n  libglib2.0-0t64 libnspr4 libnss3 libpango-1.0-0 libudev1 libx11-6 libxcb1 \\\n  libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2\n}\nchromium_download() {\nmkdir -p /opt/borrowser-ag2\ncurl --fail --location --proto '=https' --proto-redir '=https' --connect-timeout 15 \\\n  --max-time 180 --retry 2 --max-filesize 268435456 -o /tmp/chromium.zip 'https://storage.googleapis.com/chrome-for-testing-public/155.0.8059.39/linux64/chrome-linux64.zip'\n}\narchive() {\nprintf '%s  /tmp/chromium.zip\\n' '55672d1f392fd3e7b7a08621b6e804e6bcb39d40cf155504abb74b3a021ea8ea' | sha256sum --check --strict\nunzip -q /tmp/chromium.zip -d /opt/borrowser-ag2\n# The archive stays root-owned, but the non-root capture account must traverse\n# its directories and read/execute Chromium despite the private bootstrap umask.\nchmod -R a+rX /opt/borrowser-ag2\nrm /tmp/chromium.zip\n}\nsandbox() {\ncat >/etc/apparmor.d/borrowser-ag2-chromium <<'PROFILE'\nabi <abi/4.0>,\ninclude <tunables/global>\nprofile borrowser-ag2-chromium /opt/borrowser-ag2/chrome-linux64/chrome flags=(unconfined) {\n  userns,\n}\nPROFILE\napparmor_parser -r /etc/apparmor.d/borrowser-ag2-chromium\ngrep -F 'borrowser-ag2-chromium ' /sys/kernel/security/apparmor/profiles\n}\nssh_prepare() {\nuseradd --create-home --shell /bin/bash ag4\ninstall -d -m 755 /opt/borrowser-ag4\nprintf '%s' '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' | base64 --decode | gzip --decompress >/opt/borrowser-ag4/guest_capture.py\nchmod 644 /opt/borrowser-ag4/guest_capture.py\ninstall -d -m 700 -o ag4 -g ag4 /home/ag4/.ssh /home/ag4/run /tmp/ag4\n}\nssh_config() {\nprintf '%s' 'c3NoLWVkMjU1MTkgQUFBQUMzTnphQzFsWkRJMU5URTVBQUFBSUVjbTgzVUlrbkdrV01xTTRKUmZsbFN0SmxYWFJoQnN6bzlibzF1ZnNvVFk=' | base64 --decode >/home/ag4/.ssh/authorized_keys\nchown ag4:ag4 /home/ag4/.ssh/authorized_keys\nchmod 600 /home/ag4/.ssh/authorized_keys\ncat >/etc/ssh/sshd_config.d/00-borrowser-ag4.conf <<'SSH'\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\nAllowUsers ag4\nAllowAgentForwarding no\nAllowTcpForwarding no\nX11Forwarding no\nSSH\n}\nssh_validate() {\n# Standalone validation precedes ssh.service's RuntimeDirectory=sshd setup.\n# Never repair or replace an existing, unreviewed runtime path.\nif [[ ! -e /run/sshd && ! -L /run/sshd ]]; then\n  install -d -m 0755 -o root -g root /run/sshd\nfi\n[[ -d /run/sshd && ! -L /run/sshd ]] || return 1\nlocal metadata entry\nmetadata=$(stat -c '%u:%g:%a' /run/sshd)\n[[ \"$metadata\" == '0:0:755' ]] || return 1\nentry=$(find /run/sshd -mindepth 1 -maxdepth 1 -printf x -quit)\n[[ -z \"$entry\" ]] || return 1\nsshd -t\n}\nssh_restart() {\nsystemctl restart ssh\n}\nssh_identification() {\n# A successful service transition alone does not prove a listening SSH endpoint.\n# Receive only an identification line: no client banner, keys or authentication.\n/usr/bin/python3 -I - \"$1\" <<'PY'\nimport socket\nimport sys\nimport time\n\ndeadline = time.monotonic() + 4\ntry:\n    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:\n        connection.settimeout(max(0.001, deadline - time.monotonic()))\n        connection.connect((sys.argv[1], 22))\n        banner = bytearray()\n        while len(banner) < 255:\n            remaining = deadline - time.monotonic()\n            if remaining <= 0:\n                raise TimeoutError()\n            connection.settimeout(remaining)\n            byte = connection.recv(1)\n            if not byte:\n                break\n            banner.extend(byte)\n            if byte == b\"\\n\":\n                break\n        if (not banner.endswith(b\"\\r\\n\") or not banner.startswith(b\"SSH-2.0-\")\n                or not banner[8:-2].split(b\" \", 1)[0]\n                or any(byte < 32 or byte > 126 for byte in banner[:-2])):\n            raise ValueError()\nexcept (OSError, ValueError):\n    raise SystemExit(\"SSH local identification unavailable or invalid\")\nPY\n}\nssh_probe_loopback() {\nssh_identification 127.0.0.1\n}\nssh_probe_private() {\n# Local kernel observations only. No DNS, route-get to an external destination,\n# IMDS or network request. Truncated/ambiguous observations cannot select a host.\nlocal routes addresses address\nroutes=$(ip -j -4 route show default | head -c 8193)\naddresses=$(ip -j -4 address show scope global | head -c 8193)\naddress=$(/usr/bin/python3 -I - \"$routes\" \"$addresses\" <<'PY'\nimport ipaddress\nimport json\nimport re\nimport sys\n\ntry:\n    if any(len(value.encode()) > 8192 for value in sys.argv[1:]):\n        raise ValueError()\n    routes, links = (json.loads(value) for value in sys.argv[1:])\n    if not isinstance(routes, list) or len(routes) != 1 or not isinstance(links, list):\n        raise ValueError()\n    route = routes[0]\n    device = route[\"dev\"]\n    if (route[\"dst\"] != \"default\" or route.get(\"type\", \"unicast\") != \"unicast\"\n            or \"nexthops\" in route or \"multipath\" in route\n            or not isinstance(device, str) or not re.fullmatch(r\"[a-zA-Z0-9_.-]{1,15}\", device)\n            or device == \"lo\"):\n        raise ValueError()\n    primary = [link for link in links if link[\"ifname\"] == device]\n    if len(primary) != 1:\n        raise ValueError()\n    link = primary[0]\n    if (type(link[\"ifindex\"]) is not int or link[\"ifindex\"] <= 0\n            or not isinstance(link[\"flags\"], list) or \"UP\" not in link[\"flags\"]\n            or not isinstance(link[\"addr_info\"], list) or len(link[\"addr_info\"]) != 1):\n        raise ValueError()\n    info = link[\"addr_info\"][0]\n    address = ipaddress.IPv4Address(info[\"local\"])\n    if (info[\"family\"] != \"inet\" or info[\"scope\"] != \"global\"\n            or info.get(\"secondary\", False) is not False\n            or type(info[\"prefixlen\"]) is not int or not 1 <= info[\"prefixlen\"] <= 32\n            or str(address) != info[\"local\"]\n            or not any(address in ipaddress.IPv4Network(network)\n                       for network in (\"10.0.0.0/8\", \"172.16.0.0/12\", \"192.168.0.0/16\"))):\n        raise ValueError()\nexcept (ValueError, TypeError, KeyError):\n    raise SystemExit(\"SSH primary private IPv4 unavailable or ambiguous\")\nprint(address)\nPY\n)\nssh_identification \"$address\"\n}\nready() {\nlocal public_key\npublic_key=$(cut -d ' ' -f 1,2 /etc/ssh/ssh_host_ed25519_key.pub)\nprintf 'BORROWSER_AG4_READY 0123456789abcdef0123456789abcdef %s\\n' \"$public_key\" >/dev/console\n}\n\nexport -f setup apt_update apt_install chromium_download archive sandbox ssh_prepare ssh_config ssh_validate ssh_restart ssh_identification ssh_probe_loopback ssh_probe_private ready\n# 920s phase sum + 13 * 5s kill allowances = 985s, below the controller's\n# 1080s readiness window by 95s. See the operational contract and tests.\nrun_phase setup 30\nrun_phase apt_update 180\nrun_phase apt_install 420\nrun_phase chromium_download 180\nrun_phase archive 45\nrun_phase sandbox 15\nrun_phase ssh_prepare 10\nrun_phase ssh_config 5\nrun_phase ssh_validate 5\nrun_phase ssh_restart 10\nrun_phase ssh_probe_loopback 5\nrun_phase ssh_probe_private 10\nrun_phase ready 5\n"
+        }
+      },
+      "Type": "AWS::EC2::Instance",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "RunnerSecurityGroup": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "GroupDescription": "Disposable Borrowser Chromium comparison capture",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "FromPort": 443,
+            "IpProtocol": "tcp",
+            "ToPort": 443
+          }
+        ],
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": "192.0.2.1/32",
+            "FromPort": 22,
+            "IpProtocol": "tcp",
+            "ToPort": 22
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "borrowser:purpose",
+            "Value": "ag4"
+          },
+          {
+            "Key": "borrowser:run-id",
+            "Value": "0123456789abcdef0123456789abcdef"
+          },
+          {
+            "Key": "borrowser:stack-id",
+            "Value": {
+              "Ref": "AWS::StackId"
+            }
+          },
+          {
+            "Key": "Name",
+            "Value": "borrowser-chromium-comparison-security-0123456789abcdef0123456789abcdef"
+          }
+        ],
+        "VpcId": "vpc-0123456789abcdef0"
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+      "UpdateReplacePolicy": "Delete"
+    }
+  }
+}

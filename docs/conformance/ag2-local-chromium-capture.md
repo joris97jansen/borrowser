@@ -1072,4 +1072,14 @@ AG2 is integrated as one issue. Both intended platforms have recorded
 implementation and runtime-qualification evidence. New AG3 composition changes
 require their own final-tree validation; they do not erase or extend the scope
 of the historical AG2 qualification. No AG4 functionality or new GitHub issues
-are introduced.
+are introduced by that historical qualification.
+
+## AG4 execution reuse
+
+AG4 invokes this same Linux `--chromium` capture from a snapshot-matched harness
+on one disposable AWS host. It preserves the archive pin, sandbox and static
+document restrictions, fixture bytes and capture format. Its bounded wire
+ingestion is outside the native launcher; controller command ownership is a
+separate private AG4 concern. See the [AG4 contract](ag4-disposable-aws-chromium-runner.md).
+Existing local Linux evidence does not qualify the AMI, bootstrap, SSH transport
+or CloudFormation lifecycle. Local execution requires no AWS preparation.

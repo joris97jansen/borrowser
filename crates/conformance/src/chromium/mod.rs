@@ -1,5 +1,6 @@
 mod cdp;
 mod error;
+pub(crate) mod ingest;
 mod process;
 mod screenshot;
 #[cfg(test)]

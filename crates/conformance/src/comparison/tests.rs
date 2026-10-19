@@ -38,6 +38,49 @@ fn publish_bytes(result: Result<report::Report, Failure>) -> (u8, Vec<u8>, Strin
 }
 
 #[test]
+fn imported_capture_uses_the_existing_projection_and_no_operational_metadata() {
+    let fixtures: Vec<_> = FIXTURES.iter().collect();
+    let inputs: Vec<_> = fixtures
+        .iter()
+        .map(|f| {
+            let FixtureKind::Runnable { html, .. } = f.kind else {
+                panic!("runnable fixture required")
+            };
+            CaptureInput {
+                id: f.id,
+                source: f.source,
+                html,
+            }
+        })
+        .collect();
+    let colors = [[18, 52, 86], [52, 86, 120]];
+    let observations: Vec<_> = inputs.iter().zip(colors).map(|(input,color)| {
+        let mut browser=serde_json::to_value(capture(color).identity).unwrap();
+        browser["platform"]=json!("linux-x86_64");
+        json!({"test_id":input.id.0,"source":input.source,"canvas_color_rgb8":color,"browser":browser})
+    }).collect();
+    let wire=serde_json::to_vec(&json!({"schema":"borrowser.chromium-canvas.v1","document_url":crate::environment::URL,
+        "viewport":[640,480],"device_scale_factor":1,"sample_pixel":[32,32],"observations":observations})).unwrap();
+    let first = publish_bytes(compare_captured(
+        &fixtures,
+        chromium::ingest::decode(wire.as_slice(), &inputs).unwrap(),
+    ));
+    let second = publish_bytes(compare_captured(
+        &fixtures,
+        chromium::ingest::decode(wire.as_slice(), &inputs).unwrap(),
+    ));
+    assert_eq!(first, second);
+    assert_eq!(first.0, 0);
+    assert!(first.2.is_empty());
+    let report: Value = serde_json::from_slice(&first.1).unwrap();
+    assert_eq!(report["summary"]["equal_fields"], 2);
+    let text = String::from_utf8(first.1).unwrap();
+    for field in ["run_id", "stack_id", "instance_id", "cleanup", "elapsed"] {
+        assert!(!text.contains(field));
+    }
+}
+
+#[test]
 fn unit_exact_channels_and_stable_serialization() {
     for (right, status, channels) in [
         ([52, 86, 120], "equal", ["equal", "equal", "equal"]),
