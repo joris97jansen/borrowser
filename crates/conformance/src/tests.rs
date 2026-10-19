@@ -4,7 +4,7 @@ fn runnable(expected: CanvasColor, expectation: Expectation) -> Fixture {
     Fixture {
         kind: FixtureKind::Runnable {
             html: include_bytes!("../fixtures/root-canvas-color.html"),
-            expected,
+            expected: Expected::Canvas(expected),
             expectation,
         },
         ..FIXTURES[0]
@@ -115,11 +115,142 @@ fn fixture_identities_are_unique() {
 fn actual_capture_error_cannot_satisfy_known_failure_metadata() {
     let fixture = Fixture { kind: FixtureKind::Runnable {
         html: b"<!doctype html><html><head><style>html,body{margin:0;padding:0;height:0}html{background-color:#123456}div{height:100px;background-color:red}</style></head><body><div></div></body></html>",
-        expected: CanvasColor([18, 52, 86]), expectation: Expectation::KnownFailure { reason: "must not hide capture failure" },
+        expected: crate::model::Expected::Canvas(CanvasColor([18, 52, 86])), expectation: Expectation::KnownFailure { reason: "must not hide capture failure" },
     }, ..FIXTURES[0] };
     let execution = run_fixture(&fixture);
     assert!(matches!(&execution, Execution::Error(error) if error.code == "capture.overlap"));
     let report = report::evaluate(&fixture, execution);
     assert_eq!(report.status(), "ERROR");
     assert_eq!(report::exit_code(&[report]), 2);
+}
+
+#[test]
+fn projection_local_typed_numeric_diagnostics_agree_with_status() {
+    use crate::projection::{ObservationRequest, Request, StyleField, StyleProperty};
+    let fixture = Fixture {
+        request: ObservationRequest {
+            styles: &[StyleField {
+                target: "x",
+                name: "font-size",
+                property: Request::Compare(StyleProperty::FontSize),
+            }],
+            ..ObservationRequest::NONE
+        },
+        kind: FixtureKind::Runnable {
+            html: b"<!doctype html><div id=x style='font-size:20px'></div>",
+            expected: Expected::Projection(
+                r#"{"dom":{"state":"not_requested"},"styles":[{"target":"x","property":"font-size","value":{"state":"observed","value":{"state":"present","value":{"kind":"css_px","value":20}}}}],"layout":{"state":"not_requested"},"canvas":{"state":"not_requested"}}"#,
+            ),
+            expectation: Expectation::Match,
+        },
+        ..FIXTURES[4]
+    };
+    let actual = run_fixture(&fixture);
+    let evaluated = report::evaluate(&fixture, actual);
+    assert_eq!(evaluated.status(), "PASS");
+    let mut bytes = vec![];
+    report::write_report(&[evaluated], &mut bytes).unwrap();
+    assert!(!String::from_utf8(bytes).unwrap().contains("difference:"));
+    let FixtureKind::Runnable { expected, .. } = fixture.kind else {
+        unreachable!()
+    };
+    let changed = Fixture {
+        kind: FixtureKind::Runnable {
+            html: b"<!doctype html><div id=x style='font-size:21px'></div>",
+            expected,
+            expectation: Expectation::Match,
+        },
+        ..fixture
+    };
+    let evaluated = report::evaluate(&changed, run_fixture(&changed));
+    assert_eq!(evaluated.status(), "FAIL");
+    let mut bytes = vec![];
+    report::write_report(&[evaluated], &mut bytes).unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+    assert!(
+        text.contains("difference: /styles[0]/value/value/value/value expected 20.0, actual 21.0"),
+        "{text}"
+    );
+}
+
+#[test]
+fn projection_local_reports_partial_coverage_and_known_failure_reasons() {
+    use crate::projection::{ObservationRequest, Request, StyleField, StyleProperty};
+    let fixture = Fixture {
+        request: ObservationRequest {
+            dom: Request::Unsupported {
+                reason: "DOM excluded here",
+            },
+            styles: &[
+                StyleField {
+                    target: "x",
+                    name: "font-size",
+                    property: Request::Compare(StyleProperty::FontSize),
+                },
+                StyleField {
+                    target: "x",
+                    name: "line-height",
+                    property: Request::Unsupported {
+                        reason: "line-height outside profile",
+                    },
+                },
+            ],
+            ..ObservationRequest::NONE
+        },
+        kind: FixtureKind::Runnable {
+            html: b"<!doctype html><div id=x style='font-size:20px'></div>",
+            expected: Expected::Projection(
+                r#"{"dom":{"state":"unsupported","value":"DOM excluded here"},"styles":[{"target":"x","property":"font-size","value":{"state":"observed","value":{"state":"present","value":{"kind":"css_px","value":20.0}}}},{"target":"x","property":"line-height","value":{"state":"unsupported","value":"line-height outside profile"}}],"layout":{"state":"not_requested"},"canvas":{"state":"not_requested"}}"#,
+            ),
+            expectation: Expectation::Match,
+        },
+        ..FIXTURES[4]
+    };
+    for differs in [false, true] {
+        let FixtureKind::Runnable { html, expected, .. } = fixture.kind else {
+            unreachable!()
+        };
+        let fixture = Fixture {
+            kind: FixtureKind::Runnable {
+                html: if differs {
+                    b"<!doctype html><div id=x style='font-size:21px'></div>"
+                } else {
+                    html
+                },
+                expected,
+                expectation: if differs {
+                    Expectation::KnownFailure {
+                        reason: "known font-size difference",
+                    }
+                } else {
+                    Expectation::Match
+                },
+            },
+            ..fixture
+        };
+        let evaluated = report::evaluate(&fixture, run_fixture(&fixture));
+        assert_eq!(
+            evaluated.status(),
+            if differs { "XFAIL" } else { "INCOMPLETE" }
+        );
+        let mut bytes = vec![];
+        report::write_report(&[evaluated], &mut bytes).unwrap();
+        let text = String::from_utf8(bytes).unwrap();
+        assert!(
+            text.contains("unsupported: dom: DOM excluded here"),
+            "{text}"
+        );
+        assert!(
+            text.contains("unsupported: style:#x/line-height: line-height outside profile"),
+            "{text}"
+        );
+        assert!(text.contains("coverage: incomplete"), "{text}");
+        assert_eq!(text.contains("difference:"), differs, "{text}");
+        if differs {
+            assert!(
+                text.contains("known failure: known font-size difference"),
+                "{text}"
+            );
+        }
+    }
 }

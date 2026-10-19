@@ -88,16 +88,29 @@ pub struct RetainedLayoutFrameResult {
 
 #[derive(Clone, Debug)]
 pub struct RetainedLayoutArtifact {
+    source_viewport_width: f32,
     key: RetainedLayoutKey,
     root: RetainedLayoutBox,
 }
 
 impl RetainedLayoutArtifact {
+    /// Immutable geometry from this retained production artifact. Anonymous
+    /// anchors are deliberately not presented as DOM box identity.
+    pub fn root(&self) -> RetainedBoxView<'_> {
+        RetainedBoxView(&self.root)
+    }
+
     pub fn from_layout_output(key: RetainedLayoutKey, output: &LayoutPhaseOutput<'_, '_>) -> Self {
         Self {
             key,
             root: RetainedLayoutBox::from_layout(output.root()),
+            source_viewport_width: output.viewport_width(),
         }
+    }
+
+    /// Unquantized constraint used when this geometry was computed.
+    pub fn source_viewport_width(&self) -> f32 {
+        self.source_viewport_width
     }
 
     pub fn key(&self) -> RetainedLayoutKey {
@@ -125,6 +138,26 @@ impl RetainedLayoutArtifact {
     #[cfg(test)]
     pub fn contains_artifact_local_box_ordinal_debug_text(&self) -> bool {
         format!("{self:?}").contains("RetainedLayoutArtifactBoxOrdinal")
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct RetainedBoxView<'a>(&'a RetainedLayoutBox);
+
+impl<'a> RetainedBoxView<'a> {
+    pub fn direct_node_id(&self) -> Option<Id> {
+        match self.0.source {
+            RetainedBoxSource::DomNode { node_id } => Some(node_id),
+            _ => None,
+        }
+    }
+
+    pub fn rect(&self) -> Rectangle {
+        self.0.rect
+    }
+
+    pub fn children(&self) -> impl ExactSizeIterator<Item = RetainedBoxView<'a>> + 'a {
+        self.0.children.iter().map(RetainedBoxView)
     }
 }
 
@@ -444,6 +477,43 @@ mod tests {
         fn intrinsic_for_img(&self, _image: &ImagePresentation) -> Option<IntrinsicSize> {
             Some(IntrinsicSize::from_w_h(Some(80.0), Some(40.0)))
         }
+    }
+
+    #[test]
+    fn retained_observation_keeps_original_width_and_direct_identity() {
+        let dom = element(
+            1,
+            "div",
+            vec![("display", "block")],
+            vec![text(2, "inline text")],
+        );
+        let styled = build_style_tree(&dom, None);
+        let output = layout_document(LayoutPhaseInput::new(&styled, 320.125, &TestMeasurer, None));
+        let key = RetainedLayoutKeySeed {
+            identity_domain: 1,
+            layout_input_generation: 1,
+            layout_style_generation: 1,
+            text_measurement_generation: 0,
+            replaced_metadata_generation: 0,
+        }
+        .for_viewport_width(320.125);
+        let artifact = RetainedLayoutArtifact::from_layout_output(key, &output);
+        assert_eq!(artifact.source_viewport_width(), 320.125);
+        assert_ne!(
+            artifact.source_viewport_width(),
+            artifact.key().viewport_width.value() as f32 / 2.0
+        );
+        assert_eq!(artifact.root().direct_node_id(), Some(Id(1)));
+        fn compare_view(view: RetainedBoxView<'_>, original: &crate::LayoutBox<'_, '_>) {
+            assert_eq!(view.direct_node_id(), original.direct_node_id());
+            assert_eq!(view.rect().x.to_bits(), original.rect.x.to_bits());
+            assert_eq!(view.rect().width.to_bits(), original.rect.width.to_bits());
+            assert_eq!(view.children().len(), original.children.len());
+            for (view, original) in view.children().zip(&original.children) {
+                compare_view(view, original);
+            }
+        }
+        compare_view(artifact.root(), output.root());
     }
 
     #[test]

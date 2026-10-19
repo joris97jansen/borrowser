@@ -9,7 +9,10 @@ publish = false
 aws-acceptance = []
 
 [dependencies]
-browser = { path = "../browser" }
+browser = { path = "../browser", features = ["conformance-observation"] }
+html = { path = "../html", features = ["internal-api"] }
+css = { path = "../css" }
+layout = { path = "../layout" }
 bus = { path = "../bus" }
 core_types = { path = "../core_types" }
 runtime_parse = { path = "../runtime_parse" }

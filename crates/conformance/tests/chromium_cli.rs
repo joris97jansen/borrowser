@@ -38,11 +38,11 @@ fn real_chromium_cli_has_stable_independent_observations() {
         );
         assert!(output.stderr.is_empty());
         let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["schema"], "borrowser.chromium-canvas.v1");
+        assert_eq!(report["schema"], "borrowser.chromium-phases.v1");
         assert_eq!(report["viewport"], serde_json::json!([640, 480]));
         assert_eq!(report["sample_pixel"], serde_json::json!([32, 32]));
         let observations = report["observations"].as_array().unwrap();
-        assert_eq!(observations.len(), 2);
+        assert_eq!(observations.len(), 6);
         assert_eq!(
             observations[0]["canvas_color_rgb8"],
             serde_json::json!([18, 52, 86])
@@ -51,10 +51,55 @@ fn real_chromium_cli_has_stable_independent_observations() {
             observations[1]["canvas_color_rgb8"],
             serde_json::json!([52, 86, 120])
         );
-        for observation in observations {
+        let ids = [
+            "canvas/root",
+            "canvas/cascade",
+            "dom/structure",
+            "dom/template-namespaces",
+            "style/cascade-inheritance",
+            "layout/block-boxes",
+        ];
+        for (index, (observation, id)) in observations.iter().zip(ids).enumerate() {
+            assert_eq!(observation["test_id"], id);
+            if index < 2 {
+                assert!(observation["inspection"].is_null());
+            } else {
+                assert!(observation["canvas_color_rgb8"].is_null());
+                let inspection = &observation["inspection"];
+                assert_eq!(inspection["dom"].is_object(), index < 4);
+                let styles = inspection["styles"].as_array().unwrap();
+                let layout = inspection["layout"].as_array().unwrap();
+                assert_eq!(
+                    styles
+                        .iter()
+                        .map(|s| s["target"].as_str().unwrap())
+                        .collect::<Vec<_>>(),
+                    if index == 4 {
+                        vec!["parent", "child", "hidden"]
+                    } else {
+                        vec![]
+                    }
+                );
+                assert!(
+                    styles
+                        .iter()
+                        .all(|s| s["values"].as_array().unwrap().len() == 4)
+                );
+                assert_eq!(
+                    layout
+                        .iter()
+                        .map(|l| l["target"].as_str().unwrap())
+                        .collect::<Vec<_>>(),
+                    if index == 5 {
+                        vec!["container", "child", "sibling", "hidden", "zero", "missing"]
+                    } else {
+                        vec![]
+                    }
+                );
+            }
             assert_eq!(
                 observation["browser"]["capture_profile"],
-                "ag2-canvas-srgb-v2"
+                "ag5-static-phases-v1"
             );
             assert!(observation.get("expected").is_none());
             assert!(observation.get("status").is_none());

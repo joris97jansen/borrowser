@@ -68,7 +68,22 @@ fn parser_failure(error: HtmlParseFailure) -> HarnessError {
     HarnessError::new(code, "document parsing did not complete successfully")
 }
 
+#[cfg(test)]
 pub(crate) fn execute_html(html: &[u8]) -> Result<CanvasColor, HarnessError> {
+    match execute_fixture(html, crate::projection::ObservationRequest::CANVAS)?
+        .observations
+        .canvas
+    {
+        crate::projection::Observation::Observed(color) => Ok(color),
+        _ => Err(HarnessError::new("capture.missing", "canvas not observed")),
+    }
+}
+
+pub(crate) fn execute_fixture(
+    html: &[u8],
+    request: crate::projection::ObservationRequest,
+) -> Result<crate::projection::BorrowserCapture, HarnessError> {
+    crate::projection::validate_request(request)?;
     let (commands, command_rx) = mpsc::channel();
     let (parser, parser_rx) = mpsc::channel();
     let (events, event_rx) = mpsc::channel();
@@ -195,6 +210,15 @@ pub(crate) fn execute_html(html: &[u8]) -> Result<CanvasColor, HarnessError> {
         .get_mut(&egui::ViewportId::ROOT)
         .expect("root viewport")
         .native_pixels_per_point = Some(1.0);
+    if request.needs_frame() {
+        let frame = tab
+            .render_observed_frame(&ctx, input)
+            .map_err(|e| HarnessError::new("render.observation", format!("{e:?}")))?;
+        let owned = crate::projection::from_frame(&frame, request)?;
+        drop(frame);
+        forward_commands(&command_rx, &parser)?;
+        return Ok(owned);
+    }
     ctx.begin_pass(input);
     let frame = tab.ui_content(&ctx);
     let output = ctx.end_pass();
@@ -208,7 +232,23 @@ pub(crate) fn execute_html(html: &[u8]) -> Result<CanvasColor, HarnessError> {
     let status = frame
         .map_err(|_| HarnessError::new("render.style", "production style preparation failed"))?;
     accept_frame(status, &output)?;
-    capture_canvas_color(&output)
+    let canvas = match request.canvas {
+        crate::projection::Request::Compare(()) => {
+            crate::projection::Observation::Observed(capture_canvas_color(&output)?)
+        }
+        crate::projection::Request::Unsupported { reason } => {
+            crate::projection::Observation::Unsupported(reason.into())
+        }
+        crate::projection::Request::NotRequested => crate::projection::Observation::NotRequested,
+    };
+    Ok(crate::projection::BorrowserCapture {
+        observations: crate::projection::ProjectedObservations {
+            canvas,
+            ..Default::default()
+        },
+        layout_viewport_width: None,
+        layout_artifact_source_width: None,
+    })
 }
 
 fn accept_frame(status: PageFrameStatus, output: &FullOutput) -> Result<(), HarnessError> {

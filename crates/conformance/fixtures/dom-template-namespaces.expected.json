@@ -1,0 +1,145 @@
+{
+  "dom": {
+    "state": "observed",
+    "value": {
+      "kind": "document",
+      "children": [
+        {
+          "kind": "doctype",
+          "name": "html",
+          "public_id": "",
+          "system_id": ""
+        },
+        {
+          "kind": "element",
+          "namespace": "http://www.w3.org/1999/xhtml",
+          "name": "html",
+          "attributes": [],
+          "children": [
+            {
+              "kind": "element",
+              "namespace": "http://www.w3.org/1999/xhtml",
+              "name": "head",
+              "attributes": [],
+              "children": [],
+              "template": null
+            },
+            {
+              "kind": "element",
+              "namespace": "http://www.w3.org/1999/xhtml",
+              "name": "body",
+              "attributes": [],
+              "children": [
+                {
+                  "kind": "element",
+                  "namespace": "http://www.w3.org/1999/xhtml",
+                  "name": "template",
+                  "attributes": [
+                    {
+                      "namespace": "",
+                      "name": "id",
+                      "prefix": "",
+                      "value": "t"
+                    }
+                  ],
+                  "children": [],
+                  "template": {
+                    "kind": "fragment",
+                    "children": [
+                      {
+                        "kind": "element",
+                        "namespace": "http://www.w3.org/1999/xhtml",
+                        "name": "span",
+                        "attributes": [
+                          {
+                            "namespace": "",
+                            "name": "title",
+                            "prefix": "",
+                            "value": "a & b"
+                          }
+                        ],
+                        "children": [
+                          {
+                            "kind": "text",
+                            "value": "inside"
+                          }
+                        ],
+                        "template": null
+                      },
+                      {
+                        "kind": "comment",
+                        "value": "inert"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "element",
+                  "namespace": "http://www.w3.org/2000/svg",
+                  "name": "svg",
+                  "attributes": [
+                    {
+                      "namespace": "",
+                      "name": "viewBox",
+                      "prefix": "",
+                      "value": "0 0 1 1"
+                    }
+                  ],
+                  "children": [
+                    {
+                      "kind": "element",
+                      "namespace": "http://www.w3.org/2000/svg",
+                      "name": "a",
+                      "attributes": [
+                        {
+                          "namespace": "http://www.w3.org/1999/xlink",
+                          "name": "href",
+                          "prefix": "xlink",
+                          "value": "#x"
+                        }
+                      ],
+                      "children": [],
+                      "template": null
+                    }
+                  ],
+                  "template": null
+                },
+                {
+                  "kind": "element",
+                  "namespace": "http://www.w3.org/1998/Math/MathML",
+                  "name": "math",
+                  "attributes": [],
+                  "children": [
+                    {
+                      "kind": "element",
+                      "namespace": "http://www.w3.org/1998/Math/MathML",
+                      "name": "mi",
+                      "attributes": [],
+                      "children": [
+                        {
+                          "kind": "text",
+                          "value": "x"
+                        }
+                      ],
+                      "template": null
+                    }
+                  ],
+                  "template": null
+                }
+              ],
+              "template": null
+            }
+          ],
+          "template": null
+        }
+      ]
+    }
+  },
+  "styles": [],
+  "layout": {
+    "state": "not_requested"
+  },
+  "canvas": {
+    "state": "not_requested"
+  }
+}

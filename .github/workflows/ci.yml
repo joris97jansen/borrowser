@@ -290,7 +290,7 @@ jobs:
           # Ordinary tests own their private child invocations.
           cargo test -p borrowser-conformance --locked -- \
             --test-threads=1 --nocapture 2>&1 | tee "$AG2_EVIDENCE/conformance.log"
-          # This lane owns these three ignored real-browser qualifications.
+          # Each ignored qualification owns a fresh standalone process.
           cargo test -p borrowser-conformance --locked --bin borrowser-conformance \
             chromium::tests::real_chromium_capture_and_scripts \
             -- --exact --ignored --test-threads=1 --nocapture \
@@ -302,6 +302,27 @@ jobs:
           cargo test -p borrowser-conformance --locked --bin borrowser-conformance \
             comparison::tests::real_chromium_comparison_composition \
             -- --exact --ignored --test-threads=1 --nocapture \
+            2>&1 | tee -a "$AG2_EVIDENCE/conformance.log"
+          cargo test -p borrowser-conformance --locked --bin borrowser-conformance \
+            chromium::tests::real_chromium_ag5_read_only_inspection \
+            -- --exact --ignored --test-threads=1 --nocapture \
+            2>&1 | tee -a "$AG2_EVIDENCE/conformance.log"
+          cargo test -p borrowser-conformance --locked --bin borrowser-conformance \
+            chromium::tests::real_chromium_ag5_profile \
+            -- --exact --ignored --test-threads=1 --nocapture \
+            2>&1 | tee -a "$AG2_EVIDENCE/conformance.log"
+          cargo test -p borrowser-conformance --locked --test chromium_cli \
+            real_chromium_cli_has_stable_independent_observations \
+            -- --exact --ignored --nocapture \
+            2>&1 | tee -a "$AG2_EVIDENCE/conformance.log"
+          cargo test -p borrowser-conformance --locked --test comparison_cli \
+            real_chromium_combined_cli_is_stable_and_selects_exactly \
+            -- --exact --ignored --nocapture \
+            2>&1 | tee -a "$AG2_EVIDENCE/conformance.log"
+          env TMPDIR="$RUNNER_TEMP/ag2-profiles" \
+            BORROWSER_AG4_GUEST_HARNESS="$PWD/target/debug/borrowser-conformance" \
+            python3 -m unittest discover -s crates/conformance/aws/tests \
+              -p test_guest_capture.py \
             2>&1 | tee -a "$AG2_EVIDENCE/conformance.log"
           cargo run -p borrowser-conformance --locked -- --chromium \
             > "$AG2_EVIDENCE/captures.json" 2> "$AG2_EVIDENCE/capture.stderr"

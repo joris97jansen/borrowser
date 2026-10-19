@@ -30,3 +30,8 @@ mod ui;
 pub use self::state::Tab;
 pub use self::ui::PageFrameStatus;
 pub use dom_style::{inherited_color, page_background};
+
+#[cfg(feature = "conformance-observation")]
+pub(crate) mod observation;
+#[cfg(feature = "conformance-observation")]
+pub use observation::{CompletedPageFrame, FrameElementStyle, FrameObservationError};

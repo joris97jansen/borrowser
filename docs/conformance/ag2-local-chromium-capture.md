@@ -17,11 +17,12 @@ Use the full **Chrome for Testing 155.0.8059.39** distribution, revision
 `@3ff7ac5a9224be9156d7f8703a06e22890aafd34`, CDP protocol `1.3`.
 [`chromium-reference.json`](../../crates/conformance/chromium-reference.json)
 records versioned archive URLs and SHA-256 hashes for mac-arm64 and linux64.
-The current capture profile is **`ag2-canvas-srgb-v2`**: one ordinary headless
-page and the parsed-document resource policy below. The browser pin, archive
-checksums, fixture expectations and `borrowser.chromium-canvas.v1` JSON schema
-are unchanged. Earlier hidden-target and A/B evidence retains its historical v1
-identity; it is not retroactively v2 qualification.
+AG5 now uses **`ag5-static-phases-v1`** and `borrowser.chromium-phases.v1`.
+The browser pin/archive checksums and canvas restrictions are unchanged.
+[AG5](ag5-phase-comparison-projections.md) defines the additional read-only native
+inspection, strict limits and separate common projection. Earlier
+`ag2-canvas-srgb-v2` and hidden-target/A/B evidence below retains its historical
+identity; it does not qualify the new AG5 profile.
 Download and verify the selected archive before extracting it to a trusted local
 directory. `--chromium-executable PATH` takes precedence over
 `BORROWSER_CHROMIUM_EXECUTABLE`. There is no implicit executable discovery,
@@ -55,11 +56,13 @@ empty stdout. Default invocation retains AG1's execution/report behavior.
 | Observation | Physical screenshot pixel (32, 32), CSS center (32.5, 32.5) |
 | Color | Opaque sRGB RGB8, copied into the existing `CanvasColor` |
 
-The screenshot is the sole color source. Read-only DOM inspection checks the
-document identity/URL/mode and absence of live-document `link` elements for resource
-eligibility; it is not a DOM observation inventory. Layout metrics check only the viewport. CSS declarations, computed
-styles and DOM geometry are not alternative observations. No JavaScript is
-evaluated by the harness. A wrong color remains an observation.
+For the canvas family, the screenshot remains the sole color source; computed
+style and geometry never substitute for its sample. Read-only eligibility
+inspection checks document identity/URL/mode and absence of live-document `link`
+elements. AG5 separately requests native DOM, computed style and client rectangles
+through its fixed isolated-world collector, with page scripts still disabled.
+See the AG5 contract for these distinct comparisons. A wrong canvas color remains
+an observation.
 
 AG1 feeds its response in parser chunks; CDP fulfills one complete response.
 These fixtures have no timing-dependent content. Chromium uses its real raster
@@ -173,8 +176,10 @@ limit, and explicit EOF, truncated-frame, malformed-response and remote errors.
    query `DOM.querySelector(nodeId, "link")`, require integer node ID zero, and
    verify the same frame/loader. No page JavaScript is evaluated. Document
    replacement invalidates this evidence; a second scan cannot erase the failure.
-6. Verify the viewport. Request the unchanged surface PNG screenshot without
-   capture beyond the viewport. Decode/sample it and verify the frame tree again.
+6. Verify the viewport. For a canvas request, capture the unchanged surface PNG
+   without capture beyond the viewport and decode/sample it. For AG5 phase
+   requests, run the fixed read-only isolated-world collector. Verify the frame
+   tree again after the requested observations.
 7. Finish every observed favicon candidate and document-fulfillment acknowledgment
    within the same absolute capture deadline; check the frame tree and resource
    state again. No expected color is available to this execution path.

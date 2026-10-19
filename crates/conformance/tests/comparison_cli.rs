@@ -96,7 +96,7 @@ fn real_chromium_combined_cli_is_stable_and_selects_exactly() {
             );
             assert!(output.stderr.is_empty());
             let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-            assert_eq!(report["schema"], "borrowser.cross-engine-canvas.v1");
+            assert_eq!(report["schema"], "borrowser.cross-engine-phases.v1");
             assert_eq!(
                 report["environment"]["sample_pixel"],
                 serde_json::json!([32, 32])
@@ -110,8 +110,43 @@ fn real_chromium_combined_cli_is_stable_and_selects_exactly() {
                     ("canvas/cascade", [52, 86, 120]),
                 ]
             };
-            assert_eq!(cases.len(), expected.len());
-            assert_eq!(report["summary"]["equal_fields"], cases.len());
+            assert_eq!(cases.len(), if selection.is_some() { 1 } else { 6 });
+            assert!(
+                cases
+                    .iter()
+                    .all(|c| c["status"] == "equal_for_requested_scope")
+            );
+            assert_eq!(
+                report["summary"]["equal_fields"],
+                if selection.is_some() { 1 } else { 34 }
+            );
+            assert_eq!(report["summary"]["different_fields"], 0);
+            assert_eq!(report["summary"]["unsupported_fields"], 0);
+            let ids: &[&str] = if selection.is_some() {
+                &["canvas/cascade"]
+            } else {
+                &[
+                    "canvas/root",
+                    "canvas/cascade",
+                    "dom/structure",
+                    "dom/template-namespaces",
+                    "style/cascade-inheritance",
+                    "layout/block-boxes",
+                ]
+            };
+            for (case, id) in cases.iter().zip(ids) {
+                assert_eq!(case["test_id"], *id);
+                assert_eq!(case["borrowser_expectation"]["status"], "PASS");
+                let fields = case["fields"].as_array().unwrap();
+                assert_eq!(
+                    fields
+                        .iter()
+                        .map(|f| f["id"].as_str().unwrap())
+                        .collect::<Vec<_>>(),
+                    expected_profile_fields(id)
+                );
+                assert!(fields.iter().all(|f| f["status"] == "equal"));
+            }
             for (case, (id, color)) in cases.iter().zip(expected) {
                 assert_eq!(case["test_id"], *id);
                 for engine in ["borrowser", "chromium"] {
@@ -123,7 +158,7 @@ fn real_chromium_combined_cli_is_stable_and_selects_exactly() {
                 }
                 assert_eq!(
                     case["captures"]["chromium"]["browser"]["capture_profile"],
-                    "ag2-canvas-srgb-v2"
+                    "ag5-static-phases-v1"
                 );
                 assert_eq!(case["fields"][0]["status"], "equal");
                 assert_eq!(case["borrowser_expectation"]["status"], "PASS");
@@ -133,5 +168,32 @@ fn real_chromium_combined_cli_is_stable_and_selects_exactly() {
             }
             previous = Some(output.stdout);
         }
+    }
+}
+
+fn expected_profile_fields(id: &str) -> Vec<String> {
+    match id {
+        "canvas/root" | "canvas/cascade" => vec!["canvas_color_rgb8".into()],
+        "dom/structure" | "dom/template-namespaces" => vec!["dom".into()],
+        "style/cascade-inheritance" => ["parent", "child", "hidden"]
+            .into_iter()
+            .flat_map(|id| {
+                ["color", "background-color", "font-size", "display"]
+                    .map(|p| format!("style:#{id}/{p}"))
+            })
+            .collect(),
+        "layout/block-boxes" => ["container", "child", "sibling", "hidden", "zero", "missing"]
+            .into_iter()
+            .flat_map(|id| {
+                if matches!(id, "hidden" | "missing") {
+                    vec![format!("layout:#{id}/boxes")]
+                } else {
+                    ["left", "top", "right", "bottom"]
+                        .map(|edge| format!("layout:#{id}/border-box[0]/{edge}"))
+                        .to_vec()
+                }
+            })
+            .collect(),
+        _ => panic!("unexpected profile fixture {id}"),
     }
 }

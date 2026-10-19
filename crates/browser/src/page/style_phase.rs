@@ -12,6 +12,8 @@ use super::PageState;
 use super::style_cache::{StyleRecalcKind, StyleRecomputeState, recompute_styles};
 
 pub(crate) struct PreparedStylePhaseForFrame<'a> {
+    #[cfg(feature = "conformance-observation")]
+    pub(crate) style_key: crate::rendering::RetainedStyleArtifactKey,
     pub(crate) style_output: StylePhaseOutput<'a>,
     pub(crate) work_plan: RenderWorkPlan,
     pub(crate) retained_layout_key_seed: RetainedLayoutKeySeed,
@@ -74,6 +76,8 @@ impl PageState {
             .map(StylePhaseOutput::new)
             .map(|style_output| {
                 Some(PreparedStylePhaseForFrame {
+                    #[cfg(feature = "conformance-observation")]
+                    style_key: cache.key,
                     style_output,
                     work_plan,
                     retained_layout_key_seed,

@@ -1,6 +1,7 @@
 mod cdp;
 mod error;
 pub(crate) mod ingest;
+pub(crate) mod inspection;
 mod process;
 mod screenshot;
 #[cfg(test)]
@@ -32,7 +33,8 @@ pub(super) struct BrowserIdentity {
 }
 #[derive(Debug)]
 pub(super) struct ChromiumCapture {
-    pub(crate) color: CanvasColor,
+    pub(crate) color: Option<CanvasColor>,
+    pub(crate) inspection: Option<inspection::Inspection>,
     pub(crate) identity: BrowserIdentity,
     #[cfg(test)]
     default_favicon_aborted: bool,
@@ -110,8 +112,22 @@ fn identity(value: Value) -> Result<BrowserIdentity, Error> {
         capture_profile: cdp::string(&pin, "capture_profile")?.into(),
     })
 }
+#[cfg(test)]
 fn capture_html(
     html: &[u8],
+    config: &ChromiumConfig,
+    cancel: &Cancellation,
+) -> Result<ChromiumCapture, Failure> {
+    capture_requested_html(
+        html,
+        crate::projection::ObservationRequest::CANVAS,
+        config,
+        cancel,
+    )
+}
+fn capture_requested_html(
+    html: &[u8],
+    request: crate::projection::ObservationRequest,
     config: &ChromiumConfig,
     cancel: &Cancellation,
 ) -> Result<ChromiumCapture, Failure> {
@@ -122,6 +138,7 @@ fn capture_html(
             cleanup: vec![],
         })?;
     }
+    crate::projection::validate_request(request).map_err(|e| configuration(&e.detail))?;
     let executable = std::fs::canonicalize(&config.executable).map_err(|e| Failure {
         primary: Some(Error::Configuration(format!(
             "Chromium executable unavailable: {e}"
@@ -255,15 +272,35 @@ fn capture_html(
         }
         #[cfg(test)]
         cdp.capture_operation_completed();
-        let screenshot = cdp.call(
-            "Page.captureScreenshot",
-            json!({"format":"png","fromSurface":true,"captureBeyondViewport":false}),
-            capture_deadline,
-            Phase::Capture,
-        )?;
-        #[cfg(test)]
-        cdp.capture_operation("decode PNG and sample pixel");
-        let color = screenshot::sample(cdp::string(&screenshot, "data")?)?;
+        let requested = crate::projection::inspection_request(request);
+        let inspection = if requested.dom
+            || !requested.style_targets.is_empty()
+            || !requested.layout_targets.is_empty()
+        {
+            let frame_id = cdp::string(&tree["frameTree"]["frame"], "id")?;
+            Some(inspection::collect(
+                &mut cdp,
+                frame_id,
+                &requested,
+                capture_deadline,
+            )?)
+        } else {
+            None
+        };
+        let color = if matches!(request.canvas, crate::projection::Request::Compare(())) {
+            let screenshot = cdp.call(
+                "Page.captureScreenshot",
+                json!({"format":"png","fromSurface":true,"captureBeyondViewport":false}),
+                capture_deadline,
+                Phase::Capture,
+            )?;
+            #[cfg(test)]
+            cdp.capture_operation("decode PNG and sample pixel");
+            let color = screenshot::sample(cdp::string(&screenshot, "data")?)?;
+            Some(color)
+        } else {
+            None
+        };
         #[cfg(test)]
         cdp.capture_operation_completed();
         // A post-capture frame query is a protocol barrier and verifies that
@@ -299,6 +336,7 @@ fn capture_html(
         cdp.close_browser(capture_deadline)?;
         Ok(ChromiumCapture {
             color,
+            inspection,
             identity,
             #[cfg(test)]
             default_favicon_aborted: cdp.navigation.as_ref().unwrap().verified_favicon(),
@@ -330,7 +368,8 @@ fn capture_html(
 struct Observation<'a> {
     test_id: &'a str,
     source: &'a str,
-    canvas_color_rgb8: [u8; 3],
+    canvas_color_rgb8: Option<CanvasColor>,
+    inspection: Option<inspection::Inspection>,
     browser: BrowserIdentity,
 }
 #[derive(Serialize)]
@@ -347,6 +386,7 @@ pub(crate) struct CaptureInput<'a> {
     pub(crate) id: TestId,
     pub(crate) source: &'a str,
     pub(crate) html: &'a [u8],
+    pub(crate) request: crate::projection::ObservationRequest,
 }
 #[derive(Debug)]
 pub(crate) struct CapturedFixture {
@@ -420,7 +460,7 @@ pub(crate) fn capture_batch(
     for input in inputs {
         #[cfg(test)]
         crate::comparison::tests::record(crate::comparison::tests::Event::CaptureStarted(input.id));
-        let capture = capture_html(input.html, &config, &cancel)?;
+        let capture = capture_requested_html(input.html, input.request, &config, &cancel)?;
         #[cfg(test)]
         crate::comparison::tests::record(crate::comparison::tests::Event::CaptureCleaned(input.id));
         captures.push(CapturedFixture {
@@ -456,6 +496,7 @@ pub(crate) fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
                     id: fixture.id,
                     source: fixture.source,
                     html,
+                    request: fixture.request,
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -466,12 +507,13 @@ pub(crate) fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
             .map(|(input, capture)| Observation {
                 test_id: input.id.0,
                 source: input.source,
-                canvas_color_rgb8: capture.capture.color.0,
+                canvas_color_rgb8: capture.capture.color,
+                inspection: capture.capture.inspection,
                 browser: capture.capture.identity,
             })
             .collect();
         Ok(CaptureReport {
-            schema: "borrowser.chromium-canvas.v1",
+            schema: "borrowser.chromium-phases.v1",
             document_url: URL,
             viewport: [WIDTH, HEIGHT],
             device_scale_factor: 1,
@@ -481,8 +523,14 @@ pub(crate) fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
     };
     match execute() {
         Ok(report) => {
-            serde_json::to_writer(&mut *out, &report)?;
-            writeln!(out)?;
+            let mut bytes = serde_json::to_vec(&report)?;
+            bytes.push(b'\n');
+            if bytes.len() > ingest::MAX_CAPTURE_BYTES {
+                configuration("capture exceeds 64 KiB")
+                    .write_diagnostics(&mut io::stderr().lock())?;
+                return Ok(2);
+            }
+            out.write_all(&bytes)?;
             Ok(0)
         }
         Err(failure) => {

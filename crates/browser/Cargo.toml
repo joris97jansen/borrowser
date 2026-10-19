@@ -3,6 +3,9 @@ name = "browser"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+conformance-observation = []
+
 [dependencies]
 app_api = { path = "../app_api" }
 bus = { path = "../bus" }

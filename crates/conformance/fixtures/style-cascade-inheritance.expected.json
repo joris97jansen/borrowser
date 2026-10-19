@@ -1,0 +1,211 @@
+{
+  "dom": {
+    "state": "not_requested"
+  },
+  "styles": [
+    {
+      "target": "parent",
+      "property": "color",
+      "value": {
+        "state": "observed",
+        "value": {
+          "state": "present",
+          "value": {
+            "kind": "rgba8",
+            "value": [
+              18,
+              52,
+              86,
+              255
+            ]
+          }
+        }
+      }
+    },
+    {
+      "target": "parent",
+      "property": "background-color",
+      "value": {
+        "state": "observed",
+        "value": {
+          "state": "present",
+          "value": {
+            "kind": "rgba8",
+            "value": [
+              171,
+              205,
+              239,
+              255
+            ]
+          }
+        }
+      }
+    },
+    {
+      "target": "parent",
+      "property": "font-size",
+      "value": {
+        "state": "observed",
+        "value": {
+          "state": "present",
+          "value": {
+            "kind": "css_px",
+            "value": 20.0
+          }
+        }
+      }
+    },
+    {
+      "target": "parent",
+      "property": "display",
+      "value": {
+        "state": "observed",
+        "value": {
+          "state": "present",
+          "value": {
+            "kind": "keyword",
+            "value": "block"
+          }
+        }
+      }
+    },
+    {
+      "target": "child",
+      "property": "color",
+      "value": {
+        "state": "observed",
+        "value": {
+          "state": "present",
+          "value": {
+            "kind": "rgba8",
+            "value": [
+              52,
+              86,
+              120,
+              255
+            ]
+          }
+        }
+      }
+    },
+    {
+      "target": "child",
+      "property": "background-color",
+      "value": {
+        "state": "observed",
+        "value": {
+          "state": "present",
+          "value": {
+            "kind": "rgba8",
+            "value": [
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "target": "child",
+      "property": "font-size",
+      "value": {
+        "state": "observed",
+        "value": {
+          "state": "present",
+          "value": {
+            "kind": "css_px",
+            "value": 20.0
+          }
+        }
+      }
+    },
+    {
+      "target": "child",
+      "property": "display",
+      "value": {
+        "state": "observed",
+        "value": {
+          "state": "present",
+          "value": {
+            "kind": "keyword",
+            "value": "inline"
+          }
+        }
+      }
+    },
+    {
+      "target": "hidden",
+      "property": "color",
+      "value": {
+        "state": "observed",
+        "value": {
+          "state": "present",
+          "value": {
+            "kind": "rgba8",
+            "value": [
+              18,
+              52,
+              86,
+              255
+            ]
+          }
+        }
+      }
+    },
+    {
+      "target": "hidden",
+      "property": "background-color",
+      "value": {
+        "state": "observed",
+        "value": {
+          "state": "present",
+          "value": {
+            "kind": "rgba8",
+            "value": [
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "target": "hidden",
+      "property": "font-size",
+      "value": {
+        "state": "observed",
+        "value": {
+          "state": "present",
+          "value": {
+            "kind": "css_px",
+            "value": 20.0
+          }
+        }
+      }
+    },
+    {
+      "target": "hidden",
+      "property": "display",
+      "value": {
+        "state": "observed",
+        "value": {
+          "state": "present",
+          "value": {
+            "kind": "keyword",
+            "value": "none"
+          }
+        }
+      }
+    }
+  ],
+  "layout": {
+    "state": "not_requested"
+  },
+  "canvas": {
+    "state": "not_requested"
+  }
+}

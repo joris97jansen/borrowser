@@ -114,6 +114,8 @@ fn execute_selected(
                 id: fixture.id,
                 source: fixture.source,
                 html,
+
+                request: fixture.request,
             }),
             _ => None,
         })
@@ -144,6 +146,8 @@ fn compare_captured(
                 id: fixture.id,
                 source: fixture.source,
                 html,
+
+                request: fixture.request,
             }),
             _ => None,
         })
@@ -158,8 +162,8 @@ fn compare_captured(
                 let capture = captures
                     .next()
                     .ok_or_else(|| HarnessError::new("required-data", "missing Chromium sample"))?;
-                let observed = execute::execute_html(html)?;
-                report::Case::observed(fixture, observed, capture.capture)
+                let observed = execute::execute_fixture(html, fixture.request)?;
+                report::Case::observed(fixture, observed, capture.capture)?
             }
             FixtureKind::Unsupported { reason } => report::Case::unsupported(fixture, reason),
             FixtureKind::Skipped { reason } => report::Case::skipped(fixture, reason),

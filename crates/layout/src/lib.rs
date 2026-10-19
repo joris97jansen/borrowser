@@ -116,8 +116,8 @@ pub use replaced_element::{
     TextControlPresentation,
 };
 pub use retained::{
-    RetainedLayoutArtifact, RetainedLayoutFallbackReason, RetainedLayoutFrameAction,
-    RetainedLayoutFrameResult, RetainedLayoutKey, RetainedLayoutKeySeed,
+    RetainedBoxView, RetainedLayoutArtifact, RetainedLayoutFallbackReason,
+    RetainedLayoutFrameAction, RetainedLayoutFrameResult, RetainedLayoutKey, RetainedLayoutKeySeed,
     RetainedLayoutMaterializationError, RetainedViewportWidthKey,
 };
 pub use sizing::{

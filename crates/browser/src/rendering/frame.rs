@@ -35,6 +35,8 @@ pub(crate) struct OrchestratedFrameOutcome {
 }
 
 pub(crate) struct PreparedPageFrame<'a> {
+    #[cfg(feature = "conformance-observation")]
+    style_key: super::RetainedStyleArtifactKey,
     pub(crate) style_output: StylePhaseOutput<'a>,
     pub(crate) page_background: Option<(u8, u8, u8, u8)>,
     pub(crate) work_plan: RenderWorkPlan,
@@ -83,6 +85,8 @@ pub(crate) fn prepare_page_frame(
     let page_background = find_page_background_color(&prepared_style.style_output);
 
     Ok(Some(PreparedPageFrame {
+        #[cfg(feature = "conformance-observation")]
+        style_key: prepared_style.style_key,
         style_output: prepared_style.style_output,
         page_background,
         work_plan: prepared_style.work_plan,
@@ -125,8 +129,13 @@ pub(crate) fn execute_prepared_page_frame<R: ImageProvider>(
     prepared: PreparedPageFrame<'_>,
     input_state: &mut DocumentInputState,
     resources: &R,
+    #[cfg(feature = "conformance-observation")] observation: Option<
+        &mut Option<crate::tab::observation::FrameDraft>,
+    >,
 ) -> OrchestratedFrameOutcome {
     let PreparedPageFrame {
+        #[cfg(feature = "conformance-observation")]
+        style_key,
         style_output,
         page_background: _page_background,
         work_plan,
@@ -224,6 +233,24 @@ pub(crate) fn execute_prepared_page_frame<R: ImageProvider>(
         render_intrinsic_invalidation_request(IntrinsicRenderInvalidationSource::InputStateChanged)
     });
 
+    #[cfg(feature = "conformance-observation")]
+    if let Some(observation) = observation {
+        *observation = match (
+            &viewport_result.retained_layout_result,
+            &retained_paint_result,
+        ) {
+            (Some(layout), Some(paint)) if layout.key == layout.artifact.key() => {
+                Some(crate::tab::observation::FrameDraft::from_frame(
+                    &style_output,
+                    style_key,
+                    layout.artifact.clone(),
+                    paint.key,
+                    viewport_result.layout_viewport_width,
+                ))
+            }
+            _ => None,
+        };
+    }
     OrchestratedFrameOutcome {
         action: viewport_result.action,
         followup_render_request,

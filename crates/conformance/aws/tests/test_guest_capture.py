@@ -121,9 +121,24 @@ else: print('{"complete":true}')
             raw = (Path(directory) / "capture.json").read_bytes()
             self.assertLessEqual(len(raw), 65536)
             report = json.loads(raw)
-            self.assertEqual(report["schema"], "borrowser.chromium-canvas.v1")
-            self.assertEqual(len(report["observations"]), 2)
-            for observation in report["observations"]:
+            self.assertEqual(report["schema"], "borrowser.chromium-phases.v1")
+            self.assertEqual(len(report["observations"]), 6)
+            ids = ["canvas/root", "canvas/cascade", "dom/structure", "dom/template-namespaces",
+                   "style/cascade-inheritance", "layout/block-boxes"]
+            self.assertEqual([o["test_id"] for o in report["observations"]], ids)
+            for index, observation in enumerate(report["observations"]):
+                if index < 2:
+                    self.assertIsNone(observation["inspection"])
+                    self.assertEqual(observation["canvas_color_rgb8"], [[18, 52, 86], [52, 86, 120]][index])
+                else:
+                    self.assertIsNone(observation["canvas_color_rgb8"])
+                    inspection = observation["inspection"]
+                    self.assertEqual(isinstance(inspection["dom"], dict), index < 4)
+                    self.assertEqual([s["target"] for s in inspection["styles"]],
+                                     ["parent", "child", "hidden"] if index == 4 else [])
+                    self.assertTrue(all(len(s["values"]) == 4 for s in inspection["styles"]))
+                    self.assertEqual([l["target"] for l in inspection["layout"]],
+                                     ["container", "child", "sibling", "hidden", "zero", "missing"] if index == 5 else [])
                 self.assertEqual(observation["browser"]["version"], pin["version"])
                 self.assertEqual(observation["browser"]["revision"], pin["revision"])
                 self.assertEqual(observation["browser"]["capture_profile"], pin["capture_profile"])

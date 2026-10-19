@@ -938,9 +938,34 @@ When a feature lands:
 2. Link to the relevant contract doc if the behavior is subtle.
 3. Keep this file short; move detailed rules to subsystem docs.
 
-## Focused Conformance Tooling (AG1–AG3)
+## Focused Conformance Tooling (AG1–AG5)
 
-- `crates/conformance` executes two explicitly registered static HTML/CSS fixtures
+- AG5 adds deterministic common projections for committed Browser DOM,
+  accepted-frame computed color/background-color/font-size/display, direct
+  DOM-backed fixed block border boxes, and the existing guarded canvas sample.
+  Attribute ordering is canonical only in comparison; text, namespaces, child
+  order and template contents remain exact. Missing nodes, absent boxes,
+  zero-sized boxes, unsupported/unrequested fields and capture errors differ.
+  Browser owns validity and borrowing; tooling does not recompute engine phases.
+- The AG5 profile `ag5-static-phases-v1` and strict phase capture/comparison
+  schemas extend local capture and AG4 ingestion together. Bounds and transport
+  cleanup remain unchanged. Review-corrected native macOS acceptance passed on
+  2026-10-19: 34 equal fields and six independent expectation passes. Full local
+  `make ci` ran after the final code corrections and passed, as did native macOS
+  collector/CLI/guest-wrapper checks and targeted authority/validation tests.
+  Fresh native Linux qualification of this corrected profile remains a
+  closeability gate. Historical evidence below does not qualify AG5.
+  Review corrections enforce exact requested projection records before success
+  classification, typed local diagnostics, explicit partial-coverage reasons,
+  and mixed native DOM/target-presence consistency. Missing records are errors;
+  complete structural absence remains comparable data. Real-profile assertions
+  cover all 34 field identities, not just successful case statuses. These are
+  tooling corrections and introduce no engine features.
+  See the [AG5 contract](conformance/ag5-phase-comparison-projections.md).
+- This is tooling coverage only: no new CSS/Layout/Paint behavior, full box-tree
+  equivalence, GPU rasterization, general painting, scripting, or broad WPT/browser
+  compatibility is claimed. AG5 remains one of the existing nine AG issues.
+- `crates/conformance` executes six explicitly registered static HTML/CSS fixtures
   through production Tab navigation, parser runtime, atomic DOM/mode publication,
   stylesheet reconciliation and rendering.
 - A fixed, guarded opaque canvas-color observation has exact expected-result

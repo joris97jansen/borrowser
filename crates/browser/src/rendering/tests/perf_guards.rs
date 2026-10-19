@@ -83,6 +83,8 @@ impl FrameHarness {
                         prepared.take().expect("prepared frame should execute once"),
                         &mut self.input_state,
                         &self.resources,
+                        #[cfg(feature = "conformance-observation")]
+                        None,
                     ));
                 });
             },

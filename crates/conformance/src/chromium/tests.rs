@@ -105,7 +105,7 @@ fn exact_identity_is_required() {
     let mut version = json!({"product":format!("Chrome/{}",pin["version"].as_str().unwrap()),
         "revision":pin["revision"],"protocolVersion":pin["protocol_version"]});
     let actual = identity(version.clone()).unwrap();
-    assert_eq!(actual.capture_profile, "ag2-canvas-srgb-v2");
+    assert_eq!(actual.capture_profile, "ag5-static-phases-v1");
     assert_eq!(
         actual,
         serde_json::from_str::<BrowserIdentity>(&serde_json::to_string(&actual).unwrap()).unwrap()
@@ -1399,8 +1399,13 @@ fn real_chromium_capture_and_scripts() {
     let _standalone = process::Standalone::enter().unwrap();
     let config = ChromiumConfig::new(PathBuf::from(path));
     let cancel = Cancellation::default();
-    for fixture in crate::fixtures::FIXTURES {
-        let FixtureKind::Runnable { html, expected, .. } = fixture.kind else {
+    for fixture in &crate::fixtures::FIXTURES[..2] {
+        let FixtureKind::Runnable {
+            html,
+            expected: crate::model::Expected::Canvas(expected),
+            ..
+        } = fixture.kind
+        else {
             unreachable!()
         };
         let mut previous = None;
@@ -1415,17 +1420,20 @@ fn real_chromium_capture_and_scripts() {
                     fixture.id.0
                 )
             });
-            assert_eq!(result.color, expected);
+            assert_eq!(result.color, Some(expected));
             assert!(
                 result.default_favicon_aborted,
                 "qualified ordinary target did not exercise default favicon interception"
             );
-            assert_eq!(result.identity.capture_profile, "ag2-canvas-srgb-v2");
+            assert_eq!(result.identity.capture_profile, "ag5-static-phases-v1");
             eprintln!(
                 "AG2 fixture={} iteration={iteration}/3 screenshot=640x480 rgb8={:?} profile={} default_favicon=correlated-aborted-acknowledged-terminal cleanup=verified",
-                fixture.id.0, result.color.0, result.identity.capture_profile
+                fixture.id.0,
+                result.color.unwrap().0,
+                result.identity.capture_profile
             );
-            let serialized = serde_json::to_string(&(result.color.0, result.identity)).unwrap();
+            let serialized =
+                serde_json::to_string(&(result.color.unwrap().0, result.identity)).unwrap();
             if let Some(previous) = previous {
                 assert_eq!(serialized, previous);
             }
@@ -1445,7 +1453,12 @@ fn real_chromium_capture_and_scripts() {
     .into_iter()
     .enumerate()
     {
-        let FixtureKind::Runnable { html, expected, .. } = crate::fixtures::FIXTURES[0].kind else {
+        let FixtureKind::Runnable {
+            html,
+            expected: crate::model::Expected::Canvas(expected),
+            ..
+        } = crate::fixtures::FIXTURES[0].kind
+        else {
             unreachable!()
         };
         let mut input = html.to_vec();
@@ -1453,14 +1466,14 @@ fn real_chromium_capture_and_scripts() {
         eprintln!("AG2 fixture=markup-lookalike-{index} iteration=1/1");
         assert_eq!(
             capture_html(&input, &config, &cancel).unwrap().color,
-            expected
+            Some(expected)
         );
     }
     let scripted = SCRIPT_POSITIVE_CONTROL;
     eprintln!("AG2 fixture=script-suppression iteration=1/1");
     assert_eq!(
         capture_html(scripted, &config, &cancel).unwrap().color,
-        CanvasColor([18, 52, 86])
+        Some(CanvasColor([18, 52, 86]))
     );
     let enabled = ChromiumConfig {
         scripts_disabled: false,
@@ -1469,7 +1482,7 @@ fn real_chromium_capture_and_scripts() {
     eprintln!("AG2 fixture=script-positive-control iteration=1/1");
     assert_eq!(
         capture_html(scripted, &enabled, &cancel).unwrap().color,
-        CanvasColor([255, 0, 0])
+        Some(CanvasColor([255, 0, 0]))
     );
     let config = ChromiumConfig {
         scripts_disabled: true,
@@ -1684,7 +1697,8 @@ thread_local! {
 pub(crate) fn controlled_capture(color: CanvasColor) -> ChromiumCapture {
     let pin: Value = serde_json::from_str(include_str!("../../chromium-reference.json")).unwrap();
     ChromiumCapture {
-        color,
+        color: Some(color),
+        inspection: None,
         identity: identity(json!({
             "product": format!("Chrome/{}", pin["version"].as_str().unwrap()),
             "revision": pin["revision"], "protocolVersion": pin["protocol_version"],
@@ -1747,4 +1761,107 @@ pub(crate) fn assert_comparison_cleanup_failure(failure: &Failure) {
             .any(|e| matches!(e, error::CleanupError::Artifacts(_))),
         "{failure:?}"
     );
+}
+
+#[test]
+#[ignore = "requires pinned Chromium; standalone; page scripts must remain disabled"]
+fn real_chromium_ag5_read_only_inspection() {
+    let path = std::env::var_os("BORROWSER_CHROMIUM_EXECUTABLE").expect("pinned browser required");
+    let _standalone = process::Standalone::enter().unwrap();
+    let config = ChromiumConfig::new(PathBuf::from(path));
+    let request = crate::projection::ObservationRequest {
+        dom: crate::projection::Request::Compare(()),
+        styles: &[crate::projection::StyleField {
+            target: "target",
+            property: crate::projection::Request::Compare(crate::projection::StyleProperty::Color),
+            name: "color",
+        }],
+        layout: crate::projection::Request::Compare(&["target"]),
+        ..crate::projection::ObservationRequest::NONE
+    };
+    // If page scripts execute, they replace both the inspected color and width.
+    let html = br#"<!doctype html><html><head><style>
+      html,body {margin:0} #target {color:#123456;width:32px;height:16px}
+      </style></head><body><div id="target"></div><script>
+      document.getElementById('target').style.cssText='color:red;width:64px';
+      </script></body></html>"#;
+    let capture = capture_requested_html(html, request, &config, &Cancellation::default()).unwrap();
+    assert!(capture.color.is_none());
+    let observed = capture.inspection.as_ref().unwrap();
+    assert!(observed.dom.is_some());
+    assert_eq!(
+        observed.styles[0].values.as_ref().unwrap()[0],
+        "rgb(18, 52, 86)"
+    );
+    assert_eq!(observed.layout[0].boxes.as_ref().unwrap()[0].right, 32.0);
+    crate::projection::chromium(&capture, request).unwrap();
+    // These are capture errors, never truncated successful observations.
+    for bad in [
+        format!("<!doctype html><div id=target>{}</div>", "x".repeat(8193)),
+        format!("<!doctype html>{}", "<div></div>".repeat(129)),
+        "<!doctype html><div id=target></div><div id=target></div>".into(),
+    ] {
+        let failure =
+            capture_requested_html(bad.as_bytes(), request, &config, &Cancellation::default())
+                .unwrap_err();
+        assert!(
+            matches!(failure.primary, Some(Error::Capture(_))),
+            "{failure:?}"
+        );
+        assert!(failure.cleanup.is_empty(), "{failure:?}");
+    }
+}
+
+#[test]
+#[ignore = "requires pinned Chromium, standalone process; all captures precede parser workers"]
+fn real_chromium_ag5_profile() {
+    let path = std::env::var("BORROWSER_CHROMIUM_EXECUTABLE").expect("pinned browser required");
+    let mut out = vec![];
+    let mut diagnostics = vec![];
+    let code = crate::comparison::run(
+        &["--chromium-executable".into(), path],
+        &mut out,
+        &mut diagnostics,
+    )
+    .unwrap();
+    assert_eq!(
+        code,
+        0,
+        "{}\n{}",
+        String::from_utf8_lossy(&out),
+        String::from_utf8_lossy(&diagnostics)
+    );
+    let report: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(report["cases"].as_array().unwrap().len(), 6);
+    assert_eq!(report["summary"]["equal_fields"], 34);
+    assert_eq!(report["summary"]["different_fields"], 0);
+    assert_eq!(report["summary"]["unsupported_fields"], 0);
+    let ids = [
+        "canvas/root",
+        "canvas/cascade",
+        "dom/structure",
+        "dom/template-namespaces",
+        "style/cascade-inheritance",
+        "layout/block-boxes",
+    ];
+    for (case, id) in report["cases"].as_array().unwrap().iter().zip(ids) {
+        assert_eq!(case["test_id"], id);
+        let fields = case["fields"].as_array().unwrap();
+        assert_eq!(
+            fields
+                .iter()
+                .map(|f| f["id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            crate::comparison::tests::expected_profile_fields(id)
+        );
+        assert!(fields.iter().all(|f| f["status"] == "equal"));
+        assert_eq!(case["status"], "equal_for_requested_scope");
+        assert_eq!(case["borrowser_expectation"]["status"], "PASS");
+        eprintln!(
+            "AG5 {} {} fields={}",
+            case["test_id"],
+            case["status"],
+            case["fields"].as_array().unwrap().len()
+        );
+    }
 }

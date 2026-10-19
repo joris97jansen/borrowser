@@ -719,6 +719,8 @@ fn retained_paint_recomputes_when_actual_layout_reuse_key_mismatches() {
                     prepared.take().expect("prepared frame should execute once"),
                     &mut input_state,
                     &resources,
+                    #[cfg(feature = "conformance-observation")]
+                    None,
                 ));
             });
         },

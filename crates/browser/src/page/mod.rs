@@ -220,6 +220,40 @@ impl PageState {
         self.rendering.record_paint_frame_result(result);
     }
 
+    #[cfg(feature = "conformance-observation")]
+    pub(crate) fn accepts_observed_artifacts(
+        &self,
+        draft: &crate::tab::observation::FrameDraft,
+    ) -> bool {
+        let retained = &self.rendering;
+        draft.layout.source_viewport_width().is_finite()
+            && draft.layout.source_viewport_width() >= 0.0
+            && draft.layout.key()
+                == retained
+                    .retained_layout_key_seed()
+                    .for_viewport_width(draft.layout.source_viewport_width())
+            && !retained.style_dirty()
+            && !retained.layout_dirty()
+            && !retained.paint_dirty()
+            && retained.style_cache_matches_current_key()
+            && draft.style_key == retained.current_style_artifact_key()
+            && draft.layout.key()
+                == retained
+                    .retained_layout_key_seed()
+                    .for_viewport_width(draft.layout_viewport_width)
+            && retained
+                .retained_layout_artifact()
+                .is_some_and(|a| a.key() == draft.layout.key())
+            && draft.paint_key
+                == retained
+                    .retained_paint_key_seed()
+                    .for_layout_key(draft.layout.key())
+            && retained
+                .paint_cache
+                .as_ref()
+                .is_some_and(|a| a.key == draft.paint_key)
+    }
+
     pub(crate) fn style_dirty_for_rendering(&self) -> bool {
         self.rendering.style_dirty()
     }
