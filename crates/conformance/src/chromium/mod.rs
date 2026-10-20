@@ -255,21 +255,7 @@ fn capture_requested_html(
         )?;
         #[cfg(test)]
         cdp.capture_operation("verify viewport");
-        for name in ["cssLayoutViewport", "cssVisualViewport"] {
-            let v = &metrics[name];
-            if v["clientWidth"] != WIDTH
-                || v["clientHeight"] != HEIGHT
-                || v["pageX"] != 0
-                || v["pageY"] != 0
-            {
-                return Err(Error::Capture(
-                    "unexpected viewport dimensions or scroll".into(),
-                ));
-            }
-        }
-        if metrics["cssVisualViewport"]["scale"] != 1 {
-            return Err(Error::Capture("unexpected visual scale".into()));
-        }
+        validate_viewport(&metrics)?;
         #[cfg(test)]
         cdp.capture_operation_completed();
         let requested = crate::projection::inspection_request(request);
@@ -362,6 +348,125 @@ fn capture_requested_html(
             cleanup,
         }),
     }
+}
+
+// Keep the capture predicate separate from bounded failure evidence. This
+// helper deliberately preserves the existing acceptance conditions.
+fn validate_viewport(metrics: &Value) -> Result<(), Error> {
+    for name in ["cssLayoutViewport", "cssVisualViewport"] {
+        let v = &metrics[name];
+        if v["clientWidth"] != WIDTH
+            || v["clientHeight"] != HEIGHT
+            || v["pageX"] != 0
+            || v["pageY"] != 0
+        {
+            return Err(Error::Capture(format!(
+                "unexpected viewport dimensions or scroll; viewport={}",
+                viewport_diagnostic(metrics)
+            )));
+        }
+    }
+    if metrics["cssVisualViewport"]["scale"] != 1 {
+        return Err(Error::Capture(format!(
+            "unexpected visual scale; viewport={}",
+            viewport_diagnostic(metrics)
+        )));
+    }
+    Ok(())
+}
+
+fn viewport_diagnostic(metrics: &Value) -> Value {
+    // Copy only the fixed protocol fields, never arbitrary remote strings or
+    // nested objects. Missing and malformed facts stay explicit, without defaults.
+    fn scalar(value: Option<&Value>) -> Value {
+        match value {
+            None => json!({"missing":true}),
+            Some(Value::Number(n)) => Value::Number(n.clone()),
+            Some(Value::Null) => json!({"malformed":"null"}),
+            Some(Value::Bool(_)) => json!({"malformed":"boolean"}),
+            Some(Value::String(_)) => json!({"malformed":"string"}),
+            Some(Value::Array(_)) => json!({"malformed":"array"}),
+            Some(Value::Object(_)) => json!({"malformed":"object"}),
+        }
+    }
+    let mut observed = serde_json::Map::new();
+    for (name, fields) in [
+        (
+            "cssLayoutViewport",
+            &["pageX", "pageY", "clientWidth", "clientHeight"][..],
+        ),
+        (
+            "cssVisualViewport",
+            &[
+                "offsetX",
+                "offsetY",
+                "pageX",
+                "pageY",
+                "clientWidth",
+                "clientHeight",
+                "scale",
+                "zoom",
+            ][..],
+        ),
+        ("cssContentSize", &["x", "y", "width", "height"][..]),
+    ] {
+        let value = metrics.get(name);
+        observed.insert(
+            name.into(),
+            if value.is_some_and(Value::is_object) {
+                Value::Object(
+                    fields
+                        .iter()
+                        .map(|field| ((*field).into(), scalar(value.and_then(|v| v.get(field)))))
+                        .collect(),
+                )
+            } else {
+                scalar(value)
+            },
+        );
+    }
+    let mut rejected = vec![];
+    for name in ["cssLayoutViewport", "cssVisualViewport"] {
+        for (field, expected) in [
+            ("clientWidth", WIDTH),
+            ("clientHeight", HEIGHT),
+            ("pageX", 0),
+            ("pageY", 0),
+        ] {
+            if metrics[name][field] != expected {
+                let actual = metrics.get(name).and_then(|v| v.get(field));
+                rejected.push(json!({"field":format!("{name}.{field}"),"expected":expected,"actual":scalar(actual),"reason":match actual {None=>"missing",Some(Value::Number(_))=>"numeric_mismatch",_=>"malformed"}}));
+            }
+        }
+    }
+    let scale = metrics
+        .get("cssVisualViewport")
+        .and_then(|v| v.get("scale"));
+    if metrics["cssVisualViewport"]["scale"] != 1 {
+        rejected.push(json!({"field":"cssVisualViewport.scale","expected":1,"actual":scalar(scale),"reason":match scale {None=>"missing",Some(Value::Number(_))=>"numeric_mismatch",_=>"malformed"}}));
+    }
+    json!({"expected":{"width":WIDTH,"height":HEIGHT,"pageX":0,"pageY":0,"scale":1},"observed":observed,"rejected":rejected})
+}
+
+fn attribute_capture_failure(mut failure: Failure, input: &CaptureInput<'_>) -> Failure {
+    if let Some(Error::Capture(detail)) = &mut failure.primary {
+        use crate::projection::Request;
+        let request = input.request;
+        let families: Vec<_> = [
+            ("dom", !matches!(request.dom, Request::NotRequested)),
+            ("style", !request.styles.is_empty()),
+            ("layout", !matches!(request.layout, Request::NotRequested)),
+            ("canvas", !matches!(request.canvas, Request::NotRequested)),
+        ]
+        .into_iter()
+        .filter_map(|(name, requested)| requested.then_some(name))
+        .collect();
+        // Registry paths are relative to the conformance crate. Bound the
+        // context even for internal test inputs; never include HTML or expected data.
+        let context = json!({"id":input.id.0.chars().take(128).collect::<String>(),"source":format!("crates/conformance/{}", input.source.chars().take(256).collect::<String>()),"families":families});
+        *detail = format!("{detail}; fixture={context}");
+    }
+    failure
 }
 
 #[derive(Serialize)]
@@ -460,7 +565,8 @@ pub(crate) fn capture_batch(
     for input in inputs {
         #[cfg(test)]
         crate::comparison::tests::record(crate::comparison::tests::Event::CaptureStarted(input.id));
-        let capture = capture_requested_html(input.html, input.request, &config, &cancel)?;
+        let capture = capture_requested_html(input.html, input.request, &config, &cancel)
+            .map_err(|failure| attribute_capture_failure(failure, input))?;
         #[cfg(test)]
         crate::comparison::tests::record(crate::comparison::tests::Event::CaptureCleaned(input.id));
         captures.push(CapturedFixture {

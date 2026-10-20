@@ -8,6 +8,97 @@ use std::path::Path;
 ))]
 use std::process::Command;
 
+fn viewport_metrics() -> Value {
+    json!({
+        "cssLayoutViewport":{"pageX":0,"pageY":0,"clientWidth":640,"clientHeight":480},
+        "cssVisualViewport":{"offsetX":0,"offsetY":0,"pageX":0,"pageY":0,"clientWidth":640,"clientHeight":480,"scale":1,"zoom":1},
+        "cssContentSize":{"x":0,"y":0,"width":640,"height":480}
+    })
+}
+
+#[test]
+fn viewport_failure_diagnostic_attributes_fixture_metrics_and_cleanup() {
+    let mut metrics = viewport_metrics();
+    metrics["cssLayoutViewport"]["clientWidth"] = json!(625);
+    metrics["cssVisualViewport"]["clientWidth"] = json!(625);
+    metrics["cssContentSize"]["height"] = json!(900);
+    let fixture = &crate::fixtures::FIXTURES[3];
+    let input = CaptureInput {
+        id: fixture.id,
+        source: fixture.source,
+        html: b"must never appear in diagnostics",
+        request: fixture.request,
+    };
+    let failure = attribute_capture_failure(
+        Failure {
+            primary: Some(validate_viewport(&metrics).unwrap_err()),
+            cleanup: vec![error::CleanupError::Timeout],
+        },
+        &input,
+    );
+    let mut out = vec![];
+    failure.write_diagnostics(&mut out).unwrap();
+    let out = String::from_utf8(out).unwrap();
+    assert!(out.starts_with("ERROR chromium.capture: unexpected viewport dimensions or scroll;"));
+    assert!(out.contains("\"id\":\"dom/template-namespaces\""));
+    assert!(
+        out.contains("\"source\":\"crates/conformance/fixtures/dom-template-namespaces.html\"")
+    );
+    assert!(out.contains("\"families\":[\"dom\"]"));
+    assert!(
+        out.contains("\"actual\":625,\"expected\":640,\"field\":\"cssLayoutViewport.clientWidth\"")
+    );
+    assert!(out.contains("\"field\":\"cssVisualViewport.clientWidth\""));
+    assert!(out.contains("\"height\":900"));
+    assert!(out.contains("\"offsetX\":0"));
+    assert!(out.contains("\"scale\":1"));
+    assert!(out.contains("ERROR chromium.cleanup:"));
+    assert!(!out.contains("must never appear"));
+}
+
+#[test]
+fn viewport_failure_diagnostic_distinguishes_missing_malformed_and_mismatch() {
+    let mut metrics = viewport_metrics();
+    metrics["cssLayoutViewport"]
+        .as_object_mut()
+        .unwrap()
+        .remove("clientWidth");
+    metrics["cssVisualViewport"]["clientHeight"] = json!("x".repeat(100_000));
+    metrics["cssVisualViewport"]["pageY"] = json!(1);
+    let error = validate_viewport(&metrics).unwrap_err().to_string();
+    let evidence: Value = serde_json::from_str(error.split_once("; viewport=").unwrap().1).unwrap();
+    let rejected = evidence["rejected"].as_array().unwrap();
+    assert_eq!(rejected.len(), 3);
+    assert_eq!(rejected[0]["reason"], "missing");
+    assert_eq!(rejected[0]["actual"], json!({"missing":true}));
+    assert_eq!(rejected[1]["reason"], "malformed");
+    assert_eq!(rejected[1]["actual"], json!({"malformed":"string"}));
+    assert_eq!(rejected[2]["reason"], "numeric_mismatch");
+    assert!(error.len() < 4096);
+    metrics["cssLayoutViewport"] = json!([]);
+    assert!(validate_viewport(&metrics).unwrap_err().to_string().len() < 4096);
+}
+
+#[test]
+fn viewport_failure_diagnostic_preserves_capture_acceptance() {
+    validate_viewport(&viewport_metrics()).unwrap();
+    for (object, field, value) in [
+        ("cssLayoutViewport", "clientWidth", 625),
+        ("cssVisualViewport", "clientHeight", 465),
+        ("cssLayoutViewport", "pageX", 1),
+        ("cssVisualViewport", "pageY", 1),
+        ("cssVisualViewport", "scale", 2),
+    ] {
+        let mut metrics = viewport_metrics();
+        metrics[object][field] = json!(value);
+        assert!(validate_viewport(&metrics).is_err(), "{object}.{field}");
+    }
+    // Content extent is evidence, not an additional capture predicate.
+    let mut metrics = viewport_metrics();
+    metrics["cssContentSize"]["height"] = json!(900);
+    validate_viewport(&metrics).unwrap();
+}
+
 fn png_bytes(width: u32, height: u32, color: png::ColorType, data: &[u8]) -> Vec<u8> {
     let mut bytes = Vec::new();
     {
