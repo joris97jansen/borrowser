@@ -587,14 +587,8 @@ pub(crate) fn options(args: &[String]) -> Result<Options<'_>, Failure> {
 }
 impl Options<'_> {
     pub(crate) fn select_fixtures(&self) -> Result<Vec<&'static Fixture>, Failure> {
-        let fixtures: Vec<_> = crate::fixtures::FIXTURES
-            .iter()
-            .filter(|f| self.test_id.is_none_or(|id| id == f.id.0))
-            .collect();
-        if fixtures.is_empty() {
-            return Err(configuration("unknown fixture ID"));
-        }
-        Ok(fixtures)
+        crate::fixtures::select(self.test_id)
+            .map_err(|e| configuration(&format!("{}: {}", e.code, e.detail)))
     }
 }
 
@@ -640,24 +634,27 @@ pub(crate) fn capture_batch(
 pub(crate) fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
     let execute = || -> Result<CaptureReport<'_>, Failure> {
         let options = options(args)?;
-        let executable = options.executable.as_deref().ok_or_else(|| {
-            configuration("set BORROWSER_CHROMIUM_EXECUTABLE or --chromium-executable")
-        })?;
         let fixtures = options.select_fixtures()?;
         let inputs = fixtures
             .iter()
-            .map(|fixture| {
+            .filter_map(|fixture| {
                 let FixtureKind::Runnable { html, .. } = fixture.kind else {
-                    return Err(configuration("fixture is not runnable"));
+                    return None;
                 };
-                Ok(CaptureInput {
+                Some(CaptureInput {
                     id: fixture.id,
                     source: fixture.source,
                     html,
                     request: fixture.request,
                 })
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Vec<_>>();
+        if inputs.is_empty() {
+            return Err(configuration("selection contains no runnable fixtures"));
+        }
+        let executable = options.executable.as_deref().ok_or_else(|| {
+            configuration("set BORROWSER_CHROMIUM_EXECUTABLE or --chromium-executable")
+        })?;
         let captures = capture_batch(&inputs, executable)?;
         let observations = inputs
             .iter()

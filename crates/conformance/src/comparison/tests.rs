@@ -1,8 +1,5 @@
 use super::*;
-use crate::{
-    fixtures::FIXTURES,
-    model::{Execution, Expectation, TestId},
-};
+use crate::model::{Execution, Expectation, TestId};
 use serde_json::{Value, json};
 use std::{cell::RefCell, process::Command};
 
@@ -28,7 +25,12 @@ fn capture(color: [u8; 3]) -> chromium::ChromiumCapture {
     chromium::tests::controlled_capture(CanvasColor(color))
 }
 fn case(left: [u8; 3], right: [u8; 3]) -> report::Case {
-    report::Case::observed(&FIXTURES[1], CanvasColor(left).into(), capture(right)).unwrap()
+    report::Case::observed(
+        crate::fixtures::fixture("canvas/cascade"),
+        CanvasColor(left).into(),
+        capture(right),
+    )
+    .unwrap()
 }
 fn publish_bytes(result: Result<report::Report, Failure>) -> (u8, Vec<u8>, String) {
     let mut out = vec![];
@@ -39,7 +41,7 @@ fn publish_bytes(result: Result<report::Report, Failure>) -> (u8, Vec<u8>, Strin
 
 #[test]
 fn imported_capture_uses_the_existing_projection_and_no_operational_metadata() {
-    let fixtures: Vec<_> = FIXTURES[..2].iter().collect();
+    let fixtures: Vec<_> = crate::fixtures::baseline()[..2].iter().collect();
     let inputs: Vec<_> = fixtures
         .iter()
         .map(|f| {
@@ -132,13 +134,13 @@ fn unit_unsupported_skip_and_empty_never_equal() {
         kind: FixtureKind::Unsupported {
             reason: "unsupported fixture",
         },
-        ..FIXTURES[0]
+        ..(*crate::fixtures::fixture("canvas/root"))
     };
     let skipped_fixture = Fixture {
         kind: FixtureKind::Skipped {
             reason: "explicit skip",
         },
-        ..FIXTURES[1]
+        ..(*crate::fixtures::fixture("canvas/cascade"))
     };
     let (code, bytes, diagnostic) = publish_bytes(execute_selected(
         &[&unsupported_fixture, &skipped_fixture],
@@ -157,7 +159,13 @@ fn unit_unsupported_skip_and_empty_never_equal() {
     assert_eq!(report["cases"][1]["skipped"], "explicit skip");
     assert_eq!(report::Report::new(vec![]).exit_code(), 3);
     assert!(execute_selected(&[], None).is_err());
-    assert!(validate_selection(&[&FIXTURES[0], &FIXTURES[0]]).is_err());
+    assert!(
+        validate_selection(&[
+            crate::fixtures::fixture("canvas/root"),
+            crate::fixtures::fixture("canvas/root")
+        ])
+        .is_err()
+    );
 }
 
 #[test]
@@ -165,14 +173,14 @@ fn unit_complete_correspondence_required() {
     let inputs = [
         CaptureInput {
             request: crate::projection::ObservationRequest::CANVAS,
-            id: FIXTURES[0].id,
-            source: FIXTURES[0].source,
+            id: crate::fixtures::fixture("canvas/root").id,
+            source: crate::fixtures::fixture("canvas/root").source,
             html: b"",
         },
         CaptureInput {
             request: crate::projection::ObservationRequest::CANVAS,
-            id: FIXTURES[1].id,
-            source: FIXTURES[1].source,
+            id: crate::fixtures::fixture("canvas/cascade").id,
+            source: crate::fixtures::fixture("canvas/cascade").source,
             html: b"",
         },
     ];
@@ -224,7 +232,9 @@ fn unit_expectations_are_independent_and_precedence_is_explicit() {
             1,
         ),
     ] {
-        let FixtureKind::Runnable { html, expected, .. } = FIXTURES[1].kind else {
+        let FixtureKind::Runnable { html, expected, .. } =
+            crate::fixtures::fixture("canvas/cascade").kind
+        else {
             unreachable!()
         };
         let fixture = Fixture {
@@ -233,7 +243,7 @@ fn unit_expectations_are_independent_and_precedence_is_explicit() {
                 expected,
                 expectation,
             },
-            ..FIXTURES[1]
+            ..(*crate::fixtures::fixture("canvas/cascade"))
         };
         let report = report::Report::new(vec![
             report::Case::observed(&fixture, CanvasColor(observed).into(), capture(observed))
@@ -250,12 +260,12 @@ fn unit_expectations_are_independent_and_precedence_is_explicit() {
     }
     let cases = vec![
         case([52, 86, 120], [0, 0, 0]),
-        report::Case::skipped(&FIXTURES[0], "skip"),
+        report::Case::skipped(crate::fixtures::fixture("canvas/root"), "skip"),
     ];
     assert_eq!(report::Report::new(cases).exit_code(), 1);
     let cases = vec![
         case([52, 86, 120], [52, 86, 120]),
-        report::Case::skipped(&FIXTURES[0], "skip"),
+        report::Case::skipped(crate::fixtures::fixture("canvas/root"), "skip"),
     ];
     assert_eq!(report::Report::new(cases).exit_code(), 3);
 }
@@ -433,7 +443,7 @@ fn isolated_case() {
     let executable = std::env::var_os("BORROWSER_CHROMIUM_EXECUTABLE")
         .expect("explicit real test requires Chromium");
     EVENTS.with(|events| *events.borrow_mut() = Some(vec![]));
-    let mut fixtures = FIXTURES[..2].to_vec();
+    let mut fixtures = crate::fixtures::baseline()[..2].to_vec();
     match scenario.as_str() {
         "multiple" => {},
         "css" => {
@@ -566,7 +576,7 @@ fn unit_phase_partial_coverage_never_reports_full_pass() {
             ),
             expectation: Expectation::Match,
         },
-        ..FIXTURES[4]
+        ..(*crate::fixtures::fixture("style/cascade-inheritance"))
     };
     let FixtureKind::Runnable { html, .. } = fixture.kind else {
         unreachable!()
@@ -591,7 +601,7 @@ fn unit_phase_partial_coverage_never_reports_full_pass() {
 
 #[test]
 fn unit_phase_layout_difference_is_localized_and_missing_capture_is_error() {
-    let fixture = &FIXTURES[5];
+    let fixture = crate::fixtures::fixture("layout/block-boxes");
     let FixtureKind::Runnable { html, .. } = fixture.kind else {
         unreachable!()
     };
@@ -642,7 +652,7 @@ fn unit_unrequested_and_unsupported_families_are_not_canvas_equality() {
             ),
             expectation: Expectation::Match,
         },
-        ..FIXTURES[2]
+        ..(*crate::fixtures::fixture("dom/structure"))
     };
     let FixtureKind::Runnable { html, .. } = fixture.kind else {
         unreachable!()
@@ -657,7 +667,10 @@ fn unit_unrequested_and_unsupported_families_are_not_canvas_equality() {
     let no_fields =
         serde_json::to_value(report::Case::unsupported(&fixture, "explicit exclusion")).unwrap();
     assert_eq!(no_fields["coverage"]["reason"], "explicit exclusion");
-    let unsupported = report::Case::unsupported(&FIXTURES[2], "explicitly excluded DOM scenario");
+    let unsupported = report::Case::unsupported(
+        crate::fixtures::fixture("dom/structure"),
+        "explicitly excluded DOM scenario",
+    );
     let wire = serde_json::to_value(unsupported).unwrap();
     assert_eq!(wire["fields"][0]["id"], "dom");
     assert_eq!(wire["fields"][0]["status"], "unsupported");
@@ -681,7 +694,7 @@ fn style_reference() -> chromium::ChromiumCapture {
 fn unit_phase_required_records_cannot_be_truncated_duplicated_or_misidentified() {
     use crate::projection::{Observation, TargetValue};
     for index in [4, 5] {
-        let mut fixture = FIXTURES[index];
+        let mut fixture = crate::fixtures::baseline()[index];
         let FixtureKind::Runnable { html, expected, .. } = fixture.kind else {
             unreachable!()
         };
@@ -821,7 +834,7 @@ pub(crate) fn expected_profile_fields(id: &str) -> Vec<String> {
 
 #[test]
 fn unit_phase_single_style_property_difference_retains_all_twelve_fields() {
-    let fixture = &FIXTURES[4];
+    let fixture = crate::fixtures::fixture("style/cascade-inheritance");
     let FixtureKind::Runnable { html, .. } = fixture.kind else {
         unreachable!()
     };
@@ -902,7 +915,7 @@ fn unit_phase_dom_common_comparison_preserves_meaningful_structure() {
             ),
         ],
     );
-    let fixture = &FIXTURES[2];
+    let fixture = crate::fixtures::fixture("dom/structure");
     let FixtureKind::Runnable { html, .. } = fixture.kind else {
         unreachable!()
     };

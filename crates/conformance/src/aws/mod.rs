@@ -51,7 +51,14 @@ fn required(options: &BTreeMap<String, String>, key: &str) -> Result<PathBuf, St
 }
 
 pub(crate) fn artifact_info(out: &mut impl Write) -> io::Result<u8> {
-    serde_json::to_writer(&mut *out, &artifact::identity())?;
+    let identity = match artifact::identity() {
+        Ok(identity) => identity,
+        Err(error) => {
+            writeln!(io::stderr().lock(), "ERROR artifact.identity: {error}")?;
+            return Ok(2);
+        }
+    };
+    serde_json::to_writer(&mut *out, &identity)?;
     writeln!(out)?;
     Ok(0)
 }
@@ -72,18 +79,13 @@ pub(crate) fn run(
 ) -> io::Result<u8> {
     let result = (|| -> Result<_, String> {
         let (options, id) = flags(args, &["--config", "--artifact-dir", "--state-dir"])?;
-        let fixtures: Vec<_> = crate::fixtures::FIXTURES
-            .iter()
-            .filter(|f| id.as_deref().is_none_or(|id| f.id.0 == id))
-            .collect();
-        if fixtures.is_empty() {
-            return Err("unknown fixture identity".into());
-        }
+        let fixtures = crate::fixtures::select(id.as_deref())
+            .map_err(|e| format!("{}: {}", e.code, e.detail))?;
         let inputs: Vec<_> = fixtures
             .iter()
-            .map(|f| match f.kind {
+            .filter_map(|f| match f.kind {
                 crate::model::FixtureKind::Runnable { html, .. } => {
-                    Ok(crate::chromium::CaptureInput {
+                    Some(crate::chromium::CaptureInput {
                         id: f.id,
                         source: f.source,
                         html,
@@ -91,9 +93,12 @@ pub(crate) fn run(
                         request: f.request,
                     })
                 }
-                _ => Err("AG4 only captures registered runnable fixtures".to_string()),
+                _ => None,
             })
-            .collect::<Result<_, _>>()?;
+            .collect();
+        if inputs.is_empty() {
+            return Ok((fixtures, vec![]));
+        }
         let mut config = config::Config::load(&required(&options, "--config")?)?;
         let artifact = artifact::Prepared::load(&required(&options, "--artifact-dir")?)?;
         let state_root = required(&options, "--state-dir")?;

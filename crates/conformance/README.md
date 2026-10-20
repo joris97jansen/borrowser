@@ -1,4 +1,4 @@
-# Focused static conformance harness (AG1–AG4)
+# Focused static conformance harness (AG1–AG6)
 
 AG4 adds the optional `--compare-aws` and artifact-independent `--aws-cleanup`
 paths. Its two-resource Python CDK capture stack, shared eleven-resource
@@ -9,9 +9,8 @@ The run keeps its own SG and instance; shared EICE/SGs are never run cleanup
 targets. Live configuration binds the exact shared StackId and canonical template
 digest, derives physical IDs, and rejects obsolete `controller_cidr` fields.
 Historical cleanup-only remains independent of EICE/current operator configuration.
-The reviewed AMI/package snapshot are pinned. The shared EICE update, corporate
-TLS qualification, first normal EICE run and broader AG4 acceptance remain
-pending; earlier direct-SSH lifecycle evidence does not qualify EICE. The DNS
+The reviewed AMI/package snapshot are pinned. AG4 #1387 is completed and
+PR #1433 is merged. Earlier direct-SSH lifecycle evidence is historical. The DNS
 contract requires the authenticated `ec2-instance-connect-endpoint.eu-west-1.amazonaws.com`
 hostname. Command cleanup uses absolute phases: a two-second natural-shutdown
 opportunity, at most one second for TERM, the latest planned forced transition
@@ -37,18 +36,18 @@ macOS logs, including two `BrowserExited` observations and their reported
 pre-EICE reproduction, remain historical summaries only. The Chromium observations
 are unresolved and are not established EICE regressions.
 
-AG4 is not closeable: formal architecture review, final-source validation / `make ci`,
-appropriate native regressions, fresh Chromium/guest-wrapper qualification and
-live-stage source/controller/Linux artifact identities remain required, along with
-corporate EICE WebSocket/TLS qualification, authorized shared-stack change-set
-deployment and verification, external controller-permission qualification, the
-first real EICE `canvas/cascade` capture/comparison with confirmed cleanup, broader AG4
-acceptance and final closeability review. These stages remain inside AG4.
+AG6 preserves the completed AG4 contracts and validates its affected fixture and
+artifact integration. It does not reopen cloud qualification or perform live AWS
+work. Historical qualification records below retain their original scope.
+
+AG6 discovers and embeds fixture metadata at build time. See the
+[AG6 authoring and discovery contract](../../docs/conformance/ag6-fixture-discovery-and-metadata.md)
+for the schema, validation boundaries and mode behavior.
 
 Ordinary local commands below remain independent of AWS configuration,
 credentials and artifact preparation.
 
-Run the explicit fixture set:
+Run the embedded discovered fixture set:
 
 ```sh
 cargo run -p borrowser-conformance --locked
@@ -56,7 +55,7 @@ make conformance
 cargo run -p borrowser-conformance --locked -- canvas/cascade
 ```
 
-The six-fixture registry compares committed DOM structure, four selected computed
+The initial six-fixture corpus compares committed DOM structure, four selected computed
 properties, fixed block border boxes, and the existing guarded opaque sRGB canvas
 sample at pixel `(32,32)`. See the [AG5 observation and comparison contract](../../docs/conformance/ag5-phase-comparison-projections.md)
 for authority, exact coverage, unsupported cases, wire formats and qualification.
@@ -122,8 +121,9 @@ screenshot with the same viewport and device scale. Neither path makes a
 
 ## Fixtures and independent expectations
 
-`src/fixtures.rs` registers the small fixture set in report order. HTML bytes are
-embedded, so execution does not depend on the current directory.
+`build.rs` discovers `fixtures/**/*.fixture.json` and generates embedded fixtures
+in lexicographic ID order. `src/fixtures.rs` validates the entire catalogue before
+selection, execution or artifact identity publication. No runtime checkout is needed.
 
 - `canvas/root`: `html { background-color: #123456 }` yields RGB `(18, 52, 86)`.
 - `canvas/cascade`: the `#canvas` rule sets `#345678`; a later `html` selector has
@@ -135,12 +135,12 @@ not generated Borrowser output. Current production background selection prefers
 a nontransparent body color; AG1 deliberately tests transparent bodies and does
 not claim the full root/body propagation behavior is conformant.
 
-To add a case, author a static fixture within these restrictions, register a
-unique `TestId`, state the semantic reason for its exact expected color, and run
-the targeted tests and harness. There is no discovery, automatic unsupported
-feature detector, or expectation blessing command. A fixture outside the
-supported observation must be explicitly classified or await a separately
-reviewed extension; do not weaken capture to obtain a comparison.
+To add a case, author static HTML, its strict `.fixture.json` declaration and any
+independent `.expected.json` projection, then rebuild and run the harness. No Rust
+registration or test-list edit is required. Explicit `requires_javascript` metadata
+records eligibility; runnable fixtures must set it to false. There is no automatic
+unsupported-feature detector or expectation blessing command. Follow the
+[AG6 contract](../../docs/conformance/ag6-fixture-discovery-and-metadata.md).
 
 ## Results
 
@@ -226,8 +226,7 @@ platform qualification record. AG2 is integrated; both macOS arm64 and native
 Linux x86-64 have recorded production-v2 qualification. Compilation on Linux
 ARM64 does not establish runtime qualification.
 
-No AWS (AG4), WPT import, generalized adapters/providers, broad fixture discovery,
-historical storage, dashboards,
+No WPT import, generalized adapters/providers, historical storage, dashboards,
 flaky-test policy, or new engine semantics are included.
 
 ## Integrated cross-engine comparison (AG3 / #1395)
@@ -240,8 +239,8 @@ cargo run -p borrowser-conformance --locked -- --compare --chromium-executable "
 cargo run -p borrowser-conformance --locked -- --compare
 ```
 
-The first command is the acceptance case; the second selects both registered
-fixtures in registry order (`canvas/root`, `canvas/cascade`). The executable
+The first command is the acceptance case; the second selects the discovered
+catalogue in lexicographic fixture-ID order. The executable
 option overrides the environment variable. Exactly one test ID or no ID is
 accepted. Unknown/duplicate selections, extra options and missing required
 configuration are errors. This does not provision a browser.
@@ -306,7 +305,7 @@ no child processes. Restored signal dispositions apply after the capture phase.
 
 `--compare` emits pretty JSON, schema `borrowser.cross-engine-phases.v1`, followed
 by one newline. Member order is fixed by typed serialization; case order is
-fixture registry order; engine order is Borrowser then Chromium. Each canvas case has
+fixture-ID order; engine order is Borrowser then Chromium. Each canvas case has
 one `canvas_color_rgb8` field with both observed arrays, its `equal`/`different`
 status, and red/green/blue channel statuses in that order. For `canvas/cascade`,
 both arrays should be `[52, 86, 120]` and every channel should be `equal`.

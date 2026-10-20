@@ -1,157 +1,120 @@
-use crate::model::{CanvasColor, Expectation, Fixture, FixtureKind, TestId};
-use crate::projection::{ObservationRequest, Request, StyleField, StyleProperty};
+//! One embedded catalogue, validated before selection or artifact publication.
+use crate::model::{Fixture, FixtureKind, HarnessError};
+use crate::projection::{self, Request};
 
-// Order is intentional and is also the report order. Expectations are authored
-// from CSS canvas propagation and cascade specificity, never blessed output.
-pub(crate) const FIXTURES: &[Fixture] = &[
-    Fixture {
-        request: crate::projection::ObservationRequest::CANVAS,
-        id: TestId("canvas/root"),
-        source: "fixtures/root-canvas-color.html",
-        kind: FixtureKind::Runnable {
-            html: include_bytes!("../fixtures/root-canvas-color.html"),
-            expected: crate::model::Expected::Canvas(CanvasColor([0x12, 0x34, 0x56])),
-            expectation: Expectation::Match,
-        },
-    },
-    Fixture {
-        request: crate::projection::ObservationRequest::CANVAS,
-        id: TestId("canvas/cascade"),
-        source: "fixtures/cascade-canvas-color.html",
-        kind: FixtureKind::Runnable {
-            html: include_bytes!("../fixtures/cascade-canvas-color.html"),
-            expected: crate::model::Expected::Canvas(CanvasColor([0x34, 0x56, 0x78])),
-            expectation: Expectation::Match,
-        },
-    },
-    Fixture {
-        id: TestId("dom/structure"),
-        source: "fixtures/dom-structure.html",
-        request: ObservationRequest {
-            dom: Request::Compare(()),
-            ..ObservationRequest::NONE
-        },
-        kind: FixtureKind::Runnable {
-            html: include_bytes!("../fixtures/dom-structure.html"),
-            expected: crate::model::Expected::Projection(include_str!(
-                "../fixtures/dom-structure.expected.json"
-            )),
-            expectation: Expectation::Match,
-        },
-    },
-    Fixture {
-        id: TestId("dom/template-namespaces"),
-        source: "fixtures/dom-template-namespaces.html",
-        request: ObservationRequest {
-            dom: Request::Compare(()),
-            ..ObservationRequest::NONE
-        },
-        kind: FixtureKind::Runnable {
-            html: include_bytes!("../fixtures/dom-template-namespaces.html"),
-            expected: crate::model::Expected::Projection(include_str!(
-                "../fixtures/dom-template-namespaces.expected.json"
-            )),
-            expectation: Expectation::Match,
-        },
-    },
-    Fixture {
-        id: TestId("style/cascade-inheritance"),
-        source: "fixtures/style-cascade-inheritance.html",
-        request: ObservationRequest {
-            styles: &STYLE_FIELDS,
-            ..ObservationRequest::NONE
-        },
-        kind: FixtureKind::Runnable {
-            html: include_bytes!("../fixtures/style-cascade-inheritance.html"),
-            expected: crate::model::Expected::Projection(include_str!(
-                "../fixtures/style-cascade-inheritance.expected.json"
-            )),
-            expectation: Expectation::Match,
-        },
-    },
-    Fixture {
-        id: TestId("layout/block-boxes"),
-        source: "fixtures/layout-block-boxes.html",
-        request: ObservationRequest {
-            layout: Request::Compare(&[
-                "container",
-                "child",
-                "sibling",
-                "hidden",
-                "zero",
-                "missing",
-            ]),
-            ..ObservationRequest::NONE
-        },
-        kind: FixtureKind::Runnable {
-            html: include_bytes!("../fixtures/layout-block-boxes.html"),
-            expected: crate::model::Expected::Projection(include_str!(
-                "../fixtures/layout-block-boxes.expected.json"
-            )),
-            expectation: Expectation::Match,
-        },
-    },
-];
+mod generated {
+    // The metadata corpus determines which variants the generated source uses.
+    #[allow(unused_imports)]
+    use crate::model::{
+        CanvasColor, Expectation, Expected, Fixture, FixtureKind, HarnessError, TestId,
+    };
+    #[allow(unused_imports)]
+    use crate::projection::{ObservationRequest, Request, StyleField, StyleProperty};
+    include!(concat!(env!("OUT_DIR"), "/fixtures_generated.rs"));
 
-const STYLE_FIELDS: [StyleField; 12] = [
-    StyleField {
-        target: "parent",
-        property: Request::Compare(StyleProperty::Color),
-        name: StyleProperty::Color.name(),
-    },
-    StyleField {
-        target: "parent",
-        property: Request::Compare(StyleProperty::BackgroundColor),
-        name: StyleProperty::BackgroundColor.name(),
-    },
-    StyleField {
-        target: "parent",
-        property: Request::Compare(StyleProperty::FontSize),
-        name: StyleProperty::FontSize.name(),
-    },
-    StyleField {
-        target: "parent",
-        property: Request::Compare(StyleProperty::Display),
-        name: StyleProperty::Display.name(),
-    },
-    StyleField {
-        target: "child",
-        property: Request::Compare(StyleProperty::Color),
-        name: StyleProperty::Color.name(),
-    },
-    StyleField {
-        target: "child",
-        property: Request::Compare(StyleProperty::BackgroundColor),
-        name: StyleProperty::BackgroundColor.name(),
-    },
-    StyleField {
-        target: "child",
-        property: Request::Compare(StyleProperty::FontSize),
-        name: StyleProperty::FontSize.name(),
-    },
-    StyleField {
-        target: "child",
-        property: Request::Compare(StyleProperty::Display),
-        name: StyleProperty::Display.name(),
-    },
-    StyleField {
-        target: "hidden",
-        property: Request::Compare(StyleProperty::Color),
-        name: StyleProperty::Color.name(),
-    },
-    StyleField {
-        target: "hidden",
-        property: Request::Compare(StyleProperty::BackgroundColor),
-        name: StyleProperty::BackgroundColor.name(),
-    },
-    StyleField {
-        target: "hidden",
-        property: Request::Compare(StyleProperty::FontSize),
-        name: StyleProperty::FontSize.name(),
-    },
-    StyleField {
-        target: "hidden",
-        property: Request::Compare(StyleProperty::Display),
-        name: StyleProperty::Display.name(),
-    },
-];
+    pub(super) fn validated() -> Result<&'static [Fixture], HarnessError> {
+        super::validate_catalogue(GENERATED_FIXTURES)?;
+        Ok(GENERATED_FIXTURES)
+    }
+}
+
+fn validate_catalogue(fixtures: &[Fixture]) -> Result<(), HarnessError> {
+    if fixtures.is_empty() {
+        return Err(HarnessError::new(
+            "fixture.configuration",
+            "empty embedded fixture catalogue",
+        ));
+    }
+    for (index, fixture) in fixtures.iter().enumerate() {
+        let validate = || {
+            if index > 0 && fixtures[index - 1].id.0 >= fixture.id.0 {
+                return Err(HarnessError::new(
+                    "fixture.configuration",
+                    "fixture identities must be unique and sorted",
+                ));
+            }
+            projection::validate_request(fixture.request)?;
+            if matches!(fixture.request.dom, Request::NotRequested)
+                && fixture.request.styles.is_empty()
+                && matches!(fixture.request.layout, Request::NotRequested)
+                && matches!(fixture.request.canvas, Request::NotRequested)
+            {
+                return Err(HarnessError::new(
+                    "fixture.configuration",
+                    "no observation requested",
+                ));
+            }
+            if let FixtureKind::Runnable { expected, .. } = fixture.kind {
+                if fixture.requires_javascript {
+                    return Err(HarnessError::new(
+                        "fixture.configuration",
+                        "runnable fixture requires JavaScript",
+                    ));
+                }
+                expected.observations()?.validate(fixture.request)?;
+            }
+            Ok(())
+        };
+        validate().map_err(|error: HarnessError| {
+            HarnessError::new(
+                error.code,
+                format!(
+                    "{} ({}): {}",
+                    fixture.metadata_source, fixture.id.0, error.detail
+                ),
+            )
+        })?;
+    }
+    Ok(())
+}
+
+pub(crate) fn catalogue() -> Result<&'static [Fixture], HarnessError> {
+    generated::validated()
+}
+
+pub(crate) fn select(id: Option<&str>) -> Result<Vec<&'static Fixture>, HarnessError> {
+    let fixtures = catalogue()?;
+    let selected: Vec<_> = fixtures
+        .iter()
+        .filter(|f| id.is_none_or(|id| f.id.0 == id))
+        .collect();
+    if selected.is_empty() {
+        return Err(HarnessError::new(
+            "fixture.selection",
+            match id {
+                Some(id) => format!("unknown test identity {id:?}"),
+                None => "empty fixture selection".into(),
+            },
+        ));
+    }
+    Ok(selected)
+}
+
+#[cfg(test)]
+pub(crate) fn fixture(id: &str) -> &'static Fixture {
+    catalogue()
+        .expect("test catalogue")
+        .iter()
+        .find(|f| f.id.0 == id)
+        .expect("named baseline fixture")
+}
+
+// Independent original-fixture acceptance set, never a discovery registry.
+#[cfg(test)]
+pub(crate) fn baseline() -> &'static [Fixture] {
+    static BASELINE: std::sync::OnceLock<[Fixture; 6]> = std::sync::OnceLock::new();
+    BASELINE.get_or_init(|| {
+        [
+            "canvas/root",
+            "canvas/cascade",
+            "dom/structure",
+            "dom/template-namespaces",
+            "style/cascade-inheritance",
+            "layout/block-boxes",
+        ]
+        .map(|id| *fixture(id))
+    })
+}
+
+#[cfg(test)]
+mod tests;

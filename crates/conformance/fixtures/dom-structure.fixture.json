@@ -1,0 +1,20 @@
+{
+  "id": "dom/structure",
+  "input": "dom-structure.html",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "observations": {
+    "dom": {
+      "kind": "compare"
+    }
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "projection",
+    "path": "dom-structure.expected.json"
+  }
+}

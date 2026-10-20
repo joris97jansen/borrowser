@@ -24,6 +24,8 @@ pub(crate) struct TestId(pub(crate) &'static str);
 pub(crate) struct Fixture {
     pub(crate) id: TestId,
     pub(crate) source: &'static str,
+    pub(crate) metadata_source: &'static str,
+    pub(crate) requires_javascript: bool,
     pub(crate) kind: FixtureKind,
     pub(crate) request: ObservationRequest,
 }
@@ -37,7 +39,7 @@ pub(crate) enum FixtureKind {
     },
     #[cfg_attr(
         not(test),
-        expect(
+        allow(
             dead_code,
             reason = "Registry supports explicit classifications; current fixtures are runnable; tested below."
         )
@@ -45,7 +47,7 @@ pub(crate) enum FixtureKind {
     Unsupported { reason: &'static str },
     #[cfg_attr(
         not(test),
-        expect(
+        allow(
             dead_code,
             reason = "Registry supports intentional skips; current fixtures are runnable; tested below."
         )
@@ -58,7 +60,7 @@ pub(crate) enum Expectation {
     Match,
     #[cfg_attr(
         not(test),
-        expect(
+        allow(
             dead_code,
             reason = "No registered fixture currently has a known failure; XFAIL/XPASS are regression tested."
         )

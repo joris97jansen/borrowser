@@ -1,0 +1,24 @@
+{
+  "id": "canvas/cascade",
+  "input": "cascade-canvas-color.html",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "observations": {
+    "canvas": {
+      "kind": "compare"
+    }
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "canvas",
+    "rgb8": [
+      52,
+      86,
+      120
+    ]
+  }
+}

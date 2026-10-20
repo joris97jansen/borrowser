@@ -1,4 +1,4 @@
-use crate::{fixtures::FIXTURES, model::*, report, run_fixture};
+use crate::{model::*, report, run_fixture};
 
 fn runnable(expected: CanvasColor, expectation: Expectation) -> Fixture {
     Fixture {
@@ -7,7 +7,7 @@ fn runnable(expected: CanvasColor, expectation: Expectation) -> Fixture {
             expected: Expected::Canvas(expected),
             expectation,
         },
-        ..FIXTURES[0]
+        ..(*crate::fixtures::fixture("canvas/root"))
     }
 }
 
@@ -83,7 +83,7 @@ fn unsupported_and_skipped_need_no_expected_result_or_execution() {
     ] {
         let fixture = Fixture {
             kind,
-            ..FIXTURES[0]
+            ..(*crate::fixtures::fixture("canvas/root"))
         };
         let report = report::evaluate(&fixture, run_fixture(&fixture));
         assert_eq!(report.status(), status);
@@ -105,9 +105,18 @@ fn execution_error_takes_exit_precedence_over_mismatch() {
 }
 
 #[test]
-fn fixture_identities_are_unique() {
-    for (index, fixture) in FIXTURES.iter().enumerate() {
-        assert!(!FIXTURES[..index].iter().any(|other| other.id == fixture.id));
+fn every_discovered_fixture_uses_the_production_execution_and_expectation_path() {
+    for fixture in crate::fixtures::catalogue().unwrap() {
+        let report = report::evaluate(fixture, run_fixture(fixture));
+        assert!(
+            matches!(
+                report.status(),
+                "PASS" | "XFAIL" | "UNSUPPORTED" | "SKIP" | "INCOMPLETE"
+            ),
+            "{}: {}",
+            fixture.id.0,
+            report.status()
+        );
     }
 }
 
@@ -116,7 +125,7 @@ fn actual_capture_error_cannot_satisfy_known_failure_metadata() {
     let fixture = Fixture { kind: FixtureKind::Runnable {
         html: b"<!doctype html><html><head><style>html,body{margin:0;padding:0;height:0}html{background-color:#123456}div{height:100px;background-color:red}</style></head><body><div></div></body></html>",
         expected: crate::model::Expected::Canvas(CanvasColor([18, 52, 86])), expectation: Expectation::KnownFailure { reason: "must not hide capture failure" },
-    }, ..FIXTURES[0] };
+    }, ..(*crate::fixtures::fixture("canvas/root")) };
     let execution = run_fixture(&fixture);
     assert!(matches!(&execution, Execution::Error(error) if error.code == "capture.overlap"));
     let report = report::evaluate(&fixture, execution);
@@ -143,7 +152,7 @@ fn projection_local_typed_numeric_diagnostics_agree_with_status() {
             ),
             expectation: Expectation::Match,
         },
-        ..FIXTURES[4]
+        ..(*crate::fixtures::fixture("style/cascade-inheritance"))
     };
     let actual = run_fixture(&fixture);
     let evaluated = report::evaluate(&fixture, actual);
@@ -204,7 +213,7 @@ fn projection_local_reports_partial_coverage_and_known_failure_reasons() {
             ),
             expectation: Expectation::Match,
         },
-        ..FIXTURES[4]
+        ..(*crate::fixtures::fixture("style/cascade-inheritance"))
     };
     for differs in [false, true] {
         let FixtureKind::Runnable { html, expected, .. } = fixture.kind else {

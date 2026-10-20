@@ -1,0 +1,103 @@
+{
+  "id": "style/cascade-inheritance",
+  "input": "style-cascade-inheritance.html",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "observations": {
+    "styles": [
+      {
+        "target": "parent",
+        "property": "color",
+        "selection": {
+          "kind": "compare"
+        }
+      },
+      {
+        "target": "parent",
+        "property": "background-color",
+        "selection": {
+          "kind": "compare"
+        }
+      },
+      {
+        "target": "parent",
+        "property": "font-size",
+        "selection": {
+          "kind": "compare"
+        }
+      },
+      {
+        "target": "parent",
+        "property": "display",
+        "selection": {
+          "kind": "compare"
+        }
+      },
+      {
+        "target": "child",
+        "property": "color",
+        "selection": {
+          "kind": "compare"
+        }
+      },
+      {
+        "target": "child",
+        "property": "background-color",
+        "selection": {
+          "kind": "compare"
+        }
+      },
+      {
+        "target": "child",
+        "property": "font-size",
+        "selection": {
+          "kind": "compare"
+        }
+      },
+      {
+        "target": "child",
+        "property": "display",
+        "selection": {
+          "kind": "compare"
+        }
+      },
+      {
+        "target": "hidden",
+        "property": "color",
+        "selection": {
+          "kind": "compare"
+        }
+      },
+      {
+        "target": "hidden",
+        "property": "background-color",
+        "selection": {
+          "kind": "compare"
+        }
+      },
+      {
+        "target": "hidden",
+        "property": "font-size",
+        "selection": {
+          "kind": "compare"
+        }
+      },
+      {
+        "target": "hidden",
+        "property": "display",
+        "selection": {
+          "kind": "compare"
+        }
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "projection",
+    "path": "style-cascade-inheritance.expected.json"
+  }
+}

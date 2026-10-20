@@ -484,7 +484,7 @@ configuration/identity, launch, protocol, navigation, capture, timeout,
 cancellation, premature exit and cleanup failure. They do not refactor AG1's
 execution/comparison model.
 
-Only fully cleaned-up observations enter the JSON report, in fixture registry
+Only fully cleaned-up observations enter the JSON report, in fixture-ID
 order. Reports exclude timestamps, PIDs, temporary paths, frame/session IDs,
 durations and stderr. Failure diagnostics may include execution details and are
 not reference artifacts. No partial success report is emitted if a later fixture
@@ -1137,3 +1137,12 @@ ingestion is outside the native launcher; controller command ownership is a
 separate private AG4 concern. See the [AG4 contract](ag4-disposable-aws-chromium-runner.md).
 Existing local Linux evidence does not qualify the AMI, bootstrap, SSH transport
 or CloudFormation lifecycle. Local execution requires no AWS preparation.
+
+## AG6 catalogue integration
+
+[AG6](ag6-fixture-discovery-and-metadata.md) discovers metadata during the build
+and embeds the original input bytes. Capture selection uses the validated
+catalogue, filters excluded fixtures, and preserves lexicographic ID order.
+An excluded-only capture selection is an explicit configuration error before
+launch. Metadata never enables page scripts. Capture schema, bounds and native
+process/cleanup ownership remain unchanged.
