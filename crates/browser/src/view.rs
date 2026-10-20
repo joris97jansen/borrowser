@@ -18,6 +18,12 @@ pub(crate) struct ViewContentOutcome {
     pub(crate) trace: Option<crate::rendering::RenderFrameExecutionTrace>,
 }
 
+// The feature adds only a call-local sink to the existing seven-argument
+// production entry; a second rendering path or persistent cache is unnecessary.
+#[cfg_attr(
+    feature = "conformance-observation",
+    expect(clippy::too_many_arguments)
+)]
 pub(crate) fn content(
     ctx: &Context,
     page: &mut PageState,
@@ -26,6 +32,9 @@ pub(crate) fn content(
     status: Option<&String>,
     loading: bool,
     pending_work: PendingRenderWork,
+    #[cfg(feature = "conformance-observation")] observation: Option<
+        &mut Option<crate::tab::observation::FrameDraft>,
+    >,
 ) -> Result<ViewContentOutcome, css::ComputedStyleResolutionError> {
     if page.dom.is_none() {
         let visuals = ctx.style().visuals.clone();
@@ -77,7 +86,14 @@ pub(crate) fn content(
     let frame_outcome = CentralPanel::default()
         .frame(Frame::default().fill(base_fill))
         .show(ctx, |ui| {
-            execute_prepared_page_frame(ui, prepared_frame, input_state, resources)
+            execute_prepared_page_frame(
+                ui,
+                prepared_frame,
+                input_state,
+                resources,
+                #[cfg(feature = "conformance-observation")]
+                observation,
+            )
         })
         .inner;
     let OrchestratedFrameOutcome {

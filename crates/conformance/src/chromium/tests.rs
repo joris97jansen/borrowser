@@ -2,11 +2,204 @@ use super::*;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use std::os::fd::FromRawFd;
 use std::path::Path;
-#[cfg(any(
-    all(target_os = "macos", target_arch = "aarch64"),
-    all(target_os = "linux", target_arch = "x86_64")
-))]
 use std::process::Command;
+
+fn viewport_metrics() -> Value {
+    json!({
+        "cssLayoutViewport":{"pageX":0,"pageY":0,"clientWidth":640,"clientHeight":480},
+        "cssVisualViewport":{"offsetX":0,"offsetY":0,"pageX":0,"pageY":0,"clientWidth":640,"clientHeight":480,"scale":1,"zoom":1},
+        "cssContentSize":{"x":0,"y":0,"width":640,"height":480}
+    })
+}
+
+#[test]
+fn viewport_accepts_observed_linux_dom_scrollbar_dimensions() {
+    // Run 39366788841/1, dom/template-namespaces: no scroll or zoom.
+    let mut metrics = viewport_metrics();
+    metrics["cssLayoutViewport"]["clientWidth"] = json!(625);
+    metrics["cssVisualViewport"]["clientWidth"] = json!(625);
+    metrics["cssContentSize"] = json!({"x":0,"y":0,"width":625,"height":647});
+    for fixture in &crate::fixtures::FIXTURES[2..] {
+        assert_eq!(validate_viewport(&metrics, fixture.request).unwrap(), 625.0);
+    }
+    // Any requested canvas keeps the original full client-size requirement.
+    for request in [
+        crate::projection::ObservationRequest::CANVAS,
+        crate::projection::ObservationRequest {
+            canvas: crate::projection::Request::Compare(()),
+            ..crate::fixtures::FIXTURES[3].request
+        },
+    ] {
+        assert!(validate_viewport(&metrics, request).is_err());
+    }
+}
+
+#[test]
+fn viewport_native_dimensions_are_exact_bounded_and_not_a_scrollbar_constant() {
+    let request = crate::fixtures::FIXTURES[5].request;
+    for width in [640, 637, 625, 320] {
+        let mut metrics = viewport_metrics();
+        for object in ["cssLayoutViewport", "cssVisualViewport"] {
+            metrics[object]["clientWidth"] = json!(width);
+            metrics[object]["clientHeight"] = json!(465);
+        }
+        assert_eq!(
+            validate_viewport(&metrics, request).unwrap(),
+            f64::from(width)
+        );
+    }
+    let mut metrics = viewport_metrics();
+    metrics["cssVisualViewport"]["clientWidth"] = json!(639);
+    assert!(
+        validate_viewport(&metrics, request).is_err(),
+        "inconsistent native viewports"
+    );
+}
+
+#[test]
+fn viewport_rejects_invalid_dimensions_scroll_offsets_scale_and_malformed_data() {
+    let request = crate::fixtures::FIXTURES[3].request;
+    for (object, field, values) in [
+        (
+            "cssLayoutViewport",
+            "clientWidth",
+            vec![0.0, -1.0, 641.0, 625.5],
+        ),
+        ("cssLayoutViewport", "clientHeight", vec![0.0, -1.0, 481.0]),
+        ("cssLayoutViewport", "pageX", vec![-1.0, 1.0]),
+        ("cssLayoutViewport", "pageY", vec![-1.0, 1.0]),
+        ("cssVisualViewport", "clientWidth", vec![0.0, -1.0, 641.0]),
+        ("cssVisualViewport", "clientHeight", vec![0.0, -1.0, 481.0]),
+        ("cssVisualViewport", "pageX", vec![-1.0, 1.0]),
+        ("cssVisualViewport", "pageY", vec![-1.0, 1.0]),
+        ("cssVisualViewport", "offsetX", vec![-0.25, 0.25]),
+        ("cssVisualViewport", "offsetY", vec![-0.25, 0.25]),
+        ("cssVisualViewport", "scale", vec![0.0, 0.5, 2.0]),
+        ("cssVisualViewport", "zoom", vec![0.0, 0.5, 2.0]),
+    ] {
+        for value in
+            values
+                .into_iter()
+                .map(|n| json!(n))
+                .chain([Value::Null, json!("0"), json!(false)])
+        {
+            let mut metrics = viewport_metrics();
+            metrics[object][field] = value;
+            assert!(
+                validate_viewport(&metrics, request).is_err(),
+                "{object}.{field}: {metrics}"
+            );
+        }
+        let mut metrics = viewport_metrics();
+        metrics[object].as_object_mut().unwrap().remove(field);
+        assert_eq!(
+            validate_viewport(&metrics, request).is_ok(),
+            field == "zoom",
+            "{object}.{field}"
+        );
+    }
+}
+
+#[test]
+fn viewport_failure_diagnostic_attributes_fixture_metrics_and_cleanup() {
+    let mut metrics = viewport_metrics();
+    metrics["cssLayoutViewport"]["clientWidth"] = json!(625);
+    metrics["cssVisualViewport"]["clientWidth"] = json!(625);
+    metrics["cssContentSize"]["height"] = json!(900);
+    let fixture = &crate::fixtures::FIXTURES[3];
+    let input = CaptureInput {
+        id: fixture.id,
+        source: fixture.source,
+        html: b"must never appear in diagnostics",
+        request: fixture.request,
+    };
+    let failure = attribute_capture_failure(
+        Failure {
+            primary: Some(
+                validate_viewport(&metrics, crate::projection::ObservationRequest::CANVAS)
+                    .unwrap_err(),
+            ),
+            cleanup: vec![error::CleanupError::Timeout],
+        },
+        &input,
+    );
+    let mut out = vec![];
+    failure.write_diagnostics(&mut out).unwrap();
+    let out = String::from_utf8(out).unwrap();
+    assert!(out.starts_with("ERROR chromium.capture: unexpected viewport dimensions or scroll;"));
+    assert!(out.contains("\"id\":\"dom/template-namespaces\""));
+    assert!(
+        out.contains("\"source\":\"crates/conformance/fixtures/dom-template-namespaces.html\"")
+    );
+    assert!(out.contains("\"families\":[\"dom\"]"));
+    assert!(
+        out.contains("\"actual\":625,\"expected\":640,\"field\":\"cssLayoutViewport.clientWidth\"")
+    );
+    assert!(out.contains("\"field\":\"cssVisualViewport.clientWidth\""));
+    assert!(out.contains("\"height\":900"));
+    assert!(out.contains("\"offsetX\":0"));
+    assert!(out.contains("\"scale\":1"));
+    assert!(out.contains("ERROR chromium.cleanup:"));
+    assert!(!out.contains("must never appear"));
+}
+
+#[test]
+fn viewport_failure_diagnostic_distinguishes_missing_malformed_and_mismatch() {
+    let mut metrics = viewport_metrics();
+    metrics["cssLayoutViewport"]
+        .as_object_mut()
+        .unwrap()
+        .remove("clientWidth");
+    metrics["cssVisualViewport"]["clientHeight"] = json!("x".repeat(100_000));
+    metrics["cssVisualViewport"]["pageY"] = json!(1);
+    let error = validate_viewport(&metrics, crate::projection::ObservationRequest::CANVAS)
+        .unwrap_err()
+        .to_string();
+    let evidence: Value = serde_json::from_str(error.split_once("; viewport=").unwrap().1).unwrap();
+    let rejected = evidence["rejected"].as_array().unwrap();
+    assert_eq!(rejected.len(), 3);
+    assert_eq!(rejected[0]["reason"], "missing");
+    assert_eq!(rejected[0]["actual"], json!({"missing":true}));
+    assert_eq!(rejected[1]["reason"], "malformed");
+    assert_eq!(rejected[1]["actual"], json!({"malformed":"string"}));
+    assert_eq!(rejected[2]["reason"], "numeric_mismatch");
+    assert!(error.len() < 4096);
+    metrics["cssLayoutViewport"] = json!([]);
+    assert!(
+        validate_viewport(&metrics, crate::projection::ObservationRequest::CANVAS)
+            .unwrap_err()
+            .to_string()
+            .len()
+            < 4096
+    );
+}
+
+#[test]
+fn viewport_canvas_keeps_full_size_and_zero_scroll() {
+    validate_viewport(
+        &viewport_metrics(),
+        crate::projection::ObservationRequest::CANVAS,
+    )
+    .unwrap();
+    for (object, field, value) in [
+        ("cssLayoutViewport", "clientWidth", 625),
+        ("cssVisualViewport", "clientHeight", 465),
+        ("cssLayoutViewport", "pageX", 1),
+        ("cssVisualViewport", "pageY", 1),
+        ("cssVisualViewport", "scale", 2),
+    ] {
+        let mut metrics = viewport_metrics();
+        metrics[object][field] = json!(value);
+        assert!(
+            validate_viewport(&metrics, crate::projection::ObservationRequest::CANVAS).is_err(),
+            "{object}.{field}"
+        );
+    }
+    // Content extent is evidence, not an additional capture predicate.
+    let mut metrics = viewport_metrics();
+    metrics["cssContentSize"]["height"] = json!(900);
+    validate_viewport(&metrics, crate::projection::ObservationRequest::CANVAS).unwrap();
+}
 
 fn png_bytes(width: u32, height: u32, color: png::ColorType, data: &[u8]) -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -105,7 +298,7 @@ fn exact_identity_is_required() {
     let mut version = json!({"product":format!("Chrome/{}",pin["version"].as_str().unwrap()),
         "revision":pin["revision"],"protocolVersion":pin["protocol_version"]});
     let actual = identity(version.clone()).unwrap();
-    assert_eq!(actual.capture_profile, "ag2-canvas-srgb-v2");
+    assert_eq!(actual.capture_profile, "ag5-static-phases-v1");
     assert_eq!(
         actual,
         serde_json::from_str::<BrowserIdentity>(&serde_json::to_string(&actual).unwrap()).unwrap()
@@ -354,6 +547,17 @@ fn run_native_cases(scenarios: &[&str]) {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+        if *scenario == "cleanup-reap" {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                stderr.contains("cleanup-reap: armed after helper startup"),
+                "{stderr}"
+            );
+            assert!(
+                stderr.contains("cleanup-reap: injected fault consumed"),
+                "{stderr}"
+            );
+        }
         if scenario.starts_with("diagnostic-") {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let writable = scenario.ends_with("-writable");
@@ -807,6 +1011,9 @@ fn native_case() {
             fault::reset_persistent_argument_eio_activations();
         }
         fault::set(point);
+        if scenario == "cleanup-reap" {
+            eprintln!("cleanup-reap: armed after helper startup");
+        }
         if scenario == "arguments-transient" {
             // An argument-memory copy failure leaves discovery incomplete;
             // a fresh full scan must recover before cleanup can succeed.
@@ -845,6 +1052,9 @@ fn native_case() {
                 assert!(fault::take(Point::ArgumentsUnavailablePersistent));
             }
             fault::assert_consumed();
+            if scenario == "cleanup-reap" {
+                eprintln!("cleanup-reap: injected fault consumed");
+            }
             assert!(
                 errors
                     .iter()
@@ -1001,6 +1211,9 @@ fn cleanup_diagnostic_case(mut child: OwnedChromium, scenario: &str) {
     if let Some(saved) = saved_stderr {
         assert_eq!(unsafe { libc::dup2(saved.as_raw_fd(), 2) }, 2);
     }
+    if finishing {
+        assert_cleanup_failure_diagnostic(scenario, result.as_ref().unwrap().as_ref().unwrap());
+    }
     fault::assert_consumed();
     let mut expected = vec![
         CleanupEvent::Started,
@@ -1036,6 +1249,45 @@ fn cleanup_diagnostic_case(mut child: OwnedChromium, scenario: &str) {
     std::fs::remove_dir_all(&artifacts).unwrap();
     assert!(!artifacts.exists());
     assert_eq!(std::fs::read(&sentinel).unwrap(), b"preserve");
+}
+
+// Shared by the real lifecycle assertion and its negative diagnostic regression.
+// It receives only already-completed errors, so reporting cannot attempt cleanup.
+fn assert_lifecycle_cleanup(scenario: &str, errors: &[error::CleanupError]) {
+    assert!(errors.is_empty(), "scenario={scenario}: cleanup={errors:?}");
+}
+
+fn assert_cleanup_failure_diagnostic(scenario: &str, errors: &[error::CleanupError]) {
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        assert_lifecycle_cleanup(scenario, errors);
+    }))
+    .unwrap_err();
+    assert_eq!(
+        panic.downcast_ref::<String>().unwrap(),
+        &format!("scenario={scenario}: cleanup={errors:?}")
+    );
+}
+
+#[test]
+fn lifecycle_cleanup_diagnostic_retains_scenario_and_entire_error_vector() {
+    let errors = vec![
+        error::CleanupError::Identity("discover read /proc/42/stat: os error 13".into()),
+        error::CleanupError::Reap("waitpid: os error 10".into()),
+        error::CleanupError::Timeout,
+    ];
+    for scenario in ["cancel", "timeout", "exit"] {
+        assert_cleanup_failure_diagnostic(scenario, &errors);
+        assert_lifecycle_cleanup(scenario, &[]);
+    }
+}
+
+#[test]
+fn cleanup_reap_assertion_rejects_an_unreached_fault() {
+    use process::fault::{self, Point};
+    fault::set(Point::Reap);
+    assert!(std::panic::catch_unwind(fault::assert_consumed).is_err());
+    assert!(fault::take(Point::Reap));
+    fault::assert_consumed();
 }
 
 fn assert_no_children() {
@@ -1399,8 +1651,13 @@ fn real_chromium_capture_and_scripts() {
     let _standalone = process::Standalone::enter().unwrap();
     let config = ChromiumConfig::new(PathBuf::from(path));
     let cancel = Cancellation::default();
-    for fixture in crate::fixtures::FIXTURES {
-        let FixtureKind::Runnable { html, expected, .. } = fixture.kind else {
+    for fixture in &crate::fixtures::FIXTURES[..2] {
+        let FixtureKind::Runnable {
+            html,
+            expected: crate::model::Expected::Canvas(expected),
+            ..
+        } = fixture.kind
+        else {
             unreachable!()
         };
         let mut previous = None;
@@ -1415,17 +1672,20 @@ fn real_chromium_capture_and_scripts() {
                     fixture.id.0
                 )
             });
-            assert_eq!(result.color, expected);
+            assert_eq!(result.color, Some(expected));
             assert!(
                 result.default_favicon_aborted,
                 "qualified ordinary target did not exercise default favicon interception"
             );
-            assert_eq!(result.identity.capture_profile, "ag2-canvas-srgb-v2");
+            assert_eq!(result.identity.capture_profile, "ag5-static-phases-v1");
             eprintln!(
                 "AG2 fixture={} iteration={iteration}/3 screenshot=640x480 rgb8={:?} profile={} default_favicon=correlated-aborted-acknowledged-terminal cleanup=verified",
-                fixture.id.0, result.color.0, result.identity.capture_profile
+                fixture.id.0,
+                result.color.unwrap().0,
+                result.identity.capture_profile
             );
-            let serialized = serde_json::to_string(&(result.color.0, result.identity)).unwrap();
+            let serialized =
+                serde_json::to_string(&(result.color.unwrap().0, result.identity)).unwrap();
             if let Some(previous) = previous {
                 assert_eq!(serialized, previous);
             }
@@ -1445,7 +1705,12 @@ fn real_chromium_capture_and_scripts() {
     .into_iter()
     .enumerate()
     {
-        let FixtureKind::Runnable { html, expected, .. } = crate::fixtures::FIXTURES[0].kind else {
+        let FixtureKind::Runnable {
+            html,
+            expected: crate::model::Expected::Canvas(expected),
+            ..
+        } = crate::fixtures::FIXTURES[0].kind
+        else {
             unreachable!()
         };
         let mut input = html.to_vec();
@@ -1453,14 +1718,14 @@ fn real_chromium_capture_and_scripts() {
         eprintln!("AG2 fixture=markup-lookalike-{index} iteration=1/1");
         assert_eq!(
             capture_html(&input, &config, &cancel).unwrap().color,
-            expected
+            Some(expected)
         );
     }
     let scripted = SCRIPT_POSITIVE_CONTROL;
     eprintln!("AG2 fixture=script-suppression iteration=1/1");
     assert_eq!(
         capture_html(scripted, &config, &cancel).unwrap().color,
-        CanvasColor([18, 52, 86])
+        Some(CanvasColor([18, 52, 86]))
     );
     let enabled = ChromiumConfig {
         scripts_disabled: false,
@@ -1469,7 +1734,7 @@ fn real_chromium_capture_and_scripts() {
     eprintln!("AG2 fixture=script-positive-control iteration=1/1");
     assert_eq!(
         capture_html(scripted, &enabled, &cancel).unwrap().color,
-        CanvasColor([255, 0, 0])
+        Some(CanvasColor([255, 0, 0]))
     );
     let config = ChromiumConfig {
         scripts_disabled: true,
@@ -1640,7 +1905,8 @@ fn real_chromium_lifecycle_and_topology() {
             )),
             _ => unreachable!(),
         }
-        assert!(child.finish(Duration::from_secs(5)).is_empty());
+        let cleanup = child.finish(Duration::from_secs(5));
+        assert_lifecycle_cleanup(scenario, &cleanup);
         assert!(!artifacts.exists());
     }
 }
@@ -1684,7 +1950,8 @@ thread_local! {
 pub(crate) fn controlled_capture(color: CanvasColor) -> ChromiumCapture {
     let pin: Value = serde_json::from_str(include_str!("../../chromium-reference.json")).unwrap();
     ChromiumCapture {
-        color,
+        color: Some(color),
+        inspection: None,
         identity: identity(json!({
             "product": format!("Chrome/{}", pin["version"].as_str().unwrap()),
             "revision": pin["revision"], "protocolVersion": pin["protocol_version"],
@@ -1747,4 +2014,175 @@ pub(crate) fn assert_comparison_cleanup_failure(failure: &Failure) {
             .any(|e| matches!(e, error::CleanupError::Artifacts(_))),
         "{failure:?}"
     );
+}
+
+// The fixed collector's thrown Error message is the discriminator already
+// carried by Runtime.evaluate. Earlier capture failures cannot satisfy it.
+fn is_inspection_rejection(failure: &Failure, reason: &str) -> bool {
+    let Some(Error::Capture(detail)) = &failure.primary else {
+        return false;
+    };
+    let Some(exception) = detail.strip_prefix("native inspection failed: ") else {
+        return false;
+    };
+    let Ok(exception) = serde_json::from_str::<Value>(exception) else {
+        return false;
+    };
+    failure.cleanup.is_empty()
+        && exception["exception"]["description"]
+            .as_str()
+            .and_then(|description| description.lines().next())
+            == Some(format!("Error: {reason}").as_str())
+}
+
+#[test]
+fn inspection_negative_control_rejects_unrelated_capture_failures() {
+    let expected = "inspection string limit";
+    for message in [
+        "unexpected viewport dimensions or scroll".to_string(),
+        "native inspection failed: null".to_string(),
+        format!(
+            "native inspection failed: {}",
+            json!({"exception":{"description":"Error: inspection tree limit\n at node"}})
+        ),
+    ] {
+        let failure = Failure {
+            primary: Some(Error::Capture(message)),
+            cleanup: vec![],
+        };
+        assert!(!is_inspection_rejection(&failure, expected));
+    }
+    let mut failure = Failure {
+        primary: Some(Error::Capture(format!(
+            "native inspection failed: {}",
+            json!({"exception":{"description":"Error: inspection string limit\n at text"}})
+        ))),
+        cleanup: vec![],
+    };
+    assert!(is_inspection_rejection(&failure, expected));
+    failure.cleanup.push(error::CleanupError::Timeout);
+    assert!(!is_inspection_rejection(&failure, expected));
+}
+
+#[test]
+#[ignore = "requires pinned Chromium; standalone; page scripts must remain disabled"]
+fn real_chromium_ag5_read_only_inspection() {
+    let path = std::env::var_os("BORROWSER_CHROMIUM_EXECUTABLE").expect("pinned browser required");
+    let _standalone = process::Standalone::enter().unwrap();
+    let config = ChromiumConfig::new(PathBuf::from(path));
+    let request = crate::projection::ObservationRequest {
+        dom: crate::projection::Request::Compare(()),
+        styles: &[crate::projection::StyleField {
+            target: "target",
+            property: crate::projection::Request::Compare(crate::projection::StyleProperty::Color),
+            name: "color",
+        }],
+        layout: crate::projection::Request::Compare(&["target"]),
+        ..crate::projection::ObservationRequest::NONE
+    };
+    // If page scripts execute, they replace both the inspected color and width.
+    let html = br#"<!doctype html><html><head><style>
+      html,body {margin:0} #target {color:#123456;width:32px;height:16px}
+      </style></head><body><div id="target"></div><script>
+      document.getElementById('target').style.cssText='color:red;width:64px';
+      </script></body></html>"#;
+    let capture = capture_requested_html(html, request, &config, &Cancellation::default()).unwrap();
+    assert!(capture.color.is_none());
+    let observed = capture.inspection.as_ref().unwrap();
+    assert!(observed.dom.is_some());
+    assert_eq!(
+        (observed.inner_width, observed.inner_height),
+        (640.0, 480.0)
+    );
+    assert_eq!(observed.layout_width, 640.0);
+    assert_eq!(
+        observed.styles[0].values.as_ref().unwrap()[0],
+        "rgb(18, 52, 86)"
+    );
+    assert_eq!(observed.layout[0].boxes.as_ref().unwrap()[0].right, 32.0);
+    crate::projection::chromium(&capture, request).unwrap();
+    // These are capture errors, never truncated successful observations.
+    // Inert template contents still exercise the complete DOM collector but
+    // cannot introduce scrollbars before the intended bounds check.
+    for (reason, bad) in [
+        (
+            "inspection string limit",
+            format!("<!doctype html><template>{}</template>", "x".repeat(8193)),
+        ),
+        (
+            "inspection tree limit",
+            format!(
+                "<!doctype html><template>{}</template>",
+                "<div></div>".repeat(129)
+            ),
+        ),
+        (
+            "duplicate target id",
+            "<!doctype html><div id=target></div><div id=target></div>".into(),
+        ),
+    ] {
+        let failure =
+            capture_requested_html(bad.as_bytes(), request, &config, &Cancellation::default())
+                .unwrap_err();
+        assert!(
+            is_inspection_rejection(&failure, reason),
+            "{reason}: {failure:?}"
+        );
+        assert!(failure.cleanup.is_empty(), "{failure:?}");
+        eprintln!("AG5 native inspection rejected {reason}; cleanup verified");
+    }
+}
+
+#[test]
+#[ignore = "requires pinned Chromium, standalone process; all captures precede parser workers"]
+fn real_chromium_ag5_profile() {
+    let path = std::env::var("BORROWSER_CHROMIUM_EXECUTABLE").expect("pinned browser required");
+    let mut out = vec![];
+    let mut diagnostics = vec![];
+    let code = crate::comparison::run(
+        &["--chromium-executable".into(), path],
+        &mut out,
+        &mut diagnostics,
+    )
+    .unwrap();
+    assert_eq!(
+        code,
+        0,
+        "{}\n{}",
+        String::from_utf8_lossy(&out),
+        String::from_utf8_lossy(&diagnostics)
+    );
+    let report: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(report["cases"].as_array().unwrap().len(), 6);
+    assert_eq!(report["summary"]["equal_fields"], 34);
+    assert_eq!(report["summary"]["different_fields"], 0);
+    assert_eq!(report["summary"]["unsupported_fields"], 0);
+    let ids = [
+        "canvas/root",
+        "canvas/cascade",
+        "dom/structure",
+        "dom/template-namespaces",
+        "style/cascade-inheritance",
+        "layout/block-boxes",
+    ];
+    for (case, id) in report["cases"].as_array().unwrap().iter().zip(ids) {
+        assert_eq!(case["test_id"], id);
+        let fields = case["fields"].as_array().unwrap();
+        assert_eq!(
+            fields
+                .iter()
+                .map(|f| f["id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            crate::comparison::tests::expected_profile_fields(id)
+        );
+        assert!(fields.iter().all(|f| f["status"] == "equal"));
+        assert_eq!(case["status"], "equal_for_requested_scope");
+        assert_eq!(case["borrowser_expectation"]["status"], "PASS");
+        eprintln!(
+            "AG5 {} {} fields={}",
+            case["test_id"],
+            case["status"],
+            case["fields"].as_array().unwrap().len()
+        );
+    }
 }

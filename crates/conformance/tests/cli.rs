@@ -16,7 +16,7 @@ fn independent_processes_produce_identical_output_and_exit() {
     assert!(first.stderr.is_empty());
     assert!(
         String::from_utf8_lossy(&first.stdout)
-            .contains("SUMMARY PASS=2 FAIL=0 XFAIL=0 XPASS=0 UNSUPPORTED=0 SKIP=0 ERROR=0\n")
+            .contains("SUMMARY PASS=6 FAIL=0 XFAIL=0 XPASS=0 UNSUPPORTED=0 SKIP=0 ERROR=0\n")
     );
     for _ in 0..3 {
         let next = run();

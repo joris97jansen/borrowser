@@ -1,0 +1,83 @@
+{
+  "dom": {
+    "state": "not_requested"
+  },
+  "styles": [],
+  "layout": {
+    "state": "observed",
+    "value": [
+      {
+        "target": "container",
+        "value": {
+          "state": "present",
+          "value": [
+            {
+              "left": 0.0,
+              "top": 0.0,
+              "right": 170.0,
+              "bottom": 74.0
+            }
+          ]
+        }
+      },
+      {
+        "target": "child",
+        "value": {
+          "state": "present",
+          "value": [
+            {
+              "left": 5.0,
+              "top": 5.0,
+              "right": 37.0,
+              "bottom": 21.0
+            }
+          ]
+        }
+      },
+      {
+        "target": "sibling",
+        "value": {
+          "state": "present",
+          "value": [
+            {
+              "left": 0.0,
+              "top": 74.0,
+              "right": 80.0,
+              "bottom": 86.0
+            }
+          ]
+        }
+      },
+      {
+        "target": "hidden",
+        "value": {
+          "state": "present",
+          "value": []
+        }
+      },
+      {
+        "target": "zero",
+        "value": {
+          "state": "present",
+          "value": [
+            {
+              "left": 0.0,
+              "top": 86.0,
+              "right": 0.0,
+              "bottom": 86.0
+            }
+          ]
+        }
+      },
+      {
+        "target": "missing",
+        "value": {
+          "state": "missing_node"
+        }
+      }
+    ]
+  },
+  "canvas": {
+    "state": "not_requested"
+  }
+}

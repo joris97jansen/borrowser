@@ -16,6 +16,20 @@ impl Tab {
         &mut self,
         ctx: &Context,
     ) -> Result<PageFrameStatus, css::ComputedStyleResolutionError> {
+        self.ui_content_inner(
+            ctx,
+            #[cfg(feature = "conformance-observation")]
+            None,
+        )
+    }
+
+    pub(super) fn ui_content_inner(
+        &mut self,
+        ctx: &Context,
+        #[cfg(feature = "conformance-observation")] observation: Option<
+            &mut Option<super::observation::FrameDraft>,
+        >,
+    ) -> Result<PageFrameStatus, css::ComputedStyleResolutionError> {
         // Drain completed decode jobs and upload textures before painting.
         if self.resources.pump(ctx) {
             self.request_render_work(render_intrinsic_invalidation_request(
@@ -33,6 +47,8 @@ impl Tab {
             self.last_status.as_ref(),
             self.loading,
             pending_work,
+            #[cfg(feature = "conformance-observation")]
+            observation,
         )?;
         let status = outcome.status;
         self.last_render_trace = outcome.trace;

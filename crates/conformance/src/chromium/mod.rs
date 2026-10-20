@@ -1,6 +1,7 @@
 mod cdp;
 mod error;
 pub(crate) mod ingest;
+pub(crate) mod inspection;
 mod process;
 mod screenshot;
 #[cfg(test)]
@@ -32,7 +33,8 @@ pub(super) struct BrowserIdentity {
 }
 #[derive(Debug)]
 pub(super) struct ChromiumCapture {
-    pub(crate) color: CanvasColor,
+    pub(crate) color: Option<CanvasColor>,
+    pub(crate) inspection: Option<inspection::Inspection>,
     pub(crate) identity: BrowserIdentity,
     #[cfg(test)]
     default_favicon_aborted: bool,
@@ -110,8 +112,22 @@ fn identity(value: Value) -> Result<BrowserIdentity, Error> {
         capture_profile: cdp::string(&pin, "capture_profile")?.into(),
     })
 }
+#[cfg(test)]
 fn capture_html(
     html: &[u8],
+    config: &ChromiumConfig,
+    cancel: &Cancellation,
+) -> Result<ChromiumCapture, Failure> {
+    capture_requested_html(
+        html,
+        crate::projection::ObservationRequest::CANVAS,
+        config,
+        cancel,
+    )
+}
+fn capture_requested_html(
+    html: &[u8],
+    request: crate::projection::ObservationRequest,
     config: &ChromiumConfig,
     cancel: &Cancellation,
 ) -> Result<ChromiumCapture, Failure> {
@@ -122,6 +138,7 @@ fn capture_html(
             cleanup: vec![],
         })?;
     }
+    crate::projection::validate_request(request).map_err(|e| configuration(&e.detail))?;
     let executable = std::fs::canonicalize(&config.executable).map_err(|e| Failure {
         primary: Some(Error::Configuration(format!(
             "Chromium executable unavailable: {e}"
@@ -238,32 +255,39 @@ fn capture_html(
         )?;
         #[cfg(test)]
         cdp.capture_operation("verify viewport");
-        for name in ["cssLayoutViewport", "cssVisualViewport"] {
-            let v = &metrics[name];
-            if v["clientWidth"] != WIDTH
-                || v["clientHeight"] != HEIGHT
-                || v["pageX"] != 0
-                || v["pageY"] != 0
-            {
-                return Err(Error::Capture(
-                    "unexpected viewport dimensions or scroll".into(),
-                ));
-            }
-        }
-        if metrics["cssVisualViewport"]["scale"] != 1 {
-            return Err(Error::Capture("unexpected visual scale".into()));
-        }
+        let layout_width = validate_viewport(&metrics, request)?;
         #[cfg(test)]
         cdp.capture_operation_completed();
-        let screenshot = cdp.call(
-            "Page.captureScreenshot",
-            json!({"format":"png","fromSurface":true,"captureBeyondViewport":false}),
-            capture_deadline,
-            Phase::Capture,
-        )?;
-        #[cfg(test)]
-        cdp.capture_operation("decode PNG and sample pixel");
-        let color = screenshot::sample(cdp::string(&screenshot, "data")?)?;
+        let requested = crate::projection::inspection_request(request);
+        let inspection = if requested.dom
+            || !requested.style_targets.is_empty()
+            || !requested.layout_targets.is_empty()
+        {
+            let frame_id = cdp::string(&tree["frameTree"]["frame"], "id")?;
+            let inspection = inspection::collect(&mut cdp, frame_id, &requested, capture_deadline)?;
+            if inspection.layout_width != layout_width {
+                return Err(Error::Capture(
+                    "inspection layout width disagrees with CSS layout viewport".into(),
+                ));
+            }
+            Some(inspection)
+        } else {
+            None
+        };
+        let color = if matches!(request.canvas, crate::projection::Request::Compare(())) {
+            let screenshot = cdp.call(
+                "Page.captureScreenshot",
+                json!({"format":"png","fromSurface":true,"captureBeyondViewport":false}),
+                capture_deadline,
+                Phase::Capture,
+            )?;
+            #[cfg(test)]
+            cdp.capture_operation("decode PNG and sample pixel");
+            let color = screenshot::sample(cdp::string(&screenshot, "data")?)?;
+            Some(color)
+        } else {
+            None
+        };
         #[cfg(test)]
         cdp.capture_operation_completed();
         // A post-capture frame query is a protocol barrier and verifies that
@@ -299,6 +323,7 @@ fn capture_html(
         cdp.close_browser(capture_deadline)?;
         Ok(ChromiumCapture {
             color,
+            inspection,
             identity,
             #[cfg(test)]
             default_favicon_aborted: cdp.navigation.as_ref().unwrap().verified_favicon(),
@@ -326,11 +351,182 @@ fn capture_html(
     }
 }
 
+// Native phase inspection verifies the configured inner dimensions separately.
+// Client dimensions exclude platform scrollbars; canvas retains its full-size guard.
+fn validate_viewport(
+    metrics: &Value,
+    request: crate::projection::ObservationRequest,
+) -> Result<f64, Error> {
+    let canvas = matches!(request.canvas, crate::projection::Request::Compare(()));
+    let number = |object: &str, field: &str| {
+        metrics
+            .get(object)
+            .and_then(|v| v.get(field))
+            .and_then(Value::as_f64)
+            .filter(|v| v.is_finite())
+    };
+    let mut rejected = vec![];
+    let mut check = |object: &str, field: &str, valid: bool, expected: Value| {
+        if !valid {
+            let actual = metrics.get(object).and_then(|v| v.get(field));
+            rejected.push(json!({"field":format!("{object}.{field}"),"expected":expected,"actual":diagnostic_scalar(actual),"reason":match actual {None=>"missing",Some(Value::Number(_))=>"numeric_mismatch",_=>"malformed"}}));
+        }
+    };
+    for object in ["cssLayoutViewport", "cssVisualViewport"] {
+        for (field, limit) in [("clientWidth", WIDTH), ("clientHeight", HEIGHT)] {
+            let actual = number(object, field);
+            let valid = actual.is_some_and(|n| {
+                if canvas {
+                    n == f64::from(limit)
+                } else {
+                    n > 0.0
+                        && n <= f64::from(limit)
+                        && n.fract() == 0.0
+                        && (object == "cssLayoutViewport"
+                            || Some(n) == number("cssLayoutViewport", field))
+                }
+            });
+            let expected = if canvas {
+                json!(limit)
+            } else {
+                json!({"positive_integer_at_most":limit,"matches_layout_viewport":object=="cssVisualViewport"})
+            };
+            check(object, field, valid, expected);
+        }
+        for field in ["pageX", "pageY"] {
+            check(object, field, number(object, field) == Some(0.0), json!(0));
+        }
+    }
+    for field in ["offsetX", "offsetY"] {
+        check(
+            "cssVisualViewport",
+            field,
+            number("cssVisualViewport", field) == Some(0.0),
+            json!(0),
+        );
+    }
+    check(
+        "cssVisualViewport",
+        "scale",
+        number("cssVisualViewport", "scale") == Some(1.0),
+        json!(1),
+    );
+    // Optional in the pinned protocol. Present malformed/non-unit zoom is invalid.
+    if metrics
+        .get("cssVisualViewport")
+        .and_then(|v| v.get("zoom"))
+        .is_some()
+    {
+        check(
+            "cssVisualViewport",
+            "zoom",
+            number("cssVisualViewport", "zoom") == Some(1.0),
+            json!(1),
+        );
+    }
+    if !rejected.is_empty() {
+        let message = if rejected.iter().all(|field| {
+            field["field"] == "cssVisualViewport.scale"
+                || field["field"] == "cssVisualViewport.zoom"
+        }) {
+            "unexpected visual scale"
+        } else {
+            "unexpected viewport dimensions or scroll"
+        };
+        return Err(Error::Capture(format!(
+            "{message}; viewport={}",
+            viewport_diagnostic(metrics, canvas, &rejected)
+        )));
+    }
+    Ok(number("cssLayoutViewport", "clientWidth").expect("validated layout width"))
+}
+
+fn diagnostic_scalar(value: Option<&Value>) -> Value {
+    match value {
+        None => json!({"missing":true}),
+        Some(Value::Number(n)) => Value::Number(n.clone()),
+        Some(Value::Null) => json!({"malformed":"null"}),
+        Some(Value::Bool(_)) => json!({"malformed":"boolean"}),
+        Some(Value::String(_)) => json!({"malformed":"string"}),
+        Some(Value::Array(_)) => json!({"malformed":"array"}),
+        Some(Value::Object(_)) => json!({"malformed":"object"}),
+    }
+}
+
+fn viewport_diagnostic(metrics: &Value, canvas: bool, rejected: &[Value]) -> Value {
+    // Copy only fixed protocol fields, never arbitrary remote strings or nested
+    // objects. Missing and malformed facts stay explicit, without defaults.
+    let mut observed = serde_json::Map::new();
+    for (name, fields) in [
+        (
+            "cssLayoutViewport",
+            &["pageX", "pageY", "clientWidth", "clientHeight"][..],
+        ),
+        (
+            "cssVisualViewport",
+            &[
+                "offsetX",
+                "offsetY",
+                "pageX",
+                "pageY",
+                "clientWidth",
+                "clientHeight",
+                "scale",
+                "zoom",
+            ][..],
+        ),
+        ("cssContentSize", &["x", "y", "width", "height"][..]),
+    ] {
+        let value = metrics.get(name);
+        observed.insert(
+            name.into(),
+            if value.is_some_and(Value::is_object) {
+                Value::Object(
+                    fields
+                        .iter()
+                        .map(|field| {
+                            (
+                                (*field).into(),
+                                diagnostic_scalar(value.and_then(|v| v.get(field))),
+                            )
+                        })
+                        .collect(),
+                )
+            } else {
+                diagnostic_scalar(value)
+            },
+        );
+    }
+    json!({"expected":{"configured_width":WIDTH,"configured_height":HEIGHT,"canvas_full_client_size":canvas,"pageX":0,"pageY":0,"offsetX":0,"offsetY":0,"scale":1,"zoom_if_present":1},"observed":observed,"rejected":rejected})
+}
+
+fn attribute_capture_failure(mut failure: Failure, input: &CaptureInput<'_>) -> Failure {
+    if let Some(Error::Capture(detail)) = &mut failure.primary {
+        use crate::projection::Request;
+        let request = input.request;
+        let families: Vec<_> = [
+            ("dom", !matches!(request.dom, Request::NotRequested)),
+            ("style", !request.styles.is_empty()),
+            ("layout", !matches!(request.layout, Request::NotRequested)),
+            ("canvas", !matches!(request.canvas, Request::NotRequested)),
+        ]
+        .into_iter()
+        .filter_map(|(name, requested)| requested.then_some(name))
+        .collect();
+        // Registry paths are relative to the conformance crate. Bound the
+        // context even for internal test inputs; never include HTML or expected data.
+        let context = json!({"id":input.id.0.chars().take(128).collect::<String>(),"source":format!("crates/conformance/{}", input.source.chars().take(256).collect::<String>()),"families":families});
+        *detail = format!("{detail}; fixture={context}");
+    }
+    failure
+}
+
 #[derive(Serialize)]
 struct Observation<'a> {
     test_id: &'a str,
     source: &'a str,
-    canvas_color_rgb8: [u8; 3],
+    canvas_color_rgb8: Option<CanvasColor>,
+    inspection: Option<inspection::Inspection>,
     browser: BrowserIdentity,
 }
 #[derive(Serialize)]
@@ -347,6 +543,7 @@ pub(crate) struct CaptureInput<'a> {
     pub(crate) id: TestId,
     pub(crate) source: &'a str,
     pub(crate) html: &'a [u8],
+    pub(crate) request: crate::projection::ObservationRequest,
 }
 #[derive(Debug)]
 pub(crate) struct CapturedFixture {
@@ -420,7 +617,8 @@ pub(crate) fn capture_batch(
     for input in inputs {
         #[cfg(test)]
         crate::comparison::tests::record(crate::comparison::tests::Event::CaptureStarted(input.id));
-        let capture = capture_html(input.html, &config, &cancel)?;
+        let capture = capture_requested_html(input.html, input.request, &config, &cancel)
+            .map_err(|failure| attribute_capture_failure(failure, input))?;
         #[cfg(test)]
         crate::comparison::tests::record(crate::comparison::tests::Event::CaptureCleaned(input.id));
         captures.push(CapturedFixture {
@@ -456,6 +654,7 @@ pub(crate) fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
                     id: fixture.id,
                     source: fixture.source,
                     html,
+                    request: fixture.request,
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -466,12 +665,13 @@ pub(crate) fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
             .map(|(input, capture)| Observation {
                 test_id: input.id.0,
                 source: input.source,
-                canvas_color_rgb8: capture.capture.color.0,
+                canvas_color_rgb8: capture.capture.color,
+                inspection: capture.capture.inspection,
                 browser: capture.capture.identity,
             })
             .collect();
         Ok(CaptureReport {
-            schema: "borrowser.chromium-canvas.v1",
+            schema: "borrowser.chromium-phases.v1",
             document_url: URL,
             viewport: [WIDTH, HEIGHT],
             device_scale_factor: 1,
@@ -481,8 +681,14 @@ pub(crate) fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
     };
     match execute() {
         Ok(report) => {
-            serde_json::to_writer(&mut *out, &report)?;
-            writeln!(out)?;
+            let mut bytes = serde_json::to_vec(&report)?;
+            bytes.push(b'\n');
+            if bytes.len() > ingest::MAX_CAPTURE_BYTES {
+                configuration("capture exceeds 64 KiB")
+                    .write_diagnostics(&mut io::stderr().lock())?;
+                return Ok(2);
+            }
+            out.write_all(&bytes)?;
             Ok(0)
         }
         Err(failure) => {

@@ -168,6 +168,8 @@ impl ViewportRepaintPolicy {
 }
 
 pub struct ViewportFrameOutput {
+    /// Actual production layout constraint, before retained-key quantization.
+    pub layout_viewport_width: f32,
     pub action: Option<PageAction>,
     pub viewport_changed: bool,
     pub requested_followup_render: bool,
@@ -445,6 +447,7 @@ pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputV
             });
 
             ViewportFrameOutput {
+                layout_viewport_width: available_width,
                 action: input_result.action,
                 viewport_changed: viewport_width_changed,
                 requested_followup_render: input_result.requested_followup_render,

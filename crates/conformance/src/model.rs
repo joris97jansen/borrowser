@@ -1,4 +1,5 @@
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+use crate::projection::{BorrowserCapture, Observation, ObservationRequest, ProjectedObservations};
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct CanvasColor(pub(crate) [u8; 3]);
 
 #[derive(Debug)]
@@ -24,13 +25,14 @@ pub(crate) struct Fixture {
     pub(crate) id: TestId,
     pub(crate) source: &'static str,
     pub(crate) kind: FixtureKind,
+    pub(crate) request: ObservationRequest,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum FixtureKind {
     Runnable {
         html: &'static [u8],
-        expected: CanvasColor,
+        expected: Expected,
         expectation: Expectation,
     },
     #[cfg_attr(
@@ -68,7 +70,7 @@ pub(crate) enum Expectation {
 
 #[derive(Debug)]
 pub(crate) enum Execution {
-    Observed(CanvasColor),
+    Observed(BorrowserCapture),
     Unsupported { reason: &'static str },
     Skipped { reason: &'static str },
     Error(HarnessError),
@@ -80,10 +82,32 @@ pub(crate) enum Comparison {
     Mismatch,
 }
 
-pub(crate) fn compare(actual: CanvasColor, expected: CanvasColor) -> Comparison {
-    if actual == expected {
-        Comparison::Match
-    } else {
-        Comparison::Mismatch
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Expected {
+    Canvas(CanvasColor),
+    Projection(&'static str),
+}
+impl Expected {
+    pub(crate) fn observations(self) -> Result<ProjectedObservations, HarnessError> {
+        match self {
+            Self::Canvas(color) => Ok(ProjectedObservations {
+                canvas: Observation::Observed(color),
+                ..Default::default()
+            }),
+            Self::Projection(json) => serde_json::from_str(json)
+                .map_err(|e| HarnessError::new("expectation.invalid", e.to_string())),
+        }
+    }
+}
+impl From<CanvasColor> for BorrowserCapture {
+    fn from(color: CanvasColor) -> Self {
+        Self {
+            observations: ProjectedObservations {
+                canvas: Observation::Observed(color),
+                ..Default::default()
+            },
+            layout_viewport_width: None,
+            layout_artifact_source_width: None,
+        }
     }
 }

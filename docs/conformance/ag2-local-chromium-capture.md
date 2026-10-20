@@ -17,11 +17,12 @@ Use the full **Chrome for Testing 155.0.8059.39** distribution, revision
 `@3ff7ac5a9224be9156d7f8703a06e22890aafd34`, CDP protocol `1.3`.
 [`chromium-reference.json`](../../crates/conformance/chromium-reference.json)
 records versioned archive URLs and SHA-256 hashes for mac-arm64 and linux64.
-The current capture profile is **`ag2-canvas-srgb-v2`**: one ordinary headless
-page and the parsed-document resource policy below. The browser pin, archive
-checksums, fixture expectations and `borrowser.chromium-canvas.v1` JSON schema
-are unchanged. Earlier hidden-target and A/B evidence retains its historical v1
-identity; it is not retroactively v2 qualification.
+AG5 now uses **`ag5-static-phases-v1`** and `borrowser.chromium-phases.v1`.
+The browser pin/archive checksums and canvas restrictions are unchanged.
+[AG5](ag5-phase-comparison-projections.md) defines the additional read-only native
+inspection, strict limits and separate common projection. Earlier
+`ag2-canvas-srgb-v2` and hidden-target/A/B evidence below retains its historical
+identity; it does not qualify the new AG5 profile.
 Download and verify the selected archive before extracting it to a trusted local
 directory. `--chromium-executable PATH` takes precedence over
 `BORROWSER_CHROMIUM_EXECUTABLE`. There is no implicit executable discovery,
@@ -55,11 +56,13 @@ empty stdout. Default invocation retains AG1's execution/report behavior.
 | Observation | Physical screenshot pixel (32, 32), CSS center (32.5, 32.5) |
 | Color | Opaque sRGB RGB8, copied into the existing `CanvasColor` |
 
-The screenshot is the sole color source. Read-only DOM inspection checks the
-document identity/URL/mode and absence of live-document `link` elements for resource
-eligibility; it is not a DOM observation inventory. Layout metrics check only the viewport. CSS declarations, computed
-styles and DOM geometry are not alternative observations. No JavaScript is
-evaluated by the harness. A wrong color remains an observation.
+For the canvas family, the screenshot remains the sole color source; computed
+style and geometry never substitute for its sample. Read-only eligibility
+inspection checks document identity/URL/mode and absence of live-document `link`
+elements. AG5 separately requests native DOM, computed style and client rectangles
+through its fixed isolated-world collector, with page scripts still disabled.
+See the AG5 contract for these distinct comparisons. A wrong canvas color remains
+an observation.
 
 AG1 feeds its response in parser chunks; CDP fulfills one complete response.
 These fixtures have no timing-dependent content. Chromium uses its real raster
@@ -173,8 +176,14 @@ limit, and explicit EOF, truncated-frame, malformed-response and remote errors.
    query `DOM.querySelector(nodeId, "link")`, require integer node ID zero, and
    verify the same frame/loader. No page JavaScript is evaluated. Document
    replacement invalidates this evidence; a second scan cannot erase the failure.
-6. Verify the viewport. Request the unchanged surface PNG screenshot without
-   capture beyond the viewport. Decode/sample it and verify the frame tree again.
+6. Verify the viewport. For a canvas request, capture the unchanged surface PNG
+   without capture beyond the viewport and decode/sample it. For AG5 phase
+   requests, run the fixed read-only isolated-world collector. Verify the frame
+   tree again after the requested observations. Canvas retains full 640×480
+   client dimensions. Native phase inspection separately verifies 640×480 inner
+   dimensions and records scrollbar-excluding usable width; see the
+   [AG5 viewport contract](ag5-phase-comparison-projections.md#chromium-and-capture-compatibility).
+   Scroll/visual offsets remain zero and scale/optional zoom remain one.
 7. Finish every observed favicon candidate and document-fulfillment acknowledgment
    within the same absolute capture deadline; check the frame tree and resource
    state again. No expected color is available to this execution path.
@@ -359,6 +368,51 @@ pidfd. The root, anchored-session members and children adopted by this otherwise
 childless harness are owned. Detached helpers become adopted when their ancestors
 exit. Retained pidfds are signaling authority for exactly those identities; PID
 reuse cannot redirect a signal. No raw `kill(pid)`/`killpg` fallback is used.
+
+For a per-PID `/proc/<pid>/stat` observation, `ENOENT` and `ESRCH` mean that
+entry is no longer observable: Linux can return `ESRCH` when reading a proc
+descriptor opened before the process was reaped. `pidfd_open` returning `ESRCH`
+also acquires no identity. Revalidation may accept such a missing proc entry
+only when the newly opened stable pidfd independently reports exit. Permission,
+I/O, malformed-stat and other acquisition errors remain failures, even if the
+process subsequently disappears. Changed parent/session/birth tuples leave the
+scan incomplete and confer no signal authority. Absence of one entry never
+substitutes for the remaining scan or final descendant verification.
+
+Native ownership diagnostics identify proc discovery/revalidation, pidfd
+acquisition/poll/signaling or reaping, with the relevant PID/path category and
+native error where available. The real-browser lifecycle test reports its
+cancel/timeout/exit scenario and complete cleanup-error vector from one
+five-second `finish` call. Diagnostics perform no additional cleanup or scans.
+Private synchronized Linux regressions open a real proc descriptor, release and
+reap its child, then exercise the production read/error-handling path; unrelated
+disappearance, denied/malformed observations and changed identity have separate
+controls. These kernel-level regressions can run on Linux ARM64 without enabling
+the unsupported Chromium capture path there. The final functional source
+`821ef72424851da41e87192ca46d503fada592bd` (tree
+`72704e4148368fc078fcd206aea85d38f48e8b8b`) passed native Linux x86-64
+[run 39390972794/1](https://github.com/joris97jansen/borrowser/actions/runs/39390972794),
+including these regressions, bounded fixture/spawn-error controls,
+lifecycle/topology, the full AG5 profile, both CLI qualifications, all three exact
+guest-wrapper tests and final private-profile cleanup. Ordinary Rust including
+explicit HTML5 and applicable credential-free/remaining CI checks also passed.
+See the [AG5 qualification record](ag5-phase-comparison-projections.md#validation-and-qualification)
+for exact source/integration identity, coverage, evidence limits and the
+unestablished historical cleanup cause/syscall.
+
+The private proc-regression fixture collects and records exit status before
+test assertions; its destructor neither repeats completion nor asserts success.
+Protocol pipes remain owned through teardown. A fixture retained by an
+unconsumed test hook can be dropped without reentering destroyed hook storage.
+Acknowledgements use nonblocking reads with one five-second deadline and a
+16-KiB total-output bound, including incomplete lines. Normal completion has a
+five-second bound, followed on failure by one shared two-second teardown bound.
+Nonzero exits, wait errors, timeouts and unresolved cleanup stay inspectable.
+Failure controls run in isolated processes with an independent outer watchdog;
+a watchdog kill is a test failure, never fixture cleanup success. The parent/child
+control uses an isolated subreaper and the existing pidfd registry to reserve the root,
+terminate owned descendants and reap adopted children before reporting success.
+These are test-fixture bounds, not changes to Chromium's production budgets.
 
 After known creators terminate, a fresh complete scan finds newly adopted
 descendants. The direct child is reaped with `waitpid`; adopted children are

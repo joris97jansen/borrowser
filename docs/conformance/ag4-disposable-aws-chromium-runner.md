@@ -940,6 +940,18 @@ borrow the separate CloudFormation cleanup budget. There are no cloud logs or
 capture archives. The operation record retains a bounded failure summary;
 the invocation's diagnostic stream carries the retrieved prefix.
 
+AG5 extends the shared producer/consumer contract to
+`borrowser.chromium-phases.v1` / `ag5-static-phases-v1`, with six registered cases,
+independent family requests and strict bounded native observations. The guest
+harness and local consumer must be rebuilt together; old schema/profile output
+is rejected. Native phase inspections also require exact configured
+`inner_width`/`inner_height` and bounded scrollbar-excluding `layout_width`;
+missing viewport facts are rejected, not defaulted.
+[AG5](ag5-phase-comparison-projections.md) owns this compatibility
+change. No AWS transport, infrastructure, credentials, process ownership, wrapper
+stream limit or cleanup contract changes are introduced. Historical AG4 capture
+qualification does not qualify the new profile.
+
 Retrieval is bounded before buffering beyond 64 KiB. Typed wire decoding rejects
 duplicate/unknown fields, trailing/malformed JSON, missing observations, wrong
 order/identity/source, incompatible browser identity/platform and unexpected
@@ -948,7 +960,7 @@ are preserved. Operational identity checks stay outside comparison output.
 
 Only after capture validation, confirmed stack cleanup, and release of all
 controller-command/runtime/signal ownership does `compare_captured` start the
-Borrowser phase. Its AG3 projection, authored expectations and serialization
+Borrowser phase. Its shared AG5 projections, authored expectations and serialization
 remain shared with local comparison. Failure emits diagnostics and no comparison
 report.
 
@@ -1067,7 +1079,7 @@ presence exhausts the budget and leaves cleanup unresolved and recoverable.
 | Upload / execution / retrieval | 5 minutes (2 attempts) / 120 seconds (once) / 60 seconds (2 attempts) |
 | Overall capture work / cleanup | 30 minutes / separate 15 minutes; at most 3 deletion submissions, 180 polls |
 | Input/output | Harness 64 MiB; artifact metadata 16 KiB; capture 64 KiB; API and diagnostic streams 256 KiB each |
-| Operation resources | One c6i.large, one 16-GiB root disk, one ENI/public IPv4, one SG, at most two fixtures |
+| Operation resources | One c6i.large, one 16-GiB root disk, one ENI/public IPv4, one SG, at most six registered fixtures |
 
 The command owner drains nonblocking stdout/stderr fairly with bounded buffers.
 Overflow, deadlines and cancellation close input, terminate the owned process

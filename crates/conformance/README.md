@@ -56,9 +56,11 @@ make conformance
 cargo run -p borrowser-conformance --locked -- canvas/cascade
 ```
 
-The only observation is opaque sRGB RGB8 canvas color at viewport pixel `(32, 32)`:
-CSS pixel center `(32.5, 32.5)`. This establishes a small production execution and
-exact comparison boundary. It is not general browser or rendering conformance.
+The six-fixture registry compares committed DOM structure, four selected computed
+properties, fixed block border boxes, and the existing guarded opaque sRGB canvas
+sample at pixel `(32,32)`. See the [AG5 observation and comparison contract](../../docs/conformance/ag5-phase-comparison-projections.md)
+for authority, exact coverage, unsupported cases, wire formats and qualification.
+This adds tooling coverage, not engine features or broad browser conformance.
 
 ## Production execution
 
@@ -71,7 +73,7 @@ render work. The harness never constructs or accesses private document/style or
 retained-rendering state.
 
 After the parser terminal event and successful Browser completion validation,
-`Tab::ui_content` performs the normal CSS preparation, Layout, GFX Paint, and
+`Tab::render_observed_frame` (or the canvas-only `ui_content` path) performs the normal CSS preparation, Layout, GFX Paint, and
 Browser presentation path in a fresh egui pass. Publication errors, parser
 failures, missing documents, style errors, follow-up work, discarded output,
 changed navigation, and unexpected subresources are execution errors. All
@@ -98,7 +100,7 @@ paths execute, but this observation does **not independently prove their general
 correctness**. It does not test GPU rasterization, arbitrary DOM geometry,
 general element painting, text rendering, or comprehensive rendering conformance.
 
-Capture inspects only the current `egui::FullOutput`. It requires exactly one
+The canvas collector inspects only the current `egui::FullOutput`. It requires exactly one
 opaque, untextured, square-cornered, unstroked, unblurred rectangle covering the
 viewport, whose clip also covers the viewport. No other effective paint may
 intersect the guard rectangle `(30, 30)`–`(35, 35)`. The collector uses existing
@@ -155,7 +157,7 @@ Execution, exact comparison, and expectation metadata remain separate:
 | Harness/parser/publication/render/capture error | Any | ERROR |
 
 Known failures retain mismatch details. Unexpected success exposes stale metadata.
-Errors never satisfy known-failure metadata. The current two fixtures are runnable
+Errors never satisfy known-failure metadata. The current six fixtures are runnable
 and expected to match; classification regressions exercise the other outcomes
 without adding artificial skipped or failing cases to the shipped registry.
 
@@ -189,7 +191,9 @@ existing browser profile, or accepts an arbitrary browser version.
 export BORROWSER_CHROMIUM_EXECUTABLE='/absolute/path/to/pinned/browser'
 cargo run -p borrowser-conformance --locked -- --chromium
 cargo run -p borrowser-conformance --locked -- --chromium --chromium-executable "$BORROWSER_CHROMIUM_EXECUTABLE" canvas/root
-cargo test -p borrowser-conformance --locked real_chromium_ -- --ignored --nocapture --test-threads=1
+# Each invocation is a fresh standalone process, before any parser workers.
+cargo test -p borrowser-conformance --locked real_chromium_ag5_read_only_inspection -- --ignored --nocapture --test-threads=1
+cargo test -p borrowser-conformance --locked real_chromium_ag5_profile -- --ignored --nocapture --test-threads=1
 ```
 
 On macOS, the executable is `Google Chrome for Testing.app/Contents/MacOS/Google
@@ -197,7 +201,7 @@ Chrome for Testing`; on Linux it is `chrome-linux64/chrome`. A missing or
 incompatible browser is an error, including when an opt-in test is explicitly
 requested. Ordinary AG1 execution and tests require no installed browser.
 
-The `ag2-canvas-srgb-v2` profile uses one ordinary headless page. Read-only CDP
+The `ag5-static-phases-v1` profile uses one ordinary headless page. Read-only CDP
 DOM inspection requires no live-document `link` elements, including inert links,
 for these inline-only fixtures. A browser-default favicon candidate is aborted
 before network delivery and accepted only after document eligibility, paired
@@ -205,7 +209,7 @@ Network/Fetch identities, an abort acknowledgment and its failed-load terminal
 are verified. An aborted authored resource still fails capture. No HTML bytes,
 fixture expectations or Chromium sandbox settings are changed.
 
-`--chromium` emits capture-only JSON: fixture identity, observed RGB8 color,
+`--chromium` emits `borrowser.chromium-phases.v1` capture-only JSON: fixture identity, requested native DOM/style/layout facts or RGB8 color,
 environment, and exact browser identity. There are no PASS/FAIL classifications,
 expectations or Borrowser comparisons in that report. Success requires verified
 process cleanup; failure emits diagnostics to stderr, no observation to stdout,
@@ -254,12 +258,14 @@ Borrowser GPU-rasterization test, or full screenshot comparison.
 ### Capture and projection boundary
 
 Selection supplies exactly the same embedded HTML bytes to both engines.
-`chromium::CaptureInput` contains only fixture identity, source and bytes: no
-expected color or expectation metadata. The shared crate-local `capture_batch`
+`chromium::CaptureInput` contains fixture identity, source, bytes and an explicit
+observation request: no expected values or expectation metadata. The shared crate-local `capture_batch`
 entry is used by both `--chromium` and `--compare`. It returns each identity,
-source, observed `CanvasColor` and existing Chromium `BrowserIdentity` only after
-verified cleanup. Borrowser's existing `execute_html` returns `CanvasColor`
-after normal parser, Browser publication and frame/capture validation.
+source, requested native inspection/sample and existing Chromium `BrowserIdentity`
+only after verified cleanup. Borrowser's `execute_fixture` projects its selected
+facts while the accepted frame borrow is alive, after normal parser, Browser
+publication and frame/capture validation. Cross-engine common representations are
+separate from native capture data.
 
 Engine-specific capture records remain under `captures`. Chromium records its
 observed product/version/revision/protocol/platform/profile; Borrowser records
@@ -289,7 +295,7 @@ Chromium/Borrowser per-fixture interleaving, even for multiple fixtures. The
 Borrowser phase performs no child-process launches or native launcher/reaper
 operations. All AG2 deadlines, cancellation, sandbox and ownership rules remain.
 
-A parser terminal publication or return from `execute_html` does not establish
+A parser terminal publication or return from `execute_fixture` does not establish
 worker termination. Dropping its command sender eventually closes the worker's
 input, but AG3 does not wait heuristically or rely on that shutdown to make a
 later launch safe: there is no later launch. Linux's existing process-global
@@ -298,12 +304,32 @@ no child processes. Restored signal dispositions apply after the capture phase.
 
 ### Report and failure semantics
 
-`--compare` emits pretty JSON, schema `borrowser.cross-engine-canvas.v1`, followed
+`--compare` emits pretty JSON, schema `borrowser.cross-engine-phases.v1`, followed
 by one newline. Member order is fixed by typed serialization; case order is
-fixture registry order; engine order is Borrowser then Chromium. Each case has
+fixture registry order; engine order is Borrowser then Chromium. Each canvas case has
 one `canvas_color_rgb8` field with both observed arrays, its `equal`/`different`
 status, and red/green/blue channel statuses in that order. For `canvas/cascade`,
 both arrays should be `[52, 86, 120]` and every channel should be `equal`.
+
+DOM, style and layout cases expose their common values under `projections`,
+with native Chromium data and Browser frame provenance under `captures`.
+Case status is `equal_for_requested_scope`, `different` or `incomplete`; family
+coverage explicitly shows unrequested and unsupported observations. The AG5
+contract defines the selected properties, geometry, field paths and bounds.
+The passing six-fixture baseline compares exactly 34 fields: two canvas, two
+whole-DOM, twelve style and eighteen layout fields. Requested record identities,
+order, counts and states are validated before comparison; a truncated projection
+is a required-data error even with KnownFailure metadata. An empty layout target
+list is invalid configuration. Complete missing-node and zero-box records remain
+data, and different tree/rectangle lengths remain structural differences.
+When native DOM is included, style/layout presence must agree with active-document
+HTML-id lookup, excluding inert template contents, in local and AG4 ingestion.
+Native `inner_width`/`inner_height` record the configured 640×480 viewport,
+including scrollbars. `layout_width` records the root client width, excluding
+a classic vertical scrollbar; it is not assumed equal to 640. The AG5 contract
+defines the strict family-specific viewport checks and bounded failure metrics.
+Canvas sampling retains the full client-size restriction. Producers and local/AG4
+consumers must be rebuilt together; missing required viewport facts are errors.
 
 `borrowser_expectation` separately reports the independently authored expected
 RGB8, expectation metadata, optional known-failure reason and existing AG1
@@ -330,8 +356,12 @@ independent expectation failures/unexpected passes. Exit precedence is:
 | 3 | Otherwise incomplete: unsupported/skipped selection or no comparable observations |
 | 0 | All selected cases compared equally, without independent expectation failure |
 
-Exit 3 is specific to `--compare`. Existing AG1 and AG2 exit/report behavior is
-preserved. Capture/execution failures suppress the entire comparison report,
+Exit 3 also marks incomplete requested observations in local AG5 execution.
+Local text diagnostics and status use the same validated typed expectations;
+integer and floating JSON forms of the same CSS-pixel value do not create a
+false difference. Text output preserves unsupported identities/reasons,
+incomplete coverage explanations and known-failure reasons alongside differences.
+Existing canvas and fixture-classification behavior is preserved. Capture/execution failures suppress the entire comparison report,
 including earlier successful cases. Chromium primary and cleanup failures remain
 separate stderr diagnostics. Execution, validation, report construction and JSON
 serialization finish before stdout publication. Writes and flush are checked;
@@ -370,7 +400,9 @@ evidence and absence of children before removing only their own directory.
 cargo test -p borrowser-conformance --locked comparison::tests::unit_
 cargo test -p borrowser-conformance --locked --test comparison_cli
 cargo test -p borrowser-conformance --locked
-cargo test -p borrowser-conformance --locked real_chromium_ -- --ignored --nocapture --test-threads=1
+# Each invocation is a fresh standalone process, before any parser workers.
+cargo test -p borrowser-conformance --locked real_chromium_ag5_read_only_inspection -- --ignored --nocapture --test-threads=1
+cargo test -p borrowser-conformance --locked real_chromium_ag5_profile -- --ignored --nocapture --test-threads=1
 ```
 
 Explicit real-browser tests require `BORROWSER_CHROMIUM_EXECUTABLE` and fail if it

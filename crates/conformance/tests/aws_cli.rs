@@ -8,7 +8,7 @@ fn local_build_identity_is_optional_and_aws_arguments_fail_before_credentials() 
         .unwrap();
     assert!(info.status.success());
     let v: serde_json::Value = serde_json::from_slice(&info.stdout).unwrap();
-    assert_eq!(v["fixtures"].as_array().unwrap().len(), 2);
+    assert_eq!(v["fixtures"].as_array().unwrap().len(), 6);
     for args in [
         vec!["--compare-aws"],
         vec!["--aws-cleanup"],

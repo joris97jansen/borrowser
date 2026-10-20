@@ -87,6 +87,8 @@ pub(crate) fn run(
                         id: f.id,
                         source: f.source,
                         html,
+
+                        request: f.request,
                     })
                 }
                 _ => Err("AG4 only captures registered runnable fixtures".to_string()),

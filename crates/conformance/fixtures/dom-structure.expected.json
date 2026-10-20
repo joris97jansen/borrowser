@@ -1,0 +1,98 @@
+{
+  "dom": {
+    "state": "observed",
+    "value": {
+      "kind": "document",
+      "children": [
+        {
+          "kind": "doctype",
+          "name": "html",
+          "public_id": "",
+          "system_id": ""
+        },
+        {
+          "kind": "element",
+          "namespace": "http://www.w3.org/1999/xhtml",
+          "name": "html",
+          "attributes": [],
+          "children": [
+            {
+              "kind": "element",
+              "namespace": "http://www.w3.org/1999/xhtml",
+              "name": "head",
+              "attributes": [],
+              "children": [],
+              "template": null
+            },
+            {
+              "kind": "element",
+              "namespace": "http://www.w3.org/1999/xhtml",
+              "name": "body",
+              "attributes": [],
+              "children": [
+                {
+                  "kind": "element",
+                  "namespace": "http://www.w3.org/1999/xhtml",
+                  "name": "div",
+                  "attributes": [
+                    {
+                      "namespace": "",
+                      "name": "a",
+                      "prefix": "",
+                      "value": "first"
+                    },
+                    {
+                      "namespace": "",
+                      "name": "id",
+                      "prefix": "",
+                      "value": "target"
+                    },
+                    {
+                      "namespace": "",
+                      "name": "z",
+                      "prefix": "",
+                      "value": "last"
+                    }
+                  ],
+                  "children": [
+                    {
+                      "kind": "text",
+                      "value": "A & B"
+                    },
+                    {
+                      "kind": "element",
+                      "namespace": "http://www.w3.org/1999/xhtml",
+                      "name": "span",
+                      "attributes": [],
+                      "children": [
+                        {
+                          "kind": "text",
+                          "value": " x "
+                        }
+                      ],
+                      "template": null
+                    },
+                    {
+                      "kind": "comment",
+                      "value": "note"
+                    }
+                  ],
+                  "template": null
+                }
+              ],
+              "template": null
+            }
+          ],
+          "template": null
+        }
+      ]
+    }
+  },
+  "styles": [],
+  "layout": {
+    "state": "not_requested"
+  },
+  "canvas": {
+    "state": "not_requested"
+  }
+}

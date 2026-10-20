@@ -2,9 +2,13 @@ use super::super::error::Error;
 use super::{OwnershipBudget, OwnershipError};
 use std::{
     collections::BTreeMap,
+    io::Read,
     os::fd::{AsRawFd, FromRawFd, OwnedFd},
     path::PathBuf,
 };
+
+#[cfg(test)]
+mod tests;
 
 pub(super) fn preflight() -> Result<(), Error> {
     if cfg!(not(target_arch = "x86_64")) {
@@ -23,7 +27,10 @@ pub(super) fn preflight() -> Result<(), Error> {
         {
             return Err(super::last("enable child subreaper").to_string().into());
         }
-        let fd = budget.observe(|| pidfd(unsafe { libc::getpid() }))??;
+        let pid = unsafe { libc::getpid() };
+        let fd = budget
+            .observe(|| pidfd(pid))?
+            .map_err(|e| format!("pidfd_open capability pid={pid}: {e}"))?;
         let rc = budget.observe(|| unsafe {
             libc::syscall(
                 libc::SYS_pidfd_send_signal,
@@ -40,10 +47,12 @@ pub(super) fn preflight() -> Result<(), Error> {
     };
     check().map_err(|e| e.execution(super::Phase::Startup))
 }
-fn pidfd(pid: i32) -> Result<OwnedFd, String> {
+fn pidfd(pid: i32) -> std::io::Result<OwnedFd> {
+    #[cfg(test)]
+    tests::at(tests::Step::PidfdOpening, pid, None)?;
     let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
     if fd < 0 {
-        return Err(std::io::Error::last_os_error().to_string());
+        return Err(std::io::Error::last_os_error());
     }
     Ok(unsafe { OwnedFd::from_raw_fd(fd as i32) })
 }
@@ -54,12 +63,29 @@ fn alive(fd: &OwnedFd) -> Result<bool, String> {
         revents: 0,
     };
     if unsafe { libc::poll(&mut poll, 1, 0) } < 0 {
-        return Err(std::io::Error::last_os_error().to_string());
+        return Err(format!(
+            "poll retained pidfd fd={}: {}",
+            fd.as_raw_fd(),
+            std::io::Error::last_os_error()
+        ));
     }
     if poll.revents & libc::POLLNVAL != 0 {
         return Err("invalid retained pidfd".into());
     }
     Ok(poll.revents & (libc::POLLIN | libc::POLLHUP) == 0)
+}
+fn read_stat(pid: i32) -> std::io::Result<String> {
+    let mut file = std::fs::File::open(format!("/proc/{pid}/stat"))?;
+    #[cfg(test)]
+    tests::at(tests::Step::StatOpened, pid, Some(&mut file))?;
+    let mut stat = String::new();
+    file.read_to_string(&mut stat)?;
+    Ok(stat)
+}
+// Only proc-stat observation uses ENOENT/ESRCH as absence. A proc descriptor
+// can open successfully and then return ESRCH after the task is reaped.
+fn stat_disappeared(error: &std::io::Error) -> bool {
+    error.kind() == std::io::ErrorKind::NotFound || error.raw_os_error() == Some(libc::ESRCH)
 }
 fn ownership(stat: &str) -> Result<(i32, i32, u64), String> {
     let fields: Vec<_> = stat
@@ -95,7 +121,7 @@ impl Registry {
         let mut complete = true;
         let mut entries = budget
             .observe(|| std::fs::read_dir("/proc"))?
-            .map_err(|e| e.to_string())?
+            .map_err(|e| format!("discover read_dir /proc: {e}"))?
             .enumerate();
         while let Some((count, entry)) = budget.observe(|| entries.next())? {
             #[cfg(test)]
@@ -104,7 +130,7 @@ impl Registry {
             if count >= 65536 {
                 return Err("process enumeration exceeds bound".into());
             }
-            let entry = entry.map_err(|e| e.to_string())?;
+            let entry = entry.map_err(|e| format!("discover enumerate /proc: {e}"))?;
             let Some(pid) = entry
                 .file_name()
                 .to_str()
@@ -112,55 +138,69 @@ impl Registry {
             else {
                 continue;
             };
-            let read = || budget.observe(|| std::fs::read_to_string(entry.path().join("stat")));
-            let stat = match read()? {
-                Ok(s) => s,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(e) => return Err(e.to_string().into()),
-            };
-            let (parent, session, birth) = ownership(&stat)?;
-            if pid != self.root && parent != unsafe { libc::getpid() } && session != self.root {
-                continue;
-            }
-            if let Some(fd) = self.processes.get(&pid)
-                && budget.observe(|| alive(fd))??
-            {
-                continue;
-            }
-            let fd = match budget.observe(|| pidfd(pid))? {
-                Ok(fd) => fd,
-                Err(e) => {
-                    if read()?.is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound) {
-                        continue;
-                    }
-                    return Err(e.into());
-                }
-            };
-            if !budget.observe(|| alive(&fd))?? {
-                continue;
-            }
-            // Re-read ownership after opening the stable identity.
-            let again = match read()? {
-                Ok(stat) => stat,
-                Err(_) if !budget.observe(|| alive(&fd))?? => continue,
-                Err(e) => return Err(e.to_string().into()),
-            };
-            if ownership(&again)? != (parent, session, birth) {
-                complete = false;
-                continue;
-            }
-            if !budget.observe(|| alive(&fd))?? {
-                continue;
-            }
-            self.processes.insert(pid, fd);
+            complete &= self.observe_pid(pid, budget)?;
         }
         budget.check()?;
         self.complete_scan = complete;
         Ok(())
     }
+    // true means this entry was completely observed (including disappearance).
+    // false requests a fresh scan after an identity changed during acquisition.
+    fn observe_pid(
+        &mut self,
+        pid: i32,
+        budget: &OwnershipBudget<'_>,
+    ) -> Result<bool, OwnershipError> {
+        let read = || budget.observe(|| read_stat(pid));
+        let stat = match read()? {
+            Ok(s) => s,
+            Err(e) if stat_disappeared(&e) => return Ok(true),
+            Err(e) => return Err(format!("discover read /proc/{pid}/stat: {e}").into()),
+        };
+        let (parent, session, birth) =
+            ownership(&stat).map_err(|e| format!("discover parse /proc/{pid}/stat: {e}"))?;
+        if pid != self.root && parent != unsafe { libc::getpid() } && session != self.root {
+            return Ok(true);
+        }
+        if let Some(fd) = self.processes.get(&pid)
+            && budget.observe(|| alive(fd))??
+        {
+            return Ok(true);
+        }
+        let fd = match budget.observe(|| pidfd(pid))? {
+            Ok(fd) => fd,
+            // No stable identity was acquired. ESRCH says this entry ceased
+            // to be observable; other acquisition errors remain failures even
+            // if a later proc read would happen to find the process gone.
+            Err(e) if e.raw_os_error() == Some(libc::ESRCH) => return Ok(true),
+            Err(e) => return Err(format!("pidfd_open pid={pid}: {e}").into()),
+        };
+        #[cfg(test)]
+        tests::at(tests::Step::PidfdOpened, pid, None)
+            .map_err(|e| format!("pidfd_open pid={pid}: {e}"))?;
+        if !budget.observe(|| alive(&fd))?? {
+            return Ok(true);
+        }
+        // Re-read ownership after opening the stable identity.
+        let again = match read()? {
+            Ok(stat) => stat,
+            Err(e) if stat_disappeared(&e) && !budget.observe(|| alive(&fd))?? => return Ok(true),
+            Err(e) => return Err(format!("revalidate read /proc/{pid}/stat: {e}").into()),
+        };
+        if ownership(&again).map_err(|e| format!("revalidate parse /proc/{pid}/stat: {e}"))?
+            != (parent, session, birth)
+        {
+            return Ok(false);
+        }
+        if !budget.observe(|| alive(&fd))?? {
+            return Ok(true);
+        }
+        self.processes.insert(pid, fd);
+        Ok(true)
+    }
     pub fn signal(&self, signal: i32, budget: &OwnershipBudget<'_>) -> Result<(), OwnershipError> {
         budget.check()?;
-        for fd in self.processes.values() {
+        for (pid, fd) in &self.processes {
             let result = budget.observe(|| unsafe {
                 libc::syscall(
                     libc::SYS_pidfd_send_signal,
@@ -171,7 +211,11 @@ impl Registry {
                 )
             })?;
             if result != 0 && std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH) {
-                return Err(std::io::Error::last_os_error().to_string().into());
+                return Err(format!(
+                    "pidfd_send_signal pid={pid} signal={signal}: {}",
+                    std::io::Error::last_os_error()
+                )
+                .into());
             }
         }
         Ok(())
@@ -220,7 +264,11 @@ impl Registry {
             if pid < 0 && error.kind() == std::io::ErrorKind::Interrupted {
                 continue;
             }
-            return Err("remaining owned children could not be reaped".into());
+            return Err(if pid < 0 {
+                format!("reap adopted waitpid(-1, WNOHANG): {error}").into()
+            } else {
+                "reap adopted waitpid(-1, WNOHANG): child remains live".into()
+            });
         }
     }
     #[cfg(test)]

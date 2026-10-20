@@ -8,6 +8,7 @@ mod environment;
 mod execute;
 mod fixtures;
 mod model;
+mod projection;
 mod report;
 #[cfg(test)]
 mod tests;
@@ -20,7 +21,8 @@ use std::{
 
 fn run_fixture(fixture: &Fixture) -> Execution {
     match fixture.kind {
-        FixtureKind::Runnable { html, .. } => match execute::execute_html(html) {
+        FixtureKind::Runnable { html, .. } => match execute::execute_fixture(html, fixture.request)
+        {
             Ok(color) => Execution::Observed(color),
             Err(error) => Execution::Error(error),
         },
@@ -65,7 +67,7 @@ fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
     if args == ["--help"] {
         writeln!(
             out,
-            "Usage: borrowser-conformance [TEST_ID]\nRun the explicit fixture set, or one exact test identity.\n       borrowser-conformance --chromium [--chromium-executable PATH] [TEST_ID]\nCapture only, using the pinned Chrome for Testing (or BORROWSER_CHROMIUM_EXECUTABLE).\n       borrowser-conformance --compare [--chromium-executable PATH] [TEST_ID]\nCompare both engines using the bounded canvas sample.\n       borrowser-conformance --compare-aws --config PATH --artifact-dir PATH --state-dir PATH [TEST_ID]\n       borrowser-conformance --aws-cleanup --operation PATH --aws-cli PATH\nSee docs/conformance/ag4-disposable-aws-chromium-runner.md for AG4 prerequisites and qualification."
+            "Usage: borrowser-conformance [TEST_ID]\nRun the explicit fixture set, or one exact test identity.\n       borrowser-conformance --chromium [--chromium-executable PATH] [TEST_ID]\nCapture only, using the pinned Chrome for Testing (or BORROWSER_CHROMIUM_EXECUTABLE).\n       borrowser-conformance --compare [--chromium-executable PATH] [TEST_ID]\nCompare the requested static DOM, computed-style, fixed-layout, and guarded canvas observations.\n       borrowser-conformance --compare-aws --config PATH --artifact-dir PATH --state-dir PATH [TEST_ID]\n       borrowser-conformance --aws-cleanup --operation PATH --aws-cli PATH\nSee docs/conformance/ag4-disposable-aws-chromium-runner.md for AG4 prerequisites and qualification."
         )?;
         return Ok(0);
     }
