@@ -255,7 +255,7 @@ fn capture_requested_html(
         )?;
         #[cfg(test)]
         cdp.capture_operation("verify viewport");
-        validate_viewport(&metrics)?;
+        let layout_width = validate_viewport(&metrics, request)?;
         #[cfg(test)]
         cdp.capture_operation_completed();
         let requested = crate::projection::inspection_request(request);
@@ -264,12 +264,13 @@ fn capture_requested_html(
             || !requested.layout_targets.is_empty()
         {
             let frame_id = cdp::string(&tree["frameTree"]["frame"], "id")?;
-            Some(inspection::collect(
-                &mut cdp,
-                frame_id,
-                &requested,
-                capture_deadline,
-            )?)
+            let inspection = inspection::collect(&mut cdp, frame_id, &requested, capture_deadline)?;
+            if inspection.layout_width != layout_width {
+                return Err(Error::Capture(
+                    "inspection layout width disagrees with CSS layout viewport".into(),
+                ));
+            }
+            Some(inspection)
         } else {
             None
         };
@@ -350,45 +351,111 @@ fn capture_requested_html(
     }
 }
 
-// Keep the capture predicate separate from bounded failure evidence. This
-// helper deliberately preserves the existing acceptance conditions.
-fn validate_viewport(metrics: &Value) -> Result<(), Error> {
-    for name in ["cssLayoutViewport", "cssVisualViewport"] {
-        let v = &metrics[name];
-        if v["clientWidth"] != WIDTH
-            || v["clientHeight"] != HEIGHT
-            || v["pageX"] != 0
-            || v["pageY"] != 0
-        {
-            return Err(Error::Capture(format!(
-                "unexpected viewport dimensions or scroll; viewport={}",
-                viewport_diagnostic(metrics)
-            )));
+// Native phase inspection verifies the configured inner dimensions separately.
+// Client dimensions exclude platform scrollbars; canvas retains its full-size guard.
+fn validate_viewport(
+    metrics: &Value,
+    request: crate::projection::ObservationRequest,
+) -> Result<f64, Error> {
+    let canvas = matches!(request.canvas, crate::projection::Request::Compare(()));
+    let number = |object: &str, field: &str| {
+        metrics
+            .get(object)
+            .and_then(|v| v.get(field))
+            .and_then(Value::as_f64)
+            .filter(|v| v.is_finite())
+    };
+    let mut rejected = vec![];
+    let mut check = |object: &str, field: &str, valid: bool, expected: Value| {
+        if !valid {
+            let actual = metrics.get(object).and_then(|v| v.get(field));
+            rejected.push(json!({"field":format!("{object}.{field}"),"expected":expected,"actual":diagnostic_scalar(actual),"reason":match actual {None=>"missing",Some(Value::Number(_))=>"numeric_mismatch",_=>"malformed"}}));
+        }
+    };
+    for object in ["cssLayoutViewport", "cssVisualViewport"] {
+        for (field, limit) in [("clientWidth", WIDTH), ("clientHeight", HEIGHT)] {
+            let actual = number(object, field);
+            let valid = actual.is_some_and(|n| {
+                if canvas {
+                    n == f64::from(limit)
+                } else {
+                    n > 0.0
+                        && n <= f64::from(limit)
+                        && n.fract() == 0.0
+                        && (object == "cssLayoutViewport"
+                            || Some(n) == number("cssLayoutViewport", field))
+                }
+            });
+            let expected = if canvas {
+                json!(limit)
+            } else {
+                json!({"positive_integer_at_most":limit,"matches_layout_viewport":object=="cssVisualViewport"})
+            };
+            check(object, field, valid, expected);
+        }
+        for field in ["pageX", "pageY"] {
+            check(object, field, number(object, field) == Some(0.0), json!(0));
         }
     }
-    if metrics["cssVisualViewport"]["scale"] != 1 {
+    for field in ["offsetX", "offsetY"] {
+        check(
+            "cssVisualViewport",
+            field,
+            number("cssVisualViewport", field) == Some(0.0),
+            json!(0),
+        );
+    }
+    check(
+        "cssVisualViewport",
+        "scale",
+        number("cssVisualViewport", "scale") == Some(1.0),
+        json!(1),
+    );
+    // Optional in the pinned protocol. Present malformed/non-unit zoom is invalid.
+    if metrics
+        .get("cssVisualViewport")
+        .and_then(|v| v.get("zoom"))
+        .is_some()
+    {
+        check(
+            "cssVisualViewport",
+            "zoom",
+            number("cssVisualViewport", "zoom") == Some(1.0),
+            json!(1),
+        );
+    }
+    if !rejected.is_empty() {
+        let message = if rejected.iter().all(|field| {
+            field["field"] == "cssVisualViewport.scale"
+                || field["field"] == "cssVisualViewport.zoom"
+        }) {
+            "unexpected visual scale"
+        } else {
+            "unexpected viewport dimensions or scroll"
+        };
         return Err(Error::Capture(format!(
-            "unexpected visual scale; viewport={}",
-            viewport_diagnostic(metrics)
+            "{message}; viewport={}",
+            viewport_diagnostic(metrics, canvas, &rejected)
         )));
     }
-    Ok(())
+    Ok(number("cssLayoutViewport", "clientWidth").expect("validated layout width"))
 }
 
-fn viewport_diagnostic(metrics: &Value) -> Value {
-    // Copy only the fixed protocol fields, never arbitrary remote strings or
-    // nested objects. Missing and malformed facts stay explicit, without defaults.
-    fn scalar(value: Option<&Value>) -> Value {
-        match value {
-            None => json!({"missing":true}),
-            Some(Value::Number(n)) => Value::Number(n.clone()),
-            Some(Value::Null) => json!({"malformed":"null"}),
-            Some(Value::Bool(_)) => json!({"malformed":"boolean"}),
-            Some(Value::String(_)) => json!({"malformed":"string"}),
-            Some(Value::Array(_)) => json!({"malformed":"array"}),
-            Some(Value::Object(_)) => json!({"malformed":"object"}),
-        }
+fn diagnostic_scalar(value: Option<&Value>) -> Value {
+    match value {
+        None => json!({"missing":true}),
+        Some(Value::Number(n)) => Value::Number(n.clone()),
+        Some(Value::Null) => json!({"malformed":"null"}),
+        Some(Value::Bool(_)) => json!({"malformed":"boolean"}),
+        Some(Value::String(_)) => json!({"malformed":"string"}),
+        Some(Value::Array(_)) => json!({"malformed":"array"}),
+        Some(Value::Object(_)) => json!({"malformed":"object"}),
     }
+}
+
+fn viewport_diagnostic(metrics: &Value, canvas: bool, rejected: &[Value]) -> Value {
+    // Copy only fixed protocol fields, never arbitrary remote strings or nested
+    // objects. Missing and malformed facts stay explicit, without defaults.
     let mut observed = serde_json::Map::new();
     for (name, fields) in [
         (
@@ -417,35 +484,20 @@ fn viewport_diagnostic(metrics: &Value) -> Value {
                 Value::Object(
                     fields
                         .iter()
-                        .map(|field| ((*field).into(), scalar(value.and_then(|v| v.get(field)))))
+                        .map(|field| {
+                            (
+                                (*field).into(),
+                                diagnostic_scalar(value.and_then(|v| v.get(field))),
+                            )
+                        })
                         .collect(),
                 )
             } else {
-                scalar(value)
+                diagnostic_scalar(value)
             },
         );
     }
-    let mut rejected = vec![];
-    for name in ["cssLayoutViewport", "cssVisualViewport"] {
-        for (field, expected) in [
-            ("clientWidth", WIDTH),
-            ("clientHeight", HEIGHT),
-            ("pageX", 0),
-            ("pageY", 0),
-        ] {
-            if metrics[name][field] != expected {
-                let actual = metrics.get(name).and_then(|v| v.get(field));
-                rejected.push(json!({"field":format!("{name}.{field}"),"expected":expected,"actual":scalar(actual),"reason":match actual {None=>"missing",Some(Value::Number(_))=>"numeric_mismatch",_=>"malformed"}}));
-            }
-        }
-    }
-    let scale = metrics
-        .get("cssVisualViewport")
-        .and_then(|v| v.get("scale"));
-    if metrics["cssVisualViewport"]["scale"] != 1 {
-        rejected.push(json!({"field":"cssVisualViewport.scale","expected":1,"actual":scalar(scale),"reason":match scale {None=>"missing",Some(Value::Number(_))=>"numeric_mismatch",_=>"malformed"}}));
-    }
-    json!({"expected":{"width":WIDTH,"height":HEIGHT,"pageX":0,"pageY":0,"scale":1},"observed":observed,"rejected":rejected})
+    json!({"expected":{"configured_width":WIDTH,"configured_height":HEIGHT,"canvas_full_client_size":canvas,"pageX":0,"pageY":0,"offsetX":0,"offsetY":0,"scale":1,"zoom_if_present":1},"observed":observed,"rejected":rejected})
 }
 
 fn attribute_capture_failure(mut failure: Failure, input: &CaptureInput<'_>) -> Failure {

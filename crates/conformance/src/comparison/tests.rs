@@ -574,7 +574,7 @@ fn unit_phase_partial_coverage_never_reports_full_pass() {
     let actual = execute::execute_fixture(html, request).unwrap();
     let mut reference = capture([0, 0, 0]);
     reference.color = None;
-    reference.inspection=Some(serde_json::from_value(json!({"dom":null,"styles":[{"target":"parent","values":["rgb(18, 52, 86)","rgba(0, 0, 0, 0)","16px","block"]}],"layout":[],"layout_width":640})).unwrap());
+    reference.inspection=Some(serde_json::from_value(json!({"dom":null,"styles":[{"target":"parent","values":["rgb(18, 52, 86)","rgba(0, 0, 0, 0)","16px","block"]}],"layout":[],"inner_width":640,"inner_height":480,"layout_width":640})).unwrap());
     let report = report::Report::new(vec![
         report::Case::observed(&fixture, actual, reference).unwrap(),
     ]);
@@ -605,7 +605,7 @@ fn unit_phase_layout_difference_is_localized_and_missing_capture_is_error() {
         {"target":"sibling","boxes":[{"left":0,"top":74,"right":80,"bottom":86}]},
         {"target":"hidden","boxes":[]},
         {"target":"zero","boxes":[{"left":0,"top":86,"right":0,"bottom":86}]},
-        {"target":"missing","boxes":null}],"layout_width":640}))
+        {"target":"missing","boxes":null}],"inner_width":640,"inner_height":480,"layout_width":640}))
         .unwrap(),
     );
     let report = report::Report::new(vec![
@@ -624,7 +624,7 @@ fn unit_phase_layout_difference_is_localized_and_missing_capture_is_error() {
     assert!(report::Case::observed(fixture, actual.clone(), reference).is_err());
     let mut reference = capture([0, 0, 0]);
     reference.color = None;
-    reference.inspection=Some(serde_json::from_value(json!({"dom":null,"styles":[],"layout":(["container","child","sibling","hidden","zero","missing"].map(|target|json!({"target":target,"boxes":null}))),"layout_width":640})).unwrap());
+    reference.inspection=Some(serde_json::from_value(json!({"dom":null,"styles":[],"layout":(["container","child","sibling","hidden","zero","missing"].map(|target|json!({"target":target,"boxes":null}))),"inner_width":640,"inner_height":480,"layout_width":640})).unwrap());
     let case = report::Case::observed(fixture, actual, reference).unwrap();
     let wire = serde_json::to_value(case).unwrap();
     assert_eq!(wire["status"], "different");
@@ -671,7 +671,7 @@ fn style_reference() -> chromium::ChromiumCapture {
         {"target":"parent","values":["rgb(18, 52, 86)","rgb(171, 205, 239)","20px","block"]},
         {"target":"child","values":["rgb(52, 86, 120)","rgba(0, 0, 0, 0)","20px","inline"]},
         {"target":"hidden","values":["rgb(18, 52, 86)","rgba(0, 0, 0, 0)","20px","none"]}
-    ],"layout":[],"layout_width":640}))
+    ],"layout":[],"inner_width":640,"inner_height":480,"layout_width":640}))
         .unwrap(),
     );
     reference
@@ -702,7 +702,7 @@ fn unit_phase_required_records_cannot_be_truncated_duplicated_or_misidentified()
                 {"target":"sibling","boxes":[{"left":0,"top":74,"right":80,"bottom":86}]},
                 {"target":"hidden","boxes":[]},
                 {"target":"zero","boxes":[{"left":0,"top":86,"right":0,"bottom":86}]},
-                {"target":"missing","boxes":null}],"layout_width":640}))
+                {"target":"missing","boxes":null}],"inner_width":640,"inner_height":480,"layout_width":640}))
                 .unwrap(),
             );
         }
@@ -941,7 +941,7 @@ fn unit_phase_dom_common_comparison_preserves_meaningful_structure() {
         let mut reference = capture([0, 0, 0]);
         reference.color = None;
         reference.inspection = Some(
-            serde_json::from_value(json!({"dom":dom,"styles":[],"layout":[],"layout_width":640}))
+            serde_json::from_value(json!({"dom":dom,"styles":[],"layout":[],"inner_width":640,"inner_height":480,"layout_width":640}))
                 .unwrap(),
         );
         let report = report::Report::new(vec![

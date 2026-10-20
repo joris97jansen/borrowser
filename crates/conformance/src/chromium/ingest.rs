@@ -241,7 +241,7 @@ mod phase_tests {
             let inspect=if request.dom || !request.style_targets.is_empty() || !request.layout_targets.is_empty(){
                 json!({"dom":if request.dom{json!({"node_type":9,"name":"","namespace":"","value":"","public_id":"","system_id":"","attributes":[],"children":[],"template":null})}else{Value::Null},
                     "styles":request.style_targets.iter().map(|id|json!({"target":id,"values":null})).collect::<Vec<_>>(),
-                    "layout":request.layout_targets.iter().map(|id|json!({"target":id,"boxes":null})).collect::<Vec<_>>(),"layout_width":640})
+                    "layout":request.layout_targets.iter().map(|id|json!({"target":id,"boxes":null})).collect::<Vec<_>>(),"inner_width":640,"inner_height":480,"layout_width":640})
             }else{Value::Null};
             json!({"test_id":input.id.0,"source":input.source,"canvas_color_rgb8":if matches!(input.request.canvas,crate::projection::Request::Compare(())){json!([18,52,86])}else{Value::Null},"inspection":inspect,
                 "browser":{"product":format!("Chrome/{}",pin["version"].as_str().unwrap()),"version":pin["version"],"revision":pin["revision"],"protocol_version":pin["protocol_version"],"capture_profile":pin["capture_profile"],"platform":"linux-x86_64"}})
@@ -249,6 +249,38 @@ mod phase_tests {
         let wire = json!({"schema":"borrowser.chromium-phases.v1","document_url":URL,"viewport":[WIDTH,HEIGHT],"device_scale_factor":1,"sample_pixel":SAMPLE,"observations":observations});
         let check = |wire: &Value| decode(serde_json::to_vec(wire).unwrap().as_slice(), &inputs);
         assert_eq!(check(&wire).unwrap().len(), 6);
+        // Both local capture and AG4 ingestion use this strict native boundary.
+        // Usable width may exclude scrollbars; configured inner dimensions cannot.
+        let mut narrower = wire.clone();
+        narrower["observations"][3]["inspection"]["layout_width"] = json!(625);
+        assert_eq!(
+            check(&narrower).unwrap()[3]
+                .capture
+                .inspection
+                .as_ref()
+                .unwrap()
+                .layout_width,
+            625.0
+        );
+        for (field, value) in [
+            ("inner_width", json!(625)),
+            ("inner_height", json!(465)),
+            ("layout_width", json!(641)),
+            ("layout_width", json!(0)),
+            ("layout_width", json!(625.5)),
+        ] {
+            let mut bad = narrower.clone();
+            bad["observations"][3]["inspection"][field] = value;
+            assert!(check(&bad).is_err(), "{field}");
+        }
+        for field in ["inner_width", "inner_height", "layout_width"] {
+            let mut bad = narrower.clone();
+            bad["observations"][3]["inspection"]
+                .as_object_mut()
+                .unwrap()
+                .remove(field);
+            assert!(check(&bad).is_err(), "{field}");
+        }
         for pointer in [
             "/observations/2/inspection/dom",
             "/observations/4/inspection/styles",
@@ -302,7 +334,7 @@ mod mixed_presence_tests {
         };
         let element = json!({"node_type":1,"name":"div","namespace":"http://www.w3.org/1999/xhtml","value":"","public_id":"","system_id":"","attributes":[{"namespace":"","prefix":"","name":"id","value":"x"}],"children":[],"template":null});
         let document = json!({"node_type":9,"name":"","namespace":"","value":"","public_id":"","system_id":"","attributes":[],"children":[element.clone()],"template":null});
-        let base = json!({"dom":document,"styles":[{"target":"x","values":["rgb(18, 52, 86)","rgba(0, 0, 0, 0)","16px","block"]}],"layout":[{"target":"x","boxes":[]}],"layout_width":640});
+        let base = json!({"dom":document,"styles":[{"target":"x","values":["rgb(18, 52, 86)","rgba(0, 0, 0, 0)","16px","block"]}],"layout":[{"target":"x","boxes":[]}],"inner_width":640,"inner_height":480,"layout_width":640});
         let mut variants = vec![("active present, zero boxes", base.clone(), true)];
         let mut missing = base.clone();
         missing["styles"][0]["values"] = Value::Null;

@@ -20,6 +20,9 @@ pub(crate) struct Inspection {
     pub(crate) dom: Option<NativeNode>,
     pub(crate) styles: Vec<NativeStyle>,
     pub(crate) layout: Vec<NativeLayout>,
+    pub(crate) inner_width: f64,
+    pub(crate) inner_height: f64,
+    /// Standards-mode root client width: excludes a classic vertical scrollbar.
     pub(crate) layout_width: f64,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -120,7 +123,12 @@ pub(crate) fn validate(data: &Inspection, request: &InspectionRequest) -> Result
         || data.dom.is_some() != request.dom
         || data.styles.len() != request.style_targets.len()
         || data.layout.len() != request.layout_targets.len()
-        || data.layout_width != f64::from(crate::environment::WIDTH)
+        || data.inner_width != f64::from(crate::environment::WIDTH)
+        || data.inner_height != f64::from(crate::environment::HEIGHT)
+        || !data.layout_width.is_finite()
+        || data.layout_width <= 0.0
+        || data.layout_width > data.inner_width
+        || data.layout_width.fract() != 0.0
     {
         return Err(fail());
     }
@@ -249,13 +257,42 @@ where
 mod tests {
     use super::*;
     #[test]
+    fn inspection_viewport_provenance_distinguishes_inner_and_client_width() {
+        let request = InspectionRequest::default();
+        let wire = json!({"dom":null,"styles":[],"layout":[],"inner_width":640,"inner_height":480,"layout_width":625});
+        let data: Inspection = serde_json::from_value(wire.clone()).unwrap();
+        validate(&data, &request).unwrap();
+        assert_eq!(data.layout_width, 625.0);
+        assert_eq!(data.inner_width, 640.0);
+        for (field, values) in [
+            ("inner_width", vec![625.0, 641.0]),
+            ("inner_height", vec![465.0, 481.0]),
+            ("layout_width", vec![0.0, -1.0, 641.0, 625.5]),
+        ] {
+            for value in values {
+                let mut bad = wire.clone();
+                bad[field] = json!(value);
+                assert!(validate(&serde_json::from_value(bad).unwrap(), &request).is_err());
+            }
+            let mut bad = wire.clone();
+            bad.as_object_mut().unwrap().remove(field);
+            assert!(serde_json::from_value::<Inspection>(bad).is_err());
+        }
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut bad = data.clone();
+            bad.layout_width = value;
+            assert!(validate(&bad, &request).is_err());
+        }
+    }
+
+    #[test]
     fn inspection_missing_record_is_error_but_complete_missing_node_is_data() {
         let request = InspectionRequest {
             dom: false,
             style_targets: vec!["x".into()],
             layout_targets: vec!["x".into()],
         };
-        let wire = json!({"dom":null,"styles":[{"target":"x","values":null}],"layout":[{"target":"x","boxes":null}],"layout_width":640});
+        let wire = json!({"dom":null,"styles":[{"target":"x","values":null}],"layout":[{"target":"x","boxes":null}],"inner_width":640,"inner_height":480,"layout_width":640});
         let data: Inspection = serde_json::from_value(wire.clone()).unwrap();
         validate(&data, &request).unwrap();
         for pointer in ["styles", "layout"] {
@@ -282,7 +319,7 @@ mod tests {
             style_targets: vec!["x".into()],
             layout_targets: vec![],
         };
-        let mut data:Inspection=serde_json::from_value(json!({"dom":null,"styles":[{"target":"x","values":["rgb(0, 0, 0)","rgba(0, 0, 0, 0)","16px","block"]}],"layout":[],"layout_width":640})).unwrap();
+        let mut data:Inspection=serde_json::from_value(json!({"dom":null,"styles":[{"target":"x","values":["rgb(0, 0, 0)","rgba(0, 0, 0, 0)","16px","block"]}],"layout":[],"inner_width":640,"inner_height":480,"layout_width":640})).unwrap();
         validate(&data, &request).unwrap();
         data.styles[0].values.as_mut().unwrap()[0] = "x".repeat(8193);
         assert!(validate(&data, &request).is_err());
@@ -306,6 +343,8 @@ mod tests {
                     dom: Some(node),
                     styles: vec![],
                     layout: vec![],
+                    inner_width: 640.0,
+                    inner_height: 480.0,
                     layout_width: 640.0,
                 },
                 &request,

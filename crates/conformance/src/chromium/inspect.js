@@ -67,5 +67,9 @@
         }))};
     });
     if (scrollX !== 0 || scrollY !== 0) throw new Error("unexpected inspection scroll");
-    return {dom: request.dom ? tree : null, styles, layout, layout_width: innerWidth};
+    return {
+        dom: request.dom ? tree : null, styles, layout,
+        inner_width: innerWidth, inner_height: innerHeight,
+        layout_width: document.documentElement.clientWidth
+    };
 })

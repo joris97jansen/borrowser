@@ -944,7 +944,10 @@ AG5 extends the shared producer/consumer contract to
 `borrowser.chromium-phases.v1` / `ag5-static-phases-v1`, with six registered cases,
 independent family requests and strict bounded native observations. The guest
 harness and local consumer must be rebuilt together; old schema/profile output
-is rejected. [AG5](ag5-phase-comparison-projections.md) owns this compatibility
+is rejected. Native phase inspections also require exact configured
+`inner_width`/`inner_height` and bounded scrollbar-excluding `layout_width`;
+missing viewport facts are rejected, not defaulted.
+[AG5](ag5-phase-comparison-projections.md) owns this compatibility
 change. No AWS transport, infrastructure, credentials, process ownership, wrapper
 stream limit or cleanup contract changes are introduced. Historical AG4 capture
 qualification does not qualify the new profile.

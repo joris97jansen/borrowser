@@ -961,6 +961,15 @@ When a feature lands:
   complete structural absence remains comparable data. Real-profile assertions
   cover all 34 field identities, not just successful case statuses. These are
   tooling corrections and introduce no engine features.
+  Linux attempts 39311219271/1 and diagnostics-only 39366788841/1 failed before
+  comparison: the DOM namespace fixture had 625×480 scrollbar-excluding client
+  viewports under a configured 640×480 viewport. The capture correction separates
+  inner dimensions from usable layout width while preserving the canvas guard;
+  negative collector tests now require their exact intended failures.
+  These failures do not qualify the corrected source. Final native Linux
+  profile/CLI/exact-wrapper/cleanup qualification remains required. The ordinary
+  fixed-block rendering smoke was accepted after Refresh; initial URL+Enter
+  navigation failed and remains a separate pre-existing limitation.
   See the [AG5 contract](conformance/ag5-phase-comparison-projections.md).
 - This is tooling coverage only: no new CSS/Layout/Paint behavior, full box-tree
   equivalence, GPU rasterization, general painting, scripting, or broad WPT/browser

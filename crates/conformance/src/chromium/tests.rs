@@ -17,6 +17,94 @@ fn viewport_metrics() -> Value {
 }
 
 #[test]
+fn viewport_accepts_observed_linux_dom_scrollbar_dimensions() {
+    // Run 39366788841/1, dom/template-namespaces: no scroll or zoom.
+    let mut metrics = viewport_metrics();
+    metrics["cssLayoutViewport"]["clientWidth"] = json!(625);
+    metrics["cssVisualViewport"]["clientWidth"] = json!(625);
+    metrics["cssContentSize"] = json!({"x":0,"y":0,"width":625,"height":647});
+    for fixture in &crate::fixtures::FIXTURES[2..] {
+        assert_eq!(validate_viewport(&metrics, fixture.request).unwrap(), 625.0);
+    }
+    // Any requested canvas keeps the original full client-size requirement.
+    for request in [
+        crate::projection::ObservationRequest::CANVAS,
+        crate::projection::ObservationRequest {
+            canvas: crate::projection::Request::Compare(()),
+            ..crate::fixtures::FIXTURES[3].request
+        },
+    ] {
+        assert!(validate_viewport(&metrics, request).is_err());
+    }
+}
+
+#[test]
+fn viewport_native_dimensions_are_exact_bounded_and_not_a_scrollbar_constant() {
+    let request = crate::fixtures::FIXTURES[5].request;
+    for width in [640, 637, 625, 320] {
+        let mut metrics = viewport_metrics();
+        for object in ["cssLayoutViewport", "cssVisualViewport"] {
+            metrics[object]["clientWidth"] = json!(width);
+            metrics[object]["clientHeight"] = json!(465);
+        }
+        assert_eq!(
+            validate_viewport(&metrics, request).unwrap(),
+            f64::from(width)
+        );
+    }
+    let mut metrics = viewport_metrics();
+    metrics["cssVisualViewport"]["clientWidth"] = json!(639);
+    assert!(
+        validate_viewport(&metrics, request).is_err(),
+        "inconsistent native viewports"
+    );
+}
+
+#[test]
+fn viewport_rejects_invalid_dimensions_scroll_offsets_scale_and_malformed_data() {
+    let request = crate::fixtures::FIXTURES[3].request;
+    for (object, field, values) in [
+        (
+            "cssLayoutViewport",
+            "clientWidth",
+            vec![0.0, -1.0, 641.0, 625.5],
+        ),
+        ("cssLayoutViewport", "clientHeight", vec![0.0, -1.0, 481.0]),
+        ("cssLayoutViewport", "pageX", vec![-1.0, 1.0]),
+        ("cssLayoutViewport", "pageY", vec![-1.0, 1.0]),
+        ("cssVisualViewport", "clientWidth", vec![0.0, -1.0, 641.0]),
+        ("cssVisualViewport", "clientHeight", vec![0.0, -1.0, 481.0]),
+        ("cssVisualViewport", "pageX", vec![-1.0, 1.0]),
+        ("cssVisualViewport", "pageY", vec![-1.0, 1.0]),
+        ("cssVisualViewport", "offsetX", vec![-0.25, 0.25]),
+        ("cssVisualViewport", "offsetY", vec![-0.25, 0.25]),
+        ("cssVisualViewport", "scale", vec![0.0, 0.5, 2.0]),
+        ("cssVisualViewport", "zoom", vec![0.0, 0.5, 2.0]),
+    ] {
+        for value in
+            values
+                .into_iter()
+                .map(|n| json!(n))
+                .chain([Value::Null, json!("0"), json!(false)])
+        {
+            let mut metrics = viewport_metrics();
+            metrics[object][field] = value;
+            assert!(
+                validate_viewport(&metrics, request).is_err(),
+                "{object}.{field}: {metrics}"
+            );
+        }
+        let mut metrics = viewport_metrics();
+        metrics[object].as_object_mut().unwrap().remove(field);
+        assert_eq!(
+            validate_viewport(&metrics, request).is_ok(),
+            field == "zoom",
+            "{object}.{field}"
+        );
+    }
+}
+
+#[test]
 fn viewport_failure_diagnostic_attributes_fixture_metrics_and_cleanup() {
     let mut metrics = viewport_metrics();
     metrics["cssLayoutViewport"]["clientWidth"] = json!(625);
@@ -31,7 +119,10 @@ fn viewport_failure_diagnostic_attributes_fixture_metrics_and_cleanup() {
     };
     let failure = attribute_capture_failure(
         Failure {
-            primary: Some(validate_viewport(&metrics).unwrap_err()),
+            primary: Some(
+                validate_viewport(&metrics, crate::projection::ObservationRequest::CANVAS)
+                    .unwrap_err(),
+            ),
             cleanup: vec![error::CleanupError::Timeout],
         },
         &input,
@@ -65,7 +156,9 @@ fn viewport_failure_diagnostic_distinguishes_missing_malformed_and_mismatch() {
         .remove("clientWidth");
     metrics["cssVisualViewport"]["clientHeight"] = json!("x".repeat(100_000));
     metrics["cssVisualViewport"]["pageY"] = json!(1);
-    let error = validate_viewport(&metrics).unwrap_err().to_string();
+    let error = validate_viewport(&metrics, crate::projection::ObservationRequest::CANVAS)
+        .unwrap_err()
+        .to_string();
     let evidence: Value = serde_json::from_str(error.split_once("; viewport=").unwrap().1).unwrap();
     let rejected = evidence["rejected"].as_array().unwrap();
     assert_eq!(rejected.len(), 3);
@@ -76,12 +169,22 @@ fn viewport_failure_diagnostic_distinguishes_missing_malformed_and_mismatch() {
     assert_eq!(rejected[2]["reason"], "numeric_mismatch");
     assert!(error.len() < 4096);
     metrics["cssLayoutViewport"] = json!([]);
-    assert!(validate_viewport(&metrics).unwrap_err().to_string().len() < 4096);
+    assert!(
+        validate_viewport(&metrics, crate::projection::ObservationRequest::CANVAS)
+            .unwrap_err()
+            .to_string()
+            .len()
+            < 4096
+    );
 }
 
 #[test]
-fn viewport_failure_diagnostic_preserves_capture_acceptance() {
-    validate_viewport(&viewport_metrics()).unwrap();
+fn viewport_canvas_keeps_full_size_and_zero_scroll() {
+    validate_viewport(
+        &viewport_metrics(),
+        crate::projection::ObservationRequest::CANVAS,
+    )
+    .unwrap();
     for (object, field, value) in [
         ("cssLayoutViewport", "clientWidth", 625),
         ("cssVisualViewport", "clientHeight", 465),
@@ -91,12 +194,15 @@ fn viewport_failure_diagnostic_preserves_capture_acceptance() {
     ] {
         let mut metrics = viewport_metrics();
         metrics[object][field] = json!(value);
-        assert!(validate_viewport(&metrics).is_err(), "{object}.{field}");
+        assert!(
+            validate_viewport(&metrics, crate::projection::ObservationRequest::CANVAS).is_err(),
+            "{object}.{field}"
+        );
     }
     // Content extent is evidence, not an additional capture predicate.
     let mut metrics = viewport_metrics();
     metrics["cssContentSize"]["height"] = json!(900);
-    validate_viewport(&metrics).unwrap();
+    validate_viewport(&metrics, crate::projection::ObservationRequest::CANVAS).unwrap();
 }
 
 fn png_bytes(width: u32, height: u32, color: png::ColorType, data: &[u8]) -> Vec<u8> {
@@ -1854,6 +1960,54 @@ pub(crate) fn assert_comparison_cleanup_failure(failure: &Failure) {
     );
 }
 
+// The fixed collector's thrown Error message is the discriminator already
+// carried by Runtime.evaluate. Earlier capture failures cannot satisfy it.
+fn is_inspection_rejection(failure: &Failure, reason: &str) -> bool {
+    let Some(Error::Capture(detail)) = &failure.primary else {
+        return false;
+    };
+    let Some(exception) = detail.strip_prefix("native inspection failed: ") else {
+        return false;
+    };
+    let Ok(exception) = serde_json::from_str::<Value>(exception) else {
+        return false;
+    };
+    failure.cleanup.is_empty()
+        && exception["exception"]["description"]
+            .as_str()
+            .and_then(|description| description.lines().next())
+            == Some(format!("Error: {reason}").as_str())
+}
+
+#[test]
+fn inspection_negative_control_rejects_unrelated_capture_failures() {
+    let expected = "inspection string limit";
+    for message in [
+        "unexpected viewport dimensions or scroll".to_string(),
+        "native inspection failed: null".to_string(),
+        format!(
+            "native inspection failed: {}",
+            json!({"exception":{"description":"Error: inspection tree limit\n at node"}})
+        ),
+    ] {
+        let failure = Failure {
+            primary: Some(Error::Capture(message)),
+            cleanup: vec![],
+        };
+        assert!(!is_inspection_rejection(&failure, expected));
+    }
+    let mut failure = Failure {
+        primary: Some(Error::Capture(format!(
+            "native inspection failed: {}",
+            json!({"exception":{"description":"Error: inspection string limit\n at text"}})
+        ))),
+        cleanup: vec![],
+    };
+    assert!(is_inspection_rejection(&failure, expected));
+    failure.cleanup.push(error::CleanupError::Timeout);
+    assert!(!is_inspection_rejection(&failure, expected));
+}
+
 #[test]
 #[ignore = "requires pinned Chromium; standalone; page scripts must remain disabled"]
 fn real_chromium_ag5_read_only_inspection() {
@@ -1881,25 +2035,45 @@ fn real_chromium_ag5_read_only_inspection() {
     let observed = capture.inspection.as_ref().unwrap();
     assert!(observed.dom.is_some());
     assert_eq!(
+        (observed.inner_width, observed.inner_height),
+        (640.0, 480.0)
+    );
+    assert_eq!(observed.layout_width, 640.0);
+    assert_eq!(
         observed.styles[0].values.as_ref().unwrap()[0],
         "rgb(18, 52, 86)"
     );
     assert_eq!(observed.layout[0].boxes.as_ref().unwrap()[0].right, 32.0);
     crate::projection::chromium(&capture, request).unwrap();
     // These are capture errors, never truncated successful observations.
-    for bad in [
-        format!("<!doctype html><div id=target>{}</div>", "x".repeat(8193)),
-        format!("<!doctype html>{}", "<div></div>".repeat(129)),
-        "<!doctype html><div id=target></div><div id=target></div>".into(),
+    // Inert template contents still exercise the complete DOM collector but
+    // cannot introduce scrollbars before the intended bounds check.
+    for (reason, bad) in [
+        (
+            "inspection string limit",
+            format!("<!doctype html><template>{}</template>", "x".repeat(8193)),
+        ),
+        (
+            "inspection tree limit",
+            format!(
+                "<!doctype html><template>{}</template>",
+                "<div></div>".repeat(129)
+            ),
+        ),
+        (
+            "duplicate target id",
+            "<!doctype html><div id=target></div><div id=target></div>".into(),
+        ),
     ] {
         let failure =
             capture_requested_html(bad.as_bytes(), request, &config, &Cancellation::default())
                 .unwrap_err();
         assert!(
-            matches!(failure.primary, Some(Error::Capture(_))),
-            "{failure:?}"
+            is_inspection_rejection(&failure, reason),
+            "{reason}: {failure:?}"
         );
         assert!(failure.cleanup.is_empty(), "{failure:?}");
+        eprintln!("AG5 native inspection rejected {reason}; cleanup verified");
     }
 }
 

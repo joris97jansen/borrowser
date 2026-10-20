@@ -324,6 +324,12 @@ list is invalid configuration. Complete missing-node and zero-box records remain
 data, and different tree/rectangle lengths remain structural differences.
 When native DOM is included, style/layout presence must agree with active-document
 HTML-id lookup, excluding inert template contents, in local and AG4 ingestion.
+Native `inner_width`/`inner_height` record the configured 640×480 viewport,
+including scrollbars. `layout_width` records the root client width, excluding
+a classic vertical scrollbar; it is not assumed equal to 640. The AG5 contract
+defines the strict family-specific viewport checks and bounded failure metrics.
+Canvas sampling retains the full client-size restriction. Producers and local/AG4
+consumers must be rebuilt together; missing required viewport facts are errors.
 
 `borrowser_expectation` separately reports the independently authored expected
 RGB8, expectation metadata, optional known-failure reason and existing AG1

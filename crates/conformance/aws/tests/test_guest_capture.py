@@ -133,6 +133,11 @@ else: print('{"complete":true}')
                 else:
                     self.assertIsNone(observation["canvas_color_rgb8"])
                     inspection = observation["inspection"]
+                    self.assertEqual(inspection["inner_width"], 640)
+                    self.assertEqual(inspection["inner_height"], 480)
+                    self.assertGreater(inspection["layout_width"], 0)
+                    self.assertLessEqual(inspection["layout_width"], inspection["inner_width"])
+                    self.assertEqual(inspection["layout_width"], int(inspection["layout_width"]))
                     self.assertEqual(isinstance(inspection["dom"], dict), index < 4)
                     self.assertEqual([s["target"] for s in inspection["styles"]],
                                      ["parent", "child", "hidden"] if index == 4 else [])

@@ -189,7 +189,9 @@ if phase == os.environ.get("FAIL_PHASE"):
     sys.exit(int(os.environ["FAIL_STATUS"]))
 if name == "ip":
     assert args in (["-j", "-4", "route", "show", "default"], ["-j", "-4", "address", "show", "scope", "global"])
-    print(os.environ["TEST_ROUTES" if args[2] == "route" else "TEST_LINKS"])
+    # Emit exactly the configured bytes: an extra newline after 8193 bytes can
+    # hit a closed head pipe and turn validator rejection into producer failure.
+    sys.stdout.write(os.environ["TEST_ROUTES" if args[2] == "route" else "TEST_LINKS"])
 if name == "python3":
     assert args[:2] == ["-I", "-"]
     if len(args) == 4:
@@ -374,8 +376,28 @@ sys.exit(0)
                 self.assertEqual(result.returncode, 1, result.stderr.decode())
                 self.assertEqual(console.strip(), f"BORROWSER_AG4_BOOTSTRAP_FAILED {RUN} ssh_probe_private 1")
                 self.assertIn(b"primary private IPv4 unavailable or ambiguous", result.stderr)
+                expected_routes = routes if isinstance(routes, str) else json.dumps(routes)
+                expected_links = links if isinstance(links, str) else json.dumps(links)
+                self.assertEqual([c for c in calls if c[:3] == ["python3", "-I", "-"] and len(c) == 5],
+                                 [["python3", "-I", "-", expected_routes, expected_links]])
+                self.assertNotIn("BORROWSER_AG4_READY", console)
                 self.assertNotIn(["python3", "-I", "-", "10.77.0.30"], calls)
+                self.assertEqual([c[-1] for c in calls if c[0] == "timeout"], list(PHASES)[:-1])
                 self.assertFalse(any(c[0] == "cut" for c in calls))
+
+    def test_private_address_producer_failure_preserves_status_before_validation(self):
+        result, console, calls = self.execute("ssh_probe_private", 23)
+        self.assertEqual(result.returncode, 23, result.stderr.decode())
+        self.assertEqual(console.strip(), f"BORROWSER_AG4_BOOTSTRAP_FAILED {RUN} ssh_probe_private 23")
+        self.assertIn(b"uncontrolled package/command diagnostic", result.stderr)
+        self.assertNotIn(b"primary private IPv4 unavailable or ambiguous", result.stderr)
+        self.assertEqual([c for c in calls if c[0] == "ip"],
+                         [["ip", "-j", "-4", "route", "show", "default"]])
+        # The failed producer prevents both address validation and the private probe.
+        self.assertEqual([c for c in calls if c[0] == "python3"], [["python3", "-I", "-", "127.0.0.1"]])
+        self.assertNotIn("BORROWSER_AG4_READY", console)
+        self.assertEqual([c[-1] for c in calls if c[0] == "timeout"], list(PHASES)[:-1])
+        self.assertFalse(any(c[0] == "cut" for c in calls))
 
     def test_real_timeout_status_reaches_the_console_marker(self):
         result, console, _ = self.execute(real_timeout=True)

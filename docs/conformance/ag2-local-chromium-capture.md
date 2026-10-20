@@ -179,7 +179,11 @@ limit, and explicit EOF, truncated-frame, malformed-response and remote errors.
 6. Verify the viewport. For a canvas request, capture the unchanged surface PNG
    without capture beyond the viewport and decode/sample it. For AG5 phase
    requests, run the fixed read-only isolated-world collector. Verify the frame
-   tree again after the requested observations.
+   tree again after the requested observations. Canvas retains full 640×480
+   client dimensions. Native phase inspection separately verifies 640×480 inner
+   dimensions and records scrollbar-excluding usable width; see the
+   [AG5 viewport contract](ag5-phase-comparison-projections.md#chromium-and-capture-compatibility).
+   Scroll/visual offsets remain zero and scale/optional zoom remain one.
 7. Finish every observed favicon candidate and document-fulfillment acknowledgment
    within the same absolute capture deadline; check the frame tree and resource
    state again. No expected color is available to this execution path.

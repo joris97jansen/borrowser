@@ -197,6 +197,34 @@ All Chromium captures and verified cleanup complete before any Borrowser parser
 worker starts. Run real-browser qualifications in separate processes; a test that
 has executed Borrowser must not launch Chromium afterward.
 
+The configured CSS viewport is 640×480. Native inspection records `inner_width`
+and `inner_height` from `window.innerWidth/innerHeight`, which include classic
+scrollbars, and requires those exact configured dimensions. `layout_width`
+comes from the standards-mode root's `clientWidth`, excludes a classic vertical
+scrollbar, and must agree exactly with `Page.getLayoutMetrics.cssLayoutViewport`
+at live capture. It is positive, integral and no greater than `inner_width`.
+Local and AG4 ingestion require all three fields; none has a default.
+These engine-specific facts stay outside common geometry equality.
+
+The pinned [Page protocol definitions](https://github.com/chromium/chromium/blob/3ff7ac5a9224be9156d7f8703a06e22890aafd34/third_party/blink/public/devtools_protocol/domains/Page.pdl)
+define both CSS client viewports as excluding scrollbars. For DOM/style/layout
+inspection their dimensions must be positive integral values within the
+configured dimensions, with layout and visual client dimensions equal. No
+scrollbar width is assumed. If canvas is also requested, both client viewports
+must instead retain the full 640×480 size, preserving the canvas restriction.
+Every request retains zero document scroll and zero visual offsets, unit visual
+scale, and unit zoom when the optional protocol zoom field is present. Missing,
+malformed, nonfinite, inconsistent or out-of-range required values are errors.
+Scrollable content extent is diagnostic evidence, not a viewport-size equality
+requirement. This distinction adds no numeric tolerance or layout computation.
+
+Capture errors carry bounded fixture id/repository path/family attribution.
+Viewport failures retain expected dimensions, both CSS viewport objects, content
+extent when available, and exact rejected fields. Missing and malformed values
+are explicit; arbitrary remote strings/objects and fixture contents are not
+dumped. Primary failures and cleanup errors remain separate stderr diagnostics;
+no partial successful report is emitted.
+
 Producer, local consumer and AG4 ingestion use `borrowser.chromium-phases.v1`;
 comparison uses `borrowser.cross-engine-phases.v1`. Old schema/profile output is
 rejected explicitly. Producer/controller/guest harness binaries must be rebuilt
@@ -236,7 +264,10 @@ Use the existing four-level workflow and `borrowser-test-selector`:
    `real_chromium_ag5_read_only_inspection`, `real_chromium_ag5_profile`, existing
    canvas/script/lifecycle/composition tests, both real CLI tests and the exact
    guest-wrapper qualification. The inspection test verifies page-script
-   suppression and rejects oversized/duplicate-target inputs with clean shutdown.
+   suppression and matches the exact collector error for oversized strings,
+   oversized trees and duplicate targets, with clean shutdown. Inert template
+   test inputs isolate the bounds checks from unrelated viewport overflow.
+   An earlier viewport/navigation/capture error cannot satisfy these negatives.
 4. `make ci` and the existing native Linux Chromium qualification lane. The lane
    now includes the new profile and independent-process tests. Historical AG3/AG4
    evidence does not qualify this profile. No live AWS operation is needed for
@@ -249,11 +280,31 @@ capture/comparison CLI runs with exact field assertions, and all three exact
 guest-wrapper tests passed. Targeted authority/projection/reporting/ingestion
 regressions, the conformance suite and full local `make ci` passed after the
 final code corrections. Only documentation evidence changed afterward. The
-prior blank-window `make run` smoke is historical; no new manual visual fixture
-inspection is claimed. No genuine engine difference was found within the
-selected surface.
+prior blank-window `make run` smoke is historical. A later ordinary-Browser
+inspection on 2026-10-19 loaded the unchanged fixed-block fixture after Refresh
+and observed its outlined container. The initial URL+Enter submission remained
+blank; that pre-existing navigation limitation is outside AG5 and is unchanged.
+The accepted smoke proves rendering after Refresh, not exact geometry or a
+successful complete URL-entry workflow.
 
-Native Linux qualification of this corrected profile remains required. This
-statement does not claim a final committed source identity or authorize a
-publication. AG5 stays one issue; unavailable qualification evidence is a
+Native Linux [run 39311219271, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/39311219271)
+on source `bc663f83631716787d37c2cf895479da2c9a4922` failed capture before
+comparison. Its separate Rust job passed. The single diagnostics-only follow-up
+`e63c8aebd06efeca28181806369f5a075cd64ea4`, tested by
+[run 39366788841, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/39366788841),
+identified `dom/template-namespaces`: both CSS client viewports were 625×480,
+content extent was 625×647, all offsets were zero and scale/zoom were one.
+Only the client widths differed from configured 640. The old guard incorrectly
+applied the canvas full-client-size condition to this DOM-only observation.
+Both failed attempts remain evidence; neither qualifies the functional viewport
+and negative-test corrections. This was a capture defect, not an observed
+Borrowser/Chromium semantic difference.
+
+Native Linux qualification of the final corrected profile remains required:
+the complete six-fixture/34-field acceptance, both independent CLI checks, all
+three exact guest-wrapper tests and the final private-profile cleanup gate.
+The two failed attempts did not reach those later CLI/wrapper/cleanup checks.
+The viewport correction remains subject to source-bound final validation and
+review; the earlier macOS results above do not qualify later code changes.
+AG5 stays one issue; unavailable qualification evidence is a
 closeability requirement, not a separately deliverable prerequisite issue.
