@@ -871,7 +871,7 @@ pub(super) fn proxy_command(controller: &Path, descriptor: &Path) -> Result<Stri
 }
 pub(super) fn proxy(args: &[String]) -> Result<(), String> {
     if args.len() != 1
-        || super::artifact::identity().source_tree.is_none()
+        || super::artifact::identity()?.source_tree.is_none()
         || [0, 1, 2].iter().any(|fd| unsafe { libc::isatty(*fd) } != 0)
     {
         return Err("EICE helper requires stamped controller and owned nonterminal streams".into());

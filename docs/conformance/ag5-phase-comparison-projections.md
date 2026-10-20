@@ -1,8 +1,9 @@
 # AG5 static phase comparison contract
 
 AG5 extends the AG3 vertical slice within the existing nine-issue milestone.
-It adds observations and comparisons, not rendering features. The registry has
-six fixtures. The Chromium pin remains Chrome for Testing 155.0.8059.39, revision
+It adds observations and comparisons, not rendering features. Its original six
+fixtures now belong to the AG6 discovered catalogue. The Chromium pin remains
+Chrome for Testing 155.0.8059.39, revision
 `@3ff7ac5a9224be9156d7f8703a06e22890aafd34`, protocol 1.3, with unchanged archive
 checksums. The capture profile is `ag5-static-phases-v1`.
 
@@ -151,7 +152,9 @@ is alive. Expected values are absent from `CaptureInput` and all collectors.
 The four new expected JSON files are independently authored from the fixtures;
 there is no expectation generation or blessing command.
 
-Report order is registry order, then DOM/style/layout/canvas, request target and
+AG6 replaces manual registry order with lexicographic fixture-ID order; see the
+[discovery contract](ag6-fixture-discovery-and-metadata.md). Within each case,
+report order remains DOM/style/layout/canvas, request target and
 property order, and left/top/right/bottom edge order. DOM differences follow
 canonical tree paths; canvas channels remain red/green/blue. Structural absence
 has a path and both values, distinct from a missing required record. A deliberate
@@ -165,7 +168,7 @@ unsupported fields remain visible even on a differing case. Independent
 Borrowser expectation status remains separate; agreement can coexist with FAIL.
 XFAIL never hides a cross-engine difference. Local partial expectations use
 INCOMPLETE rather than PASS. Existing canvas selection text, classification and
-error precedence are preserved; the default registry now runs six fixtures.
+error precedence are preserved; AG6 discovers the default fixture catalogue.
 Local status and diagnostics consume the same validated typed expectation;
 JSON `20` and `20.0` both deserialize to the same CSS-pixel value. This is typed
 decoding, not numeric tolerance. Text reports show unsupported field/family

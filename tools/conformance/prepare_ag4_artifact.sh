@@ -56,7 +56,8 @@ for name in sorted(tracked | untracked):
     if not path.exists(): continue  # Working-tree deletions are part of this tree.
     if path.is_symlink() or not path.is_file(): raise RuntimeError("unsupported source entry: " + name)
     if name in untracked:
-        if pathlib.PurePosixPath(name).suffix not in source_suffixes and name not in new_json:
+        fixture_json = name.startswith("crates/conformance/fixtures/") and name.endswith((".fixture.json", ".expected.json"))
+        if pathlib.PurePosixPath(name).suffix not in source_suffixes and name not in new_json and not fixture_json:
             raise RuntimeError("unreviewed new source input: " + name)
     files.append(name)
 

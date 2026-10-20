@@ -1,0 +1,20 @@
+{
+  "id": "dom/template-namespaces",
+  "input": "dom-template-namespaces.html",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "observations": {
+    "dom": {
+      "kind": "compare"
+    }
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "projection",
+    "path": "dom-template-namespaces.expected.json"
+  }
+}

@@ -16,7 +16,7 @@ pub(crate) enum Request<T> {
     Compare(T),
     #[cfg_attr(
         not(test),
-        expect(
+        allow(
             dead_code,
             reason = "Explicit unsupported requests are exercised by regression fixtures"
         )
@@ -39,12 +39,20 @@ pub(crate) struct ObservationRequest {
     pub(crate) canvas: Request<()>,
 }
 impl ObservationRequest {
+    #[allow(
+        dead_code,
+        reason = "Metadata-generated requests may spell out every family"
+    )]
     pub(crate) const NONE: Self = Self {
         dom: Request::NotRequested,
         styles: &[],
         layout: Request::NotRequested,
         canvas: Request::NotRequested,
     };
+    #[allow(
+        dead_code,
+        reason = "Metadata-generated requests may spell out every family"
+    )]
     pub(crate) const CANVAS: Self = Self {
         canvas: Request::Compare(()),
         ..Self::NONE

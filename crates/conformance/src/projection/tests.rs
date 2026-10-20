@@ -1,11 +1,11 @@
 use super::*;
-use crate::{execute::execute_fixture, fixtures::FIXTURES, model::FixtureKind};
+use crate::{execute::execute_fixture, model::FixtureKind};
 fn observe(html: &str, request: ObservationRequest) -> BorrowserCapture {
     execute_fixture(html.as_bytes(), request).unwrap()
 }
 #[test]
 fn projection_production_fixtures_match_independent_expectations() {
-    for f in FIXTURES {
+    for f in crate::fixtures::baseline() {
         let FixtureKind::Runnable { html, expected, .. } = f.kind else {
             unreachable!()
         };
@@ -27,7 +27,7 @@ fn projection_production_fixtures_match_independent_expectations() {
 }
 #[test]
 fn projection_attributes_are_canonical_but_structure_text_and_templates_are_exact() {
-    let request = FIXTURES[2].request;
+    let request = crate::fixtures::fixture("dom/structure").request;
     let a = observe("<!doctype html><div b='2' a='1'> x </div>", request);
     let b = observe("<!doctype html><div a='1' b='2'> x </div>", request);
     assert_eq!(a.observations, b.observations);
@@ -52,13 +52,19 @@ fn projection_attributes_are_canonical_but_structure_text_and_templates_are_exac
 #[test]
 fn projection_canvas_is_requested_independently() {
     let html = "<!doctype html><style>div{height:100px;background-color:red}</style><div></div>";
-    assert!(execute_fixture(html.as_bytes(), FIXTURES[2].request).is_ok());
+    assert!(
+        execute_fixture(
+            html.as_bytes(),
+            crate::fixtures::fixture("dom/structure").request
+        )
+        .is_ok()
+    );
     assert!(
         execute_fixture(
             html.as_bytes(),
             ObservationRequest {
                 canvas: Request::Compare(()),
-                ..FIXTURES[2].request
+                ..crate::fixtures::fixture("dom/structure").request
             }
         )
         .is_err()
@@ -171,7 +177,7 @@ fn projection_required_family_states_and_expectations_are_validated() {
         report,
     };
     for index in [0, 2] {
-        let fixture = &FIXTURES[index];
+        let fixture = &crate::fixtures::baseline()[index];
         let FixtureKind::Runnable { html, .. } = fixture.kind else {
             unreachable!()
         };

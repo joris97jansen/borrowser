@@ -19,7 +19,7 @@ fn viewport_accepts_observed_linux_dom_scrollbar_dimensions() {
     metrics["cssLayoutViewport"]["clientWidth"] = json!(625);
     metrics["cssVisualViewport"]["clientWidth"] = json!(625);
     metrics["cssContentSize"] = json!({"x":0,"y":0,"width":625,"height":647});
-    for fixture in &crate::fixtures::FIXTURES[2..] {
+    for fixture in &crate::fixtures::baseline()[2..] {
         assert_eq!(validate_viewport(&metrics, fixture.request).unwrap(), 625.0);
     }
     // Any requested canvas keeps the original full client-size requirement.
@@ -27,7 +27,7 @@ fn viewport_accepts_observed_linux_dom_scrollbar_dimensions() {
         crate::projection::ObservationRequest::CANVAS,
         crate::projection::ObservationRequest {
             canvas: crate::projection::Request::Compare(()),
-            ..crate::fixtures::FIXTURES[3].request
+            ..crate::fixtures::fixture("dom/template-namespaces").request
         },
     ] {
         assert!(validate_viewport(&metrics, request).is_err());
@@ -36,7 +36,7 @@ fn viewport_accepts_observed_linux_dom_scrollbar_dimensions() {
 
 #[test]
 fn viewport_native_dimensions_are_exact_bounded_and_not_a_scrollbar_constant() {
-    let request = crate::fixtures::FIXTURES[5].request;
+    let request = crate::fixtures::fixture("layout/block-boxes").request;
     for width in [640, 637, 625, 320] {
         let mut metrics = viewport_metrics();
         for object in ["cssLayoutViewport", "cssVisualViewport"] {
@@ -58,7 +58,7 @@ fn viewport_native_dimensions_are_exact_bounded_and_not_a_scrollbar_constant() {
 
 #[test]
 fn viewport_rejects_invalid_dimensions_scroll_offsets_scale_and_malformed_data() {
-    let request = crate::fixtures::FIXTURES[3].request;
+    let request = crate::fixtures::fixture("dom/template-namespaces").request;
     for (object, field, values) in [
         (
             "cssLayoutViewport",
@@ -106,7 +106,7 @@ fn viewport_failure_diagnostic_attributes_fixture_metrics_and_cleanup() {
     metrics["cssLayoutViewport"]["clientWidth"] = json!(625);
     metrics["cssVisualViewport"]["clientWidth"] = json!(625);
     metrics["cssContentSize"]["height"] = json!(900);
-    let fixture = &crate::fixtures::FIXTURES[3];
+    let fixture = crate::fixtures::fixture("dom/template-namespaces");
     let input = CaptureInput {
         id: fixture.id,
         source: fixture.source,
@@ -1651,7 +1651,7 @@ fn real_chromium_capture_and_scripts() {
     let _standalone = process::Standalone::enter().unwrap();
     let config = ChromiumConfig::new(PathBuf::from(path));
     let cancel = Cancellation::default();
-    for fixture in &crate::fixtures::FIXTURES[..2] {
+    for fixture in &crate::fixtures::baseline()[..2] {
         let FixtureKind::Runnable {
             html,
             expected: crate::model::Expected::Canvas(expected),
@@ -1709,7 +1709,7 @@ fn real_chromium_capture_and_scripts() {
             html,
             expected: crate::model::Expected::Canvas(expected),
             ..
-        } = crate::fixtures::FIXTURES[0].kind
+        } = crate::fixtures::fixture("canvas/root").kind
         else {
             unreachable!()
         };
@@ -2145,18 +2145,18 @@ fn real_chromium_ag5_profile() {
         &mut diagnostics,
     )
     .unwrap();
-    assert_eq!(
-        code,
-        0,
+    assert!(
+        matches!(code, 0 | 3),
         "{}\n{}",
         String::from_utf8_lossy(&out),
         String::from_utf8_lossy(&diagnostics)
     );
     let report: Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(report["cases"].as_array().unwrap().len(), 6);
-    assert_eq!(report["summary"]["equal_fields"], 34);
+    let cases = report["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), crate::fixtures::catalogue().unwrap().len());
+    assert!(cases.windows(2).all(|pair| pair[0]["test_id"].as_str().unwrap() < pair[1]["test_id"].as_str().unwrap()));
     assert_eq!(report["summary"]["different_fields"], 0);
-    assert_eq!(report["summary"]["unsupported_fields"], 0);
+
     let ids = [
         "canvas/root",
         "canvas/cascade",
@@ -2165,9 +2165,11 @@ fn real_chromium_ag5_profile() {
         "style/cascade-inheritance",
         "layout/block-boxes",
     ];
-    for (case, id) in report["cases"].as_array().unwrap().iter().zip(ids) {
-        assert_eq!(case["test_id"], id);
+    let mut baseline_fields = 0;
+    for id in ids {
+        let case = cases.iter().find(|case| case["test_id"] == id).unwrap();
         let fields = case["fields"].as_array().unwrap();
+        baseline_fields += fields.len();
         assert_eq!(
             fields
                 .iter()
@@ -2185,4 +2187,5 @@ fn real_chromium_ag5_profile() {
             case["fields"].as_array().unwrap().len()
         );
     }
+    assert_eq!(baseline_fields, 34);
 }

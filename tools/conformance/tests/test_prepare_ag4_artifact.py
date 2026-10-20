@@ -13,6 +13,30 @@ SCRIPT = Path(__file__).resolve().parents[1] / "prepare_ag4_artifact.sh"
 
 
 class SourceSnapshot(unittest.TestCase):
+    def test_ag6_fixture_json_is_snapshotted_and_changes_source_identity(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); source, _ = self.setup_repo(root)
+            fixtures = source / "crates/conformance/fixtures"; fixtures.mkdir(parents=True)
+            metadata = fixtures / "case.fixture.json"
+            expected = fixtures / "case.expected.json"
+            metadata.write_text('{"id":"case/one"}\n')
+            expected.write_text('{"value":1}\n')
+            trees = []
+            for index in range(3):
+                output = root / ("snapshot-" + str(index))
+                result = subprocess.run(["sh", str(SCRIPT), "--source", str(source), "--out", str(output), "--snapshot-only"], capture_output=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr.decode())
+                for path in (metadata, expected):
+                    self.assertEqual((output / "source" / path.relative_to(source)).read_bytes(), path.read_bytes())
+                trees.append((output / "source-tree.txt").read_text())
+                if index == 0: metadata.write_text('{"id":"case/two"}\n')
+                if index == 1: expected.write_text('{"value":2}\n')
+            self.assertEqual(len(set(trees)), 3)
+            (fixtures / "unrelated.json").write_text("{}")
+            result = subprocess.run(["sh", str(SCRIPT), "--source", str(source), "--out", str(root / "rejected"), "--snapshot-only"], capture_output=True, timeout=30)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(b"unreviewed new source input", result.stderr)
+
     def setup_repo(self, root):
         source = root / "repo"; source.mkdir()
         def git(*args):

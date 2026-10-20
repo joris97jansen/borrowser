@@ -45,6 +45,7 @@ pub(crate) fn decode(
     reader: impl Read,
     inputs: &[CaptureInput<'_>],
 ) -> Result<Vec<CapturedFixture>, String> {
+    let fixtures = crate::fixtures::catalogue().map_err(|e| format!("{}: {}", e.code, e.detail))?;
     let mut bytes = Vec::new();
     reader
         .take((MAX_CAPTURE_BYTES + 1) as u64)
@@ -61,7 +62,11 @@ pub(crate) fn decode(
         || report.device_scale_factor != 1
         || report.sample_pixel != SAMPLE
         || inputs.is_empty()
-        || inputs.len() > crate::fixtures::FIXTURES.len()
+        || inputs.len()
+            > fixtures
+                .iter()
+                .filter(|f| matches!(f.kind, crate::model::FixtureKind::Runnable { .. }))
+                .count()
         || report.observations.len() != inputs.len()
     {
         return Err("capture environment or observation count mismatch".into());
@@ -76,9 +81,11 @@ pub(crate) fn decode(
         .enumerate()
         .map(|(index, (wire, input))| {
             if inputs[..index].iter().any(|other| other.id == input.id)
-                || !crate::fixtures::FIXTURES
-                    .iter()
-                    .any(|f| f.id == input.id && f.source == input.source)
+                || !fixtures.iter().any(|f| {
+                    f.id == input.id
+                        && f.source == input.source
+                        && matches!(f.kind, crate::model::FixtureKind::Runnable { .. })
+                })
                 || wire.test_id != input.id.0
                 || wire.source != input.source
             {
@@ -136,8 +143,8 @@ mod tests {
     fn check(v: &Value) -> Result<Vec<CapturedFixture>, String> {
         let input = CaptureInput {
             request: crate::projection::ObservationRequest::CANVAS,
-            id: crate::fixtures::FIXTURES[0].id,
-            source: crate::fixtures::FIXTURES[0].source,
+            id: crate::fixtures::fixture("canvas/root").id,
+            source: crate::fixtures::fixture("canvas/root").source,
             html: b"",
         };
         decode(serde_json::to_vec(v).unwrap().as_slice(), &[input])
@@ -145,7 +152,7 @@ mod tests {
     #[test]
     fn validated_capture_preserves_registry_identity_and_sample() {
         let c = check(&report()).unwrap();
-        assert_eq!(c[0].id, crate::fixtures::FIXTURES[0].id);
+        assert_eq!(c[0].id, crate::fixtures::fixture("canvas/root").id);
         assert_eq!(c[0].capture.color, Some(CanvasColor([18, 52, 86])));
     }
     #[test]
@@ -177,7 +184,7 @@ mod tests {
         assert!(check(&v).is_err());
         let input = CaptureInput {
             request: crate::projection::ObservationRequest::CANVAS,
-            id: crate::fixtures::FIXTURES[0].id,
+            id: crate::fixtures::fixture("canvas/root").id,
             source: "fixtures/root-canvas-color.html",
             html: b"",
         };
@@ -195,7 +202,7 @@ mod tests {
     }
     #[test]
     fn complete_registry_requires_exact_order_and_unique_observations() {
-        let inputs: Vec<_> = crate::fixtures::FIXTURES[..2]
+        let inputs: Vec<_> = crate::fixtures::baseline()[..2]
             .iter()
             .map(|f| CaptureInput {
                 request: f.request,
@@ -224,10 +231,10 @@ mod phase_tests {
     use super::*;
     use serde_json::{Value, json};
     #[test]
-    fn all_six_registry_requests_survive_encoding_and_strict_ag4_ingestion() {
+    fn original_baseline_requests_survive_encoding_and_strict_ag4_ingestion() {
         let pin: Value =
             serde_json::from_str(include_str!("../../chromium-reference.json")).unwrap();
-        let inputs: Vec<_> = crate::fixtures::FIXTURES
+        let inputs: Vec<_> = crate::fixtures::baseline()
             .iter()
             .map(|f| CaptureInput {
                 id: f.id,
@@ -327,8 +334,8 @@ mod mixed_presence_tests {
             ..ObservationRequest::NONE
         };
         let input = CaptureInput {
-            id: crate::fixtures::FIXTURES[2].id,
-            source: crate::fixtures::FIXTURES[2].source,
+            id: crate::fixtures::fixture("dom/structure").id,
+            source: crate::fixtures::fixture("dom/structure").source,
             html: b"",
             request,
         };

@@ -8,6 +8,10 @@ publish = false
 # Live acceptance is additionally ignored and requires explicit operator inputs.
 aws-acceptance = []
 
+[build-dependencies]
+serde = { version = "1.0.225", features = ["derive"] }
+serde_json = "1.0.145"
+
 [dependencies]
 browser = { path = "../browser", features = ["conformance-observation"] }
 html = { path = "../html", features = ["internal-api"] }

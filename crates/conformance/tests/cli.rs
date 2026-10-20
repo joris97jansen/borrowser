@@ -1,3 +1,5 @@
+mod support;
+
 use std::process::Command;
 
 #[test]
@@ -8,16 +10,7 @@ fn independent_processes_produce_identical_output_and_exit() {
             .unwrap()
     };
     let first = run();
-    assert!(
-        first.status.success(),
-        "{}",
-        String::from_utf8_lossy(&first.stderr)
-    );
-    assert!(first.stderr.is_empty());
-    assert!(
-        String::from_utf8_lossy(&first.stdout)
-            .contains("SUMMARY PASS=6 FAIL=0 XFAIL=0 XPASS=0 UNSUPPORTED=0 SKIP=0 ERROR=0\n")
-    );
+    support::assert_local_summary_exit(&first);
     for _ in 0..3 {
         let next = run();
         assert_eq!(next.status.code(), first.status.code());

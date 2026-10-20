@@ -122,11 +122,13 @@ else: print('{"complete":true}')
             self.assertLessEqual(len(raw), 65536)
             report = json.loads(raw)
             self.assertEqual(report["schema"], "borrowser.chromium-phases.v1")
-            self.assertEqual(len(report["observations"]), 6)
+            self.assertTrue(report["observations"])
+            observed_ids = [o["test_id"] for o in report["observations"]]
+            self.assertEqual(observed_ids, sorted(set(observed_ids)))
             ids = ["canvas/root", "canvas/cascade", "dom/structure", "dom/template-namespaces",
                    "style/cascade-inheritance", "layout/block-boxes"]
-            self.assertEqual([o["test_id"] for o in report["observations"]], ids)
-            for index, observation in enumerate(report["observations"]):
+            for index, fixture_id in enumerate(ids):
+                observation = next(o for o in report["observations"] if o["test_id"] == fixture_id)
                 if index < 2:
                     self.assertIsNone(observation["inspection"])
                     self.assertEqual(observation["canvas_color_rgb8"], [[18, 52, 86], [52, 86, 120]][index])

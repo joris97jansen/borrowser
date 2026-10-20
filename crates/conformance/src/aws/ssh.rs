@@ -825,7 +825,7 @@ mod tests {
         let work = tempfile::tempdir().unwrap();
         let config = eice::tests::config();
         let host = eice::tests::host(&work);
-        let mut identity = artifact::identity();
+        let mut identity = artifact::identity().unwrap();
         identity.platform = "linux-x86_64".into();
         let bytes = b"private artifact input sentinel".to_vec();
         let prepared = Prepared {
@@ -1074,7 +1074,7 @@ mod tests {
             let work = tempfile::tempdir().unwrap();
             let config = eice::tests::config();
             let host = eice::tests::host(&work);
-            let mut identity = artifact::identity();
+            let mut identity = artifact::identity().unwrap();
             identity.platform = "linux-x86_64".into();
             let prepared = Prepared {
                 bytes: vec![],
@@ -1145,7 +1145,7 @@ mod tests {
         let work = tempfile::tempdir().unwrap();
         let config = eice::tests::config();
         let host = eice::tests::host(&work);
-        let mut identity = artifact::identity();
+        let mut identity = artifact::identity().unwrap();
         identity.platform = "linux-x86_64".into();
         let prepared = Prepared {
             bytes: vec![1, 2, 3],

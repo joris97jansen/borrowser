@@ -16,13 +16,14 @@ pub(super) struct Identity {
     fixtures: Vec<FixtureIdentity>,
     chromium_pin_sha256: String,
 }
-pub(super) fn identity() -> Identity {
-    Identity {
+pub(super) fn identity() -> Result<Identity, String> {
+    let fixtures = crate::fixtures::catalogue().map_err(|e| format!("{}: {}", e.code, e.detail))?;
+    Ok(Identity {
         source_tree: option_env!("BORROWSER_AG4_SOURCE_TREE")
             .filter(|tree| !tree.is_empty())
             .map(Into::into),
         platform: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
-        fixtures: crate::fixtures::FIXTURES
+        fixtures: fixtures
             .iter()
             .filter_map(|f| match f.kind {
                 crate::model::FixtureKind::Runnable { html, .. } => Some(FixtureIdentity {
@@ -34,7 +35,7 @@ pub(super) fn identity() -> Identity {
             })
             .collect(),
         chromium_pin_sha256: template::sha256(include_bytes!("../../chromium-reference.json")),
-    }
+    })
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -50,7 +51,7 @@ pub(super) struct Prepared {
 }
 impl Prepared {
     pub fn load(directory: &Path) -> Result<Self, String> {
-        let own = identity();
+        let own = identity()?;
         if own.source_tree.is_none() {
             return Err("AG4 requires a snapshot-stamped controller; local commands do not".into());
         }

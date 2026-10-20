@@ -938,7 +938,17 @@ When a feature lands:
 2. Link to the relevant contract doc if the behavior is subtle.
 3. Keep this file short; move detailed rules to subsystem docs.
 
-## Focused Conformance Tooling (AG1–AG5)
+## Focused Conformance Tooling (AG1–AG6)
+
+- AG6 adds build-time deterministic fixture discovery, strict JSON metadata,
+  exact embedded inputs/expectations, and shared catalogue validation before
+  selection, execution and artifact identity publication. Execution classification,
+  independent known failures, per-observation unsupported coverage and cross-engine
+  truth remain separate. JavaScript requirements are explicit eligibility metadata;
+  page scripts stay disabled. Missing/empty discovery and malformed declarations
+  fail explicitly. No runtime checkout, fixture sidecars, new engine behavior or
+  broad WPT support is introduced. See the
+  [AG6 contract](conformance/ag6-fixture-discovery-and-metadata.md).
 
 - AG5 adds deterministic common projections for committed Browser DOM,
   accepted-frame computed color/background-color/font-size/display, direct
@@ -977,7 +987,7 @@ When a feature lands:
 - This is tooling coverage only: no new CSS/Layout/Paint behavior, full box-tree
   equivalence, GPU rasterization, general painting, scripting, or broad WPT/browser
   compatibility is claimed. AG5 remains one of the existing nine AG issues.
-- `crates/conformance` executes six explicitly registered static HTML/CSS fixtures
+- `crates/conformance` executes discovered static HTML/CSS fixtures (initially the original six)
   through production Tab navigation, parser runtime, atomic DOM/mode publication,
   stylesheet reconciliation and rendering.
 - A fixed, guarded opaque canvas-color observation has exact expected-result
@@ -987,8 +997,8 @@ When a feature lands:
   Layout/Paint behavior or GPU rasterization.
 - Execution, comparison and known-failure metadata remain distinct. PASS, FAIL,
   XFAIL, XPASS, UNSUPPORTED, SKIP and ERROR have explicit reporting/exit behavior.
-  Unsupported/skipped classification is manual; arbitrary HTML/CSS classification
-  and broad fixture discovery are not implemented.
+  Unsupported/skipped classification is explicit metadata. Repository fixture
+  discovery is implemented; automatic arbitrary HTML/CSS classification is not.
 - Parser terminal outcomes distinguish parsing from network completion, Browser
   commit and frame completion; earlier publication failures cannot become success.
 - AG2 adds an explicit local, pinned Chrome for Testing capture path: private
@@ -1109,16 +1119,12 @@ When a feature lands:
   Future Linux qualification publication requires separate authorization.
   Lost historical macOS timing/Chromium raw logs are summaries only. The two
   `BrowserExited` observations and reported pre-EICE reproduction remain unresolved
-  and are not established EICE regressions. Formal architecture review, final-source
-  validation / `make ci`, appropriate native regressions, fresh Chromium/guest-wrapper
-  qualification and live-stage source/controller/Linux artifact identities remain
-  required. Corporate EICE WebSocket/TLS qualification, authorized shared-stack
-  change-set deployment and verification, external controller-permission qualification,
-  the first real EICE `canvas/cascade` capture/comparison with confirmed cleanup,
-  broader AG4 acceptance and final closeability review also remain gates.
-  The implementation stays inside AG4; AG still has nine issues and AG4 is not
-  closeable or complete. See the
+  and are not established EICE regressions. Those qualification notes describe
+  historical checkpoints. AG4 #1387 is completed and PR #1433 is merged; AG6
+  preserves the affected contracts without reopening cloud qualification or
+  deploying AWS resources. AG remains at nine issues. See the
   [AG4 contract](conformance/ag4-disposable-aws-chromium-runner.md).
+
 - WPT support, broad browser compatibility and general rendering
   conformance remain gaps. See the
   [harness README](../crates/conformance/README.md).

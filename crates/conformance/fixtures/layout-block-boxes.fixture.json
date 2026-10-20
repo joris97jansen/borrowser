@@ -1,0 +1,28 @@
+{
+  "id": "layout/block-boxes",
+  "input": "layout-block-boxes.html",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "observations": {
+    "layout": {
+      "kind": "compare",
+      "targets": [
+        "container",
+        "child",
+        "sibling",
+        "hidden",
+        "zero",
+        "missing"
+      ]
+    }
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "projection",
+    "path": "layout-block-boxes.expected.json"
+  }
+}

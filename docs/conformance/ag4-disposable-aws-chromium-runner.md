@@ -6,13 +6,21 @@ existing AG3 comparison projection after the entire remote phase and cleanup.
 No CSS, layout, paint, browser, fixture, expectation, capture-schema, or
 comparison-schema changes are part of this runner.
 
-## Qualification status
+## Completion status
+
+AG4 issue #1387 is completed and PR #1433 is merged. The qualification narrative
+below records earlier checkpoints and is not an outstanding prerequisite for AG6.
+AG6 preserves this runner and changes only fixture sourcing/selection integration;
+no live AWS deployment or qualification is part of AG6.
+
+## Historical qualification checkpoints
 
 The current implementation carries ordinary SSH through one shared EC2 Instance
 Connect Endpoint (EICE). This is still **AG4**, within AG's existing nine issues.
 Implementation and local qualification do not authorize AWS execution or close
 AG4. The eleven-resource shared update, corporate Zscaler/EICE TLS path, first
-normal `canvas/cascade` run and subsequent broader acceptance remain pending.
+normal `canvas/cascade` run and subsequent broader acceptance were pending at
+that historical checkpoint.
 Earlier live operations qualified guest readiness and CloudFormation cleanup;
 their direct-public SSH attempts failed during banner exchange before host-key
 exchange, authentication, upload or Chromium execution. That evidence does not
@@ -22,7 +30,7 @@ qualify the new transport.
 size and Ubuntu package snapshot below. Synthetic test IDs are never production
 defaults. Live creation is still refused if either pin is missing. Pin review
 does not establish bootstrap, sandbox, deployment-role or AWS capture/cleanup
-qualification; that real acceptance evidence remains outstanding. Local AG2/AG3
+qualification; real acceptance evidence was outstanding at that checkpoint. Local AG2/AG3
 Linux qualification does not qualify this AWS environment.
 
 On 2026-10-14, read-only SSO observations in `eu-west-1` verified candidate
@@ -645,9 +653,11 @@ browser pin match its own snapshot. Never put credentials in this file.
   --state-dir /absolute/private/ag4-operations canvas/cascade
 ```
 
-Omitting the fixture selects the current two runnable fixtures in registry
-order. Every invocation creates a new random 128-bit run ID, including repeated
-executions of identical fixtures. Stack names are `borrowser-ag4-<run-id>`.
+Omitting the fixture selects the discovered catalogue in lexicographic fixture-ID
+order. Only runnable fixtures are captured; an excluded-only selection returns
+without cloud work. Each invocation that proceeds to cloud capture creates a new
+random 128-bit run ID, including repeated executions of identical fixtures.
+Stack names are `borrowser-ag4-<run-id>`.
 
 Bootstrap automatically installs the pinned Chromium archive/checksum and
 Ubuntu snapshot dependencies, installs the exact AG2 AppArmor user-namespace
@@ -1079,7 +1089,7 @@ presence exhausts the budget and leaves cleanup unresolved and recoverable.
 | Upload / execution / retrieval | 5 minutes (2 attempts) / 120 seconds (once) / 60 seconds (2 attempts) |
 | Overall capture work / cleanup | 30 minutes / separate 15 minutes; at most 3 deletion submissions, 180 polls |
 | Input/output | Harness 64 MiB; artifact metadata 16 KiB; capture 64 KiB; API and diagnostic streams 256 KiB each |
-| Operation resources | One c6i.large, one 16-GiB root disk, one ENI/public IPv4, one SG, at most six registered fixtures |
+| Operation resources | One c6i.large, one 16-GiB root disk, one ENI/public IPv4, one SG; runnable discovered fixtures within unchanged capture/time bounds |
 
 The command owner drains nonblocking stdout/stderr fairly with bounded buffers.
 Overflow, deadlines and cancellation close input, terminate the owned process
@@ -1222,16 +1232,16 @@ Their previously reported timing maxima (natural 0.172400 s, delayed 1.209466 s,
 TERM 4.052818 s, KILL 4.996157 s for supplementary absence) are historical summaries
 only, not reverified evidence. The two historical `BrowserExited` observations and
 their reported pre-EICE reproduction remain unresolved historical summaries, not
-established EICE regressions. Fresh Chromium/guest-wrapper qualification remains
-separate AG4 work on the eventual final source.
+established EICE regressions. At that historical checkpoint, fresh
+Chromium/guest-wrapper qualification remained AG4 work on its final source.
 
 When source review requires fresh timing qualification, run native macOS first
 and preserve its exact source/tool/platform identity and raw/parsed evidence. A
 new native Linux publication/run requires separate authorization and a new
 tree-bound ref. Neither a historical summary nor one platform's passing result
 establishes the other platform's qualification. The successful results above
-belong to their durable per-tree review record; broader live acceptance remains
-pending.
+belong to their durable per-tree review record; broader live acceptance was
+pending at that checkpoint. AG4 is now completed as recorded above.
 
 The existing `CI` workflow has one explicit `ag4_proxy_timing` job for pushes matching
 `qualification/ag4-native-proxy-timing-*`. All other jobs in that workflow skip only
@@ -1413,8 +1423,8 @@ deleted without another creation, and retain the targeted terminal observations.
 Also interrupt deletion and repeat cleanup. Missing ownership authority must
 refuse deletion. No mocked check substitutes for these live observations.
 
-Cross-platform command-owner timing qualification does not make AG4 closeable.
-The remaining gates are:
+At the timing-qualification checkpoint, timing evidence alone did not close AG4.
+The following gates were recorded then and are historical after #1387/#1433:
 
 1. Formal architecture review.
 2. Final-source validation / `make ci`.
@@ -1429,5 +1439,21 @@ The remaining gates are:
 11. Final closeability review.
 
 These are stages inside AG4, not new issues or milestones. AG remains at its
-existing nine issues. AG4 is not complete until the final source/artifact snapshot
-has the required validation and acceptance evidence.
+existing nine issues. This historical list does not reopen completed AG4 or
+add prerequisites to AG6.
+
+## AG6 fixture integration
+
+The [AG6 contract](ag6-fixture-discovery-and-metadata.md) replaces manual fixture
+registration with build-time discovery and exact embedding. All identity producers
+and consumers obtain the validated catalogue; malformed expectations fail before
+cloud configuration or activity. Runnable identities retain ID/source/HTML SHA-256
+in lexicographic ID order. The existing exact source tree binds metadata and
+expectations; executable SHA-256 binds the artifact. Source preparation admits new
+fixture/expectation JSON only within the conformance fixture root.
+
+Mixed selections capture only runnable inputs, then report exclusions locally.
+Excluded-only selections return an incomplete report without cloud work. The guest
+uses the same embedded selection rules. No capture records are invented. Exact
+identity/count/order checks and all existing byte/time/cleanup bounds remain.
+Historical cleanup-only is independent of catalogue validation.
