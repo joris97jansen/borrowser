@@ -388,8 +388,17 @@ Private synchronized Linux regressions open a real proc descriptor, release and
 reap its child, then exercise the production read/error-handling path; unrelated
 disappearance, denied/malformed observations and changed identity have separate
 controls. These kernel-level regressions can run on Linux ARM64 without enabling
-the unsupported Chromium capture path there. Native Linux x86-64 qualification
-of the final source is still required.
+the unsupported Chromium capture path there. The final functional source
+`821ef72424851da41e87192ca46d503fada592bd` (tree
+`72704e4148368fc078fcd206aea85d38f48e8b8b`) passed native Linux x86-64
+[run 39390972794/1](https://github.com/joris97jansen/borrowser/actions/runs/39390972794),
+including these regressions, bounded fixture/spawn-error controls,
+lifecycle/topology, the full AG5 profile, both CLI qualifications, all three exact
+guest-wrapper tests and final private-profile cleanup. Ordinary Rust including
+explicit HTML5 and applicable credential-free/remaining CI checks also passed.
+See the [AG5 qualification record](ag5-phase-comparison-projections.md#validation-and-qualification)
+for exact source/integration identity, coverage, evidence limits and the
+unestablished historical cleanup cause/syscall.
 
 The private proc-regression fixture collects and records exit status before
 test assertions; its destructor neither repeats completion nor asserts success.

@@ -278,8 +278,8 @@ Native macOS qualification was rerun on the review-corrected code on 2026-10-19:
 new inspector, existing native lifecycle/script/composition tests, repeated
 capture/comparison CLI runs with exact field assertions, and all three exact
 guest-wrapper tests passed. Targeted authority/projection/reporting/ingestion
-regressions, the conformance suite and full local `make ci` passed after the
-final code corrections. Only documentation evidence changed afterward. The
+regressions, the conformance suite and full local `make ci` passed at that
+macOS checkpoint, before the later Linux corrections described below. The
 prior blank-window `make run` smoke is historical. A later ordinary-Browser
 inspection on 2026-10-19 loaded the unchanged fixed-block fixture after Refresh
 and observed its outlined container. The initial URL+Enter submission remained
@@ -300,11 +300,52 @@ Both failed attempts remain evidence; neither qualifies the functional viewport
 and negative-test corrections. This was a capture defect, not an observed
 Borrowser/Chromium semantic difference.
 
-Native Linux qualification of the final corrected profile remains required:
-the complete six-fixture/34-field acceptance, both independent CLI checks, all
-three exact guest-wrapper tests and the final private-profile cleanup gate.
-The two failed attempts did not reach those later CLI/wrapper/cleanup checks.
-The viewport correction remains subject to source-bound final validation and
-review; the earlier macOS results above do not qualify later code changes.
-AG5 stays one issue; unavailable qualification evidence is a
-closeability requirement, not a separately deliverable prerequisite issue.
+The diagnostic attempt also exposed the bootstrap test helper's incidental
+newline at the oversized-input boundary; its producer failure did not establish
+validator rejection. The later viewport/bootstrap correction was tested in
+[run 39372426117, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/39372426117),
+which failed separately in real-Chromium cleanup (Failure A) and Linux ownership
+discovery before the cleanup-reap fault was armed (Failure B). Failure A's
+original scenario, cleanup vector and cause remain unknown. Failure B's
+disappearance-handling source defect is corrected, but its exact historical
+failing syscall remains unknown. No shared cause is established. The passing
+[diagnostics-only run 39375279230, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/39375279230)
+qualifies only its own published tree, not the later functional correction.
+
+The final functional candidate `821ef72424851da41e87192ca46d503fada592bd`,
+tree `72704e4148368fc078fcd206aea85d38f48e8b8b`, passed native Linux x86-64
+qualification in [run 39390972794, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/39390972794)
+on 2026-10-20. Its synthetic checkout
+`a00289491806550ac277c9acaf5ff50dd600ac10`, based on
+`871da2141c66b66a394dd12c8191fd7447eac468`, has the identical tree. The lane
+used Ubuntu 24.04 x86-64, Rust 1.92.0 and pinned Chrome for Testing
+155.0.8059.39 with `ag5-static-phases-v1`.
+
+Executed checks passed: all eight production-path observation regressions,
+both bounded fixture controls and the expected-parent spawn-error regression;
+native ownership and cleanup-reap fault activation/consumption; ordinary
+conformance; capture/script, lifecycle/topology and composition acceptance;
+the read-only inspector's positive control and exact string/tree/duplicate-target
+rejections; the full six-fixture profile; both independent-process CLI
+qualifications; all three exact guest-wrapper tests without a real-browser
+skip; and the final private-profile cleanup gate with empty remaining-artifact
+and profile inventories. Separate Chromium capture/cleanup-before-parser-worker
+invocations were preserved.
+
+The full-profile acceptance and CLI assertions established exact fixture order
+and field identities: 2 canvas + 2 whole-DOM + 12 style + 18 layout = 34 equal
+fields, with six independent expectation PASS results. The persisted
+`comparison.json` is canvas-only (`canvas/cascade`); it is not the full-profile
+evidence. Paint remains the guarded canvas sample, with no general painting,
+GPU-rasterization, whole-box-tree or broad browser/WPT claim.
+
+The same run passed ordinary Rust default and explicit HTML5 lanes, build/lint,
+parser/regression checks, credential-free bootstrap/synthesis (including both
+oversized inputs and producer exit-status preservation), and downstream tooling.
+Intentional opt-in skips remained explicit: disposable Noble/OpenSSH, real
+Docker cancellation and the credential-free lane's real-browser wrapper case
+(which executed in the native lane). The unrelated AG4 timing job was skipped
+by its existing branch/event condition. All twelve applicable CI jobs passed.
+These results qualify the functional tree above; later documentation-only
+commits have different complete trees and require their own current PR checks.
+AG5 stays one issue within the existing nine-issue milestone.

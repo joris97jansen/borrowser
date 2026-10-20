@@ -951,25 +951,28 @@ When a feature lands:
   schemas extend local capture and AG4 ingestion together. Bounds and transport
   cleanup remain unchanged. Review-corrected native macOS acceptance passed on
   2026-10-19: 34 equal fields and six independent expectation passes. Full local
-  `make ci` ran after the final code corrections and passed, as did native macOS
+  `make ci` passed at that checkpoint, as did native macOS
   collector/CLI/guest-wrapper checks and targeted authority/validation tests.
-  Fresh native Linux qualification of this corrected profile remains a
-  closeability gate. Historical evidence below does not qualify AG5.
+  Final functional commit `821ef72424851da41e87192ca46d503fada592bd` passed
+  native Linux x86-64 qualification in
+  [run 39390972794/1](https://github.com/joris97jansen/borrowser/actions/runs/39390972794),
+  including observation/fixture and lifecycle regressions, exact negative
+  collector controls, the full profile, both CLI qualifications, all three
+  exact guest-wrapper tests and final cleanup. Ordinary Rust (including explicit
+  HTML5), credential-free and remaining applicable CI checks also passed.
+  Full-profile acceptance/CLI assertions establish 2 canvas + 2 whole-DOM +
+  12 style + 18 layout = 34 equal fields and six independent expectation PASS
+  results; the persisted `comparison.json` is canvas-only.
   Review corrections enforce exact requested projection records before success
   classification, typed local diagnostics, explicit partial-coverage reasons,
   and mixed native DOM/target-presence consistency. Missing records are errors;
   complete structural absence remains comparable data. Real-profile assertions
   cover all 34 field identities, not just successful case statuses. These are
   tooling corrections and introduce no engine features.
-  Linux attempts 39311219271/1 and diagnostics-only 39366788841/1 failed before
-  comparison: the DOM namespace fixture had 625×480 scrollbar-excluding client
-  viewports under a configured 640×480 viewport. The capture correction separates
-  inner dimensions from usable layout width while preserving the canvas guard;
-  negative collector tests now require their exact intended failures.
-  These failures do not qualify the corrected source. Final native Linux
-  profile/CLI/exact-wrapper/cleanup qualification remains required. The ordinary
-  fixed-block rendering smoke was accepted after Refresh; initial URL+Enter
-  navigation failed and remains a separate pre-existing limitation.
+  Earlier failed and diagnostics-only attempts retain their original
+  dispositions; historical cleanup cause/syscall uncertainty is preserved in the
+  contract. The ordinary fixed-block rendering smoke was accepted after Refresh;
+  initial URL+Enter navigation failed and remains a separate pre-existing limitation.
   See the [AG5 contract](conformance/ag5-phase-comparison-projections.md).
 - This is tooling coverage only: no new CSS/Layout/Paint behavior, full box-tree
   equivalence, GPU rasterization, general painting, scripting, or broad WPT/browser
