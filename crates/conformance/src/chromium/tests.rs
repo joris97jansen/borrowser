@@ -1850,7 +1850,11 @@ fn real_chromium_lifecycle_and_topology() {
             )),
             _ => unreachable!(),
         }
-        assert!(child.finish(Duration::from_secs(5)).is_empty());
+        let cleanup = child.finish(Duration::from_secs(5));
+        assert!(
+            cleanup.is_empty(),
+            "scenario={scenario}: cleanup={cleanup:?}"
+        );
         assert!(!artifacts.exists());
     }
 }

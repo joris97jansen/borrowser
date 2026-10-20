@@ -885,8 +885,9 @@ impl OwnedChromium {
                 }
                 if !self.reaped {
                     return Err(CleanupError::Reap(format!(
-                        "direct child {}, waitpid={result}",
-                        self.pid
+                        "reap direct child {}, waitpid(WNOHANG)={result}, error={:?}",
+                        self.pid,
+                        (result < 0).then_some(error)
                     )));
                 }
                 break;

@@ -43,7 +43,10 @@ pub(super) fn preflight() -> Result<(), Error> {
 fn pidfd(pid: i32) -> Result<OwnedFd, String> {
     let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
     if fd < 0 {
-        return Err(std::io::Error::last_os_error().to_string());
+        return Err(format!(
+            "pidfd_open pid={pid}: {}",
+            std::io::Error::last_os_error()
+        ));
     }
     Ok(unsafe { OwnedFd::from_raw_fd(fd as i32) })
 }
@@ -54,7 +57,11 @@ fn alive(fd: &OwnedFd) -> Result<bool, String> {
         revents: 0,
     };
     if unsafe { libc::poll(&mut poll, 1, 0) } < 0 {
-        return Err(std::io::Error::last_os_error().to_string());
+        return Err(format!(
+            "poll retained pidfd fd={}: {}",
+            fd.as_raw_fd(),
+            std::io::Error::last_os_error()
+        ));
     }
     if poll.revents & libc::POLLNVAL != 0 {
         return Err("invalid retained pidfd".into());
@@ -95,7 +102,7 @@ impl Registry {
         let mut complete = true;
         let mut entries = budget
             .observe(|| std::fs::read_dir("/proc"))?
-            .map_err(|e| e.to_string())?
+            .map_err(|e| format!("discover read_dir /proc: {e}"))?
             .enumerate();
         while let Some((count, entry)) = budget.observe(|| entries.next())? {
             #[cfg(test)]
@@ -104,7 +111,7 @@ impl Registry {
             if count >= 65536 {
                 return Err("process enumeration exceeds bound".into());
             }
-            let entry = entry.map_err(|e| e.to_string())?;
+            let entry = entry.map_err(|e| format!("discover enumerate /proc: {e}"))?;
             let Some(pid) = entry
                 .file_name()
                 .to_str()
@@ -116,9 +123,10 @@ impl Registry {
             let stat = match read()? {
                 Ok(s) => s,
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(e) => return Err(e.to_string().into()),
+                Err(e) => return Err(format!("discover read /proc/{pid}/stat: {e}").into()),
             };
-            let (parent, session, birth) = ownership(&stat)?;
+            let (parent, session, birth) =
+                ownership(&stat).map_err(|e| format!("discover parse /proc/{pid}/stat: {e}"))?;
             if pid != self.root && parent != unsafe { libc::getpid() } && session != self.root {
                 continue;
             }
@@ -143,9 +151,11 @@ impl Registry {
             let again = match read()? {
                 Ok(stat) => stat,
                 Err(_) if !budget.observe(|| alive(&fd))?? => continue,
-                Err(e) => return Err(e.to_string().into()),
+                Err(e) => return Err(format!("revalidate read /proc/{pid}/stat: {e}").into()),
             };
-            if ownership(&again)? != (parent, session, birth) {
+            if ownership(&again).map_err(|e| format!("revalidate parse /proc/{pid}/stat: {e}"))?
+                != (parent, session, birth)
+            {
                 complete = false;
                 continue;
             }
@@ -160,7 +170,7 @@ impl Registry {
     }
     pub fn signal(&self, signal: i32, budget: &OwnershipBudget<'_>) -> Result<(), OwnershipError> {
         budget.check()?;
-        for fd in self.processes.values() {
+        for (pid, fd) in &self.processes {
             let result = budget.observe(|| unsafe {
                 libc::syscall(
                     libc::SYS_pidfd_send_signal,
@@ -171,7 +181,11 @@ impl Registry {
                 )
             })?;
             if result != 0 && std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH) {
-                return Err(std::io::Error::last_os_error().to_string().into());
+                return Err(format!(
+                    "pidfd_send_signal pid={pid} signal={signal}: {}",
+                    std::io::Error::last_os_error()
+                )
+                .into());
             }
         }
         Ok(())
@@ -220,7 +234,11 @@ impl Registry {
             if pid < 0 && error.kind() == std::io::ErrorKind::Interrupted {
                 continue;
             }
-            return Err("remaining owned children could not be reaped".into());
+            return Err(if pid < 0 {
+                format!("reap adopted waitpid(-1, WNOHANG): {error}").into()
+            } else {
+                "reap adopted waitpid(-1, WNOHANG): child remains live".into()
+            });
         }
     }
     #[cfg(test)]
