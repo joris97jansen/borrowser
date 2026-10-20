@@ -2,10 +2,6 @@ use super::*;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use std::os::fd::FromRawFd;
 use std::path::Path;
-#[cfg(any(
-    all(target_os = "macos", target_arch = "aarch64"),
-    all(target_os = "linux", target_arch = "x86_64")
-))]
 use std::process::Command;
 
 fn viewport_metrics() -> Value {
@@ -551,6 +547,17 @@ fn run_native_cases(scenarios: &[&str]) {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+        if *scenario == "cleanup-reap" {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                stderr.contains("cleanup-reap: armed after helper startup"),
+                "{stderr}"
+            );
+            assert!(
+                stderr.contains("cleanup-reap: injected fault consumed"),
+                "{stderr}"
+            );
+        }
         if scenario.starts_with("diagnostic-") {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let writable = scenario.ends_with("-writable");
@@ -1004,6 +1011,9 @@ fn native_case() {
             fault::reset_persistent_argument_eio_activations();
         }
         fault::set(point);
+        if scenario == "cleanup-reap" {
+            eprintln!("cleanup-reap: armed after helper startup");
+        }
         if scenario == "arguments-transient" {
             // An argument-memory copy failure leaves discovery incomplete;
             // a fresh full scan must recover before cleanup can succeed.
@@ -1042,6 +1052,9 @@ fn native_case() {
                 assert!(fault::take(Point::ArgumentsUnavailablePersistent));
             }
             fault::assert_consumed();
+            if scenario == "cleanup-reap" {
+                eprintln!("cleanup-reap: injected fault consumed");
+            }
             assert!(
                 errors
                     .iter()
@@ -1198,6 +1211,9 @@ fn cleanup_diagnostic_case(mut child: OwnedChromium, scenario: &str) {
     if let Some(saved) = saved_stderr {
         assert_eq!(unsafe { libc::dup2(saved.as_raw_fd(), 2) }, 2);
     }
+    if finishing {
+        assert_cleanup_failure_diagnostic(scenario, result.as_ref().unwrap().as_ref().unwrap());
+    }
     fault::assert_consumed();
     let mut expected = vec![
         CleanupEvent::Started,
@@ -1233,6 +1249,45 @@ fn cleanup_diagnostic_case(mut child: OwnedChromium, scenario: &str) {
     std::fs::remove_dir_all(&artifacts).unwrap();
     assert!(!artifacts.exists());
     assert_eq!(std::fs::read(&sentinel).unwrap(), b"preserve");
+}
+
+// Shared by the real lifecycle assertion and its negative diagnostic regression.
+// It receives only already-completed errors, so reporting cannot attempt cleanup.
+fn assert_lifecycle_cleanup(scenario: &str, errors: &[error::CleanupError]) {
+    assert!(errors.is_empty(), "scenario={scenario}: cleanup={errors:?}");
+}
+
+fn assert_cleanup_failure_diagnostic(scenario: &str, errors: &[error::CleanupError]) {
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        assert_lifecycle_cleanup(scenario, errors);
+    }))
+    .unwrap_err();
+    assert_eq!(
+        panic.downcast_ref::<String>().unwrap(),
+        &format!("scenario={scenario}: cleanup={errors:?}")
+    );
+}
+
+#[test]
+fn lifecycle_cleanup_diagnostic_retains_scenario_and_entire_error_vector() {
+    let errors = vec![
+        error::CleanupError::Identity("discover read /proc/42/stat: os error 13".into()),
+        error::CleanupError::Reap("waitpid: os error 10".into()),
+        error::CleanupError::Timeout,
+    ];
+    for scenario in ["cancel", "timeout", "exit"] {
+        assert_cleanup_failure_diagnostic(scenario, &errors);
+        assert_lifecycle_cleanup(scenario, &[]);
+    }
+}
+
+#[test]
+fn cleanup_reap_assertion_rejects_an_unreached_fault() {
+    use process::fault::{self, Point};
+    fault::set(Point::Reap);
+    assert!(std::panic::catch_unwind(fault::assert_consumed).is_err());
+    assert!(fault::take(Point::Reap));
+    fault::assert_consumed();
 }
 
 fn assert_no_children() {
@@ -1851,10 +1906,7 @@ fn real_chromium_lifecycle_and_topology() {
             _ => unreachable!(),
         }
         let cleanup = child.finish(Duration::from_secs(5));
-        assert!(
-            cleanup.is_empty(),
-            "scenario={scenario}: cleanup={cleanup:?}"
-        );
+        assert_lifecycle_cleanup(scenario, &cleanup);
         assert!(!artifacts.exists());
     }
 }

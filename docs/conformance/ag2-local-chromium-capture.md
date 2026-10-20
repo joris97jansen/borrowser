@@ -369,6 +369,42 @@ childless harness are owned. Detached helpers become adopted when their ancestor
 exit. Retained pidfds are signaling authority for exactly those identities; PID
 reuse cannot redirect a signal. No raw `kill(pid)`/`killpg` fallback is used.
 
+For a per-PID `/proc/<pid>/stat` observation, `ENOENT` and `ESRCH` mean that
+entry is no longer observable: Linux can return `ESRCH` when reading a proc
+descriptor opened before the process was reaped. `pidfd_open` returning `ESRCH`
+also acquires no identity. Revalidation may accept such a missing proc entry
+only when the newly opened stable pidfd independently reports exit. Permission,
+I/O, malformed-stat and other acquisition errors remain failures, even if the
+process subsequently disappears. Changed parent/session/birth tuples leave the
+scan incomplete and confer no signal authority. Absence of one entry never
+substitutes for the remaining scan or final descendant verification.
+
+Native ownership diagnostics identify proc discovery/revalidation, pidfd
+acquisition/poll/signaling or reaping, with the relevant PID/path category and
+native error where available. The real-browser lifecycle test reports its
+cancel/timeout/exit scenario and complete cleanup-error vector from one
+five-second `finish` call. Diagnostics perform no additional cleanup or scans.
+Private synchronized Linux regressions open a real proc descriptor, release and
+reap its child, then exercise the production read/error-handling path; unrelated
+disappearance, denied/malformed observations and changed identity have separate
+controls. These kernel-level regressions can run on Linux ARM64 without enabling
+the unsupported Chromium capture path there. Native Linux x86-64 qualification
+of the final source is still required.
+
+The private proc-regression fixture collects and records exit status before
+test assertions; its destructor neither repeats completion nor asserts success.
+Protocol pipes remain owned through teardown. A fixture retained by an
+unconsumed test hook can be dropped without reentering destroyed hook storage.
+Acknowledgements use nonblocking reads with one five-second deadline and a
+16-KiB total-output bound, including incomplete lines. Normal completion has a
+five-second bound, followed on failure by one shared two-second teardown bound.
+Nonzero exits, wait errors, timeouts and unresolved cleanup stay inspectable.
+Failure controls run in isolated processes with an independent outer watchdog;
+a watchdog kill is a test failure, never fixture cleanup success. The parent/child
+control uses an isolated subreaper and the existing pidfd registry to reserve the root,
+terminate owned descendants and reap adopted children before reporting success.
+These are test-fixture bounds, not changes to Chromium's production budgets.
+
 After known creators terminate, a fresh complete scan finds newly adopted
 descendants. The direct child is reaped with `waitpid`; adopted children are
 reaped until `ECHILD`. An incomplete scan, live adopted child or unknown wait
