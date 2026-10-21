@@ -17,12 +17,12 @@ Use the full **Chrome for Testing 155.0.8059.39** distribution, revision
 `@3ff7ac5a9224be9156d7f8703a06e22890aafd34`, CDP protocol `1.3`.
 [`chromium-reference.json`](../../crates/conformance/chromium-reference.json)
 records versioned archive URLs and SHA-256 hashes for mac-arm64 and linux64.
-AG5 now uses **`ag5-static-phases-v1`** and `borrowser.chromium-phases.v1`.
+AG7 now uses **`ag7-static-references-v1`** and `borrowser.chromium-phases.v2`.
 The browser pin/archive checksums and canvas restrictions are unchanged.
 [AG5](ag5-phase-comparison-projections.md) defines the additional read-only native
 inspection, strict limits and separate common projection. Earlier
 `ag2-canvas-srgb-v2` and hidden-target/A/B evidence below retains its historical
-identity; it does not qualify the new AG5 profile.
+identity; it does not qualify later AG5/AG7 profiles.
 Download and verify the selected archive before extracting it to a trusted local
 directory. `--chromium-executable PATH` takes precedence over
 `BORROWSER_CHROMIUM_EXECUTABLE`. There is no implicit executable discovery,
@@ -58,8 +58,8 @@ empty stdout. Default invocation retains AG1's execution/report behavior.
 
 For the canvas family, the screenshot remains the sole color source; computed
 style and geometry never substitute for its sample. Read-only eligibility
-inspection checks document identity/URL/mode and absence of live-document `link`
-elements. AG5 separately requests native DOM, computed style and client rectangles
+inspection checks document identity/URL/mode and the bounded AG7 metadata-link
+policy (or absence of links for inputs declaring none). AG5 separately requests native DOM, computed style and client rectangles
 through its fixed isolated-world collector, with page scripts still disabled.
 See the AG5 contract for these distinct comparisons. A wrong canvas color remains
 an observation.
@@ -173,8 +173,9 @@ limit, and explicit EOF, truncated-frame, malformed-response and remote errors.
    response and the **same loader's** load event. An unrelated load, navigation
    acknowledgment alone or silence never establishes readiness.
 5. Obtain a valid document node with `DOM.getDocument(depth:0)`. Check URL/mode,
-   query `DOM.querySelector(nodeId, "link")`, require integer node ID zero, and
-   verify the same frame/loader. No page JavaScript is evaluated. Document
+   query `DOM.querySelector(nodeId, "link")`, and either require node ID zero or
+   verify the complete embedded AG7 metadata-link facts through fixed read-only
+   inspection. Verify the same frame/loader. Page JavaScript remains disabled. Document
    replacement invalidates this evidence; a second scan cannot erase the failure.
 6. Verify the viewport. For a canvas request, capture the unchanged surface PNG
    without capture beyond the viewport and decode/sample it. For AG5 phase
@@ -251,18 +252,17 @@ URL/type/initiator alone cannot distinguish authored icons from browser-default
 activity. The candidate is aborted immediately at Fetch Request stage, even if
 the parsed-document check is pending. It is never continued or fulfilled.
 
-For the current inline-only fixture profile, `DOM.querySelector(document, "link")`
-must find no live-document link element. This deliberately rejects even inert
-links. Chromium owns HTML parsing, character-reference decoding, case handling,
-relation tokens and malformed-markup repair; the harness performs no raw text
-scan or second parse. Comments and raw text are not elements. Inert template
-content is not an active icon declaration, and disabled page scripts cannot
-activate it. This is a restriction of AG2's static fixture scope, not a universal
-safety claim for arbitrary HTML. The pinned
-[document icon selection](https://github.com/chromium/chromium/blob/3ff7ac5a9224be9156d7f8703a06e22890aafd34/third_party/blink/renderer/core/dom/document.cc)
-uses authored HTML link candidates or synthesizes the default icon.
+The current profile accepts no live links unless the source declares reviewed
+AG7 inert metadata facts. Only single `author`, `help`, `match` or `mismatch`
+relations with permitted attributes are eligible; mixed or resource-bearing
+relations fail. Build-time production parsing and fixed Chromium inspection
+compare parsed attribute values, namespaces and order, never resolved hrefs.
+Comments, raw text and inert template content are not active declarations.
+See [AG7](ag7-focused-external-tests-and-references.md#relationship-authority-and-metadata-links)
+for exact bounds and source authority. HTML bytes are unchanged and authored
+resource requests remain errors even when aborted.
 
-The no-link result becomes authoritative only after the intended loader's load,
+The no-link or verified metadata-link result becomes authoritative only after the intended loader's load,
 valid document URL/mode/node identity, query result and unchanged frame/loader
 verification. Production scripts remain disabled. The private script-enabled
 positive control accepts only the exact existing color-changing input, checked
@@ -275,8 +275,8 @@ and red with scripts enabled. This exception exists only in test builds.
 | --- | --- |
 | One exact fixture Document GET | Fulfill original bytes; require successful command and navigation correlation |
 | First favicon-shaped request, policy pending | Abort at Request stage; retain one bounded candidate, not an exemption |
-| No-link policy plus matching Network/Fetch IDs, abort acknowledgment and failed-load terminal | Accept as intercepted default activity |
-| Authored link, including an icon using `/favicon.ico` | Fail, even if its request was aborted |
+| Verified no-link/metadata-link policy plus matching Network/Fetch IDs, abort acknowledgment and failed-load terminal | Accept as intercepted default activity |
+| Unreviewed/resource-bearing authored link, including an icon using `/favicon.ico` | Fail, even if its request was aborted |
 | Duplicate, redirected, conflicting, malformed or foreign-session request | Fail |
 | Candidate response or successful transfer | Fail |
 | Missing request pairing, abort acknowledgment or terminal failure | Never succeed; deadline or incomplete-evidence failure |

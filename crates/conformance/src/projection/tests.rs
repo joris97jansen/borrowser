@@ -6,9 +6,8 @@ fn observe(html: &str, request: ObservationRequest) -> BorrowserCapture {
 #[test]
 fn projection_production_fixtures_match_independent_expectations() {
     for f in crate::fixtures::baseline() {
-        let FixtureKind::Runnable { html, expected, .. } = f.kind else {
-            unreachable!()
-        };
+        let html = (f).document.html;
+        let expected = (f).independent().unwrap().expected;
         let capture = execute_fixture(html, f.request).unwrap();
         assert_eq!(
             capture.observations,
@@ -178,9 +177,7 @@ fn projection_required_family_states_and_expectations_are_validated() {
     };
     for index in [0, 2] {
         let fixture = &crate::fixtures::baseline()[index];
-        let FixtureKind::Runnable { html, .. } = fixture.kind else {
-            unreachable!()
-        };
+        let html = (fixture).document.html;
         let actual = execute_fixture(html, fixture.request).unwrap();
         actual.observations.validate(fixture.request).unwrap();
         for unsupported in [false, true] {
@@ -212,14 +209,16 @@ fn projection_required_family_states_and_expectations_are_validated() {
             );
         }
         let invalid_expected = Fixture {
+            document: fixture.document.with_test_bytes(html),
             kind: FixtureKind::Runnable {
-                html,
-                expected: Expected::Projection(
-                    r#"{"dom":{"state":"not_requested"},"styles":[],"layout":{"state":"not_requested"},"canvas":{"state":"not_requested"}}"#,
-                ),
-                expectation: Expectation::KnownFailure {
-                    reason: "cannot hide incomplete expectation",
-                },
+                checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
+                    expected: Expected::Projection(
+                        r#"{"dom":{"state":"not_requested"},"styles":[],"layout":{"state":"not_requested"},"canvas":{"state":"not_requested"}}"#,
+                    ),
+                    disposition: Expectation::KnownFailure {
+                        reason: "cannot hide incomplete expectation",
+                    },
+                }),
             },
             ..*fixture
         };

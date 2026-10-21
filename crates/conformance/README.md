@@ -1,4 +1,4 @@
-# Focused static conformance harness (AG1–AG6)
+# Focused static conformance harness (AG1–AG7)
 
 AG4 adds the optional `--compare-aws` and artifact-independent `--aws-cleanup`
 paths. Its two-resource Python CDK capture stack, shared eleven-resource
@@ -43,6 +43,14 @@ work. Historical qualification records below retain their original scope.
 AG6 discovers and embeds fixture metadata at build time. See the
 [AG6 authoring and discovery contract](../../docs/conformance/ag6-fixture-discovery-and-metadata.md)
 for the schema, validation boundaries and mode behavior.
+
+AG7 adds a small pinned external corpus and scoped direct match/mismatch
+relationships. See the [AG7 contract](../../docs/conformance/ag7-focused-external-tests-and-references.md)
+for provenance, raw-byte preservation, link policy, authoring and reporting.
+Original upstream visual assertions remain unsupported. The whole catalogue now
+returns **3 locally** (unsupported full visual coverage) and **1 in comparison**
+(four confirmed RGB differences); neither result is suppressed by KnownFailure.
+The original six-fixture baseline remains unchanged.
 
 Ordinary local commands below remain independent of AWS configuration,
 credentials and artifact preparation.
@@ -109,7 +117,7 @@ color. Missing or ambiguous output, intersecting unsupported shapes, custom
 callbacks, nonfinite geometry, and a different scale are capture errors.
 A wrong opaque canvas color remains an observation and produces a mismatch.
 
-The fixtures have zero-height empty content, transparent bodies, zero margins,
+The two original canvas fixtures have zero-height empty content, transparent bodies, zero margins,
 padding and borders, and no text, images, external resources, scripts, animation,
 or transforms. UI decorations are acceptable only outside the sample guard.
 Fresh egui passes drain their own shapes; neither a second frame nor channel
@@ -157,15 +165,17 @@ Execution, exact comparison, and expectation metadata remain separate:
 | Harness/parser/publication/render/capture error | Any | ERROR |
 
 Known failures retain mismatch details. Unexpected success exposes stale metadata.
-Errors never satisfy known-failure metadata. The current six fixtures are runnable
-and expected to match; classification regressions exercise the other outcomes
-without adding artificial skipped or failing cases to the shipped registry.
+Errors never satisfy known-failure metadata. The original six fixtures remain
+runnable and expected to match. AG7 separately reports scoped relationships and
+unsupported original upstream assertions; reference dependencies never count as
+passed tests. See the AG7 status table for aggregation across these dimensions.
 
 Reports include relative fixture paths, fixed sample location, expected/actual
 hex colors, differing channel values, and fixed-order summary counts. They omit
-time, internal identities, absolute paths and orchestration traces. Exit 0 means
-no FAIL/XPASS/ERROR; exit 1 means FAIL or XPASS; exit 2 means an execution,
-configuration or output error and takes precedence. Unsupported/skipped cases
+time, internal engine identities, absolute paths and orchestration traces. Exit
+precedence is 2 for errors; 1 for independent FAIL/XPASS or relationship failure;
+3 for incomplete requested observations or unsupported runnable upstream
+assertions; 0 otherwise. Unsupported/skipped cases
 are counted separately and do not cause failure. CLI selection is all fixtures
 or one exact identity; unknown identities are errors.
 
@@ -201,15 +211,16 @@ Chrome for Testing`; on Linux it is `chrome-linux64/chrome`. A missing or
 incompatible browser is an error, including when an opt-in test is explicitly
 requested. Ordinary AG1 execution and tests require no installed browser.
 
-The `ag5-static-phases-v1` profile uses one ordinary headless page. Read-only CDP
-DOM inspection requires no live-document `link` elements, including inert links,
-for these inline-only fixtures. A browser-default favicon candidate is aborted
+The `ag7-static-references-v1` profile uses one ordinary headless page. Fixed
+read-only inspection permits only reviewed inert `author`, `help`, `match` and
+`mismatch` links whose complete parsed facts equal the embedded source facts.
+Mixed/resource-bearing or unknown relations remain rejected. A browser-default favicon candidate is aborted
 before network delivery and accepted only after document eligibility, paired
 Network/Fetch identities, an abort acknowledgment and its failed-load terminal
 are verified. An aborted authored resource still fails capture. No HTML bytes,
 fixture expectations or Chromium sandbox settings are changed.
 
-`--chromium` emits `borrowser.chromium-phases.v1` capture-only JSON: fixture identity, requested native DOM/style/layout facts or RGB8 color,
+`--chromium` emits `borrowser.chromium-phases.v2` capture-only JSON: fixture identity, requested native DOM/style/layout facts or RGB8 color,
 environment, and exact browser identity. There are no PASS/FAIL classifications,
 expectations or Borrowser comparisons in that report. Success requires verified
 process cleanup; failure emits diagnostics to stderr, no observation to stdout,
@@ -226,7 +237,7 @@ platform qualification record. AG2 is integrated; both macOS arm64 and native
 Linux x86-64 have recorded production-v2 qualification. Compilation on Linux
 ARM64 does not establish runtime qualification.
 
-No WPT import, generalized adapters/providers, historical storage, dashboards,
+No broad WPT import/execution, generalized adapters/providers, historical storage, dashboards,
 flaky-test policy, or new engine semantics are included.
 
 ## Integrated cross-engine comparison (AG3 / #1395)
@@ -245,7 +256,7 @@ option overrides the environment variable. Exactly one test ID or no ID is
 accepted. Unknown/duplicate selections, extra options and missing required
 configuration are errors. This does not provision a browser.
 
-The sole selected field is `canvas_color_rgb8`: opaque sRGB RGB8 at physical
+The original AG3 slice selects `canvas_color_rgb8`: opaque sRGB RGB8 at physical
 pixel `(32, 32)`, CSS center `(32.5, 32.5)`. All existing viewport, scale, URL,
 response, inline-only fixture and observation restrictions above apply unchanged.
 The cascade fixture exercises an ID selector beating a later less-specific
@@ -303,7 +314,7 @@ no child processes. Restored signal dispositions apply after the capture phase.
 
 ### Report and failure semantics
 
-`--compare` emits pretty JSON, schema `borrowser.cross-engine-phases.v1`, followed
+`--compare` emits pretty JSON, schema `borrowser.cross-engine-phases.v2`, followed
 by one newline. Member order is fixed by typed serialization; case order is
 fixture-ID order; engine order is Borrowser then Chromium. Each canvas case has
 one `canvas_color_rgb8` field with both observed arrays, its `equal`/`different`
@@ -342,8 +353,8 @@ with a reason; unsupported fields have no channel comparisons. Explicit skips
 remain skips. Neither classification executes an engine. Fields outside this
 projection have no placeholder rows. An adapter error, missing sample,
 unsupported runtime platform or unavailable executable is an error, not an
-unsupported field. Shipped fixtures currently support the selected field on
-both engines. Zero comparable observations never mean successful equality.
+unsupported field. Runnable cases request supported AG5 fields; excluded cases retain explicit
+classification without entering either engine. Zero comparable observations never mean successful equality.
 
 The summary counts equal/different/unsupported fields, skipped cases, and
 independent expectation failures/unexpected passes. Exit precedence is:
@@ -351,8 +362,8 @@ independent expectation failures/unexpected passes. Exit precedence is:
 | Exit | Meaning |
 | --- | --- |
 | 2 | Configuration, execution, capture, required-data, cleanup, serialization or output error |
-| 1 | Cross-engine difference or independent AG1 FAIL/XPASS |
-| 3 | Otherwise incomplete: unsupported/skipped selection or no comparable observations |
+| 1 | Cross-engine difference, independent FAIL/XPASS, or relationship failure |
+| 3 | Otherwise incomplete: requested/upstream coverage, excluded selection or no comparable observations |
 | 0 | All selected cases compared equally, without independent expectation failure |
 
 Exit 3 also marks incomplete requested observations in local AG5 execution.
@@ -525,3 +536,43 @@ The original macOS run qualifies the
 unchanged implementation, not a later documentation commit. This record does not
 claim that the PR is merged or AG3 is closed, or extend coverage beyond the
 approved exact canvas sample.
+
+## AG7 contributor validation
+
+Keep raw sources under `fixtures/external/raw/` unchanged. Pin repository revision,
+paths, SHA-256 and licence/attribution in separate sidecars. Declare a single
+source-authorized sibling reference and one meaningful present background-color
+target. Independently justified expectations are optional for relationships;
+unsupported JS/platform cases have no execution observations. See the
+[complete authoring workflow](../../docs/conformance/ag7-focused-external-tests-and-references.md#adding-another-supported-case).
+Distribute the pinned WPT licence with embedded binaries as well as sources.
+
+```sh
+cargo test -p borrowser-conformance --locked --test fixture_build
+cargo test -p borrowser-conformance --locked --bin borrowser-conformance relationship::tests::
+cargo test -p borrowser-conformance --locked --bin borrowser-conformance tests::ag7_malformed_expected_colors_are_errors_even_under_known_failure -- --exact
+cargo test -p borrowser-conformance --locked --test comparison_cli acceptance_
+cargo test -p borrowser-conformance --locked
+cargo run -p borrowser-conformance --locked -- wpt-style/background-color-mismatch
+# These require the pinned browser and native process ownership permissions.
+cargo test -p borrowser-conformance --locked --bin borrowser-conformance chromium::tests::real_chromium_ag7_inert_links -- --exact --ignored --nocapture --test-threads=1
+cargo test -p borrowser-conformance --locked --test comparison_cli real_chromium_ag7_scoped_relationships -- --exact --ignored --nocapture
+cargo test -p borrowser-conformance --locked --test comparison_cli real_chromium_combined_cli_is_stable_and_selects_exactly -- --exact --ignored --nocapture --test-threads=1
+cargo test -p borrowser-conformance --locked --test fixture_build isolated_cargo_rebuild_and_standalone_execution -- --exact --ignored --nocapture
+```
+
+The initial-corpus test-owned oracle checks exactly four RGB differences, both
+roles and values, expectations, per-engine relationships, coverage and exits.
+Fixed counts apply only to the explicitly named initial subset. Whole-catalogue
+checks discover declarations and authored expectations, verify ordered capture
+descriptors and coverage, and account for additional passing cases without a Rust
+registration/count edit. The isolated test keeps a new passing reference case
+present through ordinary CLI qualification and source-free Chromium execution.
+Both roles retain raw native capture evidence separately from projections.
+An additional unrelated canvas/cascade difference fails the acceptance checker.
+Temporary additions have explicit test-owned contributions; no production
+registration list or automatic blessing exists. Native macOS results are not
+native Linux or live-AWS qualification. Historical AG4 evidence is unchanged.
+Native Linux qualification remains required before AG7 closure. Earlier native
+shutdown/stability and composition failures need an evidence-based explanation;
+a subsequent isolated pass alone does not resolve them.

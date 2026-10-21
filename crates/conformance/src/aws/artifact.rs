@@ -3,17 +3,10 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub(super) struct FixtureIdentity {
-    id: String,
-    source: String,
-    sha256: String,
-}
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 pub(super) struct Identity {
     pub source_tree: Option<String>,
     pub platform: String,
-    fixtures: Vec<FixtureIdentity>,
+    fixtures: Vec<crate::chromium::CaptureDescriptor>,
     chromium_pin_sha256: String,
 }
 pub(super) fn identity() -> Result<Identity, String> {
@@ -23,16 +16,9 @@ pub(super) fn identity() -> Result<Identity, String> {
             .filter(|tree| !tree.is_empty())
             .map(Into::into),
         platform: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
-        fixtures: fixtures
+        fixtures: crate::chromium::inputs(&fixtures.iter().collect::<Vec<_>>())
             .iter()
-            .filter_map(|f| match f.kind {
-                crate::model::FixtureKind::Runnable { html, .. } => Some(FixtureIdentity {
-                    id: f.id.0.into(),
-                    source: f.source.into(),
-                    sha256: template::sha256(html),
-                }),
-                _ => None,
-            })
+            .map(|i| i.descriptor())
             .collect(),
         chromium_pin_sha256: template::sha256(include_bytes!("../../chromium-reference.json")),
     })
@@ -62,7 +48,7 @@ impl Prepared {
         .map_err(|e| e.to_string())?;
         let mut expected = own;
         expected.platform = "linux-x86_64".into();
-        if manifest.schema != 1 || manifest.identity != expected {
+        if manifest.schema != 2 || manifest.identity != expected {
             return Err("artifact/source/fixture/browser identity mismatch".into());
         }
         let executable = directory.join("borrowser-conformance-linux");

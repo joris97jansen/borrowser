@@ -45,6 +45,13 @@ fn color(value: [u8; 4]) -> Result<StyleValue, HarnessError> {
     }
     Ok(StyleValue::Rgba8(value))
 }
+/// Serialized expectations and ingested projections share the capture domain.
+pub(super) fn validate_color(value: &StyleValue) -> Result<(), HarnessError> {
+    match value {
+        StyleValue::Rgba8(rgba) => color(*rgba).map(|_| ()),
+        _ => Err(error("color requires an RGBA8 payload")),
+    }
+}
 fn font(value: f64) -> Result<StyleValue, HarnessError> {
     if !value.is_finite() || value < 0.0 {
         Err(error("invalid absolute computed font size"))

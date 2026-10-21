@@ -1,6 +1,108 @@
+#[path = "support/ag7.rs"]
+mod ag7;
 #[path = "../build_support/fixtures.rs"]
 mod fixture_build;
 mod support;
+
+fn copy_fixture_tree(from: &Path, to: &Path) {
+    fs::create_dir_all(to).unwrap();
+    for entry in fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let dest = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_fixture_tree(&entry.path(), &dest);
+        } else {
+            fs::copy(entry.path(), dest).unwrap();
+        }
+    }
+}
+
+#[test]
+fn ag7_pinned_sources_and_relationship_metadata_are_authoritative() {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for mutation in [
+        "test_hash",
+        "reference_bytes",
+        "licence_bytes",
+        "kind",
+        "reference_target",
+        "revision",
+        "attribution",
+        "local_kind",
+        "local_target",
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        copy_fixture_tree(&source.join("fixtures"), &temp.path().join("fixtures"));
+        let root = temp.path().join("fixtures");
+        let path = root.join(if mutation.starts_with("local") {
+            "wpt-style/background-color-mismatch.fixture.json"
+        } else {
+            "external/rgb-comments-p6.fixture.json"
+        });
+        let mut metadata: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        match mutation {
+            "test_hash" => metadata["provenance"]["sha256"] = json!("0".repeat(64)),
+            "reference_bytes" => fs::write(
+                root.join("external/raw/css/css-color/background-color-rgb-001-ref.html"),
+                b"<!doctype html><p>changed</p>",
+            )
+            .unwrap(),
+            "licence_bytes" => fs::write(root.join("external/raw/LICENSE.md"), b"changed").unwrap(),
+            "kind" | "local_kind" => {
+                metadata["relationship"]["kind"] =
+                    json!("match".to_string() + if mutation == "kind" { "not" } else { "" })
+            }
+            "reference_target" => {
+                metadata["relationship"]["input"] =
+                    json!("raw/css/css-color/background-color-rgb-003-ref.html")
+            }
+            "local_target" => {
+                metadata["relationship"]["input"] = json!("background-color-mismatch.html")
+            }
+            "revision" => {
+                metadata["relationship"]["provenance"]["revision"] = json!("0".repeat(40))
+            }
+            "attribution" => metadata["provenance"]["attribution"] = json!(" "),
+            _ => unreachable!(),
+        }
+        // Valid alternate kind still contradicts the pinned active link.
+        if mutation == "kind" {
+            metadata["relationship"]["kind"] = json!("mismatch");
+        }
+        fs::write(&path, serde_json::to_vec(&metadata).unwrap()).unwrap();
+        assert!(fixture_build::generate(temp.path()).is_err(), "{mutation}");
+    }
+    let generated = fixture_build::generate(source).unwrap();
+    assert!(generated.contains("wpt/rgb-comments-p6"));
+    assert!(generated.contains("wpt/unsupported/testdriver"));
+    assert!(generated.contains("Checks::Reference"));
+}
+
+#[test]
+fn ag7_valid_unsupported_forms_are_excluded_not_invented_relationships() {
+    for body in [
+        "<link rel=match href=one.html><link rel=match href=two.html>",
+        "<link rel=match href='../outside.html'>",
+        "<html class=reftest-wait><script>change()</script>",
+        "<meta name=fuzzy content='0-1;0-2'>",
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let mut metadata = declaration();
+        metadata["classification"] = json!({"kind":"unsupported","reason":"form outside AG7"});
+        metadata["observations"] = json!({});
+        metadata.as_object_mut().unwrap().remove("expected");
+        metadata.as_object_mut().unwrap().remove("expectation");
+        write_case(temp.path(), "excluded", metadata);
+        fs::write(
+            temp.path().join("fixtures/excluded.html"),
+            format!("<!doctype html>{body}"),
+        )
+        .unwrap();
+        let generated = fixture_build::generate(temp.path()).unwrap();
+        assert!(generated.contains("FixtureKind::Unsupported"));
+        assert!(!generated.contains("Checks::Reference"));
+    }
+}
 
 use serde_json::{Value, json};
 use std::{fs, path::Path, process::Command};
@@ -282,35 +384,6 @@ fn isolated_cargo_rebuild_and_standalone_execution() {
     assert!(String::from_utf8_lossy(&original.stdout).contains("INCOMPLETE aa/partial\n"));
     assert_eq!(original.status.code(), Some(3));
 
-    // Exercise the ordinary whole-corpus CLI assertions against the actual
-    // generated partial-coverage corpus, retaining its named baseline checks.
-    let cli_tests = Command::new(env!("CARGO"))
-        .args([
-            "test",
-            "-p",
-            "borrowser-conformance",
-            "--test",
-            "cli",
-            "--locked",
-            "--offline",
-        ])
-        .current_dir(&source)
-        .env("CARGO_TARGET_DIR", &target)
-        .env("CARGO_BUILD_JOBS", "4")
-        .env(
-            "BORROWSER_AG4_SOURCE_TREE",
-            "1111111111111111111111111111111111111111",
-        )
-        .output()
-        .unwrap();
-    assert!(
-        cli_tests.status.success(),
-        "{}\n{}",
-        String::from_utf8_lossy(&cli_tests.stdout),
-        String::from_utf8_lossy(&cli_tests.stderr)
-    );
-    eprintln!("AG6 ordinary CLI tests passed against generated partial-coverage corpus");
-
     let identity = run(&exe, temp.path(), &["--ag4-artifact-info"]);
     assert!(identity.status.success());
     let original_identity: Value = serde_json::from_slice(&identity.stdout).unwrap();
@@ -319,8 +392,8 @@ fn isolated_cargo_rebuild_and_standalone_execution() {
             .as_array()
             .unwrap()
             .iter()
-            .find(|fixture| fixture["id"] == id)
-            .unwrap_or_else(|| panic!("missing artifact identity for {id}"))["sha256"]
+            .find(|fixture| fixture["case_id"] == id)
+            .unwrap_or_else(|| panic!("missing artifact identity for {id}"))["source_sha256"]
             .as_str()
             .expect("fixture SHA-256")
             .to_owned()
@@ -346,8 +419,8 @@ fn isolated_cargo_rebuild_and_standalone_execution() {
             .as_array()
             .unwrap()
             .iter()
-            .take_while(|fixture| fixture["id"] != "added/canvas")
-            .any(|fixture| fixture["id"] == "aa/partial")
+            .take_while(|fixture| fixture["case_id"] != "added/canvas")
+            .any(|fixture| fixture["case_id"] == "aa/partial")
     );
     let html = fs::read_to_string(root.join("added.html"))
         .unwrap()
@@ -377,6 +450,142 @@ fn isolated_cargo_rebuild_and_standalone_execution() {
     let restored = run(&exe, temp.path(), &[]);
     support::assert_local_summary_exit(&restored);
     assert_eq!(restored.stdout, original.stdout);
+
+    // A new direct reference is discovered without Rust registration. Mutate
+    // only this test-owned local copy, never the committed upstream corpus.
+    let added_ref = root.join("added-reference");
+    copy_fixture_tree(&root.join("wpt-style"), &added_ref);
+    let meta_path = added_ref.join("background-color-mismatch.fixture.json");
+    let mut meta: Value = serde_json::from_slice(&fs::read(&meta_path).unwrap()).unwrap();
+    meta["id"] = json!("added/reference");
+    fs::write(&meta_path, serde_json::to_vec(&meta).unwrap()).unwrap();
+    build(&source, &target);
+    assert!(
+        run(&exe, temp.path(), &["added/reference"])
+            .status
+            .success()
+    );
+    let descriptors = || -> Vec<Value> {
+        let identity: Value =
+            serde_json::from_slice(&run(&exe, temp.path(), &["--ag4-artifact-info"]).stdout)
+                .unwrap();
+        assert_eq!(
+            identity["fixtures"].as_array().unwrap().len(),
+            original_identity["fixtures"].as_array().unwrap().len() + 2
+        );
+        identity["fixtures"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["case_id"] == "added/reference")
+            .cloned()
+            .collect()
+    };
+    let before = descriptors();
+    assert_eq!(before.len(), 2);
+    assert_eq!(before[0]["role"], "test");
+    assert_eq!(before[1]["role"], "reference");
+    let ref_path = added_ref.join("red.html");
+    fs::write(
+        &ref_path,
+        fs::read_to_string(&ref_path)
+            .unwrap()
+            .replace("red;", "blue;"),
+    )
+    .unwrap();
+    build(&source, &target);
+    let changed = descriptors();
+    assert_eq!(before[0], changed[0]);
+    assert_ne!(before[1]["source_sha256"], changed[1]["source_sha256"]);
+    assert_eq!(before[1]["request"], changed[1]["request"]);
+    assert!(
+        run(&exe, temp.path(), &["added/reference"])
+            .status
+            .success()
+    );
+    meta["observations"]["styles"][0]["target"] = json!("absent");
+    fs::write(&meta_path, serde_json::to_vec(&meta).unwrap()).unwrap();
+    build(&source, &target);
+    let requested = descriptors();
+    for side in 0..2 {
+        assert_eq!(
+            requested[side]["source_sha256"],
+            changed[side]["source_sha256"]
+        );
+        assert_ne!(requested[side]["request"], changed[side]["request"]);
+    }
+    let absent = run(&exe, temp.path(), &["added/reference"]);
+    assert_eq!(absent.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&absent.stdout).contains("presence_failed"));
+    fs::remove_dir_all(&added_ref).unwrap();
+    build(&source, &target);
+    assert_eq!(
+        run(&exe, temp.path(), &["added/reference"]).status.code(),
+        Some(2)
+    );
+    assert_eq!(run(&exe, temp.path(), &[]).stdout, original.stdout);
+
+    // Restore the independently authored passing variant and keep it present
+    // during ordinary CLI, whole-catalogue qualification and source-free runs.
+    copy_fixture_tree(&root.join("wpt-style"), &added_ref);
+    meta["observations"]["styles"][0]["target"] = json!("probe");
+    fs::write(&meta_path, serde_json::to_vec(&meta).unwrap()).unwrap();
+    fs::write(
+        &ref_path,
+        fs::read_to_string(&ref_path)
+            .unwrap()
+            .replace("red;", "blue;"),
+    )
+    .unwrap();
+    // Independently authored integer notation must survive discovery, typed
+    // execution, catalogue qualification and execution without this source tree.
+    let mut numeric = declaration();
+    numeric["id"] = json!("added/numeric");
+    numeric["observations"] = json!({"styles":[{
+        "target":"numeric","property":"font-size","selection":{"kind":"compare"}}]});
+    numeric["expected"] = json!({"kind":"projection","path":"numeric.expected.json"});
+    write_case(&crate_root, "numeric", numeric);
+    fs::write(root.join("numeric.html"),
+        "<!doctype html><html><head><style>#numeric { font-size: 20px; }</style></head><body><div id=\"numeric\"></div></body></html>").unwrap();
+    fs::write(root.join("numeric.expected.json"), br#"{
+        "dom":{"state":"not_requested"},"styles":[{"target":"numeric","property":"font-size",
+            "value":{"state":"observed","value":{"state":"present","value":{"kind":"css_px","value":20}}}}],
+        "layout":{"state":"not_requested"},"canvas":{"state":"not_requested"}
+    }"#).unwrap();
+    build(&source, &target);
+    // Exercise the ordinary whole-corpus CLI assertions against the actual
+    // generated corpus with an additional passing reference, retaining its named baseline checks.
+    let cli_tests = Command::new(env!("CARGO"))
+        .args([
+            "test",
+            "-p",
+            "borrowser-conformance",
+            "--test",
+            "cli",
+            "--locked",
+            "--offline",
+        ])
+        .current_dir(&source)
+        .env("CARGO_TARGET_DIR", &target)
+        .env("CARGO_BUILD_JOBS", "4")
+        .env(
+            "BORROWSER_AG4_SOURCE_TREE",
+            "1111111111111111111111111111111111111111",
+        )
+        .output()
+        .unwrap();
+    assert!(
+        cli_tests.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&cli_tests.stdout),
+        String::from_utf8_lossy(&cli_tests.stderr)
+    );
+    eprintln!(
+        "Expanded ordinary CLI qualification: {}\n{}\n{}",
+        cli_tests.status,
+        String::from_utf8_lossy(&cli_tests.stdout),
+        String::from_utf8_lossy(&cli_tests.stderr)
+    );
 
     // The actual generator must encode every accepted string as inert Rust data.
     let text = "quote \" slash \\ Unicode café 🦀 newline\n tab\t CR\r NUL\0 end";
@@ -410,62 +619,6 @@ fn isolated_cargo_rebuild_and_standalone_execution() {
             .code(),
         Some(2)
     );
-    if let Ok(browser) = std::env::var("BORROWSER_CHROMIUM_EXECUTABLE") {
-        // Actual CLI consumers share the generated catalogue. In particular,
-        // capture-only output must contain no invented excluded observation.
-        let output = run(
-            &exe,
-            temp.path(),
-            &["--chromium", "--chromium-executable", &browser],
-        );
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let capture: Value = serde_json::from_slice(&output.stdout).unwrap();
-        let rows = capture["observations"].as_array().unwrap();
-        assert_eq!(
-            rows.len(),
-            original_identity["fixtures"].as_array().unwrap().len()
-        );
-        assert!(rows.iter().all(|row| row["test_id"] != "excluded/js"));
-        let output = run(
-            &exe,
-            temp.path(),
-            &["--compare", "--chromium-executable", &browser],
-        );
-        assert_eq!(
-            output.status.code(),
-            Some(3),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let comparison: Value = serde_json::from_slice(&output.stdout).unwrap();
-        let cases = comparison["cases"].as_array().unwrap();
-        assert_eq!(cases.len(), rows.len() + 1);
-        assert!(
-            cases
-                .iter()
-                .find(|c| c["test_id"] == "excluded/js")
-                .unwrap()["captures"]
-                .is_null()
-        );
-        let partial = cases
-            .iter()
-            .find(|case| case["test_id"] == "aa/partial")
-            .expect("partial-coverage comparison");
-        assert_eq!(partial["status"], "incomplete");
-        assert_eq!(partial["borrowser_expectation"]["status"], "INCOMPLETE");
-        assert!(!partial["captures"].is_null());
-        assert_eq!(comparison["summary"]["different_fields"], 0);
-        eprintln!("AG6 real Chromium mixed-catalogue capture/comparison passed");
-    } else {
-        eprintln!(
-            "AG6 optional real Chromium mixed-catalogue check NOT EXECUTED: no pinned browser configured"
-        );
-    }
-
     // Even selecting a different case must validate all malformed expectations first.
     let expected = root.join("dom-structure.expected.json");
     let saved = fs::read(&expected).unwrap();
@@ -532,10 +685,62 @@ fn isolated_cargo_rebuild_and_standalone_execution() {
         serde_json::from_slice(&run(&exe, temp.path(), &["--ag4-artifact-info"]).stdout).unwrap();
     assert_eq!(identity["fixtures"], json!([]));
     fs::remove_dir_all(&root).unwrap();
-    fs::rename(saved_root, &root).unwrap();
+    // Restore as ordinary file additions. Renaming the saved directory back
+    // would preserve timestamps older than Cargo's latest directory fingerprint.
+    copy_fixture_tree(&saved_root, &root);
+    fs::remove_dir_all(saved_root).unwrap();
     build(&source, &target);
     let expected = run(&exe, temp.path(), &[]);
     support::assert_local_summary_exit(&expected);
+    let restored_text = String::from_utf8_lossy(&expected.stdout);
+    for line in [
+        "PASS canvas/root",
+        "PASS added/reference",
+        "PASS added/numeric",
+        "PASS wpt-style/background-color-mismatch",
+        "INCOMPLETE wpt/rgb-comments-p6",
+        "UNSUPPORTED excluded/js",
+    ] {
+        assert!(restored_text.contains(line), "restored corpus: {line}");
+    }
+    assert!(!restored_text.contains("excluded/skipped"));
+    let authored = ag7::declarations(&root);
+    let expanded_identity: Value =
+        serde_json::from_slice(&run(&exe, temp.path(), &["--ag4-artifact-info"]).stdout).unwrap();
+    if std::env::var_os("BORROWSER_CHROMIUM_EXECUTABLE").is_some() {
+        let output = Command::new(env!("CARGO"))
+            .args([
+                "test",
+                "-p",
+                "borrowser-conformance",
+                "--locked",
+                "--offline",
+                "--test",
+                "comparison_cli",
+                "real_chromium_combined_cli_is_stable_and_selects_exactly",
+                "--",
+                "--exact",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .current_dir(&source)
+            .env("CARGO_TARGET_DIR", &target)
+            .env("CARGO_BUILD_JOBS", "4")
+            .env(
+                "BORROWSER_AG4_SOURCE_TREE",
+                "1111111111111111111111111111111111111111",
+            )
+            .output()
+            .unwrap();
+        eprintln!(
+            "Expanded catalogue CLI qualification: {}\n{}\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(output.status.success());
+    }
     let standalone = temp.path().join("standalone");
     fs::copy(&exe, &standalone).unwrap();
     fs::remove_dir_all(&source).unwrap();
@@ -549,6 +754,149 @@ fn isolated_cargo_rebuild_and_standalone_execution() {
             .status
             .success()
     );
+    // All optional real captures now also prove that the copied executable
+    // resolves embedded test/reference inputs after removal of its source tree.
+    if let Ok(browser) = std::env::var("BORROWSER_CHROMIUM_EXECUTABLE") {
+        // Actual CLI consumers share the generated catalogue. In particular,
+        // capture-only output must contain no invented excluded observation.
+        let output = run(
+            &standalone,
+            temp.path(),
+            &["--chromium", "--chromium-executable", &browser],
+        );
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let capture: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let rows = capture["observations"].as_array().unwrap();
+        assert_eq!(
+            rows.len(),
+            expanded_identity["fixtures"].as_array().unwrap().len()
+        );
+        assert!(
+            rows.iter()
+                .all(|row| row["descriptor"]["case_id"] != "excluded/js")
+        );
+        let output = run(
+            &standalone,
+            temp.path(),
+            &["--compare", "--chromium-executable", &browser],
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let comparison: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let cases = comparison["cases"].as_array().unwrap();
+        assert_eq!(cases.len(), authored.len());
+        assert_eq!(
+            rows.iter()
+                .map(|r| r["descriptor"].clone())
+                .collect::<Vec<_>>(),
+            *expanded_identity["fixtures"].as_array().unwrap()
+        );
+        assert!(
+            cases
+                .iter()
+                .find(|c| c["test_id"] == "excluded/js")
+                .unwrap()["captures"]
+                .is_null()
+        );
+        let partial = cases
+            .iter()
+            .find(|case| case["test_id"] == "aa/partial")
+            .expect("partial-coverage comparison");
+        assert_eq!(partial["status"], "incomplete");
+        assert_eq!(partial["borrowser_expectation"]["status"], "INCOMPLETE");
+        assert!(!partial["captures"].is_null());
+        ag7::assert_catalogue(
+            &comparison,
+            output.status.code().unwrap(),
+            &expanded_identity["fixtures"],
+            &authored,
+        );
+        let numeric = cases
+            .iter()
+            .find(|c| c["test_id"] == "added/numeric")
+            .unwrap();
+        assert_eq!(numeric["status"], "equal_for_requested_scope");
+        assert_eq!(numeric["borrowser_expectation"]["status"], "PASS");
+        assert!(numeric["relationships"].is_null());
+        assert!(numeric["reference_document"].is_null());
+        assert_eq!(numeric["fields"].as_array().unwrap().len(), 1);
+        assert_eq!(numeric["fields"][0]["id"], "style:#numeric/font-size");
+        assert_eq!(numeric["fields"][0]["status"], "equal");
+        for engine in ["borrowser", "chromium"] {
+            assert_eq!(
+                numeric["projections"][engine]["styles"][0]["value"]["value"]["value"],
+                json!({"kind":"css_px","value":20.0})
+            );
+            assert!(!numeric["captures"][engine].is_null());
+        }
+        let added = cases
+            .iter()
+            .find(|c| c["test_id"] == "added/reference")
+            .unwrap();
+        assert_eq!(added["status"], "equal_for_requested_scope");
+        assert!(added["borrowser_expectation"].is_null());
+        for (doc, rgba) in [
+            (added, [0, 128, 0, 255]),
+            (&added["reference_document"], [0, 0, 255, 255]),
+        ] {
+            assert_eq!(doc["fields"].as_array().unwrap().len(), 1);
+            assert_eq!(doc["fields"][0]["status"], "equal");
+            for engine in ["borrowser", "chromium"] {
+                assert_eq!(
+                    doc["projections"][engine]["styles"][0]["value"]["value"]["value"]["value"],
+                    json!(rgba)
+                );
+                assert_eq!(added["relationships"][engine]["status"], "satisfied");
+            }
+        }
+        // The test-owned partial case contributes one unsupported DOM field;
+        // excluded/js retains its declared canvas selection and contributes a
+        // separate unsupported canvas field. Neither is an upstream-coverage count.
+        let excluded_case = cases
+            .iter()
+            .find(|c| c["test_id"] == "excluded/js")
+            .unwrap();
+        assert_eq!(excluded_case["fields"].as_array().unwrap().len(), 1);
+        assert_eq!(excluded_case["fields"][0]["id"], "canvas_color_rgb8");
+        assert_eq!(excluded_case["fields"][0]["status"], "unsupported");
+        eprintln!("AG6 real Chromium mixed-catalogue capture/comparison passed");
+    } else {
+        eprintln!(
+            "AG6 optional real Chromium mixed-catalogue check NOT EXECUTED: no pinned browser configured"
+        );
+    }
+
+    if let Ok(browser) = std::env::var("BORROWSER_CHROMIUM_EXECUTABLE") {
+        let output = run(
+            &standalone,
+            temp.path(),
+            &[
+                "--compare",
+                "wpt-style/background-color-mismatch",
+                "--chromium-executable",
+                &browser,
+            ],
+        );
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["summary"]["executed_documents"], 2);
+        assert_eq!(
+            report["cases"][0]["relationships"]["chromium"]["status"],
+            "satisfied"
+        );
+    }
     eprintln!(
         "AG6 isolated production rebuild: add/edit/remove, literal preservation, preflight, exclusions and source-free copied executable passed"
     );

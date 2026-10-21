@@ -22,8 +22,8 @@ struct WireBrowser {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Observation {
-    test_id: String,
-    source: String,
+    descriptor: super::CaptureDescriptor,
+    metadata_links: Vec<crate::metadata_links::LinkFact>,
     #[serde(deserialize_with = "super::inspection::required_nullable")]
     canvas_color_rgb8: Option<CanvasColor>,
     #[serde(deserialize_with = "super::inspection::required_nullable")]
@@ -56,17 +56,13 @@ pub(crate) fn decode(
     }
     let report: Report =
         serde_json::from_slice(&bytes).map_err(|e| format!("capture JSON: {e}"))?;
-    if report.schema != "borrowser.chromium-phases.v1"
+    if report.schema != "borrowser.chromium-phases.v2"
         || report.document_url != URL
         || report.viewport != [WIDTH, HEIGHT]
         || report.device_scale_factor != 1
         || report.sample_pixel != SAMPLE
         || inputs.is_empty()
-        || inputs.len()
-            > fixtures
-                .iter()
-                .filter(|f| matches!(f.kind, crate::model::FixtureKind::Runnable { .. }))
-                .count()
+        || inputs.len() > super::inputs(&fixtures.iter().collect::<Vec<_>>()).len()
         || report.observations.len() != inputs.len()
     {
         return Err("capture environment or observation count mismatch".into());
@@ -80,16 +76,19 @@ pub(crate) fn decode(
         .zip(inputs)
         .enumerate()
         .map(|(index, (wire, input))| {
-            if inputs[..index].iter().any(|other| other.id == input.id)
-                || !fixtures.iter().any(|f| {
-                    f.id == input.id
-                        && f.source == input.source
-                        && matches!(f.kind, crate::model::FixtureKind::Runnable { .. })
-                })
-                || wire.test_id != input.id.0
-                || wire.source != input.source
+            let descriptor = input.descriptor();
+            if inputs[..index]
+                .iter()
+                .any(|other| other.id == input.id && other.role == input.role)
+                || wire.descriptor != descriptor
             {
                 return Err("capture identity/order mismatch".into());
+            }
+            let expected_links: Vec<crate::metadata_links::LinkFact> =
+                serde_json::from_str(input.metadata_links).map_err(|e| e.to_string())?;
+            crate::metadata_links::validate(&wire.metadata_links)?;
+            if wire.metadata_links != expected_links {
+                return Err("capture metadata link correspondence mismatch".into());
             }
             let b = wire.browser;
             if b.version != pin["version"]
@@ -102,11 +101,11 @@ pub(crate) fn decode(
                 return Err("capture browser identity mismatch".into());
             }
             let captured = CapturedFixture {
-                id: input.id,
-                source: wire.source,
+                descriptor,
                 capture: ChromiumCapture {
                     color: wire.canvas_color_rgb8,
                     inspection: wire.inspection,
+                    metadata_links: wire.metadata_links,
                     identity: BrowserIdentity {
                         product: b.product,
                         version: b.version,
@@ -133,26 +132,28 @@ mod tests {
     fn report() -> Value {
         let pin: Value =
             serde_json::from_str(include_str!("../../chromium-reference.json")).unwrap();
-        json!({"schema":"borrowser.chromium-phases.v1", "document_url":URL,
+        json!({"schema":"borrowser.chromium-phases.v2", "document_url":URL,
             "viewport":[WIDTH,HEIGHT],"device_scale_factor":1,"sample_pixel":SAMPLE,
-            "observations":[{"test_id":"canvas/root","source":"fixtures/root-canvas-color.html",
+            "observations":[{"descriptor":super::super::inputs(&[crate::fixtures::fixture("canvas/root")])[0].descriptor(),"metadata_links":[],
             "canvas_color_rgb8":[18,52,86],"inspection":null,"browser":{"product":format!("Chrome/{}",pin["version"].as_str().unwrap()),
             "version":pin["version"],"revision":pin["revision"],"protocol_version":pin["protocol_version"],
             "platform":"linux-x86_64","capture_profile":pin["capture_profile"]}}]})
     }
     fn check(v: &Value) -> Result<Vec<CapturedFixture>, String> {
         let input = CaptureInput {
+            role: crate::chromium::DocumentRole::Test,
+            metadata_links: "[]",
             request: crate::projection::ObservationRequest::CANVAS,
             id: crate::fixtures::fixture("canvas/root").id,
-            source: crate::fixtures::fixture("canvas/root").source,
-            html: b"",
+            source: crate::fixtures::fixture("canvas/root").document.source,
+            html: crate::fixtures::fixture("canvas/root").document.html,
         };
         decode(serde_json::to_vec(v).unwrap().as_slice(), &[input])
     }
     #[test]
     fn validated_capture_preserves_registry_identity_and_sample() {
         let c = check(&report()).unwrap();
-        assert_eq!(c[0].id, crate::fixtures::fixture("canvas/root").id);
+        assert_eq!(c[0].descriptor.case_id, "canvas/root");
         assert_eq!(c[0].capture.color, Some(CanvasColor([18, 52, 86])));
     }
     #[test]
@@ -160,8 +161,8 @@ mod tests {
         for pointer in [
             "/schema",
             "/document_url",
-            "/observations/0/test_id",
-            "/observations/0/source",
+            "/observations/0/descriptor/case_id",
+            "/observations/0/descriptor/source_sha256",
             "/observations/0/browser/platform",
             "/observations/0/browser/version",
             "/observations/0/browser/revision",
@@ -183,10 +184,12 @@ mod tests {
         v["observations"][0]["canvas_color_rgb8"] = json!([256, 0, 0]);
         assert!(check(&v).is_err());
         let input = CaptureInput {
+            role: crate::chromium::DocumentRole::Test,
+            metadata_links: "[]",
             request: crate::projection::ObservationRequest::CANVAS,
             id: crate::fixtures::fixture("canvas/root").id,
             source: "fixtures/root-canvas-color.html",
-            html: b"",
+            html: crate::fixtures::fixture("canvas/root").document.html,
         };
         let wire = serde_json::to_string(&report()).unwrap().replacen(
             "{",
@@ -205,16 +208,18 @@ mod tests {
         let inputs: Vec<_> = crate::fixtures::baseline()[..2]
             .iter()
             .map(|f| CaptureInput {
+                role: crate::chromium::DocumentRole::Test,
+                metadata_links: "[]",
                 request: f.request,
                 id: f.id,
-                source: f.source,
-                html: b"",
+                source: f.document.source,
+                html: f.document.html,
             })
             .collect();
         let mut wire = report();
+        wire["observations"][0]["descriptor"] = json!(inputs[0].descriptor());
         let mut second = wire["observations"][0].clone();
-        second["test_id"] = json!(inputs[1].id.0);
-        second["source"] = json!(inputs[1].source);
+        second["descriptor"] = json!(inputs[1].descriptor());
         wire["observations"].as_array_mut().unwrap().push(second);
         let check = |wire: &Value| decode(serde_json::to_vec(wire).unwrap().as_slice(), &inputs);
         assert_eq!(check(&wire).unwrap().len(), 2);
@@ -223,6 +228,44 @@ mod tests {
         wire["observations"][1] = wire["observations"][0].clone();
         assert!(check(&wire).is_err());
         assert!(decode(b"{\"observations\":".as_slice(), &inputs).is_err());
+    }
+
+    #[test]
+    fn ag7_reference_ingestion_requires_exact_bytes_role_request_links_and_order() {
+        let inputs = super::super::inputs(&[crate::fixtures::fixture("wpt/rgb-comments-p6")]);
+        let mut wire = report();
+        let browser = wire["observations"][0]["browser"].clone();
+        wire["observations"]=json!(inputs.iter().map(|input|json!({
+            "descriptor":input.descriptor(),"metadata_links":serde_json::from_str::<Value>(input.metadata_links).unwrap(),
+            "canvas_color_rgb8":null,"browser":browser,
+            "inspection":{"dom":null,"styles":[{"target":"p6","values":["rgb(0, 0, 0)","rgb(10, 150, 50)","16px","block"]}],"layout":[],"inner_width":640,"inner_height":480,"layout_width":640}
+        })).collect::<Vec<_>>());
+        let check = |wire: &Value| decode(serde_json::to_vec(wire).unwrap().as_slice(), &inputs);
+        assert_eq!(check(&wire).unwrap().len(), 2);
+        for fault in 0..9 {
+            let mut bad = wire.clone();
+            match fault {
+                0 => {
+                    bad["observations"].as_array_mut().unwrap().pop();
+                }
+                1 => bad["observations"].as_array_mut().unwrap().swap(0, 1),
+                2 => bad["observations"][1] = bad["observations"][0].clone(),
+                3 => bad["observations"][1]["descriptor"]["source_sha256"] = json!("0".repeat(64)),
+                4 => bad["observations"][1]["descriptor"]["role"] = json!("test"),
+                5 => {
+                    bad["observations"][1]["descriptor"]["request"] =
+                        json!(crate::projection::ObservationRequest::CANVAS.descriptor())
+                }
+                6 => bad["observations"][1]["metadata_links"] = json!([]),
+                7 => {
+                    let extra = bad["observations"][1].clone();
+                    bad["observations"].as_array_mut().unwrap().push(extra);
+                }
+                8 => bad["observations"][1]["descriptor"]["case_id"] = json!("wpt/rgb-alias-p6"),
+                _ => unreachable!(),
+            }
+            assert!(check(&bad).is_err(), "{fault}");
+        }
     }
 }
 
@@ -237,8 +280,10 @@ mod phase_tests {
         let inputs: Vec<_> = crate::fixtures::baseline()
             .iter()
             .map(|f| CaptureInput {
+                role: crate::chromium::DocumentRole::Test,
+                metadata_links: "[]",
                 id: f.id,
-                source: f.source,
+                source: f.document.source,
                 html: b"",
                 request: f.request,
             })
@@ -250,10 +295,10 @@ mod phase_tests {
                     "styles":request.style_targets.iter().map(|id|json!({"target":id,"values":null})).collect::<Vec<_>>(),
                     "layout":request.layout_targets.iter().map(|id|json!({"target":id,"boxes":null})).collect::<Vec<_>>(),"inner_width":640,"inner_height":480,"layout_width":640})
             }else{Value::Null};
-            json!({"test_id":input.id.0,"source":input.source,"canvas_color_rgb8":if matches!(input.request.canvas,crate::projection::Request::Compare(())){json!([18,52,86])}else{Value::Null},"inspection":inspect,
+            json!({"descriptor":input.descriptor(),"metadata_links":[],"canvas_color_rgb8":if matches!(input.request.canvas,crate::projection::Request::Compare(())){json!([18,52,86])}else{Value::Null},"inspection":inspect,
                 "browser":{"product":format!("Chrome/{}",pin["version"].as_str().unwrap()),"version":pin["version"],"revision":pin["revision"],"protocol_version":pin["protocol_version"],"capture_profile":pin["capture_profile"],"platform":"linux-x86_64"}})
         }).collect();
-        let wire = json!({"schema":"borrowser.chromium-phases.v1","document_url":URL,"viewport":[WIDTH,HEIGHT],"device_scale_factor":1,"sample_pixel":SAMPLE,"observations":observations});
+        let wire = json!({"schema":"borrowser.chromium-phases.v2","document_url":URL,"viewport":[WIDTH,HEIGHT],"device_scale_factor":1,"sample_pixel":SAMPLE,"observations":observations});
         let check = |wire: &Value| decode(serde_json::to_vec(wire).unwrap().as_slice(), &inputs);
         assert_eq!(check(&wire).unwrap().len(), 6);
         // Both local capture and AG4 ingestion use this strict native boundary.
@@ -334,8 +379,10 @@ mod mixed_presence_tests {
             ..ObservationRequest::NONE
         };
         let input = CaptureInput {
+            role: crate::chromium::DocumentRole::Test,
+            metadata_links: "[]",
             id: crate::fixtures::fixture("dom/structure").id,
-            source: crate::fixtures::fixture("dom/structure").source,
+            source: crate::fixtures::fixture("dom/structure").document.source,
             html: b"",
             request,
         };
@@ -384,7 +431,7 @@ mod mixed_presence_tests {
             capture.identity.platform = "linux-x86_64".into();
             capture.inspection = Some(serde_json::from_value(inspection.clone()).unwrap());
             let local = crate::projection::chromium(&capture, request).is_ok();
-            let wire = json!({"schema":"borrowser.chromium-phases.v1","document_url":URL,"viewport":[WIDTH,HEIGHT],"device_scale_factor":1,"sample_pixel":SAMPLE,"observations":[{"test_id":input.id.0,"source":input.source,"canvas_color_rgb8":null,"inspection":inspection,"browser":capture.identity}]});
+            let wire = json!({"schema":"borrowser.chromium-phases.v2","document_url":URL,"viewport":[WIDTH,HEIGHT],"device_scale_factor":1,"sample_pixel":SAMPLE,"observations":[{"descriptor":input.descriptor(),"metadata_links":[],"canvas_color_rgb8":null,"inspection":inspection,"browser":capture.identity}]});
             let remote = decode(
                 serde_json::to_vec(&wire).unwrap().as_slice(),
                 std::slice::from_ref(&input),

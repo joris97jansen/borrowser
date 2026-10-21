@@ -88,16 +88,42 @@ fn validate_captures(
     inputs: &[CaptureInput<'_>],
     captures: &[CapturedFixture],
 ) -> Result<(), HarnessError> {
+    for (index, input) in inputs.iter().enumerate() {
+        crate::projection::validate_request(input.request)?;
+        if inputs[..index]
+            .iter()
+            .any(|other| other.id == input.id && other.role == input.role)
+        {
+            return Err(HarnessError::new(
+                "required-data",
+                "duplicate selected capture role",
+            ));
+        }
+    }
     if inputs.len() != captures.len()
         || inputs
             .iter()
             .zip(captures)
-            .any(|(input, capture)| input.id != capture.id || input.source != capture.source)
+            .any(|(input, capture)| input.descriptor() != capture.descriptor)
     {
         return Err(HarnessError::new(
             "required-data",
             "incomplete or mismatched Chromium capture correspondence",
         ));
+    }
+    for (input, captured) in inputs.iter().zip(captures) {
+        let expected: Vec<crate::metadata_links::LinkFact> =
+            serde_json::from_str(input.metadata_links)
+                .map_err(|e| HarnessError::new("required-data", e.to_string()))?;
+        crate::metadata_links::validate(&captured.capture.metadata_links)
+            .map_err(|e| HarnessError::new("required-data", e))?;
+        if expected != captured.capture.metadata_links {
+            return Err(HarnessError::new(
+                "required-data",
+                "captured link facts do not correspond to selected bytes",
+            ));
+        }
+        crate::projection::chromium(&captured.capture, input.request)?;
     }
     Ok(())
 }
@@ -107,19 +133,7 @@ fn execute_selected(
     executable: Option<&Path>,
 ) -> Result<report::Report, Failure> {
     validate_selection(fixtures)?;
-    let inputs: Vec<_> = fixtures
-        .iter()
-        .filter_map(|fixture| match fixture.kind {
-            FixtureKind::Runnable { html, .. } => Some(CaptureInput {
-                id: fixture.id,
-                source: fixture.source,
-                html,
-
-                request: fixture.request,
-            }),
-            _ => None,
-        })
-        .collect();
+    let inputs = chromium::inputs(fixtures);
     // Phase 1 is a whole-invocation boundary. Do not move this into the loop
     // below: execute_html spawns workers whose termination is not joined.
     let captures = if inputs.is_empty() {
@@ -139,31 +153,30 @@ fn compare_captured(
     captures: Vec<CapturedFixture>,
 ) -> Result<report::Report, Failure> {
     validate_selection(fixtures)?;
-    let inputs: Vec<_> = fixtures
-        .iter()
-        .filter_map(|fixture| match fixture.kind {
-            FixtureKind::Runnable { html, .. } => Some(CaptureInput {
-                id: fixture.id,
-                source: fixture.source,
-                html,
-
-                request: fixture.request,
-            }),
-            _ => None,
-        })
-        .collect();
+    let inputs = chromium::inputs(fixtures);
     validate_captures(&inputs, &captures)?;
     let mut captures = captures.into_iter();
     let mut cases = Vec::with_capacity(fixtures.len());
     // Phase 2 never launches children or calls the native launcher/reaper.
     for fixture in fixtures {
         let case = match fixture.kind {
-            FixtureKind::Runnable { html, .. } => {
+            FixtureKind::Runnable { .. } => {
                 let capture = captures
                     .next()
                     .ok_or_else(|| HarnessError::new("required-data", "missing Chromium sample"))?;
-                let observed = execute::execute_fixture(html, fixture.request)?;
-                report::Case::observed(fixture, observed, capture.capture)?
+                let observed = execute::execute_fixture(fixture.document.html, fixture.request)?;
+                let reference = if let Some((_, document)) = fixture.reference() {
+                    let captured = captures.next().ok_or_else(|| {
+                        HarnessError::new("required-data", "missing reference capture")
+                    })?;
+                    Some((
+                        execute::execute_fixture(document.html, fixture.request)?,
+                        captured.capture,
+                    ))
+                } else {
+                    None
+                };
+                report::Case::observed_pair(fixture, observed, capture.capture, reference)?
             }
             FixtureKind::Unsupported { reason } => report::Case::unsupported(fixture, reason),
             FixtureKind::Skipped { reason } => report::Case::skipped(fixture, reason),

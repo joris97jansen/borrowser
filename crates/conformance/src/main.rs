@@ -7,8 +7,10 @@ mod comparison;
 mod environment;
 mod execute;
 mod fixtures;
+mod metadata_links;
 mod model;
 mod projection;
+mod relationship;
 mod report;
 #[cfg(test)]
 mod tests;
@@ -21,11 +23,29 @@ use std::{
 
 fn run_fixture(fixture: &Fixture) -> Execution {
     match fixture.kind {
-        FixtureKind::Runnable { html, .. } => match execute::execute_fixture(html, fixture.request)
-        {
-            Ok(color) => Execution::Observed(color),
-            Err(error) => Execution::Error(error),
-        },
+        FixtureKind::Runnable { .. } => {
+            let result = (|| {
+                if fixture.requires_javascript {
+                    return Err(model::HarnessError::new(
+                        "fixture.configuration",
+                        "runnable JavaScript requirement",
+                    ));
+                }
+                let test = execute::execute_fixture(fixture.document.html, fixture.request)?;
+                Ok(if let Some((_, reference)) = fixture.reference() {
+                    Execution::ReferenceObserved {
+                        test,
+                        reference: Box::new(execute::execute_fixture(
+                            reference.html,
+                            fixture.request,
+                        )?),
+                    }
+                } else {
+                    Execution::Observed(test)
+                })
+            })();
+            result.unwrap_or_else(Execution::Error)
+        }
         FixtureKind::Unsupported { reason } => Execution::Unsupported { reason },
         FixtureKind::Skipped { reason } => Execution::Skipped { reason },
     }

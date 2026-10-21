@@ -36,6 +36,7 @@ pub(super) struct ChromiumCapture {
     pub(crate) color: Option<CanvasColor>,
     pub(crate) inspection: Option<inspection::Inspection>,
     pub(crate) identity: BrowserIdentity,
+    pub(crate) metadata_links: Vec<crate::metadata_links::LinkFact>,
     #[cfg(test)]
     default_favicon_aborted: bool,
 }
@@ -125,12 +126,24 @@ fn capture_html(
         cancel,
     )
 }
+#[cfg(test)]
 fn capture_requested_html(
     html: &[u8],
     request: crate::projection::ObservationRequest,
     config: &ChromiumConfig,
     cancel: &Cancellation,
 ) -> Result<ChromiumCapture, Failure> {
+    capture_document(html, request, &[], config, cancel)
+}
+
+fn capture_document(
+    html: &[u8],
+    request: crate::projection::ObservationRequest,
+    expected_links: &[crate::metadata_links::LinkFact],
+    config: &ChromiumConfig,
+    cancel: &Cancellation,
+) -> Result<ChromiumCapture, Failure> {
+    crate::metadata_links::validate(expected_links).map_err(|e| configuration(&e))?;
     #[cfg(test)]
     if !config.scripts_disabled {
         tests::require_script_positive_control(html).map_err(|error| Failure {
@@ -229,8 +242,7 @@ fn capture_requested_html(
             .inspect_document(&document)?;
         #[cfg(test)]
         cdp.capture_operation_completed();
-        // Query Chromium's parsed live document; do not parse HTML or rel tokens
-        // in the harness. Even inert link elements are outside this narrow profile.
+        // Default deny. Only exact build-validated inert metadata can relax this.
         let links = cdp.call(
             "DOM.querySelector",
             json!({"nodeId":document_node,"selector":"link"}),
@@ -243,10 +255,22 @@ fn capture_requested_html(
             capture_deadline,
             Phase::Capture,
         )?;
-        cdp.navigation
-            .as_mut()
-            .unwrap()
-            .verify_document_policy(&links, &tree)?;
+        let metadata_links = if expected_links.is_empty() {
+            cdp.navigation
+                .as_mut()
+                .unwrap()
+                .verify_document_policy(&links, &tree)?;
+            vec![]
+        } else {
+            let frame_id = cdp::string(&tree["frameTree"]["frame"], "id")?;
+            let facts = inspection::collect_metadata_links(&mut cdp, frame_id, capture_deadline)?;
+            cdp.navigation.as_mut().unwrap().verify_metadata_policy(
+                &facts,
+                expected_links,
+                &tree,
+            )?;
+            facts
+        };
         let metrics = cdp.call(
             "Page.getLayoutMetrics",
             json!({}),
@@ -325,13 +349,17 @@ fn capture_requested_html(
             color,
             inspection,
             identity,
+            metadata_links,
             #[cfg(test)]
             default_favicon_aborted: cdp.navigation.as_ref().unwrap().verified_favicon(),
         })
     })();
     #[cfg(test)]
-    if result.is_err() {
-        eprintln!("AG2 capture failure: {}", cdp.failure_diagnostic());
+    if let Err(error) = &result {
+        eprintln!(
+            "AG2 capture failure: {error:?}; {}",
+            cdp.failure_diagnostic()
+        );
     }
     drop(cdp);
     #[cfg(test)]
@@ -522,34 +550,84 @@ fn attribute_capture_failure(mut failure: Failure, input: &CaptureInput<'_>) -> 
 }
 
 #[derive(Serialize)]
-struct Observation<'a> {
-    test_id: &'a str,
-    source: &'a str,
+struct Observation {
+    descriptor: CaptureDescriptor,
+    metadata_links: Vec<crate::metadata_links::LinkFact>,
     canvas_color_rgb8: Option<CanvasColor>,
     inspection: Option<inspection::Inspection>,
     browser: BrowserIdentity,
 }
 #[derive(Serialize)]
-struct CaptureReport<'a> {
+struct CaptureReport {
     schema: &'static str,
     document_url: &'static str,
     viewport: [u32; 2],
     device_scale_factor: u32,
     sample_pixel: [u32; 2],
-    observations: Vec<Observation<'a>>,
+    observations: Vec<Observation>,
 }
 /// Only fixture bytes and identity cross the capture boundary, never expectations.
 pub(crate) struct CaptureInput<'a> {
     pub(crate) id: TestId,
     pub(crate) source: &'a str,
     pub(crate) html: &'a [u8],
+    pub(crate) role: DocumentRole,
+    pub(crate) metadata_links: &'a str,
     pub(crate) request: crate::projection::ObservationRequest,
 }
 #[derive(Debug)]
 pub(crate) struct CapturedFixture {
-    pub(crate) id: TestId,
-    pub(crate) source: String,
+    pub(crate) descriptor: CaptureDescriptor,
     pub(crate) capture: ChromiumCapture,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DocumentRole {
+    Test,
+    Reference,
+}
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CaptureDescriptor {
+    pub(crate) case_id: String,
+    pub(crate) role: DocumentRole,
+    pub(crate) source_sha256: String,
+    pub(crate) request: crate::projection::RequestDescriptor,
+}
+impl CaptureInput<'_> {
+    pub(crate) fn descriptor(&self) -> CaptureDescriptor {
+        use sha2::{Digest, Sha256};
+        CaptureDescriptor {
+            case_id: self.id.0.into(),
+            role: self.role,
+            source_sha256: format!("{:x}", Sha256::digest(self.html)),
+            request: self.request.descriptor(),
+        }
+    }
+}
+pub(crate) fn inputs(fixtures: &[&crate::model::Fixture]) -> Vec<CaptureInput<'static>> {
+    let mut inputs = Vec::new();
+    for fixture in fixtures {
+        if !matches!(fixture.kind, FixtureKind::Runnable { .. }) {
+            continue;
+        }
+        let mut push = |role, doc: crate::model::DocumentInput| {
+            inputs.push(CaptureInput {
+                id: fixture.id,
+                role,
+                source: doc.source,
+                html: doc.html,
+                metadata_links: doc.metadata_links,
+                request: fixture.request,
+            })
+        };
+        push(DocumentRole::Test, fixture.document);
+        if let Some((_, reference)) = fixture.reference() {
+            push(DocumentRole::Reference, reference);
+        }
+    }
+    inputs
 }
 
 pub(crate) fn configuration(detail: &str) -> Failure {
@@ -610,14 +688,21 @@ pub(crate) fn capture_batch(
     let mut captures = Vec::with_capacity(inputs.len());
     for input in inputs {
         #[cfg(test)]
-        crate::comparison::tests::record(crate::comparison::tests::Event::CaptureStarted(input.id));
-        let capture = capture_requested_html(input.html, input.request, &config, &cancel)
-            .map_err(|failure| attribute_capture_failure(failure, input))?;
+        crate::comparison::tests::record(crate::comparison::tests::Event::CaptureStarted(
+            input.id, input.role,
+        ));
+        let expected_links: Vec<crate::metadata_links::LinkFact> =
+            serde_json::from_str(input.metadata_links)
+                .map_err(|e| configuration(&format!("metadata links: {e}")))?;
+        let capture =
+            capture_document(input.html, input.request, &expected_links, &config, &cancel)
+                .map_err(|failure| attribute_capture_failure(failure, input))?;
         #[cfg(test)]
-        crate::comparison::tests::record(crate::comparison::tests::Event::CaptureCleaned(input.id));
+        crate::comparison::tests::record(crate::comparison::tests::Event::CaptureCleaned(
+            input.id, input.role,
+        ));
         captures.push(CapturedFixture {
-            id: input.id,
-            source: input.source.into(),
+            descriptor: input.descriptor(),
             capture,
         });
     }
@@ -632,23 +717,10 @@ pub(crate) fn capture_batch(
 }
 
 pub(crate) fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
-    let execute = || -> Result<CaptureReport<'_>, Failure> {
+    let execute = || -> Result<CaptureReport, Failure> {
         let options = options(args)?;
         let fixtures = options.select_fixtures()?;
-        let inputs = fixtures
-            .iter()
-            .filter_map(|fixture| {
-                let FixtureKind::Runnable { html, .. } = fixture.kind else {
-                    return None;
-                };
-                Some(CaptureInput {
-                    id: fixture.id,
-                    source: fixture.source,
-                    html,
-                    request: fixture.request,
-                })
-            })
-            .collect::<Vec<_>>();
+        let inputs = inputs(&fixtures);
         if inputs.is_empty() {
             return Err(configuration("selection contains no runnable fixtures"));
         }
@@ -660,15 +732,15 @@ pub(crate) fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
             .iter()
             .zip(captures)
             .map(|(input, capture)| Observation {
-                test_id: input.id.0,
-                source: input.source,
+                descriptor: input.descriptor(),
+                metadata_links: capture.capture.metadata_links,
                 canvas_color_rgb8: capture.capture.color,
                 inspection: capture.capture.inspection,
                 browser: capture.capture.identity,
             })
             .collect();
         Ok(CaptureReport {
-            schema: "borrowser.chromium-phases.v1",
+            schema: "borrowser.chromium-phases.v2",
             document_url: URL,
             viewport: [WIDTH, HEIGHT],
             device_scale_factor: 1,

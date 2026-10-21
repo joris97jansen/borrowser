@@ -938,7 +938,32 @@ When a feature lands:
 2. Link to the relevant contract doc if the behavior is subtle.
 3. Keep this file short; move detailed rules to subsystem docs.
 
-## Focused Conformance Tooling (AG1–AG6)
+## Focused Conformance Tooling (AG1–AG7)
+
+- AG7 embeds a deliberately small, revision/path/SHA-256-pinned WPT corpus with
+  licence and attribution. Two unchanged RGB static cases use one direct match
+  each; one locally authored mismatch is explicitly separate from upstream WPT
+  coverage. Two JS/platform cases are classified before either engine runs.
+- Relationships compare one present target's computed background-color through
+  existing AG5 exact semantics. Independent expectations, per-engine relationships,
+  same-document cross-engine comparisons and unsupported original full visual
+  assertions are separate. No full WPT reftest PASS or browser compliance is claimed.
+- Native macOS pinned Chromium confirms four RGB cross-engine differences:
+  Borrowser's existing functional-color deficiency yields transparent values while
+  Chromium yields opaque `(10,150,50)`. Correct independent expectations remain
+  XFAIL; both engines satisfy their own scoped matches. Engine behavior is unchanged.
+- AG7 validates parsed relationship/link authority without rewriting HTML, permits
+  only reviewed inert metadata links, preserves resource denial and page-script
+  exclusion, and binds reference bytes/roles/requests into exact capture and artifact
+  correspondence. All Chromium captures and cleanup still precede Borrowser workers.
+  Data-driven authoring and copied-executable execution remain. See the
+  [AG7 contract](conformance/ag7-focused-external-tests-and-references.md).
+  Both roles retain raw capture evidence separately from scoped projections;
+  malformed color payloads/expectations are errors before KnownFailure handling.
+  Fixed initial-corpus counts do not constrain catalogue expansion. Earlier native
+  macOS shutdown/stability and composition failures still need an explanation;
+  isolated passes alone do not resolve them. Native Linux qualification remains
+  required before AG7 closure. New native Linux and live-AWS qualification are not claimed.
 
 - AG6 adds build-time deterministic fixture discovery, strict JSON metadata,
   exact embedded inputs/expectations, and shared catalogue validation before
@@ -1008,7 +1033,7 @@ When a feature lands:
   comparison/reporting; success requires verified process cleanup. This is
   self-contained page delivery, not an OS-level network-isolation guarantee.
 - The `ag2-canvas-srgb-v2` profile uses one ordinary headless target. Parsed-DOM
-  eligibility rejects every live-document `link` element within the current
+  eligibility originally rejected every live-document `link` element within its
   inline-only scope. Default-favicon candidates are aborted before network and
   require paired request IDs, actual abort acknowledgment and failed-load
   completion; authored resources and incomplete evidence remain errors.

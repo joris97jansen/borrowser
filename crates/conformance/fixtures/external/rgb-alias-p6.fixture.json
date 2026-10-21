@@ -1,0 +1,61 @@
+{
+  "id": "wpt/rgb-alias-p6",
+  "input": "raw/css/css-color/background-color-rgb-003.html",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "observations": {
+    "styles": [
+      {
+        "target": "p6",
+        "property": "background-color",
+        "selection": {
+          "kind": "compare"
+        }
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "known_failure",
+    "reason": "Borrowser rejects rgb()/rgba() functional color syntax; retain the independently correct opaque color expectation."
+  },
+  "expected": {
+    "kind": "projection",
+    "path": "expected/rgb-alias-p6.expected.json"
+  },
+  "provenance": {
+    "repository": "https://github.com/web-platform-tests/wpt",
+    "revision": "2c705104a295c48053eeddf7fe0170d790a4e853",
+    "path": "css/css-color/background-color-rgb-003.html",
+    "sha256": "0b16ffcae2a1011c199a20ffc7523ca67ffb4a77c0b3599f4f77ecf85bc42f04",
+    "license": {
+      "path": "raw/LICENSE.md",
+      "upstream_path": "LICENSE.md",
+      "sha256": "5fac07febb0e2a97fb0d7b0def149ec08b642e1ba4b9c345283ab1cbd2af6570",
+      "spdx": "BSD-3-Clause"
+    },
+    "attribution": "Copyright © web-platform-tests contributors; Jerry Shih and Mozilla (author links retained)"
+  },
+  "upstream_assertion": {
+    "form": "visual_reftest",
+    "unsupported_reason": "Full rendered visual equality is unsupported; AG observes only the present p6 computed background-color."
+  },
+  "relationship": {
+    "kind": "match",
+    "input": "raw/css/css-color/background-color-rgb-003-ref.html",
+    "provenance": {
+      "repository": "https://github.com/web-platform-tests/wpt",
+      "revision": "2c705104a295c48053eeddf7fe0170d790a4e853",
+      "path": "css/css-color/background-color-rgb-003-ref.html",
+      "sha256": "92d0b06ff5f5b05e656308fa472ec7d82820b5789d98e330b741dc188ae90151",
+      "license": {
+        "path": "raw/LICENSE.md",
+        "upstream_path": "LICENSE.md",
+        "sha256": "5fac07febb0e2a97fb0d7b0def149ec08b642e1ba4b9c345283ab1cbd2af6570",
+        "spdx": "BSD-3-Clause"
+      },
+      "attribution": "Copyright © web-platform-tests contributors; Jerry Shih and Mozilla (author links retained)"
+    }
+  }
+}

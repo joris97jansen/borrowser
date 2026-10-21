@@ -102,6 +102,10 @@ impl<'a> Cdp<'a> {
         }
         if scenario.starts_with("resource-shutdown-") {
             let result = self.close_browser(deadline);
+            assert_eq!(
+                self.capture_progress.operation, "Browser.close response-stream drain",
+                "shutdown diagnostics must not retain an earlier capture operation"
+            );
             if scenario == "resource-shutdown-buffered-deadline" {
                 super::process::fault::assert_consumed();
                 assert!(matches!(
@@ -237,6 +241,8 @@ impl<'a> Cdp<'a> {
         self.cancel.check(deadline, Phase::Capture)
     }
     pub fn close_browser(&mut self, capture_deadline: Instant) -> Result<(), Error> {
+        #[cfg(test)]
+        self.capture_operation("Browser.close response-stream drain");
         self.navigation.as_ref().unwrap().finish_resources()?;
         let deadline = capture_deadline.min(Instant::now() + std::time::Duration::from_millis(250));
         // Browser.close is browser-scoped, but fixture events must still be
@@ -438,6 +444,7 @@ const FAVICON: &str = "https://borrowser.invalid/favicon.ico";
 enum DocumentPolicy {
     Pending,
     NoLinks,
+    VerifiedMetadataLinks,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FetchAction {
@@ -616,9 +623,28 @@ impl Navigation {
         Ok(())
     }
     fn resources_complete(&self) -> bool {
-        self.document_policy == DocumentPolicy::NoLinks
-            && self.fulfill_acknowledged
+        matches!(
+            self.document_policy,
+            DocumentPolicy::NoLinks | DocumentPolicy::VerifiedMetadataLinks
+        ) && self.fulfill_acknowledged
             && self.favicon.as_ref().is_none_or(FaviconCandidate::complete)
+    }
+    pub fn verify_metadata_policy(
+        &mut self,
+        actual: &[crate::metadata_links::LinkFact],
+        expected: &[crate::metadata_links::LinkFact],
+        tree: &Value,
+    ) -> Result<(), Error> {
+        self.verify_tree(tree)?;
+        if self.document_node.is_none() || self.document_policy != DocumentPolicy::Pending {
+            return Err(Self::fail("missing or duplicate document policy evidence"));
+        }
+        crate::metadata_links::validate(actual).map_err(|e| Self::fail(&e))?;
+        if actual != expected || expected.is_empty() {
+            return Err(Self::fail("metadata link correspondence mismatch"));
+        }
+        self.document_policy = DocumentPolicy::VerifiedMetadataLinks;
+        Ok(())
     }
     #[cfg(test)]
     pub fn verified_favicon(&self) -> bool {

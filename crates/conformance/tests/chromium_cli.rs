@@ -38,19 +38,32 @@ fn real_chromium_cli_has_stable_independent_observations() {
         );
         assert!(output.stderr.is_empty());
         let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["schema"], "borrowser.chromium-phases.v1");
+        assert_eq!(report["schema"], "borrowser.chromium-phases.v2");
         assert_eq!(report["viewport"], serde_json::json!([640, 480]));
         assert_eq!(report["sample_pixel"], serde_json::json!([32, 32]));
         let observations = report["observations"].as_array().unwrap();
         assert!(!observations.is_empty());
-        assert!(observations.windows(2).all(
-            |pair| pair[0]["test_id"].as_str().unwrap() < pair[1]["test_id"].as_str().unwrap()
-        ));
+        assert!(observations.windows(2).all(|pair| {
+            let key = |row: &serde_json::Value| {
+                (
+                    row["descriptor"]["case_id"].as_str().unwrap().to_owned(),
+                    if row["descriptor"]["role"] == "test" {
+                        0
+                    } else {
+                        1
+                    },
+                )
+            };
+            key(&pair[0]) < key(&pair[1])
+        }));
         for (id, color) in [
             ("canvas/root", [18, 52, 86]),
             ("canvas/cascade", [52, 86, 120]),
         ] {
-            let case = observations.iter().find(|c| c["test_id"] == id).unwrap();
+            let case = observations
+                .iter()
+                .find(|c| c["descriptor"]["case_id"] == id)
+                .unwrap();
             assert_eq!(case["canvas_color_rgb8"], serde_json::json!(color));
         }
         let ids = [
@@ -62,7 +75,10 @@ fn real_chromium_cli_has_stable_independent_observations() {
             "layout/block-boxes",
         ];
         for (index, id) in ids.into_iter().enumerate() {
-            let observation = observations.iter().find(|o| o["test_id"] == id).unwrap();
+            let observation = observations
+                .iter()
+                .find(|o| o["descriptor"]["case_id"] == id)
+                .unwrap();
             if index < 2 {
                 assert!(observation["inspection"].is_null());
             } else {
@@ -101,7 +117,7 @@ fn real_chromium_cli_has_stable_independent_observations() {
             }
             assert_eq!(
                 observation["browser"]["capture_profile"],
-                "ag5-static-phases-v1"
+                "ag7-static-references-v1"
             );
             assert!(observation.get("expected").is_none());
             assert!(observation.get("status").is_none());

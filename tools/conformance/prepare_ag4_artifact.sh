@@ -136,6 +136,6 @@ controller["platform"] = "linux-x86_64"
 if identity != controller or identity["source_tree"] != tree:
     raise RuntimeError("prepared build identities differ")
 preparation.check_cancelled()
-(out / "artifact.json").write_text(json.dumps({"schema": 1, "sha256": hashlib.sha256(linux.read_bytes()).hexdigest(), "identity": identity}, indent=2) + "\n")
+(out / "artifact.json").write_text(json.dumps({"schema": 2, "sha256": hashlib.sha256(linux.read_bytes()).hexdigest(), "identity": identity}, indent=2) + "\n")
 print(tree)
 PY

@@ -1,0 +1,27 @@
+{
+  "id": "wpt/unsupported/first-child-js",
+  "input": "raw/css/selectors/first-child.html",
+  "requires_javascript": true,
+  "classification": {
+    "kind": "unsupported",
+    "reason": "Requires testharness.js, page JavaScript, DOM selector APIs and JavaScript assertions."
+  },
+  "observations": {},
+  "provenance": {
+    "repository": "https://github.com/web-platform-tests/wpt",
+    "revision": "2c705104a295c48053eeddf7fe0170d790a4e853",
+    "path": "css/selectors/first-child.html",
+    "sha256": "cab63c4484e4e28f991defc9834217e11912402e064a5701c592d988310063e8",
+    "license": {
+      "path": "raw/LICENSE.md",
+      "upstream_path": "LICENSE.md",
+      "sha256": "5fac07febb0e2a97fb0d7b0def149ec08b642e1ba4b9c345283ab1cbd2af6570",
+      "spdx": "BSD-3-Clause"
+    },
+    "attribution": "Copyright © web-platform-tests contributors"
+  },
+  "upstream_assertion": {
+    "form": "testharness",
+    "unsupported_reason": "Requires testharness.js, page JavaScript, DOM selector APIs and JavaScript assertions."
+  }
+}

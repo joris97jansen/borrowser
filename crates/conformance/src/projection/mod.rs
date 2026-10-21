@@ -38,6 +38,60 @@ pub(crate) struct ObservationRequest {
     pub(crate) layout: Request<&'static [&'static str]>,
     pub(crate) canvas: Request<()>,
 }
+
+// Owned wire correspondence for the existing request, not another observation API.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub(crate) enum RequestSelection<T> {
+    NotRequested,
+    Compare(T),
+    Unsupported(String),
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RequestedStyle {
+    target: String,
+    property: String,
+    selection: RequestSelection<()>,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RequestDescriptor {
+    dom: RequestSelection<()>,
+    styles: Vec<RequestedStyle>,
+    layout: RequestSelection<Vec<String>>,
+    canvas: RequestSelection<()>,
+}
+impl ObservationRequest {
+    pub(crate) fn descriptor(self) -> RequestDescriptor {
+        fn own<T, U>(r: Request<T>, f: impl FnOnce(T) -> U) -> RequestSelection<U> {
+            match r {
+                Request::NotRequested => RequestSelection::NotRequested,
+                Request::Compare(v) => RequestSelection::Compare(f(v)),
+                Request::Unsupported { reason } => RequestSelection::Unsupported(reason.into()),
+            }
+        }
+        RequestDescriptor {
+            dom: own(self.dom, |v| v),
+            canvas: own(self.canvas, |v| v),
+            styles: self
+                .styles
+                .iter()
+                .map(|f| RequestedStyle {
+                    target: f.target.into(),
+                    property: f.name.into(),
+                    selection: own(f.property, |_| ()),
+                })
+                .collect(),
+            layout: own(self.layout, |v| v.iter().map(|s| (*s).into()).collect()),
+        }
+    }
+}
 impl ObservationRequest {
     #[allow(
         dead_code,
@@ -370,7 +424,8 @@ pub(crate) fn differences(
     out
 }
 impl ProjectedObservations {
-    /// Validate record correspondence, never the cardinality of observed content.
+    /// Validate record correspondence and the existing color value domain,
+    /// never the cardinality of observed content.
     pub(crate) fn validate(&self, request: ObservationRequest) -> Result<(), HarnessError> {
         validate_request(request)?;
         fn required(detail: impl Into<String>) -> HarnessError {
@@ -413,6 +468,14 @@ impl ProjectedObservations {
                 )));
             }
             state(&id, &record.value, field.property)?;
+            if let (
+                Request::Compare(StyleProperty::Color | StyleProperty::BackgroundColor),
+                Observation::Observed(TargetValue::Present(value)),
+            ) = (field.property, &record.value)
+            {
+                style::validate_color(value)
+                    .map_err(|error| required(format!("{id}: {}", error.detail)))?;
+            }
         }
         if let (Observation::Observed(records), Request::Compare(targets)) =
             (&self.layout, request.layout)
@@ -484,4 +547,21 @@ pub(crate) fn validate_request(request: ObservationRequest) -> Result<(), Harnes
         return Err(error("observation target limit"));
     }
     Ok(())
+}
+
+// Shared exact equality/diff semantics; identity and provenance are never inputs.
+pub(crate) fn compare_values(
+    id: &str,
+    left: &serde_json::Value,
+    right: &serde_json::Value,
+) -> (bool, Vec<Difference>) {
+    let equal = left == right;
+    (
+        equal,
+        if equal {
+            vec![]
+        } else {
+            differences(id, left, right)
+        },
+    )
 }

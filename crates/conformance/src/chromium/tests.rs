@@ -108,8 +108,10 @@ fn viewport_failure_diagnostic_attributes_fixture_metrics_and_cleanup() {
     metrics["cssContentSize"]["height"] = json!(900);
     let fixture = crate::fixtures::fixture("dom/template-namespaces");
     let input = CaptureInput {
+        role: crate::chromium::DocumentRole::Test,
+        metadata_links: "[]",
         id: fixture.id,
-        source: fixture.source,
+        source: fixture.document.source,
         html: b"must never appear in diagnostics",
         request: fixture.request,
     };
@@ -298,7 +300,7 @@ fn exact_identity_is_required() {
     let mut version = json!({"product":format!("Chrome/{}",pin["version"].as_str().unwrap()),
         "revision":pin["revision"],"protocolVersion":pin["protocol_version"]});
     let actual = identity(version.clone()).unwrap();
-    assert_eq!(actual.capture_profile, "ag5-static-phases-v1");
+    assert_eq!(actual.capture_profile, "ag7-static-references-v1");
     assert_eq!(
         actual,
         serde_json::from_str::<BrowserIdentity>(&serde_json::to_string(&actual).unwrap()).unwrap()
@@ -1652,11 +1654,8 @@ fn real_chromium_capture_and_scripts() {
     let config = ChromiumConfig::new(PathBuf::from(path));
     let cancel = Cancellation::default();
     for fixture in &crate::fixtures::baseline()[..2] {
-        let FixtureKind::Runnable {
-            html,
-            expected: crate::model::Expected::Canvas(expected),
-            ..
-        } = fixture.kind
+        let html = (fixture).document.html;
+        let crate::model::Expected::Canvas(expected) = (fixture).independent().unwrap().expected
         else {
             unreachable!()
         };
@@ -1677,7 +1676,7 @@ fn real_chromium_capture_and_scripts() {
                 result.default_favicon_aborted,
                 "qualified ordinary target did not exercise default favicon interception"
             );
-            assert_eq!(result.identity.capture_profile, "ag5-static-phases-v1");
+            assert_eq!(result.identity.capture_profile, "ag7-static-references-v1");
             eprintln!(
                 "AG2 fixture={} iteration={iteration}/3 screenshot=640x480 rgb8={:?} profile={} default_favicon=correlated-aborted-acknowledged-terminal cleanup=verified",
                 fixture.id.0,
@@ -1705,11 +1704,11 @@ fn real_chromium_capture_and_scripts() {
     .into_iter()
     .enumerate()
     {
-        let FixtureKind::Runnable {
-            html,
-            expected: crate::model::Expected::Canvas(expected),
-            ..
-        } = crate::fixtures::fixture("canvas/root").kind
+        let html = (crate::fixtures::fixture("canvas/root")).document.html;
+        let crate::model::Expected::Canvas(expected) = (crate::fixtures::fixture("canvas/root"))
+            .independent()
+            .unwrap()
+            .expected
         else {
             unreachable!()
         };
@@ -1957,6 +1956,7 @@ pub(crate) fn controlled_capture(color: CanvasColor) -> ChromiumCapture {
             "revision": pin["revision"], "protocolVersion": pin["protocol_version"],
         }))
         .unwrap(),
+        metadata_links: vec![],
         default_favicon_aborted: false,
     }
 }
@@ -2133,6 +2133,9 @@ fn real_chromium_ag5_read_only_inspection() {
     }
 }
 
+#[path = "../../tests/support/ag7.rs"]
+mod ag7_acceptance;
+
 #[test]
 #[ignore = "requires pinned Chromium, standalone process; all captures precede parser workers"]
 fn real_chromium_ag5_profile() {
@@ -2146,7 +2149,7 @@ fn real_chromium_ag5_profile() {
     )
     .unwrap();
     assert!(
-        matches!(code, 0 | 3),
+        code == 1,
         "{}\n{}",
         String::from_utf8_lossy(&out),
         String::from_utf8_lossy(&diagnostics)
@@ -2155,7 +2158,17 @@ fn real_chromium_ag5_profile() {
     let cases = report["cases"].as_array().unwrap();
     assert_eq!(cases.len(), crate::fixtures::catalogue().unwrap().len());
     assert!(cases.windows(2).all(|pair| pair[0]["test_id"].as_str().unwrap() < pair[1]["test_id"].as_str().unwrap()));
-    assert_eq!(report["summary"]["different_fields"], 0);
+    let selected: Vec<_> = crate::fixtures::catalogue().unwrap().iter().collect();
+    let descriptors: Vec<_> = super::inputs(&selected)
+        .iter()
+        .map(|input| input.descriptor())
+        .collect();
+    ag7_acceptance::assert_catalogue(
+        &report,
+        i32::from(code),
+        &json!(descriptors),
+        &ag7_acceptance::declarations(&Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures")),
+    );
 
     let ids = [
         "canvas/root",
@@ -2188,4 +2201,105 @@ fn real_chromium_ag5_profile() {
         );
     }
     assert_eq!(baseline_fields, 34);
+}
+
+#[test]
+fn metadata_links_policy_rejects_mixed_attributes_namespaces_and_order() {
+    let fixture = crate::fixtures::fixture("wpt/rgb-comments-p6");
+    let links = fixture.document.links().unwrap();
+    crate::metadata_links::validate(&links).unwrap();
+    for change in 0..5 {
+        let mut bad = links.clone();
+        match change {
+            0 => bad[0].namespace = "http://www.w3.org/2000/svg".into(),
+            1 => {
+                bad[0]
+                    .attributes
+                    .iter_mut()
+                    .find(|a| a.local_name == "rel")
+                    .unwrap()
+                    .value = "author stylesheet".into()
+            }
+            2 => bad[0].attributes[0].namespace = "http://www.w3.org/1999/xlink".into(),
+            3 => bad[0].attributes.reverse(),
+            4 => bad[0].attributes[0].local_name = "onload".into(),
+            _ => unreachable!(),
+        }
+        assert!(crate::metadata_links::validate(&bad).is_err(), "{change}");
+    }
+}
+
+#[test]
+#[ignore = "requires pinned Chromium, standalone process; fixed read-only metadata inspection"]
+fn real_chromium_ag7_inert_links() {
+    let path = std::env::var_os("BORROWSER_CHROMIUM_EXECUTABLE").expect("pinned Chromium required");
+    let _standalone = process::Standalone::enter().unwrap();
+    let config = ChromiumConfig::new(path.into());
+    let cancel = Cancellation::default();
+    for id in [
+        "wpt/rgb-comments-p6",
+        "wpt/rgb-alias-p6",
+        "wpt-style/background-color-mismatch",
+    ] {
+        let fixture = crate::fixtures::fixture(id);
+        for input in inputs(&[fixture]) {
+            let links: Vec<crate::metadata_links::LinkFact> =
+                serde_json::from_str(input.metadata_links).unwrap();
+            let capture =
+                capture_document(input.html, input.request, &links, &config, &cancel).unwrap();
+            assert_eq!(capture.metadata_links, links);
+            let projection = crate::projection::chromium(&capture, input.request).unwrap();
+            assert_eq!(projection.styles.len(), 1);
+            assert!(capture.color.is_none());
+            eprintln!(
+                "AG7 metadata {id} {:?}: links={} cleanup verified",
+                input.role,
+                capture.metadata_links.len()
+            );
+        }
+    }
+    use crate::metadata_links::{AttributeFact, LinkFact};
+    let attr = |name: &str, value: &str| AttributeFact {
+        namespace: String::new(),
+        prefix: String::new(),
+        local_name: name.into(),
+        value: value.into(),
+    };
+    let expected = vec![LinkFact {
+        namespace: crate::metadata_links::HTML.into(),
+        local_name: "link".into(),
+        attributes: vec![
+            attr("href", "?a=1&b=2"),
+            attr("rel", " HeLp "),
+            attr("title", "A & B"),
+        ],
+    }];
+    let html=b"<!doctype html><link title='A &amp; B' rel=' HeLp ' href='?a=1&amp;b=2'><div id=probe style='background-color:green'></div>";
+    let request = crate::fixtures::fixture("wpt-style/background-color-mismatch").request;
+    assert_eq!(
+        capture_document(html, request, &expected, &config, &cancel)
+            .unwrap()
+            .metadata_links,
+        expected
+    );
+    for relation in [
+        "help stylesheet",
+        "help preload",
+        "help help",
+        "canonical",
+        "icon",
+    ] {
+        let bad = String::from_utf8(html.to_vec())
+            .unwrap()
+            .replace(" HeLp ", relation);
+        let failure =
+            capture_document(bad.as_bytes(), request, &expected, &config, &cancel).unwrap_err();
+        assert!(failure.primary.is_some(), "{relation}");
+        assert!(failure.cleanup.is_empty(), "{failure:?}");
+    }
+    let mut resource = html.to_vec();
+    resource.extend_from_slice(b"<img src='https://borrowser.invalid/denied.png'>");
+    let failure = capture_document(&resource, request, &expected, &config, &cancel).unwrap_err();
+    assert!(failure.primary.is_some());
+    assert!(failure.cleanup.is_empty());
 }
