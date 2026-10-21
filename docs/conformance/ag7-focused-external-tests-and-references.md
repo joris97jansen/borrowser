@@ -214,6 +214,71 @@ upstream assertions (two runnable). Default counts are 7 PASS, 2 INCOMPLETE,
 2 UNSUPPORTED, exit 3. Comparison exits 1. This is macOS evidence, not native Linux
 or live AWS qualification.
 
+## Qualification record: 2026-10-21
+
+Required native Linux x86-64 qualification and applicable CI passed for the
+reviewed implementation in [PR #1436](https://github.com/joris97jansen/borrowser/pull/1436):
+
+- Base (`master`): `23a2ddf8af24cb06d74f781cea44d8616316fb6e`.
+- Implementation commit: `8daf925fdc2c74802426103856dc9894a27f880b`.
+- Implementation tree: `1cb3f2695155746af352141a63e6fcdba277bb8b`.
+- Actual CI test-merge checkout: `c592401b4d3cf04bf1d6a588158a811d497900be`.
+- Actual checkout tree: `1cb3f2695155746af352141a63e6fcdba277bb8b`, identical to
+  the implementation tree, including file modes.
+
+[CI run 39601789076, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/39601789076)
+completed successfully: twelve jobs passed; the separate AG4 native proxy cleanup
+timing job was skipped by its existing branch condition. These results qualify
+the implementation commit/tree above. Later documentation-only trees were not
+tested by this run.
+
+The [native Chromium job](https://github.com/joris97jansen/borrowser/actions/runs/39601789076/job/119227835636)
+ran on Ubuntu 24.04.5 x86-64, image `ubuntu24 20261012.334.1`, in a native Microsoft
+VM with the container probe returning `none`. It used Chrome for Testing
+`155.0.8059.39`, revision `@3ff7ac5a9224be9156d7f8703a06e22890aafd34`, CDP `1.3`,
+profile `ag7-static-references-v1`. The Linux archive SHA-256 was verified as
+`55672d1f392fd3e7b7a08621b6e804e6bcb39d40cf155504abb74b3a021ea8ea`.
+Each of the nine explicitly invoked pinned-Chromium qualifications executed one
+test and passed with exit 0. Native capture and profile-cleanup checks passed.
+
+Linux qualification retained the original six fixtures' 34 equal-field assertions
+and exactly four RGB differences: `wpt/rgb-comments-p6` and `wpt/rgb-alias-p6`,
+each in test and reference roles, at `style:#p6/background-color`. Borrowser
+observed `[0,0,0,0]`; Chromium and the independent semantic expectations remained
+`[10,150,50,255]`. Both engines satisfied their scoped matches; independent
+expectations remained XFAIL and full upstream visual coverage remained unsupported.
+The qualification tests passed by verifying those exact results; the actual
+whole-catalogue comparison still exited 1. An additional unrelated canvas/cascade
+difference was rejected by the acceptance checker.
+
+The Linux lane did not execute the isolated incremental/source-free rebuild or
+native EICE/OpenSSH qualification. Separate final macOS 27.0.1 ARM64 validation,
+including the expanded reference/numeric corpus and incremental/source-free test,
+passed against reviewed working-source manifest
+`757b22749b5d51b799ac0f3b2dad5b5a4454d41899df0127f32d774258e75d1e`.
+Its source contents and modes were verified against the implementation tree.
+The earlier macOS checkpoint above retains its original platform scope. Native
+Linux guest-wrapper checks do not add live AWS qualification; none is claimed.
+
+Historical macOS incidents remain separate from completed qualification:
+
+- **Combined-CLI shutdown incident: unresolved; owner disposition pending.**
+  `real_chromium_combined_cli_is_stable_and_selects_exactly` exited 101; the
+  harness exited 2 instead of 1 with `Shutdown deadline expired`. The retained
+  record has no cleanup diagnostic line. The binding deadline, cause and verified
+  historical cleanup outcome remain unknown.
+- **Composition incident: unresolved; owner disposition pending.**
+  `comparison::tests::real_chromium_comparison_composition` and its isolated child
+  exited 101 in `borrowser-failure`, after the second capture started and before
+  expected cleanup/worker events. Historical harness exit and primary/cleanup
+  details were omitted; the operation label could be stale. The cause and final
+  second-capture cleanup outcome remain unknown.
+
+Missing historical evidence establishes neither successful cleanup nor a proven
+leak. Later macOS/Linux passes and completed CI do not resolve either incident.
+Neither owner residual-risk recommendation has been accepted. Recording completed
+qualification does not authorize readiness, merge or issue/milestone closure.
+
 ## Adding another supported case
 
 1. Review the exact upstream revision, HTML and reference together. Check static
@@ -254,9 +319,8 @@ exclusions, native resource denial, incremental discovery and source-free execut
 Run the commands in the conformance README. Ignored qualifications must be invoked
 explicitly and must execute their named tests. Local guest-wrapper execution does
 not establish native Linux or live AWS qualification.
-Native Linux qualification is required before AG7 closure. The earlier native
-macOS shutdown/stability and composition failures remain unresolved unless their
-cause is established; a later isolated pass does not explain an earlier failure.
+See the [qualification record](#qualification-record-2026-10-21) for completed
+native Linux qualification and the separate pending owner incident dispositions.
 
 Multiple references, chains/cycles, fuzzy/print/readiness support, external
 resources/fonts, page JS, testharness.js execution, WebDriver, screenshots and

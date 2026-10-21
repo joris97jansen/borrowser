@@ -1467,5 +1467,7 @@ identity and ingestion; no extra case/selection/request digests are added.
 The source-tree, executable, browser pin/profile and platform checks remain.
 All reference captures and verified cleanup precede any Borrowser worker.
 [AG7](ag7-focused-external-tests-and-references.md) does not change infrastructure,
-credentials, transport, recovery or cleanup and supplies no new live AWS or native
-Linux qualification. Historical qualification records above retain their scope.
+credentials, transport, recovery or cleanup. Its
+[native Linux harness qualification](ag7-focused-external-tests-and-references.md#qualification-record-2026-10-21)
+is recorded in the AG7 contract; no new live AWS qualification is supplied.
+Historical qualification records above retain their original scope.

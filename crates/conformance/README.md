@@ -573,6 +573,9 @@ An additional unrelated canvas/cascade difference fails the acceptance checker.
 Temporary additions have explicit test-owned contributions; no production
 registration list or automatic blessing exists. Native macOS results are not
 native Linux or live-AWS qualification. Historical AG4 evidence is unchanged.
-Native Linux qualification remains required before AG7 closure. Earlier native
-shutdown/stability and composition failures need an evidence-based explanation;
-a subsequent isolated pass alone does not resolve them.
+Required native Linux x86-64 qualification and applicable CI passed for the
+recorded AG7 implementation; see the
+[AG7 qualification record](../../docs/conformance/ag7-focused-external-tests-and-references.md#qualification-record-2026-10-21).
+The historical combined-CLI shutdown and composition incidents remain unresolved,
+with separate owner dispositions pending. Successful qualification does not
+establish their causes or add live AWS qualification.

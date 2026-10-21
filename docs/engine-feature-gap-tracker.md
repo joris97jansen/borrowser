@@ -948,7 +948,7 @@ When a feature lands:
   existing AG5 exact semantics. Independent expectations, per-engine relationships,
   same-document cross-engine comparisons and unsupported original full visual
   assertions are separate. No full WPT reftest PASS or browser compliance is claimed.
-- Native macOS pinned Chromium confirms four RGB cross-engine differences:
+- Native macOS and Linux pinned Chromium confirm four RGB cross-engine differences:
   Borrowser's existing functional-color deficiency yields transparent values while
   Chromium yields opaque `(10,150,50)`. Correct independent expectations remain
   XFAIL; both engines satisfy their own scoped matches. Engine behavior is unchanged.
@@ -960,10 +960,12 @@ When a feature lands:
   [AG7 contract](conformance/ag7-focused-external-tests-and-references.md).
   Both roles retain raw capture evidence separately from scoped projections;
   malformed color payloads/expectations are errors before KnownFailure handling.
-  Fixed initial-corpus counts do not constrain catalogue expansion. Earlier native
-  macOS shutdown/stability and composition failures still need an explanation;
-  isolated passes alone do not resolve them. Native Linux qualification remains
-  required before AG7 closure. New native Linux and live-AWS qualification are not claimed.
+  Fixed initial-corpus counts do not constrain catalogue expansion. Required native
+  Linux qualification and applicable CI passed for the recorded implementation;
+  see the [AG7 qualification record](conformance/ag7-focused-external-tests-and-references.md#qualification-record-2026-10-21).
+  The historical macOS combined-CLI shutdown and composition incidents remain
+  unresolved, with separate owner dispositions pending. Their causes are not
+  established by later passes. No new live AWS qualification is claimed.
 
 - AG6 adds build-time deterministic fixture discovery, strict JSON metadata,
   exact embedded inputs/expectations, and shared catalogue validation before
