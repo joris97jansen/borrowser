@@ -229,7 +229,9 @@ fn real_chromium_combined_cli_is_stable_and_selects_exactly() {
             assert_eq!(
                 output.status.code(),
                 Some(if selection.is_some() { 0 } else { 1 }),
-                "{}",
+                "selection={selection:?} iteration={iteration} status={} stdout={} stderr={}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
             );
             assert!(output.stderr.is_empty());
@@ -373,10 +375,18 @@ fn real_chromium_ag7_scoped_relationships() {
         assert_eq!(
             output.status.code(),
             Some(expected_exit),
-            "{id}: {}",
+            "{id}: status={} stdout={} stderr={}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(output.stderr.is_empty());
+        assert!(
+            output.stderr.is_empty(),
+            "{id}: status={} stdout={} stderr={}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
         let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(report["cases"].as_array().unwrap().len(), 1);
         assert_eq!(report["cases"][0]["test_id"], id);
@@ -396,7 +406,9 @@ fn real_chromium_ag7_scoped_relationships() {
     let output = command().output().unwrap();
     assert!(
         output.stderr.is_empty(),
-        "{}",
+        "catalogue: status={} stdout={} stderr={}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();

@@ -531,6 +531,9 @@ jobs:
       - name: Compile HTML5 Criterion benches
         run: cargo bench -p html --bench html_bench --features html5 --no-run --locked
 
+      - name: Compile CSS Criterion benches
+        run: make compile-css-benches
+
       - name: Check generated HTML entities
         run: make html-entities-check
 

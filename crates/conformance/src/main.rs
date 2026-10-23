@@ -67,7 +67,7 @@ fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
         {
             writeln!(
                 io::stderr().lock(),
-                "ERROR chromium.platform: local comparison requires Linux x86-64 or macOS arm64"
+                "ERROR chromium.platform: local comparison requires native Linux x86-64"
             )?;
             return Ok(2);
         }
@@ -79,7 +79,7 @@ fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
         {
             writeln!(
                 io::stderr().lock(),
-                "ERROR chromium.platform: local capture requires Linux x86-64 or macOS arm64"
+                "ERROR chromium.platform: local capture requires native Linux x86-64"
             )?;
             return Ok(2);
         }

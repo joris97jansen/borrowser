@@ -21,6 +21,49 @@ pub(crate) fn record(event: Event) {
 fn trace() -> Vec<Event> {
     EVENTS.with(|events| events.borrow().clone().unwrap())
 }
+#[cfg(target_os = "macos")]
+pub(crate) fn macos_platform_failure_blocks_workers(executable: &Path) {
+    EVENTS.with(|events| *events.borrow_mut() = Some(vec![]));
+    let fixture = crate::fixtures::fixture("canvas/root");
+    let result = execute_selected(&[fixture], Some(executable));
+    let (code, output, diagnostics) = publish_bytes(result);
+    assert_eq!(code, 2);
+    assert!(output.is_empty());
+    assert!(diagnostics.contains("chromium.platform"), "{diagnostics}");
+    assert!(diagnostics.contains("ownership cleanup completeness is not proven"));
+    // No capture, standalone cleanup or worker event may precede rejection.
+    assert!(trace().is_empty(), "{:?}", trace());
+    EVENTS.with(|events| *events.borrow_mut() = None);
+}
+// Called only by the existing isolated native process fixture.
+pub(crate) fn startup_failure_blocks_workers(executable: &Path, expected_code: &str) {
+    EVENTS.with(|events| *events.borrow_mut() = Some(vec![]));
+    let fixture = crate::fixtures::fixture("canvas/root");
+    let failure = execute_selected(&[fixture], Some(executable))
+        .err()
+        .expect("startup termination must fail the required capture");
+    let Failure::Chromium(ref chromium) = failure else {
+        panic!("{failure:?}")
+    };
+    assert_eq!(chromium.primary.as_ref().unwrap().code(), expected_code);
+    assert!(chromium.cleanup.is_empty(), "{chromium:?}");
+    assert_eq!(
+        trace(),
+        vec![Event::CaptureStarted(
+            fixture.id,
+            chromium::DocumentRole::Test
+        )]
+    );
+    let (code, out, diagnostics) = publish_bytes(Err(failure));
+    assert_eq!(code, 2);
+    assert!(out.is_empty());
+    assert!(diagnostics.contains(&format!("chromium.{expected_code}")));
+    eprintln!(
+        "startup capture failed; no Borrowser workers; exit={code}; trace={:?}",
+        trace()
+    );
+    EVENTS.with(|events| *events.borrow_mut() = None);
+}
 fn capture(color: [u8; 3]) -> chromium::ChromiumCapture {
     chromium::tests::controlled_capture(CanvasColor(color))
 }
@@ -593,6 +636,11 @@ fn real_chromium_comparison_composition() {
         "reference-capture-failure",
         "css",
         "later-capture-failure",
+        "second-shutdown-cancel",
+        "second-shutdown-expired",
+        "second-shutdown-delayed",
+        "borrowser-failure-delayed",
+        "second-cleanup-failure",
         "borrowser-failure",
         "cleanup-failure",
         "cancel",
@@ -610,10 +658,21 @@ fn real_chromium_comparison_composition() {
             .unwrap();
         assert!(
             output.status.success(),
-            "{scenario}: {} {}",
+            "{scenario}: status={} stdout={} stderr={}",
+            output.status,
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+        // Intentional harness failures can make the child test pass. Preserve
+        // their primary/cleanup evidence as well as unexpected child failures.
+        if !output.stderr.is_empty() {
+            eprintln!(
+                "AG3 isolated scenario {scenario}: status={} stdout={} stderr={}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
         eprintln!("AG3 isolated scenario {scenario}: passed");
     }
 }
@@ -628,6 +687,7 @@ fn isolated_case() {
     let mut fixtures = crate::fixtures::baseline()[..2].to_vec();
     match scenario.as_str() {
         "multiple" => {}
+        "second-shutdown-delayed" => chromium::tests::arm_second_shutdown_read_pause(),
         "reference" | "reference-capture-failure" => {
             let mut fixture = *crate::fixtures::fixture("wpt-style/background-color-mismatch");
             if scenario == "reference-capture-failure" {
@@ -675,7 +735,10 @@ fn isolated_case() {
                 }),
             };
         }
-        "borrowser-failure" => {
+        "borrowser-failure" | "borrowser-failure-delayed" => {
+            if scenario == "borrowser-failure-delayed" {
+                chromium::tests::arm_second_shutdown_read_pause();
+            }
             fixtures[1].document=fixtures[1].document.with_test_bytes(b"<!doctype html><html><head><style>html,body{margin:0;padding:0;height:0}html{background-color:#123456}div{height:100px;background-color:red}</style></head><body><div></div></body></html>");
             fixtures[1].kind = FixtureKind::Runnable {
                 checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
@@ -684,14 +747,36 @@ fn isolated_case() {
                 }),
             };
         }
-        "cleanup-failure" | "cancel" => {
-            chromium::tests::arm_comparison_cleanup_failure(scenario == "cancel")
+        "second-shutdown-cancel" => chromium::tests::arm_shutdown_ack_cancellation(2),
+        "second-shutdown-expired" => chromium::tests::arm_second_shutdown_expiry(),
+        "cleanup-failure" | "second-cleanup-failure" | "cancel" => {
+            chromium::tests::arm_comparison_cleanup_failure(
+                scenario == "cancel",
+                if scenario == "second-cleanup-failure" {
+                    2
+                } else {
+                    1
+                },
+            )
         }
         _ => panic!("unknown scenario"),
     }
     let selected: Vec<_> = fixtures.iter().collect();
     let result = execute_selected(&selected, Some(Path::new(&executable)));
-    if scenario == "cleanup-failure" {
+    if scenario == "second-shutdown-expired" {
+        chromium::tests::assert_comparison_shutdown_timeout(
+            result
+                .as_ref()
+                .err()
+                .expect("capture budget expired")
+                .chromium_failure(),
+        );
+        chromium::tests::assert_shutdown_cancellation_consumed();
+    }
+    if matches!(
+        scenario.as_str(),
+        "cleanup-failure" | "second-cleanup-failure"
+    ) {
         chromium::tests::assert_comparison_cleanup_failure(
             result
                 .as_ref()
@@ -732,7 +817,12 @@ fn isolated_case() {
             }
             assert_eq!(events, expected);
         }
-        "multiple" | "css" | "borrowser-failure" => {
+        "multiple"
+        | "css"
+        | "borrowser-failure"
+        | "second-shutdown-delayed"
+        | "borrowser-failure-delayed" => {
+            chromium::tests::assert_shutdown_cancellation_consumed();
             assert_eq!(
                 events,
                 vec![
@@ -746,7 +836,10 @@ fn isolated_case() {
                 ],
                 "scenario={scenario} exit={code} diagnostics={diagnostics}"
             );
-            if scenario == "borrowser-failure" {
+            if matches!(
+                scenario.as_str(),
+                "borrowser-failure" | "borrowser-failure-delayed"
+            ) {
                 assert_eq!(code, 2);
                 assert!(bytes.is_empty());
                 assert!(diagnostics.contains("capture.overlap"));
@@ -772,10 +865,24 @@ fn isolated_case() {
                 );
             }
         }
-        "later-capture-failure" => {
+        "later-capture-failure"
+        | "second-shutdown-cancel"
+        | "second-shutdown-expired"
+        | "second-cleanup-failure" => {
             assert_eq!(code, 2);
             assert!(bytes.is_empty());
-            assert!(diagnostics.contains("chromium.navigation"));
+            assert!(diagnostics.contains(match scenario.as_str() {
+                "second-shutdown-cancel" => "chromium.cancelled",
+                "second-shutdown-expired" => "chromium.timeout",
+                "second-cleanup-failure" => "chromium.cleanup",
+                _ => "chromium.navigation",
+            }));
+            if scenario == "second-shutdown-cancel" {
+                chromium::tests::assert_shutdown_cancellation_consumed();
+            }
+            if scenario == "second-cleanup-failure" {
+                chromium::tests::recover_comparison_cleanup_failure();
+            }
             assert_eq!(
                 events,
                 vec![

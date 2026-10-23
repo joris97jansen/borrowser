@@ -940,6 +940,15 @@ When a feature lands:
 
 ## Focused Conformance Tooling (AG1–AG7)
 
+- macOS Chromium capture now rejects incomplete pinned app/framework/helper
+  structure before launch, independently of archive-authoritative qualification
+  setup and the existing CDP identity check. Recent renderer/Crashpad executions
+  against an incomplete local installation are diagnostic evidence; older bundle
+  state remains unknown. Investigation-only minidump parsing is removed. This
+  adds no engine behavior or compatibility claim; corrective-source Linux
+  qualification remains required. See the
+  [AG7 integrity record](conformance/ag7-focused-external-tests-and-references.md#macos-distribution-integrity-correction).
+
 - AG7 embeds a deliberately small, revision/path/SHA-256-pinned WPT corpus with
   licence and attribution. Two unchanged RGB static cases use one direct match
   each; one locally authored mismatch is explicitly separate from upstream WPT
@@ -963,9 +972,18 @@ When a feature lands:
   Fixed initial-corpus counts do not constrain catalogue expansion. Required native
   Linux qualification and applicable CI passed for the recorded implementation;
   see the [AG7 qualification record](conformance/ag7-focused-external-tests-and-references.md#qualification-record-2026-10-21).
-  The historical macOS combined-CLI shutdown and composition incidents remain
-  unresolved, with separate owner dispositions pending. Their causes are not
-  established by later passes. No new live AWS qualification is claimed.
+  Native macOS Chromium execution is temporarily unsupported: whole-UID ambient
+  inspection is not an acceptable availability contract, and a controlled
+  detached Crashpad late spawn invalidates final-snapshot cleanup completeness.
+  Local capture rejects before allocation/fork/workers. Fail-closed ownership
+  and historical evidence remain; no rendering incompatibility or risk waiver
+  is claimed. Restoring support requires the separately proposed Platform
+  Runtime Hardening work. Linux x86-64 is supported and authoritative.
+  Historical shutdown/composition causal gaps remain unresolved; withdrawing
+  the execution backend does not reconstruct or waive them.
+  The mandatory EOF drain now shares the existing absolute capture budget;
+  historical causal gaps remain explicit. Final corrective-source Linux qualification
+  and technical review are still required. No new live AWS qualification is claimed.
 
 - AG6 adds build-time deterministic fixture discovery, strict JSON metadata,
   exact embedded inputs/expectations, and shared catalogue validation before

@@ -6,10 +6,24 @@ execute Borrowser, compare engines, change expectations, or alter production
 Browser/HTML/CSS/Layout/Paint behavior. AG3 owns integrated comparison through
 the shared crate-local `capture_batch` entry; see the [AG3 contract in the harness README](../../crates/conformance/README.md#integrated-cross-engine-comparison-ag3--1395).
 
-Current status: AG2 is integrated, with recorded production-v2 qualification on
-macOS arm64 and native Linux x86-64. Dated evidence below preserves the conditions
-and outstanding work at the time of each run; those historical integration
-requirements are not current AG2 blockers.
+Current supported Chromium execution platform: **native Linux x86-64**. It is
+also AG7's authoritative final qualification backend. Native macOS Chromium
+execution is temporarily unsupported: generation-safe, creation-complete cleanup
+has not been established. Local `--chromium` and runnable `--compare` requests
+return `chromium.platform` (exit 2, empty stdout) before standalone native setup,
+executable access, Chromium allocation or fork, and before Borrowser workers.
+There is no Linux/AWS fallback. Borrowser-only execution and the separately
+qualified macOS AG4 controller are unaffected.
+
+The whole-UID BSD scan has an unacceptable ambient-inspectability dependency.
+More importantly, a controlled detached Crashpad intermediate can spawn a handler
+after the final PID snapshot and then exit before inspection, invalidating the
+cleanup-completeness proof. No safe narrow public-API correction was established.
+An inspectable host does not repair that temporal gap. This is a supervision
+limitation, not a Chromium rendering incompatibility or a risk waiver.
+See the [AG7 support decision](ag7-focused-external-tests-and-references.md#supported-platform-decision).
+Historical macOS/Linux results below retain their original source/platform scope;
+they are not authorization to execute the withdrawn macOS backend.
 
 ## Reference and invocation
 
@@ -43,6 +57,91 @@ cargo run -p borrowser-conformance --locked -- --chromium canvas/cascade
 The second form requires the environment variable. Neither needs manual browser
 interaction. Explicit capture without a usable browser fails with exit 2 and
 empty stdout. Default invocation retains AG1's execution/report behavior.
+
+## macOS distribution integrity
+
+This section records the accepted integrity work and historical setup procedure;
+it does not enable current macOS execution. The bounded bundle validator and its
+regressions are retained as **test-only** evidence for future re-enablement, with
+CoreFoundation a macOS development dependency. Production rejects the platform
+before bundle inspection. Archive provenance remains necessary when execution
+can safely be restored.
+
+Archive provenance and runtime preflight are separate. Qualification uses a fresh
+complete extraction of the repository-pinned mac-arm64 archive, after verifying
+its entire SHA-256. A retained main-executable digest or successful CDP identity
+response does not establish that helpers, framework metadata or resources exist.
+Do not repair an incomplete installation in place or reuse it for qualification.
+
+From the repository root, this bounded setup command downloads the manifest URL,
+checks the archive before extraction, and materializes it into a new directory:
+
+```sh
+set -eu
+ag2_install=$(mktemp -d /private/tmp/borrowser-cft.XXXXXX)
+python3 - "$ag2_install" <<'PYTHON'
+import hashlib, json, pathlib, subprocess, sys, urllib.request
+pin = json.loads(pathlib.Path("crates/conformance/chromium-reference.json").read_text())
+artifact = pin["archives"]["mac-arm64"]
+root = pathlib.Path(sys.argv[1])
+archive = root / "chrome-mac-arm64.zip"
+with urllib.request.urlopen(artifact["url"], timeout=60) as source, archive.open("xb") as dest:
+    digest = hashlib.sha256()
+    while chunk := source.read(1024 * 1024):
+        digest.update(chunk)
+        dest.write(chunk)
+if digest.hexdigest() != artifact["sha256"]:
+    raise SystemExit("archive checksum mismatch; do not extract or qualify")
+print("verified archive SHA-256:", digest.hexdigest())
+subprocess.run(["/usr/bin/ditto", "-x", "-k", str(archive), str(root / "fresh")], check=True)
+PYTHON
+# Continue only if the verification/extraction command succeeded.
+export BORROWSER_CHROMIUM_EXECUTABLE="$ag2_install/fresh/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+```
+
+Record the archive identity, extraction path, executable hash and source inventory
+with the qualification results. Keep the extraction unchanged throughout the
+qualification session; interrupted/failed extraction is not an installation.
+There is no repository-owned macOS downloader/installer. Linux retains its existing
+CI checksum-before-extraction path and unchanged archive pin.
+
+The retained macOS-only `chromium::bundle` validator checks this pinned structure:
+
+- The containing `Google Chrome for Testing.app`, real `Contents`, `MacOS`,
+  `Frameworks`, `Resources` directories, and regular executable main file.
+- Outer Info.plist string fields: `CFBundleIdentifier=com.google.chrome.for.testing`,
+  `CFBundleExecutable=Google Chrome for Testing`, and the pinned
+  `CFBundleShortVersionString`. Display names and the redundant short build number
+  are not runtime identity requirements.
+- The versioned framework, its executable, Helpers/Libraries/Resources directories,
+  framework Info.plist identity/executable/version, and `chrome_crashpad_handler`.
+- Ordinary, GPU and Renderer helper app metadata and executable files, including
+  their Aperitif counterparts. The pinned
+  [child path selection](https://github.com/chromium/chromium/blob/3ff7ac5a9224be9156d7f8703a06e22890aafd34/content/browser/child_process_host_impl.cc)
+  selects these roles/variants. Helper identifier, executable and version must
+  agree; `LSUIElement` retains the artifact's string `1`, which identifies helpers
+  as background processes. Alerts helpers serve native notification UI outside
+  this static profile; archive materialization still includes them.
+- Exactly the official framework aliases: `Versions/Current` to the pinned
+  version, and framework binary/Helpers/Libraries/Resources to their
+  `Versions/Current/...` paths. These must resolve inside the containing app.
+  Other required components must be real entries, not arbitrary symlinks.
+
+Each of the eight required plists is a regular file limited to 65,536 bytes,
+opened without following its final symlink and parsed as XML or binary using
+CoreFoundation. Fields are type-checked; error output does not dump plist values.
+Executable entries require execute permission. No recursive resource scan,
+per-launch bundle hashing, signing/notarization gate, launch switch or download
+is added. The official artifact is ad-hoc/linker-signed with unsealed resources;
+strict codesign verification is not a substitute for archive provenance.
+
+This is a minimum structure check for a trusted, stable installation, not
+attestation against a malicious/concurrently modified bundle. Full distribution
+identity remains the verified archive's responsibility; localization/resource
+byte identity is not inferred from the preflight. CDP version/revision/protocol
+validation remains part of supported capture. Validator tests retain invalid
+bundle configuration errors; current macOS execution instead fails earlier with
+the explicit unsupported-platform error regardless of bundle validity.
 
 ## Fixture and observation
 
@@ -204,20 +303,66 @@ below established the target-dependent screenshot behavior, not a measured
 compositor callback failure.
 
 Startup is bounded by 10 seconds; navigation and capture by 5 seconds each;
-explicit and emergency cleanup by 5 seconds. Browser.close gets at most 250 ms, capped by the remaining capture budget.
+explicit and emergency cleanup by 5 seconds. Browser.close delivery and mandatory
+response-stream EOF validation share the existing absolute capture deadline.
+Acknowledgements and later events never reset that deadline. This introduces no
+additional capture allowance; the normal waiting envelope remains at most
+10 + 5 + 5 + 5 seconds per document, including explicit cleanup. Emergency cleanup
+retains its existing separate bound when unwinding requires it. Native calls are
+still checked for expiry on return; these waiting bounds are not OS preemption.
 Deadlines bound waiting and never establish success. There are no readiness
 sleeps or success-after-N-retries rules.
 
-Qualification builds (`cfg(test)` only) retain the active capture operation and
-command ID, sending/receiving/response-wait stage, native check stage, and the
-last 16 completed capture-operation labels. The fixture test logs its fixed
-fixture identity and iteration before each capture and includes them on failure.
-Before cleanup, a failed capture prints one progress summary, with no CDP
-payloads, HTML, screenshot bytes, event history or elapsed times. PNG sampling
-and document/viewport/frame verification have explicit local-operation labels.
-Typed primary and cleanup errors are unchanged; successful CLI JSON and stderr
-are unchanged. This is qualification instrumentation, not a production tracing
-interface.
+Failed captures retain bounded diagnostic progress in both the normal CLI and
+qualification builds: phase/operation, command ID, sending/receiving stage,
+native check stage and the last 16 completed startup/capture operations. Shutdown also
+records its initial capture remainder and expiry, command bytes sent,
+acknowledgement timing, validated/read frame counts,
+EOF, and remaining complete/partial buffered input. Snapshots are taken before cleanup and published afterward, so diagnostic output
+cannot delay native cleanup. These are failure-only stderr diagnostics; successful
+result JSON and normal CLI stderr remain unchanged.
+Termination notifications are validated against the pinned protocol before
+identity routing: Inspector events identify the attached session, while
+`Target.targetCrashed` identifies the reported target. Malformed fields or a
+malformed session envelope fail as protocol errors, including on foreign events.
+Valid foreign termination notifications follow the existing non-resource event
+path; they cannot terminate the captured target. Only a validated capture-session
+`Inspector.detached` retains the shutdown exception, and EOF validation remains
+mandatory. Other resource/document policy checks are unchanged.
+
+Failure diagnostics distinguish native root termination from the three CDP
+termination methods. They retain session/target correspondence rather than IDs,
+the integer crash code, and at most 128 characters each of detach reason or crash
+status, explicitly marking truncation. They do not dump event JSON, HTML,
+screenshots, script results, environment or credentials. After cleanup, failed
+captures also publish the launcher's already-retained Chromium stderr, limited to
+65,536 source bytes, with lossy UTF-8 conversion and escaped control characters.
+This separate record is labelled Chromium stderr; it never enters successful
+results or successful CLI stderr. Escaping can expand the bounded representation.
+
+The investigation-only macOS minidump parser and pre-cleanup database snapshot
+have been removed. Reading process memory/crash reports is not an AG2/AG7 capture
+responsibility. The private crash directory, inherited location and authoritative
+cleanup remain unchanged; any files Chromium creates there are removed by normal
+verified cleanup. Generic bounded CDP/process/stderr/cleanup diagnostics remain.
+Historical snapshot results and limitations are retained in the
+[AG7 incident record](ag7-focused-external-tests-and-references.md#macos-distribution-integrity-correction).
+
+The temporary post-timeout observer and successful-capture tracing are preserved
+only in the separate investigation source/evidence. They are absent from the
+deliverable; see the [AG7 shutdown correction](ag7-focused-external-tests-and-references.md#shutdown-deadline-correction).
+
+Cleanup diagnostics separately record entry/actions, last signal attempt,
+termination-verification outcome, root reaping, artifact removal/retention and the
+entire cleanup error vector. Cached ownership counts/scan status are distinguished
+from current descendant liveness, which is not resampled after an expired budget.
+Root exit, acknowledgement and absence of diagnostics do not establish cleanup.
+The primary error remains separate from cleanup errors and neither becomes an
+expected failure. The combined/scoped CLI and composition test wrappers retain
+child exit, stdout and stderr on failure, with selection/iteration or scenario
+context. The independent CLI qualification now also retains iteration, numeric
+child exit, stdout and stderr on failure. Its earlier stderr-only records do not
+retroactively establish the missing exit value or iteration.
 
 The failure summary samples only the retained direct child with one
 `waitid(WNOHANG | WNOWAIT)` and the response pipe with one zero-time `poll`.
@@ -300,11 +445,11 @@ shutdown, close-command delivery is separate from response-stream validation.
 Root exit or command-side disconnection does not skip incoming event processing
 and grants no signaling or reaping authority. Success requires actual response-pipe
 EOF with no partial frame, all preceding complete frames dispatched, complete
-resource evidence, and unexpired shutdown and capture budgets. A close
+resource evidence, and the unexpired absolute capture budget. A close
 acknowledgment, empty local buffer, zero-time poll or root exit is not a substitute
 for EOF. Shutdown expiry remains `Timeout(Shutdown)`; EOF inside a frame remains
 `Protocol(Truncated)`. Policy and other protocol errors propagate unchanged.
-The existing 250 ms limit remains capped by the remaining capture deadline;
+The original absolute capture deadline also bounds mandatory EOF validation;
 there is no timeout extension or fallback to native cleanup as protocol evidence.
 No favicon observed is not a promise of future silence:
 interception remains installed until teardown, and no network-idle heuristic or
@@ -422,6 +567,12 @@ path; it is not a library-wide subreaper or process supervisor.
 
 ### macOS arm64
 
+**Execution withdrawn.** The following describes the retained implementation and
+its historical regression contracts, not a proven complete supervision backend.
+The final-snapshot completeness claim below is invalidated by the controlled
+late-spawn counterexample. Fail-closed identity/signalling behavior is preserved;
+native helper tests remain architecture evidence and do not restore support.
+
 The implementation dynamically resolves `proc_signal_with_audittoken` and
 `proc_pidpath_audittoken`, obtains real `TASK_AUDIT_TOKEN` values through retained
 `task_name_for_pid` ports, and checks that a token with an incorrect generation
@@ -445,7 +596,9 @@ process reference and signals that referenced process. A user-space generation
 check followed by ordinary `kill(pid)` would not provide this guarantee and is
 never used. Tokens identify targets; they do not bypass the caller's permissions.
 
-A final scan after known creators terminate checks for remaining owned helpers.
+A final scan after known creators terminate attempts to find remaining owned helpers.
+It does not cover every unretained detached creator's late spawn and therefore
+cannot establish cleanup completeness on macOS.
 Token-aware path queries plus zombie state distinguish exited/non-executing
 identities; failed or truncated metadata never establishes success. The harness
 reaps its direct child; macOS launchd reaps reparented helpers. The harness can

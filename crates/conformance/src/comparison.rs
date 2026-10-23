@@ -139,6 +139,7 @@ fn execute_selected(
     let captures = if inputs.is_empty() {
         vec![]
     } else {
+        chromium::require_execution_platform()?;
         let executable = executable.ok_or_else(|| {
             chromium::configuration("set BORROWSER_CHROMIUM_EXECUTABLE or --chromium-executable")
         })?;

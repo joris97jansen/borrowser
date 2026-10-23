@@ -251,11 +251,18 @@ pub(super) struct OwnedChromium {
     pub diagnostics: Vec<u8>,
     finished: bool,
     last_scan: Instant,
-    #[cfg(test)]
     pub check_activity: CheckActivity,
+    cleanup_progress: CleanupProgress,
 }
 
-#[cfg(test)]
+#[derive(Debug)]
+struct CleanupProgress {
+    phase: &'static str,
+    last_signal: Option<i32>,
+    termination_failure_phase: Option<&'static str>,
+    owned_terminated: bool,
+    artifacts: &'static str,
+}
 #[derive(Debug)]
 pub(super) enum CheckActivity {
     Budget,
@@ -264,14 +271,12 @@ pub(super) enum CheckActivity {
     RootExit,
     Complete,
 }
-#[cfg(test)]
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum RootObservation {
     NoExitObserved,
     Exited,
     Unavailable(i32),
 }
-#[cfg(test)]
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum PipeObservation {
     OpenEmpty,
@@ -282,7 +287,6 @@ pub(super) enum PipeObservation {
 }
 
 impl OwnedChromium {
-    #[cfg(test)]
     pub fn failure_observation(&self) -> (RootObservation, PipeObservation) {
         // SAFETY: the owner retains its unreaped direct child. WNOWAIT does not
         // consume its identity; WNOHANG/poll(0) never wait for state changes.
@@ -378,6 +382,16 @@ impl OwnedChromium {
         deadline: Instant,
         cancel: &Cancellation,
     ) -> Result<Self, super::error::Failure> {
+        #[cfg(test)]
+        if fault::take(fault::Point::Allocation) {
+            return Err(super::error::Failure {
+                primary: Some(Error::Launch {
+                    stage: "injected allocation boundary",
+                    errno: libc::EIO,
+                }),
+                cleanup: vec![],
+            });
+        }
         let mut owner: Option<Self> = None;
         // Retain pre-fork ownership so returned initialization errors can report
         // removal failures instead of relying on TempDir's best-effort Drop.
@@ -591,8 +605,14 @@ impl OwnedChromium {
                     diagnostics: Vec::new(),
                     finished: false,
                     last_scan: Instant::now() - Duration::from_secs(1),
-                    #[cfg(test)]
                     check_activity: CheckActivity::Budget,
+                    cleanup_progress: CleanupProgress {
+                        phase: "not entered",
+                        last_signal: None,
+                        termination_failure_phase: None,
+                        owned_terminated: false,
+                        artifacts: "owned",
+                    },
                 });
             }
             let restored =
@@ -712,34 +732,22 @@ impl OwnedChromium {
         phase: Phase,
         cancel: &Cancellation,
     ) -> Result<(), Error> {
-        #[cfg(test)]
-        {
-            self.check_activity = CheckActivity::Budget;
-        }
+        self.check_activity = CheckActivity::Budget;
         let budget = OwnershipBudget {
             deadline,
             cancel: Some(cancel),
         };
         budget.check().map_err(|e| e.execution(phase))?;
-        #[cfg(test)]
-        {
-            self.check_activity = CheckActivity::Stderr;
-        }
+        self.check_activity = CheckActivity::Stderr;
         self.drain_stderr(&budget).map_err(|e| e.execution(phase))?;
         if self.last_scan.elapsed() >= Duration::from_millis(20) {
-            #[cfg(test)]
-            {
-                self.check_activity = CheckActivity::OwnershipDiscovery;
-            }
+            self.check_activity = CheckActivity::OwnershipDiscovery;
             self.registry
                 .discover(&budget)
                 .map_err(|e| e.execution(phase))?;
             self.last_scan = Instant::now();
         }
-        #[cfg(test)]
-        {
-            self.check_activity = CheckActivity::RootExit;
-        }
+        self.check_activity = CheckActivity::RootExit;
         if budget
             .observe(|| self.exited())
             .map_err(|e| e.execution(phase))??
@@ -747,10 +755,7 @@ impl OwnedChromium {
             return Err(Error::BrowserExited);
         }
         budget.check().map_err(|e| e.execution(phase))?;
-        #[cfg(test)]
-        {
-            self.check_activity = CheckActivity::Complete;
-        }
+        self.check_activity = CheckActivity::Complete;
         Ok(())
     }
     fn exited(&self) -> Result<bool, Error> {
@@ -785,6 +790,25 @@ impl OwnedChromium {
         }
         budget.check()
     }
+    pub fn ownership_diagnostic(&self) -> String {
+        let (retained, complete) = self.registry.diagnostic_summary();
+        format!(
+            "root_pid={} retained_identities={} last_scan_complete={} last_scan_age={:?}; current_descendant_liveness=not_resampled",
+            self.pid,
+            retained,
+            complete,
+            self.last_scan.elapsed()
+        )
+    }
+    pub fn cleanup_diagnostic(&self) -> String {
+        format!(
+            "{:?} finished={} root_reaped={} stderr_bytes={}",
+            self.cleanup_progress,
+            self.finished,
+            self.reaped,
+            self.diagnostics.len()
+        )
+    }
     pub fn finish(&mut self, duration: Duration) -> Vec<CleanupError> {
         #[cfg(test)]
         fault::record_cleanup(fault::CleanupEvent::Started);
@@ -796,6 +820,7 @@ impl OwnedChromium {
             deadline: start + duration,
             cancel: None,
         };
+        self.cleanup_progress.phase = "close command pipe";
         self.input.take(); // closes command pipe; also wakes Chromium's reader
         let mut errors = Vec::new();
         let termination = (|| -> Result<(), CleanupError> {
@@ -805,6 +830,7 @@ impl OwnedChromium {
                     .map_err(|e| e.cleanup(CleanupError::Identity))?;
                 self.drain_stderr(&budget)
                     .map_err(|e| e.cleanup(CleanupError::Identity))?;
+                self.cleanup_progress.phase = "ownership discovery";
                 if let Err(e) = self.registry.discover(&budget) {
                     match e {
                         OwnershipError::Timeout | OwnershipError::Cancelled => {
@@ -822,6 +848,10 @@ impl OwnedChromium {
                 } else {
                     None
                 };
+                if let Some(signal) = signal {
+                    self.cleanup_progress.last_signal = Some(signal);
+                }
+                self.cleanup_progress.phase = "owned signal";
                 if let Some(signal) = signal
                     && let Err(e) = self.registry.signal(signal, &budget)
                 {
@@ -833,6 +863,7 @@ impl OwnedChromium {
                         _ => {}
                     }
                 }
+                self.cleanup_progress.phase = "verify owned termination";
                 let terminated = match self.registry.terminated(&budget) {
                     Ok(terminated) => terminated,
                     Err(e @ (OwnershipError::Timeout | OwnershipError::Cancelled)) => {
@@ -863,11 +894,14 @@ impl OwnedChromium {
             }
         })();
         let complete = termination.is_ok();
+        self.cleanup_progress.owned_terminated = complete;
         if let Err(e) = termination {
+            self.cleanup_progress.termination_failure_phase = Some(self.cleanup_progress.phase);
             errors.push(e);
         }
         // Keep the root waitable until all identity-dependent scans finish.
         // Expiry skips reaping rather than silently extending the deadline.
+        self.cleanup_progress.phase = "reap";
         let reaping = (|| -> Result<(), CleanupError> {
             #[cfg(test)]
             fault::expire(fault::Point::Reap, budget.deadline);
@@ -907,10 +941,15 @@ impl OwnedChromium {
         if errors.is_empty() {
             if let Err(e) = budget.check() {
                 errors.push(e.cleanup(CleanupError::Identity));
-            } else if let Some(dir) = self.directory.take()
-                && let Err(e) = dir.close()
-            {
-                errors.push(CleanupError::Artifacts(e));
+            } else if let Some(dir) = self.directory.take() {
+                self.cleanup_progress.phase = "remove artifacts";
+                match dir.close() {
+                    Ok(()) => self.cleanup_progress.artifacts = "removed",
+                    Err(e) => {
+                        self.cleanup_progress.artifacts = "removal failed";
+                        errors.push(CleanupError::Artifacts(e));
+                    }
+                }
             }
         }
         // Filesystem cleanup cannot be forcibly interrupted either. Its late
@@ -923,6 +962,7 @@ impl OwnedChromium {
         if let Some(dir) = self.directory.take() {
             // Retention is independent of diagnostic delivery. A failed stderr
             // must not interrupt bookkeeping or re-enter cleanup through Drop.
+            self.cleanup_progress.artifacts = "retained";
             let retained = dir.keep();
             let diagnostic = writeln!(
                 std::io::stderr().lock(),
@@ -1010,6 +1050,7 @@ pub(super) mod fault {
     use super::*;
     #[derive(Clone, Copy, PartialEq, Eq)]
     pub enum Point {
+        Allocation,
         PreFork,
         PreForkArtifacts,
         Descriptor,
@@ -1021,6 +1062,7 @@ pub(super) mod fault {
         Verification,
         Reap,
         AfterReap,
+        ShutdownRead,
         #[cfg(target_os = "macos")]
         ArgumentsUnavailable,
         #[cfg(target_os = "macos")]

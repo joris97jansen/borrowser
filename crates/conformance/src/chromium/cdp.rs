@@ -13,16 +13,170 @@ use std::{
 };
 
 const MAX_FRAME: usize = 4 * 1024 * 1024;
-// Qualification-only progress, never protocol contents or successful reports.
-#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EventSession {
+    Absent,
+    Capture,
+    Other,
+}
+
+// Only the three pinned termination notifications, not a general event schema.
+// IDs are compared in full but never copied into diagnostics.
+#[derive(Debug, PartialEq, Eq)]
+enum ExitSource {
+    NativeRootTermination,
+    InspectorDetached {
+        session: EventSession,
+        reason: String,
+    },
+    InspectorTargetCrashed {
+        session: EventSession,
+    },
+    TargetTargetCrashed {
+        session: EventSession,
+        target_matches: bool,
+        status: String,
+        error_code: i32,
+    },
+}
+impl ExitSource {
+    fn terminates_capture(&self, phase: Phase) -> bool {
+        match self {
+            Self::NativeRootTermination => true,
+            Self::InspectorDetached { session, .. } => {
+                *session == EventSession::Capture && phase != Phase::Shutdown
+            }
+            Self::InspectorTargetCrashed { session } => *session == EventSession::Capture,
+            Self::TargetTargetCrashed {
+                session,
+                target_matches,
+                ..
+            } => *target_matches && *session != EventSession::Other,
+        }
+    }
+}
+impl std::fmt::Display for ExitSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NativeRootTermination => f.write_str("native root termination"),
+            Self::InspectorDetached { session, reason } => {
+                write!(
+                    f,
+                    "Inspector.detached session={session:?} reason={reason:?}"
+                )
+            }
+            Self::InspectorTargetCrashed { session } => {
+                write!(f, "Inspector.targetCrashed session={session:?}")
+            }
+            Self::TargetTargetCrashed {
+                session,
+                target_matches,
+                status,
+                error_code,
+            } => {
+                write!(
+                    f,
+                    "Target.targetCrashed session={session:?} target_matches={target_matches} status={status:?} error_code={error_code}"
+                )
+            }
+        }
+    }
+}
+fn exit_event(
+    message: &Value,
+    session: Option<&str>,
+    target: Option<&str>,
+) -> Result<Option<ExitSource>, Error> {
+    let method = string(message, "method")?;
+    if !matches!(
+        method,
+        "Inspector.detached" | "Inspector.targetCrashed" | "Target.targetCrashed"
+    ) {
+        return Ok(None);
+    }
+    let params = message
+        .get("params")
+        .filter(|p| p.is_object())
+        .ok_or_else(|| malformed("event without params"))?;
+    let event_session = match message.get("sessionId") {
+        None => EventSession::Absent,
+        Some(Value::String(id)) if Some(id.as_str()) == session => EventSession::Capture,
+        Some(Value::String(_)) => EventSession::Other,
+        Some(_) => return Err(malformed("invalid event sessionId")),
+    };
+    let scalar = |text: &str| {
+        let mut chars = text.chars();
+        let mut bounded: String = chars.by_ref().take(128).collect();
+        if chars.next().is_some() {
+            bounded.push('…');
+        }
+        bounded
+    };
+    // Validate before routing: malformed evidence is never dismissed as foreign.
+    Ok(Some(match method {
+        "Inspector.detached" => ExitSource::InspectorDetached {
+            session: event_session,
+            reason: scalar(string(params, "reason")?),
+        },
+        "Inspector.targetCrashed" => ExitSource::InspectorTargetCrashed {
+            session: event_session,
+        },
+        "Target.targetCrashed" => ExitSource::TargetTargetCrashed {
+            session: event_session,
+            target_matches: Some(string(params, "targetId")?) == target,
+            status: scalar(string(params, "status")?),
+            error_code: params
+                .get("errorCode")
+                .and_then(Value::as_i64)
+                .and_then(|value| i32::try_from(value).ok())
+                .ok_or_else(|| malformed("invalid target crash errorCode"))?,
+        },
+        _ => unreachable!(),
+    }))
+}
+
+// A renderer-exit callback emits Inspector.targetCrashed before the browser
+// Target.targetCrashed carrying status/code. Inspect only bytes already read
+// when the first event failed capture: no read, dispatch, wait or state change.
+// This is supplementary diagnostic evidence, not validated stream completion.
+fn buffered_target_crash(input: &[u8], session: Option<&str>, target: Option<&str>) -> String {
+    let bounded = &input[..input.len().min(4096)];
+    let mut frames = bounded.split(|b| *b == 0);
+    for _ in 0..4 {
+        let Some(frame) = frames.next() else { break };
+        // The final split item has no delimiter and may be truncated.
+        if frames.clone().next().is_none() {
+            break;
+        }
+        let Ok(message) = serde_json::from_slice::<Value>(frame) else {
+            return "malformed buffered JSON (not dispatched)".into();
+        };
+        if message.get("id").is_some()
+            || message.get("method").and_then(Value::as_str) != Some("Target.targetCrashed")
+        {
+            continue;
+        }
+        match exit_event(&message, session, target) {
+            Ok(Some(event)) if event.terminates_capture(Phase::Startup) => {
+                return format!("{event} (not dispatched)");
+            }
+            Err(_) => return "malformed buffered Target.targetCrashed (not dispatched)".into(),
+            _ => {}
+        }
+    }
+    "unavailable within first 4 complete buffered frames / 4096 bytes".into()
+}
+// Bounded failure-only progress, never protocol contents or successful reports.
 #[derive(Debug)]
 struct CaptureProgress {
     operation: &'static str,
+    phase: Option<Phase>,
     command_id: Option<u64>,
     activity: &'static str,
     completed: std::collections::VecDeque<&'static str>,
+    shutdown: Option<ShutdownProgress>,
+    exit_source: Option<ExitSource>,
 }
-#[cfg(test)]
 impl CaptureProgress {
     fn complete(&mut self) {
         if self.completed.len() == 16 {
@@ -30,6 +184,18 @@ impl CaptureProgress {
         }
         self.completed.push_back(self.operation);
     }
+}
+#[derive(Debug)]
+struct ShutdownProgress {
+    started: Instant,
+    capture_deadline: Instant,
+    sent: bool,
+    acknowledged: bool,
+    acknowledgement_elapsed: Option<std::time::Duration>,
+    validated_frames: usize,
+    complete_frames_read: usize,
+    command_bytes_written: usize,
+    eof: bool,
 }
 pub(super) struct Cdp<'a> {
     pub child: &'a mut OwnedChromium,
@@ -40,7 +206,6 @@ pub(super) struct Cdp<'a> {
     pub session: Option<String>,
     pub target: Option<String>,
     pub navigation: Option<Navigation>,
-    #[cfg(test)]
     capture_progress: CaptureProgress,
 }
 
@@ -55,12 +220,14 @@ impl<'a> Cdp<'a> {
             session: None,
             target: None,
             navigation: None,
-            #[cfg(test)]
             capture_progress: CaptureProgress {
                 operation: "capture not started",
+                phase: None,
                 command_id: None,
                 activity: "idle",
                 completed: Default::default(),
+                shutdown: None,
+                exit_source: None,
             },
         }
     }
@@ -70,7 +237,14 @@ impl<'a> Cdp<'a> {
         self.navigation = Some(tests::verified_navigation());
         // These IDs represent earlier protocol calls in this isolated scenario.
         self.next_id = 10;
-        let deadline = Instant::now() + std::time::Duration::from_millis(300);
+        let deadline = Instant::now()
+            + std::time::Duration::from_millis(if scenario == "resource-shutdown-capture-budget" {
+                100
+            } else if scenario.starts_with("resource-shutdown-delayed-") {
+                2000
+            } else {
+                300
+            });
         if matches!(
             scenario,
             "resource-shutdown-root-invalidated"
@@ -100,8 +274,14 @@ impl<'a> Cdp<'a> {
                 }
             }
         }
+        if scenario == "resource-shutdown-cancel-after-ack" {
+            super::tests::arm_shutdown_ack_cancellation(1);
+        }
         if scenario.starts_with("resource-shutdown-") {
             let result = self.close_browser(deadline);
+            if scenario == "resource-shutdown-cancel-after-ack" {
+                super::tests::assert_shutdown_cancellation_consumed();
+            }
             assert_eq!(
                 self.capture_progress.operation, "Browser.close response-stream drain",
                 "shutdown diagnostics must not retain an earlier capture operation"
@@ -115,6 +295,33 @@ impl<'a> Cdp<'a> {
                 assert!(self.input.contains(&0), "buffered event was not retained");
                 assert!(self.navigation.as_ref().unwrap().resources_complete());
             }
+            if matches!(
+                scenario,
+                "resource-shutdown-no-response"
+                    | "resource-shutdown-ack-only"
+                    | "resource-shutdown-capture-budget"
+                    | "resource-shutdown-partial-timeout"
+            ) {
+                let diagnostic = self.failure_diagnostic();
+                eprintln!("AG7 controlled {scenario}: {diagnostic}");
+                assert!(diagnostic.contains("sent=true"), "{diagnostic}");
+                assert!(diagnostic.contains("capture_expired=true"), "{diagnostic}");
+                assert!(diagnostic.contains("eof=false"), "{diagnostic}");
+                assert!(
+                    diagnostic.contains("root_at_failure=NoExitObserved"),
+                    "{diagnostic}"
+                );
+                assert_eq!(
+                    self.capture_progress
+                        .shutdown
+                        .as_ref()
+                        .unwrap()
+                        .acknowledged,
+                    scenario != "resource-shutdown-no-response"
+                );
+                assert!(!diagnostic.contains("PRIVATE_PAYLOAD"));
+                assert!(diagnostic.len() < 4096);
+            }
             if scenario == "resource-shutdown-partial-timeout" {
                 assert!(
                     !self.input.is_empty(),
@@ -123,30 +330,169 @@ impl<'a> Cdp<'a> {
                 assert!(!self.input.contains(&0));
                 assert!(self.navigation.as_ref().unwrap().resources_complete());
             }
+            if scenario.starts_with("resource-shutdown-delayed-") {
+                eprintln!(
+                    "AG7 delayed completion {scenario}: result={result:?}; {}",
+                    self.failure_diagnostic()
+                );
+            }
             result
         } else {
             self.call("Page.getLayoutMetrics", json!({}), deadline, Phase::Capture)?;
             self.wait_resource_completion(deadline)
         }
     }
-    #[cfg(test)]
     pub fn capture_operation(&mut self, operation: &'static str) {
         self.capture_progress.operation = operation;
         self.capture_progress.command_id = None;
         self.capture_progress.activity = "local capture operation";
     }
     #[cfg(test)]
+    pub fn startup_exit_event_regression(&mut self, event: Value) -> Result<Value, Error> {
+        self.session = Some("fixture-session".into());
+        self.target = Some("fixture-target".into());
+        // Control the read boundary explicitly: one event followed by the
+        // pending Page.enable response. No timing or pipe-coalescing assumption.
+        for frame in [
+            event,
+            json!({"id":self.next_id,"sessionId":"fixture-session","result":{}}),
+        ] {
+            self.input.extend(serde_json::to_vec(&frame).unwrap());
+            self.input.push(0);
+        }
+        self.call(
+            "Page.enable",
+            json!({}),
+            Instant::now() + std::time::Duration::from_secs(2),
+            Phase::Startup,
+        )
+    }
+    #[cfg(test)]
+    pub fn startup_crash_diagnostic_regression(&mut self, scenario: &str) {
+        let enqueue = |cdp: &mut Self, frame: Value| {
+            cdp.input.extend(serde_json::to_vec(&frame).unwrap());
+            cdp.input.push(0);
+        };
+        let deadline = Instant::now() + std::time::Duration::from_secs(2);
+        for method in [
+            "Browser.getVersion",
+            "Target.createTarget",
+            "Target.setDiscoverTargets",
+            "Target.attachToTarget",
+        ] {
+            enqueue(self, json!({"id":self.next_id,"result":{}}));
+            self.call(method, json!({}), deadline, Phase::Startup)
+                .unwrap();
+        }
+        self.session = Some("fixture-session".into());
+        self.target = Some("fixture-target".into());
+        if scenario == "after-page-response" {
+            enqueue(
+                self,
+                json!({"id":self.next_id,"sessionId":"fixture-session","result":{}}),
+            );
+            self.call("Page.enable", json!({}), deadline, Phase::Startup)
+                .unwrap();
+        }
+        if scenario != "normal" {
+            enqueue(
+                self,
+                json!({"method":"Inspector.targetCrashed","sessionId":if scenario == "foreign" { "other-session" } else { "fixture-session" },"params":{}}),
+            );
+        }
+        if matches!(scenario, "pending-page-response" | "after-page-response") {
+            enqueue(
+                self,
+                json!({"method":"Target.targetCrashed","params":{"targetId":"fixture-target","status":"crashed","errorCode":17}}),
+            );
+        }
+        enqueue(
+            self,
+            json!({"id":self.next_id,"sessionId":"fixture-session","result":{}}),
+        );
+        // Inspector.enable can report an already non-live frame synchronously.
+        // It is only used in this controlled model, never added to real startup.
+        let method = match scenario {
+            "non-live-at-inspector-enable" => "Inspector.enable",
+            "after-page-response" => "Page.setLifecycleEventsEnabled",
+            _ => "Page.enable",
+        };
+        let result = self.call(method, json!({}), deadline, Phase::Startup);
+        let failed = !matches!(scenario, "normal" | "foreign");
+        assert_eq!(matches!(result, Err(Error::BrowserExited)), failed);
+        if !failed {
+            assert_eq!(result.unwrap(), json!({}));
+        }
+        let before = (self.input.clone(), self.pending.clone());
+        let diagnostic = self.failure_diagnostic();
+        assert_eq!((self.input.clone(), self.pending.clone()), before);
+        assert_eq!(self.pending.len(), usize::from(failed));
+        assert!(diagnostic.len() < 4096);
+        assert!(
+            self.capture_progress
+                .completed
+                .contains(&"Target.attachToTarget")
+        );
+        assert_eq!(
+            self.capture_progress.completed.contains(&"Page.enable"),
+            matches!(scenario, "normal" | "foreign" | "after-page-response")
+        );
+        if matches!(scenario, "pending-page-response" | "after-page-response") {
+            assert!(
+                diagnostic.contains("status=\"crashed\" error_code=17 (not dispatched)"),
+                "{diagnostic}"
+            );
+        } else if failed {
+            assert!(
+                diagnostic.contains("buffered_target_crash=unavailable"),
+                "{diagnostic}"
+            );
+        } else {
+            assert!(
+                diagnostic.contains("exit_source=none; buffered_target_crash=not inspected"),
+                "{diagnostic}"
+            );
+        }
+        eprintln!("controlled startup lifecycle {scenario}: {diagnostic}");
+    }
     pub fn capture_operation_completed(&mut self) {
         self.capture_progress.complete();
     }
-    #[cfg(test)]
     pub fn failure_diagnostic(&self) -> String {
         // One non-reaping, nonblocking root observation and a zero-time pipe
         // poll, before cleanup. No discovery, retry, signal or deadline reset.
         let (root, pipe) = self.child.failure_observation();
+        let now = Instant::now();
+        let shutdown = self.capture_progress.shutdown.as_ref().map(|s| {
+            format!("elapsed={:?} capture_remaining_at_start={:?} capture_expired={} sent={} acknowledged={} validated_frames={} complete_frames_read={} command_bytes_written={} acknowledgement_elapsed={:?} eof={}",
+                now.saturating_duration_since(s.started), s.capture_deadline.saturating_duration_since(s.started),
+                now >= s.capture_deadline, s.sent, s.acknowledged, s.validated_frames, s.complete_frames_read, s.command_bytes_written, s.acknowledgement_elapsed, s.eof)
+        });
+        let buffered_crash = if matches!(
+            self.capture_progress.exit_source,
+            Some(ExitSource::InspectorTargetCrashed { .. })
+        ) {
+            buffered_target_crash(&self.input, self.session.as_deref(), self.target.as_deref())
+        } else {
+            "not inspected".into()
+        };
         format!(
-            "{:?}; native_check={:?}; root_at_failure={root:?}; response_pipe_at_failure={pipe:?}",
-            self.capture_progress, self.child.check_activity
+            "phase={:?}; operation: {:?}; command_id: {:?}; activity: {:?}; completed: {:?}; shutdown={shutdown:?}; buffered_bytes={} complete_frames={} pending_commands={}; exit_source={}; buffered_target_crash={buffered_crash}; native_check={:?}; root_at_failure={root:?}; response_pipe_at_failure={pipe:?}; ownership={}",
+            self.capture_progress.phase,
+            self.capture_progress.operation,
+            self.capture_progress.command_id,
+            self.capture_progress.activity,
+            self.capture_progress.completed,
+            self.input.len(),
+            self.input.iter().filter(|b| **b == 0).count(),
+            self.pending.len(),
+            self.capture_progress
+                .exit_source
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "none".into()),
+            self.child.check_activity,
+            self.child.ownership_diagnostic()
         )
     }
     fn send(
@@ -156,6 +502,7 @@ impl<'a> Cdp<'a> {
         deadline: Instant,
         phase: Phase,
     ) -> Result<u64, Error> {
+        self.capture_progress.phase = Some(phase);
         let id = self.next_id;
         self.next_id += 1;
         let mut message = json!({"id":id,"method":method,"params":params});
@@ -170,11 +517,13 @@ impl<'a> Cdp<'a> {
         bytes.push(0);
         let mut written = 0;
         while written < bytes.len() {
-            self.child.check(deadline, phase, self.cancel)?;
-            #[cfg(test)]
-            {
-                self.capture_progress.activity = "sending";
+            if let Err(error) = self.child.check(deadline, phase, self.cancel) {
+                if matches!(error, Error::BrowserExited) {
+                    self.capture_progress.exit_source = Some(ExitSource::NativeRootTermination);
+                }
+                return Err(error);
             }
+            self.capture_progress.activity = "sending";
             let pipe = self
                 .child
                 .input
@@ -182,13 +531,15 @@ impl<'a> Cdp<'a> {
                 .ok_or(Error::Protocol(ProtocolError::Eof))?;
             match pipe.write(&bytes[written..]) {
                 Ok(0) => return Err(Error::Protocol(ProtocolError::Eof)),
-                Ok(n) => written += n,
+                Ok(n) => {
+                    written += n;
+                    if let Some(shutdown) = &mut self.capture_progress.shutdown {
+                        shutdown.command_bytes_written += n;
+                    }
+                }
                 Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    #[cfg(test)]
-                    {
-                        self.capture_progress.activity = "waiting for writable command pipe";
-                    }
+                    self.capture_progress.activity = "waiting for writable command pipe";
                     poll_fd(pipe.as_raw_fd(), libc::POLLOUT, deadline)?
                 }
                 Err(e) => return Err(Error::io("CDP write", e)),
@@ -205,23 +556,16 @@ impl<'a> Cdp<'a> {
         deadline: Instant,
         phase: Phase,
     ) -> Result<Value, Error> {
-        #[cfg(test)]
-        if phase == Phase::Capture {
-            self.capture_operation(method);
-            self.capture_progress.command_id = Some(self.next_id);
-            self.capture_progress.activity = "preparing command";
-        }
+        self.capture_operation(method);
+        self.capture_progress.command_id = Some(self.next_id);
+        self.capture_progress.activity = "preparing command";
         let id = self.send(method, params, deadline, phase)?;
-        #[cfg(test)]
-        {
-            self.capture_progress.activity = "waiting for response";
-        }
+        self.capture_progress.activity = "waiting for response";
         loop {
             if let Some((response_id, value)) = self.step(deadline, phase)?
                 && response_id == id
             {
-                #[cfg(test)]
-                if phase == Phase::Capture {
+                if matches!(phase, Phase::Startup | Phase::Capture) {
                     self.capture_operation_completed();
                 }
                 return Ok(value);
@@ -241,20 +585,39 @@ impl<'a> Cdp<'a> {
         self.cancel.check(deadline, Phase::Capture)
     }
     pub fn close_browser(&mut self, capture_deadline: Instant) -> Result<(), Error> {
-        #[cfg(test)]
         self.capture_operation("Browser.close response-stream drain");
         self.navigation.as_ref().unwrap().finish_resources()?;
-        let deadline = capture_deadline.min(Instant::now() + std::time::Duration::from_millis(250));
+        let started = Instant::now();
+        // EOF validation is part of capture, not a best-effort close request.
+        // Share its existing absolute deadline: acknowledgements/events cannot
+        // renew it, and cleanup retains its separate finite allowance.
+        let deadline = capture_deadline;
+        self.capture_progress.command_id = Some(self.next_id);
+        self.capture_progress.shutdown = Some(ShutdownProgress {
+            started,
+            capture_deadline,
+            sent: false,
+            acknowledged: false,
+            acknowledgement_elapsed: None,
+            validated_frames: 0,
+            complete_frames_read: 0,
+            command_bytes_written: 0,
+            eof: false,
+        });
         // Browser.close is browser-scoped, but fixture events must still be
         // checked while waiting for it. Only the outgoing command loses its session.
         let session = self.session.take();
         let sent = self.send("Browser.close", json!({}), deadline, Phase::Shutdown);
         self.session = session;
+        self.capture_progress.shutdown.as_mut().unwrap().sent = sent.is_ok();
         match sent {
             Ok(_) | Err(Error::BrowserExited | Error::Protocol(ProtocolError::Eof)) => {}
             Err(Error::Io { source, .. }) if source.kind() == std::io::ErrorKind::BrokenPipe => {}
             Err(error) => return Err(error),
         }
+        // A tolerated native exit while sending close is not the source of a
+        // later protocol failure. Continue classifying the incoming evidence.
+        self.capture_progress.exit_source = None;
         // Command delivery and root liveness do not establish that incoming
         // evidence was inspected. Only response-stream EOF after complete frame
         // dispatch is a completion boundary; timeouts and truncated frames fail.
@@ -262,6 +625,7 @@ impl<'a> Cdp<'a> {
             match self.step(deadline, Phase::Shutdown) {
                 Ok(_) => {}
                 Err(Error::Protocol(ProtocolError::Eof)) => {
+                    self.capture_progress.shutdown.as_mut().unwrap().eof = true;
                     self.navigation.as_ref().unwrap().finish_resources()?;
                     self.cancel.check(deadline, Phase::Shutdown)?;
                     return self.cancel.check(capture_deadline, Phase::Capture);
@@ -278,13 +642,14 @@ impl<'a> Cdp<'a> {
                 Err(Error::BrowserExited) if phase == Phase::Shutdown => {
                     self.cancel.check(deadline, phase)?;
                 }
+                Err(Error::BrowserExited) => {
+                    self.capture_progress.exit_source = Some(ExitSource::NativeRootTermination);
+                    return Err(Error::BrowserExited);
+                }
                 result => result?,
             }
             if let Some(end) = self.input.iter().position(|b| *b == 0) {
-                #[cfg(test)]
-                {
-                    self.capture_progress.activity = "decoding response/event";
-                }
+                self.capture_progress.activity = "decoding response/event";
                 let rest = self.input.split_off(end + 1);
                 self.input.pop();
                 let result = serde_json::from_slice(&self.input)
@@ -297,10 +662,7 @@ impl<'a> Cdp<'a> {
             }
             let mut bytes = [0; 16384];
             let size = bytes.len().min(MAX_FRAME - self.input.len());
-            #[cfg(test)]
-            {
-                self.capture_progress.activity = "receiving";
-            }
+            self.capture_progress.activity = "receiving";
             match self.child.output.read(&mut bytes[..size]) {
                 Ok(0) => {
                     return Err(Error::Protocol(if self.input.is_empty() {
@@ -312,10 +674,7 @@ impl<'a> Cdp<'a> {
                 Ok(n) => self.input.extend_from_slice(&bytes[..n]),
                 Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    #[cfg(test)]
-                    {
-                        self.capture_progress.activity = "waiting for response";
-                    }
+                    self.capture_progress.activity = "waiting for response";
                     poll_fd(self.child.output.as_raw_fd(), libc::POLLIN, deadline)?
                 }
                 Err(e) => return Err(Error::io("CDP read", e)),
@@ -324,6 +683,9 @@ impl<'a> Cdp<'a> {
     }
     fn step(&mut self, deadline: Instant, phase: Phase) -> Result<Option<(u64, Value)>, Error> {
         let message = self.read(deadline, phase)?;
+        if let Some(shutdown) = &mut self.capture_progress.shutdown {
+            shutdown.complete_frames_read += 1;
+        }
         if let Some(id) = message.get("id") {
             let id = id
                 .as_u64()
@@ -353,6 +715,19 @@ impl<'a> Cdp<'a> {
             if let Some(nav) = &mut self.navigation {
                 nav.command_completed(id);
             }
+            if let Some(shutdown) = &mut self.capture_progress.shutdown {
+                shutdown.validated_frames += 1;
+                if method == "Browser.close" {
+                    shutdown.acknowledged = true;
+                    shutdown.acknowledgement_elapsed = Some(shutdown.started.elapsed());
+                    #[cfg(test)]
+                    super::tests::shutdown_acknowledged(
+                        self.cancel,
+                        shutdown.started,
+                        shutdown.capture_deadline,
+                    );
+                }
+            }
             return Ok(Some((id, result)));
         }
         let method = string(&message, "method")?;
@@ -360,15 +735,15 @@ impl<'a> Cdp<'a> {
             .get("params")
             .filter(|p| p.is_object())
             .ok_or_else(|| malformed("event without params"))?;
-        if method == "Inspector.detached" && phase == Phase::Shutdown {
-            return Ok(None);
-        }
-        if matches!(
-            method,
-            "Inspector.detached" | "Inspector.targetCrashed" | "Target.targetCrashed"
-        ) {
+        if let Some(event) = exit_event(&message, self.session.as_deref(), self.target.as_deref())?
+            && event.terminates_capture(phase)
+        {
+            self.capture_progress.exit_source = Some(event);
             return Err(Error::BrowserExited);
         }
+        // Valid foreign notifications follow the existing non-resource routing.
+        // A validated capture-session detach during shutdown also continues;
+        // only fully validated response EOF can complete that phase.
         if message.get("sessionId").and_then(Value::as_str) == self.session.as_deref() {
             if let Some(nav) = &mut self.navigation {
                 if method == "Fetch.requestPaused" {
@@ -424,6 +799,9 @@ impl<'a> Cdp<'a> {
                 "unexpected browser target: {}",
                 params["targetInfo"]
             )));
+        }
+        if let Some(shutdown) = &mut self.capture_progress.shutdown {
+            shutdown.validated_frames += 1;
         }
         Ok(None)
     }
@@ -843,12 +1221,256 @@ impl Navigation {
 mod tests {
     use super::*;
     #[test]
+    fn buffered_target_crash_diagnostic_is_bounded_and_scoped() {
+        let event = json!({"method":"Target.targetCrashed","params":{"targetId":"capture-target","status":"failed to launch","errorCode":13},"private":"do not report"});
+        let encode = |event: &Value| {
+            let mut bytes = serde_json::to_vec(event).unwrap();
+            bytes.push(0);
+            bytes
+        };
+        let inspect = |bytes: &[u8]| {
+            buffered_target_crash(bytes, Some("capture-session"), Some("capture-target"))
+        };
+        let bytes = encode(&event);
+        assert_eq!(
+            inspect(&bytes),
+            "Target.targetCrashed session=Absent target_matches=true status=\"failed to launch\" error_code=13 (not dispatched)"
+        );
+        assert!(!inspect(&bytes).contains("private"));
+        for foreign in [
+            json!({"sessionId":"foreign","method":"Target.targetCrashed","params":event["params"]}),
+            json!({"method":"Target.targetCrashed","params":{"targetId":"foreign","status":"crashed","errorCode":1}}),
+            json!({"id":5,"result":{},"method":"Target.targetCrashed","params":event["params"]}),
+        ] {
+            assert!(inspect(&encode(&foreign)).starts_with("unavailable"));
+            let mut frames = encode(&foreign);
+            frames.extend(&bytes);
+            assert!(inspect(&frames).contains("failed to launch"));
+        }
+        assert!(inspect(&bytes[..bytes.len() - 1]).starts_with("unavailable"));
+        assert_eq!(
+            inspect(b"{invalid\0"),
+            "malformed buffered JSON (not dispatched)"
+        );
+        assert_eq!(
+            inspect(&encode(
+                &json!({"method":"Target.targetCrashed","params":{}})
+            )),
+            "malformed buffered Target.targetCrashed (not dispatched)"
+        );
+        let mut four = encode(&json!({"id":5,"result":{}})).repeat(4);
+        four.extend(&bytes);
+        assert!(inspect(&four).starts_with("unavailable"));
+        let mut oversized = encode(&json!({"private":"x".repeat(4096)}));
+        oversized.extend(&bytes);
+        assert!(inspect(&oversized).starts_with("unavailable"));
+        let mut long = event;
+        long["params"]["status"] = json!("\n".repeat(1000));
+        let diagnostic = inspect(&encode(&long));
+        assert!(diagnostic.len() < 1024);
+        assert!(!diagnostic.contains('\n'));
+    }
+    fn termination(method: &str, params: Value, session: Option<&str>) -> Value {
+        let mut event = json!({"method":method,"params":params});
+        if let Some(session) = session {
+            event["sessionId"] = json!(session);
+        }
+        event
+    }
+    fn classify(event: &Value) -> Result<Option<ExitSource>, Error> {
+        exit_event(event, Some("capture-session"), Some("capture-target"))
+    }
+    fn assert_malformed(event: &Value) {
+        assert!(matches!(
+            classify(event),
+            Err(Error::Protocol(ProtocolError::Malformed(_)))
+        ));
+    }
+    #[test]
+    fn termination_event_detach_contract_and_shutdown() {
+        let event = termination(
+            "Inspector.detached",
+            json!({"reason":"target_closed"}),
+            Some("capture-session"),
+        );
+        let source = classify(&event).unwrap().unwrap();
+        assert!(source.terminates_capture(Phase::Startup));
+        assert!(!source.terminates_capture(Phase::Shutdown));
+        assert_eq!(
+            source.to_string(),
+            "Inspector.detached session=Capture reason=\"target_closed\""
+        );
+        for session in [None, Some("other-session")] {
+            let mut other = event.clone();
+            other.as_object_mut().unwrap().remove("sessionId");
+            if let Some(session) = session {
+                other["sessionId"] = json!(session);
+            }
+            assert!(
+                !classify(&other)
+                    .unwrap()
+                    .unwrap()
+                    .terminates_capture(Phase::Startup)
+            );
+            other["params"] = json!({});
+            assert_malformed(&other); // Validate even foreign notifications.
+        }
+        for params in [
+            json!({}),
+            json!({"reason":null}),
+            json!({"reason":1}),
+            json!({"reason":[]}),
+        ] {
+            assert_malformed(&termination(
+                "Inspector.detached",
+                params,
+                Some("capture-session"),
+            ));
+        }
+    }
+    #[test]
+    fn termination_event_inspector_crash_contract() {
+        let event = termination(
+            "Inspector.targetCrashed",
+            json!({}),
+            Some("capture-session"),
+        );
+        let source = classify(&event).unwrap().unwrap();
+        assert!(source.terminates_capture(Phase::Startup));
+        assert!(source.terminates_capture(Phase::Shutdown));
+        assert_eq!(
+            source.to_string(),
+            "Inspector.targetCrashed session=Capture"
+        );
+        for session in [None, Some("other-session")] {
+            let other = termination("Inspector.targetCrashed", json!({}), session);
+            assert!(
+                !classify(&other)
+                    .unwrap()
+                    .unwrap()
+                    .terminates_capture(Phase::Startup)
+            );
+        }
+        // This event has no parameter fields. The envelope still requires an object.
+        for params in [Value::Null, json!(1), json!([]), json!("bad")] {
+            assert_malformed(&termination(
+                "Inspector.targetCrashed",
+                params,
+                Some("capture-session"),
+            ));
+        }
+        let mut missing = event;
+        missing.as_object_mut().unwrap().remove("params");
+        assert_malformed(&missing);
+    }
+    #[test]
+    fn termination_event_target_crash_contract() {
+        let params = json!({"targetId":"capture-target","status":"crashed","errorCode":1});
+        let event = termination("Target.targetCrashed", params.clone(), None);
+        let source = classify(&event).unwrap().unwrap();
+        assert!(source.terminates_capture(Phase::Startup));
+        assert!(source.terminates_capture(Phase::Shutdown));
+        assert_eq!(
+            source.to_string(),
+            "Target.targetCrashed session=Absent target_matches=true status=\"crashed\" error_code=1"
+        );
+        for field in ["targetId", "status", "errorCode"] {
+            let mut missing = event.clone();
+            missing["params"].as_object_mut().unwrap().remove(field);
+            assert_malformed(&missing);
+            for wrong in [Value::Null, json!(false), json!([]), json!({})] {
+                let mut invalid = event.clone();
+                invalid["params"][field] = wrong;
+                assert_malformed(&invalid);
+            }
+        }
+        for (field, wrong) in [
+            ("targetId", json!(1)),
+            ("status", json!(1)),
+            ("errorCode", json!("1")),
+            ("errorCode", json!(1.5)),
+            ("errorCode", json!(2147483648_i64)),
+        ] {
+            let mut invalid = event.clone();
+            invalid["params"][field] = wrong;
+            assert_malformed(&invalid);
+        }
+        for code in [i32::MIN, 0, i32::MAX] {
+            let mut valid = event.clone();
+            valid["params"]["errorCode"] = json!(code);
+            assert!(
+                classify(&valid)
+                    .unwrap()
+                    .unwrap()
+                    .terminates_capture(Phase::Startup)
+            );
+        }
+        let mut other = event.clone();
+        other["params"]["targetId"] = json!("other-target");
+        assert!(
+            !classify(&other)
+                .unwrap()
+                .unwrap()
+                .terminates_capture(Phase::Startup)
+        );
+        other["params"]["status"] = json!(false);
+        assert_malformed(&other);
+        let foreign = termination("Target.targetCrashed", params, Some("other-session"));
+        assert!(
+            !classify(&foreign)
+                .unwrap()
+                .unwrap()
+                .terminates_capture(Phase::Startup)
+        );
+        assert!(
+            !exit_event(&event, None, None)
+                .unwrap()
+                .unwrap()
+                .terminates_capture(Phase::Startup)
+        );
+    }
+    #[test]
+    fn termination_event_envelope_and_bounded_diagnostics() {
+        for (method, params) in [
+            ("Inspector.detached", json!({"reason":"closed"})),
+            ("Inspector.targetCrashed", json!({})),
+            (
+                "Target.targetCrashed",
+                json!({"targetId":"capture-target","status":"crashed","errorCode":1}),
+            ),
+        ] {
+            for invalid in [Value::Null, json!(7), json!(false), json!([])] {
+                let mut event = termination(method, params.clone(), None);
+                event["sessionId"] = invalid;
+                assert_malformed(&event);
+            }
+        }
+        let event = termination(
+            "Inspector.detached",
+            json!({"reason":"\n".repeat(10000),"ignored":"PRIVATE_PAYLOAD"}),
+            Some("capture-session"),
+        );
+        let diagnostic = classify(&event).unwrap().unwrap().to_string();
+        assert!(diagnostic.len() < 1024);
+        assert!(!diagnostic.contains('\n'));
+        assert!(diagnostic.ends_with("…\""));
+        assert!(!diagnostic.contains("PRIVATE_PAYLOAD"));
+        assert!(
+            classify(&termination("Page.lifecycleEvent", json!({}), None))
+                .unwrap()
+                .is_none()
+        );
+    }
+    #[test]
     fn capture_diagnostic_history_is_bounded() {
         let mut progress = CaptureProgress {
             operation: "DOM.getDocument",
+            phase: Some(Phase::Capture),
             command_id: Some(1),
             activity: "receiving",
             completed: Default::default(),
+            shutdown: None,
+            exit_source: None,
         };
         progress.complete();
         progress.operation = "Page.getLayoutMetrics";

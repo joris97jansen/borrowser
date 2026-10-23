@@ -1386,8 +1386,10 @@ python3 -m unittest discover -s crates/conformance/aws/tests \
   -p test_guest_capture.py -k real_pinned -v
 ```
 
-Run this on the native supported Linux configuration; macOS may additionally
-qualify the unchanged wrapper using the controller artifact and macOS Chromium.
+Run this on the native supported Linux configuration. Local macOS Chromium
+execution is temporarily unsupported under the
+[AG7 platform decision](ag7-focused-external-tests-and-references.md#supported-platform-decision);
+this does not withdraw the separately qualified macOS controller/transport.
 Record the actual platform, Python/browser versions and source/artifact hashes.
 macOS or emulated-container evidence does not qualify native Linux or AWS.
 

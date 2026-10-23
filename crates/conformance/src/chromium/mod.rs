@@ -1,3 +1,10 @@
+// Retained structure-validation evidence for future platform re-enablement.
+// macOS Chromium execution is rejected before any native setup.
+#[cfg(all(test, target_os = "macos"))]
+mod bundle;
+#[cfg(all(test, target_os = "macos"))]
+#[path = "../../tests/support/macos_bundle.rs"]
+mod bundle_fixture;
 mod cdp;
 mod error;
 pub(crate) mod ingest;
@@ -63,6 +70,20 @@ impl ChromiumConfig {
     }
 }
 fn flags() -> Vec<String> {
+    #[cfg(test)]
+    if std::env::var("AG2_NATIVE_CASE").as_deref() == Ok("startup-comparison-failure") {
+        // Existing isolated process fixture, exercised through the whole batch.
+        // No helper selection exists in the normal executable.
+        return [
+            "--exact",
+            "chromium::tests::browser_helper",
+            "--ignored",
+            "--nocapture",
+            "--",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+    }
     [
         "--headless",
         "--remote-debugging-pipe",
@@ -113,6 +134,17 @@ fn identity(value: Value) -> Result<BrowserIdentity, Error> {
         capture_profile: cdp::string(&pin, "capture_profile")?.into(),
     })
 }
+pub(super) fn require_execution_platform() -> Result<(), Failure> {
+    if cfg!(target_os = "macos") {
+        return Err(Failure {
+            primary: Some(Error::UnsupportedPlatform(
+                "macOS Chromium execution is temporarily unsupported: ownership cleanup completeness is not proven; use native Linux x86-64".into(),
+            )),
+            cleanup: vec![],
+        });
+    }
+    Ok(())
+}
 #[cfg(test)]
 fn capture_html(
     html: &[u8],
@@ -152,6 +184,7 @@ fn capture_document(
         })?;
     }
     crate::projection::validate_request(request).map_err(|e| configuration(&e.detail))?;
+    require_execution_platform()?;
     let executable = std::fs::canonicalize(&config.executable).map_err(|e| Failure {
         primary: Some(Error::Configuration(format!(
             "Chromium executable unavailable: {e}"
@@ -233,14 +266,12 @@ fn capture_document(
             capture_deadline,
             Phase::Capture,
         )?;
-        #[cfg(test)]
         cdp.capture_operation("verify document URL/mode");
         let document_node = cdp
             .navigation
             .as_mut()
             .unwrap()
             .inspect_document(&document)?;
-        #[cfg(test)]
         cdp.capture_operation_completed();
         // Default deny. Only exact build-validated inert metadata can relax this.
         let links = cdp.call(
@@ -277,10 +308,8 @@ fn capture_document(
             capture_deadline,
             Phase::Capture,
         )?;
-        #[cfg(test)]
         cdp.capture_operation("verify viewport");
         let layout_width = validate_viewport(&metrics, request)?;
-        #[cfg(test)]
         cdp.capture_operation_completed();
         let requested = crate::projection::inspection_request(request);
         let inspection = if requested.dom
@@ -305,14 +334,12 @@ fn capture_document(
                 capture_deadline,
                 Phase::Capture,
             )?;
-            #[cfg(test)]
             cdp.capture_operation("decode PNG and sample pixel");
             let color = screenshot::sample(cdp::string(&screenshot, "data")?)?;
             Some(color)
         } else {
             None
         };
-        #[cfg(test)]
         cdp.capture_operation_completed();
         // A post-capture frame query is a protocol barrier and verifies that
         // the screenshot still belongs to the acknowledged loaded document.
@@ -322,7 +349,6 @@ fn capture_document(
             capture_deadline,
             Phase::Capture,
         )?;
-        #[cfg(test)]
         cdp.capture_operation("verify frame identity and final capture deadline");
         cdp.navigation.as_ref().unwrap().verify_tree(&tree)?;
         cancel.check(capture_deadline, Phase::Capture)?;
@@ -342,7 +368,6 @@ fn capture_document(
         )?;
         cdp.navigation.as_ref().unwrap().verify_tree(&tree)?;
         cdp.wait_resource_completion(capture_deadline)?;
-        #[cfg(test)]
         cdp.capture_operation_completed();
         cdp.close_browser(capture_deadline)?;
         Ok(ChromiumCapture {
@@ -354,17 +379,42 @@ fn capture_document(
             default_favicon_aborted: cdp.navigation.as_ref().unwrap().verified_favicon(),
         })
     })();
-    #[cfg(test)]
-    if let Err(error) = &result {
-        eprintln!(
+    // Snapshot before cleanup, but publish only after it: a blocked or closed
+    // diagnostic sink must not delay ownership verification and profile cleanup.
+    let failure_diagnostic = result.as_ref().err().map(|error| {
+        format!(
             "AG2 capture failure: {error:?}; {}",
             cdp.failure_diagnostic()
-        );
-    }
+        )
+    });
     drop(cdp);
     #[cfg(test)]
     tests::comparison_before_cleanup(&child, cancel);
+    #[cfg(test)]
+    let artifact_path = child.artifact_path().to_owned();
+    let cleanup_started = Instant::now();
     let cleanup = child.finish(config.shutdown);
+    let cleanup_elapsed = cleanup_started.elapsed();
+    #[cfg(test)]
+    if cleanup.is_empty() {
+        let state = child.cleanup_diagnostic();
+        assert!(state.contains("owned_terminated: true"), "{state}");
+        assert!(state.contains("root_reaped=true"), "{state}");
+        assert!(!artifact_path.exists(), "profile survived verified cleanup");
+    }
+    if let Some(diagnostic) = failure_diagnostic {
+        let _ = writeln!(std::io::stderr().lock(), "{diagnostic}");
+    }
+    if result.is_err() || !cleanup.is_empty() {
+        let _ = writeln!(
+            std::io::stderr().lock(),
+            "AG2 cleanup: elapsed={:?} allowance={:?} {}; errors={cleanup:?}",
+            cleanup_elapsed,
+            config.shutdown,
+            child.cleanup_diagnostic()
+        );
+        let _ = write_chromium_stderr(&child.diagnostics, &mut std::io::stderr().lock());
+    }
     let result = result.and_then(|capture| {
         // Cancellation during cleanup still suppresses a success report.
         cancel.check_cancelled()?;
@@ -377,6 +427,18 @@ fn capture_document(
             cleanup,
         }),
     }
+}
+
+fn write_chromium_stderr(bytes: &[u8], out: &mut impl Write) -> io::Result<()> {
+    // The launcher retains at most 65,536 bytes. Escaping control characters
+    // prevents stderr content from impersonating another diagnostic record.
+    let bytes = &bytes[..bytes.len().min(65_536)];
+    writeln!(
+        out,
+        "AG2 Chromium stderr (retained_bytes={}, lossy_utf8, escaped): {:?}",
+        bytes.len(),
+        String::from_utf8_lossy(bytes)
+    )
 }
 
 // Native phase inspection verifies the configured inner dimensions separately.
@@ -529,6 +591,15 @@ fn viewport_diagnostic(metrics: &Value, canvas: bool, rejected: &[Value]) -> Val
 }
 
 fn attribute_capture_failure(mut failure: Failure, input: &CaptureInput<'_>) -> Failure {
+    if !matches!(failure.primary, Some(Error::Configuration(_))) {
+        let _ = writeln!(
+            std::io::stderr().lock(),
+            "AG2 failed input: id={:?} role={:?} source={:?}; Borrowser workers not started",
+            input.id.0.chars().take(128).collect::<String>(),
+            input.role,
+            input.source.chars().take(256).collect::<String>()
+        );
+    }
     if let Some(Error::Capture(detail)) = &mut failure.primary {
         use crate::projection::Request;
         let request = input.request;
@@ -679,6 +750,9 @@ pub(crate) fn capture_batch(
     inputs: &[CaptureInput<'_>],
     executable: &Path,
 ) -> Result<Vec<CapturedFixture>, Failure> {
+    // Reject unsupported execution before signal/native preflight, path access,
+    // allocation or capture. Both local CLI modes share this boundary.
+    require_execution_platform()?;
     let standalone = process::Standalone::enter().map_err(|error| Failure {
         primary: Some(error),
         cleanup: vec![],
@@ -724,6 +798,7 @@ pub(crate) fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
         if inputs.is_empty() {
             return Err(configuration("selection contains no runnable fixtures"));
         }
+        require_execution_platform()?;
         let executable = options.executable.as_deref().ok_or_else(|| {
             configuration("set BORROWSER_CHROMIUM_EXECUTABLE or --chromium-executable")
         })?;

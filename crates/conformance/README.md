@@ -192,6 +192,15 @@ terminal outcomes, publication ordering, cancellation and failure ownership.
 
 ## Local Chromium capture (AG2)
 
+**Supported execution: native Linux x86-64**, also AG7's authoritative final
+qualification backend. macOS Chromium execution is temporarily unsupported
+because ownership cleanup completeness is not proven. Runnable local capture
+and comparison reject with `chromium.platform`/exit 2 before native setup,
+allocation/fork or Borrowser workers; there is no automatic fallback.
+Historical macOS results and test-only bundle/ownership regressions remain
+evidence, not current backend support. See the
+[platform decision](../../docs/conformance/ag7-focused-external-tests-and-references.md#supported-platform-decision).
+
 Provision the exact Chrome for Testing archive in
 [`chromium-reference.json`](chromium-reference.json), verifying its SHA-256 before
 extraction. The harness never downloads a browser, searches PATH, launches your
@@ -206,9 +215,14 @@ cargo test -p borrowser-conformance --locked real_chromium_ag5_read_only_inspect
 cargo test -p borrowser-conformance --locked real_chromium_ag5_profile -- --ignored --nocapture --test-threads=1
 ```
 
-On macOS, the executable is `Google Chrome for Testing.app/Contents/MacOS/Google
-Chrome for Testing`; on Linux it is `chrome-linux64/chrome`. A missing or
-incompatible browser is an error, including when an opt-in test is explicitly
+On Linux the executable is `chrome-linux64/chrome`. Qualification requires a
+fresh complete checksum-verified archive extraction; main-executable identity
+alone is insufficient. The historical macOS app/framework/helper structure
+validator is retained only in tests for future support restoration.
+See the [setup and integrity contract](../../docs/conformance/ag2-local-chromium-capture.md#macos-distribution-integrity)
+and [historical attribution limits](../../docs/conformance/ag7-focused-external-tests-and-references.md#macos-distribution-integrity-correction).
+
+A missing or incompatible browser is an error, including when an opt-in test is explicitly
 requested. Ordinary AG1 execution and tests require no installed browser.
 
 The `ag7-static-references-v1` profile uses one ordinary headless page. Fixed
@@ -233,8 +247,9 @@ use isolated subprocesses and no installed browser.
 
 See [the AG2 contract](../../docs/conformance/ag2-local-chromium-capture.md) for
 FD ownership, bounded CDP execution, fixture delivery, process guarantees and the
-platform qualification record. AG2 is integrated; both macOS arm64 and native
-Linux x86-64 have recorded production-v2 qualification. Compilation on Linux
+platform qualification record. AG2 is integrated; historical macOS arm64 and
+native Linux x86-64 production-v2 qualification remains recorded. Current macOS
+Chromium execution is withdrawn. Compilation on Linux
 ARM64 does not establish runtime qualification.
 
 No broad WPT import/execution, generalized adapters/providers, historical storage, dashboards,
@@ -554,7 +569,7 @@ cargo test -p borrowser-conformance --locked --bin borrowser-conformance tests::
 cargo test -p borrowser-conformance --locked --test comparison_cli acceptance_
 cargo test -p borrowser-conformance --locked
 cargo run -p borrowser-conformance --locked -- wpt-style/background-color-mismatch
-# These require the pinned browser and native process ownership permissions.
+# These require supported native Linux x86-64 and the pinned browser.
 cargo test -p borrowser-conformance --locked --bin borrowser-conformance chromium::tests::real_chromium_ag7_inert_links -- --exact --ignored --nocapture --test-threads=1
 cargo test -p borrowser-conformance --locked --test comparison_cli real_chromium_ag7_scoped_relationships -- --exact --ignored --nocapture
 cargo test -p borrowser-conformance --locked --test comparison_cli real_chromium_combined_cli_is_stable_and_selects_exactly -- --exact --ignored --nocapture --test-threads=1
@@ -576,6 +591,10 @@ native Linux or live-AWS qualification. Historical AG4 evidence is unchanged.
 Required native Linux x86-64 qualification and applicable CI passed for the
 recorded AG7 implementation; see the
 [AG7 qualification record](../../docs/conformance/ag7-focused-external-tests-and-references.md#qualification-record-2026-10-21).
-The historical combined-CLI shutdown and composition incidents remain unresolved,
-with separate owner dispositions pending. Successful qualification does not
-establish their causes or add live AWS qualification.
+The historical combined-CLI shutdown and composition attribution gaps remain
+unresolved. The owner rejected a risk waiver and instead withdrew macOS Chromium
+execution pending separate platform-runtime work. The shutdown correction uses
+the existing absolute capture budget for mandatory EOF validation; it does not
+reconstruct missing historical causes. AG7 publication requires verified support
+rejection and corrective-source native Linux/distributed CI qualification. See
+the linked platform decision; no new live AWS qualification is claimed.
