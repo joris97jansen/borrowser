@@ -950,8 +950,9 @@ borrow the separate CloudFormation cleanup budget. There are no cloud logs or
 capture archives. The operation record retains a bounded failure summary;
 the invocation's diagnostic stream carries the retrieved prefix.
 
-AG5 extends the shared producer/consumer contract to
-`borrowser.chromium-phases.v1` / `ag5-static-phases-v1`, with six registered cases,
+AG5 introduced phase observations; AG7 extends the shared producer/consumer
+contract to `borrowser.chromium-phases.v2` / `ag7-static-references-v1`, with the
+original six cases and the curated external/direct-reference subset,
 independent family requests and strict bounded native observations. The guest
 harness and local consumer must be rebuilt together; old schema/profile output
 is rejected. Native phase inspections also require exact configured
@@ -1385,8 +1386,10 @@ python3 -m unittest discover -s crates/conformance/aws/tests \
   -p test_guest_capture.py -k real_pinned -v
 ```
 
-Run this on the native supported Linux configuration; macOS may additionally
-qualify the unchanged wrapper using the controller artifact and macOS Chromium.
+Run this on the native supported Linux configuration. Local macOS Chromium
+execution is temporarily unsupported under the
+[AG7 platform decision](ag7-focused-external-tests-and-references.md#supported-platform-decision);
+this does not withdraw the separately qualified macOS controller/transport.
 Record the actual platform, Python/browser versions and source/artifact hashes.
 macOS or emulated-container evidence does not qualify native Linux or AWS.
 
@@ -1447,8 +1450,9 @@ add prerequisites to AG6.
 The [AG6 contract](ag6-fixture-discovery-and-metadata.md) replaces manual fixture
 registration with build-time discovery and exact embedding. All identity producers
 and consumers obtain the validated catalogue; malformed expectations fail before
-cloud configuration or activity. Runnable identities retain ID/source/HTML SHA-256
-in lexicographic ID order. The existing exact source tree binds metadata and
+cloud configuration or activity. Runnable identities now use AG7 ordered `CaptureDescriptor` records: case ID,
+document role, exact HTML SHA-256 and typed observation request. Test precedes
+reference within lexicographic case-ID order. Artifact manifest schema is 2. The existing exact source tree binds metadata and
 expectations; executable SHA-256 binds the artifact. Source preparation admits new
 fixture/expectation JSON only within the conformance fixture root.
 
@@ -1457,3 +1461,15 @@ Excluded-only selections return an incomplete report without cloud work. The gue
 uses the same embedded selection rules. No capture records are invented. Exact
 identity/count/order checks and all existing byte/time/cleanup bounds remain.
 Historical cleanup-only is independent of catalogue validation.
+
+
+AG7 keeps this integration bounded to embedded source/artifact/capture
+correspondence. Reference bytes and exact requests participate in artifact
+identity and ingestion; no extra case/selection/request digests are added.
+The source-tree, executable, browser pin/profile and platform checks remain.
+All reference captures and verified cleanup precede any Borrowser worker.
+[AG7](ag7-focused-external-tests-and-references.md) does not change infrastructure,
+credentials, transport, recovery or cleanup. Its
+[native Linux harness qualification](ag7-focused-external-tests-and-references.md#qualification-record-2026-10-21)
+is recorded in the AG7 contract; no new live AWS qualification is supplied.
+Historical qualification records above retain their original scope.

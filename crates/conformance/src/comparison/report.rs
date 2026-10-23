@@ -2,7 +2,7 @@ use super::{CanvasObservation, FieldStatus, compare};
 use crate::{
     chromium::ChromiumCapture,
     environment::{HEIGHT, SAMPLE, URL, WIDTH},
-    model::{Execution, Expectation, Fixture, FixtureKind, HarnessError},
+    model::{Execution, Expectation, Fixture, HarnessError},
     projection::{self, BorrowserCapture, Observation, ProjectedObservations},
 };
 use serde::Serialize;
@@ -57,18 +57,15 @@ impl Field {
         }
     }
     fn values(id: String, left: Value, right: Value, unsupported: bool) -> Self {
+        let (equal, differences) = projection::compare_values(&id, &left, &right);
         let status = if unsupported {
             FieldStatus::Unsupported
-        } else if left == right {
+        } else if equal {
             FieldStatus::Equal
         } else {
             FieldStatus::Different
         };
-        let differences = if status == FieldStatus::Different {
-            projection::differences(&id, &left, &right)
-        } else {
-            vec![]
-        };
+        let differences = if unsupported { vec![] } else { differences };
         Self {
             id,
             status,
@@ -161,6 +158,11 @@ fn fields(
 pub(super) struct Case {
     test_id: &'static str,
     source: &'static str,
+    descriptor: Option<crate::chromium::CaptureDescriptor>,
+    provenance: Option<crate::model::UpstreamSource>,
+    upstream_assertion: Option<Value>,
+    reference_document: Option<ReferenceReport>,
+    relationships: Option<Relationships>,
     status: &'static str,
     coverage: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -172,51 +174,125 @@ pub(super) struct Case {
     #[serde(skip_serializing_if = "Option::is_none")]
     skipped: Option<&'static str>,
 }
+#[derive(Serialize)]
+struct ReferenceReport {
+    descriptor: crate::chromium::CaptureDescriptor,
+    source: &'static str,
+    provenance: Option<crate::model::UpstreamSource>,
+    captures: Value,
+    projections: Value,
+    fields: Vec<Field>,
+}
+#[derive(Serialize)]
+struct Relationships {
+    borrowser: crate::relationship::Evaluation,
+    chromium: crate::relationship::Evaluation,
+}
 impl Case {
+    #[cfg(test)]
     pub(super) fn observed(
         fixture: &Fixture,
         borrowser: BorrowserCapture,
         chromium: ChromiumCapture,
     ) -> Result<Self, HarnessError> {
-        let FixtureKind::Runnable {
-            expected,
-            expectation,
-            ..
-        } = fixture.kind
-        else {
-            unreachable!()
-        };
+        Self::observed_pair(fixture, borrowser, chromium, None)
+    }
+    pub(super) fn observed_pair(
+        fixture: &Fixture,
+        borrowser: BorrowserCapture,
+        chromium: ChromiumCapture,
+        reference: Option<(BorrowserCapture, ChromiumCapture)>,
+    ) -> Result<Self, HarnessError> {
         let right = projection::chromium(&chromium, fixture.request)?;
-        let expected = expected.observations()?;
-        expected.validate(fixture.request)?;
         let fields = fields(&borrowser.observations, &right, fixture.request)?;
-        let status = if fields.iter().any(|f| f.status == FieldStatus::Different) {
+        let inputs = crate::chromium::inputs(&[fixture]);
+        let (reference_document, relationships, execution) = match (fixture.reference(), reference)
+        {
+            (None, None) => (None, None, Execution::Observed(borrowser.clone())),
+            (Some((kind, document)), Some((rb, rc))) => {
+                let rp = projection::chromium(&rc, fixture.request)?;
+                let br = crate::relationship::evaluate(
+                    kind,
+                    fixture.request,
+                    &borrowser.observations,
+                    &rb.observations,
+                )?;
+                let cr = crate::relationship::evaluate(kind, fixture.request, &right, &rp)?;
+                let fields = self::fields(&rb.observations, &rp, fixture.request)?;
+                (
+                    Some(ReferenceReport {
+                        descriptor: inputs[1].descriptor(),
+                        source: document.source,
+                        provenance: document.provenance,
+                        captures: captures(&rb, &rc),
+                        projections: json!({"borrowser":rb.observations,"chromium":rp}),
+                        fields,
+                    }),
+                    Some(Relationships {
+                        borrowser: br,
+                        chromium: cr,
+                    }),
+                    Execution::ReferenceObserved {
+                        test: borrowser.clone(),
+                        reference: Box::new(rb),
+                    },
+                )
+            }
+            _ => {
+                return Err(HarnessError::new(
+                    "required-data",
+                    "reference correspondence",
+                ));
+            }
+        };
+        let evaluation = crate::report::evaluate(fixture, execution);
+        if evaluation.status() == "ERROR" {
+            return Err(HarnessError::new(
+                "required-data",
+                "invalid independent expectation or observations",
+            ));
+        }
+        let borrowser_expectation=fixture.independent().map(|independent| {
+            let (metadata,reason)=match independent.disposition { Expectation::Match=>("match",None),Expectation::KnownFailure {reason}=>("known_failure",Some(reason)) };
+            Ok::<_,HarnessError>(json!({"expected":independent.expected.observations()?,"metadata":metadata,"reason":reason,"status":evaluation.independent_status()}))
+        }).transpose()?;
+        let all_fields = fields
+            .iter()
+            .chain(reference_document.iter().flat_map(|r| r.fields.iter()));
+        let different = all_fields
+            .clone()
+            .any(|f| f.status == FieldStatus::Different);
+        let incomplete = fields.is_empty()
+            || all_fields
+                .clone()
+                .any(|f| f.status == FieldStatus::Unsupported)
+            || fixture.upstream.is_some();
+        let relationship_failed = relationships
+            .as_ref()
+            .is_some_and(|r| r.borrowser.status != "satisfied" || r.chromium.status != "satisfied");
+        let status = if different {
             "different"
-        } else if fields.is_empty() || fields.iter().any(|f| f.status == FieldStatus::Unsupported) {
+        } else if relationship_failed {
+            "relationship_failed"
+        } else if incomplete {
             "incomplete"
         } else {
             "equal_for_requested_scope"
         };
-        let expectation_status =
-            crate::report::evaluate(fixture, Execution::Observed(borrowser.clone())).status();
-        let (metadata, reason) = match expectation {
-            Expectation::Match => ("match", None),
-            Expectation::KnownFailure { reason } => ("known_failure", Some(reason)),
-        };
-        let coverage = coverage(&borrowser.observations);
         Ok(Self {
             test_id: fixture.id.0,
-            source: fixture.source,
+            source: fixture.document.source,
             status,
-            coverage,
+            coverage: coverage(&borrowser.observations),
+            descriptor: Some(inputs[0].descriptor()),
+            upstream_assertion: upstream(fixture),
+            provenance: fixture.document.provenance,
+            reference_document,
+            relationships,
             projections: Some(json!({"borrowser":borrowser.observations,"chromium":right})),
-            captures: Some(
-                json!({"borrowser":{"method":if borrowser.layout_viewport_width.is_some(){"accepted-production-frame"}else{"guarded-egui-canvas"},"canvas_color_rgb8":match borrowser.observations.canvas {Observation::Observed(c)=>Some(c),_=>None},"layout_viewport_width":borrowser.layout_viewport_width,"layout_artifact_source_width":borrowser.layout_artifact_source_width},"chromium":{"canvas_color_rgb8":chromium.color,"inspection":chromium.inspection,"browser":chromium.identity}}),
-            ),
+            captures: Some(captures(&borrowser, &chromium)),
             fields,
-            borrowser_expectation: Some(
-                json!({"expected":expected,"metadata":metadata,"reason":reason,"status":expectation_status}),
-            ),
+            borrowser_expectation,
             skipped: None,
         })
     }
@@ -248,7 +324,12 @@ impl Case {
         }
         Self {
             test_id: fixture.id.0,
-            source: fixture.source,
+            source: fixture.document.source,
+            descriptor: None,
+            provenance: fixture.document.provenance,
+            upstream_assertion: upstream(fixture),
+            reference_document: None,
+            relationships: None,
             status: "incomplete",
             coverage: json!({"classification":"unsupported","reason":reason}),
             captures: None,
@@ -261,7 +342,12 @@ impl Case {
     pub(super) fn skipped(fixture: &Fixture, reason: &'static str) -> Self {
         Self {
             test_id: fixture.id.0,
-            source: fixture.source,
+            source: fixture.document.source,
+            descriptor: None,
+            provenance: fixture.document.provenance,
+            upstream_assertion: upstream(fixture),
+            reference_document: None,
+            relationships: None,
             status: "incomplete",
             coverage: json!({"classification":"skipped"}),
             captures: None,
@@ -271,6 +357,31 @@ impl Case {
             skipped: Some(reason),
         }
     }
+}
+fn captures(borrowser: &BorrowserCapture, chromium: &ChromiumCapture) -> Value {
+    json!({
+        "borrowser": {
+            "method": if borrowser.layout_viewport_width.is_some() {
+                "accepted-production-frame"
+            } else {
+                "guarded-egui-canvas"
+            },
+            "canvas_color_rgb8": match borrowser.observations.canvas {
+                Observation::Observed(c) => Some(c), _ => None,
+            },
+            "layout_viewport_width": borrowser.layout_viewport_width,
+            "layout_artifact_source_width": borrowser.layout_artifact_source_width,
+        },
+        "chromium": {
+            "canvas_color_rgb8": chromium.color,
+            "inspection": chromium.inspection,
+            "browser": chromium.identity,
+            "metadata_links": chromium.metadata_links,
+        },
+    })
+}
+fn upstream(fixture: &Fixture) -> Option<Value> {
+    fixture.upstream.map(|u|json!({"status":"unsupported","form":u.form,"reason":u.unsupported_reason,"reference":u.reference,"coverage":if fixture.reference().is_some() {"scoped computed style only"} else {"excluded"}}))
 }
 fn coverage(p: &ProjectedObservations) -> Value {
     fn state<T>(o: &Observation<T>) -> &'static str {
@@ -318,6 +429,13 @@ struct Summary {
     expectation_failures: usize,
     expectation_unexpected_passes: usize,
     incomplete_cases: usize,
+    executed_documents: usize,
+    upstream_unsupported_cases: usize,
+    runnable_upstream_incomplete_cases: usize,
+    independent_expected_failures: usize,
+    relationship_failures: usize,
+    borrowser_relationships_satisfied: usize,
+    chromium_relationships_satisfied: usize,
 }
 #[derive(Serialize)]
 pub(super) struct Report {
@@ -330,22 +448,39 @@ impl Report {
     pub(super) fn new(cases: Vec<Case>) -> Self {
         let mut s = Summary::default();
         for case in &cases {
-            for f in &case.fields {
+            for f in case
+                .fields
+                .iter()
+                .chain(case.reference_document.iter().flat_map(|r| r.fields.iter()))
+            {
                 match f.status {
                     FieldStatus::Equal => s.equal_fields += 1,
                     FieldStatus::Different => s.different_fields += 1,
                     FieldStatus::Unsupported => s.unsupported_fields += 1,
                 }
             }
+            s.executed_documents += usize::from(case.descriptor.is_some())
+                + usize::from(case.reference_document.is_some());
+            s.upstream_unsupported_cases += usize::from(case.upstream_assertion.is_some());
+            s.runnable_upstream_incomplete_cases +=
+                usize::from(case.upstream_assertion.is_some() && case.descriptor.is_some());
+            if let Some(r) = &case.relationships {
+                s.borrowser_relationships_satisfied +=
+                    usize::from(r.borrowser.status == "satisfied");
+                s.chromium_relationships_satisfied += usize::from(r.chromium.status == "satisfied");
+                s.relationship_failures += usize::from(r.borrowser.status != "satisfied")
+                    + usize::from(r.chromium.status != "satisfied");
+            }
             s.skipped_cases += usize::from(case.skipped.is_some());
             s.incomplete_cases += usize::from(case.status == "incomplete");
             if let Some(e) = &case.borrowser_expectation {
+                s.independent_expected_failures += usize::from(e["status"] == "XFAIL");
                 s.expectation_failures += usize::from(e["status"] == "FAIL");
                 s.expectation_unexpected_passes += usize::from(e["status"] == "XPASS");
             }
         }
         Self {
-            schema: "borrowser.cross-engine-phases.v1",
+            schema: "borrowser.cross-engine-phases.v2",
             environment: json!({"document_url":URL,"viewport":[WIDTH,HEIGHT],"device_scale_factor":1,"sample_pixel":SAMPLE,"color_space":"srgb"}),
             cases,
             summary: s,
@@ -356,9 +491,13 @@ impl Report {
         if s.different_fields > 0
             || s.expectation_failures > 0
             || s.expectation_unexpected_passes > 0
+            || s.relationship_failures > 0
         {
             1
-        } else if s.incomplete_cases > 0 || s.equal_fields == 0 {
+        } else if s.incomplete_cases > 0
+            || s.runnable_upstream_incomplete_cases > 0
+            || s.equal_fields == 0
+        {
             3
         } else {
             0

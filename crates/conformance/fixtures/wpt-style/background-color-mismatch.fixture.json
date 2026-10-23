@@ -1,0 +1,23 @@
+{
+  "id": "wpt-style/background-color-mismatch",
+  "input": "background-color-mismatch.html",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "observations": {
+    "styles": [
+      {
+        "target": "probe",
+        "property": "background-color",
+        "selection": {
+          "kind": "compare"
+        }
+      }
+    ]
+  },
+  "relationship": {
+    "kind": "mismatch",
+    "input": "red.html"
+  }
+}

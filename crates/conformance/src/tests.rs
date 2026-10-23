@@ -2,12 +2,16 @@ use crate::{model::*, report, run_fixture};
 
 fn runnable(expected: CanvasColor, expectation: Expectation) -> Fixture {
     Fixture {
+        document: crate::fixtures::fixture("canvas/root")
+            .document
+            .with_test_bytes(include_bytes!("../fixtures/root-canvas-color.html")),
         kind: FixtureKind::Runnable {
-            html: include_bytes!("../fixtures/root-canvas-color.html"),
-            expected: Expected::Canvas(expected),
-            expectation,
+            checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
+                expected: Expected::Canvas(expected),
+                disposition: expectation,
+            }),
         },
-        ..(*crate::fixtures::fixture("canvas/root"))
+        ..*crate::fixtures::fixture("canvas/root")
     }
 }
 
@@ -83,7 +87,7 @@ fn unsupported_and_skipped_need_no_expected_result_or_execution() {
     ] {
         let fixture = Fixture {
             kind,
-            ..(*crate::fixtures::fixture("canvas/root"))
+            ..*crate::fixtures::fixture("canvas/root")
         };
         let report = report::evaluate(&fixture, run_fixture(&fixture));
         assert_eq!(report.status(), status);
@@ -122,10 +126,11 @@ fn every_discovered_fixture_uses_the_production_execution_and_expectation_path()
 
 #[test]
 fn actual_capture_error_cannot_satisfy_known_failure_metadata() {
-    let fixture = Fixture { kind: FixtureKind::Runnable {
-        html: b"<!doctype html><html><head><style>html,body{margin:0;padding:0;height:0}html{background-color:#123456}div{height:100px;background-color:red}</style></head><body><div></div></body></html>",
-        expected: crate::model::Expected::Canvas(CanvasColor([18, 52, 86])), expectation: Expectation::KnownFailure { reason: "must not hide capture failure" },
-    }, ..(*crate::fixtures::fixture("canvas/root")) };
+    let fixture = Fixture {
+document: crate::fixtures::fixture("canvas/root").document.with_test_bytes(b"<!doctype html><html><head><style>html,body{margin:0;padding:0;height:0}html{background-color:#123456}div{height:100px;background-color:red}</style></head><body><div></div></body></html>"),
+kind: FixtureKind::Runnable { checks: crate::model::Checks::Independent(crate::model::IndependentExpectation { expected: crate::model::Expected::Canvas(CanvasColor([18, 52, 86])), disposition: Expectation::KnownFailure { reason: "must not hide capture failure" } }) },
+..*crate::fixtures::fixture("canvas/root")
+};
     let execution = run_fixture(&fixture);
     assert!(matches!(&execution, Execution::Error(error) if error.code == "capture.overlap"));
     let report = report::evaluate(&fixture, execution);
@@ -145,14 +150,18 @@ fn projection_local_typed_numeric_diagnostics_agree_with_status() {
             }],
             ..ObservationRequest::NONE
         },
+        document: crate::fixtures::fixture("style/cascade-inheritance")
+            .document
+            .with_test_bytes(b"<!doctype html><div id=x style='font-size:20px'></div>"),
         kind: FixtureKind::Runnable {
-            html: b"<!doctype html><div id=x style='font-size:20px'></div>",
-            expected: Expected::Projection(
-                r#"{"dom":{"state":"not_requested"},"styles":[{"target":"x","property":"font-size","value":{"state":"observed","value":{"state":"present","value":{"kind":"css_px","value":20}}}}],"layout":{"state":"not_requested"},"canvas":{"state":"not_requested"}}"#,
-            ),
-            expectation: Expectation::Match,
+            checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
+                expected: Expected::Projection(
+                    r#"{"dom":{"state":"not_requested"},"styles":[{"target":"x","property":"font-size","value":{"state":"observed","value":{"state":"present","value":{"kind":"css_px","value":20}}}}],"layout":{"state":"not_requested"},"canvas":{"state":"not_requested"}}"#,
+                ),
+                disposition: Expectation::Match,
+            }),
         },
-        ..(*crate::fixtures::fixture("style/cascade-inheritance"))
+        ..*crate::fixtures::fixture("style/cascade-inheritance")
     };
     let actual = run_fixture(&fixture);
     let evaluated = report::evaluate(&fixture, actual);
@@ -160,14 +169,16 @@ fn projection_local_typed_numeric_diagnostics_agree_with_status() {
     let mut bytes = vec![];
     report::write_report(&[evaluated], &mut bytes).unwrap();
     assert!(!String::from_utf8(bytes).unwrap().contains("difference:"));
-    let FixtureKind::Runnable { expected, .. } = fixture.kind else {
-        unreachable!()
-    };
+    let expected = (fixture).independent().unwrap().expected;
     let changed = Fixture {
+        document: (fixture)
+            .document
+            .with_test_bytes(b"<!doctype html><div id=x style='font-size:21px'></div>"),
         kind: FixtureKind::Runnable {
-            html: b"<!doctype html><div id=x style='font-size:21px'></div>",
-            expected,
-            expectation: Expectation::Match,
+            checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
+                expected,
+                disposition: Expectation::Match,
+            }),
         },
         ..fixture
     };
@@ -206,34 +217,39 @@ fn projection_local_reports_partial_coverage_and_known_failure_reasons() {
             ],
             ..ObservationRequest::NONE
         },
+        document: crate::fixtures::fixture("style/cascade-inheritance")
+            .document
+            .with_test_bytes(b"<!doctype html><div id=x style='font-size:20px'></div>"),
         kind: FixtureKind::Runnable {
-            html: b"<!doctype html><div id=x style='font-size:20px'></div>",
-            expected: Expected::Projection(
-                r#"{"dom":{"state":"unsupported","value":"DOM excluded here"},"styles":[{"target":"x","property":"font-size","value":{"state":"observed","value":{"state":"present","value":{"kind":"css_px","value":20.0}}}},{"target":"x","property":"line-height","value":{"state":"unsupported","value":"line-height outside profile"}}],"layout":{"state":"not_requested"},"canvas":{"state":"not_requested"}}"#,
-            ),
-            expectation: Expectation::Match,
+            checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
+                expected: Expected::Projection(
+                    r#"{"dom":{"state":"unsupported","value":"DOM excluded here"},"styles":[{"target":"x","property":"font-size","value":{"state":"observed","value":{"state":"present","value":{"kind":"css_px","value":20.0}}}},{"target":"x","property":"line-height","value":{"state":"unsupported","value":"line-height outside profile"}}],"layout":{"state":"not_requested"},"canvas":{"state":"not_requested"}}"#,
+                ),
+                disposition: Expectation::Match,
+            }),
         },
-        ..(*crate::fixtures::fixture("style/cascade-inheritance"))
+        ..*crate::fixtures::fixture("style/cascade-inheritance")
     };
     for differs in [false, true] {
-        let FixtureKind::Runnable { html, expected, .. } = fixture.kind else {
-            unreachable!()
-        };
+        let html = (fixture).document.html;
+        let expected = (fixture).independent().unwrap().expected;
         let fixture = Fixture {
+            document: (fixture).document.with_test_bytes(if differs {
+                b"<!doctype html><div id=x style='font-size:21px'></div>"
+            } else {
+                html
+            }),
             kind: FixtureKind::Runnable {
-                html: if differs {
-                    b"<!doctype html><div id=x style='font-size:21px'></div>"
-                } else {
-                    html
-                },
-                expected,
-                expectation: if differs {
-                    Expectation::KnownFailure {
-                        reason: "known font-size difference",
-                    }
-                } else {
-                    Expectation::Match
-                },
+                checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
+                    expected,
+                    disposition: if differs {
+                        Expectation::KnownFailure {
+                            reason: "known font-size difference",
+                        }
+                    } else {
+                        Expectation::Match
+                    },
+                }),
             },
             ..fixture
         };
@@ -241,6 +257,10 @@ fn projection_local_reports_partial_coverage_and_known_failure_reasons() {
         assert_eq!(
             evaluated.status(),
             if differs { "XFAIL" } else { "INCOMPLETE" }
+        );
+        assert_eq!(
+            report::exit_code(std::slice::from_ref(&evaluated)),
+            if differs { 0 } else { 3 }
         );
         let mut bytes = vec![];
         report::write_report(&[evaluated], &mut bytes).unwrap();
@@ -262,4 +282,149 @@ fn projection_local_reports_partial_coverage_and_known_failure_reasons() {
             );
         }
     }
+}
+
+#[test]
+fn ag7_malformed_expected_colors_are_errors_even_under_known_failure() {
+    use crate::model::{Checks, IndependentExpectation};
+    use crate::projection::{BorrowserCapture, Observation, StyleValue, TargetValue};
+    let base = *crate::fixtures::fixture("wpt/rgb-comments-p6");
+    let (kind, reference) = base.reference().unwrap();
+    let actual = crate::relationship::tests::color("p6", [0, 0, 0, 0]);
+    for value in [
+        StyleValue::CssPx(0.0),
+        StyleValue::Keyword("transparent".into()),
+        StyleValue::Rgba8([10, 150, 50, 128]),
+        StyleValue::Rgba8([1, 0, 0, 0]),
+    ] {
+        let mut expected = actual.clone();
+        expected.styles[0].value = Observation::Observed(TargetValue::Present(value));
+        let fixture = Fixture {
+            kind: FixtureKind::Runnable {
+                checks: Checks::Reference {
+                    kind,
+                    reference,
+                    independent: Some(IndependentExpectation {
+                        expected: Expected::Projection(Box::leak(
+                            serde_json::to_string(&expected).unwrap().into_boxed_str(),
+                        )),
+                        disposition: Expectation::KnownFailure {
+                            reason: "must not hide malformed colors",
+                        },
+                    }),
+                },
+            },
+            ..base
+        };
+        let capture = || BorrowserCapture {
+            observations: actual.clone(),
+            layout_viewport_width: Some(640.0),
+            layout_artifact_source_width: Some(640.0),
+        };
+        let result = report::evaluate(
+            &fixture,
+            Execution::ReferenceObserved {
+                test: capture(),
+                reference: Box::new(capture()),
+            },
+        );
+        assert_eq!(result.status(), "ERROR");
+        assert_eq!(result.independent_status(), Some("ERROR"));
+        assert!(result.relationship.is_none());
+        assert_eq!(report::exit_code(std::slice::from_ref(&result)), 2);
+        let mut text = vec![];
+        report::write_report(&[result], &mut text).unwrap();
+        assert!(
+            String::from_utf8(text)
+                .unwrap()
+                .contains("observation.required_data")
+        );
+    }
+}
+
+#[test]
+fn ag7_exit_relationship_upstream_and_error_precedence() {
+    use crate::relationship::tests::color;
+    fn observed(equal: bool, absent: bool) -> Execution {
+        let mut test = color("probe", [0, 128, 0, 255]);
+        if absent {
+            test.styles[0].value = crate::projection::Observation::Observed(
+                crate::projection::TargetValue::MissingNode,
+            );
+        }
+        let reference = color(
+            "probe",
+            if equal {
+                [0, 128, 0, 255]
+            } else {
+                [255, 0, 0, 255]
+            },
+        );
+        let capture = |observations| crate::projection::BorrowserCapture {
+            observations,
+            layout_viewport_width: None,
+            layout_artifact_source_width: None,
+        };
+        Execution::ReferenceObserved {
+            test: capture(test),
+            reference: Box::new(capture(reference)),
+        }
+    }
+    let local = *crate::fixtures::fixture("wpt-style/background-color-mismatch");
+    let upstream = Fixture {
+        upstream: crate::fixtures::fixture("wpt/rgb-comments-p6").upstream,
+        ..local
+    };
+    for (fixture, equal, absent, status, code) in [
+        (&local, false, false, "PASS", 0),
+        (&upstream, false, false, "INCOMPLETE", 3),
+        (&local, true, false, "FAIL", 1),
+        (&upstream, true, false, "FAIL", 1),
+        (&local, false, true, "FAIL", 1),
+    ] {
+        let result = report::evaluate(fixture, observed(equal, absent));
+        assert_eq!(result.status(), status);
+        assert_eq!(report::exit_code(&[result]), code);
+    }
+    let good = || report::evaluate(&local, observed(false, false));
+    let partial = || report::evaluate(&upstream, observed(false, false));
+    let failure = || report::evaluate(&local, observed(true, false));
+    let known = runnable(
+        CanvasColor([0, 0, 0]),
+        Expectation::KnownFailure {
+            reason: "independent known failure",
+        },
+    );
+    let known_result = || {
+        report::evaluate(
+            &known,
+            Execution::Observed(CanvasColor([18, 52, 86]).into()),
+        )
+    };
+    let unexpected = runnable(
+        CanvasColor([18, 52, 86]),
+        Expectation::KnownFailure { reason: "stale" },
+    );
+    let unexpected_result = || {
+        report::evaluate(
+            &unexpected,
+            Execution::Observed(CanvasColor([18, 52, 86]).into()),
+        )
+    };
+    assert_eq!(report::exit_code(&[good(), partial()]), 3);
+    assert_eq!(report::exit_code(&[known_result(), partial()]), 3);
+    assert_eq!(report::exit_code(&[failure(), partial()]), 1);
+    assert_eq!(report::exit_code(&[unexpected_result(), partial()]), 1);
+    assert_eq!(report::exit_code(&[failure(), known_result()]), 1);
+    assert_eq!(
+        report::exit_code(&[
+            failure(),
+            partial(),
+            report::evaluate(
+                &local,
+                Execution::Error(HarnessError::new("configuration", "bad"))
+            )
+        ]),
+        2
+    );
 }

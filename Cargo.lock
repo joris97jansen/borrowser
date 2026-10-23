@@ -239,6 +239,7 @@ dependencies = [
  "base64",
  "browser",
  "bus",
+ "core-foundation 0.10.1",
  "core_types",
  "css",
  "egui",

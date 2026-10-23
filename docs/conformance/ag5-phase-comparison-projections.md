@@ -5,7 +5,8 @@ It adds observations and comparisons, not rendering features. Its original six
 fixtures now belong to the AG6 discovered catalogue. The Chromium pin remains
 Chrome for Testing 155.0.8059.39, revision
 `@3ff7ac5a9224be9156d7f8703a06e22890aafd34`, protocol 1.3, with unchanged archive
-checksums. The capture profile is `ag5-static-phases-v1`.
+checksums. The current AG7 capture profile is `ag7-static-references-v1`; AG5 observation
+domains, exact comparison rules and canvas guard are unchanged.
 
 ## Authority and ownership
 
@@ -88,6 +89,10 @@ Style domains and semantic stages:
   without flex/positioning blockification contexts.
 
 Native CSSOM serialization is decoded into these types, not computed again.
+Serialized color projections and independent expectations must also carry RGBA8
+payloads in the same opaque-sRGB/transparent-black domain. Wrong value variants
+or out-of-domain alpha are required-data errors before comparison or KnownFailure
+classification. This does not extend color syntax or engine behavior.
 Percentages are not resolved by tooling. Advanced color, partial alpha,
 viewport-dependent font sizing, additional display values and unselected
 properties require explicit unsupported selection. An invalid serialization or
@@ -180,7 +185,8 @@ two whole-DOM fields, twelve style properties, and eighteen layout fields
 (sixteen rectangle edges plus hidden/absent target records). Real-profile and
 independent CLI tests assert exact field identities, order and counts.
 
-Comparison exits: 2 for errors, 1 for differences or independent FAIL/XPASS,
+Comparison exits: 2 for errors, 1 for differences, independent FAIL/XPASS or AG7
+relationship/presence failures,
 3 for otherwise incomplete coverage, 0 for complete agreement over the requested
 scope. Errors suppress the entire comparison report, including earlier cases.
 
@@ -228,8 +234,9 @@ are explicit; arbitrary remote strings/objects and fixture contents are not
 dumped. Primary failures and cleanup errors remain separate stderr diagnostics;
 no partial successful report is emitted.
 
-Producer, local consumer and AG4 ingestion use `borrowser.chromium-phases.v1`;
-comparison uses `borrowser.cross-engine-phases.v1`. Old schema/profile output is
+Producer, local consumer and AG4 ingestion now use `borrowser.chromium-phases.v2`;
+comparison uses `borrowser.cross-engine-phases.v2`. AG7 adds exact ordered capture
+descriptors and parsed link facts, with separate direct-reference evaluation. Old schema/profile output is
 rejected explicitly. Producer/controller/guest harness binaries must be rebuilt
 from the same AG5 source contract. There is no version negotiation or migration
 framework. AG4 transport, credentials, infrastructure and cleanup are unchanged.
@@ -352,3 +359,16 @@ by its existing branch/event condition. All twelve applicable CI jobs passed.
 These results qualify the functional tree above; later documentation-only
 commits have different complete trees and require their own current PR checks.
 AG5 stays one issue within the existing nine-issue milestone.
+
+## AG7 relationship boundary
+
+[AG7](ag7-focused-external-tests-and-references.md) reuses the exact semantic
+comparison helper over a single present-target background-color observation.
+Both sides must supply complete compatible requested data. Independent expected
+values, within-engine relationships and same-document cross-engine fields remain
+separate. No DOM fact is removed; no AG5 selector/property/layout domain changes.
+A scoped relationship can be satisfied while the original upstream full visual
+assertion remains unsupported. That runnable coverage is independently reported
+and makes the aggregate incomplete unless a failure/error takes precedence.
+Reference documents have no invented independent expectation or test PASS count.
+Historical AG5 qualification below is evidence for its original profile only.

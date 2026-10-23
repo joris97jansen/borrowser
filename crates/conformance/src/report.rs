@@ -1,5 +1,5 @@
 use crate::model::{
-    CanvasColor, Comparison, Execution, Expectation, Expected, Fixture, FixtureKind,
+    CanvasColor, Comparison, Execution, Expectation, Expected, Fixture, IndependentExpectation,
 };
 use crate::projection::{Observation, ProjectedObservations};
 use std::io::{self, Write};
@@ -9,86 +9,112 @@ pub(crate) struct CaseReport<'a> {
     execution: Execution,
     comparison: Option<Comparison>,
     expected: Option<ProjectedObservations>,
+    pub(crate) relationship: Option<crate::relationship::Evaluation>,
 }
 
-pub(crate) fn evaluate(fixture: &Fixture, mut execution: Execution) -> CaseReport<'_> {
+pub(crate) fn evaluate(fixture: &Fixture, execution: Execution) -> CaseReport<'_> {
+    let (mut execution, reference) = match execution {
+        Execution::ReferenceObserved { test, reference } => {
+            (Execution::Observed(test), Some(reference))
+        }
+        other => (other, None),
+    };
     let mut validated_expected = None;
-    let comparison = match (&execution, fixture.kind) {
-        (Execution::Observed(actual), FixtureKind::Runnable { expected, .. }) => {
-            match expected.observations().and_then(|expected| {
-                actual.observations.validate(fixture.request)?;
+    let mut comparison = None;
+    let mut relationship = None;
+    if let Execution::Observed(actual) = &execution {
+        let result = (|| {
+            actual.observations.validate(fixture.request)?;
+            if let Some(independent) = fixture.independent() {
+                let expected = independent.expected.observations()?;
                 expected.validate(fixture.request)?;
-                Ok(expected)
-            }) {
-                Ok(expected) => {
-                    let comparison = if actual.observations == expected {
-                        Comparison::Match
-                    } else {
-                        Comparison::Mismatch
-                    };
-                    validated_expected = Some(expected);
-                    Some(comparison)
+                comparison = Some(if actual.observations == expected {
+                    Comparison::Match
+                } else {
+                    Comparison::Mismatch
+                });
+                validated_expected = Some(expected);
+            }
+            match (fixture.reference(), reference) {
+                (Some((kind, _)), Some(reference)) => {
+                    relationship = Some(crate::relationship::evaluate(
+                        kind,
+                        fixture.request,
+                        &actual.observations,
+                        &reference.observations,
+                    )?)
                 }
-                Err(error) => {
-                    execution = Execution::Error(error);
-                    None
+                (None, None) => {}
+                _ => {
+                    return Err(crate::model::HarnessError::new(
+                        "relationship.required-data",
+                        "reference capture correspondence",
+                    ));
                 }
             }
+            Ok(())
+        })();
+        if let Err(error) = result {
+            execution = Execution::Error(error);
+            comparison = None;
         }
-        _ => None,
-    };
+    }
     CaseReport {
         fixture,
         execution,
         comparison,
         expected: validated_expected,
+        relationship,
     }
 }
 
 impl CaseReport<'_> {
-    pub(crate) fn status(&self) -> &'static str {
-        if let Execution::Observed(capture) = &self.execution
-            && capture.observations.incomplete()
-            && self.comparison == Some(Comparison::Match)
-        {
-            return "INCOMPLETE";
+    pub(crate) fn independent_status(&self) -> Option<&'static str> {
+        let independent = self.fixture.independent()?;
+        if matches!(self.execution, Execution::Error(_)) {
+            return Some("ERROR");
         }
-        match (&self.execution, self.comparison, self.fixture.kind) {
-            (
-                Execution::Observed(_),
-                Some(Comparison::Match),
-                FixtureKind::Runnable {
-                    expectation: Expectation::Match,
-                    ..
-                },
-            ) => "PASS",
-            (
-                Execution::Observed(_),
-                Some(Comparison::Mismatch),
-                FixtureKind::Runnable {
-                    expectation: Expectation::Match,
-                    ..
-                },
-            ) => "FAIL",
-            (
-                Execution::Observed(_),
-                Some(Comparison::Mismatch),
-                FixtureKind::Runnable {
-                    expectation: Expectation::KnownFailure { .. },
-                    ..
-                },
-            ) => "XFAIL",
-            (
-                Execution::Observed(_),
-                Some(Comparison::Match),
-                FixtureKind::Runnable {
-                    expectation: Expectation::KnownFailure { .. },
-                    ..
-                },
-            ) => "XPASS",
-            (Execution::Unsupported { .. }, None, _) => "UNSUPPORTED",
-            (Execution::Skipped { .. }, None, _) => "SKIP",
-            _ => "ERROR",
+        if let Execution::Observed(capture) = &self.execution {
+            if capture.observations.incomplete() && self.comparison == Some(Comparison::Match) {
+                return Some("INCOMPLETE");
+            }
+            return Some(match (self.comparison, independent.disposition) {
+                (Some(Comparison::Match), Expectation::Match) => "PASS",
+                (Some(Comparison::Mismatch), Expectation::Match) => "FAIL",
+                (Some(Comparison::Match), Expectation::KnownFailure { .. }) => "XPASS",
+                (Some(Comparison::Mismatch), Expectation::KnownFailure { .. }) => "XFAIL",
+                _ => "ERROR",
+            });
+        }
+        None
+    }
+    pub(crate) fn status(&self) -> &'static str {
+        match &self.execution {
+            Execution::Error(_) => "ERROR",
+            Execution::Unsupported { .. } => "UNSUPPORTED",
+            Execution::Skipped { .. } => "SKIP",
+            Execution::Observed(_) => {
+                let independent = self.independent_status();
+                if independent == Some("ERROR") {
+                    return "ERROR";
+                }
+                if independent == Some("FAIL")
+                    || self
+                        .relationship
+                        .as_ref()
+                        .is_some_and(|r| r.status != "satisfied")
+                {
+                    return "FAIL";
+                }
+                if independent == Some("XPASS") {
+                    return "XPASS";
+                }
+                if independent == Some("INCOMPLETE") || self.fixture.upstream.is_some() {
+                    return "INCOMPLETE";
+                }
+                independent.unwrap_or("PASS")
+            }
+            Execution::ReferenceObserved { .. } => "ERROR",
         }
     }
 }
@@ -116,15 +142,14 @@ pub(crate) fn write_report(reports: &[CaseReport<'_>], out: &mut impl Write) -> 
             .position(|item| *item == status)
             .expect("report status")] += 1;
         writeln!(out, "{status} {}", report.fixture.id.0)?;
-        writeln!(out, "  source: {}", report.fixture.source)?;
-        match (&report.execution, report.fixture.kind) {
+        writeln!(out, "  source: {}", report.fixture.document.source)?;
+        match (&report.execution, report.fixture.independent()) {
             (
                 Execution::Observed(actual),
-                FixtureKind::Runnable {
+                Some(IndependentExpectation {
                     expected: Expected::Canvas(expected),
-                    expectation,
-                    ..
-                },
+                    disposition: expectation,
+                }),
             ) => {
                 let crate::projection::Observation::Observed(actual) = actual.observations.canvas
                 else {
@@ -151,11 +176,10 @@ pub(crate) fn write_report(reports: &[CaseReport<'_>], out: &mut impl Write) -> 
             }
             (
                 Execution::Observed(actual),
-                FixtureKind::Runnable {
+                Some(IndependentExpectation {
                     expected: Expected::Projection(_),
-                    expectation,
-                    ..
-                },
+                    disposition: expectation,
+                }),
             ) => {
                 let expected =
                     serde_json::to_value(report.expected.as_ref().expect("validated expectation"))?;
@@ -203,6 +227,7 @@ pub(crate) fn write_report(reports: &[CaseReport<'_>], out: &mut impl Write) -> 
                     writeln!(out, "  known failure: {reason}")?;
                 }
             }
+            (Execution::Observed(_), None) => {}
             (Execution::Unsupported { reason } | Execution::Skipped { reason }, _) => {
                 writeln!(out, "  reason: {reason}")?
             }
@@ -213,6 +238,28 @@ pub(crate) fn write_report(reports: &[CaseReport<'_>], out: &mut impl Write) -> 
                 out,
                 "  error: report.invalid: observation has no runnable expectation"
             )?,
+        }
+        if report.fixture.reference().is_some() {
+            if let Some(status) = report.independent_status() {
+                writeln!(out, "  independent expectation: {status}")?;
+            }
+            if let Some(relation) = &report.relationship {
+                writeln!(
+                    out,
+                    "  Borrowser relationship: {}",
+                    serde_json::to_string(relation)?
+                )?;
+            }
+        }
+        if let Some(upstream) = report.fixture.upstream {
+            writeln!(
+                out,
+                "  upstream assertion: UNSUPPORTED {}: {}",
+                upstream.form, upstream.unsupported_reason
+            )?;
+        }
+        if let Some(provenance) = report.fixture.document.provenance {
+            writeln!(out, "  provenance: {}", serde_json::to_string(&provenance)?)?;
         }
     }
     write!(out, "SUMMARY")?;

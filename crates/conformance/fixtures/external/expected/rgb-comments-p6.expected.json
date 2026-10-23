@@ -1,0 +1,32 @@
+{
+  "dom": {
+    "state": "not_requested"
+  },
+  "styles": [
+    {
+      "target": "p6",
+      "property": "background-color",
+      "value": {
+        "state": "observed",
+        "value": {
+          "state": "present",
+          "value": {
+            "kind": "rgba8",
+            "value": [
+              10,
+              150,
+              50,
+              255
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "layout": {
+    "state": "not_requested"
+  },
+  "canvas": {
+    "state": "not_requested"
+  }
+}

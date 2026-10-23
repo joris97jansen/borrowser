@@ -1,3 +1,10 @@
+// Retained structure-validation evidence for future platform re-enablement.
+// macOS Chromium execution is rejected before any native setup.
+#[cfg(all(test, target_os = "macos"))]
+mod bundle;
+#[cfg(all(test, target_os = "macos"))]
+#[path = "../../tests/support/macos_bundle.rs"]
+mod bundle_fixture;
 mod cdp;
 mod error;
 pub(crate) mod ingest;
@@ -36,6 +43,7 @@ pub(super) struct ChromiumCapture {
     pub(crate) color: Option<CanvasColor>,
     pub(crate) inspection: Option<inspection::Inspection>,
     pub(crate) identity: BrowserIdentity,
+    pub(crate) metadata_links: Vec<crate::metadata_links::LinkFact>,
     #[cfg(test)]
     default_favicon_aborted: bool,
 }
@@ -62,6 +70,20 @@ impl ChromiumConfig {
     }
 }
 fn flags() -> Vec<String> {
+    #[cfg(test)]
+    if std::env::var("AG2_NATIVE_CASE").as_deref() == Ok("startup-comparison-failure") {
+        // Existing isolated process fixture, exercised through the whole batch.
+        // No helper selection exists in the normal executable.
+        return [
+            "--exact",
+            "chromium::tests::browser_helper",
+            "--ignored",
+            "--nocapture",
+            "--",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+    }
     [
         "--headless",
         "--remote-debugging-pipe",
@@ -112,6 +134,17 @@ fn identity(value: Value) -> Result<BrowserIdentity, Error> {
         capture_profile: cdp::string(&pin, "capture_profile")?.into(),
     })
 }
+pub(super) fn require_execution_platform() -> Result<(), Failure> {
+    if cfg!(target_os = "macos") {
+        return Err(Failure {
+            primary: Some(Error::UnsupportedPlatform(
+                "macOS Chromium execution is temporarily unsupported: ownership cleanup completeness is not proven; use native Linux x86-64".into(),
+            )),
+            cleanup: vec![],
+        });
+    }
+    Ok(())
+}
 #[cfg(test)]
 fn capture_html(
     html: &[u8],
@@ -125,12 +158,24 @@ fn capture_html(
         cancel,
     )
 }
+#[cfg(test)]
 fn capture_requested_html(
     html: &[u8],
     request: crate::projection::ObservationRequest,
     config: &ChromiumConfig,
     cancel: &Cancellation,
 ) -> Result<ChromiumCapture, Failure> {
+    capture_document(html, request, &[], config, cancel)
+}
+
+fn capture_document(
+    html: &[u8],
+    request: crate::projection::ObservationRequest,
+    expected_links: &[crate::metadata_links::LinkFact],
+    config: &ChromiumConfig,
+    cancel: &Cancellation,
+) -> Result<ChromiumCapture, Failure> {
+    crate::metadata_links::validate(expected_links).map_err(|e| configuration(&e))?;
     #[cfg(test)]
     if !config.scripts_disabled {
         tests::require_script_positive_control(html).map_err(|error| Failure {
@@ -139,6 +184,7 @@ fn capture_requested_html(
         })?;
     }
     crate::projection::validate_request(request).map_err(|e| configuration(&e.detail))?;
+    require_execution_platform()?;
     let executable = std::fs::canonicalize(&config.executable).map_err(|e| Failure {
         primary: Some(Error::Configuration(format!(
             "Chromium executable unavailable: {e}"
@@ -220,17 +266,14 @@ fn capture_requested_html(
             capture_deadline,
             Phase::Capture,
         )?;
-        #[cfg(test)]
         cdp.capture_operation("verify document URL/mode");
         let document_node = cdp
             .navigation
             .as_mut()
             .unwrap()
             .inspect_document(&document)?;
-        #[cfg(test)]
         cdp.capture_operation_completed();
-        // Query Chromium's parsed live document; do not parse HTML or rel tokens
-        // in the harness. Even inert link elements are outside this narrow profile.
+        // Default deny. Only exact build-validated inert metadata can relax this.
         let links = cdp.call(
             "DOM.querySelector",
             json!({"nodeId":document_node,"selector":"link"}),
@@ -243,20 +286,30 @@ fn capture_requested_html(
             capture_deadline,
             Phase::Capture,
         )?;
-        cdp.navigation
-            .as_mut()
-            .unwrap()
-            .verify_document_policy(&links, &tree)?;
+        let metadata_links = if expected_links.is_empty() {
+            cdp.navigation
+                .as_mut()
+                .unwrap()
+                .verify_document_policy(&links, &tree)?;
+            vec![]
+        } else {
+            let frame_id = cdp::string(&tree["frameTree"]["frame"], "id")?;
+            let facts = inspection::collect_metadata_links(&mut cdp, frame_id, capture_deadline)?;
+            cdp.navigation.as_mut().unwrap().verify_metadata_policy(
+                &facts,
+                expected_links,
+                &tree,
+            )?;
+            facts
+        };
         let metrics = cdp.call(
             "Page.getLayoutMetrics",
             json!({}),
             capture_deadline,
             Phase::Capture,
         )?;
-        #[cfg(test)]
         cdp.capture_operation("verify viewport");
         let layout_width = validate_viewport(&metrics, request)?;
-        #[cfg(test)]
         cdp.capture_operation_completed();
         let requested = crate::projection::inspection_request(request);
         let inspection = if requested.dom
@@ -281,14 +334,12 @@ fn capture_requested_html(
                 capture_deadline,
                 Phase::Capture,
             )?;
-            #[cfg(test)]
             cdp.capture_operation("decode PNG and sample pixel");
             let color = screenshot::sample(cdp::string(&screenshot, "data")?)?;
             Some(color)
         } else {
             None
         };
-        #[cfg(test)]
         cdp.capture_operation_completed();
         // A post-capture frame query is a protocol barrier and verifies that
         // the screenshot still belongs to the acknowledged loaded document.
@@ -298,7 +349,6 @@ fn capture_requested_html(
             capture_deadline,
             Phase::Capture,
         )?;
-        #[cfg(test)]
         cdp.capture_operation("verify frame identity and final capture deadline");
         cdp.navigation.as_ref().unwrap().verify_tree(&tree)?;
         cancel.check(capture_deadline, Phase::Capture)?;
@@ -318,25 +368,53 @@ fn capture_requested_html(
         )?;
         cdp.navigation.as_ref().unwrap().verify_tree(&tree)?;
         cdp.wait_resource_completion(capture_deadline)?;
-        #[cfg(test)]
         cdp.capture_operation_completed();
         cdp.close_browser(capture_deadline)?;
         Ok(ChromiumCapture {
             color,
             inspection,
             identity,
+            metadata_links,
             #[cfg(test)]
             default_favicon_aborted: cdp.navigation.as_ref().unwrap().verified_favicon(),
         })
     })();
-    #[cfg(test)]
-    if result.is_err() {
-        eprintln!("AG2 capture failure: {}", cdp.failure_diagnostic());
-    }
+    // Snapshot before cleanup, but publish only after it: a blocked or closed
+    // diagnostic sink must not delay ownership verification and profile cleanup.
+    let failure_diagnostic = result.as_ref().err().map(|error| {
+        format!(
+            "AG2 capture failure: {error:?}; {}",
+            cdp.failure_diagnostic()
+        )
+    });
     drop(cdp);
     #[cfg(test)]
     tests::comparison_before_cleanup(&child, cancel);
+    #[cfg(test)]
+    let artifact_path = child.artifact_path().to_owned();
+    let cleanup_started = Instant::now();
     let cleanup = child.finish(config.shutdown);
+    let cleanup_elapsed = cleanup_started.elapsed();
+    #[cfg(test)]
+    if cleanup.is_empty() {
+        let state = child.cleanup_diagnostic();
+        assert!(state.contains("owned_terminated: true"), "{state}");
+        assert!(state.contains("root_reaped=true"), "{state}");
+        assert!(!artifact_path.exists(), "profile survived verified cleanup");
+    }
+    if let Some(diagnostic) = failure_diagnostic {
+        let _ = writeln!(std::io::stderr().lock(), "{diagnostic}");
+    }
+    if result.is_err() || !cleanup.is_empty() {
+        let _ = writeln!(
+            std::io::stderr().lock(),
+            "AG2 cleanup: elapsed={:?} allowance={:?} {}; errors={cleanup:?}",
+            cleanup_elapsed,
+            config.shutdown,
+            child.cleanup_diagnostic()
+        );
+        let _ = write_chromium_stderr(&child.diagnostics, &mut std::io::stderr().lock());
+    }
     let result = result.and_then(|capture| {
         // Cancellation during cleanup still suppresses a success report.
         cancel.check_cancelled()?;
@@ -349,6 +427,18 @@ fn capture_requested_html(
             cleanup,
         }),
     }
+}
+
+fn write_chromium_stderr(bytes: &[u8], out: &mut impl Write) -> io::Result<()> {
+    // The launcher retains at most 65,536 bytes. Escaping control characters
+    // prevents stderr content from impersonating another diagnostic record.
+    let bytes = &bytes[..bytes.len().min(65_536)];
+    writeln!(
+        out,
+        "AG2 Chromium stderr (retained_bytes={}, lossy_utf8, escaped): {:?}",
+        bytes.len(),
+        String::from_utf8_lossy(bytes)
+    )
 }
 
 // Native phase inspection verifies the configured inner dimensions separately.
@@ -501,6 +591,15 @@ fn viewport_diagnostic(metrics: &Value, canvas: bool, rejected: &[Value]) -> Val
 }
 
 fn attribute_capture_failure(mut failure: Failure, input: &CaptureInput<'_>) -> Failure {
+    if !matches!(failure.primary, Some(Error::Configuration(_))) {
+        let _ = writeln!(
+            std::io::stderr().lock(),
+            "AG2 failed input: id={:?} role={:?} source={:?}; Borrowser workers not started",
+            input.id.0.chars().take(128).collect::<String>(),
+            input.role,
+            input.source.chars().take(256).collect::<String>()
+        );
+    }
     if let Some(Error::Capture(detail)) = &mut failure.primary {
         use crate::projection::Request;
         let request = input.request;
@@ -522,34 +621,84 @@ fn attribute_capture_failure(mut failure: Failure, input: &CaptureInput<'_>) -> 
 }
 
 #[derive(Serialize)]
-struct Observation<'a> {
-    test_id: &'a str,
-    source: &'a str,
+struct Observation {
+    descriptor: CaptureDescriptor,
+    metadata_links: Vec<crate::metadata_links::LinkFact>,
     canvas_color_rgb8: Option<CanvasColor>,
     inspection: Option<inspection::Inspection>,
     browser: BrowserIdentity,
 }
 #[derive(Serialize)]
-struct CaptureReport<'a> {
+struct CaptureReport {
     schema: &'static str,
     document_url: &'static str,
     viewport: [u32; 2],
     device_scale_factor: u32,
     sample_pixel: [u32; 2],
-    observations: Vec<Observation<'a>>,
+    observations: Vec<Observation>,
 }
 /// Only fixture bytes and identity cross the capture boundary, never expectations.
 pub(crate) struct CaptureInput<'a> {
     pub(crate) id: TestId,
     pub(crate) source: &'a str,
     pub(crate) html: &'a [u8],
+    pub(crate) role: DocumentRole,
+    pub(crate) metadata_links: &'a str,
     pub(crate) request: crate::projection::ObservationRequest,
 }
 #[derive(Debug)]
 pub(crate) struct CapturedFixture {
-    pub(crate) id: TestId,
-    pub(crate) source: String,
+    pub(crate) descriptor: CaptureDescriptor,
     pub(crate) capture: ChromiumCapture,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DocumentRole {
+    Test,
+    Reference,
+}
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CaptureDescriptor {
+    pub(crate) case_id: String,
+    pub(crate) role: DocumentRole,
+    pub(crate) source_sha256: String,
+    pub(crate) request: crate::projection::RequestDescriptor,
+}
+impl CaptureInput<'_> {
+    pub(crate) fn descriptor(&self) -> CaptureDescriptor {
+        use sha2::{Digest, Sha256};
+        CaptureDescriptor {
+            case_id: self.id.0.into(),
+            role: self.role,
+            source_sha256: format!("{:x}", Sha256::digest(self.html)),
+            request: self.request.descriptor(),
+        }
+    }
+}
+pub(crate) fn inputs(fixtures: &[&crate::model::Fixture]) -> Vec<CaptureInput<'static>> {
+    let mut inputs = Vec::new();
+    for fixture in fixtures {
+        if !matches!(fixture.kind, FixtureKind::Runnable { .. }) {
+            continue;
+        }
+        let mut push = |role, doc: crate::model::DocumentInput| {
+            inputs.push(CaptureInput {
+                id: fixture.id,
+                role,
+                source: doc.source,
+                html: doc.html,
+                metadata_links: doc.metadata_links,
+                request: fixture.request,
+            })
+        };
+        push(DocumentRole::Test, fixture.document);
+        if let Some((_, reference)) = fixture.reference() {
+            push(DocumentRole::Reference, reference);
+        }
+    }
+    inputs
 }
 
 pub(crate) fn configuration(detail: &str) -> Failure {
@@ -601,6 +750,9 @@ pub(crate) fn capture_batch(
     inputs: &[CaptureInput<'_>],
     executable: &Path,
 ) -> Result<Vec<CapturedFixture>, Failure> {
+    // Reject unsupported execution before signal/native preflight, path access,
+    // allocation or capture. Both local CLI modes share this boundary.
+    require_execution_platform()?;
     let standalone = process::Standalone::enter().map_err(|error| Failure {
         primary: Some(error),
         cleanup: vec![],
@@ -610,14 +762,21 @@ pub(crate) fn capture_batch(
     let mut captures = Vec::with_capacity(inputs.len());
     for input in inputs {
         #[cfg(test)]
-        crate::comparison::tests::record(crate::comparison::tests::Event::CaptureStarted(input.id));
-        let capture = capture_requested_html(input.html, input.request, &config, &cancel)
-            .map_err(|failure| attribute_capture_failure(failure, input))?;
+        crate::comparison::tests::record(crate::comparison::tests::Event::CaptureStarted(
+            input.id, input.role,
+        ));
+        let expected_links: Vec<crate::metadata_links::LinkFact> =
+            serde_json::from_str(input.metadata_links)
+                .map_err(|e| configuration(&format!("metadata links: {e}")))?;
+        let capture =
+            capture_document(input.html, input.request, &expected_links, &config, &cancel)
+                .map_err(|failure| attribute_capture_failure(failure, input))?;
         #[cfg(test)]
-        crate::comparison::tests::record(crate::comparison::tests::Event::CaptureCleaned(input.id));
+        crate::comparison::tests::record(crate::comparison::tests::Event::CaptureCleaned(
+            input.id, input.role,
+        ));
         captures.push(CapturedFixture {
-            id: input.id,
-            source: input.source.into(),
+            descriptor: input.descriptor(),
             capture,
         });
     }
@@ -632,26 +791,14 @@ pub(crate) fn capture_batch(
 }
 
 pub(crate) fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
-    let execute = || -> Result<CaptureReport<'_>, Failure> {
+    let execute = || -> Result<CaptureReport, Failure> {
         let options = options(args)?;
         let fixtures = options.select_fixtures()?;
-        let inputs = fixtures
-            .iter()
-            .filter_map(|fixture| {
-                let FixtureKind::Runnable { html, .. } = fixture.kind else {
-                    return None;
-                };
-                Some(CaptureInput {
-                    id: fixture.id,
-                    source: fixture.source,
-                    html,
-                    request: fixture.request,
-                })
-            })
-            .collect::<Vec<_>>();
+        let inputs = inputs(&fixtures);
         if inputs.is_empty() {
             return Err(configuration("selection contains no runnable fixtures"));
         }
+        require_execution_platform()?;
         let executable = options.executable.as_deref().ok_or_else(|| {
             configuration("set BORROWSER_CHROMIUM_EXECUTABLE or --chromium-executable")
         })?;
@@ -660,15 +807,15 @@ pub(crate) fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
             .iter()
             .zip(captures)
             .map(|(input, capture)| Observation {
-                test_id: input.id.0,
-                source: input.source,
+                descriptor: input.descriptor(),
+                metadata_links: capture.capture.metadata_links,
                 canvas_color_rgb8: capture.capture.color,
                 inspection: capture.capture.inspection,
                 browser: capture.capture.identity,
             })
             .collect();
         Ok(CaptureReport {
-            schema: "borrowser.chromium-phases.v1",
+            schema: "borrowser.chromium-phases.v2",
             document_url: URL,
             viewport: [WIDTH, HEIGHT],
             device_scale_factor: 1,

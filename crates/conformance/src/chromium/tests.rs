@@ -1,4 +1,21 @@
 use super::*;
+#[test]
+fn termination_event_stderr_diagnostic_is_bounded_and_escaped() {
+    let mut output = vec![];
+    write_chromium_stderr(b"line\n\x1b\xff", &mut output).unwrap();
+    let text = String::from_utf8(output).unwrap();
+    assert!(text.starts_with("AG2 Chromium stderr (retained_bytes=7, lossy_utf8, escaped): "));
+    assert!(text.contains("line\\n\\u{1b}�"));
+    assert_eq!(text.lines().count(), 1);
+    let mut bytes = vec![0; 65_536];
+    bytes.extend_from_slice(b"NOT_RETAINED");
+    let mut output = vec![];
+    write_chromium_stderr(&bytes, &mut output).unwrap();
+    let text = String::from_utf8(output).unwrap();
+    assert!(text.contains("retained_bytes=65536"));
+    assert!(!text.contains("NOT_RETAINED"));
+    assert!(text.len() <= 6 * 65_536 + 128);
+}
 use base64::{Engine, engine::general_purpose::STANDARD};
 use std::os::fd::FromRawFd;
 use std::path::Path;
@@ -108,8 +125,10 @@ fn viewport_failure_diagnostic_attributes_fixture_metrics_and_cleanup() {
     metrics["cssContentSize"]["height"] = json!(900);
     let fixture = crate::fixtures::fixture("dom/template-namespaces");
     let input = CaptureInput {
+        role: crate::chromium::DocumentRole::Test,
+        metadata_links: "[]",
         id: fixture.id,
-        source: fixture.source,
+        source: fixture.document.source,
         html: b"must never appear in diagnostics",
         request: fixture.request,
     };
@@ -298,7 +317,7 @@ fn exact_identity_is_required() {
     let mut version = json!({"product":format!("Chrome/{}",pin["version"].as_str().unwrap()),
         "revision":pin["revision"],"protocolVersion":pin["protocol_version"]});
     let actual = identity(version.clone()).unwrap();
-    assert_eq!(actual.capture_profile, "ag5-static-phases-v1");
+    assert_eq!(actual.capture_profile, "ag7-static-references-v1");
     assert_eq!(
         actual,
         serde_json::from_str::<BrowserIdentity>(&serde_json::to_string(&actual).unwrap()).unwrap()
@@ -316,12 +335,16 @@ fn exact_identity_is_required() {
 #[test]
 fn missing_executable_and_cancelled_start_do_not_observe() {
     let config = ChromiumConfig::new(PathBuf::from("/nonexistent/borrowser-cft"));
-    assert!(matches!(
-        capture_html(b"", &config, &Cancellation::default())
-            .unwrap_err()
-            .primary,
-        Some(Error::Configuration(_))
-    ));
+    let failure = capture_html(b"", &config, &Cancellation::default()).unwrap_err();
+    if cfg!(target_os = "macos") {
+        assert!(
+            matches!(failure.primary, Some(Error::UnsupportedPlatform(ref s))
+            if s.contains("ownership cleanup completeness is not proven"))
+        );
+    } else {
+        assert!(matches!(failure.primary, Some(Error::Configuration(_))));
+    }
+    assert!(failure.cleanup.is_empty());
     let cancel = Cancellation::default();
     cancel.cancel();
     let error = process::OwnedChromium::launch(
@@ -381,6 +404,12 @@ fn native_lifecycle_regressions() {
     run_native_cases(&["adopted-reap"]);
     #[cfg(target_os = "macos")]
     run_native_cases(&["arguments-transient", "arguments-persistent"]);
+}
+
+#[test]
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+fn native_macos_bsd_ownership_states() {
+    run_native_cases(&["bsd-ownership"]);
 }
 #[test]
 fn linux_temporary_socket_path_uses_bytes_and_reserves_nul() {
@@ -462,6 +491,71 @@ fn native_capture_failure_diagnostics() {
         "capture-exited",
     ]);
 }
+
+#[test]
+#[cfg(any(
+    all(target_os = "macos", target_arch = "aarch64"),
+    all(target_os = "linux", target_arch = "x86_64")
+))]
+fn native_startup_exit_event_classification() {
+    run_native_cases(&["startup-exit-events", "capture-exited"]);
+    // The composition capture boundary rejects macOS before any startup event.
+    // Protocol/owner helper regressions above remain platform evidence only.
+    #[cfg(target_os = "linux")]
+    run_native_cases(&["startup-comparison-failure"]);
+}
+#[test]
+#[cfg(target_os = "macos")]
+fn macos_execution_rejected_before_allocation_and_workers() {
+    let runtime = tempfile::tempdir().unwrap();
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "chromium::tests::macos_support_boundary_child",
+            "--ignored",
+            "--nocapture",
+        ])
+        .env("TMPDIR", runtime.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{} {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(std::fs::read_dir(runtime.path()).unwrap().next().is_none());
+}
+
+#[test]
+#[cfg(target_os = "macos")]
+#[ignore = "isolated support-boundary assertion; invoked by its parent test"]
+fn macos_support_boundary_child() {
+    use process::fault::{self, Point};
+    // No Standalone::enter: rejection must precede native permission checks too.
+    assert_no_children();
+    fault::set(Point::Allocation);
+    let config = ChromiumConfig::new(PathBuf::from("/nonexistent/borrowser-cft"));
+    let failure = capture_html(b"", &config, &Cancellation::default()).unwrap_err();
+    assert!(
+        matches!(failure.primary, Some(Error::UnsupportedPlatform(ref s))
+        if s.contains("macOS Chromium execution is temporarily unsupported"))
+    );
+    assert!(failure.cleanup.is_empty());
+    crate::comparison::tests::macos_platform_failure_blocks_workers(&config.executable);
+    assert!(
+        fault::take(Point::Allocation),
+        "reached Chromium allocation"
+    );
+    assert_no_children();
+    assert!(
+        std::fs::read_dir(std::env::temp_dir())
+            .unwrap()
+            .next()
+            .is_none()
+    );
+}
+
 #[test]
 #[cfg(any(
     all(target_os = "macos", target_arch = "aarch64"),
@@ -480,9 +574,27 @@ fn native_resource_completion_and_shutdown() {
         "resource-shutdown-root-clean",
         "resource-shutdown-buffered-deadline",
         "resource-shutdown-partial-timeout",
+        "resource-shutdown-no-response",
+        "resource-shutdown-ack-only",
+        "resource-shutdown-capture-budget",
         "resource-shutdown-truncated",
         "resource-shutdown-clean",
         "resource-shutdown-invalidated-after-ack",
+    ]);
+}
+#[test]
+#[cfg(any(
+    all(target_os = "macos", target_arch = "aarch64"),
+    all(target_os = "linux", target_arch = "x86_64")
+))]
+fn native_shutdown_uses_capture_deadline() {
+    run_native_cases(&[
+        "resource-shutdown-delayed-valid",
+        "resource-shutdown-delayed-malformed",
+        "resource-shutdown-delayed-truncated",
+        "resource-shutdown-delayed-policy",
+        "resource-shutdown-delayed-never",
+        "resource-shutdown-cancel-after-ack",
     ]);
 }
 #[test]
@@ -514,8 +626,12 @@ fn run_native_cases(scenarios: &[&str]) {
         .unwrap();
     for scenario in scenarios {
         let mut command = Command::new(std::env::current_exe().unwrap());
+        if *scenario == "bsd-ownership" {
+            command.env("AG2_UNRELATED_PID", unrelated.id().to_string());
+        }
         // Set only the isolated process's environment, never that of the outer
-        // multithreaded test harness. Pre-fork cases inspect their entire parent.
+        // multithreaded test harness. Pre-fork cases
+        // inspect their entire parent, which must not contain parallel tests.
         let isolated_parent = if scenario.starts_with("prefork-") {
             // Nine additional pathname bytes fit the pinned Linux socket bound
             // under the existing CI runtime directory.
@@ -547,6 +663,28 @@ fn run_native_cases(scenarios: &[&str]) {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+        if *scenario == "startup-comparison-failure" {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let snapshot = stderr.find("AG2 capture failure: BrowserExited").unwrap();
+            let cleanup = stderr.find("AG2 cleanup:").unwrap();
+            let retained = stderr.find("AG2 Chromium stderr (").unwrap();
+            assert!(snapshot < cleanup && cleanup < retained, "{stderr}");
+            assert!(stderr.contains("exit_source=Inspector.targetCrashed session=Capture"));
+            assert!(stderr.contains("controlled startup stderr\\n"));
+            assert!(stderr.contains("owned_terminated: true"));
+            assert!(stderr.contains("root_reaped=true"));
+            assert!(stderr.contains("errors=[]"));
+            assert!(stderr.contains("startup capture failed; no Borrowser workers; exit=2"));
+            eprint!("{stderr}");
+        }
+        if scenario.starts_with("resource-shutdown-")
+            || matches!(
+                *scenario,
+                "bsd-ownership" | "startup-exit-events" | "capture-exited"
+            )
+        {
+            eprint!("{}", String::from_utf8_lossy(&output.stderr));
+        }
         if *scenario == "cleanup-reap" {
             let stderr = String::from_utf8_lossy(&output.stderr);
             assert!(
@@ -590,6 +728,12 @@ fn run_native_cases(scenarios: &[&str]) {
 fn native_case() {
     let scenario = std::env::var("AG2_NATIVE_CASE").expect("private native scenario");
     let _standalone = process::Standalone::enter().unwrap();
+    #[cfg(target_os = "macos")]
+    if scenario == "bsd-ownership" {
+        process::OwnedChromium::test_macos_bsd_ownership_states();
+        assert_no_children();
+        return;
+    }
     // Exercise FD3/4 collisions: launch must replace them and close all the
     // other ambient copies in the exec child without changing the parent.
     let occupied: Vec<_> = (0..16)
@@ -612,6 +756,17 @@ fn native_case() {
     ]
     .map(str::to_owned);
     let start = Instant::now();
+    if scenario == "startup-comparison-failure" {
+        #[cfg(target_os = "macos")]
+        let bundle = bundle_fixture::Bundle::new();
+        #[cfg(target_os = "macos")]
+        bundle.use_test_executable();
+        #[cfg(target_os = "macos")]
+        let exe = bundle.executable.clone();
+        crate::comparison::tests::startup_failure_blocks_workers(&exe, "browser-exited");
+        assert_no_children();
+        return;
+    }
     if scenario.starts_with("prefork-") {
         use process::fault::{self, Point};
         use std::os::unix::fs::PermissionsExt;
@@ -755,6 +910,122 @@ fn native_case() {
         Err(failure) => panic!("{failure:?}"),
     };
     let artifacts = child.artifact_path().to_path_buf();
+    if scenario == "startup-exit-events" {
+        cdp::Cdp::new(&mut child, &cancel)
+            .call(
+                "Browser.getVersion",
+                json!({}),
+                Instant::now() + Duration::from_secs(2),
+                Phase::Startup,
+            )
+            .unwrap();
+        let cases = [
+            (
+                "attached-detach",
+                json!({"method":"Inspector.detached","sessionId":"fixture-session","params":{"reason":"target_closed"}}),
+                "exit",
+            ),
+            (
+                "attached-crash",
+                json!({"method":"Inspector.targetCrashed","sessionId":"fixture-session","params":{}}),
+                "exit",
+            ),
+            (
+                "browser-target-crash",
+                json!({"method":"Target.targetCrashed","params":{"targetId":"fixture-target","status":"crashed","errorCode":1}}),
+                "exit",
+            ),
+            (
+                "malformed-target-crash",
+                json!({"method":"Target.targetCrashed","params":{}}),
+                "malformed",
+            ),
+            (
+                "unrelated-target-crash",
+                json!({"method":"Target.targetCrashed","params":{"targetId":"other-target","status":"crashed","errorCode":1}}),
+                "not-exit",
+            ),
+            (
+                "foreign-session-crash",
+                json!({"method":"Inspector.targetCrashed","sessionId":"other-session","params":{}}),
+                "not-exit",
+            ),
+            (
+                "malformed-event-envelope",
+                json!({"method":"Inspector.targetCrashed","sessionId":"fixture-session","params":null}),
+                "malformed",
+            ),
+            (
+                "ordinary-lifecycle-event",
+                json!({"method":"Page.lifecycleEvent","sessionId":"fixture-session","params":{"frameId":"frame","loaderId":"loader","name":"init","timestamp":1}}),
+                "ok",
+            ),
+        ];
+        let mut violations = vec![];
+        for (label, event, expected) in cases {
+            let mut cdp = cdp::Cdp::new(&mut child, &cancel);
+            let result = cdp.startup_exit_event_regression(event);
+            let correct = match expected {
+                "exit" => matches!(result, Err(Error::BrowserExited)),
+                "not-exit" => result.as_ref().is_ok_and(|value| *value == json!({})),
+                "malformed" => matches!(
+                    result,
+                    Err(Error::Protocol(error::ProtocolError::Malformed(_)))
+                ),
+                "ok" => result.is_ok(),
+                _ => unreachable!(),
+            };
+            eprintln!(
+                "controlled exit event {label}: expected={expected}; result={result:?}; {}",
+                cdp.failure_diagnostic()
+            );
+            let diagnostic = cdp.failure_diagnostic();
+            let expected_source = match label {
+                "attached-detach" => {
+                    "exit_source=Inspector.detached session=Capture reason=\"target_closed\""
+                }
+                "attached-crash" => "exit_source=Inspector.targetCrashed session=Capture",
+                "browser-target-crash" => {
+                    "exit_source=Target.targetCrashed session=Absent target_matches=true status=\"crashed\" error_code=1"
+                }
+                _ => "exit_source=none",
+            };
+            assert!(diagnostic.contains(expected_source), "{diagnostic}");
+            assert!(diagnostic.len() < 4096);
+            if !correct {
+                violations.push(label);
+            }
+        }
+        for scenario in [
+            "non-live-at-inspector-enable",
+            "pending-page-response",
+            "after-page-response",
+            "normal",
+            "foreign",
+        ] {
+            cdp::Cdp::new(&mut child, &cancel).startup_crash_diagnostic_regression(scenario);
+        }
+        let cleanup = child.finish(Duration::from_secs(2));
+        eprintln!(
+            "controlled exit events cleanup: {cleanup:?}; {}; artifacts_exist={}",
+            child.cleanup_diagnostic(),
+            artifacts.exists()
+        );
+        assert!(cleanup.is_empty(), "{cleanup:?}");
+        assert!(
+            child
+                .cleanup_diagnostic()
+                .contains("owned_terminated: true")
+        );
+        assert!(child.cleanup_diagnostic().contains("root_reaped=true"));
+        assert!(!artifacts.exists());
+        assert_no_children();
+        assert!(
+            violations.is_empty(),
+            "exit-event classification violations: {violations:?}"
+        );
+        return;
+    }
     if scenario.starts_with("diagnostic-") {
         cleanup_diagnostic_case(child, &scenario);
         return;
@@ -843,17 +1114,49 @@ fn native_case() {
     }
     if scenario.starts_with("resource-") {
         let result = cdp::Cdp::new(&mut child, &cancel).resource_regression(&scenario);
+        let errors = child.finish(Duration::from_secs(2));
+        assert!(errors.is_empty(), "{errors:?}");
+        let diagnostic = child.cleanup_diagnostic();
+        assert!(
+            diagnostic.contains("owned_terminated: true"),
+            "{diagnostic}"
+        );
+        assert!(diagnostic.contains("root_reaped=true"), "{diagnostic}");
+        assert!(
+            diagnostic.contains("artifacts: \"removed\""),
+            "{diagnostic}"
+        );
+        eprintln!("AG7 controlled {scenario} cleanup: {diagnostic}");
+        assert!(!artifacts.exists());
+        assert_no_children();
+
         match scenario.as_str() {
             "resource-shutdown-valid"
             | "resource-shutdown-clean"
-            | "resource-shutdown-root-clean" => result.unwrap(),
-            "resource-shutdown-buffered-deadline" | "resource-shutdown-partial-timeout" => {
+            | "resource-shutdown-root-clean"
+            | "resource-shutdown-delayed-valid" => result.unwrap(),
+            "resource-shutdown-buffered-deadline"
+            | "resource-shutdown-partial-timeout"
+            | "resource-shutdown-no-response"
+            | "resource-shutdown-ack-only"
+            | "resource-shutdown-capture-budget"
+            | "resource-shutdown-delayed-never" => {
                 assert!(
                     matches!(result, Err(Error::Timeout(Phase::Shutdown))),
                     "{result:?}"
                 );
             }
-            "resource-shutdown-truncated" => assert!(
+            "resource-shutdown-cancel-after-ack" => {
+                assert!(matches!(result, Err(Error::Cancelled)), "{result:?}")
+            }
+            "resource-shutdown-delayed-malformed" => assert!(
+                matches!(
+                    result,
+                    Err(Error::Protocol(error::ProtocolError::Malformed(_)))
+                ),
+                "{result:?}"
+            ),
+            "resource-shutdown-truncated" | "resource-shutdown-delayed-truncated" => assert!(
                 matches!(
                     result,
                     Err(Error::Protocol(error::ProtocolError::Truncated))
@@ -872,15 +1175,12 @@ fn native_case() {
             | "resource-shutdown-after-ack"
             | "resource-shutdown-invalidated"
             | "resource-shutdown-invalidated-after-ack"
-            | "resource-shutdown-root-invalidated" => {
+            | "resource-shutdown-root-invalidated"
+            | "resource-shutdown-delayed-policy" => {
                 assert!(matches!(result, Err(Error::Navigation(_))), "{result:?}")
             }
             _ => unreachable!(),
         }
-        let errors = child.finish(Duration::from_secs(2));
-        assert!(errors.is_empty(), "{errors:?}");
-        assert!(!artifacts.exists());
-        assert_no_children();
         return;
     }
     if scenario.starts_with("capture-") {
@@ -932,6 +1232,10 @@ fn native_case() {
             "capture-exited" => {
                 assert!(matches!(error, Error::BrowserExited));
                 assert!(
+                    diagnostic.contains("exit_source=native root termination"),
+                    "{diagnostic}"
+                );
+                assert!(
                     diagnostic.contains("root_at_failure=Exited"),
                     "{diagnostic}"
                 );
@@ -974,7 +1278,16 @@ fn native_case() {
             }
         }
         drop(cdp);
-        assert!(child.finish(Duration::from_secs(2)).is_empty());
+        let cleanup = child.finish(Duration::from_secs(2));
+        assert!(cleanup.is_empty(), "{cleanup:?}");
+        let cleanup_diagnostic = child.cleanup_diagnostic();
+        assert!(cleanup_diagnostic.contains("owned_terminated: true"));
+        assert!(cleanup_diagnostic.contains("root_reaped=true"));
+        if scenario == "capture-exited" {
+            eprintln!(
+                "controlled native root exit: {diagnostic}; cleanup={cleanup:?}; {cleanup_diagnostic}"
+            );
+        }
         assert!(!artifacts.exists());
         assert_no_children();
         return;
@@ -1317,6 +1630,30 @@ fn browser_helper() {
         std::io::stdin().read_to_end(&mut bytes).unwrap();
         return;
     }
+    #[cfg(target_os = "macos")]
+    if scenario == "bsd-ownership" {
+        use std::io::Write;
+        use std::os::unix::process::CommandExt;
+        let mut input = unsafe { std::fs::File::from_raw_fd(3) };
+        let mut output = unsafe { std::fs::File::from_raw_fd(4) };
+        let after_exec = std::env::var_os("AG2_BSD_EXEC_ACK").is_some();
+        output
+            .write_all(if after_exec { b"E" } else { b"R" })
+            .unwrap();
+        let mut command = [0];
+        match input.read(&mut command).unwrap() {
+            0 => return, // ordinary owned cleanup closed the command writer
+            1 if command[0] == b'Q' => std::process::exit(0),
+            1 if command[0] == b'X' && !after_exec => {
+                let error = Command::new(std::env::current_exe().unwrap())
+                    .args(std::env::args_os().skip(1))
+                    .env("AG2_BSD_EXEC_ACK", "1")
+                    .exec();
+                panic!("controlled exec failed: {error}");
+            }
+            _ => panic!("unexpected ownership probe command: {command:?}"),
+        }
+    }
     for (fd, direction) in [(3, libc::O_RDONLY), (4, libc::O_WRONLY)] {
         assert_eq!(
             unsafe { libc::fcntl(fd, libc::F_GETFD) } & libc::FD_CLOEXEC,
@@ -1368,6 +1705,53 @@ fn browser_helper() {
         request.push(byte[0]);
     }
     let mut write = unsafe { std::fs::File::from_raw_fd(4) };
+    if scenario == "startup-comparison-failure" {
+        let pin: Value =
+            serde_json::from_str(include_str!("../../chromium-reference.json")).unwrap();
+        for method in [
+            "Browser.getVersion",
+            "Target.createTarget",
+            "Target.setDiscoverTargets",
+            "Target.attachToTarget",
+            "Page.enable",
+        ] {
+            let command: Value = serde_json::from_slice(&request).unwrap();
+            assert_eq!(command["method"], method);
+            if method == "Page.enable" {
+                assert_eq!(command["sessionId"], "fixture-session");
+                std::io::stderr()
+                    .write_all(b"controlled startup stderr\n")
+                    .unwrap();
+                write.write_all(format!("{}\0", json!({"method":"Inspector.targetCrashed","sessionId":"fixture-session","params":{}})).as_bytes()).unwrap();
+                // Remain waitable for ordinary owned cleanup; no forced exit
+                // supplies the capture failure or a successful capture boundary.
+                let mut remaining = vec![];
+                read.read_to_end(&mut remaining).unwrap();
+                return;
+            }
+            let result = match method {
+                "Browser.getVersion" => {
+                    json!({"product":format!("Chrome/{}",pin["version"].as_str().unwrap()),"revision":pin["revision"],"protocolVersion":pin["protocol_version"]})
+                }
+                "Target.createTarget" => json!({"targetId":"fixture-target"}),
+                "Target.attachToTarget" => json!({"sessionId":"fixture-session"}),
+                _ => json!({}),
+            };
+            write
+                .write_all(format!("{}\0", json!({"id":command["id"],"result":result})).as_bytes())
+                .unwrap();
+            request.clear();
+            loop {
+                let mut byte = [0];
+                read.read_exact(&mut byte).unwrap();
+                if byte[0] == 0 {
+                    break;
+                }
+                request.push(byte[0]);
+            }
+        }
+        unreachable!();
+    }
     if scenario.starts_with("temp-") {
         let temporary = std::env::temp_dir();
         let crashes = PathBuf::from(std::env::var_os("BREAKPAD_DUMP_LOCATION").unwrap());
@@ -1515,6 +1899,71 @@ fn resource_protocol_helper(
     if !shutdown {
         response["sessionId"] = json!("fixture-session");
     }
+    if scenario.starts_with("resource-shutdown-delayed-") {
+        use std::os::fd::AsRawFd;
+        emit(write, response);
+        // A deliberate protocol-completion boundary counterexample, not a
+        // readiness sleep. Keep both directions open for longer than the former
+        // 250 ms subdeadline. Command EOF means the owner already failed and
+        // entered cleanup; return without manufacturing late success evidence.
+        let release = Instant::now() + Duration::from_millis(300);
+        loop {
+            let remaining = release.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            let mut fd = libc::pollfd {
+                fd: read.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            let rc = unsafe { libc::poll(&mut fd, 1, remaining.as_millis().max(1) as i32) };
+            if rc > 0 {
+                return;
+            }
+            assert!(
+                rc == 0
+                    || std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted
+            );
+        }
+        match scenario {
+            "resource-shutdown-delayed-valid" => event(
+                write,
+                "Inspector.detached",
+                json!({"reason":"target_closed"}),
+            ),
+            "resource-shutdown-delayed-never" => {
+                event(
+                    write,
+                    "Inspector.detached",
+                    json!({"reason":"target_closed"}),
+                );
+                let mut byte = [0];
+                assert_eq!(read.read(&mut byte).unwrap(), 0);
+            }
+            "resource-shutdown-delayed-malformed" => write.write_all(b"invalid-json\0").unwrap(),
+            "resource-shutdown-delayed-truncated" => write.write_all(b"{\"method\":").unwrap(),
+            "resource-shutdown-delayed-policy" => event(write, "DOM.documentUpdated", json!({})),
+            _ => unreachable!(),
+        }
+        return;
+    }
+    if matches!(
+        scenario,
+        "resource-shutdown-no-response"
+            | "resource-shutdown-ack-only"
+            | "resource-shutdown-capture-budget"
+            | "resource-shutdown-cancel-after-ack"
+    ) {
+        if scenario != "resource-shutdown-no-response" {
+            emit(write, response);
+        }
+        // Controlled pipe synchronization: finish() closes the command pipe.
+        // No readiness sleep, delayed retry or independent timer in the helper.
+        let mut byte = [0];
+        assert_eq!(read.read(&mut byte).unwrap(), 0);
+        return;
+    }
     if matches!(
         scenario,
         "resource-shutdown-partial-timeout" | "resource-shutdown-truncated"
@@ -1652,11 +2101,8 @@ fn real_chromium_capture_and_scripts() {
     let config = ChromiumConfig::new(PathBuf::from(path));
     let cancel = Cancellation::default();
     for fixture in &crate::fixtures::baseline()[..2] {
-        let FixtureKind::Runnable {
-            html,
-            expected: crate::model::Expected::Canvas(expected),
-            ..
-        } = fixture.kind
+        let html = (fixture).document.html;
+        let crate::model::Expected::Canvas(expected) = (fixture).independent().unwrap().expected
         else {
             unreachable!()
         };
@@ -1677,7 +2123,7 @@ fn real_chromium_capture_and_scripts() {
                 result.default_favicon_aborted,
                 "qualified ordinary target did not exercise default favicon interception"
             );
-            assert_eq!(result.identity.capture_profile, "ag5-static-phases-v1");
+            assert_eq!(result.identity.capture_profile, "ag7-static-references-v1");
             eprintln!(
                 "AG2 fixture={} iteration={iteration}/3 screenshot=640x480 rgb8={:?} profile={} default_favicon=correlated-aborted-acknowledged-terminal cleanup=verified",
                 fixture.id.0,
@@ -1705,11 +2151,11 @@ fn real_chromium_capture_and_scripts() {
     .into_iter()
     .enumerate()
     {
-        let FixtureKind::Runnable {
-            html,
-            expected: crate::model::Expected::Canvas(expected),
-            ..
-        } = crate::fixtures::fixture("canvas/root").kind
+        let html = (crate::fixtures::fixture("canvas/root")).document.html;
+        let crate::model::Expected::Canvas(expected) = (crate::fixtures::fixture("canvas/root"))
+            .independent()
+            .unwrap()
+            .expected
         else {
             unreachable!()
         };
@@ -1771,6 +2217,7 @@ fn real_chromium_capture_and_scripts() {
 #[test]
 #[ignore = "requires pinned Chromium and native lifecycle permissions; run with --test-threads=1"]
 fn real_chromium_lifecycle_and_topology() {
+    require_execution_platform().expect("real Chromium requires a supported execution platform");
     let executable = PathBuf::from(
         std::env::var_os("BORROWSER_CHROMIUM_EXECUTABLE")
             .expect("explicit real test requires Chromium"),
@@ -1944,6 +2391,10 @@ fn sandbox_renderer_pid_requires_positive_native_integer() {
 
 // AG3-only controls, available exclusively in an isolated test process.
 thread_local! {
+    static SHUTDOWN_ACKS_BEFORE_EXPIRY: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static SHUTDOWN_ACKS_BEFORE_PAUSE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static SHUTDOWN_ACKS_BEFORE_CANCEL: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static COMPARISON_CLEANUP_COUNTDOWN: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static COMPARISON_CLEANUP_FAULT: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
     static COMPARISON_RETAINED_PATH: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
 }
@@ -1957,16 +2408,92 @@ pub(crate) fn controlled_capture(color: CanvasColor) -> ChromiumCapture {
             "revision": pin["revision"], "protocolVersion": pin["protocol_version"],
         }))
         .unwrap(),
+        metadata_links: vec![],
         default_favicon_aborted: false,
     }
 }
-pub(crate) fn arm_comparison_cleanup_failure(cancel: bool) {
+pub(crate) fn arm_shutdown_ack_cancellation(count: usize) {
+    assert!(count > 0);
+    SHUTDOWN_ACKS_BEFORE_CANCEL.with(|state| assert_eq!(state.replace(count), 0));
+}
+pub(crate) fn arm_second_shutdown_read_pause() {
+    SHUTDOWN_ACKS_BEFORE_PAUSE.with(|state| assert_eq!(state.replace(2), 0));
+}
+pub(crate) fn arm_second_shutdown_expiry() {
+    SHUTDOWN_ACKS_BEFORE_EXPIRY.with(|state| assert_eq!(state.replace(2), 0));
+}
+pub(super) fn shutdown_acknowledged(
+    cancel: &Cancellation,
+    started: Instant,
+    capture_deadline: Instant,
+) {
+    SHUTDOWN_ACKS_BEFORE_EXPIRY.with(|state| {
+        let count = state.get();
+        if count > 0 {
+            state.set(count - 1);
+            if count == 1 {
+                // Exhaust this capture's actual absolute budget. Do not alter
+                // its deadline or consume/close either protocol direction.
+                cancel.check(capture_deadline, Phase::Shutdown).unwrap();
+                process::fault::set(process::fault::Point::ShutdownRead);
+                process::fault::expire(process::fault::Point::ShutdownRead, capture_deadline);
+                process::fault::assert_consumed();
+                cancel.check_cancelled().unwrap();
+                assert!(Instant::now() >= capture_deadline);
+                eprintln!(
+                    "AG7 second shutdown absolute budget exhausted; command writer unchanged"
+                );
+            }
+        }
+    });
+    SHUTDOWN_ACKS_BEFORE_PAUSE.with(|state| {
+        let count = state.get();
+        if count > 0 {
+            state.set(count - 1);
+            if count == 1 {
+                // Model a scheduler/native-operation stall after the second
+                // acknowledgement. Preserve all incoming bytes and the clock;
+                // the production deadline checks must still decide the result.
+                process::fault::set(process::fault::Point::ShutdownRead);
+                process::fault::expire(process::fault::Point::ShutdownRead, started + Duration::from_millis(300));
+                process::fault::assert_consumed();
+                eprintln!("AG7 second shutdown read pause consumed; elapsed={:?}; command writer unchanged", started.elapsed());
+            }
+        }
+    });
+    SHUTDOWN_ACKS_BEFORE_CANCEL.with(|state| {
+        let count = state.get();
+        if count > 0 {
+            state.set(count - 1);
+            if count == 1 {
+                cancel.cancel();
+            }
+        }
+    });
+}
+pub(crate) fn assert_shutdown_cancellation_consumed() {
+    SHUTDOWN_ACKS_BEFORE_EXPIRY.with(|state| assert_eq!(state.get(), 0));
+    SHUTDOWN_ACKS_BEFORE_PAUSE.with(|state| assert_eq!(state.get(), 0));
+    SHUTDOWN_ACKS_BEFORE_CANCEL.with(|state| assert_eq!(state.get(), 0));
+}
+pub(crate) fn arm_comparison_cleanup_failure(cancel: bool, capture: usize) {
+    assert!(capture > 0);
+    COMPARISON_CLEANUP_COUNTDOWN.with(|state| assert_eq!(state.replace(capture), 0));
     COMPARISON_CLEANUP_FAULT.with(|fault| {
         assert_eq!(fault.replace(if cancel { 2 } else { 1 }), 0);
     });
 }
 pub(super) fn comparison_before_cleanup(child: &OwnedChromium, cancel: &Cancellation) {
     use std::os::unix::fs::PermissionsExt;
+    if COMPARISON_CLEANUP_COUNTDOWN.with(|state| {
+        let count = state.get();
+        if count > 0 {
+            state.set(count - 1);
+        }
+        count != 1
+    }) {
+        return;
+    }
     match COMPARISON_CLEANUP_FAULT.with(|fault| fault.replace(0)) {
         0 => {}
         1 => {
@@ -2014,6 +2541,15 @@ pub(crate) fn assert_comparison_cleanup_failure(failure: &Failure) {
             .any(|e| matches!(e, error::CleanupError::Artifacts(_))),
         "{failure:?}"
     );
+}
+
+pub(crate) fn assert_comparison_shutdown_timeout(failure: &Failure) {
+    assert!(
+        matches!(failure.primary, Some(Error::Timeout(Phase::Shutdown))),
+        "{failure:?}"
+    );
+    assert!(failure.cleanup.is_empty(), "{failure:?}");
+    assert_no_children();
 }
 
 // The fixed collector's thrown Error message is the discriminator already
@@ -2133,6 +2669,9 @@ fn real_chromium_ag5_read_only_inspection() {
     }
 }
 
+#[path = "../../tests/support/ag7.rs"]
+mod ag7_acceptance;
+
 #[test]
 #[ignore = "requires pinned Chromium, standalone process; all captures precede parser workers"]
 fn real_chromium_ag5_profile() {
@@ -2146,7 +2685,7 @@ fn real_chromium_ag5_profile() {
     )
     .unwrap();
     assert!(
-        matches!(code, 0 | 3),
+        code == 1,
         "{}\n{}",
         String::from_utf8_lossy(&out),
         String::from_utf8_lossy(&diagnostics)
@@ -2155,7 +2694,17 @@ fn real_chromium_ag5_profile() {
     let cases = report["cases"].as_array().unwrap();
     assert_eq!(cases.len(), crate::fixtures::catalogue().unwrap().len());
     assert!(cases.windows(2).all(|pair| pair[0]["test_id"].as_str().unwrap() < pair[1]["test_id"].as_str().unwrap()));
-    assert_eq!(report["summary"]["different_fields"], 0);
+    let selected: Vec<_> = crate::fixtures::catalogue().unwrap().iter().collect();
+    let descriptors: Vec<_> = super::inputs(&selected)
+        .iter()
+        .map(|input| input.descriptor())
+        .collect();
+    ag7_acceptance::assert_catalogue(
+        &report,
+        i32::from(code),
+        &json!(descriptors),
+        &ag7_acceptance::declarations(&Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures")),
+    );
 
     let ids = [
         "canvas/root",
@@ -2188,4 +2737,105 @@ fn real_chromium_ag5_profile() {
         );
     }
     assert_eq!(baseline_fields, 34);
+}
+
+#[test]
+fn metadata_links_policy_rejects_mixed_attributes_namespaces_and_order() {
+    let fixture = crate::fixtures::fixture("wpt/rgb-comments-p6");
+    let links = fixture.document.links().unwrap();
+    crate::metadata_links::validate(&links).unwrap();
+    for change in 0..5 {
+        let mut bad = links.clone();
+        match change {
+            0 => bad[0].namespace = "http://www.w3.org/2000/svg".into(),
+            1 => {
+                bad[0]
+                    .attributes
+                    .iter_mut()
+                    .find(|a| a.local_name == "rel")
+                    .unwrap()
+                    .value = "author stylesheet".into()
+            }
+            2 => bad[0].attributes[0].namespace = "http://www.w3.org/1999/xlink".into(),
+            3 => bad[0].attributes.reverse(),
+            4 => bad[0].attributes[0].local_name = "onload".into(),
+            _ => unreachable!(),
+        }
+        assert!(crate::metadata_links::validate(&bad).is_err(), "{change}");
+    }
+}
+
+#[test]
+#[ignore = "requires pinned Chromium, standalone process; fixed read-only metadata inspection"]
+fn real_chromium_ag7_inert_links() {
+    let path = std::env::var_os("BORROWSER_CHROMIUM_EXECUTABLE").expect("pinned Chromium required");
+    let _standalone = process::Standalone::enter().unwrap();
+    let config = ChromiumConfig::new(path.into());
+    let cancel = Cancellation::default();
+    for id in [
+        "wpt/rgb-comments-p6",
+        "wpt/rgb-alias-p6",
+        "wpt-style/background-color-mismatch",
+    ] {
+        let fixture = crate::fixtures::fixture(id);
+        for input in inputs(&[fixture]) {
+            let links: Vec<crate::metadata_links::LinkFact> =
+                serde_json::from_str(input.metadata_links).unwrap();
+            let capture =
+                capture_document(input.html, input.request, &links, &config, &cancel).unwrap();
+            assert_eq!(capture.metadata_links, links);
+            let projection = crate::projection::chromium(&capture, input.request).unwrap();
+            assert_eq!(projection.styles.len(), 1);
+            assert!(capture.color.is_none());
+            eprintln!(
+                "AG7 metadata {id} {:?}: links={} cleanup verified",
+                input.role,
+                capture.metadata_links.len()
+            );
+        }
+    }
+    use crate::metadata_links::{AttributeFact, LinkFact};
+    let attr = |name: &str, value: &str| AttributeFact {
+        namespace: String::new(),
+        prefix: String::new(),
+        local_name: name.into(),
+        value: value.into(),
+    };
+    let expected = vec![LinkFact {
+        namespace: crate::metadata_links::HTML.into(),
+        local_name: "link".into(),
+        attributes: vec![
+            attr("href", "?a=1&b=2"),
+            attr("rel", " HeLp "),
+            attr("title", "A & B"),
+        ],
+    }];
+    let html=b"<!doctype html><link title='A &amp; B' rel=' HeLp ' href='?a=1&amp;b=2'><div id=probe style='background-color:green'></div>";
+    let request = crate::fixtures::fixture("wpt-style/background-color-mismatch").request;
+    assert_eq!(
+        capture_document(html, request, &expected, &config, &cancel)
+            .unwrap()
+            .metadata_links,
+        expected
+    );
+    for relation in [
+        "help stylesheet",
+        "help preload",
+        "help help",
+        "canonical",
+        "icon",
+    ] {
+        let bad = String::from_utf8(html.to_vec())
+            .unwrap()
+            .replace(" HeLp ", relation);
+        let failure =
+            capture_document(bad.as_bytes(), request, &expected, &config, &cancel).unwrap_err();
+        assert!(failure.primary.is_some(), "{relation}");
+        assert!(failure.cleanup.is_empty(), "{failure:?}");
+    }
+    let mut resource = html.to_vec();
+    resource.extend_from_slice(b"<img src='https://borrowser.invalid/denied.png'>");
+    let failure = capture_document(&resource, request, &expected, &config, &cancel).unwrap_err();
+    assert!(failure.primary.is_some());
+    assert!(failure.cleanup.is_empty());
 }

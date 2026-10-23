@@ -121,14 +121,14 @@ else: print('{"complete":true}')
             raw = (Path(directory) / "capture.json").read_bytes()
             self.assertLessEqual(len(raw), 65536)
             report = json.loads(raw)
-            self.assertEqual(report["schema"], "borrowser.chromium-phases.v1")
+            self.assertEqual(report["schema"], "borrowser.chromium-phases.v2")
             self.assertTrue(report["observations"])
-            observed_ids = [o["test_id"] for o in report["observations"]]
+            observed_ids = [(o["descriptor"]["case_id"], o["descriptor"]["role"] == "reference") for o in report["observations"]]
             self.assertEqual(observed_ids, sorted(set(observed_ids)))
             ids = ["canvas/root", "canvas/cascade", "dom/structure", "dom/template-namespaces",
                    "style/cascade-inheritance", "layout/block-boxes"]
             for index, fixture_id in enumerate(ids):
-                observation = next(o for o in report["observations"] if o["test_id"] == fixture_id)
+                observation = next(o for o in report["observations"] if o["descriptor"]["case_id"] == fixture_id and o["descriptor"]["role"] == "test")
                 if index < 2:
                     self.assertIsNone(observation["inspection"])
                     self.assertEqual(observation["canvas_color_rgb8"], [[18, 52, 86], [52, 86, 120]][index])
@@ -149,6 +149,15 @@ else: print('{"complete":true}')
                 self.assertEqual(observation["browser"]["version"], pin["version"])
                 self.assertEqual(observation["browser"]["revision"], pin["revision"])
                 self.assertEqual(observation["browser"]["capture_profile"], pin["capture_profile"])
+            for fixture_id, target in [("wpt/rgb-comments-p6", "p6"), ("wpt/rgb-alias-p6", "p6"), ("wpt-style/background-color-mismatch", "probe")]:
+                rows = [o for o in report["observations"] if o["descriptor"]["case_id"] == fixture_id]
+                self.assertEqual([o["descriptor"]["role"] for o in rows], ["test", "reference"])
+                for row in rows:
+                    self.assertEqual(len(row["descriptor"]["source_sha256"]), 64)
+                    self.assertEqual(row["inspection"]["styles"][0]["target"], target)
+                    expected_color = "rgb(10, 150, 50)" if target == "p6" else ("rgb(0, 128, 0)" if row["descriptor"]["role"] == "test" else "rgb(255, 0, 0)")
+                    self.assertEqual(row["inspection"]["styles"][0]["values"][1], expected_color)
+            self.assertFalse(any(o["descriptor"]["case_id"].startswith("wpt/unsupported/") for o in report["observations"]))
             # This records the observed platform; macOS evidence is not Linux/AWS evidence.
             print("AG4 exact guest wrapper platform:", report["observations"][0]["browser"]["platform"])
 

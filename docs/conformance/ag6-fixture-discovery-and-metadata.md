@@ -47,11 +47,14 @@ feature negotiation, automatic unsupported-feature detector, or blessing command
 | `input` | Required path to UTF-8 `.html`, relative to the declaration's directory. |
 | `requires_javascript` | Required boolean describing eligibility. It never enables page scripts. |
 | `classification` | `{"kind":"runnable"}`, or `unsupported`/`skipped` with a nonblank `reason`. |
-| `observations` | Required family selections described below; at least one observation must be requested. |
+| `observations` | Required family selections; runnable cases request at least one observation. Excluded cases may use `{}`. |
 | `expectation` | For runnable fixtures only: `{"kind":"match"}` or `{"kind":"known_failure","reason":"..."}`. |
 | `expected` | For runnable fixtures only: inline canvas RGB8 as above, or `{"kind":"projection","path":"case.expected.json"}`. |
 
-Runnable fixtures require both expectation fields and cannot require JavaScript.
+Runnable fixtures require both expectation fields unless they declare an AG7
+relationship; relationship cases may omit both. They cannot require JavaScript.
+AG7 adds optional `relationship`, paired `provenance`/`upstream_assertion` fields
+and exact reference provenance; see the [AG7 contract](ag7-focused-external-tests-and-references.md).
 Unsupported/skipped fixtures must omit expectation data; optional JSON nulls
 are equivalent to omission. They may declare a JavaScript requirement. Reasons
 must contain non-whitespace text. Accepted strings, including Unicode, quotes,
@@ -153,7 +156,9 @@ Execution classification, independent expectations, observation coverage and
 cross-engine truth stay separate. Known failure produces XFAIL only for a valid
 Borrowser expectation mismatch; an unexpected match is XPASS. Configuration,
 execution and capture errors never satisfy known-failure metadata. XFAIL never
-suppresses a Borrowser/Chromium difference. No status is added by AG6.
+suppresses a Borrowser/Chromium difference. No status is added by AG6. AG7 retains the same exit precedence (2, 1, 3, 0),
+adds separate scoped relationship outcomes and upstream assertion coverage, and
+never counts reference dependencies as independent passes.
 
 ## AG4 identity and bounded integration
 
@@ -161,14 +166,16 @@ AG4 #1387 is completed and PR #1433 is merged. AG6 does not reopen its cloud
 qualification or authorize live AWS work.
 
 Artifact identities still enumerate only runnable fixtures, in catalogue order,
-with ID, source and SHA-256 of the exact embedded HTML. Existing source-tree
+with AG7 `CaptureDescriptor` records: case ID, test/reference role, SHA-256 of
+the exact embedded HTML, and the exact typed observation request. References
+follow their test immediately; they are not separately registered test cases. Existing source-tree
 identity binds metadata/expectations and executable SHA-256 binds the produced
 artifact. Native and Linux builds must agree. New fixture metadata/expectation
 JSON is admitted by source preparation only beneath the fixed fixture root;
 unrelated new JSON is not admitted by this rule.
 
-Capture ingestion still checks exact runnable membership, identity, source,
-count and order. The 64-KiB capture bound, artifact/identity size bounds, process
+Capture ingestion checks the exact ordered descriptor vector, count, uniqueness,
+parsed link facts and native observation compatibility. The 64-KiB capture bound, artifact/identity size bounds, process
 budgets, transport and cleanup contracts remain unchanged. A larger corpus is
 not permission to exceed them; exact-ID selection remains available. Historical
 `--aws-cleanup` is independent of catalogue validation.

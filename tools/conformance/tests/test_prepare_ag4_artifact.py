@@ -13,6 +13,28 @@ SCRIPT = Path(__file__).resolve().parents[1] / "prepare_ag4_artifact.sh"
 
 
 class SourceSnapshot(unittest.TestCase):
+    def test_ag7_reference_and_request_changes_affect_snapshot_identity(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); source, _ = self.setup_repo(root)
+            fixtures = source / "crates/conformance/fixtures/external"
+            raw = fixtures / "raw/css"; raw.mkdir(parents=True)
+            test = raw / "test.html"; reference = raw / "ref.html"
+            metadata = fixtures / "case.fixture.json"
+            test.write_text('<!doctype html><link rel=match href=ref.html>')
+            reference.write_text('<!doctype html><p id=probe>reference</p>')
+            metadata.write_text('{"observations":{"target":"probe"}}')
+            trees = []
+            for index in range(3):
+                output = root / ("ag7-snapshot-" + str(index))
+                result = subprocess.run(["sh", str(SCRIPT), "--source", str(source), "--out", str(output), "--snapshot-only"], capture_output=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr.decode())
+                for path in (test, reference, metadata):
+                    self.assertEqual((output / "source" / path.relative_to(source)).read_bytes(), path.read_bytes())
+                trees.append((output / "source-tree.txt").read_text())
+                if index == 0: reference.write_text('<!doctype html><p id=probe>changed reference</p>')
+                if index == 1: metadata.write_text('{"observations":{"target":"different"}}')
+            self.assertEqual(len(set(trees)), 3)
+
     def test_ag6_fixture_json_is_snapshotted_and_changes_source_identity(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); source, _ = self.setup_repo(root)

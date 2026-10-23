@@ -319,6 +319,14 @@ jobs:
             real_chromium_combined_cli_is_stable_and_selects_exactly \
             -- --exact --ignored --nocapture \
             2>&1 | tee -a "$AG2_EVIDENCE/conformance.log"
+          cargo test -p borrowser-conformance --locked --bin borrowser-conformance \
+            chromium::tests::real_chromium_ag7_inert_links \
+            -- --exact --ignored --test-threads=1 --nocapture \
+            2>&1 | tee -a "$AG2_EVIDENCE/conformance.log"
+          cargo test -p borrowser-conformance --locked --test comparison_cli \
+            real_chromium_ag7_scoped_relationships \
+            -- --exact --ignored --nocapture \
+            2>&1 | tee -a "$AG2_EVIDENCE/conformance.log"
           env TMPDIR="$RUNNER_TEMP/ag2-profiles" \
             BORROWSER_AG4_GUEST_HARNESS="$PWD/target/debug/borrowser-conformance" \
             python3 -m unittest discover -s crates/conformance/aws/tests \
@@ -522,6 +530,9 @@ jobs:
 
       - name: Compile HTML5 Criterion benches
         run: cargo bench -p html --bench html_bench --features html5 --no-run --locked
+
+      - name: Compile CSS Criterion benches
+        run: make compile-css-benches
 
       - name: Check generated HTML entities
         run: make html-entities-check

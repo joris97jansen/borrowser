@@ -7,6 +7,27 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::time::Instant;
 
+pub(super) fn collect_metadata_links(
+    cdp: &mut Cdp<'_>,
+    frame_id: &str,
+    deadline: Instant,
+) -> Result<Vec<crate::metadata_links::LinkFact>, Error> {
+    let world=cdp.call("Page.createIsolatedWorld",json!({"frameId":frame_id,"worldName":"borrowser-ag7-metadata-read-only","grantUniveralAccess":false}),deadline,Phase::Capture)?;
+    let context = world["executionContextId"]
+        .as_i64()
+        .ok_or_else(|| Error::Capture("missing isolated metadata context".into()))?;
+    let response=cdp.call("Runtime.evaluate",json!({"expression":include_str!("metadata_links.js"),"contextId":context,"returnByValue":true,"timeout":deadline.saturating_duration_since(Instant::now()).as_millis() as u64}),deadline,Phase::Capture)?;
+    if response.get("exceptionDetails").is_some() {
+        return Err(Error::Capture(format!(
+            "native metadata inspection failed: {}",
+            response["exceptionDetails"]
+        )));
+    }
+    let facts = serde_json::from_value(response["result"]["value"].clone())
+        .map_err(|e| Error::Capture(format!("incomplete metadata inspection: {e}")))?;
+    Ok(facts)
+}
+
 #[derive(Clone, Debug, Default, Serialize)]
 pub(crate) struct InspectionRequest {
     pub(crate) dom: bool,

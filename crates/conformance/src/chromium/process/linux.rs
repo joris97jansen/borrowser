@@ -109,6 +109,9 @@ pub(super) struct Registry {
     complete_scan: bool,
 }
 impl Registry {
+    pub fn diagnostic_summary(&self) -> (usize, bool) {
+        (self.processes.len(), self.complete_scan)
+    }
     pub fn new(root: i32, _: PathBuf, _: PathBuf, _: PathBuf) -> Self {
         Self {
             root,

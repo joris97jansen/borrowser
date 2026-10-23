@@ -1,4 +1,5 @@
 //! AG6 build input only. Execution consumes the generated existing Fixture model.
+mod external;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -14,6 +15,9 @@ struct FixtureMetadata {
     observations: ObservationMetadata,
     expectation: Option<ExpectationMetadata>,
     expected: Option<ExpectedMetadata>,
+    provenance: Option<external::Provenance>,
+    upstream_assertion: Option<external::UpstreamAssertion>,
+    relationship: Option<external::Relationship>,
 }
 
 #[derive(Deserialize)]
@@ -170,8 +174,9 @@ fn family(selection: Option<&FamilyMetadata>) -> Result<String, String> {
     })
 }
 
-fn observations(value: &ObservationMetadata) -> Result<String, String> {
-    if value.dom.is_none()
+fn observations(value: &ObservationMetadata, runnable: bool) -> Result<String, String> {
+    if runnable
+        && value.dom.is_none()
         && value.styles.is_empty()
         && value.layout.is_none()
         && value.canvas.is_none()
@@ -233,6 +238,55 @@ fn observations(value: &ObservationMetadata) -> Result<String, String> {
     ))
 }
 
+fn provenance(p: &external::Provenance) -> String {
+    format!(
+        "UpstreamSource {{ repository: {}, revision: {}, path: {}, sha256: {}, license: {}, license_sha256: {}, attribution: {} }}",
+        literal(&p.repository),
+        literal(&p.revision),
+        literal(&p.path),
+        literal(&p.sha256),
+        literal(&p.license.path),
+        literal(&p.license.sha256),
+        literal(&p.attribution)
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn document_source(
+    root: &Path,
+    declaration: &str,
+    input: &str,
+    bytes: &[u8],
+    p: Option<&external::Provenance>,
+    facts: Option<&external::Facts>,
+    files: &BTreeSet<String>,
+    references: &mut Vec<String>,
+) -> Result<String, String> {
+    if let Some(p) = p {
+        external::validate_provenance(p, bytes)?;
+        if !input.ends_with(&format!("/raw/{}", p.path)) {
+            return Err("upstream path must be mirrored beneath raw/".into());
+        }
+        let license = reference(declaration, &p.license.path, files)?;
+        if external::sha256(&fs::read(root.join(&license)).map_err(|e| e.to_string())?)
+            != p.license.sha256
+        {
+            return Err("licence hash mismatch".into());
+        }
+        references.push(license);
+    }
+    let links = serde_json::to_string(&facts.map(|f| f.links.as_slice()).unwrap_or(&[]))
+        .map_err(|e| e.to_string())?;
+    Ok(format!(
+        "DocumentInput {{ source: {}, html: {}, sha256: {}, provenance: {}, metadata_links: {} }}",
+        literal(&format!("fixtures/{input}")),
+        embedded(input, false),
+        literal(&external::sha256(bytes)),
+        p.map_or("None".into(), |p| format!("Some({})", provenance(p))),
+        literal(&links)
+    ))
+}
+
 /// Discover only the fixed crate fixture root. No runtime files are produced.
 /// The returned source is deterministic across checkout/build locations.
 pub fn generate(manifest_dir: &Path) -> Result<String, String> {
@@ -270,52 +324,208 @@ pub fn generate(manifest_dir: &Path) -> Result<String, String> {
             let html = fs::read(root.join(&input)).map_err(|e| format!("input: {e}"))?;
             std::str::from_utf8(&html).map_err(|e| format!("input: expected UTF-8: {e}"))?;
             let mut references = vec![input.clone()];
-            let request = observations(&metadata.observations)?;
+            let runnable = matches!(metadata.classification, ClassificationMetadata::Runnable {});
+            let request = observations(&metadata.observations, runnable)?;
+            if metadata.provenance.is_some() != metadata.upstream_assertion.is_some() {
+                return Err("provenance and upstream_assertion must be declared together".into());
+            }
+            let inspected = metadata.provenance.is_some() || metadata.relationship.is_some();
+            let facts = if inspected {
+                Some(external::inspect(&html)?)
+            } else {
+                None
+            };
+            let document = document_source(
+                &root,
+                path,
+                &input,
+                &html,
+                metadata.provenance.as_ref(),
+                facts.as_ref(),
+                &files,
+                &mut references,
+            )?;
+            if let Some(facts) = &facts
+                && runnable
+            {
+                external::links::validate(&facts.links)?;
+                if !facts.static_exclusions.is_empty() {
+                    return Err(format!(
+                        "runnable source requires unsupported behavior: {:?}",
+                        facts.static_exclusions
+                    ));
+                }
+            }
+            let mut reference_document = None;
+            let mut reference_provenance = "None".to_string();
+            if let Some(rel) = &metadata.relationship {
+                if !matches!(rel.kind.as_str(), "match" | "mismatch") {
+                    return Err("relationship.kind must be match or mismatch".into());
+                }
+                let source_relations =
+                    external::relationships(facts.as_ref().expect("relationship source parsed"))?;
+                if source_relations.len() != 1 || source_relations[0].0 != rel.kind {
+                    return Err("relationship contradicts active source relationship".into());
+                }
+                let href = &source_relations[0].1;
+                external::links::reference_filename(href)?;
+                let ref_path = reference(path, &rel.input, &files)?;
+                let sibling = input
+                    .rsplit_once('/')
+                    .map_or_else(|| href.clone(), |(p, _)| format!("{p}/{href}"));
+                if ref_path != sibling {
+                    return Err("relationship target contradicts same-directory source href".into());
+                }
+                match (&metadata.provenance, &rel.provenance) {
+                    (Some(p), Some(r)) => {
+                        let expected = p
+                            .path
+                            .rsplit_once('/')
+                            .map_or_else(|| href.clone(), |(parent, _)| format!("{parent}/{href}"));
+                        if r.repository != p.repository
+                            || r.revision != p.revision
+                            || r.path != expected
+                        {
+                            return Err("relationship upstream target/pin contradiction".into());
+                        }
+                        reference_provenance = format!("Some({})", provenance(r));
+                    }
+                    (None, None) => {}
+                    _ => {
+                        return Err(
+                            "test/reference provenance must both be upstream or both local".into(),
+                        );
+                    }
+                }
+                let bytes = fs::read(root.join(&ref_path)).map_err(|e| e.to_string())?;
+                std::str::from_utf8(&bytes).map_err(|e| e.to_string())?;
+                let ref_facts = external::inspect(&bytes)?;
+                if runnable {
+                    external::links::validate(&ref_facts.links)?;
+                    if !external::relationships(&ref_facts)?.is_empty()
+                        || !ref_facts.static_exclusions.is_empty()
+                    {
+                        return Err("reference chains/readiness/scripts are unsupported".into());
+                    }
+                    if metadata.observations.dom.is_some()
+                        || metadata.observations.layout.is_some()
+                        || metadata.observations.canvas.is_some()
+                        || metadata.observations.styles.len() != 1
+                        || metadata.observations.styles[0].property != "background-color"
+                        || !matches!(
+                            metadata.observations.styles[0].selection,
+                            FamilyMetadata::Compare {}
+                        )
+                    {
+                        return Err(
+                            "relationship requires one present-target background-color observation"
+                                .into(),
+                        );
+                    }
+                }
+                reference_document = Some(document_source(
+                    &root,
+                    path,
+                    &ref_path,
+                    &bytes,
+                    rel.provenance.as_ref(),
+                    Some(&ref_facts),
+                    &files,
+                    &mut references,
+                )?);
+                references.push(ref_path);
+            } else if runnable
+                && let Some(facts) = &facts
+                && !external::relationships(facts)?.is_empty()
+            {
+                return Err("active relationship requires explicit relationship metadata".into());
+            }
+            let upstream = match &metadata.upstream_assertion {
+                None => "None".into(),
+                Some(u) => {
+                    reason(&u.unsupported_reason)?;
+                    if !matches!(u.form.as_str(), "visual_reftest" | "testharness") {
+                        return Err("unsupported upstream assertion form declaration".into());
+                    }
+                    format!(
+                        "Some(UpstreamAssertion {{ form: {}, unsupported_reason: {}, reference: {reference_provenance} }})",
+                        literal(&u.form),
+                        literal(&u.unsupported_reason)
+                    )
+                }
+            };
             let kind = match &metadata.classification {
                 ClassificationMetadata::Runnable {} => {
                     if metadata.requires_javascript {
                         return Err("requires_javascript: runnable fixtures must not require page JavaScript".into());
                     }
-                    let expectation = match metadata.expectation.as_ref() {
-                        Some(ExpectationMetadata::Match {}) => "Expectation::Match".into(),
-                        Some(ExpectationMetadata::KnownFailure { reason: text }) => {
-                            reason(text).map_err(|e| format!("expectation: {e}"))?;
-                            format!("Expectation::KnownFailure {{ reason: {} }}", literal(text))
+                    let independent = match (&metadata.expectation, &metadata.expected) {
+                        (None, None) => None,
+                        (Some(disposition), Some(expected)) => {
+                            let disposition = match disposition {
+                                ExpectationMetadata::Match {} => "Expectation::Match".into(),
+                                ExpectationMetadata::KnownFailure { reason: text } => {
+                                    reason(text)?;
+                                    format!(
+                                        "Expectation::KnownFailure {{ reason: {} }}",
+                                        literal(text)
+                                    )
+                                }
+                            };
+                            let expected = match expected {
+                                ExpectedMetadata::Canvas { rgb8 } => {
+                                    format!("Expected::Canvas(CanvasColor({rgb8:?}))")
+                                }
+                                ExpectedMetadata::Projection {
+                                    path: expected_path,
+                                } => {
+                                    let p = reference(path, expected_path, &files)?;
+                                    if !p.ends_with(".expected.json") {
+                                        return Err(
+                                            "expected.path: expected an .expected.json file".into(),
+                                        );
+                                    }
+                                    let bytes =
+                                        fs::read(root.join(&p)).map_err(|e| e.to_string())?;
+                                    std::str::from_utf8(&bytes).map_err(|e| e.to_string())?;
+                                    references.push(p.clone());
+                                    format!("Expected::Projection({})", embedded(&p, true))
+                                }
+                            };
+                            Some(format!(
+                                "IndependentExpectation {{ expected: {expected}, disposition: {disposition} }}"
+                            ))
                         }
-                        None => return Err("expectation: required for runnable fixtures".into()),
+                        _ => {
+                            return Err("expected and expectation must be declared together".into());
+                        }
                     };
-                    let expected = match metadata.expected.as_ref() {
-                        Some(ExpectedMetadata::Canvas { rgb8 }) => {
-                            format!("Expected::Canvas(CanvasColor({rgb8:?}))")
-                        }
-                        Some(ExpectedMetadata::Projection {
-                            path: expected_path,
-                        }) => {
-                            let expected_path = reference(path, expected_path, &files)
-                                .map_err(|e| format!("expected.path: {e}"))?;
-                            if !expected_path.ends_with(".expected.json") {
-                                return Err("expected.path: expected an .expected.json file".into());
-                            }
-                            let bytes = fs::read(root.join(&expected_path))
-                                .map_err(|e| format!("expected.path: {e}"))?;
-                            std::str::from_utf8(&bytes)
-                                .map_err(|e| format!("expected.path: expected UTF-8: {e}"))?;
-                            references.push(expected_path.clone());
-                            format!("Expected::Projection({})", embedded(&expected_path, true))
-                        }
-                        None => return Err("expected: required for runnable fixtures".into()),
+                    let checks = if let Some(reference) = reference_document {
+                        let kind = if metadata.relationship.as_ref().unwrap().kind == "match" {
+                            "Match"
+                        } else {
+                            "Mismatch"
+                        };
+                        format!(
+                            "Checks::Reference {{ kind: RelationshipKind::{kind}, reference: {reference}, independent: {} }}",
+                            independent.map_or("None".into(), |v| format!("Some({v})"))
+                        )
+                    } else {
+                        format!(
+                            "Checks::Independent({})",
+                            independent.ok_or(
+                                "expectation: required for runnable fixture without relationship"
+                            )?
+                        )
                     };
-                    format!(
-                        "FixtureKind::Runnable {{ html: {}, expected: {expected}, expectation: {expectation} }}",
-                        embedded(&input, false)
-                    )
+                    format!("FixtureKind::Runnable {{ checks: {checks} }}")
                 }
                 ClassificationMetadata::Unsupported { reason: text }
                 | ClassificationMetadata::Skipped { reason: text } => {
                     if metadata.expectation.is_some() || metadata.expected.is_some() {
                         return Err("classification: excluded fixtures must not declare expectation or expected data".into());
                     }
-                    reason(text).map_err(|e| format!("classification: {e}"))?;
+                    reason(text)?;
                     let variant = if matches!(
                         metadata.classification,
                         ClassificationMetadata::Unsupported { .. }
@@ -330,9 +540,8 @@ pub fn generate(manifest_dir: &Path) -> Result<String, String> {
             Ok((
                 metadata.id.clone(),
                 format!(
-                    "Fixture {{ id: TestId({}), source: {}, metadata_source: {}, requires_javascript: {}, request: {request}, kind: {kind} }}",
+                    "Fixture {{ id: TestId({}), document: {document}, upstream: {upstream}, metadata_source: {}, requires_javascript: {}, request: {request}, kind: {kind} }}",
                     literal(&metadata.id),
-                    literal(&format!("fixtures/{input}")),
                     literal(&format!("fixtures/{path}")),
                     metadata.requires_javascript
                 ),

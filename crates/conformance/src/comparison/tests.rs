@@ -5,8 +5,8 @@ use std::{cell::RefCell, process::Command};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Event {
-    CaptureStarted(TestId),
-    CaptureCleaned(TestId),
+    CaptureStarted(TestId, chromium::DocumentRole),
+    CaptureCleaned(TestId, chromium::DocumentRole),
     StandaloneReleased,
     WorkerStarted,
 }
@@ -20,6 +20,49 @@ pub(crate) fn record(event: Event) {
 }
 fn trace() -> Vec<Event> {
     EVENTS.with(|events| events.borrow().clone().unwrap())
+}
+#[cfg(target_os = "macos")]
+pub(crate) fn macos_platform_failure_blocks_workers(executable: &Path) {
+    EVENTS.with(|events| *events.borrow_mut() = Some(vec![]));
+    let fixture = crate::fixtures::fixture("canvas/root");
+    let result = execute_selected(&[fixture], Some(executable));
+    let (code, output, diagnostics) = publish_bytes(result);
+    assert_eq!(code, 2);
+    assert!(output.is_empty());
+    assert!(diagnostics.contains("chromium.platform"), "{diagnostics}");
+    assert!(diagnostics.contains("ownership cleanup completeness is not proven"));
+    // No capture, standalone cleanup or worker event may precede rejection.
+    assert!(trace().is_empty(), "{:?}", trace());
+    EVENTS.with(|events| *events.borrow_mut() = None);
+}
+// Called only by the existing isolated native process fixture.
+pub(crate) fn startup_failure_blocks_workers(executable: &Path, expected_code: &str) {
+    EVENTS.with(|events| *events.borrow_mut() = Some(vec![]));
+    let fixture = crate::fixtures::fixture("canvas/root");
+    let failure = execute_selected(&[fixture], Some(executable))
+        .err()
+        .expect("startup termination must fail the required capture");
+    let Failure::Chromium(ref chromium) = failure else {
+        panic!("{failure:?}")
+    };
+    assert_eq!(chromium.primary.as_ref().unwrap().code(), expected_code);
+    assert!(chromium.cleanup.is_empty(), "{chromium:?}");
+    assert_eq!(
+        trace(),
+        vec![Event::CaptureStarted(
+            fixture.id,
+            chromium::DocumentRole::Test
+        )]
+    );
+    let (code, out, diagnostics) = publish_bytes(Err(failure));
+    assert_eq!(code, 2);
+    assert!(out.is_empty());
+    assert!(diagnostics.contains(&format!("chromium.{expected_code}")));
+    eprintln!(
+        "startup capture failed; no Borrowser workers; exit={code}; trace={:?}",
+        trace()
+    );
+    EVENTS.with(|events| *events.borrow_mut() = None);
 }
 fn capture(color: [u8; 3]) -> chromium::ChromiumCapture {
     chromium::tests::controlled_capture(CanvasColor(color))
@@ -45,13 +88,13 @@ fn imported_capture_uses_the_existing_projection_and_no_operational_metadata() {
     let inputs: Vec<_> = fixtures
         .iter()
         .map(|f| {
-            let FixtureKind::Runnable { html, .. } = f.kind else {
-                panic!("runnable fixture required")
-            };
+            let html = f.document.html;
             CaptureInput {
+                role: crate::chromium::DocumentRole::Test,
+                metadata_links: "[]",
                 request: crate::projection::ObservationRequest::CANVAS,
                 id: f.id,
-                source: f.source,
+                source: f.document.source,
                 html,
             }
         })
@@ -60,9 +103,9 @@ fn imported_capture_uses_the_existing_projection_and_no_operational_metadata() {
     let observations: Vec<_> = inputs.iter().zip(colors).map(|(input,color)| {
         let mut browser=serde_json::to_value(capture(color).identity).unwrap();
         browser["platform"]=json!("linux-x86_64");
-        json!({"test_id":input.id.0,"source":input.source,"canvas_color_rgb8":color,"inspection":null,"browser":browser})
+        json!({"descriptor":input.descriptor(),"metadata_links":[],"canvas_color_rgb8":color,"inspection":null,"browser":browser})
     }).collect();
-    let wire=serde_json::to_vec(&json!({"schema":"borrowser.chromium-phases.v1","document_url":crate::environment::URL,
+    let wire=serde_json::to_vec(&json!({"schema":"borrowser.chromium-phases.v2","document_url":crate::environment::URL,
         "viewport":[640,480],"device_scale_factor":1,"sample_pixel":[32,32],"observations":observations})).unwrap();
     let first = publish_bytes(compare_captured(
         &fixtures,
@@ -134,13 +177,13 @@ fn unit_unsupported_skip_and_empty_never_equal() {
         kind: FixtureKind::Unsupported {
             reason: "unsupported fixture",
         },
-        ..(*crate::fixtures::fixture("canvas/root"))
+        ..*crate::fixtures::fixture("canvas/root")
     };
     let skipped_fixture = Fixture {
         kind: FixtureKind::Skipped {
             reason: "explicit skip",
         },
-        ..(*crate::fixtures::fixture("canvas/cascade"))
+        ..*crate::fixtures::fixture("canvas/cascade")
     };
     let (code, bytes, diagnostic) = publish_bytes(execute_selected(
         &[&unsupported_fixture, &skipped_fixture],
@@ -172,15 +215,19 @@ fn unit_unsupported_skip_and_empty_never_equal() {
 fn unit_complete_correspondence_required() {
     let inputs = [
         CaptureInput {
+            role: crate::chromium::DocumentRole::Test,
+            metadata_links: "[]",
             request: crate::projection::ObservationRequest::CANVAS,
             id: crate::fixtures::fixture("canvas/root").id,
-            source: crate::fixtures::fixture("canvas/root").source,
+            source: crate::fixtures::fixture("canvas/root").document.source,
             html: b"",
         },
         CaptureInput {
+            role: crate::chromium::DocumentRole::Test,
+            metadata_links: "[]",
             request: crate::projection::ObservationRequest::CANVAS,
             id: crate::fixtures::fixture("canvas/cascade").id,
-            source: crate::fixtures::fixture("canvas/cascade").source,
+            source: crate::fixtures::fixture("canvas/cascade").document.source,
             html: b"",
         },
     ];
@@ -188,8 +235,7 @@ fn unit_complete_correspondence_required() {
         inputs
             .iter()
             .map(|input| CapturedFixture {
-                id: input.id,
-                source: input.source.into(),
+                descriptor: input.descriptor(),
                 capture: capture([0, 0, 0]),
             })
             .collect::<Vec<_>>()
@@ -201,15 +247,17 @@ fn unit_complete_correspondence_required() {
     wrong.reverse();
     assert!(validate_captures(&inputs, &wrong).is_err());
     wrong = captures();
-    wrong[1].id = wrong[0].id;
+    wrong[1].descriptor.case_id = wrong[0].descriptor.case_id.clone();
     assert!(validate_captures(&inputs, &wrong).is_err());
     wrong = captures();
-    wrong[1].source = "wrong source".into();
+    wrong[1].descriptor.source_sha256 = "wrong hash".into();
     assert!(validate_captures(&inputs, &wrong).is_err());
     wrong = captures();
     wrong.push(CapturedFixture {
-        id: TestId("extra"),
-        source: "extra".into(),
+        descriptor: crate::chromium::CaptureDescriptor {
+            case_id: "extra".into(),
+            ..inputs[0].descriptor()
+        },
         capture: capture([0, 0, 0]),
     });
     assert!(validate_captures(&inputs, &wrong).is_err());
@@ -232,18 +280,22 @@ fn unit_expectations_are_independent_and_precedence_is_explicit() {
             1,
         ),
     ] {
-        let FixtureKind::Runnable { html, expected, .. } =
-            crate::fixtures::fixture("canvas/cascade").kind
-        else {
-            unreachable!()
-        };
+        let html = (crate::fixtures::fixture("canvas/cascade")).document.html;
+        let expected = (crate::fixtures::fixture("canvas/cascade"))
+            .independent()
+            .unwrap()
+            .expected;
         let fixture = Fixture {
+            document: crate::fixtures::fixture("canvas/cascade")
+                .document
+                .with_test_bytes(html),
             kind: FixtureKind::Runnable {
-                html,
-                expected,
-                expectation,
+                checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
+                    expected,
+                    disposition: expectation,
+                }),
             },
-            ..(*crate::fixtures::fixture("canvas/cascade"))
+            ..*crate::fixtures::fixture("canvas/cascade")
         };
         let report = report::Report::new(vec![
             report::Case::observed(&fixture, CanvasColor(observed).into(), capture(observed))
@@ -301,6 +353,177 @@ fn unit_errors_have_empty_output_and_preserve_primary_and_cleanup() {
     assert!(result.1.is_empty());
     assert!(result.2.contains("original primary"));
     assert!(result.2.contains("chromium.cleanup"));
+}
+
+#[test]
+fn unit_ag7_exclusions_enter_neither_execution_engine() {
+    EVENTS.with(|e| *e.borrow_mut() = Some(vec![]));
+    let fixtures = [
+        crate::fixtures::fixture("wpt/unsupported/first-child-js"),
+        crate::fixtures::fixture("wpt/unsupported/testdriver"),
+    ];
+    for f in fixtures {
+        assert!(matches!(
+            crate::run_fixture(f),
+            Execution::Unsupported { .. }
+        ));
+    }
+    let report = execute_selected(&fixtures, None).unwrap();
+    assert_eq!(report.exit_code(), 3);
+    assert!(trace().is_empty());
+    let value = serde_json::to_value(report).unwrap();
+    assert_eq!(value["summary"]["executed_documents"], 0);
+    assert!(
+        value["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["captures"].is_null() && c["relationships"].is_null())
+    );
+    EVENTS.with(|e| *e.borrow_mut() = None);
+}
+
+fn style_capture(target: &str, background: &str) -> chromium::ChromiumCapture {
+    let mut c = capture([0, 0, 0]);
+    c.color = None;
+    c.inspection=Some(serde_json::from_value(json!({"dom":null,"styles":[{"target":target,"values":["rgb(0, 0, 0)",background,"16px","block"]}],"layout":[],"inner_width":640,"inner_height":480,"layout_width":640})).unwrap());
+    c
+}
+
+#[test]
+fn unit_ag7_reference_descriptor_binds_bytes_role_request_and_order() {
+    let fixture = crate::fixtures::fixture("wpt/rgb-comments-p6");
+    let mut inputs = chromium::inputs(&[fixture]);
+    assert_eq!(inputs.len(), 2);
+    let captures = || {
+        inputs
+            .iter()
+            .map(|i| {
+                let mut capture = style_capture("p6", "rgb(10, 150, 50)");
+                capture.metadata_links = serde_json::from_str(i.metadata_links).unwrap();
+                CapturedFixture {
+                    descriptor: i.descriptor(),
+                    capture,
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+    assert!(validate_captures(&inputs, &captures()).is_ok());
+    for fault in 0..7 {
+        let mut bad = captures();
+        match fault {
+            0 => {
+                bad.pop();
+            }
+            1 => bad.reverse(),
+            2 => bad[1].descriptor = bad[0].descriptor.clone(),
+            3 => bad[1].descriptor.source_sha256 = "0".repeat(64),
+            4 => {
+                bad[1].descriptor.request =
+                    crate::projection::ObservationRequest::CANVAS.descriptor()
+            }
+            5 => bad[1].capture.metadata_links.clear(),
+            6 => bad.extend(captures()),
+            _ => unreachable!(),
+        }
+        assert!(validate_captures(&inputs, &bad).is_err(), "{fault}");
+    }
+    let original = captures();
+    let before = inputs[1].descriptor();
+    inputs[1].html = b"<!doctype html><p>test-owned changed reference</p>";
+    assert_ne!(inputs[1].descriptor().source_sha256, before.source_sha256);
+    assert!(validate_captures(&inputs, &original).is_err());
+    inputs[1].html = fixture.reference().unwrap().1.html;
+    inputs[1].request = crate::projection::ObservationRequest::CANVAS;
+    assert_ne!(inputs[1].descriptor().request, before.request);
+    assert!(validate_captures(&inputs, &original).is_err());
+}
+
+#[test]
+fn unit_ag7_relationships_never_hide_independent_or_cross_engine_failures() {
+    use crate::{
+        model::{Checks, Expected, IndependentExpectation, RelationshipKind},
+        relationship::tests::color,
+    };
+    let mut fixture = *crate::fixtures::fixture("wpt-style/background-color-mismatch");
+    let capture_b = |rgba| crate::projection::BorrowserCapture {
+        observations: color("probe", rgba),
+        layout_viewport_width: None,
+        layout_artifact_source_width: None,
+    };
+    let (_, reference) = fixture.reference().unwrap();
+    let expected = Box::leak(
+        serde_json::to_string(&color("probe", [0, 128, 0, 255]))
+            .unwrap()
+            .into_boxed_str(),
+    );
+    fixture.kind = FixtureKind::Runnable {
+        checks: Checks::Reference {
+            kind: RelationshipKind::Mismatch,
+            reference,
+            independent: Some(IndependentExpectation {
+                expected: Expected::Projection(expected),
+                disposition: Expectation::KnownFailure {
+                    reason: "test-owned independent mismatch",
+                },
+            }),
+        },
+    };
+    let case = report::Case::observed_pair(
+        &fixture,
+        capture_b([255, 0, 0, 255]),
+        style_capture("probe", "rgb(255, 0, 0)"),
+        Some((
+            capture_b([255, 0, 0, 255]),
+            style_capture("probe", "rgb(255, 0, 0)"),
+        )),
+    )
+    .unwrap();
+    let report = report::Report::new(vec![case]);
+    assert_eq!(report.exit_code(), 1);
+    let v = serde_json::to_value(report).unwrap();
+    assert_eq!(v["cases"][0]["borrowser_expectation"]["status"], "XFAIL");
+    assert_eq!(v["summary"]["different_fields"], 0);
+    assert_eq!(v["summary"]["relationship_failures"], 2);
+    // Both mismatch relationships hold, but both same-document comparisons differ.
+    fixture.kind = FixtureKind::Runnable {
+        checks: Checks::Reference {
+            kind: RelationshipKind::Mismatch,
+            reference,
+            independent: None,
+        },
+    };
+    let case = report::Case::observed_pair(
+        &fixture,
+        capture_b([0, 128, 0, 255]),
+        style_capture("probe", "rgb(0, 0, 255)"),
+        Some((
+            capture_b([255, 0, 0, 255]),
+            style_capture("probe", "rgb(255, 255, 0)"),
+        )),
+    )
+    .unwrap();
+    let report = report::Report::new(vec![case]);
+    assert_eq!(report.exit_code(), 1);
+    let v = serde_json::to_value(report).unwrap();
+    assert_eq!(v["summary"]["different_fields"], 2);
+    assert_eq!(v["summary"]["relationship_failures"], 0);
+    fixture.upstream = crate::fixtures::fixture("wpt/rgb-comments-p6").upstream;
+    let case = report::Case::observed_pair(
+        &fixture,
+        capture_b([0, 128, 0, 255]),
+        style_capture("probe", "rgb(0, 128, 0)"),
+        Some((
+            capture_b([255, 0, 0, 255]),
+            style_capture("probe", "rgb(255, 0, 0)"),
+        )),
+    )
+    .unwrap();
+    let report = report::Report::new(vec![case]);
+    assert_eq!(report.exit_code(), 3);
+    let v = serde_json::to_value(report).unwrap();
+    assert_eq!(v["summary"]["different_fields"], 0);
+    assert_eq!(v["summary"]["runnable_upstream_incomplete_cases"], 1);
 }
 
 struct FailingWriter {
@@ -409,8 +632,15 @@ fn real_chromium_comparison_composition() {
         .expect("explicit real test requires Chromium");
     for scenario in [
         "multiple",
+        "reference",
+        "reference-capture-failure",
         "css",
         "later-capture-failure",
+        "second-shutdown-cancel",
+        "second-shutdown-expired",
+        "second-shutdown-delayed",
+        "borrowser-failure-delayed",
+        "second-cleanup-failure",
         "borrowser-failure",
         "cleanup-failure",
         "cancel",
@@ -428,10 +658,21 @@ fn real_chromium_comparison_composition() {
             .unwrap();
         assert!(
             output.status.success(),
-            "{scenario}: {} {}",
+            "{scenario}: status={} stdout={} stderr={}",
+            output.status,
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+        // Intentional harness failures can make the child test pass. Preserve
+        // their primary/cleanup evidence as well as unexpected child failures.
+        if !output.stderr.is_empty() {
+            eprintln!(
+                "AG3 isolated scenario {scenario}: status={} stdout={} stderr={}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
         eprintln!("AG3 isolated scenario {scenario}: passed");
     }
 }
@@ -445,20 +686,97 @@ fn isolated_case() {
     EVENTS.with(|events| *events.borrow_mut() = Some(vec![]));
     let mut fixtures = crate::fixtures::baseline()[..2].to_vec();
     match scenario.as_str() {
-        "multiple" => {},
+        "multiple" => {}
+        "second-shutdown-delayed" => chromium::tests::arm_second_shutdown_read_pause(),
+        "reference" | "reference-capture-failure" => {
+            let mut fixture = *crate::fixtures::fixture("wpt-style/background-color-mismatch");
+            if scenario == "reference-capture-failure" {
+                let (kind, reference) = fixture.reference().unwrap();
+                fixture.kind = FixtureKind::Runnable {
+                    checks: crate::model::Checks::Reference {
+                        kind,
+                        reference: reference
+                            .with_test_bytes(b"<!doctype html><link rel=canonical href=/inert>"),
+                        independent: None,
+                    },
+                };
+            }
+            fixtures = vec![fixture];
+        }
         "css" => {
-            let FixtureKind::Runnable { html, expected, expectation } = fixtures[1].kind else { unreachable!() };
-            let changed = std::str::from_utf8(html).unwrap().replace("#345678", "#2468ac");
-            fixtures[1].kind = FixtureKind::Runnable { html: Box::leak(changed.into_bytes().into_boxed_slice()), expected, expectation };
-        },
-        "later-capture-failure" => fixtures[1].kind = FixtureKind::Runnable { html: b"<!doctype html><link rel=canonical href=/inert>", expected: crate::model::Expected::Canvas(CanvasColor([0,0,0])), expectation: Expectation::Match },
-        "borrowser-failure" => fixtures[1].kind = FixtureKind::Runnable { html: b"<!doctype html><html><head><style>html,body{margin:0;padding:0;height:0}html{background-color:#123456}div{height:100px;background-color:red}</style></head><body><div></div></body></html>", expected: crate::model::Expected::Canvas(CanvasColor([0,0,0])), expectation: Expectation::Match },
-        "cleanup-failure" | "cancel" => chromium::tests::arm_comparison_cleanup_failure(scenario == "cancel"),
+            let html = (fixtures[1]).document.html;
+            let expected = (fixtures[1]).independent().unwrap().expected;
+            let expectation = (fixtures[1]).independent().unwrap().disposition;
+            let changed = std::str::from_utf8(html)
+                .unwrap()
+                .replace("#345678", "#2468ac");
+            {
+                fixtures[1].document = fixtures[1]
+                    .document
+                    .with_test_bytes(Box::leak(changed.into_bytes().into_boxed_slice()));
+                fixtures[1].kind = FixtureKind::Runnable {
+                    checks: crate::model::Checks::Independent(
+                        crate::model::IndependentExpectation {
+                            expected,
+                            disposition: expectation,
+                        },
+                    ),
+                };
+            };
+        }
+        "later-capture-failure" => {
+            fixtures[1].document = fixtures[1]
+                .document
+                .with_test_bytes(b"<!doctype html><link rel=canonical href=/inert>");
+            fixtures[1].kind = FixtureKind::Runnable {
+                checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
+                    expected: crate::model::Expected::Canvas(CanvasColor([0, 0, 0])),
+                    disposition: Expectation::Match,
+                }),
+            };
+        }
+        "borrowser-failure" | "borrowser-failure-delayed" => {
+            if scenario == "borrowser-failure-delayed" {
+                chromium::tests::arm_second_shutdown_read_pause();
+            }
+            fixtures[1].document=fixtures[1].document.with_test_bytes(b"<!doctype html><html><head><style>html,body{margin:0;padding:0;height:0}html{background-color:#123456}div{height:100px;background-color:red}</style></head><body><div></div></body></html>");
+            fixtures[1].kind = FixtureKind::Runnable {
+                checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
+                    expected: crate::model::Expected::Canvas(CanvasColor([0, 0, 0])),
+                    disposition: Expectation::Match,
+                }),
+            };
+        }
+        "second-shutdown-cancel" => chromium::tests::arm_shutdown_ack_cancellation(2),
+        "second-shutdown-expired" => chromium::tests::arm_second_shutdown_expiry(),
+        "cleanup-failure" | "second-cleanup-failure" | "cancel" => {
+            chromium::tests::arm_comparison_cleanup_failure(
+                scenario == "cancel",
+                if scenario == "second-cleanup-failure" {
+                    2
+                } else {
+                    1
+                },
+            )
+        }
         _ => panic!("unknown scenario"),
     }
     let selected: Vec<_> = fixtures.iter().collect();
     let result = execute_selected(&selected, Some(Path::new(&executable)));
-    if scenario == "cleanup-failure" {
+    if scenario == "second-shutdown-expired" {
+        chromium::tests::assert_comparison_shutdown_timeout(
+            result
+                .as_ref()
+                .err()
+                .expect("capture budget expired")
+                .chromium_failure(),
+        );
+        chromium::tests::assert_shutdown_cancellation_consumed();
+    }
+    if matches!(
+        scenario.as_str(),
+        "cleanup-failure" | "second-cleanup-failure"
+    ) {
         chromium::tests::assert_comparison_cleanup_failure(
             result
                 .as_ref()
@@ -470,20 +788,58 @@ fn isolated_case() {
     let (code, bytes, diagnostics) = publish_bytes(result);
     let events = trace();
     match scenario.as_str() {
-        "multiple" | "css" | "borrowser-failure" => {
+        "reference" | "reference-capture-failure" => {
+            let mut expected = vec![
+                Event::CaptureStarted(fixtures[0].id, chromium::DocumentRole::Test),
+                Event::CaptureCleaned(fixtures[0].id, chromium::DocumentRole::Test),
+                Event::CaptureStarted(fixtures[0].id, chromium::DocumentRole::Reference),
+            ];
+            if scenario == "reference" {
+                expected.extend([
+                    Event::CaptureCleaned(fixtures[0].id, chromium::DocumentRole::Reference),
+                    Event::StandaloneReleased,
+                    Event::WorkerStarted,
+                    Event::WorkerStarted,
+                ]);
+                assert_eq!(code, 0);
+                assert!(diagnostics.is_empty());
+                let report: Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(report["summary"]["executed_documents"], 2);
+                assert_eq!(report["cases"].as_array().unwrap().len(), 1);
+                assert_eq!(
+                    report["cases"][0]["relationships"]["borrowser"]["status"],
+                    "satisfied"
+                );
+            } else {
+                assert_eq!(code, 2);
+                assert!(bytes.is_empty());
+                assert!(!diagnostics.is_empty());
+            }
+            assert_eq!(events, expected);
+        }
+        "multiple"
+        | "css"
+        | "borrowser-failure"
+        | "second-shutdown-delayed"
+        | "borrowser-failure-delayed" => {
+            chromium::tests::assert_shutdown_cancellation_consumed();
             assert_eq!(
                 events,
                 vec![
-                    Event::CaptureStarted(fixtures[0].id),
-                    Event::CaptureCleaned(fixtures[0].id),
-                    Event::CaptureStarted(fixtures[1].id),
-                    Event::CaptureCleaned(fixtures[1].id),
+                    Event::CaptureStarted(fixtures[0].id, chromium::DocumentRole::Test),
+                    Event::CaptureCleaned(fixtures[0].id, chromium::DocumentRole::Test),
+                    Event::CaptureStarted(fixtures[1].id, chromium::DocumentRole::Test),
+                    Event::CaptureCleaned(fixtures[1].id, chromium::DocumentRole::Test),
                     Event::StandaloneReleased,
                     Event::WorkerStarted,
                     Event::WorkerStarted
-                ]
+                ],
+                "scenario={scenario} exit={code} diagnostics={diagnostics}"
             );
-            if scenario == "borrowser-failure" {
+            if matches!(
+                scenario.as_str(),
+                "borrowser-failure" | "borrowser-failure-delayed"
+            ) {
                 assert_eq!(code, 2);
                 assert!(bytes.is_empty());
                 assert!(diagnostics.contains("capture.overlap"));
@@ -509,23 +865,43 @@ fn isolated_case() {
                 );
             }
         }
-        "later-capture-failure" => {
+        "later-capture-failure"
+        | "second-shutdown-cancel"
+        | "second-shutdown-expired"
+        | "second-cleanup-failure" => {
             assert_eq!(code, 2);
             assert!(bytes.is_empty());
-            assert!(diagnostics.contains("chromium.navigation"));
+            assert!(diagnostics.contains(match scenario.as_str() {
+                "second-shutdown-cancel" => "chromium.cancelled",
+                "second-shutdown-expired" => "chromium.timeout",
+                "second-cleanup-failure" => "chromium.cleanup",
+                _ => "chromium.navigation",
+            }));
+            if scenario == "second-shutdown-cancel" {
+                chromium::tests::assert_shutdown_cancellation_consumed();
+            }
+            if scenario == "second-cleanup-failure" {
+                chromium::tests::recover_comparison_cleanup_failure();
+            }
             assert_eq!(
                 events,
                 vec![
-                    Event::CaptureStarted(fixtures[0].id),
-                    Event::CaptureCleaned(fixtures[0].id),
-                    Event::CaptureStarted(fixtures[1].id)
+                    Event::CaptureStarted(fixtures[0].id, chromium::DocumentRole::Test),
+                    Event::CaptureCleaned(fixtures[0].id, chromium::DocumentRole::Test),
+                    Event::CaptureStarted(fixtures[1].id, chromium::DocumentRole::Test)
                 ]
             );
         }
         "cleanup-failure" | "cancel" => {
             assert_eq!(code, 2);
             assert!(bytes.is_empty());
-            assert_eq!(events, vec![Event::CaptureStarted(fixtures[0].id)]);
+            assert_eq!(
+                events,
+                vec![Event::CaptureStarted(
+                    fixtures[0].id,
+                    chromium::DocumentRole::Test
+                )]
+            );
             assert!(diagnostics.contains(if scenario == "cancel" {
                 "chromium.cancelled"
             } else {
@@ -569,18 +945,20 @@ fn unit_phase_partial_coverage_never_reports_full_pass() {
     };
     let fixture = Fixture {
         request,
+        document: crate::fixtures::fixture("style/cascade-inheritance")
+            .document
+            .with_test_bytes(b"<!doctype html><div id=parent style='color:#123456'></div>"),
         kind: FixtureKind::Runnable {
-            html: b"<!doctype html><div id=parent style='color:#123456'></div>",
-            expected: crate::model::Expected::Projection(
-                r#"{"dom":{"state":"not_requested"},"styles":[{"target":"parent","property":"color","value":{"state":"observed","value":{"state":"present","value":{"kind":"rgba8","value":[18,52,86,255]}}}},{"target":"parent","property":"line-height","value":{"state":"unsupported","value":"outside selected AG5 surface"}}],"layout":{"state":"not_requested"},"canvas":{"state":"not_requested"}}"#,
-            ),
-            expectation: Expectation::Match,
+            checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
+                expected: crate::model::Expected::Projection(
+                    r#"{"dom":{"state":"not_requested"},"styles":[{"target":"parent","property":"color","value":{"state":"observed","value":{"state":"present","value":{"kind":"rgba8","value":[18,52,86,255]}}}},{"target":"parent","property":"line-height","value":{"state":"unsupported","value":"outside selected AG5 surface"}}],"layout":{"state":"not_requested"},"canvas":{"state":"not_requested"}}"#,
+                ),
+                disposition: Expectation::Match,
+            }),
         },
-        ..(*crate::fixtures::fixture("style/cascade-inheritance"))
+        ..*crate::fixtures::fixture("style/cascade-inheritance")
     };
-    let FixtureKind::Runnable { html, .. } = fixture.kind else {
-        unreachable!()
-    };
+    let html = (fixture).document.html;
     let actual = execute::execute_fixture(html, request).unwrap();
     let mut reference = capture([0, 0, 0]);
     reference.color = None;
@@ -602,9 +980,7 @@ fn unit_phase_partial_coverage_never_reports_full_pass() {
 #[test]
 fn unit_phase_layout_difference_is_localized_and_missing_capture_is_error() {
     let fixture = crate::fixtures::fixture("layout/block-boxes");
-    let FixtureKind::Runnable { html, .. } = fixture.kind else {
-        unreachable!()
-    };
+    let html = (fixture).document.html;
     let actual = execute::execute_fixture(html, fixture.request).unwrap();
     let mut reference = capture([0, 0, 0]);
     reference.color = None;
@@ -645,18 +1021,20 @@ fn unit_phase_layout_difference_is_localized_and_missing_capture_is_error() {
 fn unit_unrequested_and_unsupported_families_are_not_canvas_equality() {
     let fixture = Fixture {
         request: crate::projection::ObservationRequest::NONE,
+        document: crate::fixtures::fixture("dom/structure")
+            .document
+            .with_test_bytes(b"<!doctype html><div></div>"),
         kind: FixtureKind::Runnable {
-            html: b"<!doctype html><div></div>",
-            expected: crate::model::Expected::Projection(
-                r#"{"dom":{"state":"not_requested"},"styles":[],"layout":{"state":"not_requested"},"canvas":{"state":"not_requested"}}"#,
-            ),
-            expectation: Expectation::Match,
+            checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
+                expected: crate::model::Expected::Projection(
+                    r#"{"dom":{"state":"not_requested"},"styles":[],"layout":{"state":"not_requested"},"canvas":{"state":"not_requested"}}"#,
+                ),
+                disposition: Expectation::Match,
+            }),
         },
-        ..(*crate::fixtures::fixture("dom/structure"))
+        ..*crate::fixtures::fixture("dom/structure")
     };
-    let FixtureKind::Runnable { html, .. } = fixture.kind else {
-        unreachable!()
-    };
+    let html = (fixture).document.html;
     let actual = execute::execute_fixture(html, fixture.request).unwrap();
     let mut reference = capture([0, 0, 0]);
     reference.color = None;
@@ -695,15 +1073,18 @@ fn unit_phase_required_records_cannot_be_truncated_duplicated_or_misidentified()
     use crate::projection::{Observation, TargetValue};
     for index in [4, 5] {
         let mut fixture = crate::fixtures::baseline()[index];
-        let FixtureKind::Runnable { html, expected, .. } = fixture.kind else {
-            unreachable!()
-        };
-        fixture.kind = FixtureKind::Runnable {
-            html,
-            expected,
-            expectation: Expectation::KnownFailure {
-                reason: "must not hide malformed data",
-            },
+        let html = (fixture).document.html;
+        let expected = (fixture).independent().unwrap().expected;
+        {
+            fixture.document = fixture.document.with_test_bytes(html);
+            fixture.kind = FixtureKind::Runnable {
+                checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
+                    expected,
+                    disposition: Expectation::KnownFailure {
+                        reason: "must not hide malformed data",
+                    },
+                }),
+            };
         };
         let actual = execute::execute_fixture(html, fixture.request).unwrap();
         let mut reference = style_reference();
@@ -835,9 +1216,7 @@ pub(crate) fn expected_profile_fields(id: &str) -> Vec<String> {
 #[test]
 fn unit_phase_single_style_property_difference_retains_all_twelve_fields() {
     let fixture = crate::fixtures::fixture("style/cascade-inheritance");
-    let FixtureKind::Runnable { html, .. } = fixture.kind else {
-        unreachable!()
-    };
+    let html = (fixture).document.html;
     let actual = execute::execute_fixture(html, fixture.request).unwrap();
     for differs in [false, true] {
         let mut reference = style_reference();
@@ -916,9 +1295,7 @@ fn unit_phase_dom_common_comparison_preserves_meaningful_structure() {
         ],
     );
     let fixture = crate::fixtures::fixture("dom/structure");
-    let FixtureKind::Runnable { html, .. } = fixture.kind else {
-        unreachable!()
-    };
+    let html = (fixture).document.html;
     let actual = execute::execute_fixture(html, fixture.request).unwrap();
     for mutation in [
         "none",

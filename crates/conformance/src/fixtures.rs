@@ -6,7 +6,9 @@ mod generated {
     // The metadata corpus determines which variants the generated source uses.
     #[allow(unused_imports)]
     use crate::model::{
-        CanvasColor, Expectation, Expected, Fixture, FixtureKind, HarnessError, TestId,
+        CanvasColor, Checks, DocumentInput, Expectation, Expected, Fixture, FixtureKind,
+        HarnessError, IndependentExpectation, RelationshipKind, TestId, UpstreamAssertion,
+        UpstreamSource,
     };
     #[allow(unused_imports)]
     use crate::projection::{ObservationRequest, Request, StyleField, StyleProperty};
@@ -34,7 +36,8 @@ fn validate_catalogue(fixtures: &[Fixture]) -> Result<(), HarnessError> {
                 ));
             }
             projection::validate_request(fixture.request)?;
-            if matches!(fixture.request.dom, Request::NotRequested)
+            if matches!(fixture.kind, FixtureKind::Runnable { .. })
+                && matches!(fixture.request.dom, Request::NotRequested)
                 && fixture.request.styles.is_empty()
                 && matches!(fixture.request.layout, Request::NotRequested)
                 && matches!(fixture.request.canvas, Request::NotRequested)
@@ -44,14 +47,35 @@ fn validate_catalogue(fixtures: &[Fixture]) -> Result<(), HarnessError> {
                     "no observation requested",
                 ));
             }
-            if let FixtureKind::Runnable { expected, .. } = fixture.kind {
+            if let FixtureKind::Runnable { .. } = fixture.kind {
                 if fixture.requires_javascript {
                     return Err(HarnessError::new(
                         "fixture.configuration",
                         "runnable fixture requires JavaScript",
                     ));
                 }
-                expected.observations()?.validate(fixture.request)?;
+                if let Some(independent) = fixture.independent() {
+                    independent
+                        .expected
+                        .observations()?
+                        .validate(fixture.request)?;
+                }
+                let mut documents = vec![fixture.document];
+                if let Some((_, reference)) = fixture.reference() {
+                    crate::relationship::validate_scope(fixture.request)?;
+                    documents.push(reference);
+                }
+                for doc in documents {
+                    use sha2::{Digest, Sha256};
+                    if doc.sha256 != format!("{:x}", Sha256::digest(doc.html)) {
+                        return Err(HarnessError::new(
+                            "fixture.source",
+                            "embedded byte hash mismatch",
+                        ));
+                    }
+                    crate::metadata_links::validate(&doc.links()?)
+                        .map_err(|e| HarnessError::new("fixture.links", e))?;
+                }
             }
             Ok(())
         };

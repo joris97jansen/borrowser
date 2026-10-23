@@ -81,21 +81,7 @@ pub(crate) fn run(
         let (options, id) = flags(args, &["--config", "--artifact-dir", "--state-dir"])?;
         let fixtures = crate::fixtures::select(id.as_deref())
             .map_err(|e| format!("{}: {}", e.code, e.detail))?;
-        let inputs: Vec<_> = fixtures
-            .iter()
-            .filter_map(|f| match f.kind {
-                crate::model::FixtureKind::Runnable { html, .. } => {
-                    Some(crate::chromium::CaptureInput {
-                        id: f.id,
-                        source: f.source,
-                        html,
-
-                        request: f.request,
-                    })
-                }
-                _ => None,
-            })
-            .collect();
+        let inputs = crate::chromium::inputs(&fixtures);
         if inputs.is_empty() {
             return Ok((fixtures, vec![]));
         }
