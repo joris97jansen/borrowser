@@ -938,7 +938,51 @@ When a feature lands:
 2. Link to the relevant contract doc if the behavior is subtle.
 3. Keep this file short; move detailed rules to subsystem docs.
 
-## Focused Conformance Tooling (AG1–AG8)
+## Focused Conformance Tooling (AG1–AG9)
+
+AG9 consolidates the existing infrastructure and developer workflow without
+changing engine behavior, fixtures, independent expectations, comparison families,
+suite membership or execution backends. The supported claim is:
+
+> Borrowser has focused deterministic conformance infrastructure for its current
+> static HTML/CSS scope and can compare selected behavior against Chromium.
+
+| Dimension | Achieved scope and remaining boundary |
+| --- | --- |
+| Available infrastructure | Dedicated embedded/discovered fixture harness, explicit eligibility and expectation metadata, production Borrowser execution, pinned local Linux Chromium capture/comparison, optional existing AG4 disposable Linux runner, deterministic reports and fixed CI/extended suites. |
+| Supported observations | Committed DOM structure; selected computed `color`, `background-color`, `font-size`, `display`; selected direct DOM-backed fixed-block border boxes; guarded opaque sRGB canvas sample; one direct present-target background-color match/mismatch relationship. AG5/AG7 domains remain authoritative. |
+| Verified behavior | Original six fixtures have independent PASS results and 34 equal cross-engine fields in retained native Linux qualification. The seven-case CI suite executes eight documents and compares successfully; extended has eleven cases/twelve executable documents. Evidence provenance and fresh-vs-historical limits are linked below. |
+| Known mismatches | `wpt/rgb-alias-p6` and `wpt/rgb-comments-p6`, both test and reference roles, differ at `style:#p6/background-color`: Borrowser `[0,0,0,0]`, Chromium `[10,150,50,255]`. These are existing CSS functional-color gaps, not missing harness infrastructure. Correct independent expectations remain XFAIL; scoped relationships can be satisfied despite those differences. |
+| Unsupported tests/assertions | Two JS/testdriver cases are excluded before execution. The two runnable imported RGB cases retain unsupported original full visual assertions and aggregate INCOMPLETE. Extended local exit is 3; comparison exit is 1. Aggregate and independent results are separate. |
+| Platform limits | Native Linux x86-64 is the supported local Chromium backend. macOS Chromium remains withdrawn; macOS Borrowser-only execution and the separately qualified AG4 controller retain their existing scope. AWS evidence is historical, not fresh AG9 live qualification. |
+| Remaining compatibility gaps | Broad WPT compliance, general CSS/layout/paint compatibility, visual/screenshot equivalence, GPU/text-rendering validation, page JavaScript, DOM scripting, WebDriver and unsupported platform APIs remain outside this infrastructure's claims. |
+
+The [conformance guide](../crates/conformance/README.md) now connects fixture
+authoring/classification, production execution, optional comparison, result
+interpretation and investigation. Its [AG9 evidence record](../crates/conformance/README.md#ag9-closeout-evidence)
+distinguishes fresh local checks from retained qualification. Historical entries
+below retain their original source identities and limitations; they are not
+additional uncompleted AG issues.
+
+AG8's native Linux [run 40067542665, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/40067542665)
+qualified commit `66cc60339b0950f791f4cafed81f17fc33305396`, tree
+`06e42ff58e2049eafc0db1bc9c6996605834484d`, subsequently merged unchanged as
+`d883e006ae84bbd4f6c47ba993491340ff12f7b0`. During AG9, retained artifact hashes,
+the ten explicitly executed browser qualifications and thirteen composition
+scenarios were verified against that exact baseline. This supports the unchanged
+comparison implementation; it is not execution of Linux tests on the AG9
+documentation tree. No new live AWS qualification is claimed.
+
+Fresh AG9 macOS checks passed the 29 targeted integration tests, six production
+frame-observation tests, isolated fixture rebuild/source-free test and seven-case
+CI suite. Extended execution retained exit 3 and its exact incomplete/unsupported/
+independent-XFAIL facts. The full conformance run and `make ci` failed in nine
+retained macOS native ownership helpers; a focused retry outside the execution
+sandbox also failed. Formatting and all three Clippy lanes passed before CI
+stopped. These failures and incomplete-cleanup diagnostics remain explicit
+platform limitations; they are not converted into passing checks or fixture
+exclusions. The supported Linux evidence above applies to the unchanged
+implementation, not to a newly successful macOS CI run.
 
 - AG8 adds fixed coverage-driven Borrowser-only CI (seven cases/eight documents)
   and extended (eleven cases/twelve executable documents) suites, whole-catalogue
@@ -1184,6 +1228,7 @@ When a feature lands:
   deploying AWS resources. AG remains at nine issues. See the
   [AG4 contract](conformance/ag4-disposable-aws-chromium-runner.md).
 
-- WPT support, broad browser compatibility and general rendering
-  conformance remain gaps. See the
+- A focused pinned WPT-style import/reference path is available. Broad WPT
+  compliance, browser compatibility and general rendering conformance remain
+  gaps. See the
   [harness README](../crates/conformance/README.md).

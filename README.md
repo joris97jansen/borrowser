@@ -395,6 +395,11 @@ This is about **foundations**, not polish or hype.
 
 - 🗺️ **Roadmap** — planned milestones and long-term direction
 
+- **[Focused conformance](crates/conformance/README.md)** — add static HTML/CSS
+  fixtures, run Borrowser and optionally compare selected observations with pinned
+  Chromium on supported Linux. This infrastructure does not imply broad WPT or
+  browser compatibility.
+
   
 
 ---

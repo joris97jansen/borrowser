@@ -774,10 +774,34 @@ failure with success or pending state.
 
 `crates/conformance` is separate tooling. It supplies fixed document response
 bytes at the normal resource boundary and uses Tab navigation, parser runtime,
-Browser publication, authored stylesheet reconciliation, and `Tab::ui_content`.
-Its only observation is a guarded opaque canvas-color sample from Browser's
-egui output. The canvas fill derives from production computed style and is
-presented by Browser's CentralPanel; executing Layout/GFX in that frame does not
-make the canvas sample proof of their general correctness. See the
-[conformance README](../../crates/conformance/README.md) for exact environment,
-capture restrictions, reporting, and independently authored expectations.
+Browser publication and authored stylesheet reconciliation. AG1 originally
+observed only a guarded opaque canvas-color sample from `Tab::ui_content`'s
+production egui output. AG5–AG8 extend selected observations and tooling without
+reimplementing parser, CSS, Layout or Paint semantics.
+
+The current `Tab::render_observed_frame` boundary calls the same production
+rendering body and returns a read-only `CompletedPageFrame` only after parser
+completion, Browser commit, accepted rendering and retained-artifact validity
+checks. Tooling projects committed DOM structure, selected actual computed-style
+values and direct DOM-backed retained border boxes while that frame borrow is
+valid. Canvas-only execution retains the normal `ui_content` path. CSS owns
+computed values, Layout owns geometry, GFX Paint owns paint output and Browser
+owns orchestration, retained state and observation validity. Internal node and
+box identities do not become cross-engine identities or public snapshot APIs.
+
+The guarded paint observation still proves only one opaque canvas-background
+sample, not general painting, text or GPU rasterization. Scoped direct reference
+relationships currently compare a present target's computed background color;
+they do not establish full visual reftest success. Native Chromium inspection and
+Borrowser capture provenance remain distinct from common exact comparison
+projections. All selected Chromium capture and cleanup finish before Borrowser
+parser workers start. Independent expectations, cross-engine differences,
+relationship verdicts, unsupported coverage and execution errors remain separate.
+
+See [AG5 observation authority and domains](../conformance/ag5-phase-comparison-projections.md),
+[AG6 discovery](../conformance/ag6-fixture-discovery-and-metadata.md),
+[AG7 references](../conformance/ag7-focused-external-tests-and-references.md) and
+[AG8 reporting and suites](../conformance/ag8-deterministic-reporting-and-suites.md).
+The [conformance guide](../../crates/conformance/README.md) documents the supported
+workflow and evidence limits. This is focused static HTML/CSS infrastructure,
+not broad WPT or browser compatibility.

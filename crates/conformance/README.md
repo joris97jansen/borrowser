@@ -1,44 +1,75 @@
-# Focused static conformance harness (AG1–AG8)
+# Focused static conformance harness (AG1–AG9)
 
-AG4 adds the optional `--compare-aws` and artifact-independent `--aws-cleanup`
-paths. Its two-resource Python CDK capture stack, shared eleven-resource
-networking/service-role/EICE stack, ordinary SSH through the endpoint, strict capture
-ingestion, operation recovery and qualification gates are documented in the
-[AG4 contract](../../docs/conformance/ag4-disposable-aws-chromium-runner.md).
-The run keeps its own SG and instance; shared EICE/SGs are never run cleanup
-targets. Live configuration binds the exact shared StackId and canonical template
-digest, derives physical IDs, and rejects obsolete `controller_cidr` fields.
-Historical cleanup-only remains independent of EICE/current operator configuration.
-The reviewed AMI/package snapshot are pinned. AG4 #1387 is completed and
-PR #1433 is merged. Earlier direct-SSH lifecycle evidence is historical. The DNS
-contract requires the authenticated `ec2-instance-connect-endpoint.eu-west-1.amazonaws.com`
-hostname. Command cleanup uses absolute phases: a two-second natural-shutdown
-opportunity, at most one second for TERM, the latest planned forced transition
-at T0+3, and forced cleanup/finalization through the unchanged T0+5 authority. All
-PGID authority ends before root reap; only kernel-owned native child obligations
-remain afterward. This composition qualified on native macOS arm64 and Ubuntu
-24.04 x86-64 for exact tree `ffb82ab09cfa1eb8ea7e9ec5ed4f0ba9c1bbcd23`.
-Both platforms met the T0+4 qualification target with complete 32+32 timing
-records; minimum cross-platform headroom was 0.997243 s to that target and
-1.997243 s to the hard deadline. Linux run 39017456664/1 succeeded. See the
-[retained timing qualification](../../docs/conformance/ag4-disposable-aws-chromium-runner.md#native-cleanup-timing-qualification-2026-10-17)
-for measurements and durable evidence under `~/.local/share/borrowser/reviews/ag4/`.
+Borrowser has focused deterministic conformance infrastructure for its current
+static HTML/CSS scope and can compare selected behavior against Chromium.
+This is not broad WPT compliance, CSS compatibility, visual equivalence or general
+browser compatibility. AG9 consolidates the existing AG1–AG8 implementation.
 
-This documentation-only update reports that exact qualified tree; its resulting
-Git tree is different and is not a new qualification identity. Later executable,
-test, CI-semantic or timing-source changes require review of whether fresh
-qualification is necessary. Final live artifacts receive fresh source/artifact
-identities.
+## Start here
 
-The old Linux run 38957426608/1 failed; its durable evidence is retained. Future
-Linux qualification publications/runs require separate authorization. Earlier lost
-macOS logs, including two `BrowserExited` observations and their reported
-pre-EICE reproduction, remain historical summaries only. The Chromium observations
-are unresolved and are not established EICE regressions.
+From the repository root, with the pinned Rust toolchain and native build
+dependencies installed:
 
-AG6 preserves the completed AG4 contracts and validates its affected fixture and
-artifact integration. It does not reopen cloud qualification or perform live AWS
-work. Historical qualification records below retain their original scope.
+```sh
+make conformance-ci
+cargo run -q -p borrowser-conformance --locked -- canvas/cascade
+cargo run -q -p borrowser-conformance --locked -- --suite extended
+```
+
+The CI suite has seven cases/eight executable documents and currently exits 0.
+Extended has eleven cases/twelve executable documents and intentionally returns
+binary exit 3: seven PASS, two INCOMPLETE, two UNSUPPORTED, plus two independent
+XFAIL facts. Read the results even when the command is nonzero.
+`make conformance-extended` runs the same selection but Make reports its own
+nonzero recipe status. Neither local suite requires Chromium, network resources or AWS.
+
+On **native Linux x86-64**, first follow the
+[Linux Chromium setup](../../docs/conformance/ag2-local-chromium-capture.md#supported-linux-setup).
+Then run:
+
+```sh
+cargo run -q -p borrowser-conformance --locked -- --compare --suite ci
+cargo run -q -p borrowser-conformance --locked -- --compare --suite extended
+```
+
+The pinned executable is supplied through `BORROWSER_CHROMIUM_EXECUTABLE` or
+`--chromium-executable PATH`. CI comparison currently exits 0; extended comparison
+exits 1 with the four known RGB differences described below. `--chromium` captures
+only; `--compare` executes both engines and compares selected facts. macOS Chromium
+execution is withdrawn and returns an infrastructure error, with no fallback.
+Borrowser-only execution on macOS remains supported. AWS is an optional remote
+Linux capture path with its own existing prerequisites, not a local fallback.
+
+Continue with [adding a fixture](#add-and-classify-a-fixture),
+[reading results](#results), or [investigating a difference](#investigate-a-difference).
+
+## Harness map and supported observations
+
+| Location | Responsibility |
+| --- | --- |
+| `build.rs`, `build_support/`, `src/fixtures.rs` | Discover and embed declarations; validate the catalogue; select exact IDs or fixed named suites. |
+| `fixtures/` | Native HTML inputs, `.fixture.json` declarations and independent `.expected.json` projections. |
+| `fixtures/external/raw/`, `fixtures/external/expected/` | Unchanged pinned upstream inputs/references/licence and separate authored expectations; sidecars live under `fixtures/external/`. |
+| `fixtures/wpt-style/` | Locally authored static reference cases, explicitly distinct from upstream WPT coverage. |
+| `src/execute.rs`, `src/environment.rs` | Supply fixed document bytes at the production resource boundary and observe an accepted production frame. |
+| `src/chromium/`, `chromium-reference.json` | Pinned native capture, trusted read-only inspection and process cleanup. |
+| `src/projection/`, `src/relationship.rs`, `src/comparison*`, `src/report.rs` | Select common values, evaluate exact comparisons and relationships, report independent results and coverage. |
+| `src/aws/`, `aws/`, `../../tools/conformance/` | Optional existing disposable-host capture, artifact preparation and recovery. |
+
+| Observation | Supported comparison | Limit |
+| --- | --- | --- |
+| Parser/DOM | Browser-committed document structure, doctype, namespaces, attributes, exact text/comments, child order and template contents. | Not parser-internal snapshots, DOM scripting or broad parser compliance. |
+| Computed style | Selected unique-ID targets: `color`, `background-color`, `font-size`, `display` in AG5's explicit value domains. | Not arbitrary CSSOM values, additional properties or CSS compatibility. |
+| Layout | Selected direct DOM-backed border boxes in document CSS pixels, including distinct missing/hidden/zero-sized results. | Fixed supported block geometry; no whole-box-tree or general layout equivalence. |
+| Paint | Guarded opaque sRGB canvas background at pixel `(32,32)`. | No general element/text painting, GPU rasterization or screenshot equivalence. |
+| Reference relationship | One direct match/mismatch over a present target's computed background color. | Original upstream full visual assertions remain unsupported. |
+
+[AG5](../../docs/conformance/ag5-phase-comparison-projections.md) owns exact
+observation domains and projection rules; [AG7](../../docs/conformance/ag7-focused-external-tests-and-references.md)
+owns scoped reference semantics. Native capture/provenance remains separate from
+common comparison projections. Tooling does not recompute CSS, layout or paint.
+
+## Catalogue and suite contracts
 
 AG6 discovers and embeds fixture metadata at build time. See the
 [AG6 authoring and discovery contract](../../docs/conformance/ag6-fixture-discovery-and-metadata.md)
@@ -161,11 +192,75 @@ records eligibility; runnable fixtures must set it to false. There is no automat
 unsupported-feature detector or expectation blessing command. Follow the
 [AG6 contract](../../docs/conformance/ag6-fixture-discovery-and-metadata.md).
 
+## Add and classify a fixture
+
+1. Choose an existing observation from the table above and read its AG5 limits.
+   Start from the matching native fixture, keeping HTML static and self-contained.
+   Fixture HTML and metadata paths are relative to `crates/conformance/fixtures/`;
+   references must stay within the sidecar directory or its descendants.
+2. Add UTF-8 HTML and a unique-ID `.fixture.json`. For a minimal canvas example,
+   copy `root-canvas-color.html` to `example-canvas.html`, change the authored
+   root color to `#234567`, and add `example-canvas.fixture.json`:
+
+   ```json
+   {
+     "id": "canvas/example",
+     "input": "example-canvas.html",
+     "requires_javascript": false,
+     "classification": { "kind": "runnable" },
+     "observations": { "canvas": { "kind": "compare" } },
+     "expectation": { "kind": "match" },
+     "expected": { "kind": "canvas", "rgb8": [35, 69, 103] }
+   }
+   ```
+
+   The RGB bytes come from the authored hexadecimal color, not a captured result.
+   Keep the original empty body and geometry so the canvas guard remains valid.
+   For DOM/style/layout, use a separate independently authored expected projection
+   following the corresponding existing `.expected.json` and AG5 request rules.
+3. Classify eligibility honestly. `classification.kind` is `runnable`,
+   `unsupported` or `skipped`; exclusions require a nonblank reason and omit
+   expectation data. A known engine defect is still runnable: use
+   `expectation: { "kind": "known_failure", "reason": "..." }` with the correct
+   independent expected value. This does not suppress a cross-engine difference.
+   JavaScript requirements are explicit metadata, never permission to execute it.
+4. Rebuild and run the exact ID:
+
+   ```sh
+   cargo run -q -p borrowser-conformance --locked -- canvas/example
+   ```
+
+   On supported Linux with the pinned browser, optionally compare it:
+
+   ```sh
+   cargo run -q -p borrowser-conformance --locked -- --compare canvas/example
+   ```
+
+   This example should produce independent PASS and equal canvas observations.
+   Discovery requires no Rust registration. The whole catalogue is validated
+   before selection, and orphan inputs or malformed declarations fail explicitly.
+   Adding a fixture does not add it to `ci` or `extended`; suite changes require
+   separate explicit membership review within the relevant fixture change.
+5. Inspect expected/actual values, coverage and reproduction output. Add regression
+   assertions appropriate to new coverage. Never bless captured output or change
+   an expectation merely to remove a difference.
+
+The [AG6 authoring contract](../../docs/conformance/ag6-fixture-discovery-and-metadata.md)
+defines the strict schema and source-free embedding. For upstream tests, follow
+[AG7's import path](../../docs/conformance/ag7-focused-external-tests-and-references.md#adding-another-supported-case):
+preserve exact raw bytes, pinned revision/path/SHA-256 and licence/attribution;
+keep metadata and independent expectations separate. A supported relationship
+must match the source's direct sibling reference and use the existing present-ID
+background-color scope. Do not insert IDs, rewrite upstream HTML, emulate page
+scripts or claim the original visual assertion passed. Unsupported reference
+forms and JS/platform tests are classified with reasons. There is no generic
+WPT importer or full WPT runner.
+
 ## Results
 
 Execution, exact comparison, and expectation metadata remain separate:
 
-| Execution/comparison | Expectation | Status |
+| Independent observation or execution | Expectation | Independent status / exclusion |
 | --- | --- | --- |
 | Observation matches | Match | PASS |
 | Observation differs | Match | FAIL |
@@ -174,6 +269,29 @@ Execution, exact comparison, and expectation metadata remain separate:
 | Explicit unsupported classification | No expectation needed | UNSUPPORTED |
 | Explicit intentional skip | No expectation needed | SKIP |
 | Harness/parser/publication/render/capture error | Any | ERROR |
+
+These independent statuses are not the whole case verdict. A satisfied scoped
+relationship can produce PASS without an independent expectation. A runnable
+upstream visual assertion outside the observed scope makes its aggregate verdict
+INCOMPLETE even when its independent expectation is XFAIL and its relationship
+is satisfied. A matching partial projection is also INCOMPLETE. FAIL/XPASS and
+ERROR retain their precedence; a known mismatch can still be XFAIL with partial
+coverage. See [AG8's aggregate status rules](../../docs/conformance/ag8-deterministic-reporting-and-suites.md#case-totals-and-independent-facts).
+
+`SUMMARY` counts each case once; independent expectations, reference documents,
+cross-engine fields and relationships have separate counts. Current extended
+results have aggregate XFAIL=0 but `INDEPENDENT_EXPECTATIONS XFAIL=2`.
+The two RGB cases have four cross-engine differences: test and reference for
+each of `wpt/rgb-alias-p6` and `wpt/rgb-comments-p6`, at
+`style:#p6/background-color`. Borrowser yields transparent `[0,0,0,0]` while
+Chromium yields opaque `[10,150,50,255]`. Both engines still satisfy their own
+scoped match relationships. That does not establish cross-engine equality.
+
+Fatal invocation errors have a separate stderr `RUN_ERROR` and reproduction
+record. They never create results for unexecuted cases. A real entered-case
+ERROR is distinct. Reject any comparison output from exit 2, including partial
+bytes after an output-write failure. Exit precedence is **2, then 1, then 3,
+then 0**, not numerical severity order.
 
 Known failures retain mismatch details. Unexpected success exposes stale metadata.
 Errors never satisfy known-failure metadata. The original six fixtures remain
@@ -190,6 +308,74 @@ assertions; 0 otherwise. Unsupported/skipped cases
 are counted separately and do not cause failure. CLI selection is all fixtures, one exact identity, or an explicit named suite
 optionally narrowed to a member; unknown/out-of-suite identities are errors.
 
+## Investigate a difference
+
+1. Check the exit and stderr first. Exit 2 is configuration, execution, capture,
+   required-data, cleanup or publication failure, not an engine mismatch or skip.
+   Preserve the primary and cleanup diagnostics; do not interpret partial JSON.
+2. Use the report's exact-ID reproduction command from the same source checkout.
+   Check fixture metadata, source hashes, requested fields, fixed environment,
+   capture profile and pinned Chromium identity. Rebuild after fixture edits.
+   For example, run the known RGB case independently and then compare on Linux:
+
+   ```sh
+   cargo run -q -p borrowser-conformance --locked -- wpt/rgb-comments-p6
+   cargo run -q -p borrowser-conformance --locked -- --compare --chromium-executable "$BORROWSER_CHROMIUM_EXECUTABLE" wpt/rgb-comments-p6
+   ```
+
+   The current local result is INCOMPLETE/exit 3 with an independent XFAIL;
+   comparison returns exit 1 with two differing fields, one per document role.
+3. Read `borrowser_expectation`, aggregate `borrowser_status`, cross-engine
+   `status`, `fields[].differences`, `coverage`, `upstream_assertion` and
+   `relationships` separately. Inspect `reference_document` as well as the test.
+   A relationship compares test and reference within one engine. Cross-engine
+   fields compare the same document between engines.
+4. Inspect `captures` for native evidence/provenance and `projections` for the
+   selected common facts. DOM order/text, style values and layout edges have
+   exact AG5 semantics; no offsets, tolerances or CSS recomputation are allowed.
+   Use `--chromium` with the same exact ID if capture-only output is useful;
+   it contains no expectations or comparison verdicts. There are no retained
+   screenshot archives or general pixel-diff tools in this harness.
+5. Decide whether the finding is invalid/missing infrastructure data, a projection
+   defect, a pre-existing engine gap, or a regression in a previously supported
+   observation. Minimize only a local copy; preserve upstream provenance and the
+   original independent expectation. Direct a semantic defect to HTML/parser,
+   CSS, Layout, Paint or Browser according to its production owner. Do not fix
+   engine behavior inside a collector or suppress differences with KnownFailure.
+
+## Optional AWS Chromium workflow
+
+The existing AG4 path runs the same capture mechanism on a disposable Linux host,
+retrieves and validates its observations, confirms cleanup, then executes the
+local Borrowser comparison. It accepts the catalogue or one exact ID, **not**
+`--suite`. Shared networking/EICE and operator permissions are prerequisites;
+the run-owned instance and security group are cleanup targets, not shared resources.
+Ordinary conformance commands never require cloud credentials or provisioning.
+
+Follow the [AG4 artifact and operator contract](../../docs/conformance/ag4-disposable-aws-chromium-runner.md#toolchain-and-immutable-artifacts)
+before using a prepared, source-matched bundle:
+
+```sh
+/absolute/private/ag4-bundle/borrowser-conformance-controller \
+  --compare-aws --config /absolute/private/ag4-operator.json \
+  --artifact-dir /absolute/private/ag4-bundle \
+  --state-dir /absolute/private/ag4-operations canvas/cascade
+```
+
+Keep the operation state and diagnostics until termination is confirmed. Recovery
+uses the existing artifact-independent cleanup entry:
+
+```sh
+/absolute/private/ag4-bundle/borrowser-conformance-controller --aws-cleanup \
+  --operation /absolute/private/ag4-operations/RUN_ID \
+  --aws-cli /absolute/path/to/pinned/aws
+```
+
+See [AG4 recovery](../../docs/conformance/ag4-disposable-aws-chromium-runner.md#durable-operation-lifecycle-and-recovery)
+for identity checks and terminal cleanup evidence. A cleanup failure is an error,
+never successful comparison. Existing completed AG4 qualification retains its
+recorded scope; AG9 does not require new resources or claim fresh live AWS evidence.
+
 ## Validation and exclusions
 
 ```sh
@@ -200,6 +386,129 @@ Tests execute the real fixtures, change authored CSS, deliberately change an
 expectation, verify all classifications, reject ambiguous capture, and compare
 stdout/stderr/exit across independent processes. Production runtime tests cover
 terminal outcomes, publication ordering, cancellation and failure ownership.
+
+## AG9 closeout evidence
+
+AG9 changes documentation only. The implementation baseline is merge commit
+`d883e006ae84bbd4f6c47ba993491340ff12f7b0`, tree
+`06e42ff58e2049eafc0db1bc9c6996605834484d`. Rust, fixtures, expectations, browser
+pins, CI semantics and AWS machinery are unchanged. Documentation changes create
+a different working tree; they are not a newly qualified native execution tree.
+
+### Fresh AG9 local validation (2026-10-24)
+
+Host: macOS 27.0.1 arm64, Rust/Cargo 1.92.0. Commands ran from the repository
+root against the baseline above plus this documentation-only diff. No real
+Chromium was launched and no AWS calls were made. These results are separate
+from the retained native Linux and live AWS qualification below.
+
+| ID | Actual command | Actual result |
+| --- | --- | --- |
+| V1 | `cargo test -p borrowser-conformance --locked --test fixture_build --test cli --test comparison_cli --test chromium_cli --test aws_cli -- --test-threads=1` | Exit 0; 29 passed, 5 ignored. The ignored tests do not count as executed qualification. |
+| V2 | `cargo test -p browser --lib --features conformance-observation --locked tab::tests::observation::` | Exit 0; all 6 observation tests passed, 245 filtered out. |
+| V3 | `env -u BORROWSER_CHROMIUM_EXECUTABLE cargo test -p borrowser-conformance --locked --test fixture_build isolated_cargo_rebuild_and_standalone_execution -- --exact --ignored --nocapture` | Exit 0; the one named test passed, including 4 nested ordinary CLI tests. Add/edit/remove and source-free execution passed; optional Chromium check explicitly not executed. |
+| V4 | `cargo test -p borrowser-conformance --locked -- --test-threads=1` | Exit 101; binary tests: 177 passed, 9 failed, 13 ignored. Native helper ownership inspection failed; later integration targets were not reached. |
+| F1 | `cargo test -p borrowser-conformance --locked --bin borrowser-conformance chromium::tests::native_macos_bsd_ownership_states -- --exact --nocapture --test-threads=1` | Exit 101 outside the execution sandbox; one named test failed, 198 filtered out. This did not establish a successful native qualification. |
+| V5 | `make conformance-ci` | Exit 0; exactly 7 PASS, no FAIL/XPASS/ERROR/INCOMPLETE. |
+| V6 | `cargo run -q -p borrowser-conformance --locked -- --suite extended` | Exit 3; exactly 7 PASS, 2 INCOMPLETE, 2 UNSUPPORTED, with 2 independent XFAIL facts and 3 satisfied scoped relationships. |
+| V13 | `make ci` | Exit 2 outside the execution sandbox. CI fixtures, formatting and all three Clippy lanes passed; workspace tests stopped at the same 9 native helper failures (177 passed, 13 ignored in that binary). Subsequent pipeline stages did not run. |
+
+V6's exact case identities, correct independent expected RGBA values, observed
+transparent values, relationship results and exclusions were inspected; its
+nonzero result was not accepted solely by exit code. No expectations or reports
+were altered. No filtered zero-test command was counted as validation.
+
+The nine V4/V13 failures are `chromium::tests::native_capture_failure_diagnostics`,
+`native_cleanup_diagnostic_failures`, `native_lifecycle_regressions`,
+`native_macos_bsd_ownership_states`, `native_process_and_pipe_contract`,
+`native_resource_completion_and_shutdown`, `native_shutdown_uses_capture_deadline`,
+`native_startup_exit_event_classification` and `native_temporary_artifact_containment`.
+The restricted run reported `task_name_for_pid: Mach 5`. The focused retry and
+full CI outside that sandbox instead reported a live process executable
+unavailable during ownership scanning, with incomplete-cleanup diagnostics and
+retained test artifacts. Removing the execution sandbox did not resolve host
+inspection availability. The affected ambient process/underlying cause was not
+established, and successful cleanup is not inferred for these failed helpers.
+
+These remain **failed local checks**, not skips, expected fixture failures or
+freshly passing CI. They exercise the retained macOS native supervisor whose
+production Chromium backend is already withdrawn by AG7. This is a category B
+platform limitation in unchanged code, not evidence of a new parser/style/layout/
+paint defect or a reason to restore macOS inside AG9. The supported native Linux
+baseline passed its applicable CI and native qualifications. With no executable,
+fixture or CI changes in AG9, that exact-source evidence and the fresh local
+workflow checks satisfy the focused milestone's supported-platform requirements;
+AG9 does not claim green full CI on this macOS host.
+
+### Retained native Linux evidence
+
+[AG8 PR #1437](https://github.com/joris97jansen/borrowser/pull/1437) qualified
+commit `66cc60339b0950f791f4cafed81f17fc33305396` in
+[run 40067542665, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/40067542665).
+Its PR test merge `c2d6dc4001a43be0f0ecdc4d98aefc9e49a7a88a` and final merge
+have the exact baseline tree above. The [AG8 completion record](https://github.com/joris97jansen/borrowser/issues/1428#issuecomment-6381065501)
+records closure of AG8, not AG9.
+
+The retained environment is native Ubuntu 24.04 x86-64, Chrome for Testing
+155.0.8059.39, revision `@3ff7ac5a9224be9156d7f8703a06e22890aafd34`, CDP 1.3,
+profile `ag7-static-references-v1`. The complete Linux archive SHA-256 is
+`55672d1f392fd3e7b7a08621b6e804e6bcb39d40cf155504abb74b3a021ea8ea`.
+AG9 rechecked the retained eighteen artifact digests, full CI log archive digest,
+exact Git tree, unchanged browser pin and explicit successful test executions.
+The retained CI archive digest is
+`7990b2289996ab1f65a9ff66d2497169423a5ac60bb6b11416e4c5d040d3823e`.
+
+All ten explicitly invoked real-browser qualifications executed successfully,
+including `real_chromium_ag5_profile`,
+`real_chromium_combined_cli_is_stable_and_selects_exactly`,
+`real_chromium_ag7_scoped_relationships` and
+`ag8_real_chromium_suites_are_stable`. The baseline assertions cover two whole-DOM,
+twelve style, eighteen layout and two canvas fields: 34 equal fields with six
+independent PASS results. Suite assertions establish CI exit 0 with seven cases /
+eight documents and extended exit 1 with eleven cases / twelve documents,
+exactly four known RGB differences and no additional differences. Both suite
+reports were byte-identical across independent processes in that pinned environment.
+All thirteen composition scenarios passed and final cleanup inventories were empty.
+
+Evidence consists of retained untruncated execution logs, captured artifacts and
+strict assertions in the unchanged tests. Individual suite JSON was captured by
+the test, not separately exported; the retained `comparison.json` is canvas-only.
+All twelve applicable workflow jobs and GitGuardian passed; the branch-specific
+AG4 proxy-timing job was inapplicable. This distributed CI is not a literal
+execution of local `make ci`.
+
+AG9's implementation host is macOS arm64. Planned V7–V12 native Linux Chromium
+commands were **not freshly executed** in AG9. No native Linux executor was
+available through this workspace without a new publication or provisioning.
+The retained exact-implementation qualification is sufficient for the existing
+local capture/comparison exit criteria because this diff changes no executable,
+fixture, pin or CI behavior. It is not a claim that V7–V12 ran on the AG9 tree.
+The Linux setup text is derived from that existing CI mechanism, not a fresh
+installation trial. A later executable or environment change requires its own
+applicable validation; macOS support remains withdrawn.
+
+### Retained optional AWS evidence
+
+AG4 completion remains governed by its [existing contract](../../docs/conformance/ag4-disposable-aws-chromium-runner.md#completion-status).
+AG9 inspected the sealed broader-acceptance record of 2026-10-19 for head
+`ea7d79bec6e521ddd7bc8e73152614e064b06987`, tree
+`7c64e864123d99758fff332106abbc476c51e450`, PR #1433. Ten selected sealed files
+were checked against `SHA256SUMS`, including the test executable, summary,
+stdout/stderr and six per-operation disposal verifications.
+`aws::acceptance::real_capture_and_interrupted_create_recovery` executed once and
+passed. All six scenarios confirmed cleanup: first/repeated cascade, both original
+runnable fixtures, accepted-create interruption, cancellation and accepted-delete
+interruption. Expected controller exits were respectively 0, 0, 0, 86, 2 and 87;
+cleanup-only recovery preserved the original operation identities.
+
+This was historical canvas-only live acceptance, not live qualification of the
+later AG5–AG8 full profile. Raw comparison reports were not retained by that test;
+its exact comparison assertions and logs are the evidence. A supplementary EC2
+read failed once and its read-only retry succeeded; the harness was not retried.
+AG4's completed lifecycle evidence plus later local/guest integration coverage
+supports the existing optional backend. AG9 neither provisions resources nor
+claims fresh AWS execution, and does not reopen completed AG4 or historical
+macOS incident attribution.
 
 ## Local Chromium capture (AG2)
 
@@ -230,7 +539,7 @@ On Linux the executable is `chrome-linux64/chrome`. Qualification requires a
 fresh complete checksum-verified archive extraction; main-executable identity
 alone is insufficient. The historical macOS app/framework/helper structure
 validator is retained only in tests for future support restoration.
-See the [setup and integrity contract](../../docs/conformance/ag2-local-chromium-capture.md#macos-distribution-integrity)
+See the [supported Linux setup](../../docs/conformance/ag2-local-chromium-capture.md#supported-linux-setup)
 and [historical attribution limits](../../docs/conformance/ag7-focused-external-tests-and-references.md#macos-distribution-integrity-correction).
 
 A missing or incompatible browser is an error, including when an opt-in test is explicitly
@@ -279,7 +588,8 @@ cargo run -p borrowser-conformance --locked -- --compare
 The first command is the acceptance case; the second selects the discovered
 catalogue in lexicographic fixture-ID order. The executable
 option overrides the environment variable. Exactly one test ID or no ID is
-accepted. Unknown/duplicate selections, extra options and missing required
+accepted, optionally within an explicit AG8 `--suite ci|extended` selection.
+Unknown/duplicate selections, extra options and missing required
 configuration are errors. This does not provision a browser.
 
 The original AG3 slice selects `canvas_color_rgb8`: opaque sRGB RGB8 at physical
@@ -305,7 +615,9 @@ separate from native capture data.
 
 Engine-specific capture records remain under `captures`. Chromium records its
 observed product/version/revision/protocol/platform/profile; Borrowser records
-its `guarded-egui-canvas` observation method and observed color. Egui shapes,
+its `guarded-egui-canvas` observation method and observed color for canvas cases.
+Other families retain their native inspection and production-frame provenance
+as described by AG5. Egui shapes,
 PNG pixels and CDP responses are validated transiently, then discarded; there
 are no raw screenshot archives or retained protocol logs. These capture records
 are distinct from the common `fields` projection. Provenance is inspectable but
@@ -374,8 +686,8 @@ comparison construction still publishes no JSON; invocation errors have separate
 stderr summaries and never fabricate unexecuted case outcomes.
 
 `borrowser_expectation` separately reports the independently authored expected
-RGB8, expectation metadata, optional known-failure reason and existing AG1
-classification. It reuses the same successful Borrowser observation, without a
+projection or RGB8, expectation metadata, optional known-failure reason and
+independent status. It reuses the same successful Borrowser observation, without a
 second execution. Equal engine observations can still produce an expectation
 `FAIL`; Chromium never supplies or blesses expected values. `XFAIL` does not
 suppress a cross-engine difference.
@@ -456,10 +768,13 @@ outer composition wrapper invokes every isolated scenario; private entries are
 not standalone test selections:
 
 ```sh
-cargo test -p borrowser-conformance --locked -- --include-ignored \
-  --skip chromium::tests::native_case --skip chromium::tests::browser_helper \
-  --skip comparison::tests::isolated_case --test-threads=1 --nocapture
+cargo test -p borrowser-conformance --locked --bin borrowser-conformance comparison::tests::real_chromium_comparison_composition -- --exact --ignored --test-threads=1 --nocapture
+cargo test -p borrowser-conformance --locked --test comparison_cli real_chromium_combined_cli_is_stable_and_selects_exactly -- --exact --ignored --test-threads=1 --nocapture
+cargo test -p borrowser-conformance --locked --test comparison_cli ag8_real_chromium_suites_are_stable -- --exact --ignored --test-threads=1 --nocapture
 ```
+
+Use these explicit outer tests on supported Linux; do not blanket-enable ignored
+tests or invoke private helper entries. Verify each named test actually executes.
 
 The existing Linux pinned-browser lane includes combined execution and retains
 its strict empty-runtime-directory gate. Local `make ci` does not replace real
@@ -612,6 +927,49 @@ The historical combined-CLI shutdown and composition attribution gaps remain
 unresolved. The owner rejected a risk waiver and instead withdrew macOS Chromium
 execution pending separate platform-runtime work. The shutdown correction uses
 the existing absolute capture budget for mandatory EOF validation; it does not
-reconstruct missing historical causes. AG7 publication requires verified support
-rejection and corrective-source native Linux/distributed CI qualification. See
+reconstruct missing historical causes. AG7 publication required verified support
+rejection and corrective-source native Linux/distributed CI qualification, which
+completed as recorded in the linked AG7 completion record. See
 the linked platform decision; no new live AWS qualification is claimed.
+
+## Historical AG4 qualification summary
+
+AG4 adds the optional `--compare-aws` and artifact-independent `--aws-cleanup`
+paths. Its two-resource Python CDK capture stack, shared eleven-resource
+networking/service-role/EICE stack, ordinary SSH through the endpoint, strict capture
+ingestion, operation recovery and qualification gates are documented in the
+[AG4 contract](../../docs/conformance/ag4-disposable-aws-chromium-runner.md).
+The run keeps its own SG and instance; shared EICE/SGs are never run cleanup
+targets. Live configuration binds the exact shared StackId and canonical template
+digest, derives physical IDs, and rejects obsolete `controller_cidr` fields.
+Historical cleanup-only remains independent of EICE/current operator configuration.
+The reviewed AMI/package snapshot are pinned. AG4 #1387 is completed and
+PR #1433 is merged. Earlier direct-SSH lifecycle evidence is historical. The DNS
+contract requires the authenticated `ec2-instance-connect-endpoint.eu-west-1.amazonaws.com`
+hostname. Command cleanup uses absolute phases: a two-second natural-shutdown
+opportunity, at most one second for TERM, the latest planned forced transition
+at T0+3, and forced cleanup/finalization through the unchanged T0+5 authority. All
+PGID authority ends before root reap; only kernel-owned native child obligations
+remain afterward. This composition qualified on native macOS arm64 and Ubuntu
+24.04 x86-64 for exact tree `ffb82ab09cfa1eb8ea7e9ec5ed4f0ba9c1bbcd23`.
+Both platforms met the T0+4 qualification target with complete 32+32 timing
+records; minimum cross-platform headroom was 0.997243 s to that target and
+1.997243 s to the hard deadline. Linux run 39017456664/1 succeeded. See the
+[retained timing qualification](../../docs/conformance/ag4-disposable-aws-chromium-runner.md#native-cleanup-timing-qualification-2026-10-17)
+for measurements and durable evidence under `~/.local/share/borrowser/reviews/ag4/`.
+
+This documentation-only update reports that exact qualified tree; its resulting
+Git tree is different and is not a new qualification identity. Later executable,
+test, CI-semantic or timing-source changes require review of whether fresh
+qualification is necessary. Final live artifacts receive fresh source/artifact
+identities.
+
+The old Linux run 38957426608/1 failed; its durable evidence is retained. Future
+Linux qualification publications/runs require separate authorization. Earlier lost
+macOS logs, including two `BrowserExited` observations and their reported
+pre-EICE reproduction, remain historical summaries only. The Chromium observations
+are unresolved and are not established EICE regressions.
+
+AG6 preserves the completed AG4 contracts and validates its affected fixture and
+artifact integration. It does not reopen cloud qualification or perform live AWS
+work. Historical qualification records below retain their original scope.
