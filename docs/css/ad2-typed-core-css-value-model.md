@@ -144,6 +144,25 @@ preserved as accepted opaque values for current properties.
 
 ## Extension Points
 
+The [AH1 addressing contract](../platform/ah1-url-origin-resource-addressing-contract.md)
+defines the boundary for future resource-reference integration. `CssUrlValue`
+remains an authored CSS primitive. CSS owns syntax/escape processing, property
+acceptance, applicability, and CSS-specific reference meaning; logical
+addressing owns URL parsing, normalization, resolution, and origin semantics.
+Browser supplies document/stylesheet provenance and coordinates resource
+lifecycle. Future CSS integration must retain the applicable source/base
+context and delegate URL semantics rather than reparse serialized CSS or add a
+CSS-local URL resolver.
+
+As specified in AH1, URL parsing for CSS omits the WHATWG parser's encoding
+argument and uses its default UTF-8 after stylesheet decoding into Unicode
+and CSS syntax/escape processing, regardless of the original stylesheet
+encoding. HTML's applicable parsing context can differ. This integration
+distinction does not introduce a Rust context type or public API in AH1.
+
+AH1 adds no URL-valued property grammar, `@import` loading, fetch integration,
+or computed-style behavior. Existing unsupported URL values remain unsupported.
+
 Future issues may add supported URL-valued properties, string-valued
 properties, CSS-wide keywords, shorthands, relative units, broader color
 syntax, or function grammars. Those issues must extend the CSS-owned core

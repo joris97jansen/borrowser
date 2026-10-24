@@ -63,6 +63,31 @@ Each crate is intentionally small, isolated, and testable.
 
 As a rule of thumb: `layout` stays UI/input-agnostic, while interactive behaviors (rendering + input routing for things like text controls) live in `gfx` (e.g. `<textarea>` caret/selection helpers in `gfx::textarea`).
 
+## AH1: logical addressing ownership
+
+The [AH1 URL, origin, and resource-addressing contract](../platform/ah1-url-origin-resource-addressing-contract.md)
+defines addressing as a logical browser-platform boundary owning URL parsing,
+normalization, serialization, relative/base resolution, origin semantics,
+resource-address construction, and deterministic diagnostics. HTML and CSS
+produce authored references; Browser coordinates document/base state and
+resource lifecycle. Networking, cache, and security policies consume normalized
+addresses, identity inputs, and origins. Layout and Paint retain their existing
+downstream responsibilities.
+
+Physical crate/module placement remains undecided until implementation evidence
+establishes dependency direction, actual consumers, API needs, cycle avoidance,
+and cohesion. The existing `platform` crate owns window/runtime integration;
+its name does not make it the addressing implementation location. AH1 adds no
+crate, module, API, dependency, or Rust behavior.
+
+Existing Browser/GFX URL helpers, string transport, HTTP/HTTPS/file loading,
+redirects, and navigation are documented migration points and remain unchanged.
+The AH scheme matrix describes future addressing capability separately from
+current transport. `file:` origin policy remains explicitly unresolved, and
+navigation stays a Browser consumer without a new AH identity abstraction.
+Only the architecture contract is complete; wider AH implementation remains
+pending in the [feature-gap tracker](../engine-feature-gap-tracker.md).
+
 ---
 
 # 📤 Message Bus (CoreCommand / CoreEvent)
