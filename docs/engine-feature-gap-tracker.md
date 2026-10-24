@@ -970,8 +970,8 @@ qualified commit `66cc60339b0950f791f4cafed81f17fc33305396`, tree
 `d883e006ae84bbd4f6c47ba993491340ff12f7b0`. During AG9, retained artifact hashes,
 the ten explicitly executed browser qualifications and thirteen composition
 scenarios were verified against that exact baseline. This supports the unchanged
-comparison implementation; it is not execution of Linux tests on the AG9
-documentation tree. No new live AWS qualification is claimed.
+comparison implementation; it does not qualify the final AG9 tree or its later
+CI preparation change. No new live AWS qualification is claimed.
 
 Fresh AG9 macOS checks passed the 29 targeted integration tests, six production
 frame-observation tests, isolated fixture rebuild/source-free test and seven-case

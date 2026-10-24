@@ -490,6 +490,12 @@ jobs:
       - name: Build (debug, all targets)
         run: cargo build --workspace --all-targets --locked
 
+      # Prepare the package-only dependency/feature configuration outside the
+      # two-minute execution budget; the workspace --all-targets build may use
+      # a different unified feature configuration.
+      - name: Build conformance execution binary
+        run: cargo build -p borrowser-conformance --locked
+
       - name: AG8 bounded Borrowser-only suite
         timeout-minutes: 2
         run: make conformance-ci

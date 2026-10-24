@@ -389,18 +389,25 @@ terminal outcomes, publication ordering, cancellation and failure ownership.
 
 ## AG9 closeout evidence
 
-AG9 changes documentation only. The implementation baseline is merge commit
+AG9 changes documentation and CI preparation of the existing bounded
+Borrowser-only conformance gate. The CI correction prebuilds the exact package
+configuration outside the unchanged two-minute execution budget. It changes no
+engine behavior, conformance semantics, fixtures, expectations, browser pins,
+suite membership, timeout policy or AWS machinery.
+
+The executable Borrowser/conformance implementation remains that of merge commit
 `d883e006ae84bbd4f6c47ba993491340ff12f7b0`, tree
-`06e42ff58e2049eafc0db1bc9c6996605834484d`. Rust, fixtures, expectations, browser
-pins, CI semantics and AWS machinery are unchanged. Documentation changes create
-a different working tree; they are not a newly qualified native execution tree.
+`06e42ff58e2049eafc0db1bc9c6996605834484d`. The final documentation/workflow tree
+differs from that baseline; retained qualification does not qualify the CI
+preparation change.
 
 ### Fresh AG9 local validation (2026-10-24)
 
-Host: macOS 27.0.1 arm64, Rust/Cargo 1.92.0. Commands ran from the repository
-root against the baseline above plus this documentation-only diff. No real
-Chromium was launched and no AWS calls were made. These results are separate
-from the retained native Linux and live AWS qualification below.
+Host: macOS 27.0.1 arm64, Rust/Cargo 1.92.0. Commands below ran from the repository
+root against the baseline above plus the original documentation-only diff,
+before the CI preparation correction. No real Chromium was launched and no AWS
+calls were made in these checks. These results are separate from the retained
+native Linux and live AWS qualification below.
 
 | ID | Actual command | Actual result |
 | --- | --- | --- |
@@ -435,10 +442,11 @@ freshly passing CI. They exercise the retained macOS native supervisor whose
 production Chromium backend is already withdrawn by AG7. This is a category B
 platform limitation in unchanged code, not evidence of a new parser/style/layout/
 paint defect or a reason to restore macOS inside AG9. The supported native Linux
-baseline passed its applicable CI and native qualifications. With no executable,
-fixture or CI changes in AG9, that exact-source evidence and the fresh local
-workflow checks satisfy the focused milestone's supported-platform requirements;
-AG9 does not claim green full CI on this macOS host.
+baseline passed its applicable CI and native qualifications. With no executable
+or fixture changes in AG9, that exact-source evidence and the recorded local
+workflow checks retain their scope for the unchanged implementation; they do
+not qualify the later CI preparation change. AG9 does not claim green full CI
+on this macOS host.
 
 ### Retained native Linux evidence
 
@@ -477,12 +485,15 @@ All twelve applicable workflow jobs and GitGuardian passed; the branch-specific
 AG4 proxy-timing job was inapplicable. This distributed CI is not a literal
 execution of local `make ci`.
 
-AG9's implementation host is macOS arm64. Planned V7–V12 native Linux Chromium
-commands were **not freshly executed** in AG9. No native Linux executor was
-available through this workspace without a new publication or provisioning.
+During the original AG9 local validation, planned V7–V12 native Linux Chromium
+commands were **not freshly executed**. The implementation host was macOS arm64,
+with no native Linux executor available through this workspace without a new
+publication or provisioning.
 The retained exact-implementation qualification is sufficient for the existing
-local capture/comparison exit criteria because this diff changes no executable,
-fixture, pin or CI behavior. It is not a claim that V7–V12 ran on the AG9 tree.
+local capture/comparison exit criteria because AG9 changes no executable
+implementation, fixtures, expectations, browser pin or comparison semantics.
+This evidence does not qualify the later CI preparation change or claim that
+V7–V12 ran on the final AG9 tree.
 The Linux setup text is derived from that existing CI mechanism, not a fresh
 installation trial. A later executable or environment change requires its own
 applicable validation; macOS support remains withdrawn.
