@@ -64,6 +64,86 @@ The second form requires the environment variable. Neither needs manual browser
 interaction. Explicit capture without a usable browser fails with exit 2 and
 empty stdout. Default invocation retains AG1's execution/report behavior.
 
+## Supported Linux setup
+
+Use a native Linux x86-64 host. Ubuntu 24.04 is the environment used by the
+existing [Linux qualification job](../../.github/workflows/ci.yml); containers,
+emulation, Linux ARM64 and macOS execution do not establish that qualification.
+Run capture as a normal non-root user. The Chromium sandbox remains enabled.
+The following commands document the existing CI installation mechanism, not a
+new harness installer. Run them from the repository root in Bash. Installation
+requires administrator access; `/opt/borrowser-ag2` must be a new directory so
+an incomplete or different installation cannot be silently reused.
+
+Install the runtime dependencies (download/extraction tools are included for a
+plain host):
+
+```sh
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends \
+  curl jq unzip apparmor libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 \
+  libatspi2.0-0t64 libcairo2 libcups2t64 libdbus-1-3 libexpat1 \
+  libgbm1 libglib2.0-0t64 libnspr4 libnss3 libpango-1.0-0 libudev1 \
+  libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 \
+  libxkbcommon0 libxrandr2
+```
+
+Download the complete `linux64` archive from the checked-in pin, verify its
+SHA-256 **before extraction**, and install it without changing its contents:
+
+```sh
+set -euo pipefail
+ag_linux_manifest=crates/conformance/chromium-reference.json
+ag_linux_version=$(jq -er '.version' "$ag_linux_manifest")
+ag_linux_url=$(jq -er '.archives.linux64.url' "$ag_linux_manifest")
+ag_linux_sha=$(jq -er '.archives.linux64.sha256' "$ag_linux_manifest")
+test "$ag_linux_url" = "https://storage.googleapis.com/chrome-for-testing-public/$ag_linux_version/linux64/chrome-linux64.zip"
+ag_linux_archive=$(mktemp /tmp/borrowser-chrome-linux64.XXXXXX)
+curl --fail --location --proto '=https' --proto-redir '=https' \
+  --connect-timeout 15 --max-time 180 --retry 2 \
+  --output "$ag_linux_archive" "$ag_linux_url"
+printf '%s  %s\n' "$ag_linux_sha" "$ag_linux_archive" | sha256sum --check --strict
+sudo mkdir /opt/borrowser-ag2
+sudo unzip -q "$ag_linux_archive" -d /opt/borrowser-ag2
+export BORROWSER_CHROMIUM_EXECUTABLE=/opt/borrowser-ag2/chrome-linux64/chrome
+"$BORROWSER_CHROMIUM_EXECUTABLE" --version
+```
+
+Ubuntu 24.04 restricts unprivileged user namespaces. The existing CI rule permits
+them only for this exact installed executable, without changing global sysctls
+or disabling the Chromium sandbox:
+
+```sh
+sudo tee /etc/apparmor.d/borrowser-ag2-chromium > /dev/null <<'PROFILE'
+abi <abi/4.0>,
+include <tunables/global>
+profile borrowser-ag2-chromium /opt/borrowser-ag2/chrome-linux64/chrome flags=(unconfined) {
+  userns,
+}
+PROFILE
+sudo apparmor_parser -r /etc/apparmor.d/borrowser-ag2-chromium
+sudo grep -F 'borrowser-ag2-chromium ' /sys/kernel/security/apparmor/profiles
+```
+
+Then, as the non-root operator with the repository toolchain installed:
+
+```sh
+cargo run -q -p borrowser-conformance --locked -- --chromium --suite ci
+cargo run -q -p borrowser-conformance --locked -- --compare --suite ci
+cargo run -q -p borrowser-conformance --locked -- --compare --suite extended
+```
+
+Capture-only and CI comparison currently exit 0. Extended comparison exits 1
+with the four documented RGB differences; inspect their exact identities, values,
+independent expectations and coverage instead of accepting any nonzero result.
+The full archive identity and successful native lifecycle are prerequisites for
+qualification; `--version` alone proves neither. Preserve source identity,
+archive digest, commands, report output, stderr and actual exits when recording
+evidence. Missing dependencies, denied process inspection or sandbox setup,
+incorrect browser identity and cleanup failures are execution errors, not skips.
+The harness does not download dependencies, change system policy or retry with
+an arbitrary installed browser.
+
 ## macOS distribution integrity
 
 This section records the accepted integrity work and historical setup procedure;
