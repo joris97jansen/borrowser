@@ -134,6 +134,7 @@ fn viewport_failure_diagnostic_attributes_fixture_metrics_and_cleanup() {
     };
     let failure = attribute_capture_failure(
         Failure {
+            context: None,
             primary: Some(
                 validate_viewport(&metrics, crate::projection::ObservationRequest::CANVAS)
                     .unwrap_err(),
@@ -2525,6 +2526,7 @@ pub(crate) fn recover_comparison_cleanup_failure() {
 }
 pub(crate) fn controlled_comparison_failure() -> Failure {
     Failure {
+        context: None,
         primary: Some(Error::Capture("original primary".into())),
         cleanup: vec![error::CleanupError::Identity("verification failed".into())],
     }
@@ -2583,12 +2585,14 @@ fn inspection_negative_control_rejects_unrelated_capture_failures() {
         ),
     ] {
         let failure = Failure {
+            context: None,
             primary: Some(Error::Capture(message)),
             cleanup: vec![],
         };
         assert!(!is_inspection_rejection(&failure, expected));
     }
     let mut failure = Failure {
+        context: None,
         primary: Some(Error::Capture(format!(
             "native inspection failed: {}",
             json!({"exception":{"description":"Error: inspection string limit\n at text"}})
@@ -2838,4 +2842,34 @@ fn real_chromium_ag7_inert_links() {
     let failure = capture_document(&resource, request, &expected, &config, &cancel).unwrap_err();
     assert!(failure.primary.is_some());
     assert!(failure.cleanup.is_empty());
+}
+
+#[test]
+fn ag8_all_capture_failures_preserve_document_role_and_primary_cleanup_codes() {
+    let fixture = crate::fixtures::fixture("wpt-style/background-color-mismatch");
+    let inputs = inputs(&[fixture]);
+    for primary in [
+        Error::Configuration("invalid".into()),
+        Error::Timeout(Phase::Navigation),
+        Error::BrowserExited,
+    ] {
+        let expected_code = primary.code();
+        let failure = attribute_capture_failure(
+            Failure {
+                context: None,
+                primary: Some(primary),
+                cleanup: vec![error::CleanupError::Timeout],
+            },
+            &inputs[1],
+        );
+        let mut diagnostics = vec![];
+        failure.write_diagnostics(&mut diagnostics).unwrap();
+        let text = String::from_utf8(diagnostics).unwrap();
+        assert!(text.contains(&format!("ERROR chromium.{expected_code}:")));
+        assert!(text.contains("ERROR chromium.cleanup:"));
+        assert!(text.contains("role=Reference"));
+        assert!(text.contains("wpt-style/background-color-mismatch"));
+        assert!(text.contains("fixtures/wpt-style/red.html"));
+        assert!(!text.contains("SUMMARY"));
+    }
 }

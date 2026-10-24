@@ -10,7 +10,10 @@ continues to define the supported observations and exact comparisons.
 Add UTF-8 HTML and a `*.fixture.json` declaration beneath
 `crates/conformance/fixtures/`. Add an independently authored `*.expected.json`
 when using a projection expectation. No Rust registration or test-list edit is
-required. Rebuild the harness before running the new data:
+required for discovery. [AG8 named suites](ag8-deterministic-reporting-and-suites.md)
+are fixed reviewed ID lists: new fixtures do not expand them. Full-catalogue
+validation still precedes suite filtering; exact-ID and all-catalogue paths
+remain available. Rebuild the harness before running the new data:
 
 ```sh
 cargo run -p borrowser-conformance --locked -- canvas/root

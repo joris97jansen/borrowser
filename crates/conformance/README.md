@@ -1,4 +1,4 @@
-# Focused static conformance harness (AG1–AG7)
+# Focused static conformance harness (AG1–AG8)
 
 AG4 adds the optional `--compare-aws` and artifact-independent `--aws-cleanup`
 paths. Its two-resource Python CDK capture stack, shared eleven-resource
@@ -51,6 +51,16 @@ Original upstream visual assertions remain unsupported. The whole catalogue now
 returns **3 locally** (unsupported full visual coverage) and **1 in comparison**
 (four confirmed RGB differences); neither result is suppressed by KnownFailure.
 The original six-fixture baseline remains unchanged.
+
+AG8 adds fixed `ci` (seven cases/eight documents) and `extended` (eleven
+cases/twelve executable documents) suites. See the [AG8 reporting and suite
+contract](../../docs/conformance/ag8-deterministic-reporting-and-suites.md) for
+membership rationale, derived case counts, run errors, reproduction and strict
+exit policy. `make conformance-ci` is the bounded Borrowser-only CI entry;
+`make conformance-extended` preserves incomplete coverage (currently exit 3 from
+the binary, propagated as a nonzero Make recipe). Explicit Chromium comparison
+uses `--compare --suite ci|extended` on supported native Linux x86-64. AWS is
+optional and has no suite policy. New fixtures do not expand either named suite.
 
 Ordinary local commands below remain independent of AWS configuration,
 credentials and artifact preparation.
@@ -145,7 +155,8 @@ not claim the full root/body propagation behavior is conformant.
 
 To add a case, author static HTML, its strict `.fixture.json` declaration and any
 independent `.expected.json` projection, then rebuild and run the harness. No Rust
-registration or test-list edit is required. Explicit `requires_javascript` metadata
+registration or test-list edit is required for discovery; named AG8 suites require
+an explicit reviewed membership change. Explicit `requires_javascript` metadata
 records eligibility; runnable fixtures must set it to false. There is no automatic
 unsupported-feature detector or expectation blessing command. Follow the
 [AG6 contract](../../docs/conformance/ag6-fixture-discovery-and-metadata.md).
@@ -176,8 +187,8 @@ time, internal engine identities, absolute paths and orchestration traces. Exit
 precedence is 2 for errors; 1 for independent FAIL/XPASS or relationship failure;
 3 for incomplete requested observations or unsupported runnable upstream
 assertions; 0 otherwise. Unsupported/skipped cases
-are counted separately and do not cause failure. CLI selection is all fixtures
-or one exact identity; unknown identities are errors.
+are counted separately and do not cause failure. CLI selection is all fixtures, one exact identity, or an explicit named suite
+optionally narrowed to a member; unknown/out-of-suite identities are errors.
 
 ## Validation and exclusions
 
@@ -329,7 +340,7 @@ no child processes. Restored signal dispositions apply after the capture phase.
 
 ### Report and failure semantics
 
-`--compare` emits pretty JSON, schema `borrowser.cross-engine-phases.v2`, followed
+`--compare` emits pretty JSON, schema `borrowser.cross-engine-phases.v3`, followed
 by one newline. Member order is fixed by typed serialization; case order is
 fixture-ID order; engine order is Borrowser then Chromium. Each canvas case has
 one `canvas_color_rgb8` field with both observed arrays, its `equal`/`different`
@@ -338,7 +349,7 @@ both arrays should be `[52, 86, 120]` and every channel should be `equal`.
 
 DOM, style and layout cases expose their common values under `projections`,
 with native Chromium data and Browser frame provenance under `captures`.
-Case status is `equal_for_requested_scope`, `different` or `incomplete`; family
+Case status is `equal_for_requested_scope`, `different`, `relationship_failed` or `incomplete`; family
 coverage explicitly shows unrequested and unsupported observations. The AG5
 contract defines the selected properties, geometry, field paths and bounds.
 The passing six-fixture baseline compares exactly 34 fields: two canvas, two
@@ -355,6 +366,12 @@ a classic vertical scrollbar; it is not assumed equal to 640. The AG5 contract
 defines the strict family-specific viewport checks and bounded failure metrics.
 Canvas sampling retains the full client-size restriction. Producers and local/AG4
 consumers must be rebuilt together; missing required viewport facts are errors.
+
+AG8 adds `borrowser_status` and `summary.borrowser_cases` from the existing
+aggregate evaluator, plus selection and reproduction context. These case totals
+do not replace comparison, relationship or independent-expectation facts. Fatal
+comparison construction still publishes no JSON; invocation errors have separate
+stderr summaries and never fabricate unexecuted case outcomes.
 
 `borrowser_expectation` separately reports the independently authored expected
 RGB8, expectation metadata, optional known-failure reason and existing AG1

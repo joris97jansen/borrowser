@@ -485,6 +485,10 @@ fn unit_ag7_relationships_never_hide_independent_or_cross_engine_failures() {
     assert_eq!(v["cases"][0]["borrowser_expectation"]["status"], "XFAIL");
     assert_eq!(v["summary"]["different_fields"], 0);
     assert_eq!(v["summary"]["relationship_failures"], 2);
+    assert_eq!(v["cases"][0]["borrowser_status"], "FAIL");
+    assert_eq!(v["summary"]["borrowser_cases"]["failed"], 1);
+    assert_eq!(v["summary"]["borrowser_cases"]["expected_failed"], 0);
+    assert_eq!(v["summary"]["executed_documents"], 2);
     // Both mismatch relationships hold, but both same-document comparisons differ.
     fixture.kind = FixtureKind::Runnable {
         checks: Checks::Reference {
@@ -524,6 +528,9 @@ fn unit_ag7_relationships_never_hide_independent_or_cross_engine_failures() {
     let v = serde_json::to_value(report).unwrap();
     assert_eq!(v["summary"]["different_fields"], 0);
     assert_eq!(v["summary"]["runnable_upstream_incomplete_cases"], 1);
+    assert_eq!(v["cases"][0]["borrowser_status"], "INCOMPLETE");
+    assert_eq!(v["summary"]["borrowser_cases"]["incomplete"], 1);
+    assert_eq!(v["summary"]["executed_documents"], 2);
 }
 
 struct FailingWriter {
@@ -562,11 +569,10 @@ fn unit_writer_errors_include_partial_output_and_flush() {
             publish(Ok(result), &mut writer, &mut diagnostics).unwrap(),
             2
         );
-        assert!(
-            String::from_utf8(diagnostics)
-                .unwrap()
-                .contains("comparison.write")
-        );
+        let diagnostics = String::from_utf8(diagnostics).unwrap();
+        assert!(diagnostics.contains("comparison.write"));
+        assert!(diagnostics.contains("RUN_ERROR scope=invocation errors=1 origin=harness code=comparison.write case_results=publication_failed"));
+        assert!(!diagnostics.contains("SUMMARY"));
         if fail_flush {
             assert!(writer.bytes.ends_with(b"\n"));
         } else {
@@ -1359,4 +1365,89 @@ fn unit_phase_dom_common_comparison_preserves_meaningful_structure() {
             );
         }
     }
+}
+
+#[test]
+fn ag8_v3_counts_case_verdicts_separately_from_comparison_facts() {
+    let fixture = crate::fixtures::fixture("style/cascade-inheritance");
+    let actual = execute::execute_fixture(fixture.document.html, fixture.request).unwrap();
+    let mut reference = style_reference();
+    reference.inspection.as_mut().unwrap().styles[0]
+        .values
+        .as_mut()
+        .unwrap()[0] = "rgb(18, 52, 87)".into();
+    let mut report = report::Report::new(vec![
+        report::Case::observed(fixture, actual, reference).unwrap(),
+    ]);
+    report.set_selection(Some(crate::fixtures::Suite::Ci), "--compare");
+    let (exit, bytes, diagnostics) = publish_bytes(Ok(report));
+    assert_eq!(exit, 1);
+    assert!(diagnostics.is_empty());
+    let wire: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(wire["schema"], "borrowser.cross-engine-phases.v3");
+    assert_eq!(wire["selection"], json!({"suite":"ci","mode":"--compare"}));
+    assert_eq!(wire["cases"][0]["borrowser_status"], "PASS");
+    assert_eq!(wire["cases"][0]["status"], "different");
+    assert!(wire["cases"][0]["reproduce"].as_str().unwrap().contains("--suite ci --chromium-executable \"$BORROWSER_CHROMIUM_EXECUTABLE\" 'style/cascade-inheritance'"));
+    assert_eq!(wire["summary"]["different_fields"], 1);
+    assert_eq!(
+        wire["summary"]["borrowser_cases"],
+        json!({"passed":1,"failed":0,"expected_failed":0,"unexpected_passed":0,"unsupported":0,"skipped":0,"errored":0,"incomplete":0})
+    );
+}
+
+#[test]
+fn ag8_invocation_failure_publishes_no_case_totals() {
+    let (exit, bytes, diagnostics) = publish_bytes(Err(HarnessError::new(
+        "required-data",
+        "failed after capture",
+    )
+    .into()));
+    assert_eq!(exit, 2);
+    assert!(bytes.is_empty());
+    assert_eq!(
+        diagnostics,
+        "ERROR comparison.required-data: failed after capture\nRUN_ERROR scope=invocation errors=1 origin=harness code=comparison.required-data case_results=not_published\n"
+    );
+    let (exit, bytes, diagnostics) =
+        publish_bytes(Err(chromium::configuration("capture configuration").into()));
+    assert_eq!(exit, 2);
+    assert!(bytes.is_empty());
+    assert!(
+        diagnostics
+            .contains("origin=chromium code=chromium.configuration case_results=not_published")
+    );
+    for status in ["PASS=", "FAIL=", "SKIP=", "ERROR="] {
+        assert!(!diagnostics.contains(status));
+    }
+}
+
+#[test]
+fn ag8_late_borrowser_failure_does_not_publish_earlier_cases() {
+    let first = crate::fixtures::fixture("canvas/cascade");
+    let bad = Fixture {
+        document: crate::fixtures::fixture("canvas/root").document.with_test_bytes(b"<!doctype html><html><head><style>html,body{margin:0;padding:0;height:0}html{background-color:#123456}div{height:100px;background-color:red}</style></head><body><div></div></body></html>"),
+        ..*crate::fixtures::fixture("canvas/root")
+    };
+    let fixtures = [first, &bad];
+    let captures = chromium::inputs(&fixtures)
+        .into_iter()
+        .map(|input| CapturedFixture {
+            descriptor: input.descriptor(),
+            capture: capture([52, 86, 120]),
+        })
+        .collect();
+    let (exit, bytes, diagnostics) = publish_bytes(compare_captured(&fixtures, captures));
+    assert_eq!(exit, 2);
+    assert!(bytes.is_empty());
+    assert!(diagnostics.contains("comparison.capture.overlap"));
+    assert!(
+        diagnostics
+            .contains("fixture=canvas/root role=test source=fixtures/root-canvas-color.html")
+    );
+    assert!(
+        diagnostics
+            .contains("origin=harness code=comparison.capture.overlap case_results=not_published")
+    );
+    assert!(!diagnostics.contains("SUMMARY"));
 }

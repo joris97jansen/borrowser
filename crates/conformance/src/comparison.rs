@@ -112,18 +112,23 @@ fn validate_captures(
         ));
     }
     for (input, captured) in inputs.iter().zip(captures) {
-        let expected: Vec<crate::metadata_links::LinkFact> =
-            serde_json::from_str(input.metadata_links)
-                .map_err(|e| HarnessError::new("required-data", e.to_string()))?;
-        crate::metadata_links::validate(&captured.capture.metadata_links)
-            .map_err(|e| HarnessError::new("required-data", e))?;
-        if expected != captured.capture.metadata_links {
-            return Err(HarnessError::new(
-                "required-data",
-                "captured link facts do not correspond to selected bytes",
-            ));
-        }
-        crate::projection::chromium(&captured.capture, input.request)?;
+        let validate = || -> Result<(), HarnessError> {
+            let expected: Vec<crate::metadata_links::LinkFact> =
+                serde_json::from_str(input.metadata_links)
+                    .map_err(|e| HarnessError::new("required-data", e.to_string()))?;
+            crate::metadata_links::validate(&captured.capture.metadata_links)
+                .map_err(|e| HarnessError::new("required-data", e))?;
+            if expected != captured.capture.metadata_links {
+                return Err(HarnessError::new(
+                    "required-data",
+                    "captured link facts do not correspond to selected bytes",
+                ));
+            }
+            crate::projection::chromium(&captured.capture, input.request)?;
+            Ok(())
+        };
+        validate()
+            .map_err(|e| e.with_document(input.id, &format!("{:?}", input.role), input.source))?;
     }
     Ok(())
 }
@@ -165,19 +170,24 @@ fn compare_captured(
                 let capture = captures
                     .next()
                     .ok_or_else(|| HarnessError::new("required-data", "missing Chromium sample"))?;
-                let observed = execute::execute_fixture(fixture.document.html, fixture.request)?;
+                let observed = execute::execute_fixture(fixture.document.html, fixture.request)
+                    .map_err(|e| e.with_document(fixture.id, "test", fixture.document.source))?;
                 let reference = if let Some((_, document)) = fixture.reference() {
                     let captured = captures.next().ok_or_else(|| {
                         HarnessError::new("required-data", "missing reference capture")
                     })?;
                     Some((
-                        execute::execute_fixture(document.html, fixture.request)?,
+                        execute::execute_fixture(document.html, fixture.request).map_err(|e| {
+                            e.with_document(fixture.id, "reference", document.source)
+                        })?,
                         captured.capture,
                     ))
                 } else {
                     None
                 };
-                report::Case::observed_pair(fixture, observed, capture.capture, reference)?
+                report::Case::observed_pair(fixture, observed, capture.capture, reference).map_err(
+                    |e| e.with_document(fixture.id, "test/reference", fixture.document.source),
+                )?
             }
             FixtureKind::Unsupported { reason } => report::Case::unsupported(fixture, reason),
             FixtureKind::Skipped { reason } => report::Case::skipped(fixture, reason),
@@ -193,7 +203,14 @@ pub(crate) fn publish_captured(
     out: &mut impl Write,
     diagnostics: &mut impl Write,
 ) -> io::Result<u8> {
-    publish(compare_captured(fixtures, captures), out, diagnostics)
+    publish(
+        compare_captured(fixtures, captures).map(|mut report| {
+            report.set_selection(None, "--compare-aws");
+            report
+        }),
+        out,
+        diagnostics,
+    )
 }
 
 // Execution, correspondence checks, construction and serialization all finish
@@ -207,6 +224,11 @@ fn publish(
         Ok(report) => report,
         Err(failure) => {
             failure.write_diagnostics(diagnostics)?;
+            let (origin, code) = match &failure {
+                Failure::Chromium(f) => ("chromium", format!("chromium.{}", f.code())),
+                Failure::Harness(e) => ("harness", format!("comparison.{}", e.code)),
+            };
+            crate::report::write_run_error(diagnostics, origin, &code, "not_published")?;
             return Ok(2);
         }
     };
@@ -215,12 +237,24 @@ fn publish(
         Ok(bytes) => bytes,
         Err(error) => {
             writeln!(diagnostics, "ERROR comparison.serialize: {error}")?;
+            crate::report::write_run_error(
+                diagnostics,
+                "harness",
+                "comparison.serialize",
+                "not_published",
+            )?;
             return Ok(2);
         }
     };
     bytes.push(b'\n');
     if let Err(error) = out.write_all(&bytes).and_then(|()| out.flush()) {
         writeln!(diagnostics, "ERROR comparison.write: {error}")?;
+        crate::report::write_run_error(
+            diagnostics,
+            "harness",
+            "comparison.write",
+            "publication_failed",
+        )?;
         return Ok(2);
     }
     Ok(code)
@@ -231,11 +265,13 @@ pub(crate) fn run(
     out: &mut impl Write,
     diagnostics: &mut impl Write,
 ) -> io::Result<u8> {
-    let result = chromium::options(args)
+    let result = crate::options(args, true)
         .map_err(Failure::from)
         .and_then(|options| {
             let fixtures = options.select_fixtures()?;
-            execute_selected(&fixtures, options.executable.as_deref())
+            let mut report = execute_selected(&fixtures, options.executable.as_deref())?;
+            report.set_selection(options.suite, "--compare");
+            Ok(report)
         });
     publish(result, out, diagnostics)
 }

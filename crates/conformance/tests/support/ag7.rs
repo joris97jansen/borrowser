@@ -69,10 +69,14 @@ pub fn assert_exact_difference_set(report: &Value) {
 }
 
 pub fn assert_initial_cases(report: &Value) {
-    assert_eq!(report["schema"], "borrowser.cross-engine-phases.v2");
+    assert_eq!(report["schema"], "borrowser.cross-engine-phases.v3");
     for id in RGB.into_iter().chain([LOCAL]) {
         let c = case(report, id);
         let rgb = id != LOCAL;
+        assert_eq!(
+            c["borrowser_status"],
+            if rgb { "INCOMPLETE" } else { "PASS" }
+        );
         let target = if rgb { "p6" } else { "probe" };
         assert_eq!(
             c["status"],
@@ -179,6 +183,7 @@ pub fn assert_initial_cases(report: &Value) {
         let c = case(report, id);
         assert_eq!(c["status"], "incomplete");
         assert_eq!(c["coverage"]["classification"], "unsupported");
+        assert_eq!(c["borrowser_status"], "UNSUPPORTED");
         assert_eq!(c["upstream_assertion"]["status"], "unsupported");
         for field in [
             "captures",
@@ -207,7 +212,7 @@ pub fn assert_initial_summary(report: &Value) {
     assert_eq!(selected.len(), 11);
     assert_eq!(
         summary(&selected),
-        json!({"equal_fields":36,"different_fields":4,"unsupported_fields":0,"skipped_cases":0,"expectation_failures":0,"expectation_unexpected_passes":0,"incomplete_cases":2,"executed_documents":12,"upstream_unsupported_cases":4,"runnable_upstream_incomplete_cases":2,"independent_expected_failures":2,"relationship_failures":0,"borrowser_relationships_satisfied":3,"chromium_relationships_satisfied":3})
+        json!({"borrowser_cases":{"passed":7,"failed":0,"expected_failed":0,"unexpected_passed":0,"unsupported":2,"skipped":0,"errored":0,"incomplete":2},"equal_fields":36,"different_fields":4,"unsupported_fields":0,"skipped_cases":0,"expectation_failures":0,"expectation_unexpected_passes":0,"incomplete_cases":2,"executed_documents":12,"upstream_unsupported_cases":4,"runnable_upstream_incomplete_cases":2,"independent_expected_failures":2,"relationship_failures":0,"borrowser_relationships_satisfied":3,"chromium_relationships_satisfied":3})
     );
 }
 
@@ -362,6 +367,25 @@ fn summary(cases: &[&Value]) -> Value {
                 );
             }
         }
+    }
+    s["borrowser_cases"] = json!({"passed":0,"failed":0,"expected_failed":0,"unexpected_passed":0,"unsupported":0,"skipped":0,"errored":0,"incomplete":0});
+    for c in cases {
+        let field = match c["borrowser_status"]
+            .as_str()
+            .expect("v3 aggregate case status")
+        {
+            "PASS" => "passed",
+            "FAIL" => "failed",
+            "XFAIL" => "expected_failed",
+            "XPASS" => "unexpected_passed",
+            "UNSUPPORTED" => "unsupported",
+            "SKIP" => "skipped",
+            "ERROR" => "errored",
+            "INCOMPLETE" => "incomplete",
+            status => panic!("unknown status {status}"),
+        };
+        let n = s["borrowser_cases"][field].as_u64().unwrap();
+        s["borrowser_cases"][field] = json!(n + 1);
     }
     s
 }

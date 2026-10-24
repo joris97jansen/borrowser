@@ -938,15 +938,26 @@ When a feature lands:
 2. Link to the relevant contract doc if the behavior is subtle.
 3. Keep this file short; move detailed rules to subsystem docs.
 
-## Focused Conformance Tooling (AG1–AG7)
+## Focused Conformance Tooling (AG1–AG8)
 
-- macOS Chromium capture now rejects incomplete pinned app/framework/helper
-  structure before launch, independently of archive-authoritative qualification
-  setup and the existing CDP identity check. Recent renderer/Crashpad executions
+- AG8 adds fixed coverage-driven Borrowser-only CI (seven cases/eight documents)
+  and extended (eleven cases/twelve executable documents) suites, whole-catalogue
+  validation before selection, stable ordering and actionable reproduction.
+  Comparison schema v3 separates aggregate Borrowser counts from existing
+  independent expectations, comparison facts and relationships. Real case ERROR
+  and fatal invocation failures remain separate; fatal comparison construction
+  publishes no partial/fabricated cases. CI fails on regressions and keeps
+  incomplete coverage/known differences visible. Chromium/AWS remain optional
+  for ordinary engine CI; capture and artifact formats and production execution
+  are unchanged. No engine capability or broader WPT coverage is claimed. See
+  the [AG8 contract](conformance/ag8-deterministic-reporting-and-suites.md).
+
+- The historical macOS bundle validator rejects incomplete pinned app/framework/helper
+  structure; it remains test-only after the supported-platform withdrawal. Recent renderer/Crashpad executions
   against an incomplete local installation are diagnostic evidence; older bundle
   state remains unknown. Investigation-only minidump parsing is removed. This
-  adds no engine behavior or compatibility claim; corrective-source Linux
-  qualification remains required. See the
+  adds no engine behavior or compatibility claim. AG7 corrective-source Linux
+  qualification completed as recorded below. See the
   [AG7 integrity record](conformance/ag7-focused-external-tests-and-references.md#macos-distribution-integrity-correction).
 
 - AG7 embeds a deliberately small, revision/path/SHA-256-pinned WPT corpus with
@@ -982,8 +993,11 @@ When a feature lands:
   Historical shutdown/composition causal gaps remain unresolved; withdrawing
   the execution backend does not reconstruct or waive them.
   The mandatory EOF drain now shares the existing absolute capture budget;
-  historical causal gaps remain explicit. Final corrective-source Linux qualification
-  and technical review are still required. No new live AWS qualification is claimed.
+  historical causal gaps remain explicit. AG7 completed in merged PR #1436 after
+  native Linux run 39925036784/1 and applicable CI passed for integrated tree
+  `822c20cd0a9ad06eae4511ab5524d773f02e6c0d`; see the
+  [completion record](conformance/ag7-focused-external-tests-and-references.md#completion-record-2026-10-23).
+  That baseline evidence does not qualify later AG8 changes. No new live AWS qualification is claimed.
 
 - AG6 adds build-time deterministic fixture discovery, strict JSON metadata,
   exact embedded inputs/expectations, and shared catalogue validation before

@@ -160,3 +160,100 @@ fn invalid_requests_fail_catalogue_preflight_before_expected_comparison() {
         assert!(error.detail.contains(original.metadata_source));
     }
 }
+
+#[test]
+fn ag8_named_membership_is_explicit_bounded_and_ordered() {
+    let expected_ci = [
+        "canvas/cascade",
+        "canvas/root",
+        "dom/structure",
+        "dom/template-namespaces",
+        "layout/block-boxes",
+        "style/cascade-inheritance",
+        "wpt-style/background-color-mismatch",
+    ];
+    let mut expected_extended = expected_ci.to_vec();
+    expected_extended.extend([
+        "wpt/rgb-alias-p6",
+        "wpt/rgb-comments-p6",
+        "wpt/unsupported/first-child-js",
+        "wpt/unsupported/testdriver",
+    ]);
+    for (suite, ids, documents) in [
+        (Suite::Ci, expected_ci.to_vec(), 8),
+        (Suite::Extended, expected_extended, 12),
+    ] {
+        let selected = select_suite(Some(suite), None).unwrap();
+        assert_eq!(selected.iter().map(|f| f.id.0).collect::<Vec<_>>(), ids);
+        let count: usize = selected
+            .iter()
+            .filter(|f| matches!(f.kind, FixtureKind::Runnable { .. }))
+            .map(|f| 1 + usize::from(f.reference().is_some()))
+            .sum();
+        assert_eq!(count, documents);
+        for id in ids {
+            assert_eq!(select_suite(Some(suite), Some(id)).unwrap().len(), 1);
+        }
+    }
+    assert!(select_suite(Some(Suite::Ci), Some("wpt/rgb-alias-p6")).is_err());
+}
+
+#[test]
+fn ag8_catalogue_growth_does_not_expand_suites_and_validation_precedes_selection() {
+    let mut all = catalogue().unwrap().to_vec();
+    all.push(Fixture {
+        id: crate::model::TestId("zz/new"),
+        ..*fixture("canvas/root")
+    });
+    assert_eq!(
+        select_from(&all, None, None).unwrap().len(),
+        catalogue().unwrap().len() + 1
+    );
+    assert_eq!(select_from(&all, Some(Suite::Ci), None).unwrap().len(), 7);
+    assert_eq!(
+        select_from(&all, Some(Suite::Extended), None)
+            .unwrap()
+            .len(),
+        11
+    );
+    all.last_mut().unwrap().requires_javascript = true;
+    for suite in [None, Some(Suite::Ci), Some(Suite::Extended)] {
+        for id in [None, Some("canvas/root")] {
+            let error = select_from(&all, suite, id).unwrap_err();
+            assert_eq!(error.code, "fixture.configuration");
+            assert!(error.detail.contains("zz/new"));
+        }
+    }
+    let excluded = [*fixture("wpt/unsupported/testdriver")];
+    assert_eq!(select_from(&excluded, None, None).unwrap().len(), 1);
+    assert!(select_from(&excluded, Some(Suite::Ci), None).is_err());
+    assert!(select_from(&[excluded[0], excluded[0]], None, None).is_err());
+}
+
+#[test]
+fn ag8_regressing_ci_member_remains_required() {
+    use crate::model::{CanvasColor, Checks, IndependentExpectation};
+    let mut all = catalogue().unwrap().to_vec();
+    let member = all.iter_mut().find(|f| f.id.0 == "canvas/root").unwrap();
+    member.kind = FixtureKind::Runnable {
+        checks: Checks::Independent(IndependentExpectation {
+            expected: Expected::Canvas(CanvasColor([0, 0, 0])),
+            disposition: Expectation::Match,
+        }),
+    };
+    let selected = select_from(&all, Some(Suite::Ci), None).unwrap();
+    assert_eq!(selected.len(), 7);
+    let reports: Vec<_> = selected
+        .into_iter()
+        .map(|f| crate::report::evaluate(f, crate::run_fixture(f)))
+        .collect();
+    assert_eq!(crate::report::exit_code(&reports), 1);
+    let mut output = vec![];
+    crate::report::write_suite_report(&reports, Some(Suite::Ci), &mut output).unwrap();
+    let output = String::from_utf8(output).unwrap();
+    assert!(output.contains("FAIL canvas/root\n"));
+    assert!(output.contains("--suite ci 'canvas/root'"));
+    assert!(output.ends_with(
+        "SUMMARY PASS=6 FAIL=1 XFAIL=0 XPASS=0 UNSUPPORTED=0 SKIP=0 ERROR=0 INCOMPLETE=0\n"
+    ));
+}

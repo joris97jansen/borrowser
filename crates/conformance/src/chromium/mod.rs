@@ -16,7 +16,7 @@ pub(crate) mod tests;
 
 use crate::{
     environment::{HEIGHT, SAMPLE, URL, WIDTH},
-    model::{CanvasColor, Fixture, FixtureKind, TestId},
+    model::{CanvasColor, FixtureKind, TestId},
 };
 pub(crate) use error::Failure;
 use error::{Error, Phase};
@@ -137,6 +137,7 @@ fn identity(value: Value) -> Result<BrowserIdentity, Error> {
 pub(super) fn require_execution_platform() -> Result<(), Failure> {
     if cfg!(target_os = "macos") {
         return Err(Failure {
+            context: None,
             primary: Some(Error::UnsupportedPlatform(
                 "macOS Chromium execution is temporarily unsupported: ownership cleanup completeness is not proven; use native Linux x86-64".into(),
             )),
@@ -179,6 +180,7 @@ fn capture_document(
     #[cfg(test)]
     if !config.scripts_disabled {
         tests::require_script_positive_control(html).map_err(|error| Failure {
+            context: None,
             primary: Some(error),
             cleanup: vec![],
         })?;
@@ -186,6 +188,7 @@ fn capture_document(
     crate::projection::validate_request(request).map_err(|e| configuration(&e.detail))?;
     require_execution_platform()?;
     let executable = std::fs::canonicalize(&config.executable).map_err(|e| Failure {
+        context: None,
         primary: Some(Error::Configuration(format!(
             "Chromium executable unavailable: {e}"
         ))),
@@ -423,6 +426,7 @@ fn capture_document(
     match (result, cleanup.is_empty()) {
         (Ok(capture), true) => Ok(capture),
         (result, _) => Err(Failure {
+            context: None,
             primary: result.err(),
             cleanup,
         }),
@@ -591,15 +595,12 @@ fn viewport_diagnostic(metrics: &Value, canvas: bool, rejected: &[Value]) -> Val
 }
 
 fn attribute_capture_failure(mut failure: Failure, input: &CaptureInput<'_>) -> Failure {
-    if !matches!(failure.primary, Some(Error::Configuration(_))) {
-        let _ = writeln!(
-            std::io::stderr().lock(),
-            "AG2 failed input: id={:?} role={:?} source={:?}; Borrowser workers not started",
-            input.id.0.chars().take(128).collect::<String>(),
-            input.role,
-            input.source.chars().take(256).collect::<String>()
-        );
-    }
+    failure.context = Some(format!(
+        "id={:?} role={:?} source={:?}; Borrowser workers not started",
+        input.id.0.chars().take(128).collect::<String>(),
+        input.role,
+        input.source.chars().take(256).collect::<String>()
+    ));
     if let Some(Error::Capture(detail)) = &mut failure.primary {
         use crate::projection::Request;
         let request = input.request;
@@ -703,41 +704,9 @@ pub(crate) fn inputs(fixtures: &[&crate::model::Fixture]) -> Vec<CaptureInput<'s
 
 pub(crate) fn configuration(detail: &str) -> Failure {
     Failure {
+        context: None,
         primary: Some(Error::Configuration(detail.into())),
         cleanup: vec![],
-    }
-}
-
-pub(crate) struct Options<'a> {
-    pub(crate) executable: Option<PathBuf>,
-    test_id: Option<&'a str>,
-}
-
-pub(crate) fn options(args: &[String]) -> Result<Options<'_>, Failure> {
-    let mut executable = std::env::var_os("BORROWSER_CHROMIUM_EXECUTABLE").map(PathBuf::from);
-    let mut id = None;
-    let mut args = args.iter();
-    while let Some(arg) = args.next() {
-        if arg == "--chromium-executable" {
-            executable =
-                Some(PathBuf::from(args.next().ok_or_else(|| {
-                    configuration("--chromium-executable requires a path")
-                })?));
-        } else if arg.starts_with('-') || id.replace(arg.as_str()).is_some() {
-            return Err(configuration(
-                "expected --chromium-executable PATH and at most one fixture ID",
-            ));
-        }
-    }
-    Ok(Options {
-        executable,
-        test_id: id,
-    })
-}
-impl Options<'_> {
-    pub(crate) fn select_fixtures(&self) -> Result<Vec<&'static Fixture>, Failure> {
-        crate::fixtures::select(self.test_id)
-            .map_err(|e| configuration(&format!("{}: {}", e.code, e.detail)))
     }
 }
 
@@ -754,6 +723,7 @@ pub(crate) fn capture_batch(
     // allocation or capture. Both local CLI modes share this boundary.
     require_execution_platform()?;
     let standalone = process::Standalone::enter().map_err(|error| Failure {
+        context: None,
         primary: Some(error),
         cleanup: vec![],
     })?;
@@ -766,8 +736,9 @@ pub(crate) fn capture_batch(
             input.id, input.role,
         ));
         let expected_links: Vec<crate::metadata_links::LinkFact> =
-            serde_json::from_str(input.metadata_links)
-                .map_err(|e| configuration(&format!("metadata links: {e}")))?;
+            serde_json::from_str(input.metadata_links).map_err(|e| {
+                attribute_capture_failure(configuration(&format!("metadata links: {e}")), input)
+            })?;
         let capture =
             capture_document(input.html, input.request, &expected_links, &config, &cancel)
                 .map_err(|failure| attribute_capture_failure(failure, input))?;
@@ -781,6 +752,7 @@ pub(crate) fn capture_batch(
         });
     }
     cancel.check_cancelled().map_err(|error| Failure {
+        context: None,
         primary: Some(error),
         cleanup: vec![],
     })?;
@@ -790,19 +762,21 @@ pub(crate) fn capture_batch(
     Ok(captures)
 }
 
-pub(crate) fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
+pub(crate) fn run(
+    inputs: &[CaptureInput<'_>],
+    executable: Option<&Path>,
+    out: &mut impl Write,
+    diagnostics: &mut impl Write,
+) -> io::Result<u8> {
     let execute = || -> Result<CaptureReport, Failure> {
-        let options = options(args)?;
-        let fixtures = options.select_fixtures()?;
-        let inputs = inputs(&fixtures);
         if inputs.is_empty() {
             return Err(configuration("selection contains no runnable fixtures"));
         }
         require_execution_platform()?;
-        let executable = options.executable.as_deref().ok_or_else(|| {
+        let executable = executable.ok_or_else(|| {
             configuration("set BORROWSER_CHROMIUM_EXECUTABLE or --chromium-executable")
         })?;
-        let captures = capture_batch(&inputs, executable)?;
+        let captures = capture_batch(inputs, executable)?;
         let observations = inputs
             .iter()
             .zip(captures)
@@ -828,15 +802,26 @@ pub(crate) fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
             let mut bytes = serde_json::to_vec(&report)?;
             bytes.push(b'\n');
             if bytes.len() > ingest::MAX_CAPTURE_BYTES {
-                configuration("capture exceeds 64 KiB")
-                    .write_diagnostics(&mut io::stderr().lock())?;
+                configuration("capture exceeds 64 KiB").write_diagnostics(diagnostics)?;
+                crate::report::write_run_error(
+                    diagnostics,
+                    "chromium",
+                    "chromium.configuration",
+                    "not_published",
+                )?;
                 return Ok(2);
             }
             out.write_all(&bytes)?;
             Ok(0)
         }
         Err(failure) => {
-            failure.write_diagnostics(&mut io::stderr().lock())?;
+            failure.write_diagnostics(diagnostics)?;
+            crate::report::write_run_error(
+                diagnostics,
+                "chromium",
+                &format!("chromium.{}", failure.code()),
+                "not_published",
+            )?;
             Ok(2)
         }
     }

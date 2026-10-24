@@ -196,7 +196,7 @@ fn non_utf8_argument_closed_stderr_preserves_exit_two() {
     assert!(writable.stdout.is_empty());
     assert_eq!(
         writable.stderr,
-        b"ERROR command: test identity must be UTF-8\n"
+        b"ERROR command: test identity must be UTF-8\nRUN_ERROR scope=invocation errors=1 origin=harness code=command case_results=not_published\n"
     );
     let failed = output_with_closed_stderr(command);
     assert_eq!(failed.status.code(), Some(2));
@@ -236,7 +236,7 @@ fn real_chromium_combined_cli_is_stable_and_selects_exactly() {
             );
             assert!(output.stderr.is_empty());
             let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-            assert_eq!(report["schema"], "borrowser.cross-engine-phases.v2");
+            assert_eq!(report["schema"], "borrowser.cross-engine-phases.v3");
             assert_eq!(
                 report["environment"]["sample_pixel"],
                 serde_json::json!([32, 32])
@@ -425,4 +425,100 @@ fn assert_general_catalogue(report: &serde_json::Value, exit: i32) {
     let authored =
         ag7::declarations(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures"));
     ag7::assert_catalogue(report, exit, &identity["fixtures"], &authored);
+}
+
+#[test]
+fn ag8_explicit_comparison_distinguishes_selection_and_capture_errors() {
+    for (args, origin) in [
+        (vec!["--suite", "ci", "wpt/rgb-alias-p6"], "harness"),
+        (
+            vec![
+                "--suite",
+                "ci",
+                "--chromium-executable",
+                "/nonexistent/borrowser-cft",
+            ],
+            "chromium",
+        ),
+    ] {
+        let output = command()
+            .args(args)
+            .env_remove("BORROWSER_CHROMIUM_EXECUTABLE")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        let text = String::from_utf8(output.stderr).unwrap();
+        assert!(text.contains(&format!(
+            "RUN_ERROR scope=invocation errors=1 origin={origin}"
+        )));
+        assert!(text.contains("case_results=not_published"));
+        assert!(!text.contains("UNSUPPORTED"));
+        assert!(!text.contains("SKIP"));
+    }
+    // Explicit exclusion does not enter a capture path, but remains incomplete.
+    let output = command()
+        .args(["--suite", "extended", "wpt/unsupported/testdriver"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(3));
+    assert!(output.stderr.is_empty());
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["schema"], "borrowser.cross-engine-phases.v3");
+    assert_eq!(report["summary"]["borrowser_cases"]["unsupported"], 1);
+    assert_eq!(report["summary"]["executed_documents"], 0);
+}
+
+#[test]
+#[ignore = "requires supported native Linux x86-64 and pinned Chromium; independent CLI processes"]
+fn ag8_real_chromium_suites_are_stable() {
+    // The production platform gate rejects unsupported hosts before capture;
+    // the exact exit-0 assertion below cannot accept that as qualification.
+    std::env::var_os("BORROWSER_CHROMIUM_EXECUTABLE").expect("pinned browser required");
+    let elsewhere = tempfile::tempdir().unwrap();
+    for (suite, exit, cases, documents) in [("ci", 0, 7, 8), ("extended", 1, 11, 12)] {
+        let mut previous = None;
+        for _ in 0..2 {
+            let output = command()
+                .args(["--suite", suite])
+                .current_dir(elsewhere.path())
+                .output()
+                .unwrap();
+            assert_eq!(
+                output.status.code(),
+                Some(exit),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(output.stderr.is_empty());
+            let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(report["schema"], "borrowser.cross-engine-phases.v3");
+            assert_eq!(report["selection"]["suite"], suite);
+            assert_eq!(report["cases"].as_array().unwrap().len(), cases);
+            assert_eq!(report["summary"]["executed_documents"], documents);
+            assert_eq!(report["summary"]["borrowser_cases"]["passed"], 7);
+            for key in [
+                "failed",
+                "expected_failed",
+                "unexpected_passed",
+                "errored",
+                "skipped",
+            ] {
+                assert_eq!(report["summary"]["borrowser_cases"][key], 0);
+            }
+            if suite == "extended" {
+                ag7::assert_initial_cases(&report);
+                ag7::assert_initial_summary(&report);
+            } else {
+                assert_eq!(report["summary"]["different_fields"], 0);
+                assert_eq!(report["summary"]["incomplete_cases"], 0);
+                assert_eq!(report["summary"]["borrowser_relationships_satisfied"], 1);
+                assert_eq!(report["summary"]["chromium_relationships_satisfied"], 1);
+            }
+            if let Some(previous) = previous {
+                assert_eq!(output.stdout, previous);
+            }
+            previous = Some(output.stdout);
+        }
+    }
 }

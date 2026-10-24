@@ -27,9 +27,14 @@ fn real_execution_mismatch_is_inspectable_and_not_a_boolean() {
         String::from_utf8(bytes).unwrap(),
         concat!(
             "FAIL canvas/root\n  source: fixtures/root-canvas-color.html\n",
+            "  metadata: fixtures/root-canvas-color.fixture.json\n",
+            "  suite: catalogue\n",
+            "  reproduce: cargo run -q -p borrowser-conformance --locked -- 'canvas/root'\n",
             "  sample: (32.5, 32.5) CSS px\n  expected: #123457\n  actual:   #123456\n",
             "  difference: blue expected 87, actual 86\n",
-            "SUMMARY PASS=0 FAIL=1 XFAIL=0 XPASS=0 UNSUPPORTED=0 SKIP=0 ERROR=0\n"
+            "ENVIRONMENT viewport=640x480 device_scale_factor=1 sample_pixel=(32, 32) document_url=https://borrowser.invalid/ag1/fixture.html\n",
+            "INDEPENDENT_EXPECTATIONS XFAIL=0\nRUN harness_errors=0\n",
+            "SUMMARY PASS=0 FAIL=1 XFAIL=0 XPASS=0 UNSUPPORTED=0 SKIP=0 ERROR=0 INCOMPLETE=0\n"
         )
     );
 }
@@ -427,4 +432,65 @@ fn ag7_exit_relationship_upstream_and_error_precedence() {
         ]),
         2
     );
+}
+
+#[test]
+fn ag8_counts_aggregate_cases_once_and_keep_real_errors_separate() {
+    use crate::report::CaseCounts;
+    let pass = runnable(CanvasColor([18, 52, 86]), Expectation::Match);
+    let fail = runnable(CanvasColor([0, 0, 0]), Expectation::Match);
+    let xfail = runnable(
+        CanvasColor([0, 0, 0]),
+        Expectation::KnownFailure { reason: "known" },
+    );
+    let xpass = runnable(
+        CanvasColor([18, 52, 86]),
+        Expectation::KnownFailure { reason: "stale" },
+    );
+    let unsupported = Fixture {
+        kind: FixtureKind::Unsupported {
+            reason: "outside scope",
+        },
+        ..pass
+    };
+    let skipped = Fixture {
+        kind: FixtureKind::Skipped { reason: "explicit" },
+        ..pass
+    };
+    let cases = [
+        &pass,
+        &fail,
+        &xfail,
+        &xpass,
+        &unsupported,
+        &skipped,
+        crate::fixtures::fixture("wpt/rgb-alias-p6"),
+    ];
+    let mut reports: Vec<_> = cases
+        .into_iter()
+        .map(|f| report::evaluate(f, run_fixture(f)))
+        .collect();
+    reports.push(report::evaluate(
+        &pass,
+        Execution::Error(HarnessError::new("parser.execution", "entered case")),
+    ));
+    let mut counts = CaseCounts::default();
+    for case in &reports {
+        counts.record(case.status());
+    }
+    assert_eq!(
+        serde_json::to_value(counts).unwrap(),
+        serde_json::json!({"passed":1,"failed":1,
+        "expected_failed":1,"unexpected_passed":1,"unsupported":1,"skipped":1,"errored":1,"incomplete":1})
+    );
+    assert_eq!(report::exit_code(&reports), 2);
+    let mut bytes = vec![];
+    report::write_suite_report(&reports, Some(crate::fixtures::Suite::Extended), &mut bytes)
+        .unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+    assert!(text.contains("INDEPENDENT_EXPECTATIONS XFAIL=2\n"));
+    assert!(!text.contains("RUN_ERROR"));
+    assert!(text.ends_with(
+        "SUMMARY PASS=1 FAIL=1 XFAIL=1 XPASS=1 UNSUPPORTED=1 SKIP=1 ERROR=1 INCOMPLETE=1\n"
+    ));
 }

@@ -1,5 +1,11 @@
 # AG2 — local Chromium canvas capture
 
+AG8's harness CLI accepts `--chromium --suite ci|extended` and resolves the
+selection before passing document inputs to this adapter. It adds no suite policy
+to capture, no lifecycle change and no capture-wire/profile change. Fatal stderr
+diagnostics gain a separate invocation summary and reproduction context; entered
+case totals are never fabricated. See the [AG8 contract](ag8-deterministic-reporting-and-suites.md).
+
 AG2 belongs entirely to `crates/conformance`. It independently renders the AG1
 fixture bytes and returns `CanvasColor` plus Chromium provenance. It does not
 execute Borrowser, compare engines, change expectations, or alter production

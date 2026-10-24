@@ -379,6 +379,12 @@ fn isolated_cargo_rebuild_and_standalone_execution() {
     )
     .unwrap();
     build(&source, &target);
+    let named_original: Vec<_> = ["ci", "extended"]
+        .into_iter()
+        .map(|suite| run(&exe, temp.path(), &["--suite", suite]))
+        .collect();
+    assert_eq!(named_original[0].status.code(), Some(0));
+    assert_eq!(named_original[1].status.code(), Some(3));
     let original = run(&exe, temp.path(), &[]);
     support::assert_local_summary_exit(&original);
     assert!(String::from_utf8_lossy(&original.stdout).contains("INCOMPLETE aa/partial\n"));
@@ -406,6 +412,12 @@ fn isolated_cargo_rebuild_and_standalone_execution() {
     fs::copy(root.join("root-canvas-color.html"), root.join("added.html")).unwrap();
     build(&source, &target);
     assert!(run(&exe, temp.path(), &["added/canvas"]).status.success());
+    for (suite, original) in ["ci", "extended"].into_iter().zip(&named_original) {
+        let next = run(&exe, temp.path(), &["--suite", suite]);
+        assert_eq!(next.status.code(), original.status.code());
+        assert_eq!(next.stdout, original.stdout);
+        assert_eq!(next.stderr, original.stderr);
+    }
     let identity: Value =
         serde_json::from_slice(&run(&exe, temp.path(), &["--ag4-artifact-info"]).stdout).unwrap();
     assert_eq!(
@@ -744,6 +756,12 @@ fn isolated_cargo_rebuild_and_standalone_execution() {
     let standalone = temp.path().join("standalone");
     fs::copy(&exe, &standalone).unwrap();
     fs::remove_dir_all(&source).unwrap();
+    for (suite, original) in ["ci", "extended"].into_iter().zip(&named_original) {
+        let next = run(&standalone, temp.path(), &["--suite", suite]);
+        assert_eq!(next.status.code(), original.status.code());
+        assert_eq!(next.stdout, original.stdout);
+        assert_eq!(next.stderr, original.stderr);
+    }
     let actual = run(&standalone, temp.path(), &[]);
     support::assert_local_summary_exit(&actual);
     assert_eq!(actual.status.code(), expected.status.code());

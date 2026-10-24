@@ -85,3 +85,26 @@ fn local_build_identity_is_optional_and_aws_arguments_fail_before_credentials() 
         assert!(!o.stderr.is_empty());
     }
 }
+
+#[test]
+fn ag8_aws_execution_failures_and_harness_selection_have_distinct_provenance() {
+    for (args, origin) in [
+        (vec!["--compare-aws"], "aws"),
+        (vec!["--compare-aws", "unknown"], "harness"),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_borrowser-conformance"))
+            .args(args)
+            .env("AWS_CONFIG_FILE", "/must/not/be/accessed")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains(&format!(
+            "RUN_ERROR scope=invocation errors=1 origin={origin}"
+        )));
+        assert!(stderr.contains("case_results=not_published"));
+        assert!(!stderr.contains("UNSUPPORTED"));
+        assert!(!stderr.contains("SKIP"));
+    }
+}

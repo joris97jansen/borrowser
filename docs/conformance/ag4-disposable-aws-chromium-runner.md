@@ -1,5 +1,12 @@
 # AG4 disposable AWS Chromium runner
 
+AG8 changes the shared final comparison report to `borrowser.cross-engine-phases.v3`
+and distinguishes harness preflight failures from AWS execution failures in terminal
+stderr summaries. AWS remains an optional, suite-unaware backend with the existing
+all-catalogue/exact-ID interface. Artifact schema, remote capture wire/profile,
+cleanup and recovery contracts are unchanged. See the
+[AG8 reporting contract](ag8-deterministic-reporting-and-suites.md).
+
 AG4 belongs to conformance tooling. AWS supplies one disposable Linux execution
 environment for the existing AG2 capture. Validated capture data enters the
 existing AG3 comparison projection after the entire remote phase and cleanup.
