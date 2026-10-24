@@ -475,6 +475,24 @@ Notes:
 
 ## Browser Runtime / Platform
 
+Addressing architecture status:
+
+- AH1 completes the [URL, origin, and resource-addressing architecture contract](platform/ah1-url-origin-resource-addressing-contract.md)
+  only. It establishes logical addressing ownership, HTML/CSS reference
+  production, Browser document/base coordination, future networking/cache/policy
+  consumer boundaries, a scheme-capability matrix, deterministic diagnostics
+  requirements, and rules against further independent URL semantics.
+- Physical crate/module placement and `file:` origin policy remain explicitly
+  unresolved. Navigation remains a Browser consumer. Existing URL helpers and
+  HTTP/HTTPS/file loading are documented migration points and are unchanged.
+- AH behavior remains pending: a qualified Borrowser-owned parser boundary,
+  normalized addressing and resource identity, explicit fallback/active base
+  state and lifecycle, stylesheet base provenance, origin determination and
+  same-origin comparison, unified unsupported-capability diagnostics, and
+  URL/origin debug/conformance evidence. The current `url` dependency is not
+  qualified by AH1. Neither Milestone AH nor security-policy support is complete;
+  AG remains unchanged at nine issues.
+
 Current supported subset:
 
 - AC1 runtime-owned retained render state foundation: `PageState` owns

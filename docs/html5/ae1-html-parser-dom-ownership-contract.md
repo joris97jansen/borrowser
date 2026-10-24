@@ -182,6 +182,20 @@ API.
 
 ## CSS, Layout, And Paint Consumer Boundaries
 
+The [AH1 addressing contract](../platform/ah1-url-origin-resource-addressing-contract.md)
+defines HTML as a producer of resource-reference strings from parser-created
+attributes and DOM structure. HTML retains syntax decoding, canonical names,
+namespaces, tree order, and template semantics; it does not own URL parsing,
+normalization, base resolution, or origin computation. Browser discovers the
+relevant facts from committed publications and coordinates document/base
+lifetime; logical addressing owns their URL semantics.
+
+Current head/resource extraction helpers remain unchanged. In particular,
+`HeadMetadata::base_href` is raw metadata, not proof that standards-complete
+active document base selection exists. Future integration must preserve atomic
+publication and inert template/foreign-namespace boundaries. AH1 introduces no
+parser behavior, DOM API, dynamic base update, or resource loading change.
+
 CSS consumes the materialized DOM as style input. CSS may inspect element
 names, attributes, relationships, and stylesheet text in `<style>` elements.
 It must not depend on tokenizer states, insertion modes, parse-error counts,

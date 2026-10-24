@@ -78,6 +78,29 @@ pending, CSS receives orders 0, 2, and 3. A later pass may receive 0, 1, 2,
 and 3. Network completion order and compact active-vector position are never
 cascade order.
 
+## AH1 addressing and stylesheet base provenance
+
+The [AH1 addressing contract](../platform/ah1-url-origin-resource-addressing-contract.md)
+keeps Browser attachment identity, CSS source identity, resolved resource URL,
+and future fetch/cache identity inputs distinct. Equal resource addresses must
+not merge AF5 slots, compact sparse order, or make completion order authoritative.
+CSS cascade origin and `CssParseOrigin` are unrelated to URL/security origins.
+
+Future integration must carry qualified stylesheet-location provenance under
+the applicable HTML/CSS integration rules, separately from the authored link
+and embedding document's base. AH1 records the current HTML URL list[0] and
+CSSOM first-request rules and their acknowledged integration issue; it leaves
+exact redirect/location reconciliation to evidence in existing AH work. No
+request or response URL is selected as a universal stylesheet base.
+Embedded/inline references require their applicable environment context.
+Browser retains provenance and coordinates availability; CSS owns authored
+values and applicability; addressing owns URL semantics. AH1 specifies no new
+collection field or API and does not claim that the current loader supplies a
+qualified stylesheet-base handoff.
+
+Current discovery/resolution helpers, slot reconciliation, decoded stylesheet
+installation, cascade order, and supported property behavior remain unchanged.
+
 ## Checked representation and failures
 
 Pass-local coordinates are compact `u32` newtypes. Every conversion from an
