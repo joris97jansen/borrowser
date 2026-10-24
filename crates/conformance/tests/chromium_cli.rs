@@ -218,3 +218,28 @@ fn macos_execution_rejected_before_normal_cli_launch() {
         }
     }
 }
+
+#[test]
+fn ag8_capture_resolves_suites_before_entering_the_adapter() {
+    for (args, origin) in [
+        (vec!["--suite", "ci", "wpt/rgb-alias-p6"], "harness"),
+        (
+            vec![
+                "--suite",
+                "ci",
+                "--chromium-executable",
+                "/nonexistent/borrowser-cft",
+            ],
+            "chromium",
+        ),
+    ] {
+        let output = command().args(args).output().unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        let text = String::from_utf8(output.stderr).unwrap();
+        assert!(text.contains(&format!(
+            "RUN_ERROR scope=invocation errors=1 origin={origin}"
+        )));
+        assert!(text.contains("case_results=not_published"));
+    }
+}

@@ -385,6 +385,7 @@ impl OwnedChromium {
         #[cfg(test)]
         if fault::take(fault::Point::Allocation) {
             return Err(super::error::Failure {
+                context: None,
                 primary: Some(Error::Launch {
                     stage: "injected allocation boundary",
                     errno: libc::EIO,
@@ -720,6 +721,7 @@ impl OwnedChromium {
                     Vec::new()
                 };
                 Err(super::error::Failure {
+                    context: None,
                     primary: Some(primary),
                     cleanup,
                 })

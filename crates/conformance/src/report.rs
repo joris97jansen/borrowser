@@ -123,26 +123,131 @@ fn color(CanvasColor([r, g, b]): CanvasColor) -> String {
     format!("#{r:02x}{g:02x}{b:02x}")
 }
 
+/// Derived aggregate case totals, never counts of documents or comparison facts.
+#[derive(Default, Debug, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct CaseCounts {
+    pub(crate) passed: usize,
+    pub(crate) failed: usize,
+    pub(crate) expected_failed: usize,
+    pub(crate) unexpected_passed: usize,
+    pub(crate) unsupported: usize,
+    pub(crate) skipped: usize,
+    pub(crate) errored: usize,
+    pub(crate) incomplete: usize,
+}
+impl CaseCounts {
+    pub(crate) fn record(&mut self, status: &str) {
+        let count = match status {
+            "PASS" => &mut self.passed,
+            "FAIL" => &mut self.failed,
+            "XFAIL" => &mut self.expected_failed,
+            "XPASS" => &mut self.unexpected_passed,
+            "UNSUPPORTED" => &mut self.unsupported,
+            "SKIP" => &mut self.skipped,
+            "ERROR" => &mut self.errored,
+            "INCOMPLETE" => &mut self.incomplete,
+            _ => unreachable!("existing evaluated case status"),
+        };
+        *count += 1;
+    }
+    fn fields(&self) -> [(&'static str, usize); 8] {
+        [
+            ("PASS", self.passed),
+            ("FAIL", self.failed),
+            ("XFAIL", self.expected_failed),
+            ("XPASS", self.unexpected_passed),
+            ("UNSUPPORTED", self.unsupported),
+            ("SKIP", self.skipped),
+            ("ERROR", self.errored),
+            ("INCOMPLETE", self.incomplete),
+        ]
+    }
+}
+
+fn quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+pub(crate) fn reproduction(mode: &str, suite: Option<crate::fixtures::Suite>, id: &str) -> String {
+    let mut command = "cargo run -q -p borrowser-conformance --locked --".to_string();
+    if !mode.is_empty() {
+        command.push(' ');
+        command.push_str(mode);
+    }
+    if let Some(suite) = suite {
+        command.push_str(&format!(" --suite {}", suite.name()));
+    }
+    match mode {
+        "--compare" | "--chromium" => command.push_str(" --chromium-executable \"$BORROWSER_CHROMIUM_EXECUTABLE\""),
+        "--compare-aws" => command.push_str(" --config \"$AG4_CONFIG\" --artifact-dir \"$AG4_ARTIFACT_DIR\" --state-dir \"$AG4_STATE_DIR\""),
+        _ => {}
+    }
+    command.push(' ');
+    command.push_str(&quote(id));
+    command
+}
+
+pub(crate) fn write_run_error(
+    out: &mut impl Write,
+    origin: &str,
+    code: &str,
+    publication: &str,
+) -> io::Result<()> {
+    writeln!(
+        out,
+        "RUN_ERROR scope=invocation errors=1 origin={origin} code={code} case_results={publication}"
+    )
+}
+
+pub(crate) fn write_invocation_reproduction(
+    args: &[String],
+    out: &mut impl Write,
+) -> io::Result<()> {
+    writeln!(
+        out,
+        "REPRO command: cargo run -q -p borrowser-conformance --locked -- {}",
+        args.iter().map(|s| quote(s)).collect::<Vec<_>>().join(" ")
+    )?;
+    if matches!(
+        args.first().map(String::as_str),
+        Some("--compare" | "--chromium")
+    ) && !args.iter().any(|arg| arg == "--chromium-executable")
+    {
+        writeln!(
+            out,
+            "REPRO BORROWSER_CHROMIUM_EXECUTABLE: {:?}",
+            std::env::var_os("BORROWSER_CHROMIUM_EXECUTABLE")
+        )?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
 pub(crate) fn write_report(reports: &[CaseReport<'_>], out: &mut impl Write) -> io::Result<()> {
-    const STATUSES: [&str; 8] = [
-        "PASS",
-        "FAIL",
-        "XFAIL",
-        "XPASS",
-        "UNSUPPORTED",
-        "SKIP",
-        "ERROR",
-        "INCOMPLETE",
-    ];
-    let mut counts = [0; 8];
+    write_suite_report(reports, None, out)
+}
+
+pub(crate) fn write_suite_report(
+    reports: &[CaseReport<'_>],
+    suite: Option<crate::fixtures::Suite>,
+    out: &mut impl Write,
+) -> io::Result<()> {
+    let mut counts = CaseCounts::default();
     for report in reports {
         let status = report.status();
-        counts[STATUSES
-            .iter()
-            .position(|item| *item == status)
-            .expect("report status")] += 1;
+        counts.record(status);
         writeln!(out, "{status} {}", report.fixture.id.0)?;
         writeln!(out, "  source: {}", report.fixture.document.source)?;
+        writeln!(out, "  metadata: {}", report.fixture.metadata_source)?;
+        writeln!(out, "  suite: {}", suite.map_or("catalogue", |s| s.name()))?;
+        writeln!(
+            out,
+            "  reproduce: {}",
+            reproduction("", suite, report.fixture.id.0)
+        )?;
+        if let Some((_, reference)) = report.fixture.reference() {
+            writeln!(out, "  reference source: {}", reference.source)?;
+        }
         match (&report.execution, report.fixture.independent()) {
             (
                 Execution::Observed(actual),
@@ -262,11 +367,26 @@ pub(crate) fn write_report(reports: &[CaseReport<'_>], out: &mut impl Write) -> 
             writeln!(out, "  provenance: {}", serde_json::to_string(&provenance)?)?;
         }
     }
+    writeln!(
+        out,
+        "ENVIRONMENT viewport={}x{} device_scale_factor=1 sample_pixel=({}, {}) document_url={}",
+        crate::environment::WIDTH,
+        crate::environment::HEIGHT,
+        crate::environment::SAMPLE[0],
+        crate::environment::SAMPLE[1],
+        crate::environment::URL
+    )?;
+    writeln!(
+        out,
+        "INDEPENDENT_EXPECTATIONS XFAIL={}",
+        reports
+            .iter()
+            .filter(|r| r.independent_status() == Some("XFAIL"))
+            .count()
+    )?;
+    writeln!(out, "RUN harness_errors=0")?;
     write!(out, "SUMMARY")?;
-    for (status, count) in STATUSES.into_iter().zip(counts) {
-        if status == "INCOMPLETE" && count == 0 {
-            continue;
-        }
+    for (status, count) in counts.fields() {
         write!(out, " {status}={count}")?;
     }
     writeln!(out)

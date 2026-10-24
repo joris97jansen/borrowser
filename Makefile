@@ -401,6 +401,7 @@ build-release-html5:
 
 # Full CI-equivalent pipeline
 ci:
+	@$(MAKE) conformance-ci
 	@$(MAKE) fmt-check
 	@$(MAKE) lint
 	@$(MAKE) lint-html5
@@ -496,3 +497,12 @@ test-ag4:
 	cargo test -p borrowser-conformance --locked
 	python3 -m unittest discover -s tools/conformance/tests -v
 	python3 -m unittest discover -s crates/conformance/aws/tests -v
+
+# Fixed membership; ordinary engine development requires no external browser/cloud.
+.PHONY: conformance-ci conformance-extended
+conformance-ci:
+	cargo run -q -p borrowser-conformance --locked -- --suite ci
+
+# Intentionally propagates the suite command's failure; Make uses its own nonzero exit status.
+conformance-extended:
+	cargo run -q -p borrowser-conformance --locked -- --suite extended

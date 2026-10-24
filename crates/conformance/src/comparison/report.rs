@@ -156,6 +156,8 @@ fn fields(
 }
 #[derive(Serialize)]
 pub(super) struct Case {
+    borrowser_status: &'static str,
+    reproduce: String,
     test_id: &'static str,
     source: &'static str,
     descriptor: Option<crate::chromium::CaptureDescriptor>,
@@ -280,6 +282,8 @@ impl Case {
             "equal_for_requested_scope"
         };
         Ok(Self {
+            borrowser_status: evaluation.status(),
+            reproduce: crate::report::reproduction("--compare", None, fixture.id.0),
             test_id: fixture.id.0,
             source: fixture.document.source,
             status,
@@ -323,6 +327,9 @@ impl Case {
             fields.push(Field::new(unavailable, unavailable));
         }
         Self {
+            borrowser_status: crate::report::evaluate(fixture, Execution::Unsupported { reason })
+                .status(),
+            reproduce: crate::report::reproduction("--compare", None, fixture.id.0),
             test_id: fixture.id.0,
             source: fixture.document.source,
             descriptor: None,
@@ -341,6 +348,9 @@ impl Case {
     }
     pub(super) fn skipped(fixture: &Fixture, reason: &'static str) -> Self {
         Self {
+            borrowser_status: crate::report::evaluate(fixture, Execution::Skipped { reason })
+                .status(),
+            reproduce: crate::report::reproduction("--compare", None, fixture.id.0),
             test_id: fixture.id.0,
             source: fixture.document.source,
             descriptor: None,
@@ -422,6 +432,7 @@ fn coverage(p: &ProjectedObservations) -> Value {
 }
 #[derive(Default, Serialize)]
 struct Summary {
+    borrowser_cases: crate::report::CaseCounts,
     equal_fields: usize,
     different_fields: usize,
     unsupported_fields: usize,
@@ -440,6 +451,7 @@ struct Summary {
 #[derive(Serialize)]
 pub(super) struct Report {
     schema: &'static str,
+    selection: Value,
     environment: Value,
     cases: Vec<Case>,
     summary: Summary,
@@ -448,6 +460,7 @@ impl Report {
     pub(super) fn new(cases: Vec<Case>) -> Self {
         let mut s = Summary::default();
         for case in &cases {
+            s.borrowser_cases.record(case.borrowser_status);
             for f in case
                 .fields
                 .iter()
@@ -480,10 +493,17 @@ impl Report {
             }
         }
         Self {
-            schema: "borrowser.cross-engine-phases.v2",
+            schema: "borrowser.cross-engine-phases.v3",
+            selection: json!({"suite":"catalogue","mode":"--compare"}),
             environment: json!({"document_url":URL,"viewport":[WIDTH,HEIGHT],"device_scale_factor":1,"sample_pixel":SAMPLE,"color_space":"srgb"}),
             cases,
             summary: s,
+        }
+    }
+    pub(super) fn set_selection(&mut self, suite: Option<crate::fixtures::Suite>, mode: &str) {
+        self.selection = json!({"suite":suite.map_or("catalogue", |s| s.name()),"mode":mode});
+        for case in &mut self.cases {
+            case.reproduce = crate::report::reproduction(mode, suite, case.test_id);
         }
     }
     pub(super) fn exit_code(&self) -> u8 {

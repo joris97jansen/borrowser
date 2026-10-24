@@ -5,6 +5,24 @@ embedded WPT subset and one local WPT-style mismatch case to the AG6 catalogue.
 It reuses AG5 production observations and exact comparisons. No parser, CSS,
 layout, paint or browser behavior is changed to make these cases pass.
 
+## Completion record (2026-10-23)
+
+AG7 completed through [PR 1436](https://github.com/joris97jansen/borrowser/pull/1436),
+merged as `4ebae1ebd9b18d12ecbf8a7470f7cfbe58678f1b`. Native Linux qualification
+[run 39925036784, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/39925036784)
+passed all nine explicit Chromium qualifications and applicable CI for integrated
+tree `822c20cd0a9ad06eae4511ab5524d773f02e6c0d`, corrective head
+`e9b1caaf93ff1ff78eabef0069eadb517654cc66`. The
+[issue completion record](https://github.com/joris97jansen/borrowser/issues/1109#issuecomment-6361546562)
+supersedes historical pending qualification/closure language below. The supported
+platform decision is unchanged: native Linux x86-64; macOS Chromium remains
+withdrawn. Historical observations and evidence gaps are preserved.
+
+AG8 builds on that completed baseline. Its comparison report is
+`borrowser.cross-engine-phases.v3`; historical AG7 captures/reports and their
+qualification identities are not rewritten. See the
+[AG8 contract](ag8-deterministic-reporting-and-suites.md) for suites and reporting.
+
 ## Supported-platform decision
 
 Native Linux x86-64 is the supported and authoritative Chromium qualification
@@ -55,8 +73,9 @@ with the existing jobs this preserves `make ci` component coverage; distributed
 CI is not a literal execution of that command. Earlier Linux results below
 qualify only their recorded trees. Mac-only tests, separate source-free evidence,
 and unexecuted native EICE/OpenSSH qualifications retain their platform limits.
-No new live AWS qualification is required or claimed. Publication and successful
-corrective-source Linux CI remain pending; no readiness/merge/closure is implied.
+No new live AWS qualification is required or claimed. Corrective-source native
+Linux CI and AG7 completion are recorded above; historical records below retain
+their original source identities and limitations.
 
 ## Corpus and provenance
 
@@ -780,9 +799,11 @@ exclusions, native resource denial, incremental discovery and source-free execut
 Run the commands in the conformance README. Ignored qualifications must be invoked
 explicitly and must execute their named tests. Local guest-wrapper execution does
 not establish native Linux or live AWS qualification.
-See the [qualification record](#qualification-record-2026-10-21) for completed
-native Linux qualification of the published implementation and the unresolved
-incident blockers that the owner requires to be technically resolved.
+The [completion record](#completion-record-2026-10-23) is authoritative for AG7's
+completed status and native Linux qualification. The dated
+[qualification and incident records](#qualification-record-2026-10-21) preserve
+historical observations and evidence limitations; they do not describe AG7's
+current completion state or outstanding closure requirements.
 
 Multiple references, chains/cycles, fuzzy/print/readiness support, external
 resources/fonts, page JS, testharness.js execution, WebDriver, screenshots and

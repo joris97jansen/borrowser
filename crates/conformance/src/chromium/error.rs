@@ -54,6 +54,7 @@ pub(crate) enum CleanupError {
 
 #[derive(Debug)]
 pub(crate) struct Failure {
+    pub context: Option<String>,
     pub primary: Option<Error>,
     pub cleanup: Vec<CleanupError>,
 }
@@ -129,12 +130,19 @@ impl fmt::Display for CleanupError {
 }
 
 impl Failure {
+    pub(crate) fn code(&self) -> &'static str {
+        self.primary.as_ref().map_or("cleanup", Error::code)
+    }
+
     pub(crate) fn write_diagnostics(&self, out: &mut impl std::io::Write) -> std::io::Result<()> {
         if let Some(error) = &self.primary {
             writeln!(out, "ERROR chromium.{}: {error}", error.code())?;
         }
         for error in &self.cleanup {
             writeln!(out, "ERROR chromium.cleanup: {error}")?;
+        }
+        if let Some(context) = &self.context {
+            writeln!(out, "AG2 failed input: {context}")?;
         }
         Ok(())
     }

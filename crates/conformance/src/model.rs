@@ -15,6 +15,13 @@ impl HarnessError {
             detail: detail.into(),
         }
     }
+    pub(crate) fn with_document(mut self, id: TestId, role: &str, source: &str) -> Self {
+        self.detail = format!(
+            "{}; fixture={} role={} source={}",
+            self.detail, id.0, role, source
+        );
+        self
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

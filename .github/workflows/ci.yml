@@ -332,6 +332,10 @@ jobs:
             python3 -m unittest discover -s crates/conformance/aws/tests \
               -p test_guest_capture.py \
             2>&1 | tee -a "$AG2_EVIDENCE/conformance.log"
+          cargo test -p borrowser-conformance --locked --test comparison_cli \
+            ag8_real_chromium_suites_are_stable \
+            -- --exact --ignored --nocapture --test-threads=1 \
+            2>&1 | tee -a "$AG2_EVIDENCE/conformance.log"
           cargo run -p borrowser-conformance --locked -- --chromium \
             > "$AG2_EVIDENCE/captures.json" 2> "$AG2_EVIDENCE/capture.stderr"
           cargo run -p borrowser-conformance --locked -- --compare canvas/cascade \
@@ -485,6 +489,10 @@ jobs:
 
       - name: Build (debug, all targets)
         run: cargo build --workspace --all-targets --locked
+
+      - name: AG8 bounded Borrowser-only suite
+        timeout-minutes: 2
+        run: make conformance-ci
 
       - name: Run tests (default HTML5 build)
         run: cargo test --workspace --lib --bins --tests --examples --locked

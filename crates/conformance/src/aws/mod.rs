@@ -77,10 +77,28 @@ pub(crate) fn run(
     out: &mut impl Write,
     diagnostics: &mut impl Write,
 ) -> io::Result<u8> {
+    let (options, id) = match flags(args, &["--config", "--artifact-dir", "--state-dir"]) {
+        Ok(options) => options,
+        Err(error) => {
+            writeln!(diagnostics, "ERROR aws: {error}")?;
+            crate::report::write_run_error(
+                diagnostics,
+                "aws",
+                "aws.configuration",
+                "not_published",
+            )?;
+            return Ok(2);
+        }
+    };
+    let fixtures = match crate::fixtures::select(id.as_deref()) {
+        Ok(fixtures) => fixtures,
+        Err(error) => {
+            writeln!(diagnostics, "ERROR {}: {}", error.code, error.detail)?;
+            crate::report::write_run_error(diagnostics, "harness", error.code, "not_published")?;
+            return Ok(2);
+        }
+    };
     let result = (|| -> Result<_, String> {
-        let (options, id) = flags(args, &["--config", "--artifact-dir", "--state-dir"])?;
-        let fixtures = crate::fixtures::select(id.as_deref())
-            .map_err(|e| format!("{}: {}", e.code, e.detail))?;
         let inputs = crate::chromium::inputs(&fixtures);
         if inputs.is_empty() {
             return Ok((fixtures, vec![]));
@@ -104,6 +122,7 @@ pub(crate) fn run(
         }
         Err(e) => {
             writeln!(diagnostics, "ERROR aws: {e}")?;
+            crate::report::write_run_error(diagnostics, "aws", "aws.execution", "not_published")?;
             Ok(2)
         }
     }

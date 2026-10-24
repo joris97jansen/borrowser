@@ -14,9 +14,8 @@ mod generated {
     use crate::projection::{ObservationRequest, Request, StyleField, StyleProperty};
     include!(concat!(env!("OUT_DIR"), "/fixtures_generated.rs"));
 
-    pub(super) fn validated() -> Result<&'static [Fixture], HarnessError> {
-        super::validate_catalogue(GENERATED_FIXTURES)?;
-        Ok(GENERATED_FIXTURES)
+    pub(super) fn fixtures() -> &'static [Fixture] {
+        GENERATED_FIXTURES
     }
 }
 
@@ -93,20 +92,105 @@ fn validate_catalogue(fixtures: &[Fixture]) -> Result<(), HarnessError> {
 }
 
 pub(crate) fn catalogue() -> Result<&'static [Fixture], HarnessError> {
-    generated::validated()
+    let fixtures = generated::fixtures();
+    validate_catalogue(fixtures)?;
+    Ok(fixtures)
 }
 
 pub(crate) fn select(id: Option<&str>) -> Result<Vec<&'static Fixture>, HarnessError> {
-    let fixtures = catalogue()?;
+    select_suite(None, id)
+}
+
+/// Harness selection only; execution backends receive selected documents.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Suite {
+    Ci,
+    Extended,
+}
+
+const CI: &[&str] = &[
+    "canvas/cascade",
+    "canvas/root",
+    "dom/structure",
+    "dom/template-namespaces",
+    "layout/block-boxes",
+    "style/cascade-inheritance",
+    "wpt-style/background-color-mismatch",
+];
+const EXTENDED: &[&str] = &[
+    "canvas/cascade",
+    "canvas/root",
+    "dom/structure",
+    "dom/template-namespaces",
+    "layout/block-boxes",
+    "style/cascade-inheritance",
+    "wpt-style/background-color-mismatch",
+    "wpt/rgb-alias-p6",
+    "wpt/rgb-comments-p6",
+    "wpt/unsupported/first-child-js",
+    "wpt/unsupported/testdriver",
+];
+
+impl Suite {
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Ci => "ci",
+            Self::Extended => "extended",
+        }
+    }
+
+    fn members(self) -> &'static [&'static str] {
+        match self {
+            Self::Ci => CI,
+            Self::Extended => EXTENDED,
+        }
+    }
+}
+
+pub(crate) fn select_suite(
+    suite: Option<Suite>,
+    id: Option<&str>,
+) -> Result<Vec<&'static Fixture>, HarnessError> {
+    select_from(generated::fixtures(), suite, id)
+}
+
+fn select_from<'a>(
+    fixtures: &'a [Fixture],
+    suite: Option<Suite>,
+    id: Option<&str>,
+) -> Result<Vec<&'a Fixture>, HarnessError> {
+    // Validate the entire catalogue even when selecting one member. Validate
+    // named membership only on that path: legacy standalone catalogues remain valid.
+    validate_catalogue(fixtures)?;
+    if let Some(suite) = suite {
+        let members = suite.members();
+        if members.windows(2).any(|pair| pair[0] >= pair[1])
+            || members
+                .iter()
+                .any(|id| !fixtures.iter().any(|f| f.id.0 == *id))
+        {
+            return Err(HarnessError::new(
+                "fixture.configuration",
+                format!(
+                    "{} suite members must exist, be unique and sorted",
+                    suite.name()
+                ),
+            ));
+        }
+    }
     let selected: Vec<_> = fixtures
         .iter()
+        .filter(|f| suite.is_none_or(|suite| suite.members().contains(&f.id.0)))
         .filter(|f| id.is_none_or(|id| f.id.0 == id))
         .collect();
     if selected.is_empty() {
         return Err(HarnessError::new(
             "fixture.selection",
             match id {
-                Some(id) => format!("unknown test identity {id:?}"),
+                Some(id) => match suite {
+                    Some(suite) => format!("test identity {id:?} is not in suite {}", suite.name()),
+                    None => format!("unknown test identity {id:?}"),
+                },
                 None => "empty fixture selection".into(),
             },
         ));
