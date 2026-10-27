@@ -9,6 +9,15 @@ documentation only. Existing URL helpers, HTTP/HTTPS/file loading, navigation,
 DOM publication, styling, rendering, and conformance execution remain unchanged.
 It neither completes Milestone AH nor qualifies the existing URL dependency.
 
+Subsequent implementation reference: the
+[AH2 typed URL contract](ah2-typed-url-parsing-and-diagnostics.md)
+records the dedicated addressing owner, immutable URL parsing and explicit-base
+resolution, diagnostics, and the narrow image-source consumer migration. The
+2026-10-26 decision adopts published `url 2.5.7` with explicit limitations rather
+than requiring full backend conformance before AH2. Independent standards
+expectations remain unchanged; see AH-URL-001 in the feature-gap tracker. The unresolved
+physical-placement statements below describe AH1's original decision boundary.
+
 ## Reading this contract
 
 The following labels separate authority from implementation status:
@@ -423,7 +432,7 @@ semantics. Paths are relative to the repository root.
 | [browser/src/document_style.rs](../../crates/browser/src/document_style.rs): `DocumentStyleSet::reconcile_from_dom`, `collect_stylesheet_inputs`, `resolve_url`; [browser/src/page/stylesheets.rs](../../crates/browser/src/page/stylesheets.rs): `reconcile_document_stylesheets` | Stylesheet resolution trims with `str::trim`, rejects empty references, requires a base, and joins via `url::Url`. Attachment reconciliation is separate from resource identity. |
 | [browser/src/tab/css.rs](../../crates/browser/src/tab/css.rs): `on_css_network_start`, `on_css_network_done`, `on_css_decoded_block`; [runtime_css/src/lib.rs](../../crates/runtime_css/src/lib.rs): `start_css_runtime` | Response metadata is tracked; decoded CSS is installed by slot. Completion transports the requested URL; there is no qualified stylesheet-base handoff for CSS resource values. |
 | [browser/src/tab/discovery.rs](../../crates/browser/src/tab/discovery.rs): `discover_images`, `base_url`, `send_fetch` | Parses the page base and joins collected image references independently of the rendering resource provider. |
-| [browser/src/resources.rs](../../crates/browser/src/resources.rs): `resolve_image_source`, `strip_surrounding_html_ascii_whitespace`, `ResourceManager::request_image` | Strips surrounding HTML ASCII whitespace, rejects empty input, tries absolute parsing before joining; image lookup uses string keys. This differs from stylesheet/GFX paths. |
+| [browser/src/resources.rs](../../crates/browser/src/resources.rs): `resolve_image_source`, `strip_surrounding_html_ascii_whitespace`, `ResourceManager::request_image` | AH2 routes absolute parsing and explicit-base resolution through `addressing::BrowserUrl`. Still strips HTML ASCII whitespace, rejects empty input, tries absolute parsing before resolving; image lookup retains string keys. This differs from stylesheet/GFX paths. |
 | [browser/src/rendering/frame.rs](../../crates/browser/src/rendering/frame.rs): `BrowserReplacedElementInfo::resolve_image_source` | Browser provides image resolution to Layout through the existing resource boundary. |
 | [browser/src/tab/nav.rs](../../crates/browser/src/tab/nav.rs): `normalize_url`, `is_same_document_navigation_with`; [browser/src/tab/ui.rs](../../crates/browser/src/tab/ui.rs): `url_label`, `display_title` | Navigation recognizes lowercase HTTP/HTTPS/file prefixes and otherwise guesses HTTPS; same-document logic compares selected URL components. UI also parses URLs for display. These are consumer integration points. |
 | [gfx/src/util/url.rs](../../crates/gfx/src/util/url.rs): `resolve_relative_url`; [gfx/src/input/route/actions.rs](../../crates/gfx/src/input/route/actions.rs): `activate_release_target` | Link handling resolves in GFX and passes the raw reference through when no base exists. |

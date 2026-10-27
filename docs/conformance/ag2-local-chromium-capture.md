@@ -659,6 +659,90 @@ The final-snapshot completeness claim below is invalidated by the controlled
 late-spawn counterexample. Fail-closed identity/signalling behavior is preserved;
 native helper tests remain architecture evidence and do not restore support.
 
+#### AH2 clean-master attribution check (2026-10-26)
+
+The AH2 review reproduced its nine failing native helper tests on clean fetched
+`origin/master` commit `7b2189c0b5fe8570fa7113de6d0e925e81941635`, then on
+`feat/AH2-typed-url-parsing` with the same test command. This is execution evidence
+of a pre-existing conformance/platform failure, not an inference from unchanged
+source files. It does not restore macOS capture support or waive failed CI.
+
+Environment for both: macOS 27.0.1 (26A434), arm64, Apple SDK 27.0,
+`rustc 1.92.0 (ded5c06cf 2025-12-08)`, Cargo 1.92.0, target
+`aarch64-apple-darwin`, the repository's ordinary optimized/debuginfo test profile.
+Both ran outside the execution sandbox under the same user, sequentially, with
+one outer test thread. No test hooks, expectations, exclusions, timeouts, or
+native helper code were changed. Exact tests were selected; the helper's own
+existing isolated-subprocess mechanism remained in use.
+
+The baseline was a new detached worktree at
+`/private/tmp/borrowser-ah2-acceptance-5wh5x42b/master`, clean before and after.
+Its `CARGO_TARGET_DIR` was the sibling `master-target`, seeded using an APFS
+copy-on-write clone of the active debug cache, not hardlinks. Cargo rebuilt the
+baseline workspace crates from that checkout. The AH2 target remained separate.
+All locked registry versions/checksums matched. The normalized normal-dependency
+package/feature trees differ only by AH2's local addressing package/dependency.
+No existing worktree, branch, or staging area was overwritten.
+
+Executed in each checkout with its respective target directory:
+
+```sh
+cargo test -p borrowser-conformance --bin borrowser-conformance --locked --offline -- \
+  --exact \
+  chromium::tests::native_capture_failure_diagnostics \
+  chromium::tests::native_cleanup_diagnostic_failures \
+  chromium::tests::native_lifecycle_regressions \
+  chromium::tests::native_macos_bsd_ownership_states \
+  chromium::tests::native_process_and_pipe_contract \
+  chromium::tests::native_resource_completion_and_shutdown \
+  chromium::tests::native_shutdown_uses_capture_deadline \
+  chromium::tests::native_startup_exit_event_classification \
+  chromium::tests::native_temporary_artifact_containment \
+  --nocapture --test-threads=1
+```
+
+Both exited **101: 0 passed, 9 failed, 0 ignored, 190 filtered out**. Test execution
+was 45.10 seconds on master and 45.11 seconds on AH2 (compilation excluded).
+Test names and failure/primary/cleanup signatures matched. Process IDs, thread
+IDs and temporary artifact paths differ between executions and are not semantic
+failure identities.
+
+| Test (`chromium::tests::` prefix) | First failing scenario | Master and AH2 signature |
+| --- | --- | --- |
+| `native_capture_failure_diagnostics` | `capture-timeout` | A |
+| `native_cleanup_diagnostic_failures` | `diagnostic-finish-writable` | A |
+| `native_lifecycle_regressions` | `partial-mask` (prior `partial-descriptor` passed) | B |
+| `native_macos_bsd_ownership_states` | `bsd-ownership` | A, propagated through a probe unwrap |
+| `native_process_and_pipe_contract` | `exec-error` | C |
+| `native_resource_completion_and_shutdown` | `resource-rejected-abort` | A |
+| `native_shutdown_uses_capture_deadline` | `resource-shutdown-delayed-valid` | A |
+| `native_startup_exit_event_classification` | `startup-exit-events` | A |
+| `native_temporary_artifact_containment` | `temp-clean` | A |
+
+A is primary `UnsupportedPlatform("process ownership: live process executable
+unavailable during ownership scan")`, followed by cleanup
+`Identity("live process executable unavailable during ownership scan"), Timeout,
+Timeout`. B retains the deliberately injected primary
+`Launch { stage: "injected mask restoration", errno: 5 }`, with the same cleanup
+identity failure/timeouts. C fails the existing assertion that `failure.primary`
+is `Error::Launch`; its output also reports incomplete Chromium cleanup. C does
+not expose enough detail to assert that its primary error is A.
+
+The earlier sandboxed AH2 CI also reported `task_name_for_pid: Mach 5`. That is a
+related process-inspection failure class, not the literal signature of this
+outside-sandbox paired run. The precise OS/process condition behind unavailable
+live-executable information remains unestablished. No parser-related root cause
+is supported by the paired evidence.
+
+Existing ownership remains `crates/conformance/src/chromium/process/macos.rs`
+and the native helper regression contracts in `chromium/tests.rs`. This section
+is the existing conformance tracking location; any repair or CI-policy decision
+belongs there, without weakening ownership verification in AH2. Raw run evidence
+is retained locally under `target/ah2-acceptance/`: `baseline.json`,
+`environment.txt`, `master-native.log`, `ah2-native.log`, `native-results.json`,
+and `native-signatures.json`. The [AH2 review record](../platform/ah2-typed-url-parsing-and-diagnostics.md)
+records the final broader validation and merge-readiness limits.
+
 The implementation dynamically resolves `proc_signal_with_audittoken` and
 `proc_pidpath_audittoken`, obtains real `TASK_AUDIT_TOKEN` values through retained
 `task_name_for_pid` ports, and checks that a token with an incorrect generation

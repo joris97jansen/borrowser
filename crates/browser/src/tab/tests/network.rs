@@ -4,6 +4,79 @@ use core_types::{NetworkResponseInfo, ResourceKind};
 use std::sync::mpsc;
 
 #[test]
+fn known_url_deviations_reach_image_requests_and_resource_lookup_keys() {
+    use super::support::no_quirks_patch_publication_from_output;
+    use crate::resources::{ImageState, resolve_image_source};
+
+    for (source, observed) in [
+        ("file://example.net/C:/", Some("file:///C:/")),
+        ("file:///w|/m", Some("file:///w|/m")),
+        ("file://host//w|/m", Some("file://host/w|/m")),
+        ("file:////w|/m", Some("file:///w|/m")),
+        ("file://spider///", Some("file://spider/")),
+        ("file:////foo", Some("file:///foo")),
+        ("http://example.test/a^b", Some("http://example.test/a^b")),
+        (
+            "http://example.test/a%5Eb",
+            Some("http://example.test/a%5Eb"),
+        ),
+        ("non-special:opaque  ?hi", Some("non-special:opaque  ?hi")),
+        ("https://xn--/", None),
+    ] {
+        let mut tab = Tab::new(1);
+        let (tx, rx) = mpsc::channel();
+        tab.set_bus_sender(tx);
+        tab.nav_gen = 7;
+        let base = "http://example.test/page.html";
+        tab.page.start_nav(base);
+        let output = html::parse_document(
+            format!("<!doctype html><img src=\"{source}\">"),
+            html::HtmlParseOptions::default(),
+        )
+        .unwrap();
+        tab.on_core_event(CoreEvent::DomPatchUpdate {
+            tab_id: 1,
+            request_id: 7,
+            publication: no_quirks_patch_publication_from_output(output),
+        })
+        .unwrap();
+        let requests: Vec<_> = rx
+            .try_iter()
+            .filter_map(|command| match command {
+                CoreCommand::FetchStream {
+                    url,
+                    kind: ResourceKind::Image,
+                    ..
+                } => Some(url),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            requests,
+            observed.into_iter().map(str::to_owned).collect::<Vec<_>>(),
+            "{source}"
+        );
+        assert_eq!(
+            resolve_image_source(Some(base), source).as_deref(),
+            observed
+        );
+        if let Some(key) = observed {
+            assert!(matches!(
+                tab.resources.image_state_by_url(key),
+                ImageState::Loading { .. }
+            ));
+            // No reparse at request/lookup: this would lose the host if reparsed.
+            if source == "file://host//w|/m" {
+                assert!(matches!(
+                    tab.resources.image_state_by_url("file:///w:/m"),
+                    ImageState::Missing
+                ));
+            }
+        }
+    }
+}
+
+#[test]
 fn css_with_html_content_type_is_not_forwarded_to_css_runtime() {
     let mut tab = Tab::new(1);
     let (tx, rx) = mpsc::channel();
