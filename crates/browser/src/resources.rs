@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::sync::mpsc;
 
+use addressing::BrowserUrl;
 use app_api::RepaintHandle;
 use egui::{ColorImage, TextureHandle, TextureId, TextureOptions};
 use gfx::paint::ImageProvider;
 use tools::common::MAX_IMAGE_BYTES;
-use url::Url;
 
 const MAX_IMAGE_PIXELS: usize = 16_777_216; // 4096 * 4096
 
@@ -328,14 +328,15 @@ pub(crate) fn resolve_image_source(base_url: Option<&str>, source: &str) -> Opti
     if source.is_empty() {
         return None;
     }
-    if let Ok(url) = Url::parse(source) {
-        return Some(url.to_string());
+    if let Ok(parsed) = BrowserUrl::parse(source) {
+        return Some(parsed.url.as_str().to_owned());
     }
-    Url::parse(base_url?)
+    BrowserUrl::parse(base_url?)
         .ok()?
-        .join(source)
+        .url
+        .resolve(source)
         .ok()
-        .map(Into::into)
+        .map(|parsed| parsed.url.as_str().to_owned())
 }
 
 fn strip_surrounding_html_ascii_whitespace(value: &str) -> &str {
@@ -387,6 +388,94 @@ mod tests {
             .as_deref(),
             Some("https://cdn.example/hero.png")
         );
+    }
+
+    #[test]
+    fn image_source_url_boundary_preserves_resolution_and_failure_behavior() {
+        for (base, source, expected) in [
+            (
+                Some("https://example.test/docs/page.html"),
+                "../images/logo.png",
+                Some("https://example.test/images/logo.png"),
+            ),
+            (
+                Some("invalid base"),
+                "HTTP://EXAMPLE.test:80/a/../b?q#f",
+                Some("http://example.test/b?q#f"),
+            ),
+            (Some("invalid base"), "relative.png", None),
+            (None, "https://example.test:70000/a.png", None),
+            (
+                Some("https://example.test/page"),
+                "https://example.test:70000/a.png",
+                None,
+            ),
+            (
+                Some("https://example.test/docs/page"),
+                "//cdn.test:443/a.png",
+                Some("https://cdn.test/a.png"),
+            ),
+            (Some("about:blank"), "relative.png", None),
+            (Some("about:blank"), "#image", Some("about:blank#image")),
+            (None, "file:///tmp/image.png", Some("file:///tmp/image.png")),
+            (None, "custom:image", Some("custom:image")),
+            (
+                Some("https://u:p@example.test/a/"),
+                "../b.png?x=1&x=2#f",
+                Some("https://u:p@example.test/b.png?x=1&x=2#f"),
+            ),
+        ] {
+            assert_eq!(resolve_image_source(base, source).as_deref(), expected);
+        }
+    }
+
+    #[test]
+    fn known_url_deviations_match_pre_ah2_image_resolution() {
+        // Snapshot of the helper at master 7b2189c0. Literal observations below
+        // are separate from the unchanged WHATWG expectations in addressing.
+        fn pre_ah2(base_url: Option<&str>, source: &str) -> Option<String> {
+            let source = strip_surrounding_html_ascii_whitespace(source);
+            if source.is_empty() {
+                return None;
+            }
+            if let Ok(url) = url::Url::parse(source) {
+                return Some(url.to_string());
+            }
+            url::Url::parse(base_url?)
+                .ok()?
+                .join(source)
+                .ok()
+                .map(Into::into)
+        }
+
+        for (source, observed) in [
+            ("file://example.net/C:/", Some("file:///C:/")),
+            ("file:///w|/m", Some("file:///w|/m")),
+            ("file://host//w|/m", Some("file://host/w|/m")),
+            ("file:////w|/m", Some("file:///w|/m")),
+            ("file://spider///", Some("file://spider/")),
+            ("file:////foo", Some("file:///foo")),
+            ("http://example.test/a^b", Some("http://example.test/a^b")),
+            (
+                "http://example.test/a%5Eb",
+                Some("http://example.test/a%5Eb"),
+            ),
+            ("non-special:opaque  ?hi", Some("non-special:opaque  ?hi")),
+            ("https://xn--/", None),
+            ("a^b", Some("http://example.test/a^b")),
+        ] {
+            let base = Some("http://example.test/page.html");
+            assert_eq!(
+                pre_ah2(base, source).as_deref(),
+                observed,
+                "master: {source}"
+            );
+            assert_eq!(
+                resolve_image_source(base, source).as_deref(),
+                observed,
+                "AH2: {source}"
+            );
+        }
     }
 
     #[test]

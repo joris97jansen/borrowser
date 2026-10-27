@@ -482,18 +482,91 @@ Addressing architecture status:
   production, Browser document/base coordination, future networking/cache/policy
   consumer boundaries, a scheme-capability matrix, deterministic diagnostics
   requirements, and rules against further independent URL semantics.
-- Physical crate/module placement and `file:` origin policy remain explicitly
-  unresolved. Navigation remains a Browser consumer. Existing URL helpers and
-  HTTP/HTTPS/file loading are documented migration points and are unchanged.
-- AH behavior remains pending: a qualified Borrowser-owned parser boundary,
-  normalized addressing and resource identity, explicit fallback/active base
+- AH2 implements the dedicated `addressing` crate: immutable `BrowserUrl`,
+  explicit components, absolute parsing and explicit-base resolution, typed
+  fatal/implementation failures, ordered recoverable events, normalized
+  serialization/equality, and credential-redacted debug output. The
+  [AH2 contract](platform/ah2-typed-url-parsing-and-diagnostics.md) records the
+  revised decision to use published, locked `url 2.5.7` with known limitations,
+  retained independent expectations, and validation. This is not full WHATWG
+  compliance. The image-source helper uses the boundary without changing HTML
+  preprocessing, relative fallback, or resource loading.
+- `file:` origin policy remains explicitly unresolved. Navigation remains a
+  Browser consumer. Other URL helpers and
+  HTTP/HTTPS/file loading remain documented migration points.
+- AH behavior remains pending: normalized resource addressing and identity,
+  explicit fallback/active base
   state and lifecycle, stylesheet base provenance, origin determination and
   same-origin comparison, unified unsupported-capability diagnostics, and
-  URL/origin debug/conformance evidence. The current `url` dependency is not
-  qualified by AH1. Neither Milestone AH nor security-policy support is complete;
+  wider URL/origin debug/conformance evidence. The current `url` dependency is not
+  fully qualified against WHATWG. Neither Milestone AH nor security-policy support is complete;
   AG remains unchanged at nine issues.
 
-Current supported subset:
+### AH-URL-001 — Upstream WHATWG URL parsing deviations
+
+**Status:** Known external dependency limitations affecting active resource
+addressing: file host/path preservation, HTTP caret encoding, opaque-path spaces,
+and ASCII-domain acceptance. The focused consumer checks reproduce pre-AH2
+behavior; no AH2 normalization or loading regression was found. The earlier
+statement about ordinary HTTP/HTTPS resolution was too narrow: a raw caret
+reaches an HTTP request target unchanged. This establishes a concrete behavior
+difference, not exploitability or a particular server's response.
+
+**Evidence provenance:** the earlier isolated investigation evaluated
+`servo/rust-url` revision `00a6ce58d02f4e0d43c5ca0702c0bedb8b1ebf3a`.
+Borrowser does **not** depend on that revision. Cargo.lock selects the published
+crates.io `url 2.5.7` package (package source revision
+`2387efa12d3d294d488bb77ab580a21b88868fd2`, checksum
+`08bc136a29a3d1758e07a9cca267be308aeebf5cfd5a10f3f67ab2097683ef5b`).
+The following published-dependency results were separately reproduced through
+`BrowserUrl` and the image-source consumer on 2026-10-26; they are not inferred
+from the upstream revision.
+
+| Input | WHATWG expectation | Observed at investigated upstream revision | Confirmed locked `url 2.5.7` |
+| --- | --- | --- | --- |
+| `file:///w\|/m` | `file:///w:/m` | `file:///w\|/m` | `file:///w\|/m` |
+| `file://host//w\|/m` | unchanged | `file://host/w\|/m` | `file://host/w\|/m` |
+| `file:////w\|/m` | unchanged | `file:///w\|/m` | `file:///w\|/m` |
+
+Additional **published 2.5.7** evidence (not attributed to the newer upstream pin):
+
+| Input | WHATWG expectation | `BrowserUrl` / image-source result | Active consumer consequence |
+| --- | --- | --- | --- |
+| `file://example.net/C:/` | Host retained; unchanged URL | `file:///C:/` / same | Image discovery sends that string; the macOS file loader attempts local `/C:/`, not a remote authority operation. |
+| `http://example.test/a^b` | `http://example.test/a%5Eb` | Raw caret retained / same | Raw and encoded forms produce distinct image keys and distinct HTTP request paths; loopback transport confirms `/a^b` versus `/a%5Eb`. |
+| `non-special:opaque  ?hi` | `non-special:opaque %20?hi` | Two spaces retained / same | Discovery can enqueue it, but the HTTP client rejects this hostless non-HTTP URL before a response. |
+| `https://xn--/` | Accepted unchanged | `InvalidDomain` / `None` | Discovery rejects the reference; no image fetch is enqueued. |
+
+All these observations match master `7b2189c0b5fe8570fa7113de6d0e925e81941635`'s
+parser/helper behavior. The file loader is a separate pre-existing limitation:
+it strips `file://` and calls `File::open` on the remaining platform path; it
+does not implement remote file-authority semantics or reparse the URL. The
+repeated-slash cases change serialized keys, but a different filesystem object
+is not inferred solely from redundant separators. No native Windows file-I/O
+claim is made from macOS tests.
+
+The [AH2 consumer trace](platform/ah2-typed-url-parsing-and-diagnostics.md#consumer-impact-assessment)
+records the exact paths, master comparison, and tests. Further file host-loss,
+repeated-slash and round-trip cases remain in the unchanged standards fixtures
+and [discrepancy evidence](platform/ah2-typed-url-parsing-and-diagnostics.md#retained-standards-discrepancies).
+Do not assume affected file strings preserve identity across reparsing. This
+entry does not classify all file URLs as unsupported; file-origin policy remains
+separately unresolved under AH1.
+
+**Decision:** Do not patch or fork the dependency for AH2. Revisit when a current
+consumer requires the affected behavior, a security or correctness blocker is
+demonstrated, or a qualified upstream correction becomes available.
+
+References: [PR #1103](https://github.com/servo/rust-url/pull/1103),
+[PR #1119](https://github.com/servo/rust-url/pull/1119),
+[PR #1147](https://github.com/servo/rust-url/pull/1147),
+[caret correction PR #1141](https://github.com/servo/rust-url/pull/1141),
+[ASCII-domain issue #1135](https://github.com/servo/rust-url/issues/1135),
+[WHATWG path percent-encode set](https://url.spec.whatwg.org/#path-percent-encode-set),
+[WHATWG parsing states, including opaque paths](https://url.spec.whatwg.org/#concept-basic-url-parser),
+[WHATWG domain-to-ASCII](https://url.spec.whatwg.org/#concept-domain-to-ascii).
+
+### Current supported subset
 
 - AC1 runtime-owned retained render state foundation: `PageState` owns
   `RetainedRenderState`, typed `RenderEpoch` semantics, deterministic retained

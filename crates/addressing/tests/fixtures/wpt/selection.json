@@ -1,0 +1,333 @@
+{
+  "upstream_revision": "c48d58747e1f211527fb695fd60548a997fae617",
+  "upstream_path": "url/resources/urltestdata.json",
+  "sha256": "81e85fd3c199c08ef9c34cf651b3580eeedd080316493bfaf277a6b5ff8cf652",
+  "license_sha256": "5fac07febb0e2a97fb0d7b0def149ec08b642e1ba4b9c345283ab1cbd2af6570",
+  "standard_revision": "845bafca22fb0c5a42c4bf384a9bdea525a2f10d",
+  "cases": [
+    {
+      "id": "credentials-empty-password",
+      "index": 3,
+      "input": "https://test:@test",
+      "rationale": "Empty authored password normalizes away"
+    },
+    {
+      "id": "credentials-empty-both",
+      "index": 4,
+      "input": "https://:@test",
+      "rationale": "Empty authored credentials normalize away"
+    },
+    {
+      "id": "credentials-nonspecial-empty-password",
+      "index": 5,
+      "input": "non-special://test:@test/x",
+      "rationale": "Same credential normalization for non-special URLs"
+    },
+    {
+      "id": "credentials-unicode",
+      "index": 47,
+      "input": "http://é@é",
+      "rationale": "Independent userinfo encoding and IDNA host processing"
+    },
+    {
+      "id": "credentials-backslash",
+      "index": 56,
+      "input": "http://a:b@c\\",
+      "rationale": "Special-scheme reverse-solidus recovery"
+    },
+    {
+      "id": "file-port-invalid",
+      "index": 85,
+      "input": "file://example:1/",
+      "rationale": "File URLs do not accept ports"
+    },
+    {
+      "id": "file-ipv6-invalid",
+      "index": 88,
+      "input": "file://[example]/",
+      "rationale": "Invalid bracketed file host is fatal"
+    },
+    {
+      "id": "file-windows-drive-pipe",
+      "index": 138,
+      "input": "file:///w|/m",
+      "rationale": "Windows drive separator normalization"
+    },
+    {
+      "id": "file-windows-drive-no-slashes",
+      "index": 139,
+      "input": "file:C|/m/",
+      "rationale": "File authority-slash recovery"
+    },
+    {
+      "id": "path-dot-segments",
+      "index": 142,
+      "input": "http://example.com/././foo",
+      "rationale": "Hierarchical dot-segment normalization"
+    },
+    {
+      "id": "path-encoded-dot-segments",
+      "index": 155,
+      "input": "http://example.com/foo/%2e./%2e%2e/.%2e/%2e.bar",
+      "rationale": "Encoded dot-segment normalization"
+    },
+    {
+      "id": "path-incomplete-percent",
+      "index": 161,
+      "input": "http://example.com/foo%",
+      "rationale": "Malformed percent escape is recoverable"
+    },
+    {
+      "id": "path-invalid-percent",
+      "index": 163,
+      "input": "http://example.com/foo%2zbar",
+      "rationale": "Malformed percent escape is preserved"
+    },
+    {
+      "id": "path-existing-escapes",
+      "index": 165,
+      "input": "http://example.com/foo%41%7a",
+      "rationale": "Existing percent escape spelling is preserved"
+    },
+    {
+      "id": "path-unicode",
+      "index": 174,
+      "input": "http://example.com/你好你好",
+      "rationale": "UTF-8 path percent encoding"
+    },
+    {
+      "id": "fragment-empty",
+      "index": 179,
+      "input": "http://www.google.com/foo?bar=baz#",
+      "rationale": "Present-empty fragment survives serialization"
+    },
+    {
+      "id": "ipv4-nondecimal",
+      "index": 183,
+      "input": "http://192.0x00A80001",
+      "rationale": "IPv4 host normalization"
+    },
+    {
+      "id": "credentials-missing-host",
+      "index": 186,
+      "input": "http://user:pass@/",
+      "rationale": "Credentials do not make an empty host valid"
+    },
+    {
+      "id": "http-default-port",
+      "index": 189,
+      "input": "http://foo:80/",
+      "rationale": "Default HTTP port is absent after normalization"
+    },
+    {
+      "id": "https-default-port",
+      "index": 193,
+      "input": "https://foo:443/",
+      "rationale": "Default HTTPS port is absent after normalization"
+    },
+    {
+      "id": "ftp-parses-without-operation-support",
+      "index": 195,
+      "input": "ftp://foo:21/",
+      "rationale": "Parsing is distinct from transport support"
+    },
+    {
+      "id": "ws-default-port",
+      "index": 199,
+      "input": "ws://foo:80/",
+      "rationale": "Reserved scheme still has parsing semantics"
+    },
+    {
+      "id": "wss-default-port",
+      "index": 205,
+      "input": "wss://foo:443/",
+      "rationale": "Reserved secure scheme still has parsing semantics"
+    },
+    {
+      "id": "special-slash-recovery",
+      "index": 207,
+      "input": "http:/example.com/",
+      "rationale": "Recoverable authority-slash syntax"
+    },
+    {
+      "id": "file-slash-recovery",
+      "index": 211,
+      "input": "file:/example.com/",
+      "rationale": "Recoverable file authority-slash syntax"
+    },
+    {
+      "id": "credentials-empty-username",
+      "index": 234,
+      "input": "http://@www.example.com",
+      "rationale": "Empty authored username is not retained"
+    },
+    {
+      "id": "credentials-password-only",
+      "index": 241,
+      "input": "http://:b@www.example.com",
+      "rationale": "Empty username with a nonempty password"
+    },
+    {
+      "id": "boundary-controls",
+      "index": 290,
+      "input": "\u0000\u001b\u0004\u0012 http://example.com/\u001f \r ",
+      "rationale": "Only URL-standard preprocessing belongs to parsing"
+    },
+    {
+      "id": "opaque-path-trailing-space",
+      "index": 292,
+      "input": "non-special:opaque  ?hi",
+      "rationale": "Opaque-path trailing-space normalization with query"
+    },
+    {
+      "id": "idna-unicode",
+      "index": 327,
+      "input": "https://faß.ExAmPlE/",
+      "rationale": "Independent non-ASCII domain expectation"
+    },
+    {
+      "id": "opaque-host-unicode",
+      "index": 328,
+      "input": "sc://faß.ExAmPlE/",
+      "rationale": "Non-special host encoding differs from IDNA"
+    },
+    {
+      "id": "domain-space-invalid",
+      "index": 342,
+      "input": "https://x x:12",
+      "rationale": "Invalid domain is fatal"
+    },
+    {
+      "id": "ipv6-invalid",
+      "index": 351,
+      "input": "http://[www.google.com]/",
+      "rationale": "Invalid IPv6 text is fatal"
+    },
+    {
+      "id": "special-query-encoding",
+      "index": 382,
+      "input": "http://host/?'",
+      "rationale": "Special-query percent-encode set"
+    },
+    {
+      "id": "nonspecial-query-encoding",
+      "index": 383,
+      "input": "notspecial://host/?'",
+      "rationale": "Non-special query preserves apostrophe"
+    },
+    {
+      "id": "opaque-host-invalid",
+      "index": 438,
+      "input": "sc://a b/",
+      "rationale": "Invalid opaque-host code point is fatal"
+    },
+    {
+      "id": "domain-percent-encoding",
+      "index": 549,
+      "input": "https://%e2%98%83",
+      "rationale": "Host percent decoding before IDNA"
+    },
+    {
+      "id": "embedded-tabs-newlines",
+      "index": 555,
+      "input": "h\tt\nt\rp://h\to\ns\rt:9\t0\n0\r0/p\ta\nt\rh?q\tu\ne\rry#f\tr\na\rg",
+      "rationale": "Preprocessing applies throughout the input"
+    },
+    {
+      "id": "ipv4-out-of-range",
+      "index": 595,
+      "input": "https://256.0.0.1/test",
+      "rationale": "Invalid IPv4 address is fatal"
+    },
+    {
+      "id": "file-repeated-path-slashes",
+      "index": 630,
+      "input": "file://spider///",
+      "rationale": "Known counterexample: preserve repeated file path slashes"
+    },
+    {
+      "id": "file-localhost-repeated-slashes",
+      "index": 634,
+      "input": "file://localhost//a//../..//",
+      "rationale": "Known counterexample: localhost and path normalization"
+    },
+    {
+      "id": "file-domain-and-drive",
+      "index": 662,
+      "input": "file://example.net/C:/",
+      "rationale": "Known counterexample: preserve domain host alongside drive"
+    },
+    {
+      "id": "file-ipv4-and-drive",
+      "index": 663,
+      "input": "file://1.2.3.4/C:/",
+      "rationale": "Known counterexample: preserve IPv4 host alongside drive"
+    },
+    {
+      "id": "file-ipv6-and-drive",
+      "index": 664,
+      "input": "file://[1::8]/C:/",
+      "rationale": "Known counterexample: preserve IPv6 host alongside drive"
+    },
+    {
+      "id": "file-empty-host-repeated-slash",
+      "index": 697,
+      "input": "file:////foo",
+      "rationale": "Known counterexample: preserve empty host and path shape"
+    },
+    {
+      "id": "nonspecial-empty-host-query",
+      "index": 736,
+      "input": "sc://?",
+      "rationale": "Empty host is distinct from absent authority"
+    },
+    {
+      "id": "nonspecial-hostless-path",
+      "index": 754,
+      "input": "non-spec:/.//",
+      "rationale": "Hostless hierarchical path serialization"
+    },
+    {
+      "id": "nonspecial-host-case",
+      "index": 770,
+      "input": "non-special://H%4fSt/path",
+      "rationale": "Opaque host spelling is not domain normalization"
+    },
+    {
+      "id": "nonspecial-ipv6",
+      "index": 772,
+      "input": "non-special://[1:2:0:0:5:0:0:0]/",
+      "rationale": "IPv6 remains typed in non-special authorities"
+    },
+    {
+      "id": "blob-opaque-path",
+      "index": 776,
+      "input": "blob:https://example.com:443/",
+      "rationale": "Parsing a blob-shaped string does not compute origins"
+    },
+    {
+      "id": "fragment-null",
+      "index": 903,
+      "input": "https://x/?#\u0000y",
+      "rationale": "NULL is percent encoded in a fragment"
+    },
+    {
+      "id": "empty-input",
+      "index": 916,
+      "input": "",
+      "rationale": "No implicit base or address-bar guessing"
+    },
+    {
+      "id": "idna-ascii-xn-label",
+      "index": 921,
+      "input": "https://xn--/",
+      "rationale": "Known current-standard IDNA counterexample"
+    },
+    {
+      "id": "unknown-scheme-authority",
+      "index": 925,
+      "input": "constructor://HOST:80",
+      "rationale": "Generic non-special authority with nondefault port"
+    }
+  ]
+}

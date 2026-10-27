@@ -74,18 +74,25 @@ resource lifecycle. Networking, cache, and security policies consume normalized
 addresses, identity inputs, and origins. Layout and Paint retain their existing
 downstream responsibilities.
 
-Physical crate/module placement remains undecided until implementation evidence
-establishes dependency direction, actual consumers, API needs, cycle avoidance,
-and cohesion. The existing `platform` crate owns window/runtime integration;
-its name does not make it the addressing implementation location. AH1 adds no
-crate, module, API, dependency, or Rust behavior.
+AH1 deferred physical placement. AH2 selects the dedicated `addressing` crate
+below its consumers; it owns immutable `BrowserUrl` values, absolute parsing,
+explicit-base resolution, typed diagnostics, normalized serialization, complete
+URL equality, and credential-redacted debug output. It wraps the published
+`url` dependency selected by Cargo.lock. The existing `platform` crate owns window/runtime
+integration and depends on addressing consumers, so it cannot serve this role
+without reversing dependency direction. The
+[AH2 contract](../platform/ah2-typed-url-parsing-and-diagnostics.md)
+records the revised dependency-acceptance decision, retained standards failures,
+and scoped validation. AH1 itself added no crate, dependency, or Rust behavior.
 
-Existing Browser/GFX URL helpers, string transport, HTTP/HTTPS/file loading,
-redirects, and navigation are documented migration points and remain unchanged.
+Browser's image-source resolution helper now uses addressing, preserving its
+HTML preprocessing and absolute-first/base-fallback behavior. Other Browser/GFX
+URL helpers, string transport, HTTP/HTTPS/file loading, redirects, and navigation
+remain documented migration points using the same published backend.
 The AH scheme matrix describes future addressing capability separately from
 current transport. `file:` origin policy remains explicitly unresolved, and
 navigation stays a Browser consumer without a new AH identity abstraction.
-Only the architecture contract is complete; wider AH implementation remains
+Document bases, origins, resource identity, and wider AH implementation remain
 pending in the [feature-gap tracker](../engine-feature-gap-tracker.md).
 
 ---
