@@ -399,8 +399,15 @@ build-release:
 build-release-html5:
 	cargo build --workspace --release --features html5 --locked
 
+# Enforce the independently frozen AH3 URL source and graph in both workspaces.
+.PHONY: check-url-dependencies
+check-url-dependencies:
+	python3 tools/ci/check_url_dependencies.py
+	python3 -m unittest discover -s tools/ci/tests -v
+
 # Full CI-equivalent pipeline
 ci:
+	@$(MAKE) check-url-dependencies
 	@$(MAKE) conformance-ci
 	@$(MAKE) fmt-check
 	@$(MAKE) lint

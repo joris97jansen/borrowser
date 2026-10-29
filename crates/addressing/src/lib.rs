@@ -1,6 +1,6 @@
 //! Immutable URL values and explicit-base resolution owned by Borrowser.
 //!
-//! Parsing wraps the published `url` crate. It does not grant permission to
+//! Parsing wraps the revision-pinned maintained `url` fork. It does not grant permission to
 //! fetch a scheme, compute an origin, or select a document base. See the AH2
 //! contract and AH-URL-001 in the feature-gap tracker for dependency limitations.
 
@@ -84,8 +84,7 @@ impl BrowserUrl {
 
     /// Complete normalized serialization, including credentials. Use `Debug`
     /// for credential-redacted diagnostics; this is not a presentation label.
-    /// Known backend deviations can prevent round-trip stability for some file
-    /// URLs; repeated serialization of this immutable value is always stable.
+    /// Repeated serialization of this immutable value is always stable.
     pub fn as_str(&self) -> &str {
         self.inner.as_str()
     }

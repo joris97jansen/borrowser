@@ -6,6 +6,8 @@ use std::fmt;
 pub enum UrlDiagnostic {
     Backslash,
     BoundaryControlOrSpaceIgnored,
+    /// Strict domain-to-ASCII validation failed; non-strict parsing may still succeed.
+    DomainToAscii,
     EmbeddedCredentials,
     ExpectedAuthoritySlashes,
     ExpectedFileSlashes,
@@ -25,6 +27,7 @@ impl UrlDiagnostic {
         match event {
             V::Backslash => Self::Backslash,
             V::C0SpaceIgnored => Self::BoundaryControlOrSpaceIgnored,
+            V::DomainToAscii => Self::DomainToAscii,
             V::EmbeddedCredentials => Self::EmbeddedCredentials,
             V::ExpectedDoubleSlash => Self::ExpectedAuthoritySlashes,
             V::ExpectedFileDoubleSlash => Self::ExpectedFileSlashes,

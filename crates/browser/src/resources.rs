@@ -430,50 +430,28 @@ mod tests {
     }
 
     #[test]
-    fn known_url_deviations_match_pre_ah2_image_resolution() {
-        // Snapshot of the helper at master 7b2189c0. Literal observations below
-        // are separate from the unchanged WHATWG expectations in addressing.
-        fn pre_ah2(base_url: Option<&str>, source: &str) -> Option<String> {
-            let source = strip_surrounding_html_ascii_whitespace(source);
-            if source.is_empty() {
-                return None;
-            }
-            if let Ok(url) = url::Url::parse(source) {
-                return Some(url.to_string());
-            }
-            url::Url::parse(base_url?)
-                .ok()?
-                .join(source)
-                .ok()
-                .map(Into::into)
-        }
-
-        for (source, observed) in [
-            ("file://example.net/C:/", Some("file:///C:/")),
-            ("file:///w|/m", Some("file:///w|/m")),
-            ("file://host//w|/m", Some("file://host/w|/m")),
-            ("file:////w|/m", Some("file:///w|/m")),
-            ("file://spider///", Some("file://spider/")),
-            ("file:////foo", Some("file:///foo")),
-            ("http://example.test/a^b", Some("http://example.test/a^b")),
+    fn qualified_url_resolution_matches_standard_expectations() {
+        // Literal independent expectations; the production helper remains unchanged.
+        for (source, expected) in [
+            ("file://example.net/C:/", Some("file://example.net/C:/")),
+            ("file:///w|/m", Some("file:///w:/m")),
+            ("file://host//w|/m", Some("file://host//w|/m")),
+            ("file:////w|/m", Some("file:////w|/m")),
+            ("file://spider///", Some("file://spider///")),
+            ("file:////foo", Some("file:////foo")),
+            ("http://example.test/a^b", Some("http://example.test/a%5Eb")),
             (
                 "http://example.test/a%5Eb",
                 Some("http://example.test/a%5Eb"),
             ),
-            ("non-special:opaque  ?hi", Some("non-special:opaque  ?hi")),
-            ("https://xn--/", None),
-            ("a^b", Some("http://example.test/a^b")),
+            ("non-special:opaque  ?hi", Some("non-special:opaque %20?hi")),
+            ("https://xn--/", Some("https://xn--/")),
+            ("a^b", Some("http://example.test/a%5Eb")),
         ] {
-            let base = Some("http://example.test/page.html");
             assert_eq!(
-                pre_ah2(base, source).as_deref(),
-                observed,
-                "master: {source}"
-            );
-            assert_eq!(
-                resolve_image_source(base, source).as_deref(),
-                observed,
-                "AH2: {source}"
+                resolve_image_source(Some("http://example.test/page.html"), source).as_deref(),
+                expected,
+                "{source}"
             );
         }
     }

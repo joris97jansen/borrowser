@@ -101,3 +101,6 @@ path = "fuzz_targets/css_values.rs"
 test = false
 doc = false
 bench = false
+
+[patch.crates-io]
+url = { git = "https://github.com/joris97jansen/rust-url.git", rev = "7dc4ecbf4d29817e723e04ae94b14f1326764f61" }

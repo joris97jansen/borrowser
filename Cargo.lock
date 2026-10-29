@@ -937,8 +937,7 @@ checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 [[package]]
 name = "form_urlencoded"
 version = "1.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
+source = "git+https://github.com/joris97jansen/rust-url.git?rev=7dc4ecbf4d29817e723e04ae94b14f1326764f61#7dc4ecbf4d29817e723e04ae94b14f1326764f61"
 dependencies = [
  "percent-encoding",
 ]
@@ -1246,8 +1245,7 @@ dependencies = [
 [[package]]
 name = "idna"
 version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b0875f23caa03898994f6ddc501886a45c7d3d62d04d2d90788d47be1b1e4de"
+source = "git+https://github.com/joris97jansen/rust-url.git?rev=7dc4ecbf4d29817e723e04ae94b14f1326764f61#7dc4ecbf4d29817e723e04ae94b14f1326764f61"
 dependencies = [
  "idna_adapter",
  "smallvec",
@@ -2012,8 +2010,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 [[package]]
 name = "percent-encoding"
 version = "2.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+source = "git+https://github.com/joris97jansen/rust-url.git?rev=7dc4ecbf4d29817e723e04ae94b14f1326764f61#7dc4ecbf4d29817e723e04ae94b14f1326764f61"
 
 [[package]]
 name = "pin-project"
@@ -3067,9 +3064,8 @@ dependencies = [
 
 [[package]]
 name = "url"
-version = "2.5.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08bc136a29a3d1758e07a9cca267be308aeebf5cfd5a10f3f67ab2097683ef5b"
+version = "2.5.8"
+source = "git+https://github.com/joris97jansen/rust-url.git?rev=7dc4ecbf4d29817e723e04ae94b14f1326764f61#7dc4ecbf4d29817e723e04ae94b14f1326764f61"
 dependencies = [
  "form_urlencoded",
  "idna",

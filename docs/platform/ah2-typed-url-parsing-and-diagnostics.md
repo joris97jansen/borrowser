@@ -1,8 +1,11 @@
 # AH2: Typed URL Parsing, Resolution, And Diagnostics
 
-Last updated: 2026-10-26
-Status: implemented and ready for code review with explicit dependency limitations;
-full CI reproduces native macOS process-ownership failures present on clean master
+Last updated: 2026-10-28
+Status: maintained-fork dependency integration; full AH3 acceptance remains pending
+
+The sections preceding the [2026-10-28 integration](#ah3-maintained-fork-integration-2026-10-28)
+retain the original AH2 decision and AH3 blocked checkpoint as historical evidence.
+They describe published `url 2.5.7`, not the dependency selected after this integration.
 
 ## Scope and revised architectural decision
 
@@ -444,3 +447,339 @@ fail. The exact first output differs from the upstream reporter's dependency
 environment; the table records this workspace's actual result, without importing
 the reporter's output as an oracle. The first serialization is itself not a
 claim of correct canonical normalization.
+## AH3 explicit-base qualification: blocked acceptance (2026-10-27)
+
+AH2 merged through PR #1440. AH3 starts at master
+`0109ab0c489891c0ff3d57f1d4cd446c656dcaa9` on
+`feat/AH3-base-url-resolution`, with a clean working tree and unchanged
+production `BrowserUrl`, diagnostics, dependency graph, and consumers. This is
+an incomplete AH3 evidence checkpoint, not an implementation closeout.
+
+### Unchanged base and diagnostic boundary
+
+A parsed, immutable `BrowserUrl` supplies explicit base context to `resolve`;
+a new base type or document state is not needed. A malformed base string fails
+at `BrowserUrl::parse`, before resolution is possible. Without base context,
+`parse` accepts absolute inputs and reports `RelativeWithoutBase` for relative
+inputs. A successfully parsed opaque-path base supports fragment references,
+but not empty, query-only, or path-relative references. Parsing/resolution is
+separate from resource-operation support: parseable unsupported-operation
+schemes do not become syntax errors. No capability registry or document base
+selection is added by AH3.
+
+Outcomes retain operation-local recoverable diagnostics in callback order,
+including repetitions; failures retain typed fatal categories and the supplied
+base. Base-parsing diagnostics belong to base construction and are not
+replayed by resolution. These are existing AH2 contracts; expanded native AH3
+regressions remain unfinished because the discovery gate below blocked work.
+
+### Population and selection, established before execution
+
+The unchanged pinned corpus contains 1,011 entries: 896 objects and 115 comment
+strings. Of the objects, 336 have explicit non-null string bases: 274 concrete
+successful URL expectations and 62 expected failures. All 336 were evaluated.
+The remaining 560 objects have null bases and are outside this discovery pass;
+AH2's existing selected absolute qualification remains separate.
+
+Seventeen of those null-base objects also carry `relativeTo` annotations
+(16 `non-opaque-path-base`, one `any-base`). All seventeen explicitly expect
+failure without a base; none supplies a concrete resolved expectation for a
+substituted base. They were not expanded into invented base/result pairs.
+The pinned [upstream constructor harness](https://github.com/web-platform-tests/wpt/blob/c48d58747e1f211527fb695fd60548a997fae617/url/url-constructor.any.js)
+uses `base` and `failure` and does not interpret `relativeTo`. Its blob identity
+is `b4b639b813e9752db24c38e94dcf57c084ee52fd`. AH3 does not claim coverage of
+annotation-driven expansions, URL mutation, origins, or JavaScript URL APIs.
+
+The [32-case selection](../../crates/addressing/tests/fixtures/wpt/resolution-selection.json)
+was recorded before any resolution results were evaluated. It covers ordinary
+paths, dot segments, root/authority replacement, query/fragment/empty inputs,
+same-scheme shorthand, fatal input, non-special hierarchy, opaque bases,
+file URLs, and known file host/drive/separator risk classes. These semantic
+criteria did not depend on whether the implementation passed. The manifest
+retains exact source indices, input/base identities, individual rationales,
+corpus/license hashes, and the existing WPT and Standard revisions. The original
+absolute selection, source corpus, license, and expectations remain unchanged.
+
+### Discovery results and attribution
+
+The new production-API discovery test checks all ten existing URL component
+projection fields against WPT, or its explicit expected fatal result. It also
+checks repeated typed outcomes and base immutability. It does not reparse
+production serialization to create an observation. Separate calls directly to
+locked `url 2.5.7` verify wrapper/backend component and outcome parity solely
+for attribution; they are not the normative oracle. All bases parsed, and all
+336 production outcomes matched the direct dependency outcomes.
+
+| Scope | Strict WPT matches | Discrepancies | Interpretation |
+| --- | --- | --- | --- |
+| Focused 32 | 29 | 3 | Differences at 645, 667, 993 are existing file-defect classes. |
+| All 336 explicit-base cases | 303 | 33 | 241 successful URLs and all 62 expected failures matched. |
+| Existing file-defect classes | 0 of these 22 discrepant cases | 22 | Additional manifestations of AH-URL-001, not strict passes. |
+| Newly discovered non-file discrepancies | 0 of these 11 discrepant cases | 11 | Material acceptance blockers, not accepted limitations. |
+
+The 22 file discrepancies below belong to the previously documented file
+host/drive and empty-path-segment defects. They remain dependency-owned and
+could be considered only under AH2's explicit limitation policy, with no
+conformance claim. Four cases already have a changed parsed base (613, 646,
+660: host lost; 703: empty segment lost). The remaining 18 first diverge during
+reference resolution. This distinction prevents blaming resolution alone for
+base-parsing information loss. No new file correction is implemented.
+
+All cells below use JSON string spelling so backslashes and newlines remain
+unambiguous. `InvalidInput(EmptyHost)` denotes the typed fatal actual result.
+Component-level differences and parsed-base serializations are also printed by
+the reproducible test; the tables retain each discrepancy's complete URL result.
+
+| WPT index | Reference | Base input | Expected URL | Actual URL |
+| --- | --- | --- | --- | --- |
+| 613 | `"/"` | `"file://h/C:/a/b"` | `"file://h/C:/"` | `"file:///C:/"` |
+| 635 | `"/////mouse"` | `"file:///elephant"` | `"file://///mouse"` | `"file:///mouse"` |
+| 637 | `"\\/localhost//pig"` | `"file://lion/"` | `"file:////pig"` | `"file:///pig"` |
+| 638 | `"//localhost//pig"` | `"file://lion/"` | `"file:////pig"` | `"file:///pig"` |
+| 639 | `"/..//localhost//pig"` | `"file://lion/"` | `"file://lion//localhost//pig"` | `"file://lion/localhost//pig"` |
+| 645 | `"C\|"` | `"file://host/dir/file"` | `"file://host/C:"` | `"file:///C:"` |
+| 646 | `"C\|"` | `"file://host/D:/dir1/dir2/file"` | `"file://host/C:"` | `"file:///C:"` |
+| 647 | `"C\|#"` | `"file://host/dir/file"` | `"file://host/C:#"` | `"file:///C:#"` |
+| 648 | `"C\|?"` | `"file://host/dir/file"` | `"file://host/C:?"` | `"file:///C:?"` |
+| 649 | `"C\|/"` | `"file://host/dir/file"` | `"file://host/C:/"` | `"file:///C:/"` |
+| 650 | `"C\|\n/"` | `"file://host/dir/file"` | `"file://host/C:/"` | `"file:///C:/"` |
+| 651 | `"C\|\\"` | `"file://host/dir/file"` | `"file://host/C:/"` | `"file:///C:/"` |
+| 658 | `"/c:/foo/bar"` | `"file://host/path"` | `"file://host/c:/foo/bar"` | `"file:///c:/foo/bar"` |
+| 660 | `".."` | `"file://x/C:/"` | `"file://x/C:/"` | `"file:///C:/"` |
+| 666 | `"C\|/"` | `"file://host/"` | `"file://host/C:/"` | `"file:///C:/"` |
+| 667 | `"/C:/"` | `"file://host/"` | `"file://host/C:/"` | `"file:///C:/"` |
+| 668 | `"file:C:/"` | `"file://host/"` | `"file://host/C:/"` | `"file:///C:/"` |
+| 669 | `"file:/C:/"` | `"file://host/"` | `"file://host/C:/"` | `"file:///C:/"` |
+| 699 | `"file:////one/two"` | `"file:///"` | `"file:////one/two"` | `"file:///one/two"` |
+| 702 | `"////one/two"` | `"file:///"` | `"file:////one/two"` | `"file:///one/two"` |
+| 703 | `"file:///.//"` | `"file:////"` | `"file:////"` | `"file:///"` |
+| 993 | `"/\\//\\/a/../"` | `"file:///"` | `"file://////"` | `"file:///"` |
+
+The eleven new cases below are outside the documented file/encoding/IDNA
+limitations. Seven valid HTTP references fail unexpectedly; three non-special
+backslash references resolve to incorrect paths or authorities; one non-special
+parent traversal incorrectly treats a drive-shaped segment as a file root.
+Their base URLs parse unchanged. Direct dependency parity attributes all eleven
+to `url 2.5.7`, rather than the Borrowser adapter. They pre-exist AH3: the
+production code is byte-identical to merged AH2. "New" means newly discovered
+in this qualification, not introduced by this change.
+
+| WPT index | Reference | Base input | Expected URL | Actual URL or failure |
+| --- | --- | --- | --- | --- |
+| 659 | `".."` | `"abc://x/y/z/C:/"` | `"abc://x/y/z/"` | `"abc://x/y/z/C:/"` |
+| 984 | `"///test"` | `"http://example.org/"` | `"http://test/"` | `"InvalidInput(EmptyHost)"` |
+| 985 | `"///\\//\\//test"` | `"http://example.org/"` | `"http://test/"` | `"InvalidInput(EmptyHost)"` |
+| 986 | `"///example.org/path"` | `"http://example.org/"` | `"http://example.org/path"` | `"InvalidInput(EmptyHost)"` |
+| 987 | `"///example.org/../path"` | `"http://example.org/"` | `"http://example.org/path"` | `"InvalidInput(EmptyHost)"` |
+| 988 | `"///example.org/../../"` | `"http://example.org/"` | `"http://example.org/"` | `"InvalidInput(EmptyHost)"` |
+| 989 | `"///example.org/../path/../../"` | `"http://example.org/"` | `"http://example.org/"` | `"InvalidInput(EmptyHost)"` |
+| 990 | `"///example.org/../path/../../path"` | `"http://example.org/"` | `"http://example.org/path"` | `"InvalidInput(EmptyHost)"` |
+| 1004 | `"\\a"` | `"foo://foo/a"` | `"foo://foo/\\a"` | `"foo://foo/a"` |
+| 1005 | `"\\/a"` | `"foo://foo/a"` | `"foo://foo/\\/a"` | `"foo://a"` |
+| 1006 | `"\\\\a"` | `"foo://foo/a"` | `"foo://foo/\\\\a"` | `"foo://a"` |
+
+These new differences block honest AH3 acceptance under the approved scope.
+In particular the non-special backslash cases can change the resolved authority,
+and valid HTTP slash forms are rejected. They have not been added to an accepted
+inventory or disguised as passes. No local parser patch, fork, second resolver,
+or normalization workaround is proposed. A qualified upstream correction or an
+explicit project decision on these additional limitations is required before
+AH3 can be closed. Such a decision is not inferred from AH2's narrower inventory.
+
+### Reproduction and incomplete validation
+
+Run the strict discovery test (it deliberately exits 101 with all 33 differences
+visible until the acceptance blockers are resolved):
+
+```sh
+cargo test -p addressing --test qualification pinned_wpt_relative_discovery --locked -- --nocapture
+```
+
+The JSON report includes each source index, input, base input, actual parsed
+base, and per-component independently expected and actual values. All report
+inputs are fixed public synthetic WPT fixture data. This is conformance evidence,
+not an arbitrary-user-input logging facility or a safe composite debug API.
+No credential-bearing runtime input is collected. The existing production
+`Debug` contract redacts only userinfo; path/query/fragment contents are still
+inspectable and can contain secrets.
+
+Before discovery, `cargo test -p addressing --test browser_url --locked` passed
+all nine existing tests. The discovery test fails on the material new dependency
+behavior, so AH3 implementation stops at this checkpoint as requested. Expanded
+native regressions and successful/failed/sensitive composite debug snapshots
+have not been implemented; the debugging exit criterion is still open. Document
+URL/fallback/active base lifecycle, HTML base selection, HTML/CSS consumer
+migration, origins, resource identity, fetching, caching, and navigation remain
+deferred. No production Rust types, APIs, algorithms, state, logging, or consumer
+behavior changed.
+
+| Validation at this checkpoint | Result |
+| --- | --- |
+| `cargo test -p addressing --test browser_url --locked` | PASS: nine existing tests, before adding discovery. |
+| `cargo test -p addressing --test qualification pinned_wpt_relative_discovery --locked -- --nocapture` | FAIL (101): all 336 evaluated, 33 discrepancies retained; repeated run confirms the same counts. |
+| `cargo test -p addressing --locked` | FAIL (101): all 19 existing tests pass; only the new strict discovery test fails. No ignored tests; doc tests are not reached after the integration-test failure. |
+| `make fmt-check` | PASS. |
+| `cargo clippy -p addressing --all-targets --locked -- -D warnings` | PASS. |
+| `git diff --check` | PASS. |
+| Runtime smoke | Not needed: no production/runtime behavior changed. |
+| `make ci` | Not run: implementation stopped at the explicit material-defect gate; no readiness or clean-CI claim. Required before a later completed implementation is declared ready for review. |
+
+Raw logs are retained locally in `target/ah3-validation/`; their essential
+results, expectations, and reproduction commands are recorded here so the
+evidence does not depend on untracked build artifacts. No commits, pushes,
+PRs, or issue changes were made.
+
+## AH3 maintained-fork integration (2026-10-28)
+
+### Exact source and qualified graph
+
+The approved immutable parsing/explicit-base dependency is maintained
+[`joris97jansen/rust-url`](https://github.com/joris97jansen/rust-url) revision
+`7dc4ecbf4d29817e723e04ae94b14f1326764f61` (`url 2.5.8`). This is the production
+revision, not CI control commit `32630e7b55f8ad75a3f92e96a48552dac755f35c`.
+[Hosted qualification run 40706692979](https://github.com/joris97jansen/rust-url/actions/runs/40706692979)
+qualified Linux, Windows, macOS, native feature lanes, sanitizers, consumer-graph
+fuzz regression replay, audit and pinned WPT outcomes before this integration.
+
+The original Borrowser consumer lock SHA-256 is
+`3802ddab6a9d38ed2228ff165244fd30ba91523522f3e7e11e276bb9225c3ab3`.
+It exactly matches the consumer lock recorded in fork qualification. The fork's
+qualification workspace lock is a different file with SHA-256
+`a770f264be9656bcf64db971b60c2a09ee0a542600ead12b66f52f878db154d6`;
+its extra development dependencies are not consumer dependencies.
+
+Cargo graph trials establish the minimal overrides:
+
+- Root `[patch.crates-io]`: `url` and `percent-encoding`, each pinned to the full
+  production revision above. Patching `url` automatically selects its sibling
+  Git/path `idna 1.1.0`, `form_urlencoded 1.2.2` and `percent-encoding 2.3.2`.
+  No explicit IDNA or form patch is necessary. The percent-encoding patch unifies
+  `winit` and `arboard` with that existing fork instance; a URL-only trial produced
+  duplicate registry/Git instances at the same version.
+- Independent fuzz workspace: only the revision-pinned `url` patch. Its actual
+  graph already contains one instance of each fork sibling, so extra sibling
+  overrides would add no necessary selection.
+- The existing workspace `url = "2"` requirement remains sufficient. The full
+  revision and committed locks select `2.5.8`; an `=2.5.8` requirement is not
+  necessary for this integration. Locked source selection is checked explicitly.
+
+The root lock changes only URL's version (`2.5.7` to `2.5.8`) and the four fork
+package source identities. Every external version and registry checksum remains
+unchanged. The fuzz lock's previous ICU 2.2 graph is aligned to the already
+qualified consumer closure, not upgraded to the modern qualification graph.
+Changes outside that closure are excluded. Both resolved URL closures contain
+exactly the qualified 35 coordinates (URL plus 34 runtime dependencies), with
+one instance of each fork package and no unused patches. External registry
+checksums match qualification.
+
+| Dependency | Preserved qualified version |
+| --- | --- |
+| `idna_adapter` | `1.2.1` |
+| `icu_collections`, `icu_locale_core`, `icu_normalizer`, `icu_normalizer_data`, `icu_provider` | `2.0.0` |
+| `icu_properties`, `icu_properties_data` | `2.0.1` |
+| `potential_utf`, `tinystr`, `zerotrie`, `zerovec` | `0.1.3`, `0.8.1`, `0.2.2`, `0.11.4` |
+| `serde`, `serde_core`, `serde_derive` | `1.0.225` |
+
+Direct/transitive URL consumers in the main graph are addressing, Browser, CSS,
+GFX, ureq and webbrowser. The fuzz workspace reaches URL through CSS. All resolve
+the same approved revision. This is a single dependency source override, not a
+second URL resolver or a consumer normalization repair. Graph changes require
+explicit review and requalification rather than an unbounded dependency update.
+
+Reproduction after integration:
+
+```sh
+cargo metadata --locked --format-version 1
+cargo tree --locked -i url
+cargo tree --locked -i percent-encoding
+cargo metadata --manifest-path fuzz/Cargo.toml --locked --format-version 1
+cargo tree --manifest-path fuzz/Cargo.toml --locked -i url
+cargo test -p addressing --locked -- --nocapture
+cargo test -p browser -p net --lib --locked
+```
+
+### Typed diagnostic integration
+
+`SyntaxViolation::DomainToAscii` maps explicitly to `UrlDiagnostic::DomainToAscii`.
+It reports strict domain-to-ASCII validation and can accompany a successful
+non-strict parse: `https://xn--/` is accepted with this event. A fatal invalid
+domain remains `InvalidInput(InvalidDomain)`; a later invalid port remains
+`InvalidInput(InvalidPort)`. Prior events retain order and repetitions, and
+resolution failures retain the supplied base with credential-redacted Debug.
+Unknown future callbacks still map to `Unclassified`.
+
+Focused regressions cover acceptance, a valid IDNA control, callback ordering,
+fatal domain/port failures, deterministic repetition, immutable base context,
+and absence of replayed base-construction events. The existing
+`FileHostWithDriveLetter` callback remains observed for `file://host/C:/` even
+though its host now survives parsing; integration preserves that callback
+contract rather than inventing diagnostic silence.
+
+### Corrected outcomes and preserved evidence
+
+Before removing the nine historical parsing deviation records, the unchanged
+54-case qualification selected zero deviations under the pinned dependency.
+The old inventory deliberately failed on that resolved difference. The active
+inventory is now empty; original observed values remain in this document's
+historical tables and Git history. No WPT expectations or selections changed.
+
+Production `BrowserUrl` qualification now requires all **560/560 null-base** and
+**336/336 explicit-base** WPT outcomes, comparing all ten component fields or
+the independently specified failure outcome. The original 54 absolute and 32
+relative selection identities remain unchanged. Repeatability and base immutability
+are checked. The 17 null-base `relativeTo` annotations still receive no invented
+base/result expansions. These are parsing/resolution claims, not setter claims.
+
+Native regression checks now require caret percent encoding, file host/path
+identity and the former rust-url #1101 fixed point. Image-source and Tab tests
+require the corrected request/resource keys. A loopback transport regression
+requires raw and encoded caret references to use `/a%5Eb` on the wire. Parsing
+of `https://xn--/` is checked at the typed boundary; it is no longer used as a
+supposed local parser rejection in a network test. Production Browser and net
+implementations remain unchanged.
+
+The WPT corpus, licenses, selection manifests and source expectations remain
+byte-identical. Diagnostic callbacks are checked against explicit state contracts;
+the WPT component fixtures are not represented as a complete diagnostic oracle.
+
+### Limitations and AH3 completion boundary
+
+The original ten Unicode 17 IDNA corpus failures belong to the modern ICU 2.4 /
+Unicode 18 reference graph. They remain documented failures, not passes. The
+qualified consumer graph uses ICU 2.0 / Unicode 16. Neither conformance fixture
+nor generic IDNA behavior is changed in Borrowser.
+
+The fork still records nine setter findings: eight implementation limitations
+and one missing href-dispatch case in its existing driver (the public href API
+conforms). Immutable `BrowserUrl` exposes none of those setters. This integration
+does not qualify mutation APIs or erase those findings.
+
+Dependency integration alone does not close [AH3 #1113](https://github.com/joris97jansen/borrowser/issues/1113)
+or Milestone AH. The full local CI pipeline now passes. Remaining AH3 acceptance
+includes a final audit of the focused native missing/invalid-base, invalid-reference
+and unsupported-scheme cases, and credential-safe operation-level Debug output
+covering input, base, resolved URL and diagnostics with deterministic snapshots.
+Existing value/outcome/failure Debug tests do not establish that complete operation
+record. AH3 explicitly permits closeout before document-level base integration.
+Active/fallback base state and lifecycle, HTML base elements, origin/security policy,
+fetch/resource identity and further consumer migrations remain separate later work.
+No new base type, parser abstraction, scheme registry, or consumer-side workaround
+is introduced by this integration.
+
+### Integration validation
+
+The focused typed diagnostic tests and the complete addressing package pass:
+one library test, 11 typed URL tests and 11 qualification tests. The WPT totals
+are 560/560 null-base, 336/336 explicit-base and 54/54 original absolute-selection
+matches, with zero parsing deviations. Browser's 248 tests and net's 14 tests pass,
+including deterministic image/resource keys and loopback caret normalization.
+Both complete Cargo graphs match the qualified URL dependency closure/checksums,
+and all existing fuzz bins pass a locked compile check.
+
+`make ci` passes locally with Rust 1.92.0 on native macOS. This includes its fixed
+conformance suite, formatting, all three warnings-denied Clippy lanes, both
+workspace test lanes, parser/golden/WPT/runtime/fuzz smoke checks, debug and release
+builds, bench compilation and generated-entity validation. Release/bench builds
+still emit non-fatal warnings in unchanged HTML/CSS files; these are not suppressed.
+No known failure was converted into a pass, no expectation was skipped, and no
+live site is used as conformance evidence.
