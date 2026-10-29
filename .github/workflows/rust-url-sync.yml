@@ -1,0 +1,43 @@
+name: rust-url synchronization
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 6 * * 1' # Mondays at 06:23 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-url-sync-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    name: Check rust-url synchronization
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      PYTHONDONTWRITEBYTECODE: '1'
+
+    steps:
+      - name: Checkout Borrowser
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.15'
+          architecture: 'x64'
+
+      - name: Check synchronization and write summary
+        run: python tools/ci/check_rust_url_sync.py
