@@ -471,6 +471,9 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      - name: Verify qualified URL dependency sources and graphs
+        run: make check-url-dependencies
+
       - name: Rustfmt (check)
         if: matrix.run_lints
         run: cargo fmt --all -- --check

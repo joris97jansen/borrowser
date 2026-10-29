@@ -140,6 +140,19 @@ fn explicit_base_resolution_preserves_the_base_and_reference_semantics() {
         opaque.resolve("https://h.test/").unwrap().url.as_str(),
         "https://h.test/"
     );
+    let original_opaque = opaque.clone();
+    let empty_error = opaque.resolve("").unwrap_err();
+    assert_eq!(
+        empty_error.kind,
+        UrlFailureKind::InvalidInput(E::RelativeAgainstOpaqueBase)
+    );
+    assert!(empty_error.diagnostics.is_empty());
+    assert_eq!(empty_error.base.as_ref(), Some(&opaque));
+    assert_eq!(opaque, original_opaque);
+    for _ in 0..3 {
+        assert_eq!(opaque.resolve("").unwrap_err(), empty_error);
+        assert_eq!(opaque, original_opaque);
+    }
 }
 
 #[test]
@@ -240,12 +253,24 @@ fn fatal_errors_retain_prior_events_without_raw_input() {
     assert_eq!(error.base.as_ref(), Some(&base));
     assert_eq!(error.kind, UrlFailureKind::InvalidInput(E::EmptyHost));
     assert!(!format!("{error:?} {error:#?} {error}").contains("secret"));
+
+    let original_base = base.clone();
+    let reference = "//user:password@authority.test:70000/path";
+    let error = base.resolve(reference).unwrap_err();
+    assert_eq!(error.kind, UrlFailureKind::InvalidInput(E::InvalidPort));
+    assert_eq!(error.diagnostics, vec![D::EmbeddedCredentials]);
+    assert_eq!(error.base.as_ref(), Some(&base));
+    assert_eq!(base, original_base);
+    for _ in 0..3 {
+        assert_eq!(base.resolve(reference).unwrap_err(), error);
+        assert_eq!(base, original_base);
+    }
 }
 
 #[test]
-fn debug_is_deterministic_and_redacts_credentials_without_mutating_identity() {
+fn debug_is_deterministic_and_redacts_contents_without_mutating_identity() {
     let outcome = BrowserUrl::parse("https://secret-user:p%3Ass@h.test:8443/a?x#f").unwrap();
-    let expected = "BrowserUrl { scheme: \"https\", username: \"<redacted>\", password: Some(\"<redacted>\"), host: Some(Domain(\"h.test\")), port: Some(8443), path: \"/a\", query: Some(\"x\"), fragment: Some(\"f\"), authority: true, opaque_path: false }";
+    let expected = "BrowserUrl { scheme: \"https\", username: \"<redacted>\", password: Some(\"<redacted>\"), host_kind: Some(\"domain\"), port: Some(\"<redacted>\"), path: \"<redacted>\", query: Some(\"<redacted>\"), fragment: Some(\"<redacted>\"), authority: true, opaque_path: false }";
     assert_eq!(format!("{:?}", outcome.url), expected);
     for input in [
         "https://secret-user@h.test/",
@@ -285,44 +310,98 @@ fn parsing_does_not_imply_operation_support_or_origin_computation() {
 }
 
 #[test]
-fn ah_url_001_locked_dependency_observations_remain_distinct_from_standard_expectations() {
-    // The expected strings come from the independently reviewed WHATWG file
-    // and path/opaque-path states and percent-encode sets. Observations
-    // characterize url 2.5.7, not conformance.
-    for (input, standard, observed) in [
-        (
-            "file://example.net/C:/",
-            "file://example.net/C:/",
-            "file:///C:/",
-        ),
-        ("file:///w|/m", "file:///w:/m", "file:///w|/m"),
-        ("file://host//w|/m", "file://host//w|/m", "file://host/w|/m"),
-        ("file:////w|/m", "file:////w|/m", "file:///w|/m"),
-        ("file://spider///", "file://spider///", "file://spider/"),
-        ("file:////foo", "file:////foo", "file:///foo"),
-        (
-            "http://example.test/a^b",
-            "http://example.test/a%5Eb",
-            "http://example.test/a^b",
-        ),
-        (
-            "non-special:opaque  ?hi",
-            "non-special:opaque %20?hi",
-            "non-special:opaque  ?hi",
-        ),
+fn maintained_dependency_satisfies_previous_deviation_cases() {
+    // Literal expectations retained from the independent URL Standard review.
+    // Historical url 2.5.7 observations remain in the AH2 contract.
+    for (input, expected) in [
+        ("file://example.net/C:/", "file://example.net/C:/"),
+        ("file:///w|/m", "file:///w:/m"),
+        ("file://host//w|/m", "file://host//w|/m"),
+        ("file:////w|/m", "file:////w|/m"),
+        ("file://spider///", "file://spider///"),
+        ("file:////foo", "file:////foo"),
+        ("http://example.test/a^b", "http://example.test/a%5Eb"),
+        ("non-special:opaque  ?hi", "non-special:opaque %20?hi"),
+        ("https://xn--/", "https://xn--/"),
     ] {
-        assert_ne!(observed, standard);
-        assert_eq!(
-            parsed(input).as_str(),
-            observed,
-            "Dependency behavior changed: review AH-URL-001"
-        );
+        let first = parsed(input);
+        assert_eq!(first.as_str(), expected, "{input:?}");
+        assert_eq!(parsed(first.as_str()), first, "{input:?}: fixed point");
     }
-    assert_eq!(parsed("file://example.net/C:/").host(), None);
-    // The current Standard accepts this ASCII label; the published backend
-    // rejects it before any downstream resource operation can be requested.
     assert_eq!(
-        BrowserUrl::parse("https://xn--/").unwrap_err().kind,
-        UrlFailureKind::InvalidInput(E::InvalidDomain)
+        parsed("file://example.net/C:/").host(),
+        Some(UrlHost::Domain("example.net"))
     );
+}
+
+#[test]
+fn domain_to_ascii_validation_is_recoverable_and_ordered() {
+    let accepted = BrowserUrl::parse("https://xn--/").unwrap();
+    assert_eq!(accepted.url.as_str(), "https://xn--/");
+    assert_eq!(accepted.diagnostics, vec![D::DomainToAscii]);
+    assert!(
+        BrowserUrl::parse("https://bücher.test/")
+            .unwrap()
+            .diagnostics
+            .is_empty()
+    );
+
+    let input = " https://u:p@xn--/a%zz";
+    let first = BrowserUrl::parse(input).unwrap();
+    assert_eq!(first.url.as_str(), "https://u:p@xn--/a%zz");
+    assert_eq!(
+        first.diagnostics,
+        vec![
+            D::BoundaryControlOrSpaceIgnored,
+            D::EmbeddedCredentials,
+            D::DomainToAscii,
+            D::InvalidPercentEncoding,
+        ]
+    );
+    for _ in 0..3 {
+        assert_eq!(BrowserUrl::parse(input).unwrap(), first);
+    }
+
+    let base = BrowserUrl::parse("https://u:p@xn--/dir/page").unwrap();
+    assert_eq!(
+        base.diagnostics,
+        vec![D::EmbeddedCredentials, D::DomainToAscii]
+    );
+    let original = base.url.clone();
+    let resolved = base.url.resolve("child").unwrap();
+    assert_eq!(resolved.url.as_str(), "https://u:p@xn--/dir/child");
+    assert!(
+        resolved.diagnostics.is_empty(),
+        "base callbacks must not be replayed"
+    );
+    assert_eq!(
+        base.url.resolve("//xn--/new").unwrap().diagnostics,
+        vec![D::DomainToAscii]
+    );
+    assert_eq!(base.url, original);
+}
+
+#[test]
+fn domain_to_ascii_validation_does_not_replace_fatal_errors() {
+    let invalid = BrowserUrl::parse("https://exa mple.test/").unwrap_err();
+    assert_eq!(invalid.kind, UrlFailureKind::InvalidInput(E::InvalidDomain));
+    assert_eq!(invalid.diagnostics, vec![D::DomainToAscii]);
+
+    let base = parsed("https://base-user:base-password@h.test/dir/page");
+    let original = base.clone();
+    for _ in 0..3 {
+        let error = base
+            .resolve("https://input-user:input-password@xn--:70000/")
+            .unwrap_err();
+        assert_eq!(error.kind, UrlFailureKind::InvalidInput(E::InvalidPort));
+        assert_eq!(
+            error.diagnostics,
+            vec![D::EmbeddedCredentials, D::DomainToAscii]
+        );
+        assert_eq!(error.base.as_ref(), Some(&base));
+        let debug = format!("{error:?} {error:#?} {error}");
+        assert!(!debug.contains("base-user") && !debug.contains("base-password"));
+        assert!(!debug.contains("input-user") && !debug.contains("input-password"));
+        assert_eq!(base, original);
+    }
 }

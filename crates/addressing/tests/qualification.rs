@@ -1,4 +1,4 @@
-//! Published-backend evidence, including explicitly recorded deviations.
+//! Maintained-backend qualification against independent URL expectations.
 //!
 //! The 2026-10-26 adoption decision permits known dependency limitations; it
 //! does not change the independently authored WPT expectations. Exact observed
@@ -7,6 +7,7 @@
 //! All credential-bearing inputs here are synthetic test data. Backend Debug
 //! output in this test is evidence only, not the proposed safe engine Debug API.
 
+use addressing::{BrowserUrl, UrlHost};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -17,6 +18,224 @@ use url::{Host, ParseError, SyntaxViolation, Url};
 
 const CORPUS: &[u8] = include_bytes!("fixtures/wpt/urltestdata.json");
 const LICENSE: &[u8] = include_bytes!("fixtures/wpt/LICENSE.md");
+
+// WPT accessor spelling only: this observes the production URL without
+// reparsing its serialization or borrowing a backend URL. Origin is out of AH3.
+fn browser_url_components(url: &BrowserUrl) -> Value {
+    let hostname = match url.host() {
+        None => String::new(),
+        Some(UrlHost::Domain(host) | UrlHost::Opaque(host)) => host.to_owned(),
+        Some(UrlHost::Ipv4(host)) => host.to_string(),
+        Some(UrlHost::Ipv6(host)) => format!("[{host}]"),
+    };
+    let host = match url.port() {
+        Some(port) => format!("{hostname}:{port}"),
+        None => hostname.clone(),
+    };
+    json!({
+        "href": url.as_str(),
+        "protocol": format!("{}:", url.scheme()),
+        "username": url.username(),
+        "password": url.password().unwrap_or_default(),
+        "host": host,
+        "hostname": hostname,
+        "port": url.port().map(|port| port.to_string()).unwrap_or_default(),
+        "pathname": url.path(),
+        "search": url.query().filter(|value| !value.is_empty())
+            .map(|value| format!("?{value}")).unwrap_or_default(),
+        "hash": url.fragment().filter(|value| !value.is_empty())
+            .map(|value| format!("#{value}")).unwrap_or_default(),
+    })
+}
+
+#[test]
+fn pinned_wpt_relative_discovery() {
+    // All inputs below are the pinned, public, synthetic WPT fixtures. This
+    // evidence output is not a safe logging API for arbitrary user input.
+    let selection: Value =
+        serde_json::from_str(include_str!("fixtures/wpt/resolution-selection.json")).unwrap();
+    assert_eq!(
+        selection["upstream_revision"],
+        "c48d58747e1f211527fb695fd60548a997fae617"
+    );
+    assert_eq!(selection["upstream_path"], "url/resources/urltestdata.json");
+    assert_eq!(
+        selection["standard_revision"],
+        "845bafca22fb0c5a42c4bf384a9bdea525a2f10d"
+    );
+    assert_eq!(selection["sha256"], format!("{:x}", Sha256::digest(CORPUS)));
+    assert_eq!(
+        selection["license_sha256"],
+        format!("{:x}", Sha256::digest(LICENSE))
+    );
+    let corpus: Vec<Value> = serde_json::from_slice(CORPUS).unwrap();
+    let mut selected_indices = BTreeSet::new();
+    let mut selected_ids = BTreeSet::new();
+    for case in selection["cases"].as_array().unwrap() {
+        let index = case["index"].as_u64().unwrap() as usize;
+        assert!(selected_indices.insert(index));
+        assert!(selected_ids.insert(case["id"].as_str().unwrap()));
+        assert!(!case["rationale"].as_str().unwrap().is_empty());
+        assert_eq!(case["input"], corpus[index]["input"]);
+        assert_eq!(case["base"], corpus[index]["base"]);
+        assert!(case["base"].is_string());
+    }
+    assert_eq!(selected_indices.len(), 32);
+    let objects = corpus.iter().filter(|source| source.is_object()).count();
+    let relative_to = corpus
+        .iter()
+        .filter(|source| source.get("relativeTo").is_some())
+        .count();
+    assert_eq!(
+        objects,
+        selection["population"]["corpus_objects"].as_u64().unwrap() as usize
+    );
+    assert_eq!(
+        relative_to,
+        selection["population"]["null_base_relative_to"]
+            .as_u64()
+            .unwrap() as usize
+    );
+    let mut evaluated = 0;
+    let mut expected_failures = 0;
+    let mut discrepancies = Vec::new();
+    for (index, source) in corpus.iter().enumerate() {
+        let Some(base_input) = source.get("base").and_then(Value::as_str) else {
+            continue;
+        };
+        evaluated += 1;
+        let input = source["input"].as_str().unwrap();
+        let mut differences = serde_json::Map::new();
+        let base = BrowserUrl::parse(base_input)
+            .expect("WPT base must parse")
+            .url;
+        let original = base.clone();
+        let result = base.resolve(input);
+        // Attribution only: the normative oracle below is WPT, not this second
+        // call to the dependency. Verify wrapper/backend parity before blaming
+        // upstream for a production mismatch, including base parsing effects.
+        let backend_base = Url::parse(base_input).unwrap();
+        assert_eq!(
+            base.as_str(),
+            backend_base.as_str(),
+            "WPT {index}: base adapter"
+        );
+        let backend = Url::options().base_url(Some(&backend_base)).parse(input);
+        match (&result, &backend) {
+            (Ok(outcome), Ok(backend)) => assert_eq!(
+                browser_url_components(&outcome.url),
+                wpt_components(backend),
+                "WPT {index}: adapter"
+            ),
+            (Err(_), Err(_)) => {}
+            _ => panic!("WPT {index}: Borrowser/backend outcome differs"),
+        }
+        for _ in 0..3 {
+            assert_eq!(base.resolve(input), result, "WPT {index}: repeatability");
+            assert_eq!(base, original, "WPT {index}: immutable base");
+        }
+        match (&result, source.get("failure") == Some(&Value::Bool(true))) {
+            (Ok(outcome), false) => {
+                for (component, actual) in browser_url_components(&outcome.url).as_object().unwrap()
+                {
+                    let expected = source.get(component).expect("concrete WPT component");
+                    if actual != expected {
+                        differences.insert(
+                            component.clone(),
+                            json!({"expected":expected,"actual":actual}),
+                        );
+                    }
+                }
+            }
+            (Err(_), true) => {
+                expected_failures += 1;
+            }
+            (Ok(outcome), true) => {
+                differences.insert(
+                    "parse".into(),
+                    json!({"expected":"failure","actual":outcome.url.as_str()}),
+                );
+            }
+            (Err(error), false) => {
+                differences.insert(
+                    "parse".into(),
+                    json!({"expected":source["href"],"actual":format!("{:?}",error.kind)}),
+                );
+            }
+        }
+        if !differences.is_empty() {
+            discrepancies.push(json!({"index":index,"input":input,"base":base_input,"parsed_base":base.as_str(),"differences":differences}));
+        }
+    }
+    let selected_discrepancies = discrepancies
+        .iter()
+        .filter(|case| selected_indices.contains(&(case["index"].as_u64().unwrap() as usize)))
+        .count();
+    eprintln!(
+        "AH3 FOCUSED: {} selected; {} strict matches; {selected_discrepancies} discrepancies",
+        selected_indices.len(),
+        selected_indices.len() - selected_discrepancies
+    );
+    eprintln!(
+        "AH3 DISCOVERY: {evaluated} evaluated; {} strict matches; {} discrepancies",
+        evaluated - discrepancies.len(),
+        discrepancies.len()
+    );
+    eprintln!(
+        "AH3 FORMS: {} concrete successes; {expected_failures} expected failures matched; {relative_to} null-base relativeTo annotations outside explicit-base population",
+        evaluated - expected_failures
+    );
+    eprintln!("{}", serde_json::to_string_pretty(&discrepancies).unwrap());
+    assert_eq!(evaluated, 336);
+    assert_eq!(expected_failures, 62);
+    assert!(
+        discrepancies.is_empty(),
+        "Review AH3 discovery before accepting any deviations"
+    );
+}
+
+#[test]
+fn pinned_wpt_absolute_discovery() {
+    let selection: Value =
+        serde_json::from_str(include_str!("fixtures/wpt/selection.json")).unwrap();
+    assert_eq!(
+        selection["upstream_revision"],
+        "c48d58747e1f211527fb695fd60548a997fae617"
+    );
+    assert_eq!(selection["sha256"], format!("{:x}", Sha256::digest(CORPUS)));
+    assert_eq!(
+        selection["license_sha256"],
+        format!("{:x}", Sha256::digest(LICENSE))
+    );
+    let corpus: Vec<Value> = serde_json::from_slice(CORPUS).unwrap();
+    let mut evaluated = 0;
+    for (index, source) in corpus
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.is_object() && s["base"].is_null())
+    {
+        evaluated += 1;
+        let input = source["input"].as_str().unwrap();
+        let result = BrowserUrl::parse(input);
+        for _ in 0..3 {
+            assert_eq!(
+                BrowserUrl::parse(input),
+                result,
+                "WPT {index}: repeatability"
+            );
+        }
+        if source.get("failure") == Some(&Value::Bool(true)) {
+            assert!(result.is_err(), "WPT {index}: expected fatal result");
+        } else {
+            let outcome = result.unwrap_or_else(|error| panic!("WPT {index}: {error:?}"));
+            for (component, actual) in browser_url_components(&outcome.url).as_object().unwrap() {
+                assert_eq!(actual, &source[component], "WPT {index}: {component}");
+            }
+        }
+    }
+    assert_eq!(evaluated, 560);
+    eprintln!("AH3 NULL-BASE: {evaluated} evaluated; {evaluated} strict matches; 0 discrepancies");
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -269,9 +488,8 @@ fn pinned_wpt_absolute_semantics_and_published_dependency_deviations() {
 
 #[test]
 fn native_absolute_normalization_and_stability() {
-    // Independently authored expectations from the pinned URL Standard; never
-    // generated by serializing the candidate. The caret discrepancy is recorded
-    // separately, not substituted into the standards expectation below.
+    // Independently authored expectations from the pinned URL Standard;
+    // never generated by serializing the candidate.
     let cases = [
         (
             "http-case-port",
@@ -366,25 +584,10 @@ fn native_absolute_normalization_and_stability() {
     ];
     let mut failures = Vec::new();
     let mut failed_cases = 0;
-    let mut known_deviations = 0;
     for (id, input, expected) in cases {
         let before = failures.len();
         let (result, diagnostics) = parse(input);
         match &result {
-            Ok(url) if id == "path-caret" => {
-                known_deviations += 1;
-                assert_eq!(expected, "http://example.test/a%5Eb");
-                assert_eq!(
-                    url.as_str(),
-                    "http://example.test/a^b",
-                    "Review recorded caret deviation after a backend change"
-                );
-                assert_ne!(url.as_str(), expected);
-                eprintln!(
-                    "KNOWN DEVIATION {id}: expected={expected:?}; actual={:?}",
-                    url.as_str()
-                );
-            }
             Ok(url) => compare(
                 &mut failures,
                 id,
@@ -401,8 +604,8 @@ fn native_absolute_normalization_and_stability() {
         }
     }
     eprintln!(
-        "Native normalization: {} standards matches; {known_deviations} known deviations; {failed_cases} unexpected failures",
-        cases.len() - failed_cases - known_deviations
+        "Native normalization: {} standards matches; {failed_cases} unexpected failures",
+        cases.len() - failed_cases
     );
     finish("native normalization", cases.len(), failures);
 }
@@ -690,27 +893,20 @@ fn recoverable_callbacks_preserve_observed_sequence_and_duplicates() {
 }
 
 #[test]
-fn known_file_round_trip_counterexample_is_retained_as_dependency_evidence() {
-    // Independently required fixed-point invariant, using the reproduction from
-    // https://github.com/servo/rust-url/issues/1101. The first result is NOT an
-    // independent canonical-output expectation or a standards-compliance claim.
+fn former_file_round_trip_counterexample_preserves_path_and_host() {
+    // Preserve the independent fixed-point invariant and original reproduction
+    // from rust-url #1101. An empty first segment must remain before t:.
     let input = "file://.cRe!+aacRddddddddddddddtpe=//t:/a|et/!..";
     let first = Url::parse(input).unwrap();
-    let second = Url::parse(first.as_str()).unwrap();
     assert_eq!(
         first.as_str(),
-        "file://.cre!+aacrddddddddddddddtpe=/t:/a|et/!.."
+        "file://.cre!+aacrddddddddddddddtpe=//t:/a|et/!.."
     );
     assert_eq!(first.host_str(), Some(".cre!+aacrddddddddddddddtpe="));
-    assert_eq!(second.as_str(), "file:///t:/a|et/!..");
-    assert_eq!(second.host_str(), None);
-    assert_ne!(
-        first, second,
-        "Review AH-URL-001 when round-trip behavior changes"
-    );
-    // The independently required invariant remains an explicit known failure,
-    // not a guarantee of this published dependency. No parser fixes are applied.
-    eprintln!("KNOWN DEVIATION rust-url-1101: parse-serialize-parse loses the host");
+    for _ in 0..3 {
+        let second = Url::parse(first.as_str()).unwrap();
+        assert_eq!(first, second);
+    }
 }
 
 #[test]

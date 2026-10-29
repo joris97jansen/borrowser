@@ -1,0 +1,246 @@
+{
+  "upstream_revision": "c48d58747e1f211527fb695fd60548a997fae617",
+  "upstream_path": "url/resources/urltestdata.json",
+  "sha256": "81e85fd3c199c08ef9c34cf651b3580eeedd080316493bfaf277a6b5ff8cf652",
+  "license_sha256": "5fac07febb0e2a97fb0d7b0def149ec08b642e1ba4b9c345283ab1cbd2af6570",
+  "standard_revision": "845bafca22fb0c5a42c4bf384a9bdea525a2f10d",
+  "selection_criteria": [
+    "One or more upstream identities per AH3 semantic category, chosen before running resolution results.",
+    "Include ordinary HTTP, file, non-special hierarchical and opaque bases, concrete successes and fatal results.",
+    "Include known file host/drive and repeated-separator risk classes; do not filter by candidate behavior.",
+    "All 336 non-null-base cases are additionally evaluated in the discovery pass; null-base relativeTo entries are counted separately, never reinterpreted as concrete resolved expectations."
+  ],
+  "population": {
+    "corpus_objects": 896,
+    "non_null_base": 336,
+    "concrete_success": 274,
+    "expected_failure": 62,
+    "null_base_relative_to": 17
+  },
+  "cases": [
+    {
+      "id": "wpt-7",
+      "index": 7,
+      "input": "http:foo.com",
+      "base": "http://example.org/foo/bar",
+      "rationale": "Same-scheme shorthand preserves base-sensitive parsing"
+    },
+    {
+      "id": "wpt-9",
+      "index": 9,
+      "input": " foo.com  ",
+      "base": "http://example.org/foo/bar",
+      "rationale": "Recoverable boundary whitespace during resolution"
+    },
+    {
+      "id": "wpt-17",
+      "index": 17,
+      "input": "http://f:b/c",
+      "base": "http://example.org/foo/bar",
+      "rationale": "Fatal port with an explicit base"
+    },
+    {
+      "id": "wpt-24",
+      "index": 24,
+      "input": "",
+      "base": "http://example.org/foo/bar",
+      "rationale": "Empty reference"
+    },
+    {
+      "id": "wpt-33",
+      "index": 33,
+      "input": "#",
+      "base": "http://example.org/foo/bar",
+      "rationale": "Present-empty fragment"
+    },
+    {
+      "id": "wpt-37",
+      "index": 37,
+      "input": "?",
+      "base": "http://example.org/foo/bar",
+      "rationale": "Present-empty query"
+    },
+    {
+      "id": "wpt-38",
+      "index": 38,
+      "input": "/",
+      "base": "http://example.org/foo/bar",
+      "rationale": "Root-relative path"
+    },
+    {
+      "id": "wpt-134",
+      "index": 134,
+      "input": "test",
+      "base": "file:///tmp/mock/path",
+      "rationale": "Simple local-file relative path"
+    },
+    {
+      "id": "wpt-263",
+      "index": 263,
+      "input": ".",
+      "base": "http://www.example.com/test",
+      "rationale": "Single-dot segment"
+    },
+    {
+      "id": "wpt-264",
+      "index": 264,
+      "input": "..",
+      "base": "http://www.example.com/test",
+      "rationale": "Double-dot segment"
+    },
+    {
+      "id": "wpt-265",
+      "index": 265,
+      "input": "test.txt",
+      "base": "http://www.example.com/test",
+      "rationale": "Simple relative path"
+    },
+    {
+      "id": "wpt-266",
+      "index": 266,
+      "input": "./test.txt",
+      "base": "http://www.example.com/test",
+      "rationale": "Leading single-dot segment"
+    },
+    {
+      "id": "wpt-267",
+      "index": 267,
+      "input": "../test.txt",
+      "base": "http://www.example.com/test",
+      "rationale": "Parent-directory path"
+    },
+    {
+      "id": "wpt-269",
+      "index": 269,
+      "input": "../../test.txt",
+      "base": "http://www.example.com/test",
+      "rationale": "Parent traversal bounded at root"
+    },
+    {
+      "id": "wpt-272",
+      "index": 272,
+      "input": "//www.example2.com",
+      "base": "http://www.example.com/test",
+      "rationale": "Scheme-relative authority replacement"
+    },
+    {
+      "id": "wpt-373",
+      "index": 373,
+      "input": "#x",
+      "base": "about:blank",
+      "rationale": "Fragment against an about opaque base"
+    },
+    {
+      "id": "wpt-375",
+      "index": 375,
+      "input": "#",
+      "base": "test:test?test",
+      "rationale": "Empty fragment retains opaque-base query"
+    },
+    {
+      "id": "wpt-387",
+      "index": 387,
+      "input": "/some/path",
+      "base": "http://user:pass@example.org:21/smth",
+      "rationale": "Inherited synthetic userinfo"
+    },
+    {
+      "id": "wpt-389",
+      "index": 389,
+      "input": "i",
+      "base": "sc:sd",
+      "rationale": "Opaque base rejects relative path"
+    },
+    {
+      "id": "wpt-391",
+      "index": 391,
+      "input": "i",
+      "base": "sc:/pa/pa",
+      "rationale": "Non-special hierarchical base"
+    },
+    {
+      "id": "wpt-397",
+      "index": 397,
+      "input": "../i",
+      "base": "sc://ho/pa",
+      "rationale": "Parent traversal on non-special authority"
+    },
+    {
+      "id": "wpt-404",
+      "index": 404,
+      "input": "?i",
+      "base": "sc:sd",
+      "rationale": "Opaque base rejects query-only reference"
+    },
+    {
+      "id": "wpt-409",
+      "index": 409,
+      "input": "#i",
+      "base": "sc:sd",
+      "rationale": "Opaque base accepts fragment-only reference"
+    },
+    {
+      "id": "wpt-608",
+      "index": 608,
+      "input": "pix/submit.gif",
+      "base": "file:///C:/Users/Domenic/Dropbox/GitHub/tmpvar/jsdom/test/level2/html/files/anchor.html",
+      "rationale": "File URL with Windows drive as base"
+    },
+    {
+      "id": "wpt-619",
+      "index": 619,
+      "input": "",
+      "base": "file:///test?test#test",
+      "rationale": "Empty file reference clears fragment"
+    },
+    {
+      "id": "wpt-621",
+      "index": 621,
+      "input": "?x",
+      "base": "file:///test?test#test",
+      "rationale": "File query replacement clears fragment"
+    },
+    {
+      "id": "wpt-623",
+      "index": 623,
+      "input": "#x",
+      "base": "file:///test?test#test",
+      "rationale": "File fragment replacement retains query"
+    },
+    {
+      "id": "wpt-645",
+      "index": 645,
+      "input": "C|",
+      "base": "file://host/dir/file",
+      "rationale": "File drive-letter normalization and host preservation risk"
+    },
+    {
+      "id": "wpt-656",
+      "index": 656,
+      "input": "/c|/foo/bar",
+      "base": "file:///c:/baz/qux",
+      "rationale": "Root-relative Windows drive-letter normalization"
+    },
+    {
+      "id": "wpt-667",
+      "index": 667,
+      "input": "/C:/",
+      "base": "file://host/",
+      "rationale": "Root-relative drive retains file host; known dependency-risk class"
+    },
+    {
+      "id": "wpt-764",
+      "index": 764,
+      "input": "",
+      "base": "non-spec:/..//p",
+      "rationale": "Non-special hostless empty reference serialization"
+    },
+    {
+      "id": "wpt-993",
+      "index": 993,
+      "input": "/\\//\\/a/../",
+      "base": "file:///",
+      "rationale": "File repeated separators; known dependency-risk class"
+    }
+  ]
+}

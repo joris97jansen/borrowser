@@ -35,7 +35,7 @@ echo "  wall-timeout-sec: ${WALL_TIMEOUT_SEC}"
 echo "  failure-artifact: ${ARTIFACT_PATH}"
 
 echo "Building fuzz smoke target..."
-cargo build --manifest-path "${ROOT_DIR}/fuzz/Cargo.toml" --bin html5_tree_builder_tokens
+cargo build --manifest-path "${ROOT_DIR}/fuzz/Cargo.toml" --locked --bin html5_tree_builder_tokens
 
 SMOKE_CMD=(
   "${BIN_PATH}"

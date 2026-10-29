@@ -491,6 +491,30 @@ Addressing architecture status:
   retained independent expectations, and validation. This is not full WHATWG
   compliance. The image-source helper uses the boundary without changing HTML
   preprocessing, relative fallback, or resource loading.
+- AH3 now integrates maintained `rust-url` revision
+  `7dc4ecbf4d29817e723e04ae94b14f1326764f61` using revision-pinned Cargo patches
+  and the qualified consumer graph (adapter 1.2.1 / ICU 2.0). Production-API
+  qualification matches 560/560 null-base and 336/336 explicit-base WPT outcomes.
+  The earlier blocked checkpoint remains historical evidence below. Typed
+  `DomainToAscii` callbacks are explicitly mapped; no resolver or consumer
+  workaround is added. [Integration contract and reproduction](platform/ah2-typed-url-parsing-and-diagnostics.md#ah3-maintained-fork-integration-2026-10-28)
+  record minimal patches, graph identity, corrected regressions and limitations.
+  The dependency-integration full CI passed. AH3 now adds production-safe
+  structural operation debugging: a pure formatter over the existing input,
+  explicit base and typed result, with content-redacted URL Debug, ordered
+  diagnostics, fatal categories and a failure-base consistency check. Exact URL
+  expectations remain separate synthetic conformance evidence; production output
+  intentionally cannot reconstruct the URL transformation. Literal snapshots
+  cover success, failure, sensitive/opaque inputs and nested Debug. See the
+  [privacy contract](platform/ah2-typed-url-parsing-and-diagnostics.md#ah3-structural-operation-debugging-2026-10-29).
+  **AH3 acceptance is satisfied:** the final native audit covers missing/invalid
+  bases, invalid references, opaque-base restrictions, unsupported schemes and
+  deterministic diagnostics. Its two missing assertion groups now extend existing
+  native tests; no production behavior changed. All 32 addressing tests, 896/896
+  pinned WPT outcomes, dependency enforcement and full local CI pass. The
+  [completed acceptance matrix](platform/ah2-typed-url-parsing-and-diagnostics.md#ah3-final-native-acceptance-2026-10-29)
+  records the evidence and closeout recommendation for #1113; no GitHub closure or
+  merge is claimed. Document-level base integration remains later work.
 - `file:` origin policy remains explicitly unresolved. Navigation remains a
   Browser consumer. Other URL helpers and
   HTTP/HTTPS/file loading remain documented migration points.
@@ -504,13 +528,33 @@ Addressing architecture status:
 
 ### AH-URL-001 — Upstream WHATWG URL parsing deviations
 
-**Status:** Known external dependency limitations affecting active resource
-addressing: file host/path preservation, HTTP caret encoding, opaque-path spaces,
-and ASCII-domain acceptance. The focused consumer checks reproduce pre-AH2
-behavior; no AH2 normalization or loading regression was found. The earlier
+**Status (2026-10-29):** The historical parsing deviations below are corrected
+by the exact qualified fork integrated for AH3. All independent pinned parsing
+outcomes now match through `BrowserUrl`; the nine active parsing-deviation
+records were retired only after reproduction. Historical observations remain
+evidence, not current required behavior. Ten modern-graph IDNA corpus findings
+and nine fork setter findings remain documented limitations; immutable AH3
+parsing does not use mutation APIs. AH3 scoped acceptance is satisfied after the
+final native audit; this does not complete Milestone AH or library-wide URL
+qualification.
+
+The following 2026-10-26/27 observations concern the earlier published dependency.
+The focused consumer checks reproduced pre-AH2 behavior; no AH2 normalization or
+loading regression was found. The earlier
 statement about ordinary HTTP/HTTPS resolution was too narrow: a raw caret
 reaches an HTTP request target unchanged. This establishes a concrete behavior
 difference, not exploitability or a particular server's response.
+
+**AH3 discovery update (2026-10-27):** full non-null-base WPT discovery
+reproduces 22 file host/drive/separator discrepancies in these known classes.
+Eleven further cases fall outside the accepted inventory: WPT 659 (non-special
+parent traversal), 984–990 (unexpected HTTP empty-host failures), and 1004–1006
+(non-special backslash path/authority changes). All 336 production outcomes were
+compared with direct locked-backend outcomes; no adapter difference was found.
+These newly observed dependency defects block AH3 acceptance. They are not
+reclassified as accepted merely because the same dependency owns them. No local
+workaround, new ignored test, or altered upstream expectation was introduced.
+See the [complete discrepancy tables](platform/ah2-typed-url-parsing-and-diagnostics.md#discovery-results-and-attribution).
 
 **Evidence provenance:** the earlier isolated investigation evaluated
 `servo/rust-url` revision `00a6ce58d02f4e0d43c5ca0702c0bedb8b1ebf3a`.

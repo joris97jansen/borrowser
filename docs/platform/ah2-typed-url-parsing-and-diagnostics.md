@@ -1,8 +1,15 @@
 # AH2: Typed URL Parsing, Resolution, And Diagnostics
 
-Last updated: 2026-10-26
-Status: implemented and ready for code review with explicit dependency limitations;
-full CI reproduces native macOS process-ownership failures present on clean master
+Last updated: 2026-10-29
+Status: AH3 explicit-base URL resolution acceptance satisfied; document-level base integration remains deferred
+
+The sections preceding the [2026-10-28 integration](#ah3-maintained-fork-integration-2026-10-28)
+retain the original AH2 decision and AH3 blocked checkpoint as historical evidence.
+They describe published `url 2.5.7`, not the dependency selected after this integration.
+The [2026-10-29 operation-debugging contract](#ah3-structural-operation-debugging-2026-10-29)
+supersedes the historical userinfo-only Debug policy with content redaction.
+The [final native acceptance audit](#ah3-final-native-acceptance-2026-10-29) records
+AH3 closeout evidence; earlier pending/blocked statements are historical checkpoints.
 
 ## Scope and revised architectural decision
 
@@ -93,7 +100,8 @@ stability. Universal standards-normalization and round-trip stability are not
 claimed: the published dependency has the retained file counterexample below.
 No ad hoc normalization repairs or blanket rejection of file URLs are applied.
 
-`Debug` is deterministic structured component output with a fixed field order.
+Historical AH2 Debug policy (superseded by the current operation-debugging
+contract below): `Debug` is deterministic structured component output with a fixed field order.
 Username/password contents become `<redacted>` while their normalized presence
 remains inspectable. Both normal and pretty Debug, including nested outcomes,
 are safe for URL userinfo. Debug is an internal regression contract, not a public
@@ -444,3 +452,525 @@ fail. The exact first output differs from the upstream reporter's dependency
 environment; the table records this workspace's actual result, without importing
 the reporter's output as an oracle. The first serialization is itself not a
 claim of correct canonical normalization.
+## AH3 explicit-base qualification: blocked acceptance (2026-10-27)
+
+AH2 merged through PR #1440. AH3 starts at master
+`0109ab0c489891c0ff3d57f1d4cd446c656dcaa9` on
+`feat/AH3-base-url-resolution`, with a clean working tree and unchanged
+production `BrowserUrl`, diagnostics, dependency graph, and consumers. This is
+an incomplete AH3 evidence checkpoint, not an implementation closeout.
+
+### Unchanged base and diagnostic boundary
+
+A parsed, immutable `BrowserUrl` supplies explicit base context to `resolve`;
+a new base type or document state is not needed. A malformed base string fails
+at `BrowserUrl::parse`, before resolution is possible. Without base context,
+`parse` accepts absolute inputs and reports `RelativeWithoutBase` for relative
+inputs. A successfully parsed opaque-path base supports fragment references,
+but not empty, query-only, or path-relative references. Parsing/resolution is
+separate from resource-operation support: parseable unsupported-operation
+schemes do not become syntax errors. No capability registry or document base
+selection is added by AH3.
+
+Outcomes retain operation-local recoverable diagnostics in callback order,
+including repetitions; failures retain typed fatal categories and the supplied
+base. Base-parsing diagnostics belong to base construction and are not
+replayed by resolution. These are existing AH2 contracts; expanded native AH3
+regressions remain unfinished because the discovery gate below blocked work.
+
+### Population and selection, established before execution
+
+The unchanged pinned corpus contains 1,011 entries: 896 objects and 115 comment
+strings. Of the objects, 336 have explicit non-null string bases: 274 concrete
+successful URL expectations and 62 expected failures. All 336 were evaluated.
+The remaining 560 objects have null bases and are outside this discovery pass;
+AH2's existing selected absolute qualification remains separate.
+
+Seventeen of those null-base objects also carry `relativeTo` annotations
+(16 `non-opaque-path-base`, one `any-base`). All seventeen explicitly expect
+failure without a base; none supplies a concrete resolved expectation for a
+substituted base. They were not expanded into invented base/result pairs.
+The pinned [upstream constructor harness](https://github.com/web-platform-tests/wpt/blob/c48d58747e1f211527fb695fd60548a997fae617/url/url-constructor.any.js)
+uses `base` and `failure` and does not interpret `relativeTo`. Its blob identity
+is `b4b639b813e9752db24c38e94dcf57c084ee52fd`. AH3 does not claim coverage of
+annotation-driven expansions, URL mutation, origins, or JavaScript URL APIs.
+
+The [32-case selection](../../crates/addressing/tests/fixtures/wpt/resolution-selection.json)
+was recorded before any resolution results were evaluated. It covers ordinary
+paths, dot segments, root/authority replacement, query/fragment/empty inputs,
+same-scheme shorthand, fatal input, non-special hierarchy, opaque bases,
+file URLs, and known file host/drive/separator risk classes. These semantic
+criteria did not depend on whether the implementation passed. The manifest
+retains exact source indices, input/base identities, individual rationales,
+corpus/license hashes, and the existing WPT and Standard revisions. The original
+absolute selection, source corpus, license, and expectations remain unchanged.
+
+### Discovery results and attribution
+
+The new production-API discovery test checks all ten existing URL component
+projection fields against WPT, or its explicit expected fatal result. It also
+checks repeated typed outcomes and base immutability. It does not reparse
+production serialization to create an observation. Separate calls directly to
+locked `url 2.5.7` verify wrapper/backend component and outcome parity solely
+for attribution; they are not the normative oracle. All bases parsed, and all
+336 production outcomes matched the direct dependency outcomes.
+
+| Scope | Strict WPT matches | Discrepancies | Interpretation |
+| --- | --- | --- | --- |
+| Focused 32 | 29 | 3 | Differences at 645, 667, 993 are existing file-defect classes. |
+| All 336 explicit-base cases | 303 | 33 | 241 successful URLs and all 62 expected failures matched. |
+| Existing file-defect classes | 0 of these 22 discrepant cases | 22 | Additional manifestations of AH-URL-001, not strict passes. |
+| Newly discovered non-file discrepancies | 0 of these 11 discrepant cases | 11 | Material acceptance blockers, not accepted limitations. |
+
+The 22 file discrepancies below belong to the previously documented file
+host/drive and empty-path-segment defects. They remain dependency-owned and
+could be considered only under AH2's explicit limitation policy, with no
+conformance claim. Four cases already have a changed parsed base (613, 646,
+660: host lost; 703: empty segment lost). The remaining 18 first diverge during
+reference resolution. This distinction prevents blaming resolution alone for
+base-parsing information loss. No new file correction is implemented.
+
+All cells below use JSON string spelling so backslashes and newlines remain
+unambiguous. `InvalidInput(EmptyHost)` denotes the typed fatal actual result.
+Component-level differences and parsed-base serializations are also printed by
+the reproducible test; the tables retain each discrepancy's complete URL result.
+
+| WPT index | Reference | Base input | Expected URL | Actual URL |
+| --- | --- | --- | --- | --- |
+| 613 | `"/"` | `"file://h/C:/a/b"` | `"file://h/C:/"` | `"file:///C:/"` |
+| 635 | `"/////mouse"` | `"file:///elephant"` | `"file://///mouse"` | `"file:///mouse"` |
+| 637 | `"\\/localhost//pig"` | `"file://lion/"` | `"file:////pig"` | `"file:///pig"` |
+| 638 | `"//localhost//pig"` | `"file://lion/"` | `"file:////pig"` | `"file:///pig"` |
+| 639 | `"/..//localhost//pig"` | `"file://lion/"` | `"file://lion//localhost//pig"` | `"file://lion/localhost//pig"` |
+| 645 | `"C\|"` | `"file://host/dir/file"` | `"file://host/C:"` | `"file:///C:"` |
+| 646 | `"C\|"` | `"file://host/D:/dir1/dir2/file"` | `"file://host/C:"` | `"file:///C:"` |
+| 647 | `"C\|#"` | `"file://host/dir/file"` | `"file://host/C:#"` | `"file:///C:#"` |
+| 648 | `"C\|?"` | `"file://host/dir/file"` | `"file://host/C:?"` | `"file:///C:?"` |
+| 649 | `"C\|/"` | `"file://host/dir/file"` | `"file://host/C:/"` | `"file:///C:/"` |
+| 650 | `"C\|\n/"` | `"file://host/dir/file"` | `"file://host/C:/"` | `"file:///C:/"` |
+| 651 | `"C\|\\"` | `"file://host/dir/file"` | `"file://host/C:/"` | `"file:///C:/"` |
+| 658 | `"/c:/foo/bar"` | `"file://host/path"` | `"file://host/c:/foo/bar"` | `"file:///c:/foo/bar"` |
+| 660 | `".."` | `"file://x/C:/"` | `"file://x/C:/"` | `"file:///C:/"` |
+| 666 | `"C\|/"` | `"file://host/"` | `"file://host/C:/"` | `"file:///C:/"` |
+| 667 | `"/C:/"` | `"file://host/"` | `"file://host/C:/"` | `"file:///C:/"` |
+| 668 | `"file:C:/"` | `"file://host/"` | `"file://host/C:/"` | `"file:///C:/"` |
+| 669 | `"file:/C:/"` | `"file://host/"` | `"file://host/C:/"` | `"file:///C:/"` |
+| 699 | `"file:////one/two"` | `"file:///"` | `"file:////one/two"` | `"file:///one/two"` |
+| 702 | `"////one/two"` | `"file:///"` | `"file:////one/two"` | `"file:///one/two"` |
+| 703 | `"file:///.//"` | `"file:////"` | `"file:////"` | `"file:///"` |
+| 993 | `"/\\//\\/a/../"` | `"file:///"` | `"file://////"` | `"file:///"` |
+
+The eleven new cases below are outside the documented file/encoding/IDNA
+limitations. Seven valid HTTP references fail unexpectedly; three non-special
+backslash references resolve to incorrect paths or authorities; one non-special
+parent traversal incorrectly treats a drive-shaped segment as a file root.
+Their base URLs parse unchanged. Direct dependency parity attributes all eleven
+to `url 2.5.7`, rather than the Borrowser adapter. They pre-exist AH3: the
+production code is byte-identical to merged AH2. "New" means newly discovered
+in this qualification, not introduced by this change.
+
+| WPT index | Reference | Base input | Expected URL | Actual URL or failure |
+| --- | --- | --- | --- | --- |
+| 659 | `".."` | `"abc://x/y/z/C:/"` | `"abc://x/y/z/"` | `"abc://x/y/z/C:/"` |
+| 984 | `"///test"` | `"http://example.org/"` | `"http://test/"` | `"InvalidInput(EmptyHost)"` |
+| 985 | `"///\\//\\//test"` | `"http://example.org/"` | `"http://test/"` | `"InvalidInput(EmptyHost)"` |
+| 986 | `"///example.org/path"` | `"http://example.org/"` | `"http://example.org/path"` | `"InvalidInput(EmptyHost)"` |
+| 987 | `"///example.org/../path"` | `"http://example.org/"` | `"http://example.org/path"` | `"InvalidInput(EmptyHost)"` |
+| 988 | `"///example.org/../../"` | `"http://example.org/"` | `"http://example.org/"` | `"InvalidInput(EmptyHost)"` |
+| 989 | `"///example.org/../path/../../"` | `"http://example.org/"` | `"http://example.org/"` | `"InvalidInput(EmptyHost)"` |
+| 990 | `"///example.org/../path/../../path"` | `"http://example.org/"` | `"http://example.org/path"` | `"InvalidInput(EmptyHost)"` |
+| 1004 | `"\\a"` | `"foo://foo/a"` | `"foo://foo/\\a"` | `"foo://foo/a"` |
+| 1005 | `"\\/a"` | `"foo://foo/a"` | `"foo://foo/\\/a"` | `"foo://a"` |
+| 1006 | `"\\\\a"` | `"foo://foo/a"` | `"foo://foo/\\\\a"` | `"foo://a"` |
+
+These new differences block honest AH3 acceptance under the approved scope.
+In particular the non-special backslash cases can change the resolved authority,
+and valid HTTP slash forms are rejected. They have not been added to an accepted
+inventory or disguised as passes. No local parser patch, fork, second resolver,
+or normalization workaround is proposed. A qualified upstream correction or an
+explicit project decision on these additional limitations is required before
+AH3 can be closed. Such a decision is not inferred from AH2's narrower inventory.
+
+### Reproduction and incomplete validation
+
+Run the strict discovery test (it deliberately exits 101 with all 33 differences
+visible until the acceptance blockers are resolved):
+
+```sh
+cargo test -p addressing --test qualification pinned_wpt_relative_discovery --locked -- --nocapture
+```
+
+The JSON report includes each source index, input, base input, actual parsed
+base, and per-component independently expected and actual values. All report
+inputs are fixed public synthetic WPT fixture data. This is conformance evidence,
+not an arbitrary-user-input logging facility or a safe composite debug API.
+No credential-bearing runtime input is collected. The existing production
+`Debug` contract redacts only userinfo; path/query/fragment contents are still
+inspectable and can contain secrets.
+
+Before discovery, `cargo test -p addressing --test browser_url --locked` passed
+all nine existing tests. The discovery test fails on the material new dependency
+behavior, so AH3 implementation stops at this checkpoint as requested. Expanded
+native regressions and successful/failed/sensitive composite debug snapshots
+have not been implemented; the debugging exit criterion is still open. Document
+URL/fallback/active base lifecycle, HTML base selection, HTML/CSS consumer
+migration, origins, resource identity, fetching, caching, and navigation remain
+deferred. No production Rust types, APIs, algorithms, state, logging, or consumer
+behavior changed.
+
+| Validation at this checkpoint | Result |
+| --- | --- |
+| `cargo test -p addressing --test browser_url --locked` | PASS: nine existing tests, before adding discovery. |
+| `cargo test -p addressing --test qualification pinned_wpt_relative_discovery --locked -- --nocapture` | FAIL (101): all 336 evaluated, 33 discrepancies retained; repeated run confirms the same counts. |
+| `cargo test -p addressing --locked` | FAIL (101): all 19 existing tests pass; only the new strict discovery test fails. No ignored tests; doc tests are not reached after the integration-test failure. |
+| `make fmt-check` | PASS. |
+| `cargo clippy -p addressing --all-targets --locked -- -D warnings` | PASS. |
+| `git diff --check` | PASS. |
+| Runtime smoke | Not needed: no production/runtime behavior changed. |
+| `make ci` | Not run: implementation stopped at the explicit material-defect gate; no readiness or clean-CI claim. Required before a later completed implementation is declared ready for review. |
+
+Raw logs are retained locally in `target/ah3-validation/`; their essential
+results, expectations, and reproduction commands are recorded here so the
+evidence does not depend on untracked build artifacts. No commits, pushes,
+PRs, or issue changes were made.
+
+## AH3 maintained-fork integration (2026-10-28)
+
+### Exact source and qualified graph
+
+The approved immutable parsing/explicit-base dependency is maintained
+[`joris97jansen/rust-url`](https://github.com/joris97jansen/rust-url) revision
+`7dc4ecbf4d29817e723e04ae94b14f1326764f61` (`url 2.5.8`). This is the production
+revision, not CI control commit `32630e7b55f8ad75a3f92e96a48552dac755f35c`.
+[Hosted qualification run 40706692979](https://github.com/joris97jansen/rust-url/actions/runs/40706692979)
+qualified Linux, Windows, macOS, native feature lanes, sanitizers, consumer-graph
+fuzz regression replay, audit and pinned WPT outcomes before this integration.
+
+The original Borrowser consumer lock SHA-256 is
+`3802ddab6a9d38ed2228ff165244fd30ba91523522f3e7e11e276bb9225c3ab3`.
+It exactly matches the consumer lock recorded in fork qualification. The fork's
+qualification workspace lock is a different file with SHA-256
+`a770f264be9656bcf64db971b60c2a09ee0a542600ead12b66f52f878db154d6`;
+its extra development dependencies are not consumer dependencies.
+
+Cargo graph trials establish the minimal overrides:
+
+- Root `[patch.crates-io]`: `url` and `percent-encoding`, each pinned to the full
+  production revision above. Patching `url` automatically selects its sibling
+  Git/path `idna 1.1.0`, `form_urlencoded 1.2.2` and `percent-encoding 2.3.2`.
+  No explicit IDNA or form patch is necessary. The percent-encoding patch unifies
+  `winit` and `arboard` with that existing fork instance; a URL-only trial produced
+  duplicate registry/Git instances at the same version.
+- Independent fuzz workspace: only the revision-pinned `url` patch. Its actual
+  graph already contains one instance of each fork sibling, so extra sibling
+  overrides would add no necessary selection.
+- The existing workspace `url = "2"` requirement remains sufficient. The full
+  revision and committed locks select `2.5.8`; an `=2.5.8` requirement is not
+  necessary for this integration. Locked source selection is checked explicitly.
+
+The root lock changes only URL's version (`2.5.7` to `2.5.8`) and the four fork
+package source identities. Every external version and registry checksum remains
+unchanged. The fuzz lock's previous ICU 2.2 graph is aligned to the already
+qualified consumer closure, not upgraded to the modern qualification graph.
+Changes outside that closure are excluded. Both resolved URL closures contain
+exactly the qualified 35 coordinates (URL plus 34 runtime dependencies), with
+one instance of each fork package and no unused patches. External registry
+checksums match qualification.
+
+| Dependency | Preserved qualified version |
+| --- | --- |
+| `idna_adapter` | `1.2.1` |
+| `icu_collections`, `icu_locale_core`, `icu_normalizer`, `icu_normalizer_data`, `icu_provider` | `2.0.0` |
+| `icu_properties`, `icu_properties_data` | `2.0.1` |
+| `potential_utf`, `tinystr`, `zerotrie`, `zerovec` | `0.1.3`, `0.8.1`, `0.2.2`, `0.11.4` |
+| `serde`, `serde_core`, `serde_derive` | `1.0.225` |
+
+Direct/transitive URL consumers in the main graph are addressing, Browser, CSS,
+GFX, ureq and webbrowser. The fuzz workspace reaches URL through CSS. All resolve
+the same approved revision. This is a single dependency source override, not a
+second URL resolver or a consumer normalization repair. Graph changes require
+explicit review and requalification rather than an unbounded dependency update.
+
+Reproduction after integration:
+
+```sh
+cargo metadata --locked --format-version 1
+cargo tree --locked -i url
+cargo tree --locked -i percent-encoding
+cargo metadata --manifest-path fuzz/Cargo.toml --locked --format-version 1
+cargo tree --manifest-path fuzz/Cargo.toml --locked -i url
+cargo test -p addressing --locked -- --nocapture
+cargo test -p browser -p net --lib --locked
+```
+
+### Typed diagnostic integration
+
+`SyntaxViolation::DomainToAscii` maps explicitly to `UrlDiagnostic::DomainToAscii`.
+It reports strict domain-to-ASCII validation and can accompany a successful
+non-strict parse: `https://xn--/` is accepted with this event. A fatal invalid
+domain remains `InvalidInput(InvalidDomain)`; a later invalid port remains
+`InvalidInput(InvalidPort)`. Prior events retain order and repetitions, and
+resolution failures retain the supplied base with credential-redacted Debug.
+Unknown future callbacks still map to `Unclassified`.
+
+Focused regressions cover acceptance, a valid IDNA control, callback ordering,
+fatal domain/port failures, deterministic repetition, immutable base context,
+and absence of replayed base-construction events. The existing
+`FileHostWithDriveLetter` callback remains observed for `file://host/C:/` even
+though its host now survives parsing; integration preserves that callback
+contract rather than inventing diagnostic silence.
+
+### Corrected outcomes and preserved evidence
+
+Before removing the nine historical parsing deviation records, the unchanged
+54-case qualification selected zero deviations under the pinned dependency.
+The old inventory deliberately failed on that resolved difference. The active
+inventory is now empty; original observed values remain in this document's
+historical tables and Git history. No WPT expectations or selections changed.
+
+Production `BrowserUrl` qualification now requires all **560/560 null-base** and
+**336/336 explicit-base** WPT outcomes, comparing all ten component fields or
+the independently specified failure outcome. The original 54 absolute and 32
+relative selection identities remain unchanged. Repeatability and base immutability
+are checked. The 17 null-base `relativeTo` annotations still receive no invented
+base/result expansions. These are parsing/resolution claims, not setter claims.
+
+Native regression checks now require caret percent encoding, file host/path
+identity and the former rust-url #1101 fixed point. Image-source and Tab tests
+require the corrected request/resource keys. A loopback transport regression
+requires raw and encoded caret references to use `/a%5Eb` on the wire. Parsing
+of `https://xn--/` is checked at the typed boundary; it is no longer used as a
+supposed local parser rejection in a network test. Production Browser and net
+implementations remain unchanged.
+
+The WPT corpus, licenses, selection manifests and source expectations remain
+byte-identical. Diagnostic callbacks are checked against explicit state contracts;
+the WPT component fixtures are not represented as a complete diagnostic oracle.
+
+### Limitations and AH3 completion boundary
+
+The original ten Unicode 17 IDNA corpus failures belong to the modern ICU 2.4 /
+Unicode 18 reference graph. They remain documented failures, not passes. The
+qualified consumer graph uses ICU 2.0 / Unicode 16. Neither conformance fixture
+nor generic IDNA behavior is changed in Borrowser.
+
+The fork still records nine setter findings: eight implementation limitations
+and one missing href-dispatch case in its existing driver (the public href API
+conforms). Immutable `BrowserUrl` exposes none of those setters. This integration
+does not qualify mutation APIs or erase those findings.
+
+Dependency integration alone does not close [AH3 #1113](https://github.com/joris97jansen/borrowser/issues/1113)
+or Milestone AH. The full local CI pipeline now passes. Remaining AH3 acceptance
+includes a final audit of the focused native missing/invalid-base, invalid-reference
+and unsupported-scheme cases, and credential-safe operation-level Debug output
+covering input, base, resolved URL and diagnostics with deterministic snapshots.
+Existing value/outcome/failure Debug tests do not establish that complete operation
+record. AH3 explicitly permits closeout before document-level base integration.
+Active/fallback base state and lifecycle, HTML base elements, origin/security policy,
+fetch/resource identity and further consumer migrations remain separate later work.
+No new base type, parser abstraction, scheme registry, or consumer-side workaround
+is introduced by this integration.
+
+### Integration validation
+
+The focused typed diagnostic tests and the complete addressing package pass:
+one library test, 11 typed URL tests and 11 qualification tests. The WPT totals
+are 560/560 null-base, 336/336 explicit-base and 54/54 original absolute-selection
+matches, with zero parsing deviations. Browser's 248 tests and net's 14 tests pass,
+including deterministic image/resource keys and loopback caret normalization.
+Both complete Cargo graphs match the qualified URL dependency closure/checksums,
+and all existing fuzz bins pass a locked compile check.
+
+`make ci` passes locally with Rust 1.92.0 on native macOS. This includes its fixed
+conformance suite, formatting, all three warnings-denied Clippy lanes, both
+workspace test lanes, parser/golden/WPT/runtime/fuzz smoke checks, debug and release
+builds, bench compilation and generated-entity validation. Release/bench builds
+still emit non-fatal warnings in unchanged HTML/CSS files; these are not suppressed.
+No known failure was converted into a pass, no expectation was skipped, and no
+live site is used as conformance evidence.
+
+
+## AH3 structural operation debugging (2026-10-29)
+
+### Production capability and operation association
+
+`addressing::format_resolution_debug(reference, base, &result)` formats an already
+completed parse or explicit-base resolution. It borrows `&str`,
+`Option<&BrowserUrl>` and `&Result<UrlParseOutcome, UrlFailure>` and returns an
+owned, sanitized `String`. It does not parse or resolve again, retain the input
+in an outcome/failure, clone URLs or diagnostic collections, mutate values,
+perform I/O, or introduce automatic logging. There is no report/context type,
+extra resolver, logging dependency, raw-output mode, or document base state.
+
+```rust
+use addressing::{BrowserUrl, format_resolution_debug};
+
+let base = BrowserUrl::parse("https://example.test/dir/page").unwrap().url;
+let reference = "../image.png";
+let result = base.resolve(reference);
+let diagnostic = format_resolution_debug(reference, Some(&base), &result);
+```
+
+The caller must provide input, base and result from the same completed operation.
+The formatter cannot prove their provenance. A failure already retains a typed
+base: the formatter compares that base with the supplied base using full URL
+`Eq`, including credentials, private components and `None` versus `Some`.
+`failure_base_matches: Some(true)` means those bases compare equal; `Some(false)`
+exposes inconsistent context without changing or rejecting the result. Identical
+redacted URL output does not establish equality. For success this check is
+unavailable and the field is `None`. No check authenticates the reference or a
+successful result, and public result fields are not an integrity boundary.
+
+The deterministic field order is `input`, `base`, `resolved`, `diagnostics`,
+`failure`, `failure_base_matches`. On success, `resolved` is `Some` and `failure`
+is `None`; on failure the reverse applies. Diagnostics remain in callback order,
+including repetitions and events preceding fatal errors. Base-construction
+events are not replayed. Base context is explicit, not document-selection
+provenance. A malformed base string remains a separate base-construction parse
+failure; no invalid `BrowserUrl` is manufactured for diagnostic output.
+
+### Current privacy policy
+
+Production-safe structural diagnostics deliberately withhold exact URL content:
+
+| Field | Representation |
+| --- | --- |
+| Reference | Empty string stays empty; every nonempty input becomes `<redacted>`, including malformed references. |
+| Scheme | Only literal labels `http`, `https`, `ftp`, `file`, `ws`, `wss`, `about`, `data`, `blob`, `javascript` are displayed; all other scheme values become `<redacted>`. This is a formatting vocabulary, not a scheme capability registry. |
+| Username/password | Normalized absence/empty/nonempty distinctions remain; nonempty contents become `<redacted>`. |
+| Host | Only absent/present and `domain`, `opaque`, `ipv4`, `ipv6` kind are displayed as `host_kind`. No hostname or address is emitted. |
+| Port | Absent/present remains; every explicit nondefault value becomes `<redacted>`. Default ports already normalize to absence. |
+| Path and opaque payload | Empty versus nonempty remains; nonempty content becomes `<redacted>`, including embedded URLs and file paths. |
+| Query/fragment | `None`, `Some("")` and `Some("<redacted>")` distinguish absence, empty and nonempty. Parameter names, values and fragment contents are all withheld. |
+| Authority/opaque path | Existing normalized boolean properties remain visible. |
+| Diagnostics/failure | Existing typed enum categories; no raw input or backend error-display strings. |
+
+No sensitive lengths, hashes, fingerprints or raw substrings are added. The
+formatter explains status, component presence and validation/failure categories;
+it does **not** reveal the exact authored reference or URL transformation. Many
+distinct URLs intentionally have the same diagnostic projection. Structural
+metadata, standard scheme labels, diagnostic categories and base-consistency
+results remain observable, so this is not a promise of universal information
+hiding or safe logging of arbitrary application data.
+
+`BrowserUrl::Debug` now applies the same content policy, in ordinary and pretty
+formatting. Derived `UrlParseOutcome::Debug`, `UrlFailure::Debug`, and nested
+`Result`/`Option` output inherit it. `UrlFailure::Display` emits only the typed
+failure category. Neither `BrowserUrl` nor `UrlParseOutcome` implements Display.
+The historical host/path/query/fragment/port Debug contents are deliberately
+removed; parsing, semantic equality/hash and serialization are unchanged.
+
+Complete accessors (`as_str`, `scheme`, `host`, credentials, path, query, fragment,
+port) still expose their actual values. `UrlHost`'s derived Debug and the returned
+host/IP values' Debug/Display can expose host contents. Formatting those explicit
+accessors, raw references, complete strings or backend URL values is outside this
+privacy guarantee. The formatter does not call those raw formatting paths as an
+intermediate shortcut. Its output is an internal regression contract, not URL
+serialization, resource identity, a public API schema or a transport format.
+
+### Independent evidence and remaining acceptance
+
+The production-API tests in `crates/addressing/tests/resolution_debug.rs` use
+reviewed literal success/failure/empty/missing-base/opaque snapshots, including
+nested pretty Debug. Synthetic secret substitutions protect host, IP, credential,
+path, query, fragment, port and custom-scheme redaction without collapsing actual
+URL equality. Tests cover malformed/encoded inputs, deterministic repetition,
+ordered repeated diagnostics, base-event isolation, failure-base mismatches,
+owned input lifetime and immutable URL/hash/result semantics.
+
+Exact URL transformations remain independently verifiable through typed
+accessors in controlled synthetic tests. Those assertions are conformance
+evidence; they do not require a production raw-output mode. Normative WPT corpus,
+expectations and qualification remain unchanged: 560 null-base and 336
+explicit-base cases must continue to match. Diagnostic completeness remains
+limited to observed backend events; no new validation taxonomy is invented.
+
+The operation-debugging implementation passed validation. At this checkpoint,
+AH3 still required its final native acceptance audit of missing/invalid bases,
+invalid references and parseable unsupported schemes. That audit is completed
+in the final acceptance section below.
+No document-level base lifecycle, HTML base integration, origins, capability
+policy, fetching, navigation or consumer migration is introduced here.
+
+
+## AH3 final native acceptance (2026-10-29)
+
+The final audit read [AH3 #1113](https://github.com/joris97jansen/borrowser/issues/1113),
+the AH1/AH2 ownership contracts, production APIs and existing native/WPT evidence.
+The issue explicitly permits closeout before document-level base integration.
+The parsed, immutable `BrowserUrl` supplied to `resolve` is the explicit typed
+base. A new base/context/report abstraction or document state is not required.
+A parseable opaque URL is a valid URL even though some relative forms cannot
+resolve against it. Unsupported resource operations remain separate from syntax.
+
+The read-only audit found no production defect and exactly two missing permanent
+assertions: empty references against an opaque base, and typed fatal failure for
+an authority-relative reference with an invalid port. Temporary audit probes
+confirmed existing behavior before the assertions were added. Both now extend
+existing functions in `crates/addressing/tests/browser_url.rs`; no new test module,
+production API, parser behavior, fixture, dependency or browser consumer changed.
+
+### Completed native acceptance matrix
+
+Every row below is satisfied. Test links identify concrete existing assertions;
+WPT references are zero-based indices in the unchanged pinned corpus.
+
+| Requirement | Native tests / qualification | Asserted behavior and invariant |
+| --- | --- | --- |
+| Absolute URLs without a base | [`normalized_components_are_explicit`](../../crates/addressing/tests/browser_url.rs#L10); [`pinned_wpt_absolute_discovery`](../../crates/addressing/tests/qualification.rs#L198) | Typed components and normalized serialization; all 560 null-base outcomes match. |
+| Relative references without a base | [`fatal_errors_retain_prior_events_without_raw_input`](../../crates/addressing/tests/browser_url.rs#L226); [`missing_base_snapshot_and_failure_consistency_use_actual_url_equality`](../../crates/addressing/tests/resolution_debug.rs#L112) | Empty/path-relative inputs fail with RelativeWithoutBase and no supplied base. |
+| Invalid base construction | [`fatal_errors_retain_prior_events_without_raw_input`](../../crates/addressing/tests/browser_url.rs#L226) | The shared BrowserUrl::parse constructor rejects invalid host/domain/port/IP inputs with typed failures before a base can be supplied. Private URL storage prevents bypassing construction; no nominal base wrapper is needed. |
+| Explicit typed base and common relative forms | [`explicit_base_resolution_preserves_the_base_and_reference_semantics`](../../crates/addressing/tests/browser_url.rs#L91); [`domain_to_ascii_validation_is_recoverable_and_ordered`](../../crates/addressing/tests/browser_url.rs#L338); [`pinned_wpt_relative_discovery`](../../crates/addressing/tests/qualification.rs#L52) | Simple/parent/root/scheme-relative paths, dot segments, query/fragment/empty forms and absolute overrides produce independently expected URLs. WPT 263 covers a literal dot reference. |
+| Opaque bases: rejected references | [`explicit_base_resolution_preserves_the_base_and_reference_semantics`](../../crates/addressing/tests/browser_url.rs#L91); [`pinned_wpt_relative_discovery`](../../crates/addressing/tests/qualification.rs#L52) | Path and now empty references fail with RelativeAgainstOpaqueBase. The empty case explicitly asserts retained base, no callbacks, immutability and identical repeated errors. WPT 404–405 independently reject query-only references. |
+| Opaque bases: permitted references | [`explicit_base_resolution_preserves_the_base_and_reference_semantics`](../../crates/addressing/tests/browser_url.rs#L91); [`opaque_resolution_snapshot_hides_payload_and_preserves_failure_distinction`](../../crates/addressing/tests/resolution_debug.rs#L151) | Fragments and absolute references succeed; data URL payloads remain opaque and redacted in diagnostics. |
+| Malformed authority-relative reference | [`fatal_errors_retain_prior_events_without_raw_input`](../../crates/addressing/tests/browser_url.rs#L226) | HTTPS base plus //user:password@authority.test:70000/path fails with InvalidPort and exactly EmbeddedCredentials. The exact typed base is retained and unchanged; repeated errors, including diagnostic order, compare equal. |
+| Recoverable events preceding fatal errors | [`fatal_errors_retain_prior_events_without_raw_input`](../../crates/addressing/tests/browser_url.rs#L226); [`domain_to_ascii_validation_does_not_replace_fatal_errors`](../../crates/addressing/tests/browser_url.rs#L385); [`failed_resolution_snapshot_retains_prior_events_and_fatal_category`](../../crates/addressing/tests/resolution_debug.rs#L63) | Prior callbacks remain separate from typed fatal categories, including domain-to-ASCII validation before a later port failure. |
+| Ordering, repetitions and deterministic results | [`recoverable_events_are_ordered_repeated_and_separate_from_values`](../../crates/addressing/tests/browser_url.rs#L185); [`recoverable_order_and_repetitions_are_not_replayed_from_base_construction`](../../crates/addressing/tests/resolution_debug.rs#L323) | Literal callback vectors retain order and duplicates; repeated parse/resolve/format results compare equal. |
+| Base immutability and event isolation | [`domain_to_ascii_validation_is_recoverable_and_ordered`](../../crates/addressing/tests/browser_url.rs#L338); [`pinned_wpt_relative_discovery`](../../crates/addressing/tests/qualification.rs#L52); [`successful_resolution_snapshot_preserves_exact_semantics_separately`](../../crates/addressing/tests/resolution_debug.rs#L18) | Base construction events are not replayed. All 336 explicit-base cases check repeatability and base immutability; both added fatal cases retain and preserve their supplied bases. |
+| Query-only, fragment-only and empty references | [`explicit_base_resolution_preserves_the_base_and_reference_semantics`](../../crates/addressing/tests/browser_url.rs#L91); [`absent_and_empty_components_and_credentials_follow_normalization`](../../crates/addressing/tests/browser_url.rs#L59); [`empty_reference_snapshot_distinguishes_empty_from_withheld_input`](../../crates/addressing/tests/resolution_debug.rs#L94) | Exact query/fragment results, fragment removal by an empty reference, and absent versus present-empty components remain explicit; opaque-empty behavior is separately rejected. |
+| Parseable unsupported schemes and resource-operation boundary | [`parsing_does_not_imply_operation_support_or_origin_computation`](../../crates/addressing/tests/browser_url.rs#L295); [`pinned_wpt_relative_discovery`](../../crates/addressing/tests/qualification.rs#L52); [`unsupported_and_rejected_urls_fail_before_a_resource_response`](../../crates/net/src/tests/fetch.rs#L25) | Valid file/FTP/data/javascript/blob/custom URL syntax remains parseable. WPT 45, 93–95, 104–106 and 112 cover nonstandard/unsupported references with explicit bases. Existing resource-operation failures remain Transport with no response; transport is not a URL-validity oracle. |
+| Typed results, serialization, equality and hashing | [`url_equality_and_hashing_use_complete_serialization_not_origin_or_fetch_identity`](../../crates/addressing/tests/browser_url.rs#L159); [`pinned_wpt_absolute_semantics_and_published_dependency_deviations`](../../crates/addressing/tests/qualification.rs#L405); [`successful_resolution_snapshot_preserves_exact_semantics_separately`](../../crates/addressing/tests/resolution_debug.rs#L18) | Results use BrowserUrl; exact synthetic strings/components, fixed points, full-serialization identity and before/after hashes remain checked. Diagnostic projections are not identity keys. |
+| Credential-safe operation debugging | [`successful_resolution_snapshot_preserves_exact_semantics_separately`](../../crates/addressing/tests/resolution_debug.rs#L18); [`failed_resolution_snapshot_retains_prior_events_and_fatal_category`](../../crates/addressing/tests/resolution_debug.rs#L63); [`component_presence_and_nested_pretty_debug_have_explicit_snapshots`](../../crates/addressing/tests/resolution_debug.rs#L177); [`secret_substitution_preserves_structural_debug_without_collapsing_url_identity`](../../crates/addressing/tests/resolution_debug.rs#L241) | Nine production-API tests protect literal success/failure snapshots, nested ordinary/pretty redaction, sensitive substitutions, malformed references, provenance limitations and no retained input. |
+
+### Final validation and acceptance scope
+
+The updated native BrowserUrl suite passes all 11 tests. The complete addressing
+suite passes all 32 tests: one library, 11 typed URL, 11 qualification and nine
+operation-debugging tests. Test counts do not increase merely because two
+assertion groups were added. Independent pinned WPT remains **560/560 null-base**
+and **336/336 explicit-base**, zero discrepancies; the original 54 absolute and
+32 focused relative selections also pass. No normative expectation was changed.
+
+Commands run for the final assertion increment:
+
+```sh
+cargo test -p addressing --test browser_url --locked --offline -- --nocapture
+cargo test -p addressing --locked --offline -- --nocapture
+make check-url-dependencies
+cargo fmt --all -- --check
+cargo clippy -p addressing --all-targets --locked --offline -- -D warnings
+git diff --check
+make ci
+```
+
+All pass. The full CI run includes the existing warnings-denied Clippy lanes,
+workspace/feature tests, deterministic runtime/golden/fuzz checks, release builds,
+bench compilation and generated entities. Existing nonfatal release/bench warnings
+remain unsuppressed. The acceptance documentation is recorded after successful
+validation; the tested Rust content remains unchanged. Final documentation and
+whitespace checks pass.
+
+Both Cargo workspaces still select qualified rust-url revision
+`7dc4ecbf4d29817e723e04ae94b14f1326764f61` and its approved 35-package closure.
+Production parsing, resolution, serialization, equality, hashing, callbacks and
+structural Debug are unchanged by the final assertions. Historical Unicode/IDNA
+and setter findings above remain documented; this is scoped immutable URL
+acceptance, not complete library-wide WHATWG or mutation conformance.
+
+**AH3's exit criteria are satisfied and it is ready for closeout review.** This
+records local implementation/validation status, not a claim that a GitHub issue
+has been closed, changes merged or a PR published. No further implementation
+phase or abstraction is required. Milestone AH is not complete: document URL and
+fallback/active-base lifecycle, HTML base integration, origins, further consumer
+migrations, resource/cache identity, fetching/navigation and security policy
+remain outside this issue's accepted scope.
