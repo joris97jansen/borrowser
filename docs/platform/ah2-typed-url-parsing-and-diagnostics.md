@@ -1,13 +1,15 @@
 # AH2: Typed URL Parsing, Resolution, And Diagnostics
 
 Last updated: 2026-10-29
-Status: maintained-fork integration and structural operation debugging; final AH3 native acceptance remains pending
+Status: AH3 explicit-base URL resolution acceptance satisfied; document-level base integration remains deferred
 
 The sections preceding the [2026-10-28 integration](#ah3-maintained-fork-integration-2026-10-28)
 retain the original AH2 decision and AH3 blocked checkpoint as historical evidence.
 They describe published `url 2.5.7`, not the dependency selected after this integration.
 The [2026-10-29 operation-debugging contract](#ah3-structural-operation-debugging-2026-10-29)
 supersedes the historical userinfo-only Debug policy with content redaction.
+The [final native acceptance audit](#ah3-final-native-acceptance-2026-10-29) records
+AH3 closeout evidence; earlier pending/blocked statements are historical checkpoints.
 
 ## Scope and revised architectural decision
 
@@ -883,8 +885,92 @@ expectations and qualification remain unchanged: 560 null-base and 336
 explicit-base cases must continue to match. Diagnostic completeness remains
 limited to observed backend events; no new validation taxonomy is invented.
 
-This completes the operation-debugging implementation requirement when its
-validation passes. AH3 is still open for the final native acceptance audit of
-missing/invalid bases, invalid references and parseable unsupported schemes.
+The operation-debugging implementation passed validation. At this checkpoint,
+AH3 still required its final native acceptance audit of missing/invalid bases,
+invalid references and parseable unsupported schemes. That audit is completed
+in the final acceptance section below.
 No document-level base lifecycle, HTML base integration, origins, capability
 policy, fetching, navigation or consumer migration is introduced here.
+
+
+## AH3 final native acceptance (2026-10-29)
+
+The final audit read [AH3 #1113](https://github.com/joris97jansen/borrowser/issues/1113),
+the AH1/AH2 ownership contracts, production APIs and existing native/WPT evidence.
+The issue explicitly permits closeout before document-level base integration.
+The parsed, immutable `BrowserUrl` supplied to `resolve` is the explicit typed
+base. A new base/context/report abstraction or document state is not required.
+A parseable opaque URL is a valid URL even though some relative forms cannot
+resolve against it. Unsupported resource operations remain separate from syntax.
+
+The read-only audit found no production defect and exactly two missing permanent
+assertions: empty references against an opaque base, and typed fatal failure for
+an authority-relative reference with an invalid port. Temporary audit probes
+confirmed existing behavior before the assertions were added. Both now extend
+existing functions in `crates/addressing/tests/browser_url.rs`; no new test module,
+production API, parser behavior, fixture, dependency or browser consumer changed.
+
+### Completed native acceptance matrix
+
+Every row below is satisfied. Test links identify concrete existing assertions;
+WPT references are zero-based indices in the unchanged pinned corpus.
+
+| Requirement | Native tests / qualification | Asserted behavior and invariant |
+| --- | --- | --- |
+| Absolute URLs without a base | [`normalized_components_are_explicit`](../../crates/addressing/tests/browser_url.rs#L10); [`pinned_wpt_absolute_discovery`](../../crates/addressing/tests/qualification.rs#L198) | Typed components and normalized serialization; all 560 null-base outcomes match. |
+| Relative references without a base | [`fatal_errors_retain_prior_events_without_raw_input`](../../crates/addressing/tests/browser_url.rs#L226); [`missing_base_snapshot_and_failure_consistency_use_actual_url_equality`](../../crates/addressing/tests/resolution_debug.rs#L112) | Empty/path-relative inputs fail with RelativeWithoutBase and no supplied base. |
+| Invalid base construction | [`fatal_errors_retain_prior_events_without_raw_input`](../../crates/addressing/tests/browser_url.rs#L226) | The shared BrowserUrl::parse constructor rejects invalid host/domain/port/IP inputs with typed failures before a base can be supplied. Private URL storage prevents bypassing construction; no nominal base wrapper is needed. |
+| Explicit typed base and common relative forms | [`explicit_base_resolution_preserves_the_base_and_reference_semantics`](../../crates/addressing/tests/browser_url.rs#L91); [`domain_to_ascii_validation_is_recoverable_and_ordered`](../../crates/addressing/tests/browser_url.rs#L338); [`pinned_wpt_relative_discovery`](../../crates/addressing/tests/qualification.rs#L52) | Simple/parent/root/scheme-relative paths, dot segments, query/fragment/empty forms and absolute overrides produce independently expected URLs. WPT 263 covers a literal dot reference. |
+| Opaque bases: rejected references | [`explicit_base_resolution_preserves_the_base_and_reference_semantics`](../../crates/addressing/tests/browser_url.rs#L91); [`pinned_wpt_relative_discovery`](../../crates/addressing/tests/qualification.rs#L52) | Path and now empty references fail with RelativeAgainstOpaqueBase. The empty case explicitly asserts retained base, no callbacks, immutability and identical repeated errors. WPT 404–405 independently reject query-only references. |
+| Opaque bases: permitted references | [`explicit_base_resolution_preserves_the_base_and_reference_semantics`](../../crates/addressing/tests/browser_url.rs#L91); [`opaque_resolution_snapshot_hides_payload_and_preserves_failure_distinction`](../../crates/addressing/tests/resolution_debug.rs#L151) | Fragments and absolute references succeed; data URL payloads remain opaque and redacted in diagnostics. |
+| Malformed authority-relative reference | [`fatal_errors_retain_prior_events_without_raw_input`](../../crates/addressing/tests/browser_url.rs#L226) | HTTPS base plus //user:password@authority.test:70000/path fails with InvalidPort and exactly EmbeddedCredentials. The exact typed base is retained and unchanged; repeated errors, including diagnostic order, compare equal. |
+| Recoverable events preceding fatal errors | [`fatal_errors_retain_prior_events_without_raw_input`](../../crates/addressing/tests/browser_url.rs#L226); [`domain_to_ascii_validation_does_not_replace_fatal_errors`](../../crates/addressing/tests/browser_url.rs#L385); [`failed_resolution_snapshot_retains_prior_events_and_fatal_category`](../../crates/addressing/tests/resolution_debug.rs#L63) | Prior callbacks remain separate from typed fatal categories, including domain-to-ASCII validation before a later port failure. |
+| Ordering, repetitions and deterministic results | [`recoverable_events_are_ordered_repeated_and_separate_from_values`](../../crates/addressing/tests/browser_url.rs#L185); [`recoverable_order_and_repetitions_are_not_replayed_from_base_construction`](../../crates/addressing/tests/resolution_debug.rs#L323) | Literal callback vectors retain order and duplicates; repeated parse/resolve/format results compare equal. |
+| Base immutability and event isolation | [`domain_to_ascii_validation_is_recoverable_and_ordered`](../../crates/addressing/tests/browser_url.rs#L338); [`pinned_wpt_relative_discovery`](../../crates/addressing/tests/qualification.rs#L52); [`successful_resolution_snapshot_preserves_exact_semantics_separately`](../../crates/addressing/tests/resolution_debug.rs#L18) | Base construction events are not replayed. All 336 explicit-base cases check repeatability and base immutability; both added fatal cases retain and preserve their supplied bases. |
+| Query-only, fragment-only and empty references | [`explicit_base_resolution_preserves_the_base_and_reference_semantics`](../../crates/addressing/tests/browser_url.rs#L91); [`absent_and_empty_components_and_credentials_follow_normalization`](../../crates/addressing/tests/browser_url.rs#L59); [`empty_reference_snapshot_distinguishes_empty_from_withheld_input`](../../crates/addressing/tests/resolution_debug.rs#L94) | Exact query/fragment results, fragment removal by an empty reference, and absent versus present-empty components remain explicit; opaque-empty behavior is separately rejected. |
+| Parseable unsupported schemes and resource-operation boundary | [`parsing_does_not_imply_operation_support_or_origin_computation`](../../crates/addressing/tests/browser_url.rs#L295); [`pinned_wpt_relative_discovery`](../../crates/addressing/tests/qualification.rs#L52); [`unsupported_and_rejected_urls_fail_before_a_resource_response`](../../crates/net/src/tests/fetch.rs#L25) | Valid file/FTP/data/javascript/blob/custom URL syntax remains parseable. WPT 45, 93–95, 104–106 and 112 cover nonstandard/unsupported references with explicit bases. Existing resource-operation failures remain Transport with no response; transport is not a URL-validity oracle. |
+| Typed results, serialization, equality and hashing | [`url_equality_and_hashing_use_complete_serialization_not_origin_or_fetch_identity`](../../crates/addressing/tests/browser_url.rs#L159); [`pinned_wpt_absolute_semantics_and_published_dependency_deviations`](../../crates/addressing/tests/qualification.rs#L405); [`successful_resolution_snapshot_preserves_exact_semantics_separately`](../../crates/addressing/tests/resolution_debug.rs#L18) | Results use BrowserUrl; exact synthetic strings/components, fixed points, full-serialization identity and before/after hashes remain checked. Diagnostic projections are not identity keys. |
+| Credential-safe operation debugging | [`successful_resolution_snapshot_preserves_exact_semantics_separately`](../../crates/addressing/tests/resolution_debug.rs#L18); [`failed_resolution_snapshot_retains_prior_events_and_fatal_category`](../../crates/addressing/tests/resolution_debug.rs#L63); [`component_presence_and_nested_pretty_debug_have_explicit_snapshots`](../../crates/addressing/tests/resolution_debug.rs#L177); [`secret_substitution_preserves_structural_debug_without_collapsing_url_identity`](../../crates/addressing/tests/resolution_debug.rs#L241) | Nine production-API tests protect literal success/failure snapshots, nested ordinary/pretty redaction, sensitive substitutions, malformed references, provenance limitations and no retained input. |
+
+### Final validation and acceptance scope
+
+The updated native BrowserUrl suite passes all 11 tests. The complete addressing
+suite passes all 32 tests: one library, 11 typed URL, 11 qualification and nine
+operation-debugging tests. Test counts do not increase merely because two
+assertion groups were added. Independent pinned WPT remains **560/560 null-base**
+and **336/336 explicit-base**, zero discrepancies; the original 54 absolute and
+32 focused relative selections also pass. No normative expectation was changed.
+
+Commands run for the final assertion increment:
+
+```sh
+cargo test -p addressing --test browser_url --locked --offline -- --nocapture
+cargo test -p addressing --locked --offline -- --nocapture
+make check-url-dependencies
+cargo fmt --all -- --check
+cargo clippy -p addressing --all-targets --locked --offline -- -D warnings
+git diff --check
+make ci
+```
+
+All pass. The full CI run includes the existing warnings-denied Clippy lanes,
+workspace/feature tests, deterministic runtime/golden/fuzz checks, release builds,
+bench compilation and generated entities. Existing nonfatal release/bench warnings
+remain unsuppressed. The acceptance documentation is recorded after successful
+validation; the tested Rust content remains unchanged. Final documentation and
+whitespace checks pass.
+
+Both Cargo workspaces still select qualified rust-url revision
+`7dc4ecbf4d29817e723e04ae94b14f1326764f61` and its approved 35-package closure.
+Production parsing, resolution, serialization, equality, hashing, callbacks and
+structural Debug are unchanged by the final assertions. Historical Unicode/IDNA
+and setter findings above remain documented; this is scoped immutable URL
+acceptance, not complete library-wide WHATWG or mutation conformance.
+
+**AH3's exit criteria are satisfied and it is ready for closeout review.** This
+records local implementation/validation status, not a claim that a GitHub issue
+has been closed, changes merged or a PR published. No further implementation
+phase or abstraction is required. Milestone AH is not complete: document URL and
+fallback/active-base lifecycle, HTML base integration, origins, further consumer
+migrations, resource/cache identity, fetching/navigation and security policy
+remain outside this issue's accepted scope.

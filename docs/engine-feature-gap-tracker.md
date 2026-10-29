@@ -507,8 +507,14 @@ Addressing architecture status:
   intentionally cannot reconstruct the URL transformation. Literal snapshots
   cover success, failure, sensitive/opaque inputs and nested Debug. See the
   [privacy contract](platform/ah2-typed-url-parsing-and-diagnostics.md#ah3-structural-operation-debugging-2026-10-29).
-  **AH3 is not yet complete:** the final native missing/invalid-base,
-  invalid-reference and unsupported-scheme acceptance audit remains in #1113.
+  **AH3 acceptance is satisfied:** the final native audit covers missing/invalid
+  bases, invalid references, opaque-base restrictions, unsupported schemes and
+  deterministic diagnostics. Its two missing assertion groups now extend existing
+  native tests; no production behavior changed. All 32 addressing tests, 896/896
+  pinned WPT outcomes, dependency enforcement and full local CI pass. The
+  [completed acceptance matrix](platform/ah2-typed-url-parsing-and-diagnostics.md#ah3-final-native-acceptance-2026-10-29)
+  records the evidence and closeout recommendation for #1113; no GitHub closure or
+  merge is claimed. Document-level base integration remains later work.
 - `file:` origin policy remains explicitly unresolved. Navigation remains a
   Browser consumer. Other URL helpers and
   HTTP/HTTPS/file loading remain documented migration points.
@@ -522,13 +528,15 @@ Addressing architecture status:
 
 ### AH-URL-001 — Upstream WHATWG URL parsing deviations
 
-**Status (2026-10-28):** The historical parsing deviations below are corrected
+**Status (2026-10-29):** The historical parsing deviations below are corrected
 by the exact qualified fork integrated for AH3. All independent pinned parsing
 outcomes now match through `BrowserUrl`; the nine active parsing-deviation
 records were retired only after reproduction. Historical observations remain
 evidence, not current required behavior. Ten modern-graph IDNA corpus findings
 and nine fork setter findings remain documented limitations; immutable AH3
-parsing does not use mutation APIs. Full AH3 acceptance remains pending.
+parsing does not use mutation APIs. AH3 scoped acceptance is satisfied after the
+final native audit; this does not complete Milestone AH or library-wide URL
+qualification.
 
 The following 2026-10-26/27 observations concern the earlier published dependency.
 The focused consumer checks reproduced pre-AH2 behavior; no AH2 normalization or

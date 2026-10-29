@@ -140,6 +140,19 @@ fn explicit_base_resolution_preserves_the_base_and_reference_semantics() {
         opaque.resolve("https://h.test/").unwrap().url.as_str(),
         "https://h.test/"
     );
+    let original_opaque = opaque.clone();
+    let empty_error = opaque.resolve("").unwrap_err();
+    assert_eq!(
+        empty_error.kind,
+        UrlFailureKind::InvalidInput(E::RelativeAgainstOpaqueBase)
+    );
+    assert!(empty_error.diagnostics.is_empty());
+    assert_eq!(empty_error.base.as_ref(), Some(&opaque));
+    assert_eq!(opaque, original_opaque);
+    for _ in 0..3 {
+        assert_eq!(opaque.resolve("").unwrap_err(), empty_error);
+        assert_eq!(opaque, original_opaque);
+    }
 }
 
 #[test]
@@ -240,6 +253,18 @@ fn fatal_errors_retain_prior_events_without_raw_input() {
     assert_eq!(error.base.as_ref(), Some(&base));
     assert_eq!(error.kind, UrlFailureKind::InvalidInput(E::EmptyHost));
     assert!(!format!("{error:?} {error:#?} {error}").contains("secret"));
+
+    let original_base = base.clone();
+    let reference = "//user:password@authority.test:70000/path";
+    let error = base.resolve(reference).unwrap_err();
+    assert_eq!(error.kind, UrlFailureKind::InvalidInput(E::InvalidPort));
+    assert_eq!(error.diagnostics, vec![D::EmbeddedCredentials]);
+    assert_eq!(error.base.as_ref(), Some(&base));
+    assert_eq!(base, original_base);
+    for _ in 0..3 {
+        assert_eq!(base.resolve(reference).unwrap_err(), error);
+        assert_eq!(base, original_base);
+    }
 }
 
 #[test]
