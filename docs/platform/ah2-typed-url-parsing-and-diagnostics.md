@@ -703,6 +703,53 @@ cargo test -p addressing --locked -- --nocapture
 cargo test -p browser -p net --lib --locked
 ```
 
+### rust-url synchronization monitor
+
+The dedicated [rust-url workflow](../../.github/workflows/rust-url-sync.yml) runs
+Mondays at 06:23 UTC and supports manual execution. It uses read-only permissions
+and temporary complete Git histories; it never changes dependencies or remote
+branches. Its network checks run separately from PR validation. Deterministic
+tests join the existing `make check-url-dependencies` discovery.
+
+Missing upstream ancestry in the maintained `borrowser` branch, or a fork `main`
+that differs from upstream `main`, produces a review warning and exit 1. A newer
+maintained revision beyond the consumer pin is informational (exit 0): adoption
+requires explicit qualification. Conflicting or malformed main/fuzz pins are
+configuration errors. Unavailable references, failed/timed-out fetches, unrelated
+histories and incomplete comparisons are errors (exit 2), which take precedence
+over warnings. An ahead or divergent consumer history also requires review.
+The Actions summary records hashes, counts, bounded commit lists and comparison
+links; branch-based comparison links show live branch state.
+
+Git ancestry proves historical reachability, not semantic equivalence: cherry-picks
+and squashes can warn despite equivalent changes, while later reverts preserve
+ancestry. This monitor establishes neither dependency qualification nor URL
+Standard conformance. The existing CI check verifies the previously qualified
+Cargo graph.
+
+GitHub currently identifies `master` as Borrowser's default branch. Merging this
+workflow there enables the next weekly schedule, without triggering a run on the
+merge itself. After merging, manually run and inspect it:
+
+```sh
+gh workflow run rust-url-sync.yml --repo joris97jansen/borrowser --ref master
+```
+
+Verify the run uses the merged `master` SHA and Python 3.12.15, inspect all
+applicable comparisons and their summaries, and confirm the conclusion matches
+the findings.
+A legitimate synchronization warning is a failed monitor, not a deployment
+failure. Then confirm the next scheduled run occurs. Manual runs inspect their
+selected ref; scheduled runs inspect the default branch.
+
+Failure notifications depend on GitHub Actions email/web notification settings;
+scheduled recipients follow the workflow creator, later cron editor or person
+who re-enabled it. Availability notices do not trigger failure-only notifications.
+GitHub may delay or drop scheduled runs and disables public-repository schedules
+after 60 days without activity. The monitor cannot detect its own missing runs.
+See [GitHub's event documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)
+and [notification documentation](https://docs.github.com/en/actions/concepts/workflows-and-actions/notifications-for-workflow-runs).
+
 ### Typed diagnostic integration
 
 `SyntaxViolation::DomainToAscii` maps explicitly to `UrlDiagnostic::DomainToAscii`.
