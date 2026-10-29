@@ -6,7 +6,9 @@
 
 mod diagnostics;
 
-pub use diagnostics::{UrlDiagnostic, UrlFailure, UrlFailureKind, UrlParseError};
+pub use diagnostics::{
+    UrlDiagnostic, UrlFailure, UrlFailureKind, UrlParseError, format_resolution_debug,
+};
 
 use std::cell::RefCell;
 use std::fmt;
@@ -24,6 +26,7 @@ pub struct BrowserUrl {
 
 /// A borrowed host component. Empty hosts are represented by `None` together
 /// with [`BrowserUrl::has_authority`]; they are not a domain name.
+/// Its derived Debug exposes host contents; use the URL Debug for redacted output.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UrlHost<'a> {
     /// An ASCII domain for a special scheme (including IDNA normalization).
@@ -83,7 +86,7 @@ impl BrowserUrl {
     }
 
     /// Complete normalized serialization, including credentials. Use `Debug`
-    /// for credential-redacted diagnostics; this is not a presentation label.
+    /// for content-redacted structural diagnostics; this is not a presentation label.
     /// Repeated serialization of this immutable value is always stable.
     pub fn as_str(&self) -> &str {
         self.inner.as_str()
@@ -152,23 +155,38 @@ impl BrowserUrl {
 
 impl fmt::Debug for BrowserUrl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Never delegate to the backend Debug or include its serialization.
+        // Only fixed labels and component presence leave this formatter. Never
+        // delegate to backend Debug, serialize the URL, or echo arbitrary text.
+        let scheme = match self.scheme() {
+            "http" => "http",
+            "https" => "https",
+            "ftp" => "ftp",
+            "file" => "file",
+            "ws" => "ws",
+            "wss" => "wss",
+            "about" => "about",
+            "data" => "data",
+            "blob" => "blob",
+            "javascript" => "javascript",
+            _ => "<redacted>",
+        };
+        let host_kind = self.host().map(|host| match host {
+            UrlHost::Domain(_) => "domain",
+            UrlHost::Opaque(_) => "opaque",
+            UrlHost::Ipv4(_) => "ipv4",
+            UrlHost::Ipv6(_) => "ipv6",
+        });
+        // Preserve absent/empty/nonempty distinctions without content or lengths.
+        let redact = |value: &str| if value.is_empty() { "" } else { "<redacted>" };
         f.debug_struct("BrowserUrl")
-            .field("scheme", &self.scheme())
-            .field(
-                "username",
-                &if self.username().is_empty() {
-                    ""
-                } else {
-                    "<redacted>"
-                },
-            )
-            .field("password", &self.password().map(|_| "<redacted>"))
-            .field("host", &self.host())
-            .field("port", &self.port())
-            .field("path", &self.path())
-            .field("query", &self.query())
-            .field("fragment", &self.fragment())
+            .field("scheme", &scheme)
+            .field("username", &redact(self.username()))
+            .field("password", &self.password().map(redact))
+            .field("host_kind", &host_kind)
+            .field("port", &self.port().map(|_| "<redacted>"))
+            .field("path", &redact(self.path()))
+            .field("query", &self.query().map(redact))
+            .field("fragment", &self.fragment().map(redact))
             .field("authority", &self.has_authority())
             .field("opaque_path", &self.has_opaque_path())
             .finish()

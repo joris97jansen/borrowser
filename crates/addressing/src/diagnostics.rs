@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::{BrowserUrl, UrlParseOutcome};
+
 /// Borrowser categories for observed recoverable backend callbacks. These are
 /// not an exhaustive WHATWG validation taxonomy and carry no source positions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -90,7 +92,8 @@ impl UrlFailureKind {
 
 /// A failed operation, retaining events observed before failure. Neither input
 /// strings nor backend error messages are stored. A resolution failure retains
-/// its explicit base, whose Debug redacts credentials. Document/base-selection
+/// its explicit base, whose Debug redacts URL contents. Display emits only the
+/// typed failure category. Document/base-selection
 /// provenance remains the source producer's responsibility.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UrlFailure {
@@ -107,6 +110,48 @@ impl fmt::Display for UrlFailure {
 }
 
 impl std::error::Error for UrlFailure {}
+
+/// Format structural diagnostics for an already completed parse or resolution.
+///
+/// Supply the reference, optional base and result from the same operation. This
+/// function does not parse again or prove input/result provenance. On failure,
+/// `failure_base_matches` compares the supplied base with the retained failure
+/// base using complete URL equality (including the distinction between no base
+/// and a supplied base). On success that check is unavailable and prints `None`.
+///
+/// Nonempty references are withheld completely, including malformed inputs.
+/// Nested URLs use their content-redacted Debug. This explains operation status,
+/// component presence and ordered diagnostics, not the exact URL transformation.
+/// It is an internal debug contract, not URL serialization or a public wire format.
+/// No input is retained, no values are mutated, and no logging or I/O occurs.
+pub fn format_resolution_debug(
+    reference: &str,
+    base: Option<&BrowserUrl>,
+    result: &Result<UrlParseOutcome, UrlFailure>,
+) -> String {
+    let input = if reference.is_empty() {
+        ""
+    } else {
+        "<redacted>"
+    };
+    let (resolved, diagnostics, failure, failure_base_matches) = match result {
+        Ok(outcome) => (
+            Some(&outcome.url),
+            outcome.diagnostics.as_slice(),
+            None,
+            None,
+        ),
+        Err(error) => (
+            None,
+            error.diagnostics.as_slice(),
+            Some(error.kind),
+            Some(base == error.base.as_ref()),
+        ),
+    };
+    format!(
+        "UrlResolution {{\n    input: {input:?},\n    base: {base:?},\n    resolved: {resolved:?},\n    diagnostics: {diagnostics:?},\n    failure: {failure:?},\n    failure_base_matches: {failure_base_matches:?},\n}}"
+    )
+}
 
 #[cfg(test)]
 mod tests {

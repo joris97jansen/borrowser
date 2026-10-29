@@ -1,11 +1,13 @@
 # AH2: Typed URL Parsing, Resolution, And Diagnostics
 
-Last updated: 2026-10-28
-Status: maintained-fork dependency integration; full AH3 acceptance remains pending
+Last updated: 2026-10-29
+Status: maintained-fork integration and structural operation debugging; final AH3 native acceptance remains pending
 
 The sections preceding the [2026-10-28 integration](#ah3-maintained-fork-integration-2026-10-28)
 retain the original AH2 decision and AH3 blocked checkpoint as historical evidence.
 They describe published `url 2.5.7`, not the dependency selected after this integration.
+The [2026-10-29 operation-debugging contract](#ah3-structural-operation-debugging-2026-10-29)
+supersedes the historical userinfo-only Debug policy with content redaction.
 
 ## Scope and revised architectural decision
 
@@ -96,7 +98,8 @@ stability. Universal standards-normalization and round-trip stability are not
 claimed: the published dependency has the retained file counterexample below.
 No ad hoc normalization repairs or blanket rejection of file URLs are applied.
 
-`Debug` is deterministic structured component output with a fixed field order.
+Historical AH2 Debug policy (superseded by the current operation-debugging
+contract below): `Debug` is deterministic structured component output with a fixed field order.
 Username/password contents become `<redacted>` while their normalized presence
 remains inspectable. Both normal and pretty Debug, including nested outcomes,
 are safe for URL userinfo. Debug is an internal regression contract, not a public
@@ -783,3 +786,105 @@ builds, bench compilation and generated-entity validation. Release/bench builds
 still emit non-fatal warnings in unchanged HTML/CSS files; these are not suppressed.
 No known failure was converted into a pass, no expectation was skipped, and no
 live site is used as conformance evidence.
+
+
+## AH3 structural operation debugging (2026-10-29)
+
+### Production capability and operation association
+
+`addressing::format_resolution_debug(reference, base, &result)` formats an already
+completed parse or explicit-base resolution. It borrows `&str`,
+`Option<&BrowserUrl>` and `&Result<UrlParseOutcome, UrlFailure>` and returns an
+owned, sanitized `String`. It does not parse or resolve again, retain the input
+in an outcome/failure, clone URLs or diagnostic collections, mutate values,
+perform I/O, or introduce automatic logging. There is no report/context type,
+extra resolver, logging dependency, raw-output mode, or document base state.
+
+```rust
+use addressing::{BrowserUrl, format_resolution_debug};
+
+let base = BrowserUrl::parse("https://example.test/dir/page").unwrap().url;
+let reference = "../image.png";
+let result = base.resolve(reference);
+let diagnostic = format_resolution_debug(reference, Some(&base), &result);
+```
+
+The caller must provide input, base and result from the same completed operation.
+The formatter cannot prove their provenance. A failure already retains a typed
+base: the formatter compares that base with the supplied base using full URL
+`Eq`, including credentials, private components and `None` versus `Some`.
+`failure_base_matches: Some(true)` means those bases compare equal; `Some(false)`
+exposes inconsistent context without changing or rejecting the result. Identical
+redacted URL output does not establish equality. For success this check is
+unavailable and the field is `None`. No check authenticates the reference or a
+successful result, and public result fields are not an integrity boundary.
+
+The deterministic field order is `input`, `base`, `resolved`, `diagnostics`,
+`failure`, `failure_base_matches`. On success, `resolved` is `Some` and `failure`
+is `None`; on failure the reverse applies. Diagnostics remain in callback order,
+including repetitions and events preceding fatal errors. Base-construction
+events are not replayed. Base context is explicit, not document-selection
+provenance. A malformed base string remains a separate base-construction parse
+failure; no invalid `BrowserUrl` is manufactured for diagnostic output.
+
+### Current privacy policy
+
+Production-safe structural diagnostics deliberately withhold exact URL content:
+
+| Field | Representation |
+| --- | --- |
+| Reference | Empty string stays empty; every nonempty input becomes `<redacted>`, including malformed references. |
+| Scheme | Only literal labels `http`, `https`, `ftp`, `file`, `ws`, `wss`, `about`, `data`, `blob`, `javascript` are displayed; all other scheme values become `<redacted>`. This is a formatting vocabulary, not a scheme capability registry. |
+| Username/password | Normalized absence/empty/nonempty distinctions remain; nonempty contents become `<redacted>`. |
+| Host | Only absent/present and `domain`, `opaque`, `ipv4`, `ipv6` kind are displayed as `host_kind`. No hostname or address is emitted. |
+| Port | Absent/present remains; every explicit nondefault value becomes `<redacted>`. Default ports already normalize to absence. |
+| Path and opaque payload | Empty versus nonempty remains; nonempty content becomes `<redacted>`, including embedded URLs and file paths. |
+| Query/fragment | `None`, `Some("")` and `Some("<redacted>")` distinguish absence, empty and nonempty. Parameter names, values and fragment contents are all withheld. |
+| Authority/opaque path | Existing normalized boolean properties remain visible. |
+| Diagnostics/failure | Existing typed enum categories; no raw input or backend error-display strings. |
+
+No sensitive lengths, hashes, fingerprints or raw substrings are added. The
+formatter explains status, component presence and validation/failure categories;
+it does **not** reveal the exact authored reference or URL transformation. Many
+distinct URLs intentionally have the same diagnostic projection. Structural
+metadata, standard scheme labels, diagnostic categories and base-consistency
+results remain observable, so this is not a promise of universal information
+hiding or safe logging of arbitrary application data.
+
+`BrowserUrl::Debug` now applies the same content policy, in ordinary and pretty
+formatting. Derived `UrlParseOutcome::Debug`, `UrlFailure::Debug`, and nested
+`Result`/`Option` output inherit it. `UrlFailure::Display` emits only the typed
+failure category. Neither `BrowserUrl` nor `UrlParseOutcome` implements Display.
+The historical host/path/query/fragment/port Debug contents are deliberately
+removed; parsing, semantic equality/hash and serialization are unchanged.
+
+Complete accessors (`as_str`, `scheme`, `host`, credentials, path, query, fragment,
+port) still expose their actual values. `UrlHost`'s derived Debug and the returned
+host/IP values' Debug/Display can expose host contents. Formatting those explicit
+accessors, raw references, complete strings or backend URL values is outside this
+privacy guarantee. The formatter does not call those raw formatting paths as an
+intermediate shortcut. Its output is an internal regression contract, not URL
+serialization, resource identity, a public API schema or a transport format.
+
+### Independent evidence and remaining acceptance
+
+The production-API tests in `crates/addressing/tests/resolution_debug.rs` use
+reviewed literal success/failure/empty/missing-base/opaque snapshots, including
+nested pretty Debug. Synthetic secret substitutions protect host, IP, credential,
+path, query, fragment, port and custom-scheme redaction without collapsing actual
+URL equality. Tests cover malformed/encoded inputs, deterministic repetition,
+ordered repeated diagnostics, base-event isolation, failure-base mismatches,
+owned input lifetime and immutable URL/hash/result semantics.
+
+Exact URL transformations remain independently verifiable through typed
+accessors in controlled synthetic tests. Those assertions are conformance
+evidence; they do not require a production raw-output mode. Normative WPT corpus,
+expectations and qualification remain unchanged: 560 null-base and 336
+explicit-base cases must continue to match. Diagnostic completeness remains
+limited to observed backend events; no new validation taxonomy is invented.
+
+This completes the operation-debugging implementation requirement when its
+validation passes. AH3 is still open for the final native acceptance audit of
+missing/invalid bases, invalid references and parseable unsupported schemes.
+No document-level base lifecycle, HTML base integration, origins, capability
+policy, fetching, navigation or consumer migration is introduced here.

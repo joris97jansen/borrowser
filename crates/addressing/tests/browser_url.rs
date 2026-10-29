@@ -243,9 +243,9 @@ fn fatal_errors_retain_prior_events_without_raw_input() {
 }
 
 #[test]
-fn debug_is_deterministic_and_redacts_credentials_without_mutating_identity() {
+fn debug_is_deterministic_and_redacts_contents_without_mutating_identity() {
     let outcome = BrowserUrl::parse("https://secret-user:p%3Ass@h.test:8443/a?x#f").unwrap();
-    let expected = "BrowserUrl { scheme: \"https\", username: \"<redacted>\", password: Some(\"<redacted>\"), host: Some(Domain(\"h.test\")), port: Some(8443), path: \"/a\", query: Some(\"x\"), fragment: Some(\"f\"), authority: true, opaque_path: false }";
+    let expected = "BrowserUrl { scheme: \"https\", username: \"<redacted>\", password: Some(\"<redacted>\"), host_kind: Some(\"domain\"), port: Some(\"<redacted>\"), path: \"<redacted>\", query: Some(\"<redacted>\"), fragment: Some(\"<redacted>\"), authority: true, opaque_path: false }";
     assert_eq!(format!("{:?}", outcome.url), expected);
     for input in [
         "https://secret-user@h.test/",

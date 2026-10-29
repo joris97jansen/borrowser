@@ -499,9 +499,16 @@ Addressing architecture status:
   `DomainToAscii` callbacks are explicitly mapped; no resolver or consumer
   workaround is added. [Integration contract and reproduction](platform/ah2-typed-url-parsing-and-diagnostics.md#ah3-maintained-fork-integration-2026-10-28)
   record minimal patches, graph identity, corrected regressions and limitations.
-  Local full CI passes. **AH3 is not yet complete:** final native acceptance
-  audit and credential-safe operation-level input/base/resolved/diagnostic debug
-  output with deterministic snapshots remain open requirements of #1113.
+  The dependency-integration full CI passed. AH3 now adds production-safe
+  structural operation debugging: a pure formatter over the existing input,
+  explicit base and typed result, with content-redacted URL Debug, ordered
+  diagnostics, fatal categories and a failure-base consistency check. Exact URL
+  expectations remain separate synthetic conformance evidence; production output
+  intentionally cannot reconstruct the URL transformation. Literal snapshots
+  cover success, failure, sensitive/opaque inputs and nested Debug. See the
+  [privacy contract](platform/ah2-typed-url-parsing-and-diagnostics.md#ah3-structural-operation-debugging-2026-10-29).
+  **AH3 is not yet complete:** the final native missing/invalid-base,
+  invalid-reference and unsupported-scheme acceptance audit remains in #1113.
 - `file:` origin policy remains explicitly unresolved. Navigation remains a
   Browser consumer. Other URL helpers and
   HTTP/HTTPS/file loading remain documented migration points.
