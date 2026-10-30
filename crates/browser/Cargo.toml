@@ -25,3 +25,4 @@ image = { workspace = true }
 
 [dev-dependencies]
 html = { path = "../html", features = ["dom-snapshot", "test-harness", "html5"] }
+runtime_css = { path = "../runtime_css" }

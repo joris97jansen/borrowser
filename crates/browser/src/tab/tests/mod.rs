@@ -8,3 +8,6 @@ mod rendering;
 mod style_cache;
 mod stylesheets;
 mod support;
+
+mod document_addressing;
+mod resource_associations;

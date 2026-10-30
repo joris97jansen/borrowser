@@ -9,6 +9,7 @@ use super::PageState;
 
 pub(crate) struct PageStylesheetReconcile {
     pub(crate) fetches: Vec<StylesheetFetch>,
+    pub(crate) retired: Vec<StylesheetFetch>,
     pub(crate) render_invalidation: Option<RenderInvalidationRequest>,
 }
 
@@ -18,18 +19,53 @@ impl PageState {
         let Some(dom) = self.dom.as_deref() else {
             return PageStylesheetReconcile {
                 fetches: Vec::new(),
+                retired: Vec::new(),
                 render_invalidation: None,
             };
         };
+        let base_url = self
+            .addresses
+            .as_ref()
+            .map(super::DocumentAddressState::active_base_url);
         let result = self
             .rendering
             .document_styles
-            .reconcile_from_dom(dom, self.base_url.as_deref());
+            .reconcile_from_dom(dom, base_url);
         let render_invalidation = result.changed.then(|| self.apply_stylesheet_set_change());
         PageStylesheetReconcile {
             fetches: result.fetches,
+            retired: result.retired,
             render_invalidation,
         }
+    }
+
+    pub(crate) fn external_stylesheet_requests(&self) -> Vec<StylesheetFetch> {
+        self.rendering
+            .document_styles
+            .external_stylesheet_requests()
+    }
+
+    pub(crate) fn abort_pending_external_stylesheets(
+        &mut self,
+        completed: &std::collections::HashSet<StylesheetSlotId>,
+    ) -> Vec<StylesheetFetch> {
+        self.rendering
+            .document_styles
+            .abort_pending_external(completed)
+    }
+
+    pub(crate) fn active_external_stylesheet_slots(
+        &self,
+    ) -> std::collections::HashSet<StylesheetSlotId> {
+        self.rendering.document_styles.active_external_slots()
+    }
+    pub(crate) fn has_external_stylesheet_slot(&self, id: StylesheetSlotId) -> bool {
+        self.rendering.document_styles.has_external_slot(id)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn stylesheet_slot_lookup_count(&self) -> usize {
+        self.rendering.document_styles.slot_lookup_count()
     }
 
     #[cfg(test)]

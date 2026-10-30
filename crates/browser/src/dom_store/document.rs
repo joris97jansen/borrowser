@@ -7,7 +7,7 @@ use html::{DomPatch, Node, PatchKey, internal::Id};
 pub(crate) struct DomDoc {
     pub(crate) version: DomVersion,
     pub(super) arena: DomArena,
-    root: Option<PatchKey>,
+    pub(super) root: Option<PatchKey>,
     pub(crate) current: Option<Box<Node>>,
 }
 
@@ -40,7 +40,11 @@ impl DomDoc {
         self.current = None;
     }
 
-    pub(crate) fn apply(&mut self, patches: &[DomPatch]) -> Result<(), DomPatchError> {
+    pub(crate) fn apply(
+        &mut self,
+        patches: &[DomPatch],
+        mut observation: Option<&mut super::base::BaseObservation>,
+    ) -> Result<(), DomPatchError> {
         // Protocol invariants:
         // - Root is created only by `CreateDocument`.
         // - A `Clear` batch must re-establish a root by the end of the batch.
@@ -56,12 +60,21 @@ impl DomDoc {
         let had_clear = matches!(patches.first(), Some(DomPatch::Clear));
         let start = if had_clear {
             self.clear();
+            if let Some(observer) = observation.as_deref_mut() {
+                observer.reset();
+            }
             1
         } else {
             0
         };
         for patch in &patches[start..] {
+            let effect = observation
+                .as_deref_mut()
+                .map(|observer| observer.before(&self.arena, patch));
             self.apply_one(patch, had_clear)?;
+            if let (Some(observer), Some(effect)) = (observation.as_deref_mut(), effect) {
+                observer.after(&self.arena, self.root, effect);
+            }
         }
         if had_clear && self.root.is_none() {
             return Err(DomPatchError::Protocol(

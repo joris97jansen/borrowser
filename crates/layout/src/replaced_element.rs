@@ -54,10 +54,11 @@ pub enum ReplacedKind {
 
 /// Optional, host-provided info for replaced elements (e.g. decoded image sizes).
 pub trait ReplacedElementInfoProvider {
-    /// Resolve the exact stored HTML `src` value through the browser-owned
-    /// document/resource context before it becomes paint-facing layout data.
-    /// URL-specific preprocessing belongs to that Browser integration.
-    fn resolve_image_source(&self, source: &str) -> Option<String>;
+    /// Obtain the Browser-selected source for this document-local owner and its
+    /// exact stored `src`. Equal authored values on different elements can have
+    /// different selected URLs. Missing/failed associations stay unresolved;
+    /// layout and paint never select a new base or repair the association.
+    fn resolve_image_source(&self, _node_id: html::internal::Id, source: &str) -> Option<String>;
 
     fn intrinsic_for_img(&self, image: &ImagePresentation) -> Option<IntrinsicSize>;
 }
@@ -78,7 +79,7 @@ pub(crate) fn replaced_element_presentation(
     match kind {
         ReplacedKind::Img => {
             let resolved_source = exact_html_attribute(node, "src").and_then(|source| {
-                replaced_info.and_then(|provider| provider.resolve_image_source(source))
+                replaced_info.and_then(|provider| provider.resolve_image_source(node.id(), source))
             });
             Some(ReplacedElementPresentation::Image(ImagePresentation {
                 resolved_source,

@@ -57,7 +57,7 @@ impl Tab {
         }
         if let Some(action) = outcome.action {
             match action {
-                crate::view::PageAction::Navigate(url) => self.navigate_to_new(url),
+                crate::view::PageAction::Navigate(href) => self.activate_link(&href),
             }
         }
         Ok(status)

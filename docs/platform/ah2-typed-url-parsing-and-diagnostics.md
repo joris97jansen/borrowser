@@ -1,7 +1,7 @@
 # AH2: Typed URL Parsing, Resolution, And Diagnostics
 
 Last updated: 2026-10-29
-Status: AH3 explicit-base URL resolution acceptance satisfied; document-level base integration remains deferred
+Status: AH3 explicit-base URL resolution acceptance satisfied; AH4 document integration is documented below
 
 The sections preceding the [2026-10-28 integration](#ah3-maintained-fork-integration-2026-10-28)
 retain the original AH2 decision and AH3 blocked checkpoint as historical evidence.
@@ -1021,3 +1021,13 @@ phase or abstraction is required. Milestone AH is not complete: document URL and
 fallback/active-base lifecycle, HTML base integration, origins, further consumer
 migrations, resource/cache identity, fetching/navigation and security policy
 remain outside this issue's accepted scope.
+
+## AH4 document integration (2026-10-30)
+
+[AH4](ah4-document-url-and-base-state.md) now consumes the existing immutable
+BrowserUrl API for Browser-owned document URL/fallback/frozen-base lifetime.
+HTML-specific selection, freezing, prohibited schemes and outcome reporting
+remain in Browser. No addressing API, parser dependency, qualification fixture,
+or diagnostic taxonomy changes. Earlier document-integration deferrals describe
+the historical AH2/AH3 boundary. Full HTML resource scheduling and remaining AH
+origin/resource-identity/CSS-location work remain outside this implementation.

@@ -190,11 +190,11 @@ normalization, base resolution, or origin computation. Browser discovers the
 relevant facts from committed publications and coordinates document/base
 lifetime; logical addressing owns their URL semantics.
 
-Current head/resource extraction helpers remain unchanged. In particular,
-`HeadMetadata::base_href` is raw metadata, not proof that standards-complete
-active document base selection exists. Future integration must preserve atomic
-publication and inert template/foreign-namespace boundaries. AH1 introduces no
-parser behavior, DOM API, dynamic base update, or resource loading change.
+AH1 left head/resource extraction helpers unchanged. `HeadMetadata::base_href`
+remains raw metadata. [AH4](../platform/ah4-document-url-and-base-state.md) now
+implements Browser-owned active-base selection while preserving atomic
+publication and inert template/foreign-namespace boundaries. Standalone HTML
+parsing still has no URL context or URL-resolution responsibility.
 
 CSS consumes the materialized DOM as style input. CSS may inspect element
 names, attributes, relationships, and stylesheet text in `<style>` elements.
@@ -345,3 +345,12 @@ insertion location and passes that expanded name through live nodes and
 CSS receives it for matching; Layout owns unsupported-foreign box suppression;
 Paint receives only Layout-approved boxes. Namespace declarations are stored
 attributes and never drive HTML-parser namespace selection.
+
+## AH4 document addressing consumer
+
+[AH4](../platform/ah4-document-url-and-base-state.md) keeps standalone HTML
+parsing independent of URL context. Browser's existing DOM applier observes
+ordered canonical structural/href facts; Browser owns document URL and frozen
+base state and commits it with the materialized DOM. Addressing supplies the
+existing URL operations. Raw head metadata does not select the active base.
+Template associations and foreign namespaces preserve their existing boundaries.

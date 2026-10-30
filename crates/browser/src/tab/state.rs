@@ -7,7 +7,39 @@ use app_api::RepaintHandle;
 use bus::CoreCommand;
 use core_types::{DomHandle, DomVersion, NetworkResponseInfo, RequestId, StylesheetSlotId, TabId};
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::mpsc;
+
+/// A history URL and its Browser-owned document-state association.
+#[derive(Clone)]
+pub struct HistoryEntry {
+    pub(super) url: String,
+    pub(super) document_state: Option<DocumentState>,
+}
+
+impl HistoryEntry {
+    /// The URL associated with this entry.
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+}
+
+// The allocation is an opaque identity, not the document or a cache of it.
+// Entries for the same document state share it; the active identity is derived
+// from the current entry only while its page is available. It is independent of
+// URLs, DOM handles and requests.
+#[derive(Clone)]
+pub(super) struct DocumentState(Arc<()>);
+
+impl DocumentState {
+    pub(super) fn new() -> Self {
+        Self(Arc::new(()))
+    }
+
+    pub(super) fn is_same(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) enum DocumentParseStatus {
@@ -28,14 +60,15 @@ pub(super) struct DocumentLoadState {
 pub(super) struct StylesheetLoadState {
     pub(super) response: NetworkResponseInfo,
     pub(super) accept_body: bool,
+    pub(super) network_done: bool,
 }
 
 pub struct Tab {
     pub tab_id: TabId,
 
     pub url: String,
-    pub history: Vec<String>,
-    pub history_index: usize,
+    pub(crate) history: Vec<HistoryEntry>,
+    pub(crate) history_index: usize,
     pub nav_gen: RequestId,
 
     pub(super) loading: bool,
@@ -80,6 +113,17 @@ impl Tab {
         }
     }
 
+    /// History entries in navigation order. Entry URLs and document associations
+    /// are updated together by Browser navigation.
+    pub fn history(&self) -> &[HistoryEntry] {
+        &self.history
+    }
+
+    /// Index of the selected entry; zero when history is empty.
+    pub fn history_index(&self) -> usize {
+        self.history_index
+    }
+
     pub fn set_bus_sender(&mut self, tx: mpsc::Sender<CoreCommand>) {
         self.cmd_tx = Some(tx);
     }
@@ -101,6 +145,13 @@ impl Tab {
             self.document_load.parse_status = DocumentParseStatus::Failed;
             self.loading = false;
             self.last_status = Some(status);
+            let completed = self
+                .stylesheet_loads
+                .iter()
+                .filter_map(|(id, load)| load.network_done.then_some(*id))
+                .collect();
+            let pending = self.page.abort_pending_external_stylesheets(&completed);
+            self.retire_stylesheet_requests(pending, self.nav_gen);
             self.send_cmd(CoreCommand::CancelRequest {
                 tab_id: self.tab_id,
                 request_id: self.nav_gen,

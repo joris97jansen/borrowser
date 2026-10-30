@@ -68,6 +68,34 @@ impl DomStore {
         to: DomVersion,
         patches: &[DomPatch],
     ) -> Result<(), DomPatchError> {
+        self.apply_internal(handle, from, to, patches, None)
+    }
+
+    /// `selected` is the first applicable candidate from the preceding committed
+    /// handle/version, including a candidate whose URL was rejected. A fresh
+    /// handle supplies None. Browser stages selection and DOM together, keeping
+    /// this invariant valid for subtree-first move observation.
+    pub(crate) fn apply_recording_base_changes(
+        &mut self,
+        handle: DomHandle,
+        from: DomVersion,
+        to: DomVersion,
+        patches: &[DomPatch],
+        selected: Option<PatchKey>,
+    ) -> Result<super::base::BaseObservation, DomPatchError> {
+        let mut observation = super::base::BaseObservation::new(selected);
+        self.apply_internal(handle, from, to, patches, Some(&mut observation))?;
+        Ok(observation)
+    }
+
+    fn apply_internal(
+        &mut self,
+        handle: DomHandle,
+        from: DomVersion,
+        to: DomVersion,
+        patches: &[DomPatch],
+        observation: Option<&mut super::base::BaseObservation>,
+    ) -> Result<(), DomPatchError> {
         if patches.is_empty() {
             return Err(DomPatchError::Protocol("empty patch batch"));
         }
@@ -87,7 +115,7 @@ impl DomStore {
         // Apply transactionally: on any protocol/runtime error, keep the
         // previous document state unchanged.
         let mut staged = doc.clone();
-        staged.apply(patches)?;
+        staged.apply(patches, observation)?;
         staged.version = to;
         staged.rebuild_cache()?;
         *doc = staged;

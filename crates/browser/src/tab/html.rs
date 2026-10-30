@@ -18,6 +18,19 @@ impl Tab {
         {
             return;
         }
+        if !self.response_matches_history_request(&response.requested_url) {
+            self.fail_document("Document response does not match the current request".into());
+            return;
+        }
+        let document_url = match addressing::BrowserUrl::parse(response.display_url()) {
+            Ok(parsed) => parsed.url,
+            Err(error) => {
+                self.fail_document(format!("Invalid document response URL: {error}"));
+                return;
+            }
+        };
+        self.accept_history_document(&document_url);
+        self.retire_document_stylesheets();
         self.dom_store.clear();
         self.dom_handle = None;
         self.dom_version = core_types::DomVersion::INITIAL;
@@ -25,7 +38,8 @@ impl Tab {
         self.document_load.bytes_received = 0;
         self.stylesheet_loads.clear();
         self.url = response.final_url.clone();
-        self.page.start_nav(response.display_url());
+        self.page.reset_for_navigation();
+        self.page.begin_document(document_url);
         self.clear_render_orchestration_state();
         self.loading = true;
         self.last_status = Some(format!(

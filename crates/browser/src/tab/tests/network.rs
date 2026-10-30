@@ -57,7 +57,9 @@ fn qualified_urls_reach_image_requests_and_resource_lookup_keys() {
             "{source}"
         );
         assert_eq!(
-            resolve_image_source(Some(base), source).as_deref(),
+            resolve_image_source(tab.page.active_base_url(), source)
+                .as_ref()
+                .map(|url| url.as_str()),
             observed
         );
         if let Some(key) = observed {

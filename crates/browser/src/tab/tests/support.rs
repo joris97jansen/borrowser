@@ -6,6 +6,85 @@ use html::{DomPatch, Node, PatchKey, internal::Id};
 use layout::TextMeasurer;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+pub(super) const ADDRESS_URL: &str = "https://example.test/dir/page?q=1#initial";
+
+pub(super) fn addressing_tab(source: &str) -> (Tab, std::sync::mpsc::Receiver<bus::CoreCommand>) {
+    addressing_tab_with_url(source, ADDRESS_URL)
+}
+
+pub(super) fn addressing_tab_with_url(
+    source: &str,
+    document_url: &str,
+) -> (Tab, std::sync::mpsc::Receiver<bus::CoreCommand>) {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 6;
+    let (tx, rx) = std::sync::mpsc::channel();
+    tab.set_bus_sender(tx);
+    tab.navigate_to_new(document_url.into());
+    tab.on_core_event(bus::CoreEvent::NetworkStart {
+        tab_id: 1,
+        request_id: 7,
+        stylesheet_slot_id: None,
+        kind: core_types::ResourceKind::Html,
+        response: core_types::NetworkResponseInfo {
+            requested_url: document_url.into(),
+            final_url: document_url.into(),
+            status_code: Some(200),
+            content_type: Some("text/html".into()),
+        },
+    })
+    .unwrap();
+    rx.try_iter().for_each(drop);
+    let output = html::parse_document(source, html::HtmlParseOptions::default()).unwrap();
+    tab.on_core_event(bus::CoreEvent::DomPatchUpdate {
+        tab_id: 1,
+        request_id: 7,
+        publication: no_quirks_patch_publication_from_output(output),
+    })
+    .unwrap();
+    (tab, rx)
+}
+
+pub(super) fn publish_addressing_patches(
+    tab: &mut Tab,
+    patches: Vec<DomPatch>,
+) -> Result<(), bus::DocumentPublicationFailure> {
+    tab.on_core_event(bus::CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: tab.nav_gen,
+        publication: no_quirks_patch_publication(
+            tab.dom_handle.unwrap(),
+            tab.dom_version,
+            tab.dom_version.next(),
+            patches,
+        ),
+    })
+}
+
+pub(super) fn element_id(node: &Node, id: &str) -> Id {
+    fn find(node: &Node, id: &str) -> Option<Id> {
+        if node.attr("id") == Some(id) {
+            return Some(node.id());
+        }
+        match node {
+            Node::Document { children, .. } => children.iter().find_map(|node| find(node, id)),
+            Node::Element { element } => element.children().iter().find_map(|node| find(node, id)),
+            _ => None,
+        }
+    }
+    find(node, id).expect("explicit fixture element")
+}
+
+pub(super) fn attributes(key: Id, attrs: &[(&str, &str)]) -> DomPatch {
+    DomPatch::SetAttributes {
+        key: PatchKey::from_id(key),
+        attributes: attrs
+            .iter()
+            .map(|(name, value)| html::internal::unqualified_attribute(name, *value))
+            .collect(),
+    }
+}
+
 pub(super) fn page_matching_environment(tab: &Tab) -> css::SelectorMatchingEnvironment {
     css::SelectorMatchingEnvironment::new(
         tab.page

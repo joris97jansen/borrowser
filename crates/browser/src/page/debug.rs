@@ -13,6 +13,13 @@ use super::{DomMutationFacts, PageState};
 use super::{PageStyleGenerations, StyleRecalcKind};
 
 impl PageState {
+    #[allow(dead_code)] // Internal diagnostic surface, with no automatic logging.
+    pub(crate) fn document_address_debug_snapshot(&self) -> Option<String> {
+        self.addresses
+            .as_ref()
+            .map(super::DocumentAddressState::debug_snapshot)
+    }
+
     /// Runs the bounded CSS-owned AF6 candidate/winner diagnostic through the
     /// same evaluator used by production style resolution.
     pub fn cascade_evaluation_debug_snapshot(

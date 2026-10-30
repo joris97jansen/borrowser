@@ -27,7 +27,7 @@ mod status;
 mod tests;
 mod ui;
 
-pub use self::state::Tab;
+pub use self::state::{HistoryEntry, Tab};
 pub use self::ui::PageFrameStatus;
 pub use dom_style::{inherited_color, page_background};
 

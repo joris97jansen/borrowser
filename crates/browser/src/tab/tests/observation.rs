@@ -5,6 +5,19 @@ use core_types::DomVersion;
 fn published() -> (Tab, HtmlParseCompletion) {
     let mut tab = Tab::new(1);
     tab.navigate_to_new("https://example.com/ag5".into());
+    tab.on_core_event(CoreEvent::NetworkStart {
+        tab_id: 1,
+        request_id: tab.nav_gen,
+        stylesheet_slot_id: None,
+        kind: core_types::ResourceKind::Html,
+        response: core_types::NetworkResponseInfo {
+            requested_url: tab.url.clone(),
+            final_url: tab.url.clone(),
+            status_code: Some(200),
+            content_type: None,
+        },
+    })
+    .unwrap();
     let parsed = html::parse_document(
         "<!doctype html><div id='x' style='color:#123456;width:32px;height:16px'></div>",
         html::HtmlParseOptions::default(),

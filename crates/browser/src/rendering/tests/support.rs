@@ -44,6 +44,7 @@ pub(super) fn page_with_node(dom: Node) -> PageState {
         Box::new(dom),
         DomMutationFacts::document_replaced_for_tests(),
     );
+    let _ = page.reconcile_image_sources();
     let _ = page.reconcile_document_stylesheets();
     page
 }
@@ -481,7 +482,7 @@ pub(super) fn pending_for_replaced_element_flow() -> PendingRenderWork {
 pub(super) struct FixedReplacedInfo;
 
 impl ReplacedElementInfoProvider for FixedReplacedInfo {
-    fn resolve_image_source(&self, source: &str) -> Option<String> {
+    fn resolve_image_source(&self, _node_id: html::internal::Id, source: &str) -> Option<String> {
         Some(format!("https://example.test/{source}"))
     }
 
