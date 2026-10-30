@@ -323,20 +323,18 @@ impl ImageProvider for ResourceManager {
     }
 }
 
-pub(crate) fn resolve_image_source(base_url: Option<&str>, source: &str) -> Option<String> {
+pub(crate) fn resolve_image_source(
+    base_url: Option<&BrowserUrl>,
+    source: &str,
+) -> Option<BrowserUrl> {
     let source = strip_surrounding_html_ascii_whitespace(source);
     if source.is_empty() {
         return None;
     }
-    if let Ok(parsed) = BrowserUrl::parse(source) {
-        return Some(parsed.url.as_str().to_owned());
+    match base_url {
+        Some(base) => base.resolve(source).ok().map(|parsed| parsed.url),
+        None => BrowserUrl::parse(source).ok().map(|parsed| parsed.url),
     }
-    BrowserUrl::parse(base_url?)
-        .ok()?
-        .url
-        .resolve(source)
-        .ok()
-        .map(|parsed| parsed.url.as_str().to_owned())
 }
 
 fn strip_surrounding_html_ascii_whitespace(value: &str) -> &str {
@@ -350,11 +348,15 @@ fn strip_surrounding_html_ascii_whitespace(value: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        EntryState, ImageState, ResourceManager, resolve_image_source,
-        strip_surrounding_html_ascii_whitespace,
-    };
+    use super::{EntryState, ImageState, ResourceManager, strip_surrounding_html_ascii_whitespace};
     use tools::common::MAX_IMAGE_BYTES;
+
+    fn resolve_image_source(base: Option<&str>, source: &str) -> Option<String> {
+        let base = base
+            .and_then(|base| addressing::BrowserUrl::parse(base).ok())
+            .map(|parsed| parsed.url);
+        super::resolve_image_source(base.as_ref(), source).map(|url| url.as_str().to_owned())
+    }
 
     #[test]
     fn browser_resource_provider_resolves_typed_image_sources() {

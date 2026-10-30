@@ -12,6 +12,8 @@ use super::PageState;
 use super::style_cache::{StyleRecalcKind, StyleRecomputeState, recompute_styles};
 
 pub(crate) struct PreparedStylePhaseForFrame<'a> {
+    pub(crate) image_sources:
+        &'a std::collections::HashMap<html::internal::Id, super::ImageSourceBinding>,
     #[cfg(feature = "conformance-observation")]
     pub(crate) style_key: crate::rendering::RetainedStyleArtifactKey,
     pub(crate) style_output: StylePhaseOutput<'a>,
@@ -76,6 +78,7 @@ impl PageState {
             .map(StylePhaseOutput::new)
             .map(|style_output| {
                 Some(PreparedStylePhaseForFrame {
+                    image_sources: &self.image_sources,
                     #[cfg(feature = "conformance-observation")]
                     style_key: cache.key,
                     style_output,

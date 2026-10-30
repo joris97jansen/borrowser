@@ -344,3 +344,14 @@ and every quoted label as `node-<positive-canonical-decimal>`. Zero or
 leading-zero label numbers, arbitrary prefixes, unquoted labels, signs, and
 leading-zero integer spellings are malformed. It does not validate live-DOM
 applicability or recreate patch creation history.
+
+## AH4 Browser-derived document-base facts
+
+Browser's strict staged applier can record private ordered base-candidate
+selection/href facts while applying the existing patch protocol. No opcode,
+publication schema, HTML parsing responsibility or public mutation API changes.
+Atomic moves stay atomic; Clear resets candidate lifetime. These facts and
+staged URL processing cannot change live document/base state or issue resource
+commands on rejected publication. See the
+[AH4 contract](../platform/ah4-document-url-and-base-state.md) for selection work
+bounds, frozen URL lifetime, owner retirement and resource scheduling limits.

@@ -10,3 +10,5 @@ mod processing_instruction;
 mod protocol;
 mod structure;
 mod template;
+
+mod base;

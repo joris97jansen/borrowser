@@ -222,7 +222,11 @@ fn layout_resolves_typed_replaced_presentation_before_gfx() {
     }
 
     impl crate::ReplacedElementInfoProvider for PresentationProvider {
-        fn resolve_image_source(&self, source: &str) -> Option<String> {
+        fn resolve_image_source(
+            &self,
+            _node_id: html::internal::Id,
+            source: &str,
+        ) -> Option<String> {
             self.seen_sources.borrow_mut().push(source.to_string());
             match source {
                 " hero.png " => Some("https://example.test/hero.png".to_string()),

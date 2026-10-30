@@ -1,7 +1,7 @@
 # AH1: URL, Origin, And Resource Addressing Architecture Contract
 
 Last updated: 2026-10-24
-Status: architecture contract complete; addressing implementation remains pending
+Status: architecture contract complete; AH2–AH4 implementation references below
 Scope: Milestone AH ownership, semantics, integration boundaries, and evidence
 
 AH1 establishes one logical browser-platform owner for addressing. It changes
@@ -539,3 +539,12 @@ completion separately from pending behavior. No test that duplicates Markdown
 or guards a nonexistent API is warranted. Rust subsystem/runtime suites do
 not prove these unimplemented semantics; normal merge-gate validation remains
 separate.
+
+## AH4 implementation reference
+
+[AH4 document URL and base state](ah4-document-url-and-base-state.md) implements
+Browser-owned ordinary UTF-8 document addressing, ordered base selection and
+freezing, atomic publication, stable existing consumer associations, and
+structural diagnostics. It uses the unchanged AH2/AH3 URL API. Full HTML loading
+scheduling, inherited about contexts, overrides and policy enforcement remain
+unsupported; the architecture and standards requirements above still apply.

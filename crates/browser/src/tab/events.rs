@@ -235,6 +235,14 @@ impl Tab {
         } = publication;
         let mut staged_store = self.dom_store.clone();
         let new_handle = self.dom_handle != Some(handle);
+        let mut addresses = self
+            .page
+            .addresses
+            .clone()
+            .ok_or(DocumentPublicationFailure::InvariantViolation)?;
+        if new_handle {
+            addresses.reset_selection();
+        }
         let (dom, mutation_facts, staged_version) = match payload {
             DocumentPublicationPayload::Patch { from, to, patches } => {
                 if !new_handle && self.page.document_mode != Some(document_mode) {
@@ -246,9 +254,23 @@ impl Tab {
                         .create(handle)
                         .map_err(|_| DocumentPublicationFailure::InvalidPayload)?;
                 }
-                staged_store
-                    .apply(handle, from, to, &patches)
+                let observation = staged_store
+                    .apply_recording_base_changes(
+                        handle,
+                        from,
+                        to,
+                        &patches,
+                        addresses.selected_key(),
+                    )
                     .map_err(map_dom_patch_error)?;
+                for change in observation.changes {
+                    match change {
+                        crate::dom_store::BaseElementChange::Reset => addresses.reset_selection(),
+                        crate::dom_store::BaseElementChange::Selection(candidate) => addresses
+                            .select(candidate)
+                            .map_err(|_| DocumentPublicationFailure::InvariantViolation)?,
+                    }
+                }
                 let dom = staged_store
                     .materialize(handle)
                     .map_err(|_| DocumentPublicationFailure::MaterializationFailed)?;
@@ -295,12 +317,19 @@ impl Tab {
         };
 
         // Commit only after the candidate store and materialized DOM validate.
+        let retired = if mutation_facts.document_replaced() {
+            self.page.external_stylesheet_requests()
+        } else {
+            Vec::new()
+        };
+        self.page.addresses = Some(addresses);
         self.dom_store = staged_store;
         self.dom_handle = Some(handle);
         self.dom_version = staged_version;
         let render_work = self
             .page
             .commit_dom_publication(dom, document_mode, mutation_facts);
+        self.retire_stylesheet_requests(retired, request_id);
         self.page.update_head_metadata();
         self.page
             .seed_input_values_from_dom(&mut self.document_input.input_values);

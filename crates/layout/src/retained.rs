@@ -469,7 +469,11 @@ mod tests {
     struct TestReplacedInfo;
 
     impl ReplacedElementInfoProvider for TestReplacedInfo {
-        fn resolve_image_source(&self, source: &str) -> Option<String> {
+        fn resolve_image_source(
+            &self,
+            _node_id: html::internal::Id,
+            source: &str,
+        ) -> Option<String> {
             assert_eq!(source, " hero.png ");
             Some("https://example.test/assets/hero.png".to_string())
         }

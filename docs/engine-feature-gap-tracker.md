@@ -515,12 +515,28 @@ Addressing architecture status:
   [completed acceptance matrix](platform/ah2-typed-url-parsing-and-diagnostics.md#ah3-final-native-acceptance-2026-10-29)
   records the evidence and closeout recommendation for #1113; no GitHub closure or
   merge is claimed. Document-level base integration remains later work.
+- AH4 implements [Browser-owned document URL and frozen-base state](platform/ah4-document-url-and-base-state.md):
+  typed document URLs, derived fallback, first applicable HTML base selection,
+  relative/empty/rejected href behavior, ordered parser-publication facts, atomic
+  rollback, stable image/stylesheet owner associations and retirement, Browser
+  hyperlink resolution, and AH3-redacted internal diagnostics. Static final base
+  state is chunk-independent. Resource discovery remains publication-boundary
+  behavior: full HTML per-element loading/microtask timing, inherited about bases,
+  overrides, non-UTF-8 contexts, base target and policy hooks remain unsupported.
+  Browser retires stylesheet attachments and aborts their partial CSS buffers
+  on navigation, replacement and tab removal using the owning request generation.
+  A successfully committed preview remains an active document during parsing
+  and after parser failure; an uncommitted response is not reusable.
 - `file:` origin policy remains explicitly unresolved. Navigation remains a
   Browser consumer. Other URL helpers and
   HTTP/HTTPS/file loading remain documented migration points.
+- Existing loader and diagnostics gaps remain: the file loader treats query or
+  fragment text as part of its local path, a cancelled in-flight image may remain
+  `Loading` and prevent a later same-URL request, and legacy network error/status
+  output can contain raw URLs including credentials. AH3's redacted structural
+  snapshots do not cover those outputs. AH4 does not resolve these gaps.
 - AH behavior remains pending: normalized resource addressing and identity,
-  explicit fallback/active base
-  state and lifecycle, stylesheet base provenance, origin determination and
+  inherited/override base contexts and full loading scheduling, stylesheet base provenance, origin determination and
   same-origin comparison, unified unsupported-capability diagnostics, and
   wider URL/origin debug/conformance evidence. The current `url` dependency is not
   fully qualified against WHATWG. Neither Milestone AH nor security-policy support is complete;

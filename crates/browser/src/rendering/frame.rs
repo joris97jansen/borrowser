@@ -46,7 +46,8 @@ pub(crate) struct PreparedPageFrame<'a> {
     retained_paint_artifact: Option<PaintArtifact>,
     pending_work: PendingRenderWork,
     style_dirty_before_frame: bool,
-    base_url: Option<String>,
+    image_sources:
+        &'a std::collections::HashMap<html::internal::Id, crate::page::ImageSourceBinding>,
     form_controls: FormControlIndex,
 }
 
@@ -75,7 +76,6 @@ pub(crate) fn prepare_page_frame(
     pending_work: PendingRenderWork,
 ) -> Result<Option<PreparedPageFrame<'_>>, ComputedStyleResolutionError> {
     let style_dirty_before_frame = page.style_dirty_for_rendering();
-    let base_url = page.base_url.clone();
     let form_controls = page.form_controls.clone();
 
     let prepared_style = match page.prepare_style_phase_for_frame(&pending_work)? {
@@ -96,19 +96,20 @@ pub(crate) fn prepare_page_frame(
         retained_paint_artifact: prepared_style.retained_paint_artifact,
         pending_work,
         style_dirty_before_frame,
-        base_url,
+        image_sources: prepared_style.image_sources,
         form_controls,
     }))
 }
 
 struct BrowserReplacedElementInfo<'a, R> {
-    base_url: Option<&'a str>,
+    image_sources:
+        &'a std::collections::HashMap<html::internal::Id, crate::page::ImageSourceBinding>,
     resources: &'a R,
 }
 
 impl<R: ImageProvider> layout::ReplacedElementInfoProvider for BrowserReplacedElementInfo<'_, R> {
-    fn resolve_image_source(&self, source: &str) -> Option<String> {
-        crate::resources::resolve_image_source(self.base_url, source)
+    fn resolve_image_source(&self, node_id: html::internal::Id, source: &str) -> Option<String> {
+        crate::page::selected_image_source(self.image_sources, node_id, source)
     }
 
     fn intrinsic_for_img(
@@ -145,11 +146,11 @@ pub(crate) fn execute_prepared_page_frame<R: ImageProvider>(
         retained_paint_artifact,
         pending_work,
         style_dirty_before_frame,
-        base_url,
+        image_sources,
         form_controls,
     } = prepared;
     let replaced_info = BrowserReplacedElementInfo {
-        base_url: base_url.as_deref(),
+        image_sources,
         resources,
     };
     let repaint_policy = viewport_repaint_policy(&pending_work);
@@ -157,7 +158,7 @@ pub(crate) fn execute_prepared_page_frame<R: ImageProvider>(
         ViewportCtx::new(
             ui,
             &style_output,
-            base_url.as_deref(),
+            None, // Return authored link intent; Browser owns URL resolution.
             ViewportResourceInputs::new(resources, &replaced_info),
             &mut input_state.input_values,
             &form_controls,
@@ -391,5 +392,136 @@ fn repaint_execution_scope_from_viewport(scope: ViewportRepaintScope) -> Repaint
     match scope {
         ViewportRepaintScope::Viewport => RepaintExecutionScope::Viewport,
         ViewportRepaintScope::Document => RepaintExecutionScope::Document,
+    }
+}
+
+#[cfg(test)]
+mod image_association_tests {
+    use super::*;
+    use layout::ReplacedElementInfoProvider;
+    use std::cell::RefCell;
+
+    struct Measure;
+    impl layout::TextMeasurer for Measure {
+        fn measure(&self, text: &str, _style: &css::ComputedStyle) -> f32 {
+            text.len() as f32 * 8.0
+        }
+        fn line_height(&self, _style: &css::ComputedStyle) -> f32 {
+            16.0
+        }
+    }
+    struct Sizes(RefCell<Vec<String>>);
+    impl ImageProvider for Sizes {
+        fn image_state_by_url(&self, _url: &str) -> gfx::paint::ImageState {
+            gfx::paint::ImageState::Missing
+        }
+        fn image_intrinsic_size_px(&self, url: &str) -> Option<(u32, u32)> {
+            self.0.borrow_mut().push(url.into());
+            Some((if url.contains("/old/") { 11 } else { 22 }, 10))
+        }
+    }
+
+    #[test]
+    fn resource_associations_layout_and_intrinsic_lookup_use_selected_owner_urls() {
+        let mut page = PageState::new();
+        page.start_nav("https://example.test/old/page");
+        let parse = |source| {
+            let mut output = html::parse_document(source, Default::default()).unwrap();
+            let mut store = crate::dom_store::DomStore::new();
+            let handle = core_types::DomHandle(1);
+            store.create(handle).unwrap();
+            store
+                .apply(
+                    handle,
+                    core_types::DomVersion::INITIAL,
+                    core_types::DomVersion(1),
+                    &output.patches,
+                )
+                .unwrap();
+            output.document = store.materialize_owned(handle).unwrap();
+            output
+        };
+        let initial = parse("<!doctype html><img src=same.png><img src=''><img src='http://['>");
+        page.document_mode = Some(initial.document_mode);
+        page.dom = Some(Box::new(initial.document));
+        page.reconcile_image_sources();
+        page.addresses
+            .as_mut()
+            .unwrap()
+            .select(Some((html::PatchKey(999), "/new/".into())))
+            .unwrap();
+        let next = parse("<!doctype html><img src=same.png><img src=same.png><img src='http://['>");
+        page.dom = Some(Box::new(next.document));
+        page.reconcile_image_sources();
+        let resources = Sizes(RefCell::new(Vec::new()));
+        let first_id;
+        {
+            let prepared = prepare_page_frame(&mut page, PendingRenderWork::default())
+                .unwrap()
+                .unwrap();
+            let provider = BrowserReplacedElementInfo {
+                image_sources: prepared.image_sources,
+                resources: &resources,
+            };
+            let output = layout::layout_document(layout::LayoutPhaseInput::from_style_output(
+                &prepared.style_output,
+                320.0,
+                &Measure,
+                Some(&provider),
+            ));
+            fn images(
+                node: &layout::LayoutBox<'_, '_>,
+                out: &mut Vec<(html::internal::Id, Option<String>, Option<f32>)>,
+            ) {
+                if let Some(layout::ReplacedElementPresentation::Image(image)) =
+                    node.replaced_presentation()
+                {
+                    out.push((
+                        node.node_id(),
+                        image.resolved_source().map(str::to_owned),
+                        node.replaced_intrinsic.and_then(|size| size.width),
+                    ));
+                }
+                for child in &node.children {
+                    images(child, out);
+                }
+            }
+            let mut actual = Vec::new();
+            images(output.root(), &mut actual);
+            assert_eq!(actual.len(), 3);
+            first_id = actual[0].0;
+            assert_eq!(
+                actual[0].1.as_deref(),
+                Some("https://example.test/old/same.png")
+            );
+            assert_eq!(actual[0].2, Some(11.0));
+            assert_eq!(
+                actual[1].1.as_deref(),
+                Some("https://example.test/new/same.png")
+            );
+            assert_eq!(actual[1].2, Some(22.0));
+            assert_eq!(actual[2].1, None);
+            assert_eq!(
+                &*resources.0.borrow(),
+                &[
+                    "https://example.test/old/same.png",
+                    "https://example.test/new/same.png"
+                ]
+            );
+            assert_eq!(
+                provider.resolve_image_source(first_id, "mismatch.png"),
+                None
+            );
+        }
+        page.image_sources.remove(&first_id);
+        let provider = BrowserReplacedElementInfo {
+            image_sources: &page.image_sources,
+            resources: &resources,
+        };
+        assert_eq!(
+            provider.resolve_image_source(first_id, "same.png"),
+            None,
+            "missing association must not resolve against /new/"
+        );
     }
 }

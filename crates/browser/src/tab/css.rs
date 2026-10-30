@@ -1,21 +1,39 @@
 use super::Tab;
-use super::state::StylesheetLoadState;
+use super::state::{DocumentParseStatus, StylesheetLoadState};
 use super::status::format_network_error;
 use bus::CoreCommand;
 use core_types::{NetworkErrorKind, NetworkResponseInfo, RequestId, StylesheetSlotId};
 
 impl Tab {
+    fn accepts_css_network_event(&self, slot_id: StylesheetSlotId) -> bool {
+        self.document_load.parse_status != DocumentParseStatus::Failed
+            && self.page.has_external_stylesheet_slot(slot_id)
+    }
+
+    fn accepts_css_runtime_event(&self, slot_id: StylesheetSlotId) -> bool {
+        self.page.has_external_stylesheet_slot(slot_id)
+            && (self.document_load.parse_status != DocumentParseStatus::Failed
+                || self
+                    .stylesheet_loads
+                    .get(&slot_id)
+                    .is_some_and(|load| load.network_done))
+    }
+
     pub(super) fn on_css_network_start(
         &mut self,
         stylesheet_slot_id: StylesheetSlotId,
         response: NetworkResponseInfo,
     ) {
+        if !self.accepts_css_network_event(stylesheet_slot_id) {
+            return;
+        }
         let accept_body = should_accept_css_response(response.content_type.as_deref());
         self.stylesheet_loads.insert(
             stylesheet_slot_id,
             StylesheetLoadState {
                 response,
                 accept_body,
+                network_done: false,
             },
         );
     }
@@ -27,6 +45,9 @@ impl Tab {
         bytes: Vec<u8>,
         request_id: RequestId,
     ) {
+        if !self.accepts_css_network_event(stylesheet_slot_id) {
+            return;
+        }
         if !self
             .stylesheet_loads
             .get(&stylesheet_slot_id)
@@ -51,12 +72,16 @@ impl Tab {
         _bytes_received: usize,
         request_id: RequestId,
     ) {
+        if !self.accepts_css_network_event(stylesheet_slot_id) {
+            return;
+        }
         let url = response.requested_url.clone();
         self.stylesheet_loads.insert(
             stylesheet_slot_id,
             StylesheetLoadState {
                 accept_body: should_accept_css_response(response.content_type.as_deref()),
                 response,
+                network_done: true,
             },
         );
         self.send_cmd(CoreCommand::CssDone {
@@ -76,6 +101,9 @@ impl Tab {
         error: String,
         request_id: RequestId,
     ) {
+        if !self.accepts_css_network_event(stylesheet_slot_id) {
+            return;
+        }
         self.stylesheet_loads.remove(&stylesheet_slot_id);
         let render_work = self.page.mark_css_aborted(stylesheet_slot_id);
         self.send_cmd(CoreCommand::CssAbort {
@@ -103,11 +131,17 @@ impl Tab {
         stylesheet_slot_id: StylesheetSlotId,
         css_block: String,
     ) {
+        if !self.accepts_css_runtime_event(stylesheet_slot_id) {
+            return;
+        }
         let render_work = self.page.apply_css_block(stylesheet_slot_id, &css_block);
         let _ = self.request_optional_render_work(render_work);
     }
 
     pub(super) fn on_css_sheet_done(&mut self, stylesheet_slot_id: StylesheetSlotId, _url: String) {
+        if !self.accepts_css_runtime_event(stylesheet_slot_id) {
+            return;
+        }
         let mut render_work = self.page.mark_css_done(stylesheet_slot_id);
         let remaining = self.page.pending_count();
         self.update_loading();

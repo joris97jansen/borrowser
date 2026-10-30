@@ -1,9 +1,13 @@
+mod addressing;
 mod debug;
+pub(crate) use addressing::DocumentAddressState;
 mod dom_mutation;
+mod image_sources;
 mod retained_render_state;
 mod style_cache;
 mod style_phase;
 mod stylesheets;
+pub(crate) use image_sources::{ImageSourceBinding, selected_image_source};
 
 pub(crate) use dom_mutation::{DomMutationFacts, PendingDomMutationFacts};
 #[cfg(test)]
@@ -63,7 +67,7 @@ impl DomPublicationRenderInvalidation {
 }
 
 pub struct PageState {
-    pub base_url: Option<String>,
+    pub(crate) addresses: Option<DocumentAddressState>,
     pub dom: Option<Box<Node>>,
     pub(crate) document_mode: Option<html::DocumentMode>,
     pub head: HeadMetadata,
@@ -71,31 +75,65 @@ pub struct PageState {
     pub visible_text_cache: String,
     pub form_controls: FormControlIndex,
 
+    pub(crate) image_sources: std::collections::HashMap<html::internal::Id, ImageSourceBinding>,
     rendering: RetainedRenderState,
 }
 
 impl PageState {
     pub fn new() -> Self {
         Self {
-            base_url: None,
+            addresses: None,
             dom: None,
             document_mode: None,
             head: HeadMetadata::default(),
             visible_text_cache: String::new(),
             form_controls: FormControlIndex::default(),
+            image_sources: std::collections::HashMap::new(),
             rendering: RetainedRenderState::new(),
         }
     }
 
     // Clear all state for new navigation
-    pub fn start_nav(&mut self, final_url: &str) {
-        self.base_url = Some(final_url.to_string());
+    pub(crate) fn reset_for_navigation(&mut self) {
+        self.addresses = None;
+        self.image_sources.clear();
         self.dom = None;
         self.document_mode = None;
         self.head = HeadMetadata::default();
         self.visible_text_cache.clear();
         self.form_controls = FormControlIndex::default();
         self.rendering.reset_for_navigation();
+    }
+
+    pub(crate) fn begin_document(&mut self, url: ::addressing::BrowserUrl) {
+        self.addresses = Some(DocumentAddressState::new(url));
+    }
+
+    pub(crate) fn document_url(&self) -> Option<&::addressing::BrowserUrl> {
+        self.addresses
+            .as_ref()
+            .map(DocumentAddressState::document_url)
+    }
+    #[cfg(test)]
+    pub(crate) fn fallback_base_url(&self) -> Option<&::addressing::BrowserUrl> {
+        self.addresses
+            .as_ref()
+            .map(DocumentAddressState::fallback_base_url)
+    }
+    pub(crate) fn active_base_url(&self) -> Option<&::addressing::BrowserUrl> {
+        self.addresses
+            .as_ref()
+            .map(DocumentAddressState::active_base_url)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn start_nav(&mut self, url: &str) {
+        self.reset_for_navigation();
+        self.begin_document(
+            ::addressing::BrowserUrl::parse(url)
+                .expect("explicit test document URL")
+                .url,
+        );
     }
 
     pub fn update_head_metadata(&mut self) {
@@ -114,6 +152,8 @@ impl PageState {
     ) -> DomPublicationRenderInvalidation {
         self.dom = Some(dom);
         if facts.document_replaced() {
+            self.image_sources.clear();
+            self.rendering.document_styles.clear();
             self.rendering
                 .reset_retained_identities_for_document_replacement();
         }
@@ -129,6 +169,8 @@ impl PageState {
         self.document_mode = Some(document_mode);
         self.dom = Some(dom);
         if facts.document_replaced() {
+            self.image_sources.clear();
+            self.rendering.document_styles.clear();
             self.rendering
                 .reset_retained_identities_for_document_replacement();
         }

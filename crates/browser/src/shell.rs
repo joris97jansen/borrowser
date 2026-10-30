@@ -11,6 +11,9 @@ use gfx::ui::toolbar::navigation_widgets;
 
 use crate::tab::Tab;
 
+#[cfg(test)]
+mod tests;
+
 pub struct ShellApp {
     tabs: Vec<Tab>,
     active: usize,
@@ -55,17 +58,22 @@ impl ShellApp {
         self.request_repaint();
     }
 
-    fn close_at(&mut self, idx: usize) {
-        // Cancel any in-flight request for that tab
-        if let (Some(tab), Some(tx)) = (
-            self.tabs.get(idx).filter(|tab| tab.nav_gen > 0),
-            self.cmd_tx.as_ref(),
-        ) {
-            let _ = tx.send(CoreCommand::CancelRequest {
-                tab_id: tab.tab_id,
-                request_id: tab.nav_gen,
-            });
+    fn retire_and_cancel_tab(&mut self, idx: usize) {
+        if let Some(tab) = self.tabs.get_mut(idx) {
+            tab.retire_document_stylesheets();
+            if tab.nav_gen > 0
+                && let Some(tx) = &self.cmd_tx
+            {
+                let _ = tx.send(CoreCommand::CancelRequest {
+                    tab_id: tab.tab_id,
+                    request_id: tab.nav_gen,
+                });
+            }
         }
+    }
+
+    fn close_at(&mut self, idx: usize) {
+        self.retire_and_cancel_tab(idx);
 
         // Remove the tab
         let removed_active = idx == self.active;
@@ -92,15 +100,7 @@ impl ShellApp {
         }
         let idx = self.active;
 
-        if let (Some(tab), Some(tx)) = (
-            self.tabs.get(idx).filter(|tab| tab.nav_gen > 0),
-            self.cmd_tx.as_ref(),
-        ) {
-            let _ = tx.send(CoreCommand::CancelRequest {
-                tab_id: tab.tab_id,
-                request_id: tab.nav_gen,
-            });
-        }
+        self.retire_and_cancel_tab(idx);
 
         self.tabs.remove(idx);
         if self.tabs.is_empty() {

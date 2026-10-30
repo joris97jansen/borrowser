@@ -642,16 +642,29 @@ fn loaded_external_media_only_change_preserves_source_without_refetch_and_invali
         .expect("loaded screen stylesheet is present and inactive");
     let before = tab.page.style_generations();
 
-    let print = parse_document(
-        "<!doctype html><html><head><link rel=stylesheet href=site.css media=print></head><body><p>Hello</p></body></html>",
-        HtmlParseOptions::default(),
+    let link_key = tab.page.dom.as_deref().unwrap();
+    fn stylesheet_id(node: &html::Node) -> Option<html::internal::Id> {
+        if node.attr_has_token("rel", "stylesheet") {
+            return Some(node.id());
+        }
+        match node {
+            html::Node::Document { children, .. } => children.iter().find_map(stylesheet_id),
+            html::Node::Element { element } => element.children().iter().find_map(stylesheet_id),
+            _ => None,
+        }
+    }
+    let link_id = stylesheet_id(link_key).unwrap();
+    super::support::publish_addressing_patches(
+        &mut tab,
+        vec![super::support::attributes(
+            link_id,
+            &[
+                ("rel", "stylesheet"),
+                ("href", "site.css"),
+                ("media", "print"),
+            ],
+        )],
     )
-    .expect("print document parses");
-    tab.on_core_event(CoreEvent::DomPatchUpdate {
-        tab_id: tab.tab_id,
-        request_id: 241,
-        publication: no_quirks_patch_publication_from_output(print),
-    })
     .unwrap();
     assert!(
         rx.try_iter().all(|command| !matches!(

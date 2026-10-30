@@ -78,6 +78,35 @@ fn streaming_tab() -> (Tab, Receiver<CoreCommand>, HtmlParseCompletion) {
     (tab, rx, completion)
 }
 
+fn streaming_addressed_preview() -> (Tab, Receiver<CoreCommand>) {
+    let (mut tab, rx) = navigating_tab();
+    let request_id = tab.nav_gen;
+    tab.on_core_event(start(request_id, response(URL))).unwrap();
+    assert!(matches!(
+        rx.try_recv().unwrap(),
+        CoreCommand::ParseHtmlStart { request_id: id, .. } if id == request_id
+    ));
+    let source = concat!(
+        "<!doctype html><base href='https://example.com/document#frozen'>",
+        "<img id=preview src=preview.png><p>streaming preview</p>"
+    );
+    let parsed = html::parse_document(source, html::HtmlParseOptions::default()).unwrap();
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: 1,
+        request_id,
+        publication: no_quirks_patch_publication_from_output(parsed),
+    })
+    .unwrap();
+    assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Pending);
+    assert!(tab.page.dom.is_some());
+    assert!(matches!(
+        rx.try_recv().unwrap(),
+        CoreCommand::FetchStream { request_id: id, kind: ResourceKind::Image, .. } if id == request_id
+    ));
+    assert!(rx.try_recv().is_err());
+    (tab, rx)
+}
+
 fn finish_document(tab: &mut Tab, rx: &Receiver<CoreCommand>, completion: HtmlParseCompletion) {
     tab.on_core_event(CoreEvent::NetworkDone {
         tab_id: 1,
@@ -134,7 +163,7 @@ fn document_snapshot(tab: &Tab) -> String {
                 .and_then(|handle| tab.dom_store.get_current(handle)),
             &tab.page.dom,
             tab.page.document_mode,
-            &tab.page.base_url,
+            &tab.page.addresses,
         ),
         (
             &tab.stylesheet_loads,
@@ -202,7 +231,10 @@ fn first_document_start_is_accepted_once_before_any_publication() {
     assert_eq!(tab.document_load.response, Some(response(URL)));
     assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Pending);
     assert!(tab.loading);
-    assert_eq!(tab.page.base_url.as_deref(), Some(URL));
+    assert_eq!(
+        tab.page.active_base_url().map(|url| url.as_str()),
+        Some(URL)
+    );
     assert!(matches!(
         rx.try_recv().unwrap(),
         CoreCommand::ParseHtmlStart { .. }
@@ -362,4 +394,172 @@ fn navigation_and_refresh_reset_terminal_state_but_fragment_navigation_does_not(
             assert!(rx.try_recv().is_err());
         }
     }
+}
+
+#[test]
+fn document_lifecycle_published_preview_remains_active_during_parsing_and_after_failure() {
+    let (mut tab, rx) = streaming_addressed_preview();
+    let generation = tab.nav_gen;
+    let handle = tab.dom_handle;
+    let version = tab.dom_version;
+    let frozen_base = tab.page.active_base_url().unwrap().clone();
+    let image = super::support::element_id(tab.page.dom.as_deref().unwrap(), "preview");
+    let selected =
+        crate::page::selected_image_source(&tab.page.image_sources, image, "preview.png");
+    assert!(selected.is_some());
+
+    // A published preview is the active document even while parsing continues.
+    tab.activate_link("#one");
+    tab.activate_link("#two");
+    tab.go_back();
+    assert_eq!(tab.page.document_url().unwrap().fragment(), Some("one"));
+    tab.go_back();
+    assert_eq!(tab.page.document_url().unwrap().fragment(), None);
+    tab.go_forward();
+    tab.go_forward();
+    assert_eq!(tab.page.document_url().unwrap().fragment(), Some("two"));
+    assert_eq!(tab.nav_gen, generation);
+    assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Pending);
+    assert_eq!(tab.dom_handle, handle);
+    assert_eq!(tab.dom_version, version);
+    assert_eq!(tab.page.active_base_url(), Some(&frozen_base));
+    assert_eq!(
+        crate::page::selected_image_source(&tab.page.image_sources, image, "preview.png"),
+        selected
+    );
+    assert!(rx.try_recv().is_err(), "fragment traversal sends no fetch");
+
+    // Parser failure preserves the accepted preview and its identity.
+    fail_parser(&mut tab, &rx);
+    tab.activate_link("#after-failure");
+    assert_eq!(
+        tab.page.document_url().unwrap().fragment(),
+        Some("after-failure")
+    );
+    tab.go_back();
+    assert_eq!(tab.page.document_url().unwrap().fragment(), Some("two"));
+    tab.go_forward();
+    assert_eq!(
+        tab.page.document_url().unwrap().fragment(),
+        Some("after-failure")
+    );
+    assert_eq!(tab.nav_gen, generation);
+    assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Failed);
+    assert_eq!(tab.dom_handle, handle);
+    assert_eq!(tab.dom_version, version);
+    assert_eq!(tab.page.active_base_url(), Some(&frozen_base));
+    assert_eq!(
+        crate::page::selected_image_source(&tab.page.image_sources, image, "preview.png"),
+        selected
+    );
+    assert!(
+        rx.try_recv().is_err(),
+        "failed preview traversal sends no fetch"
+    );
+}
+
+#[test]
+fn document_lifecycle_navigation_away_cannot_reuse_preview_or_accept_stale_publications() {
+    for fail_before_navigation in [false, true] {
+        let (mut tab, rx) = streaming_addressed_preview();
+        tab.activate_link("#preview");
+        assert!(rx.try_recv().is_err());
+        if fail_before_navigation {
+            fail_parser(&mut tab, &rx);
+        }
+        let previous_request = tab.nav_gen;
+        let next_url = "https://example.com/replacement";
+        tab.navigate_to_new(next_url.into());
+        assert_eq!(tab.nav_gen, previous_request + 1);
+        assert!(tab.page.document_url().is_none());
+        assert!(tab.page.dom.is_none());
+        assert!(tab.page.image_sources.is_empty());
+        let commands: Vec<_> = rx.try_iter().collect();
+        assert!(commands.iter().any(|command| matches!(command,
+            CoreCommand::FetchStream { request_id, url, kind: ResourceKind::Html, .. }
+                if *request_id == tab.nav_gen && url == next_url
+        )));
+
+        // An old response and old DOM publication cannot revive the preview.
+        tab.on_core_event(start(previous_request, response(URL)))
+            .unwrap();
+        let stale = html::parse_document(
+            "<!doctype html><p id=stale>stale</p>",
+            html::HtmlParseOptions::default(),
+        )
+        .unwrap();
+        tab.on_core_event(CoreEvent::DomPatchUpdate {
+            tab_id: 1,
+            request_id: previous_request,
+            publication: no_quirks_patch_publication_from_output(stale),
+        })
+        .unwrap();
+        assert!(tab.page.document_url().is_none());
+        assert!(tab.page.dom.is_none());
+        assert!(rx.try_recv().is_err());
+
+        let current_request = tab.nav_gen;
+        tab.on_core_event(start(current_request, response(next_url)))
+            .unwrap();
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            CoreCommand::ParseHtmlStart { request_id, .. } if request_id == current_request
+        ));
+        let replacement = html::parse_document(
+            "<!doctype html><p id=replacement>replacement</p>",
+            html::HtmlParseOptions::default(),
+        )
+        .unwrap();
+        tab.on_core_event(CoreEvent::DomPatchUpdate {
+            tab_id: 1,
+            request_id: current_request,
+            publication: no_quirks_patch_publication_from_output(replacement),
+        })
+        .unwrap();
+        assert_eq!(tab.page.document_url().unwrap().as_str(), next_url);
+        super::support::element_id(tab.page.dom.as_deref().unwrap(), "replacement");
+        assert!(rx.try_recv().is_err());
+
+        // The old history entry is a different document, even if it was a
+        // committed preview; traversal must request it again.
+        tab.go_back();
+        assert_eq!(tab.nav_gen, current_request + 1);
+        assert!(tab.page.document_url().is_none());
+        assert!(tab.page.dom.is_none());
+        assert!(rx.try_iter().any(|command| matches!(command,
+            CoreCommand::FetchStream { request_id, url, kind: ResourceKind::Html, .. }
+                if request_id == tab.nav_gen && url == format!("{URL}#preview")
+        )));
+    }
+}
+
+#[test]
+fn document_lifecycle_unpublished_request_and_response_cannot_be_reused() {
+    let (mut tab, rx) = navigating_tab();
+    let first_request = tab.nav_gen;
+    assert!(tab.page.document_url().is_none());
+    assert!(tab.page.dom.is_none());
+    tab.navigate_to_new(format!("{URL}#before-response"));
+    assert_eq!(tab.nav_gen, first_request + 1);
+    assert!(rx.try_iter().any(|command| matches!(command,
+        CoreCommand::FetchStream { request_id, kind: ResourceKind::Html, .. } if request_id == tab.nav_gen
+    )));
+
+    let second_url = format!("{URL}#before-response");
+    let second_request = tab.nav_gen;
+    tab.on_core_event(start(second_request, response(&second_url)))
+        .unwrap();
+    assert!(matches!(
+        rx.try_recv().unwrap(),
+        CoreCommand::ParseHtmlStart { .. }
+    ));
+    assert!(tab.page.document_url().is_some());
+    assert!(tab.page.dom.is_none());
+    tab.navigate_to_new(format!("{URL}#before-publication"));
+    assert_eq!(tab.nav_gen, second_request + 1);
+    assert!(tab.page.document_url().is_none());
+    assert!(tab.page.dom.is_none());
+    assert!(rx.try_iter().any(|command| matches!(command,
+        CoreCommand::FetchStream { request_id, kind: ResourceKind::Html, .. } if request_id == tab.nav_gen
+    )));
 }

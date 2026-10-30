@@ -1,4 +1,6 @@
 mod arena;
+mod base;
+pub(crate) use base::BaseElementChange;
 mod document;
 mod error;
 mod materialize;
