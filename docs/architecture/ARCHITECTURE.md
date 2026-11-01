@@ -77,8 +77,8 @@ downstream responsibilities.
 AH1 deferred physical placement. AH2 selects the dedicated `addressing` crate
 below its consumers; it owns immutable `BrowserUrl` values, absolute parsing,
 explicit-base resolution, typed diagnostics, normalized serialization, complete
-URL equality, and credential-redacted debug output. It wraps the published
-`url` dependency selected by Cargo.lock. The existing `platform` crate owns window/runtime
+URL equality, and content-redacted debug output. AH3 subsequently adopted the
+revision-pinned maintained `url` fork selected by Cargo.lock. The existing `platform` crate owns window/runtime
 integration and depends on addressing consumers, so it cannot serve this role
 without reversing dependency direction. The
 [AH2 contract](../platform/ah2-typed-url-parsing-and-diagnostics.md)
@@ -88,7 +88,7 @@ and scoped validation. AH1 itself added no crate, dependency, or Rust behavior.
 Browser's image-source resolution helper now uses addressing, preserving its
 HTML preprocessing and absolute-first/base-fallback behavior. Other Browser/GFX
 URL helpers, string transport, HTTP/HTTPS/file loading, redirects, and navigation
-remain documented migration points using the same published backend.
+remain documented migration points using the same qualified backend.
 The AH scheme matrix describes future addressing capability separately from
 current transport. AH4 owns document URL/frozen-base lifetime. [AH5](../platform/ah5-origin-representation-and-same-origin.md)
 adds addressing-owned tuple/opaque origins and Browser-retained document origins.
@@ -96,8 +96,14 @@ Complete ordinary http/https/file document state is prepared before response
 acceptance; unsupported creation contexts fail through the existing lifecycle.
 File origins are fresh opaque values per new load, retained for same-document
 operations; this defines no filesystem permissions or security enforcement.
-Origins, URL equality, and history associations remain distinct. Resource
-identity and wider AH work remain pending in the [feature-gap tracker](../engine-feature-gap-tracker.md).
+Origins, URL equality, and history associations remain distinct.
+[AH6](../platform/ah6-resource-addresses-and-identity-keys.md) adds addressing-owned
+resource purpose, operation capability and fragmentless retrieval identity. Browser
+retains complete stylesheet references separately from dispatch-time request records;
+CSS event admission requires exact issued provenance and immutable response metadata.
+Checked command delivery settles failures locally. CSS buffering retirement is
+separate from generation-wide network cancellation. Image keys and bus schemas are
+unchanged. Wider AH work remains pending in the [feature-gap tracker](../engine-feature-gap-tracker.md).
 
 ---
 

@@ -1,5 +1,11 @@
 # AH2: Typed URL Parsing, Resolution, And Diagnostics
 
+Current resource-address integration: [AH6](ah6-resource-addresses-and-identity-keys.md)
+adds typed complete references, fragmentless retrieval keys and operation capabilities.
+Browser's stylesheet handoff now retains references separately from issued request
+provenance, validates immutable CSS response metadata, and handles command delivery
+failures. Historical exclusions below describe the earlier issue's scope.
+
 Subsequent origin implementation: [AH5](ah5-origin-representation-and-same-origin.md)
 adds the separate `BrowserUrl::url_origin()` operation and typed Origin. Parsing,
 URL equality, and existing Debug remain unchanged; historical origin deferrals

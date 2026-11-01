@@ -951,9 +951,11 @@ fn first_document_start_is_accepted_once_before_any_publication() {
 
 #[test]
 fn repeated_document_start_preserves_streaming_preview_and_stylesheet_work() {
-    let (mut tab, rx, completion) = streaming_tab();
+    let (mut tab, rx, mut completion) = streaming_tab();
     let css_url = "https://example.com/site.css";
-    let slot = tab.page.register_css(css_url);
+    let slot = super::support::append_stylesheet_link(&mut tab, css_url);
+    completion.version = tab.dom_version;
+    rx.try_iter().for_each(drop);
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: 1,
         request_id: tab.nav_gen,
@@ -972,6 +974,19 @@ fn repeated_document_start_preserves_streaming_preview_and_stylesheet_work() {
     assert_eq!(document_snapshot(&tab), before);
     assert!(rx.try_recv().is_err());
     // The existing stylesheet and parser lifecycles can still finish normally.
+    tab.on_core_event(CoreEvent::NetworkDone {
+        tab_id: 1,
+        request_id: tab.nav_gen,
+        stylesheet_slot_id: Some(slot),
+        kind: ResourceKind::Css,
+        response: response(css_url),
+        bytes_received: 0,
+    })
+    .unwrap();
+    assert!(matches!(
+        rx.try_recv().unwrap(),
+        CoreCommand::CssDone { .. }
+    ));
     tab.on_core_event(CoreEvent::CssSheetDone {
         tab_id: 1,
         request_id: tab.nav_gen,

@@ -1,5 +1,11 @@
 # AH4: Document URL And Frozen Document Base
 
+Current resource-address integration: [AH6](ah6-resource-addresses-and-identity-keys.md)
+adds typed complete references, fragmentless retrieval keys and operation capabilities.
+Browser's stylesheet handoff now retains references separately from issued request
+provenance, validates immutable CSS response metadata, and handles command delivery
+failures. Historical exclusions below describe the earlier issue's scope.
+
 Subsequent origin integration: [AH5](ah5-origin-representation-and-same-origin.md)
 extends DocumentAddressState with a retained origin and requires complete,
 side-effect-free preparation before response acceptance. Existing navigation

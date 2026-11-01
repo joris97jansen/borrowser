@@ -179,8 +179,9 @@ fn resource_associations_stylesheet_moves_media_source_changes_and_retired_respo
             status_code: Some(200),
             content_type: Some("text/css".into()),
         },
+        tab.nav_gen,
     );
-    tab.on_css_decoded_block(first, "p{color:red}".into());
+    complete_css(&mut tab, first, &fetched[0].1, "p{color:red}");
     publish_addressing_patches(
         &mut tab,
         vec![
@@ -227,8 +228,9 @@ fn resource_associations_stylesheet_moves_media_source_changes_and_retired_respo
             status_code: Some(200),
             content_type: None,
         },
+        tab.nav_gen,
     );
-    tab.on_css_decoded_block(first, "p{color:blue}".into());
+    tab.on_css_decoded_block(first, &fetched[0].1, "p{color:blue}".into(), tab.nav_gen);
     assert!(!tab.stylesheet_loads.contains_key(&first));
     assert!(tab.page.css_stylesheets().is_empty());
     publish_addressing_patches(
@@ -293,7 +295,12 @@ fn resource_associations_clear_and_replacement_never_reuse_outstanding_slots() {
     let replaced = requests(&rx, ResourceKind::Css)[0].0.unwrap();
     assert_ne!(new, replaced);
     assert!(tab.page.image_sources.is_empty());
-    tab.on_css_decoded_block(new, "p{color:blue}".into());
+    tab.on_css_decoded_block(
+        new,
+        "https://example.test/new/same.css",
+        "p{color:blue}".into(),
+        tab.nav_gen,
+    );
     assert!(tab.page.css_stylesheets().is_empty());
 }
 
@@ -330,7 +337,7 @@ fn resource_associations_retirement_aborts_partial_css_and_late_events_cannot_re
         status_code: Some(200),
         content_type: Some("text/css".into()),
     };
-    tab.on_css_network_start(slot, response.clone());
+    tab.on_css_network_start(slot, response.clone(), tab.nav_gen);
     tab.on_css_network_chunk(slot, url.clone(), b"p{".to_vec(), 7);
     assert!(
         matches!(rx.try_recv().unwrap(),CoreCommand::CssChunk{stylesheet_slot_id,..} if stylesheet_slot_id==slot)
@@ -347,7 +354,7 @@ fn resource_associations_retirement_aborts_partial_css_and_late_events_cannot_re
     );
     assert!(rx.try_recv().is_err());
     assert!(tab.stylesheet_loads.is_empty());
-    tab.on_css_network_start(slot, response.clone());
+    tab.on_css_network_start(slot, response.clone(), tab.nav_gen);
     tab.on_css_network_chunk(slot, url.clone(), b"color:red}".to_vec(), 7);
     tab.on_css_network_done(slot, response, 12, 7);
     assert!(rx.try_recv().is_err());
@@ -486,7 +493,7 @@ fn resource_associations_streamed_css_uses_one_live_record_lookup_per_chunk() {
             status_code: Some(200),
             content_type: Some("text/css".into()),
         };
-        tab.on_css_network_start(slot, response);
+        tab.on_css_network_start(slot, response, tab.nav_gen);
         let before = tab.page.stylesheet_slot_lookup_count();
         for _ in 0..4096 {
             tab.on_css_network_chunk(slot, url.clone(), b"p{}".to_vec(), 7);

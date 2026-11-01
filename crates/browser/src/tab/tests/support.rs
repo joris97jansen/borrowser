@@ -8,6 +8,93 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 pub(super) const ADDRESS_URL: &str = "https://example.test/dir/page?q=1#initial";
 
+/// Add a real parser-publication attachment and let production discovery issue it.
+pub(super) fn append_stylesheet_link(tab: &mut Tab, url: &str) -> core_types::StylesheetSlotId {
+    let before: std::collections::HashSet<_> = tab.stylesheet_loads.keys().copied().collect();
+    let parent = PatchKey::from_id(tab.page.dom.as_deref().expect("committed fixture").id());
+    let key = PatchKey(900_000);
+    publish_addressing_patches(
+        tab,
+        vec![
+            DomPatch::CreateElement {
+                key,
+                name: html::internal::html_name("link"),
+                attributes: vec![
+                    html::internal::unqualified_attribute("rel", "stylesheet"),
+                    html::internal::unqualified_attribute("href", url),
+                ],
+            },
+            DomPatch::AppendChild { parent, child: key },
+        ],
+    )
+    .unwrap();
+    *tab.stylesheet_loads
+        .keys()
+        .find(|id| !before.contains(id))
+        .expect("production dispatch")
+}
+
+/// Establish the actual network/runtime protocol for cascade/lifetime fixtures.
+/// The slot must already have been issued by production discovery.
+pub(super) fn complete_css(
+    tab: &mut Tab,
+    slot: core_types::StylesheetSlotId,
+    url: &str,
+    text: &str,
+) {
+    use bus::CoreEvent;
+    use core_types::{NetworkResponseInfo, ResourceKind};
+    let response = NetworkResponseInfo {
+        requested_url: url.into(),
+        final_url: url.into(),
+        status_code: Some(200),
+        content_type: Some("text/css".into()),
+    };
+    let tab_id = tab.tab_id;
+    let request_id = tab.nav_gen;
+    tab.on_core_event(CoreEvent::NetworkStart {
+        tab_id,
+        request_id,
+        stylesheet_slot_id: Some(slot),
+        kind: ResourceKind::Css,
+        response: response.clone(),
+    })
+    .unwrap();
+    tab.on_core_event(CoreEvent::NetworkChunk {
+        tab_id,
+        request_id,
+        stylesheet_slot_id: Some(slot),
+        kind: ResourceKind::Css,
+        url: url.into(),
+        bytes: text.as_bytes().to_vec(),
+    })
+    .unwrap();
+    tab.on_core_event(CoreEvent::NetworkDone {
+        tab_id,
+        request_id,
+        stylesheet_slot_id: Some(slot),
+        kind: ResourceKind::Css,
+        response,
+        bytes_received: text.len(),
+    })
+    .unwrap();
+    tab.on_core_event(CoreEvent::CssDecodedBlock {
+        tab_id,
+        request_id,
+        stylesheet_slot_id: slot,
+        url: url.into(),
+        css_block: text.into(),
+    })
+    .unwrap();
+    tab.on_core_event(CoreEvent::CssSheetDone {
+        tab_id,
+        request_id,
+        stylesheet_slot_id: slot,
+        url: url.into(),
+    })
+    .unwrap();
+}
+
 pub(super) fn addressing_tab(source: &str) -> (Tab, std::sync::mpsc::Receiver<bus::CoreCommand>) {
     addressing_tab_with_url(source, ADDRESS_URL)
 }

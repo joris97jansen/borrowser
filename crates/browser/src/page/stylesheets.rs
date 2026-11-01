@@ -9,7 +9,7 @@ use super::PageState;
 
 pub(crate) struct PageStylesheetReconcile {
     pub(crate) fetches: Vec<StylesheetFetch>,
-    pub(crate) retired: Vec<StylesheetFetch>,
+    pub(crate) retired: Vec<StylesheetSlotId>,
     pub(crate) render_invalidation: Option<RenderInvalidationRequest>,
 }
 
@@ -39,28 +39,24 @@ impl PageState {
         }
     }
 
-    pub(crate) fn external_stylesheet_requests(&self) -> Vec<StylesheetFetch> {
-        self.rendering
-            .document_styles
-            .external_stylesheet_requests()
-    }
-
     pub(crate) fn abort_pending_external_stylesheets(
         &mut self,
         completed: &std::collections::HashSet<StylesheetSlotId>,
-    ) -> Vec<StylesheetFetch> {
+    ) -> Vec<StylesheetSlotId> {
         self.rendering
             .document_styles
             .abort_pending_external(completed)
     }
 
+    pub(crate) fn has_external_stylesheet_slot(&self, id: StylesheetSlotId) -> bool {
+        self.rendering.document_styles.has_external_slot(id)
+    }
+
+    #[cfg(test)]
     pub(crate) fn active_external_stylesheet_slots(
         &self,
     ) -> std::collections::HashSet<StylesheetSlotId> {
         self.rendering.document_styles.active_external_slots()
-    }
-    pub(crate) fn has_external_stylesheet_slot(&self, id: StylesheetSlotId) -> bool {
-        self.rendering.document_styles.has_external_slot(id)
     }
 
     #[cfg(test)]

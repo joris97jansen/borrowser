@@ -58,11 +58,69 @@ pub(super) struct DocumentLoadState {
     pub(super) parse_status: DocumentParseStatus,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(super) struct StylesheetLoadState {
-    pub(super) response: NetworkResponseInfo,
-    pub(super) accept_body: bool,
-    pub(super) network_done: bool,
+    pub(super) request_id: RequestId,
+    pub(super) issued_key: addressing::ResourceIdentityKey,
+    pub(super) phase: StylesheetLoadPhase,
+}
+
+#[derive(Clone)]
+pub(super) enum StylesheetLoadPhase {
+    AwaitingStart,
+    Receiving {
+        response: NetworkResponseInfo,
+        accept_body: bool,
+        body_forwarded: bool,
+    },
+    AwaitingRuntime {
+        response: NetworkResponseInfo,
+        accept_body: bool,
+        progress: CssRuntimeProgress,
+    },
+    Complete {
+        response: NetworkResponseInfo,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum CssRuntimeProgress {
+    NoBlockExpected,
+    AwaitingBlock,
+    BlockReceived,
+}
+
+impl StylesheetLoadPhase {
+    pub(super) fn accepted_response(&self) -> Option<&NetworkResponseInfo> {
+        match self {
+            Self::AwaitingStart => None,
+            Self::Receiving { response, .. }
+            | Self::AwaitingRuntime { response, .. }
+            | Self::Complete { response } => Some(response),
+        }
+    }
+    pub(super) fn network_complete(&self) -> bool {
+        matches!(self, Self::AwaitingRuntime { .. } | Self::Complete { .. })
+    }
+}
+
+impl std::fmt::Debug for StylesheetLoadState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let phase = match self.phase {
+            StylesheetLoadPhase::AwaitingStart => "awaiting-start",
+            StylesheetLoadPhase::Receiving { .. } => "receiving",
+            StylesheetLoadPhase::AwaitingRuntime { .. } => "awaiting-runtime",
+            StylesheetLoadPhase::Complete { .. } => "complete",
+        };
+        f.debug_struct("StylesheetLoadState")
+            .field("issued_key", &self.issued_key)
+            .field("phase", &phase)
+            .field(
+                "response_admitted",
+                &self.phase.accepted_response().is_some(),
+            )
+            .finish()
+    }
 }
 
 pub struct Tab {
@@ -150,10 +208,10 @@ impl Tab {
             let completed = self
                 .stylesheet_loads
                 .iter()
-                .filter_map(|(id, load)| load.network_done.then_some(*id))
+                .filter_map(|(id, load)| load.phase.network_complete().then_some(*id))
                 .collect();
             let pending = self.page.abort_pending_external_stylesheets(&completed);
-            self.retire_stylesheet_requests(pending, self.nav_gen);
+            self.retire_stylesheet_requests(pending);
             self.send_cmd(CoreCommand::CancelRequest {
                 tab_id: self.tab_id,
                 request_id: self.nav_gen,

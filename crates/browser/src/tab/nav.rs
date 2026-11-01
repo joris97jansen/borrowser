@@ -1,6 +1,9 @@
 use super::Tab;
 use super::state::{DocumentState, HistoryEntry};
-use addressing::BrowserUrl;
+use addressing::{
+    BrowserUrl, ResourceAddress, ResourceCapability, ResourceKind as AddressResourceKind,
+    ResourceOperation,
+};
 use bus::CoreCommand;
 use core_types::ResourceKind;
 
@@ -35,11 +38,12 @@ impl Tab {
                 return;
             }
         };
-        if !matches!(destination.scheme(), "http" | "https" | "file") {
+        let destination = ResourceAddress::new(destination, AddressResourceKind::Hyperlink);
+        if destination.capability(ResourceOperation::Navigation) != ResourceCapability::Supported {
             self.last_status = Some("Unsupported hyperlink navigation scheme".into());
             return;
         }
-        self.navigate_url(destination.as_str().to_owned());
+        self.navigate_url(destination.url().as_str().to_owned());
     }
 
     fn navigate_url(&mut self, url: String) {

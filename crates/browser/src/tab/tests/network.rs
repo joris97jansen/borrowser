@@ -80,13 +80,12 @@ fn qualified_urls_reach_image_requests_and_resource_lookup_keys() {
 
 #[test]
 fn css_with_html_content_type_is_not_forwarded_to_css_runtime() {
-    let mut tab = Tab::new(1);
-    let (tx, rx) = mpsc::channel();
-    tab.set_bus_sender(tx);
+    let (mut tab, rx) = super::support::addressing_tab("<!doctype html><p>preview</p>");
     tab.nav_gen = 7;
 
     let url = "https://example.com/site.css".to_string();
-    let slot_id = tab.page.register_css(&url);
+    let slot_id = super::support::append_stylesheet_link(&mut tab, &url);
+    rx.try_iter().for_each(drop);
 
     let response = NetworkResponseInfo {
         requested_url: url.clone(),
@@ -136,7 +135,7 @@ fn css_with_html_content_type_is_not_forwarded_to_css_runtime() {
         "expected CssDone to clear pending stylesheet state"
     );
 
-    tab.on_css_sheet_done(slot_id, url);
+    tab.on_css_sheet_done(slot_id, &url, tab.nav_gen);
     assert_eq!(tab.page.pending_count(), 0);
     assert!(
         tab.last_status
@@ -193,13 +192,12 @@ fn resource_limit_document_error_surfaces_status_and_stops_loading() {
 
 #[test]
 fn stylesheet_resource_limit_aborts_partial_css_and_clears_pending_state() {
-    let mut tab = Tab::new(1);
-    let (tx, rx) = mpsc::channel();
-    tab.set_bus_sender(tx);
+    let (mut tab, rx) = super::support::addressing_tab("<!doctype html><p>preview</p>");
     tab.nav_gen = 9;
 
     let url = "https://example.com/site.css".to_string();
-    let slot_id = tab.page.register_css(&url);
+    let slot_id = super::support::append_stylesheet_link(&mut tab, &url);
+    rx.try_iter().for_each(drop);
 
     let response = NetworkResponseInfo {
         requested_url: url.clone(),
@@ -269,14 +267,12 @@ fn stylesheet_resource_limit_aborts_partial_css_and_clears_pending_state() {
 
 #[test]
 fn decoded_css_for_aborted_stylesheet_slot_is_ignored() {
-    let mut tab = Tab::new(1);
-    let (tx, rx) = mpsc::channel();
-    tab.set_bus_sender(tx);
+    let (mut tab, rx) = super::support::addressing_tab("<!doctype html><p>preview</p>");
     tab.nav_gen = 18;
-    tab.page.start_nav("https://example.com/index.html");
 
     let url = "https://example.com/aborted.css".to_string();
-    let slot_id = tab.page.register_css(&url);
+    let slot_id = super::support::append_stylesheet_link(&mut tab, &url);
+    rx.try_iter().for_each(drop);
     let response = NetworkResponseInfo {
         requested_url: url.clone(),
         final_url: url.clone(),

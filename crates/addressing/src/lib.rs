@@ -7,8 +7,12 @@
 
 mod diagnostics;
 mod origin;
+mod resource;
 
 pub use origin::Origin;
+pub use resource::{
+    ResourceAddress, ResourceCapability, ResourceIdentityKey, ResourceKind, ResourceOperation,
+};
 
 pub use diagnostics::{
     UrlDiagnostic, UrlFailure, UrlFailureKind, UrlParseError, format_resolution_debug,
