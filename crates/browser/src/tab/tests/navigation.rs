@@ -13,6 +13,79 @@ fn history_test_tab() -> (Tab, std::sync::mpsc::Receiver<CoreCommand>) {
     (tab, rx)
 }
 
+#[test]
+fn navigation_file_origin_is_retained_for_fragments_and_fresh_after_refetch() {
+    let root = "file:///tmp/ah5-history.html";
+    let (mut tab, rx) = history_test_tab();
+    tab.navigate_to_new(root.into());
+    history_accept_document(&mut tab, root, root, "<!doctype html><p>file");
+    let first = tab
+        .page
+        .addresses
+        .as_ref()
+        .unwrap()
+        .document_origin()
+        .clone();
+    assert!(first.is_opaque());
+    let (other, _) = super::support::addressing_tab_with_url("<!doctype html><p>independent", root);
+    assert_ne!(
+        other.page.addresses.as_ref().unwrap().document_origin(),
+        &first
+    );
+    rx.try_iter().for_each(drop);
+    tab.activate_link("#one");
+    tab.activate_link("#two");
+    tab.go_back();
+    tab.go_forward();
+    assert_eq!(
+        tab.page.addresses.as_ref().unwrap().document_origin(),
+        &first
+    );
+    history_expect_no_document_fetch(&rx);
+    tab.refresh();
+    assert!(tab.page.addresses.is_none());
+    let refreshed = "file:///tmp/ah5-history.html#two";
+    history_accept_document(&mut tab, refreshed, root, "<!doctype html><p>reloaded");
+    let second = tab
+        .page
+        .addresses
+        .as_ref()
+        .unwrap()
+        .document_origin()
+        .clone();
+    assert_ne!(second, first);
+    assert_eq!(second.serialize(), first.serialize());
+    rx.try_iter().for_each(drop);
+    tab.go_back();
+    tab.go_back();
+    tab.go_forward();
+    assert_eq!(
+        tab.page.addresses.as_ref().unwrap().document_origin(),
+        &second
+    );
+    history_expect_no_document_fetch(&rx);
+    // A distinct load retires the available file document. Traversal back
+    // must refetch and determine a new origin.
+    tab.navigate_to_new("https://other.test/".into());
+    history_accept_document(
+        &mut tab,
+        "https://other.test/",
+        "https://other.test/",
+        "<!doctype html><p>other",
+    );
+    tab.go_back();
+    assert!(tab.page.addresses.is_none());
+    history_accept_document(
+        &mut tab,
+        "file:///tmp/ah5-history.html#one",
+        root,
+        "<!doctype html><p>returned",
+    );
+    let third = tab.page.addresses.as_ref().unwrap().document_origin();
+    assert_ne!(third, &first);
+    assert_ne!(third, &second);
+}
+
 fn history_expect_fetch(
     rx: &std::sync::mpsc::Receiver<CoreCommand>,
     generation: u64,

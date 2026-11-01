@@ -1,6 +1,6 @@
 mod addressing;
 mod debug;
-pub(crate) use addressing::DocumentAddressState;
+pub(crate) use addressing::{DocumentAddressError, DocumentAddressState};
 mod dom_mutation;
 mod image_sources;
 mod retained_render_state;
@@ -105,8 +105,8 @@ impl PageState {
         self.rendering.reset_for_navigation();
     }
 
-    pub(crate) fn begin_document(&mut self, url: ::addressing::BrowserUrl) {
-        self.addresses = Some(DocumentAddressState::new(url));
+    pub(crate) fn begin_document(&mut self, addresses: DocumentAddressState) {
+        self.addresses = Some(addresses);
     }
 
     pub(crate) fn document_url(&self) -> Option<&::addressing::BrowserUrl> {
@@ -130,9 +130,12 @@ impl PageState {
     pub(crate) fn start_nav(&mut self, url: &str) {
         self.reset_for_navigation();
         self.begin_document(
-            ::addressing::BrowserUrl::parse(url)
-                .expect("explicit test document URL")
-                .url,
+            DocumentAddressState::new(
+                ::addressing::BrowserUrl::parse(url)
+                    .expect("explicit test document URL")
+                    .url,
+            )
+            .expect("supported test document creation context"),
         );
     }
 

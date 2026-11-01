@@ -19,6 +19,52 @@ use url::{Host, ParseError, SyntaxViolation, Url};
 const CORPUS: &[u8] = include_bytes!("fixtures/wpt/urltestdata.json");
 const LICENSE: &[u8] = include_bytes!("fixtures/wpt/LICENSE.md");
 
+#[test]
+fn pinned_wpt_origin_serialization() {
+    let selection: Value =
+        serde_json::from_str(include_str!("fixtures/wpt/origin-selection.json")).unwrap();
+    assert_eq!(
+        selection["upstream_revision"],
+        "c48d58747e1f211527fb695fd60548a997fae617"
+    );
+    assert_eq!(selection["upstream_path"], "url/resources/urltestdata.json");
+    assert_eq!(
+        selection["standard_revision"],
+        "845bafca22fb0c5a42c4bf384a9bdea525a2f10d"
+    );
+    assert_eq!(selection["sha256"], format!("{:x}", Sha256::digest(CORPUS)));
+    assert_eq!(
+        selection["license_sha256"],
+        format!("{:x}", Sha256::digest(LICENSE))
+    );
+    let corpus: Vec<Value> = serde_json::from_slice(CORPUS).unwrap();
+    let mut indices = BTreeSet::new();
+    let mut ids = BTreeSet::new();
+    for case in selection["cases"].as_array().unwrap() {
+        let index = case["index"].as_u64().unwrap() as usize;
+        assert!(indices.insert(index));
+        assert!(ids.insert(case["id"].as_str().unwrap()));
+        assert!(!case["rationale"].as_str().unwrap().is_empty());
+        let source = &corpus[index];
+        assert_eq!(case["input"], source["input"]);
+        assert_eq!(case["base"], source["base"]);
+        let result = match source["base"].as_str() {
+            Some(base) => BrowserUrl::parse(base)
+                .unwrap()
+                .url
+                .resolve(source["input"].as_str().unwrap()),
+            None => BrowserUrl::parse(source["input"].as_str().unwrap()),
+        }
+        .unwrap();
+        assert_eq!(
+            result.url.url_origin().serialize(),
+            source["origin"].as_str().unwrap(),
+            "case {index}"
+        );
+    }
+    assert_eq!(indices.len(), 31);
+}
+
 // WPT accessor spelling only: this observes the production URL without
 // reparsing its serialization or borrowing a backend URL. Origin is out of AH3.
 fn browser_url_components(url: &BrowserUrl) -> Value {

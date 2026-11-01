@@ -1,11 +1,19 @@
 //! Browser-owned document lifetime and HTML frozen-base processing.
-use addressing::{BrowserUrl, UrlDiagnostic, UrlFailure, UrlFailureKind, UrlParseError};
+use addressing::{BrowserUrl, Origin, UrlDiagnostic, UrlFailure, UrlFailureKind, UrlParseError};
 use html::PatchKey;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DocumentAddressState {
     document_url: BrowserUrl,
+    document_origin: Origin,
     selected_base: Option<(PatchKey, FrozenBase)>,
+}
+
+/// This response path cannot supply inherited about, blob-entry, or sandbox
+/// creation context. A valid URL is not proof of supported document creation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DocumentAddressError {
+    UnsupportedDocumentCreationContext,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -24,15 +32,26 @@ enum BaseOutcome {
 }
 
 impl DocumentAddressState {
-    pub(crate) fn new(document_url: BrowserUrl) -> Self {
-        Self {
-            document_url,
-            selected_base: None,
+    pub(crate) fn new(document_url: BrowserUrl) -> Result<Self, DocumentAddressError> {
+        // Prepare without touching PageState, history, response acceptance, or
+        // parser state. This is Browser's current document capability boundary,
+        // not addressing's URL parsing or origin scheme classification.
+        if !matches!(document_url.scheme(), "http" | "https" | "file") {
+            return Err(DocumentAddressError::UnsupportedDocumentCreationContext);
         }
+        let document_origin = document_url.url_origin();
+        Ok(Self {
+            document_url,
+            document_origin,
+            selected_base: None,
+        })
     }
 
     pub(crate) fn document_url(&self) -> &BrowserUrl {
         &self.document_url
+    }
+    pub(crate) fn document_origin(&self) -> &Origin {
+        &self.document_origin
     }
     // UTF-8 ordinary documents only: inherited about bases and overrides are
     // unsupported creation contexts, rather than hidden alternative defaults.
@@ -51,6 +70,8 @@ impl DocumentAddressState {
         self.selected_base = None;
     }
     pub(crate) fn set_document_url(&mut self, url: BrowserUrl) {
+        // Callers have established same-document identity using URL/history
+        // rules. Never determine origin again, including for opaque file origins.
         // A selected element keeps its frozen result, even a rejected href's
         // old fallback. Updating the document URL is not a freezing trigger.
         self.document_url = url;
@@ -68,8 +89,9 @@ impl DocumentAddressState {
     }
     pub(crate) fn debug_snapshot(&self) -> String {
         format!(
-            "DocumentAddress {{\n    document_url: {:?},\n    fallback_base: {:?},\n    active_base: {:?},\n    selected_base: {:?},\n}}",
+            "DocumentAddress {{\n    document_url: {:?},\n    document_origin: {:?},\n    fallback_base: {:?},\n    active_base: {:?},\n    selected_base: {:?},\n}}",
             self.document_url(),
+            self.document_origin(),
             self.fallback_base_url(),
             self.active_base_url(),
             self.selected_base
@@ -160,7 +182,8 @@ mod tests {
     #[test]
     fn document_addressing_fallback_changes_do_not_refreeze_selected_elements() {
         for href in ["", "http://[", "data:text/plain,x", "relative/"] {
-            let mut state = DocumentAddressState::new(url("https://example.test/page#old"));
+            let mut state =
+                DocumentAddressState::new(url("https://example.test/page#old")).unwrap();
             state.select(Some((PatchKey(1), href.into()))).unwrap();
             let frozen = state.active_base_url().clone();
             state.set_document_url(url("https://example.test/page#new"));
@@ -173,7 +196,7 @@ mod tests {
 
     #[test]
     fn document_addressing_literal_redacted_snapshot() {
-        let mut state = DocumentAddressState::new(url("https://example.test/private"));
+        let mut state = DocumentAddressState::new(url("https://example.test/private")).unwrap();
         state
             .select(Some((PatchKey(1), "http://[".into())))
             .unwrap();
@@ -181,7 +204,7 @@ mod tests {
         assert_eq!(
             state.debug_snapshot(),
             format!(
-                "DocumentAddress {{\n    document_url: {structural},\n    fallback_base: {structural},\n    active_base: {structural},\n    selected_base: Some((PatchKey(1), FrozenBase {{ url: {structural}, outcome: InvalidHref(InvalidIpv6Address), diagnostics: [] }})),\n}}"
+                "DocumentAddress {{\n    document_url: {structural},\n    document_origin: Origin {{ kind: \"tuple\", scheme: \"https\", host_kind: \"domain\", port: None }},\n    fallback_base: {structural},\n    active_base: {structural},\n    selected_base: Some((PatchKey(1), FrozenBase {{ url: {structural}, outcome: InvalidHref(InvalidIpv6Address), diagnostics: [] }})),\n}}"
             )
         );
     }

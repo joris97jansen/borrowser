@@ -1,10 +1,14 @@
-//! Immutable URL values and explicit-base resolution owned by Borrowser.
+//! Immutable URL values, explicit-base resolution, and origins owned by Borrowser.
 //!
 //! Parsing wraps the revision-pinned maintained `url` fork. It does not grant permission to
-//! fetch a scheme, compute an origin, or select a document base. See the AH2
+//! fetch a scheme or select a document base. URL-origin determination is a
+//! separate operation, not a replacement for document creation rules. See the AH2
 //! contract and AH-URL-001 in the feature-gap tracker for dependency limitations.
 
 mod diagnostics;
+mod origin;
+
+pub use origin::Origin;
 
 pub use diagnostics::{
     UrlDiagnostic, UrlFailure, UrlFailureKind, UrlParseError, format_resolution_debug,

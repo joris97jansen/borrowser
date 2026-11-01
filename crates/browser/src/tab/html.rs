@@ -29,7 +29,18 @@ impl Tab {
                 return;
             }
         };
-        self.accept_history_document(&document_url);
+        // All fallible admission work precedes history/response/page mutations.
+        // URL-origin computation alone cannot stand in for missing creation
+        // context. A rejected response follows the existing terminal failure
+        // path; navigation may already have retired the previous page.
+        let addresses = match crate::page::DocumentAddressState::new(document_url) {
+            Ok(addresses) => addresses,
+            Err(crate::page::DocumentAddressError::UnsupportedDocumentCreationContext) => {
+                self.fail_document("Unsupported document creation context".into());
+                return;
+            }
+        };
+        self.accept_history_document(addresses.document_url());
         self.retire_document_stylesheets();
         self.dom_store.clear();
         self.dom_handle = None;
@@ -39,7 +50,7 @@ impl Tab {
         self.stylesheet_loads.clear();
         self.url = response.final_url.clone();
         self.page.reset_for_navigation();
-        self.page.begin_document(document_url);
+        self.page.begin_document(addresses);
         self.clear_render_orchestration_state();
         self.loading = true;
         self.last_status = Some(format!(
@@ -53,8 +64,25 @@ impl Tab {
         self.poke_redraw();
     }
 
-    pub(super) fn on_html_network_chunk(&mut self, bytes: Vec<u8>, request_id: RequestId) {
+    pub(super) fn on_html_network_chunk(
+        &mut self,
+        url: &str,
+        bytes: Vec<u8>,
+        request_id: RequestId,
+    ) {
         if self.document_load.parse_status != DocumentParseStatus::Pending {
+            return;
+        }
+        // Pending also covers the interval before response admission. Only an
+        // accepted start authorizes feeding this document's parser session.
+        let Some(accepted) = self.document_load.response.as_ref() else {
+            self.fail_document("HTML chunk received before document admission".into());
+            return;
+        };
+        // Producers label chunks with the original requested URL, even after
+        // redirects or same-document URL changes. Preserve that exact provenance.
+        if url != accepted.requested_url.as_str() {
+            self.fail_document("HTML chunk does not match the accepted response".into());
             return;
         }
         self.document_load.bytes_received = self
@@ -77,7 +105,18 @@ impl Tab {
         if self.document_load.parse_status != DocumentParseStatus::Pending {
             return;
         }
-        self.document_load.response = Some(response.clone());
+        let Some(accepted) = self.document_load.response.as_ref() else {
+            self.fail_document("HTML completion received before document admission".into());
+            return;
+        };
+        // HTTP and file producers reuse the exact start snapshot at completion.
+        // Preserve all immutable provenance, not just equivalent URL spelling:
+        // requested/final URL, status, and content type must agree. Completion
+        // cannot admit a document or change its retained URL/origin/history.
+        if accepted != &response {
+            self.fail_document("HTML completion does not match the accepted response".into());
+            return;
+        }
         self.document_load.bytes_received = bytes_received;
         self.send_cmd(CoreCommand::ParseHtmlDone {
             tab_id: self.tab_id,
@@ -85,7 +124,7 @@ impl Tab {
         });
         self.last_status = Some(format!(
             "Document response complete • {}",
-            response_summary(&response, bytes_received)
+            response_summary(accepted, bytes_received)
         ));
         self.poke_redraw();
     }

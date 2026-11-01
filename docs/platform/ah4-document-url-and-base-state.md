@@ -1,5 +1,12 @@
 # AH4: Document URL And Frozen Document Base
 
+Subsequent origin integration: [AH5](ah5-origin-representation-and-same-origin.md)
+extends DocumentAddressState with a retained origin and requires complete,
+side-effect-free preparation before response acceptance. Existing navigation
+reset, failure, publication, and history semantics are preserved. AH4's historical
+origin exclusions below describe its original scope. Opaque file origins define
+identity, not filesystem resource permissions or local-resource enforcement.
+
 Date: 2026-10-30
 Status: implemented; review pending
 Scope: Browser-managed UTF-8 documents, parser-created DOM publication, existing

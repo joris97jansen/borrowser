@@ -1,5 +1,10 @@
 # AH2: Typed URL Parsing, Resolution, And Diagnostics
 
+Subsequent origin implementation: [AH5](ah5-origin-representation-and-same-origin.md)
+adds the separate `BrowserUrl::url_origin()` operation and typed Origin. Parsing,
+URL equality, and existing Debug remain unchanged; historical origin deferrals
+below describe AH2/AH3 scope, not current absence of origins.
+
 Last updated: 2026-10-29
 Status: AH3 explicit-base URL resolution acceptance satisfied; AH4 document integration is documented below
 

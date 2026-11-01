@@ -1,7 +1,7 @@
 # AH1: URL, Origin, And Resource Addressing Architecture Contract
 
 Last updated: 2026-10-24
-Status: architecture contract complete; AH2–AH4 implementation references below
+Status: architecture contract complete; AH2–AH5 implementation references below
 Scope: Milestone AH ownership, semantics, integration boundaries, and evidence
 
 AH1 establishes one logical browser-platform owner for addressing. It changes
@@ -19,6 +19,12 @@ expectations remain unchanged; see AH-URL-001 in the feature-gap tracker. The un
 physical-placement statements below describe AH1's original decision boundary.
 
 ## Reading this contract
+
+Current origin implementation: [AH5](ah5-origin-representation-and-same-origin.md)
+implements typed tuple/opaque origins and retained ordinary response-document
+origins. It resolves the original file-policy decision below with fresh opaque
+identity per new load, without defining filesystem access permissions. Historical
+AH1 unresolved/deferred labels remain evidence of the original boundary.
 
 The following labels separate authority from implementation status:
 

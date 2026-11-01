@@ -51,6 +51,8 @@ pub(super) enum DocumentParseStatus {
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct DocumentLoadState {
+    // Immutable snapshot installed by successful HTML response-start admission.
+    // Completion validates it; Pending alone is not admission.
     pub(super) response: Option<NetworkResponseInfo>,
     pub(super) bytes_received: usize,
     pub(super) parse_status: DocumentParseStatus,
