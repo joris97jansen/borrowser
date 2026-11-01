@@ -527,8 +527,20 @@ Addressing architecture status:
   on navigation, replacement and tab removal using the owning request generation.
   A successfully committed preview remains an active document during parsing
   and after parser failure; an uncommitted response is not reusable.
-- `file:` origin policy remains explicitly unresolved. Navigation remains a
-  Browser consumer. Other URL helpers and
+- AH5 implements [typed origins and same-origin comparison](platform/ah5-origin-representation-and-same-origin.md):
+  normalized tuple origins for http/https/ftp/ws/wss, shareable opaque identity,
+  semantic serialization, privacy-safe Debug, and a selected 31-case pinned WPT
+  origin-serialization lane. Browser retains ordinary http/https/file document
+  origins and prepares complete state before acceptance mutations. Unsupported
+  response contexts fail without binding history or installing address state.
+  HTML chunks/completion require admitted response state; completion validates
+  all immutable response fields and retains the original provenance snapshot.
+  `file:` policy is fresh opaque identity per new load, retained through fragments,
+  publications and same-document traversal. It defines no filesystem resource
+  permissions or future local-resource same-origin enforcement. About inheritance,
+  associated blob entries, and sandboxed creation remain unsupported; blob URL
+  determination implements the actual no-entry fallback only.
+- Navigation remains a Browser consumer. Other URL helpers and
   HTTP/HTTPS/file loading remain documented migration points.
 - Existing loader and diagnostics gaps remain: the file loader treats query or
   fragment text as part of its local path, a cancelled in-flight image may remain
@@ -536,8 +548,8 @@ Addressing architecture status:
   output can contain raw URLs including credentials. AH3's redacted structural
   snapshots do not cover those outputs. AH4 does not resolve these gaps.
 - AH behavior remains pending: normalized resource addressing and identity,
-  inherited/override base contexts and full loading scheduling, stylesheet base provenance, origin determination and
-  same-origin comparison, unified unsupported-capability diagnostics, and
+  inherited/override base contexts and full loading scheduling, stylesheet base provenance,
+  remaining document-creation contexts, unified unsupported-capability diagnostics, and
   wider URL/origin debug/conformance evidence. The current `url` dependency is not
   fully qualified against WHATWG. Neither Milestone AH nor security-policy support is complete;
   AG remains unchanged at nine issues.

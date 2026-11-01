@@ -46,12 +46,267 @@ fn document_addressing_static_selection_matrix() {
     ] {
         let (tab, _) = addressing_tab(&format!("<!doctype html>{markup}"));
         assert_eq!(tab.page.document_url().unwrap().as_str(), ADDRESS_URL);
+        assert_eq!(
+            tab.page.addresses.as_ref().unwrap().document_origin(),
+            &addressing::BrowserUrl::parse(ADDRESS_URL)
+                .unwrap()
+                .url
+                .url_origin()
+        );
         assert_eq!(tab.page.fallback_base_url().unwrap().as_str(), ADDRESS_URL);
         assert_eq!(
             tab.page.active_base_url().unwrap().as_str(),
             expected,
             "{markup}"
         );
+    }
+}
+
+#[test]
+fn document_addressing_file_origin_survives_base_clear_handle_and_rejected_publications() {
+    let file = "file:///tmp/ah5-document.html";
+    let (mut tab, rx) = addressing_tab_with_url(
+        "<!doctype html><base id=b href='https://other.test/'>",
+        file,
+    );
+    let retained = tab
+        .page
+        .addresses
+        .as_ref()
+        .unwrap()
+        .document_origin()
+        .clone();
+    assert!(retained.is_opaque());
+    let base = element_id(tab.page.dom.as_deref().unwrap(), "b");
+    publish_addressing_patches(
+        &mut tab,
+        vec![attributes(base, &[("href", "https://different.test/")])],
+    )
+    .unwrap();
+    assert_eq!(
+        tab.page.addresses.as_ref().unwrap().document_origin(),
+        &retained
+    );
+    let parsed = html::parse_document(
+        "<!doctype html><base href='https://replacement.test/'>",
+        Default::default(),
+    )
+    .unwrap();
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: 1,
+        request_id: tab.nav_gen,
+        publication: no_quirks_patch_publication_from_output(parsed),
+    })
+    .unwrap();
+    assert_eq!(
+        tab.page.addresses.as_ref().unwrap().document_origin(),
+        &retained
+    );
+    let parsed = html::parse_document("<!doctype html><p>clear", Default::default()).unwrap();
+    publish_addressing_patches(
+        &mut tab,
+        std::iter::once(DomPatch::Clear)
+            .chain(
+                parsed
+                    .patches
+                    .into_iter()
+                    .filter(|patch| !matches!(patch, DomPatch::Clear)),
+            )
+            .collect(),
+    )
+    .unwrap();
+    assert_eq!(
+        tab.page.addresses.as_ref().unwrap().document_origin(),
+        &retained
+    );
+    let before = tab.page.addresses.clone();
+    let parsed = html::parse_document("<!doctype html><p>stale", Default::default()).unwrap();
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: 1,
+        request_id: tab.nav_gen - 1,
+        publication: no_quirks_patch_publication_from_output(parsed),
+    })
+    .unwrap();
+    assert_eq!(tab.page.addresses, before);
+    assert!(
+        publish_addressing_patches(
+            &mut tab,
+            vec![DomPatch::AppendText {
+                key: PatchKey(99999),
+                text: "invalid".into()
+            }]
+        )
+        .is_err()
+    );
+    assert_eq!(tab.page.addresses, before);
+    assert_eq!(
+        tab.page.addresses.as_ref().unwrap().document_origin(),
+        &retained
+    );
+    assert_eq!(retained.serialize(), "null");
+    assert!(
+        tab.page
+            .document_address_debug_snapshot()
+            .unwrap()
+            .contains("document_origin: Origin { kind: \"opaque\" }")
+    );
+    rx.try_iter().for_each(drop);
+}
+
+#[test]
+fn document_addressing_unsupported_response_never_partially_accepts() {
+    use super::super::state::DocumentParseStatus;
+    for unsupported in [
+        "ftp://host/a",
+        "ws://host/a",
+        "wss://host/a",
+        "about:blank?x#f",
+        "about:srcdoc",
+        "data:text/html,secret",
+        "blob:https://host/id",
+        "javascript:secret",
+        "custom-private:secret",
+    ] {
+        for transition in ["new", "refresh", "traversal"] {
+            let file = "file:///tmp/ah5-admission.html";
+            let (mut tab, rx) = addressing_tab_with_url("<!doctype html><p>previous", file);
+            tab.activate_link("#one");
+            tab.activate_link("#two");
+            match transition {
+                "new" => tab.navigate_to_new("https://request.test/new".into()),
+                "refresh" => tab.refresh(),
+                _ => {
+                    tab.navigate_to_new("https://request.test/other".into());
+                    tab.go_back();
+                }
+            }
+            // Navigation has already retired the old page. Rejection must not
+            // restore it or rebind any historical document associations.
+            assert!(tab.page.addresses.is_none());
+            assert!(tab.page.dom.is_none());
+            assert!(tab.document_load.response.is_none());
+            let history = tab.history.clone();
+            let history_index = tab.history_index;
+            let toolbar = tab.url.clone();
+            let handle = tab.dom_handle;
+            let version = tab.dom_version;
+            let requested = tab.history[history_index].url.clone();
+            let request_id = tab.nav_gen;
+            rx.try_iter().for_each(drop);
+            let rejected = core_types::NetworkResponseInfo {
+                requested_url: requested.clone(),
+                final_url: unsupported.into(),
+                status_code: Some(200),
+                content_type: Some("text/html".into()),
+            };
+            tab.on_core_event(CoreEvent::NetworkStart {
+                tab_id: 1,
+                request_id,
+                stylesheet_slot_id: None,
+                kind: ResourceKind::Html,
+                response: rejected.clone(),
+            })
+            .unwrap();
+            assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Failed);
+            assert!(!tab.loading);
+            assert_eq!(
+                tab.last_status.as_deref(),
+                Some("Unsupported document creation context")
+            );
+            assert!(tab.document_load.response.is_none());
+            assert!(tab.page.addresses.is_none());
+            assert!(tab.page.dom.is_none());
+            assert_eq!(tab.dom_handle, handle);
+            assert_eq!(tab.dom_version, version);
+            assert_eq!(tab.url, toolbar);
+            assert_eq!(tab.history_index, history_index);
+            assert_eq!(tab.history.len(), history.len());
+            for (current, previous) in tab.history.iter().zip(&history) {
+                assert_eq!(current.url, previous.url);
+                match (&current.document_state, &previous.document_state) {
+                    (Some(a), Some(b)) => assert!(a.is_same(b)),
+                    (None, None) => {}
+                    _ => panic!("admission changed a history association"),
+                }
+            }
+            let commands: Vec<_> = rx.try_iter().collect();
+            assert_eq!(commands.len(), 1);
+            assert!(
+                matches!(commands[0], CoreCommand::CancelRequest { request_id: id, .. } if id == request_id)
+            );
+            // Failure is terminal even if the next start would be supported.
+            let supported = core_types::NetworkResponseInfo {
+                final_url: requested.clone(),
+                ..rejected
+            };
+            tab.on_core_event(CoreEvent::NetworkStart {
+                tab_id: 1,
+                request_id,
+                stylesheet_slot_id: None,
+                kind: ResourceKind::Html,
+                response: supported.clone(),
+            })
+            .unwrap();
+            tab.on_core_event(CoreEvent::NetworkChunk {
+                tab_id: 1,
+                request_id,
+                stylesheet_slot_id: None,
+                kind: ResourceKind::Html,
+                url: requested,
+                bytes: b"ignored".to_vec(),
+            })
+            .unwrap();
+            tab.on_core_event(CoreEvent::NetworkDone {
+                tab_id: 1,
+                request_id,
+                stylesheet_slot_id: None,
+                kind: ResourceKind::Html,
+                response: supported,
+                bytes_received: 7,
+            })
+            .unwrap();
+            let parsed =
+                html::parse_document("<!doctype html><p>late", Default::default()).unwrap();
+            assert!(
+                tab.on_core_event(CoreEvent::DomPatchUpdate {
+                    tab_id: 1,
+                    request_id,
+                    publication: no_quirks_patch_publication_from_output(parsed)
+                })
+                .is_err()
+            );
+            assert!(tab.page.addresses.is_none());
+            assert!(tab.document_load.response.is_none());
+            assert_eq!(
+                tab.last_status.as_deref(),
+                Some("Unsupported document creation context")
+            );
+            assert!(rx.try_recv().is_err());
+            // Only a fresh navigation generation can recover.
+            tab.navigate_to_new("https://recovery.test/".into());
+            tab.on_core_event(CoreEvent::NetworkStart {
+                tab_id: 1,
+                request_id: tab.nav_gen,
+                stylesheet_slot_id: None,
+                kind: ResourceKind::Html,
+                response: core_types::NetworkResponseInfo {
+                    requested_url: "https://recovery.test/".into(),
+                    final_url: "https://recovery.test/".into(),
+                    status_code: Some(200),
+                    content_type: None,
+                },
+            })
+            .unwrap();
+            assert_eq!(
+                tab.page
+                    .addresses
+                    .as_ref()
+                    .unwrap()
+                    .document_origin()
+                    .serialize(),
+                "https://recovery.test"
+            );
+        }
     }
 }
 

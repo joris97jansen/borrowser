@@ -1,0 +1,226 @@
+{
+  "upstream_revision": "c48d58747e1f211527fb695fd60548a997fae617",
+  "upstream_path": "url/resources/urltestdata.json",
+  "sha256": "81e85fd3c199c08ef9c34cf651b3580eeedd080316493bfaf277a6b5ff8cf652",
+  "license_sha256": "5fac07febb0e2a97fb0d7b0def149ec08b642e1ba4b9c345283ab1cbd2af6570",
+  "standard_revision": "845bafca22fb0c5a42c4bf384a9bdea525a2f10d",
+  "cases": [
+    {
+      "id": "origin-3",
+      "index": 3,
+      "input": "https://test:@test",
+      "base": null,
+      "rationale": "Empty password does not enter a tuple origin"
+    },
+    {
+      "id": "origin-4",
+      "index": 4,
+      "input": "https://:@test",
+      "base": null,
+      "rationale": "Empty userinfo does not enter a tuple origin"
+    },
+    {
+      "id": "origin-47",
+      "index": 47,
+      "input": "http://é@é",
+      "base": null,
+      "rationale": "Unicode credentials do not enter a tuple origin"
+    },
+    {
+      "id": "origin-57",
+      "index": 57,
+      "input": "ws://a@b\\c",
+      "base": null,
+      "rationale": "WebSocket origin uses the parsed host, not credential or path text"
+    },
+    {
+      "id": "origin-81",
+      "index": 81,
+      "input": "ftp:/example.com/",
+      "base": "http://example.org/foo/bar",
+      "rationale": "FTP special parsing supplies tuple components"
+    },
+    {
+      "id": "origin-91",
+      "index": 91,
+      "input": "ws:/example.com/",
+      "base": "http://example.org/foo/bar",
+      "rationale": "WS special parsing supplies tuple components"
+    },
+    {
+      "id": "origin-92",
+      "index": 92,
+      "input": "wss:/example.com/",
+      "base": "http://example.org/foo/bar",
+      "rationale": "WSS special parsing supplies tuple components"
+    },
+    {
+      "id": "origin-93",
+      "index": 93,
+      "input": "data:/example.com/",
+      "base": "http://example.org/foo/bar",
+      "rationale": "Data URL syntax does not create a tuple origin"
+    },
+    {
+      "id": "origin-104",
+      "index": 104,
+      "input": "data:example.com/",
+      "base": "http://example.org/foo/bar",
+      "rationale": "Opaque data origin without an authority"
+    },
+    {
+      "id": "origin-112",
+      "index": 112,
+      "input": "data:text/html,test#test",
+      "base": "http://example.org/foo/bar",
+      "rationale": "Data fragments do not enter semantic serialization"
+    },
+    {
+      "id": "origin-195",
+      "index": 195,
+      "input": "ftp://foo:21/",
+      "base": null,
+      "rationale": "FTP default port is omitted"
+    },
+    {
+      "id": "origin-196",
+      "index": 196,
+      "input": "ftp://foo:80/",
+      "base": null,
+      "rationale": "FTP nondefault port is retained"
+    },
+    {
+      "id": "origin-199",
+      "index": 199,
+      "input": "ws://foo:80/",
+      "base": null,
+      "rationale": "WS default port is omitted"
+    },
+    {
+      "id": "origin-200",
+      "index": 200,
+      "input": "ws://foo:81/",
+      "base": null,
+      "rationale": "WS nondefault port is retained"
+    },
+    {
+      "id": "origin-201",
+      "index": 201,
+      "input": "ws://foo:443/",
+      "base": null,
+      "rationale": "WS does not treat the WSS default as its own"
+    },
+    {
+      "id": "origin-203",
+      "index": 203,
+      "input": "wss://foo:80/",
+      "base": null,
+      "rationale": "WSS does not treat the WS default as its own"
+    },
+    {
+      "id": "origin-205",
+      "index": 205,
+      "input": "wss://foo:443/",
+      "base": null,
+      "rationale": "WSS default port is omitted"
+    },
+    {
+      "id": "origin-415",
+      "index": 415,
+      "input": "about:/../",
+      "base": null,
+      "rationale": "About URL origin is opaque independently of document inheritance"
+    },
+    {
+      "id": "origin-548",
+      "index": 548,
+      "input": "ftp://%e2%98%83",
+      "base": null,
+      "rationale": "FTP uses canonical IDNA host serialization"
+    },
+    {
+      "id": "origin-776",
+      "index": 776,
+      "input": "blob:https://example.com:443/",
+      "base": null,
+      "rationale": "Blob HTTPS no-entry fallback normalizes default port"
+    },
+    {
+      "id": "origin-777",
+      "index": 777,
+      "input": "blob:http://example.org:88/",
+      "base": null,
+      "rationale": "Blob HTTP no-entry fallback retains nondefault port"
+    },
+    {
+      "id": "origin-778",
+      "index": 778,
+      "input": "blob:d3958f5c-0777-0845-9dcf-2cb28783acaf",
+      "base": null,
+      "rationale": "Blob invalid embedded URL is opaque"
+    },
+    {
+      "id": "origin-779",
+      "index": 779,
+      "input": "blob:",
+      "base": null,
+      "rationale": "Empty blob path is opaque"
+    },
+    {
+      "id": "origin-781",
+      "index": 781,
+      "input": "blob:blob:",
+      "base": null,
+      "rationale": "Nested empty blob is opaque"
+    },
+    {
+      "id": "origin-782",
+      "index": 782,
+      "input": "blob:blob:https://example.org/",
+      "base": null,
+      "rationale": "Nested blob with HTTPS payload does not recurse"
+    },
+    {
+      "id": "origin-784",
+      "index": 784,
+      "input": "blob:about:blank",
+      "base": null,
+      "rationale": "Blob about payload is opaque"
+    },
+    {
+      "id": "origin-786",
+      "index": 786,
+      "input": "blob:ftp://host/path",
+      "base": null,
+      "rationale": "Blob FTP payload cannot use tuple fallback"
+    },
+    {
+      "id": "origin-787",
+      "index": 787,
+      "input": "blob:ws://example.org/",
+      "base": null,
+      "rationale": "Blob WS payload cannot use tuple fallback"
+    },
+    {
+      "id": "origin-788",
+      "index": 788,
+      "input": "blob:wss://example.org/",
+      "base": null,
+      "rationale": "Blob WSS payload cannot use tuple fallback"
+    },
+    {
+      "id": "origin-790",
+      "index": 790,
+      "input": "blob:http%3a//example.org/",
+      "base": null,
+      "rationale": "Blob fallback does not percent-decode an embedded scheme"
+    },
+    {
+      "id": "origin-926",
+      "index": 926,
+      "input": "data://example.com:8080/pathname?search#hash",
+      "base": null,
+      "rationale": "A host-shaped data URL still has an opaque origin"
+    }
+  ]
+}

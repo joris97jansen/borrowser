@@ -90,10 +90,14 @@ HTML preprocessing and absolute-first/base-fallback behavior. Other Browser/GFX
 URL helpers, string transport, HTTP/HTTPS/file loading, redirects, and navigation
 remain documented migration points using the same published backend.
 The AH scheme matrix describes future addressing capability separately from
-current transport. `file:` origin policy remains explicitly unresolved, and
-navigation stays a Browser consumer without a new AH identity abstraction.
-Document bases, origins, resource identity, and wider AH implementation remain
-pending in the [feature-gap tracker](../engine-feature-gap-tracker.md).
+current transport. AH4 owns document URL/frozen-base lifetime. [AH5](../platform/ah5-origin-representation-and-same-origin.md)
+adds addressing-owned tuple/opaque origins and Browser-retained document origins.
+Complete ordinary http/https/file document state is prepared before response
+acceptance; unsupported creation contexts fail through the existing lifecycle.
+File origins are fresh opaque values per new load, retained for same-document
+operations; this defines no filesystem permissions or security enforcement.
+Origins, URL equality, and history associations remain distinct. Resource
+identity and wider AH work remain pending in the [feature-gap tracker](../engine-feature-gap-tracker.md).
 
 ---
 

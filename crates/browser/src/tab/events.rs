@@ -15,7 +15,7 @@ impl Tab {
             CoreEvent::NetworkStart {
                 tab_id,
                 request_id,
-                stylesheet_slot_id: _,
+                stylesheet_slot_id: None,
                 kind: ResourceKind::Html,
                 response,
             } if self.is_current(tab_id, request_id) => {
@@ -25,19 +25,19 @@ impl Tab {
             CoreEvent::NetworkChunk {
                 tab_id,
                 request_id,
-                stylesheet_slot_id: _,
+                stylesheet_slot_id: None,
                 kind: ResourceKind::Html,
-                url: _,
+                url,
                 bytes,
                 ..
             } if self.is_current(tab_id, request_id) => {
-                self.on_html_network_chunk(bytes, request_id);
+                self.on_html_network_chunk(&url, bytes, request_id);
             }
 
             CoreEvent::NetworkDone {
                 tab_id,
                 request_id,
-                stylesheet_slot_id: _,
+                stylesheet_slot_id: None,
                 kind: ResourceKind::Html,
                 response,
                 bytes_received,
@@ -48,7 +48,7 @@ impl Tab {
             CoreEvent::NetworkError {
                 tab_id,
                 request_id,
-                stylesheet_slot_id: _,
+                stylesheet_slot_id: None,
                 kind: ResourceKind::Html,
                 url,
                 error_kind,
