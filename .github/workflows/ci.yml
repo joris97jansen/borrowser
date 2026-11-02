@@ -181,11 +181,14 @@ jobs:
       RUST_BACKTRACE: 1
       BORROWSER_CHROMIUM_EXECUTABLE: /opt/borrowser-ag2/chrome-linux64/chrome
       AG2_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      AG2_BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          # pull_request events supply the synthetic integration commit.
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Record and verify native runner environment
@@ -197,7 +200,15 @@ jobs:
           echo "TMPDIR=$RUNNER_TEMP/ag2-build-tmp" >> "$GITHUB_ENV"
           exec > >(tee "$AG2_EVIDENCE/environment.log") 2>&1
           printf 'run=%s/%s/actions/runs/%s attempt=%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
-          printf 'workflow_sha=%s head_sha=%s checkout_sha=%s\n' "$GITHUB_SHA" "$AG2_HEAD_SHA" "$(git rev-parse HEAD)"
+          printf 'event_sha=%s checkout_sha=%s checkout_tree=%s\n' "$GITHUB_SHA" "$(git rev-parse HEAD)" "$(git rev-parse 'HEAD^{tree}')"
+          printf 'pr_head_sha=%s pr_base_sha=%s\n' "$AG2_HEAD_SHA" "$AG2_BASE_SHA"
+          git show -s --format='checkout_parents=%P' HEAD
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          rustup show active-toolchain
+          rustc -vV
+          cargo -vV
+          test "$(rustc -vV | sed -n 's/^host: //p')" = x86_64-unknown-linux-gnu
           printf 'runner_os=%s runner_arch=%s image=%s image_version=%s\n' "$RUNNER_OS" "$RUNNER_ARCH" "$ImageOS" "$ImageVersion"
           uname -a
           cat /etc/os-release
@@ -279,8 +290,15 @@ jobs:
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: env TMPDIR=${{ runner.temp }}/ag2-profiles
         run: |
           set -euo pipefail
+          set +e
           cargo test -p borrowser-conformance --locked native_ -- --nocapture \
             2>&1 | tee "$AG2_EVIDENCE/native.log"
+          AG2_NATIVE_PIPE_STATUS=("${PIPESTATUS[@]}")
+          set -e
+          printf 'cargo_exit=%s tee_exit=%s\n' "${AG2_NATIVE_PIPE_STATUS[0]}" "${AG2_NATIVE_PIPE_STATUS[1]}" > "$AG2_EVIDENCE/native-status.txt"
+          # Preserve Cargo's original failure; evidence capture cannot turn it green.
+          if test "${AG2_NATIVE_PIPE_STATUS[0]}" -ne 0; then exit "${AG2_NATIVE_PIPE_STATUS[0]}"; fi
+          exit "${AG2_NATIVE_PIPE_STATUS[1]}"
 
       - name: Qualify real Chromium and complete conformance suite
         env:
@@ -383,7 +401,7 @@ jobs:
           # databases, dumps or other browser-created contents, including hidden files.
           mkdir -p "$RUNNER_TEMP/ag2-upload"
           for name in environment.log browser-install.log chromium-reference.json archive.sha256 \
-            build.log clippy.log native.log conformance.log captures.json capture.stderr comparison.json comparison.stderr \
+            build.log clippy.log native.log native-status.txt conformance.log captures.json capture.stderr comparison.json comparison.stderr \
             remaining-artifacts.log result.txt processes.txt kernel.log profile-files.txt; do
             if test -f "$AG2_EVIDENCE/$name"; then
               size=$(wc -c < "$AG2_EVIDENCE/$name")
@@ -401,7 +419,30 @@ jobs:
           import os
           import sys
           with open(sys.argv[1], "rb") as source:
-              source.seek(max(0, os.fstat(source.fileno()).st_size - 1048576))
+              size = os.fstat(source.fileno()).st_size
+              if os.path.basename(sys.argv[1]) == "native.log":
+                  # Keep causal records even when the native log's tail omits them.
+                  # Only complete extraction is acceptable qualification evidence.
+                  import json
+                  directory = os.path.dirname(sys.argv[2])
+                  remaining, retained, complete = size, 0, True
+                  with open(os.path.join(directory, "ag41-witness.log"), "wb") as witness:
+                      while remaining:
+                          line = source.readline(min(8192, remaining))
+                          if not line:
+                              complete = False
+                              break
+                          remaining -= len(line)
+                          if b"AG41_" in line or b"aws::command::tests::native_procfs_" in line:
+                              if retained + len(line) > 1048576 or not line.endswith(b"\n"):
+                                  complete = False
+                                  break
+                              witness.write(line)
+                              retained += len(line)
+                  with open(os.path.join(directory, "ag41-witness-status.json"), "w") as status:
+                      json.dump({"complete": complete and remaining == 0,
+                                 "source_bytes": size, "retained_bytes": retained}, status)
+              source.seek(max(0, size - 1048576))
               data = source.read(1048576)
           with open(sys.argv[2], "wb") as destination:
               destination.write(data)
@@ -504,10 +545,12 @@ jobs:
         run: make conformance-ci
 
       - name: Run tests (default HTML5 build)
-        run: cargo test --workspace --lib --bins --tests --examples --locked
+        # AG4.1's red native qualification runs in the required AG2 native step.
+        # Filter only its duplicate wrappers here; keep all other tests enabled.
+        run: cargo test --workspace --lib --bins --tests --examples --locked -- --skip aws::command::tests::native_procfs_
 
       - name: Run tests (explicit html5 feature lane)
-        run: cargo test --workspace --lib --bins --tests --examples --features html5 --locked
+        run: cargo test --workspace --lib --bins --tests --examples --features html5 --locked -- --skip aws::command::tests::native_procfs_
 
       - name: Run canonical HTML parser conformance observations
         run: cargo test -p html --test html5_parser_conformance --features parser-conformance --locked

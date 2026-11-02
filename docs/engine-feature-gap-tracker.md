@@ -1391,6 +1391,29 @@ implementation, not to a newly successful macOS CI run.
   deploying AWS resources. AG remains at nine issues. See the
   [AG4 contract](conformance/ag4-disposable-aws-chromium-runner.md).
 
+- AG4.1 (#1446) is an implemented, natively qualified Linux command-owner
+  correctness correction. For raw `ENOENT`/`ESRCH` at individual proc-stat open/read
+  boundaries, the observer skips only that entry and continues the existing
+  bounded scan under its deadline; this does not establish group quiescence.
+  Genuine failures remain sticky, and ownership, signaling, EOF, finalization and
+  reaping requirements are unchanged. This is a correctness follow-up to the
+  original nine-issue AG scope recorded above, with no new browser-engine
+  capability and no reopening of completed AG4 #1387. The independently reviewed
+  [native red witness, run 41430207033/1](https://github.com/joris97jansen/borrowser/actions/runs/41430207033),
+  demonstrated the two intended real-kernel ESRCH classification failures.
+  The unchanged witnesses passed after the correction in commit
+  `2b2144956563a5c0eb60c2c7344cc35fb20e4e6b`, tree
+  `77a5149b4942bd350cd871abecec6fdea20a2c90`, qualified by
+  [native green run 41447791680/1](https://github.com/joris97jansen/borrowser/actions/runs/41447791680).
+  Real ESRCH remained recorded; ownership completed unpoisoned, a surviving group
+  member returned `Executing`, and unwind teardown passed. All 26 existing AWS
+  ownership scenarios, Chromium qualification and all applicable executed CI jobs
+  passed. The original AH6 PR #1445 failure's syscall and PID remain unidentified;
+  this evidence establishes neither its cause nor AH6 completion or merge-readiness.
+  See the [AG4.1 contract and evidence record](conformance/ag4-disposable-aws-chromium-runner.md#ag41-linux-procfs-qualification-2026-11-02).
+  Final documentation-candidate CI, architecture/diff review and closeability
+  review remain required; this record does not claim merge or issue closure.
+
 - A focused pinned WPT-style import/reference path is available. Broad WPT
   compliance, browser compatibility and general rendering conformance remain
   gaps. See the
