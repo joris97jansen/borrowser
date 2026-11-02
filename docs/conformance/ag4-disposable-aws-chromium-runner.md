@@ -534,6 +534,38 @@ source changes require review of whether fresh qualification is necessary. If a
 future qualification misses the margin, retain the failure and review it without
 expanding the five-second authority.
 
+### Linux proc-stat observation and disappearance
+
+The [Linux command observer](../../crates/conformance/src/aws/command/linux.rs)
+examines numeric entries in `/proc`, including processes unrelated to the owned
+command group. Raw `ENOENT` or `ESRCH` while opening an individual
+`/proc/<pid>/stat` or reading its already-opened descriptor means that observation
+target disappeared. Only that entry is skipped. The observer continues the same
+bounded scan; disappearance supplies neither process-group membership nor proof
+of group quiescence. Successfully parsed stat data supplies membership and
+execution state for the remaining observed entries.
+
+The existing limits remain 65,536 directory entries, 64 observed group members
+and 8,192 stat bytes. `Executing` and `NoExecuting` require completion of the scan
+and its final deadline check. Phase-deadline exhaustion remains `DeadlineReached`,
+never quiescence. Directory open/iteration errors, permission failures, other I/O
+errors, malformed/incomplete/oversize stat data and exceeded observation bounds
+retain their failure semantics. The disappearance predicate applies only to the
+two per-PID stat operations; signaling and root/adopted-child waits retain their
+separate error and completion rules, including the native reaper's `ECHILD`
+completion check.
+
+Procfs observation does not grant ownership or signaling authority. The unreaped
+root still reserves the owned group identity throughout all PGID observation and
+signaling. Successful signal delivery alone does not establish cleanup; the
+existing group-signal `ESRCH` handling is also separate from skipping one procfs
+entry. Finalization still requires root exit, both pipe EOFs and complete
+`NoExecuting` observation before root reaping, followed by native descendant
+reaping within the original cleanup authority. Genuine cleanup failures remain
+sticky and poison the owner even if later observation or reaping succeeds.
+The [AG4.1 qualification record](#ag41-linux-procfs-qualification-2026-11-02)
+documents the deterministic regression and the correction's evidence limits.
+
 ### Authentication-safe transport diagnostics
 
 All EICE/OpenSSH/AWS-CLI stderr follows: **bounded capture → authentication
@@ -1480,3 +1512,122 @@ credentials, transport, recovery or cleanup. Its
 [native Linux harness qualification](ag7-focused-external-tests-and-references.md#qualification-record-2026-10-21)
 is recorded in the AG7 contract; no new live AWS qualification is supplied.
 Historical qualification records above retain their original scope.
+
+## AG4.1 Linux procfs qualification: 2026-11-02
+
+[AG4.1 #1446](https://github.com/joris97jansen/borrowser/issues/1446) is an
+implemented, natively qualified Linux command-owner correctness correction in
+[draft PR #1447](https://github.com/joris97jansen/borrowser/pull/1447). It adds no
+browser-engine capability and does not reopen historical AG4 #1387 completion.
+The independently demonstrated defect was operation-specific: the original
+observer tolerated `NotFound` at stat open but propagated read errors. A real
+`ESRCH` after successful open could therefore become a sticky cleanup failure.
+The correction changes only Linux stat-open/read disappearance classification;
+it does not suppress genuine observation, signaling or reaping failures.
+
+The [private Linux regression fixtures](../../crates/conformance/src/aws/command/linux/tests.rs)
+use a supervising process with exact `Child` handles for unrelated auxiliary A,
+isolated observer O and, in the member control, live group leader G. Each fixture
+has its own process group. O enters the real `Owner` while childless; only that
+owner creates and reaps command root R and handles its adopted descendants. The
+supervisor never owns or reaps R. A private, test-only, thread-local hook targets
+A's exact PID after successful stat open. Through private control sockets it
+confirms that the supervisor released and reaped A before the original descriptor
+is read. A second hook records the immutable real read result; neither hook
+injects errno, replaces the descriptor or changes enumeration. The handshake
+uses the observer's existing absolute scan deadline and must be consumed exactly
+once. Fixture teardown is bounded and verified separately.
+
+The same fixtures and assertions demonstrate both sides of the correction:
+
+- `native_procfs_disappearance_after_open` requires real kernel `ESRCH` in the
+  owner's first relevant observation, with successful root exit already confirmed.
+  The red witness matched that error to the observer result, primary failure,
+  retained cleanup failure and poisoned owner despite subsequent physical
+  finalization. The green witness retains the real `ESRCH` record, completes
+  ownership unpoisoned, and passes command reuse and `finish()` assertions.
+- `native_procfs_disappearance_preserves_member` keeps unrelated G alive through
+  observation. Red returns the matching `ESRCH` before completing classification;
+  green completes the scan and returns `Executing`. Only afterward does the
+  supervisor release and reap G. Disappearance is never accepted as quiescence.
+- `native_procfs_fixture_teardown_on_unwind` catches the intended panic after all
+  three helpers are ready, before starting owner execution, and requires three
+  successful exact-child reaps. It passes in both runs. The owner's separate
+  root/native-reap milestones verify production finalization; its root fixture
+  creates no adopted descendant. Existing ownership scenarios cover actual
+  descendant cleanup, observation/signaling failures, deadlines and stderr.
+
+A failed test alone is not red evidence. Missing or repeated hooks, unexpected
+kernel results (including failure to observe `ESRCH`), synchronization/helper
+failures, exhausted deadlines or incomplete teardown are inconclusive. Acceptance
+requires the complete causal records and verified teardown. Synthetic tests of
+`stat_disappeared` are separate: they accept raw `ENOENT`/`ESRCH`, reject `EACCES`,
+`EPERM`, `EIO`, `EBADF`, `EINVAL`, `ECHILD` and `EINTR`, and reject `NotFound`
+without a raw errno. They do not stand in for the real-kernel witness.
+
+Both runs used native Ubuntu 24.04.5 x86-64 and Rust/Cargo 1.92.0. Their unchanged
+base was `bd4fbcf3eb42c9e18e360efc7f4a638650db46aa`. The existing AG2 job used
+the same invocation, with the regression fixtures, wrappers, hooks, assertions
+and workflow byte-identical between red and green:
+
+```sh
+cargo test -p borrowser-conformance --locked native_ -- --nocapture
+```
+
+| Identity/result | Native red witness | Native green witness |
+| --- | --- | --- |
+| PR head commit | `bf88b36d34c2a02dbf456411e6383bf1687988c7` | `2b2144956563a5c0eb60c2c7344cc35fb20e4e6b` |
+| PR head and tested tree | `46e4696c04c6499886f0cef312f007276e830aa1` | `77a5149b4942bd350cd871abecec6fdea20a2c90` |
+| Actual synthetic merge checkout | `b34c78c50d0e0ae0e7a426dc91420e599c958209` | `feafa77460f10527ad2c9e11356e88293cf75c12` |
+| Workflow run / attempt | [41430207033 / 1](https://github.com/joris97jansen/borrowser/actions/runs/41430207033) | [41447791680 / 1](https://github.com/joris97jansen/borrowser/actions/runs/41447791680) |
+| AG2 native job | [125226581312](https://github.com/joris97jansen/borrowser/actions/runs/41430207033/job/125226581312) | [125285120042](https://github.com/joris97jansen/borrowser/actions/runs/41447791680/job/125285120042) |
+| Cargo / tee exit | 101 / 0 | 0 / 0 |
+| Native binary: passed / failed / existing ignored | 14 / 2 / 2 | 16 / 0 / 2 |
+
+These are synthetic PR integration checkouts, not head-only testing; each tested
+tree equals its recorded PR-head tree. The red witness was independently reviewed
+as **VALID RED WITNESS**. Green auxiliary PIDs 3818 and 3819 each produced real
+`ESRCH` after successful open and exact supervisor reap; group 3828 remained alive
+and returned `Executing`. The first-observation owner result was successful and
+unpoisoned, with both EOFs, pre-reap group confirmation, root/native reaping and
+owner quiescence recorded. The matching native CLI integration test also passed.
+The complete green conformance suite passed both classification tests and all 26
+existing AWS ownership scenarios. Native Chromium, real-Chromium qualification
+and artifact-cleanup verification passed. The full green workflow passed all 12
+executed jobs; the separate historical AG4 proxy-timing job was inapplicable and
+skipped. No new 32-sample proxy-timing qualification is claimed.
+
+The original downloaded archive SHA-256 values are:
+
+- Red artifact `13134167521`:
+  `a256073cdfe4fd3ee9ca50305a4a198d015007600059bc2c159e506b0ed5099e`.
+- Green artifact `13143023547`:
+  `78eb60ead3a7420fa3abfa5ebe13ce49f5417282d1b8c37dfe2360ed9a951666`.
+
+Both archives match their recorded GitHub digests and member hashes. Green's
+complete 46,010-byte native log and 4,228-byte literal witness extraction are
+retained; all 513 native-log lines match the hosted job log. Durable evidence is
+under `~/.local/share/borrowser/reviews/ag4/`:
+
+- Red: `ag41-procfs-native-witness-bf88b36d34c2a02dbf456411e6383bf1687988c7/`.
+- Green: `ag41-procfs-native-green-2b2144956563a5c0eb60c2c7344cc35fb20e4e6b/`.
+
+The green store retains the red archive as well as the green archive, raw native
+job log, environment/test/status records, full workflow logs, exact
+`red-to-green.patch`, `red-green-comparison.json`, `native-artifact-manifest.json`
+and `evidence-sha256.json`. No required causal evidence was truncated. The green
+verdict is **VALID GREEN WITNESS** for this specific observer correction; it is
+not a fresh live-AWS or corporate EICE qualification.
+
+The original intermittent hosted `timeout-stderr` cleanup failure on AH6
+[PR #1445](https://github.com/joris97jansen/borrowser/pull/1445) triggered the
+investigation, but its exact syscall and PID remain unidentified. The separate
+observer defect, native red witness and native green witness do not establish
+that failure's cause, demonstrate an AH6 regression or guarantee that all future
+AWS command-owner failures are resolved. AH6 and its acceptance status are unchanged.
+
+This documentation update reports the qualified implementation tree above; it
+does not make a later documentation tree a newly qualified source identity.
+Final diff/architecture review, ordinary CI on the final candidate and PR
+closeability review remain required before merge or AG4.1 closure. Historical
+AG4 completion and qualification records retain their original scope.
