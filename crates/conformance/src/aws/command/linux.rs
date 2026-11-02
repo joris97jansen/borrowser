@@ -4,6 +4,8 @@ use std::{
     io::Read,
     time::{Duration, Instant},
 };
+#[cfg(all(test, target_arch = "x86_64"))]
+pub(super) mod tests;
 pub(super) struct Scope {
     old: i32,
 }
@@ -80,15 +82,20 @@ pub(super) fn group_running(group: i32, deadline: Instant) -> Result<GroupObserv
         {
             continue;
         }
+        #[cfg(all(test, target_arch = "x86_64"))]
+        let pid = entry.file_name().to_str().unwrap().parse::<i32>().unwrap();
         let file = match fs::File::open(entry.path().join("stat")) {
             Ok(f) => f,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
             Err(e) => return Err(e.to_string()),
         };
+        #[cfg(all(test, target_arch = "x86_64"))]
+        tests::stat_opened(pid, deadline);
         let mut s = String::new();
-        file.take(8193)
-            .read_to_string(&mut s)
-            .map_err(|e| e.to_string())?;
+        let read = file.take(8193).read_to_string(&mut s);
+        #[cfg(all(test, target_arch = "x86_64"))]
+        tests::stat_read_finished(pid, &read);
+        read.map_err(|e| e.to_string())?;
         if s.len() > 8192 {
             return Err("truncated proc stat".into());
         }

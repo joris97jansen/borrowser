@@ -69,7 +69,7 @@ fn cleanup_observation_deadline_is_not_quiescence() {
     );
 }
 
-fn assert_authority_order(owner: &Owner) {
+pub(super) fn assert_authority_order(owner: &Owner) {
     assert_eq!(
         owner
             .timing
@@ -104,6 +104,24 @@ fn assert_authority_order(owner: &Owner) {
     assert!(root_reaped <= event("descendant_reap_started"));
     assert!(event("descendants_reaped") <= event("owner_quiescent"));
     assert!(event("owner_quiescent") < event("cleanup_started") + CLEANUP_LIMIT);
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn native_procfs_disappearance_after_open() {
+    super::linux::tests::supervise(false);
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn native_procfs_disappearance_preserves_member() {
+    super::linux::tests::supervise(true);
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn native_procfs_fixture_teardown_on_unwind() {
+    super::linux::tests::teardown_on_unwind();
 }
 
 // Each command owner runs in an isolated process: no test-harness child/reaper races.
