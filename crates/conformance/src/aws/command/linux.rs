@@ -58,6 +58,9 @@ impl Drop for Scope {
         unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, self.old, 0, 0, 0) };
     }
 }
+fn stat_disappeared(error: &std::io::Error) -> bool {
+    matches!(error.raw_os_error(), Some(libc::ENOENT) | Some(libc::ESRCH))
+}
 pub(super) fn group_running(group: i32, deadline: Instant) -> Result<GroupObservation, String> {
     if Instant::now() >= deadline {
         return Ok(GroupObservation::DeadlineReached);
@@ -86,7 +89,7 @@ pub(super) fn group_running(group: i32, deadline: Instant) -> Result<GroupObserv
         let pid = entry.file_name().to_str().unwrap().parse::<i32>().unwrap();
         let file = match fs::File::open(entry.path().join("stat")) {
             Ok(f) => f,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) if stat_disappeared(&e) => continue,
             Err(e) => return Err(e.to_string()),
         };
         #[cfg(all(test, target_arch = "x86_64"))]
@@ -95,7 +98,11 @@ pub(super) fn group_running(group: i32, deadline: Instant) -> Result<GroupObserv
         let read = file.take(8193).read_to_string(&mut s);
         #[cfg(all(test, target_arch = "x86_64"))]
         tests::stat_read_finished(pid, &read);
-        read.map_err(|e| e.to_string())?;
+        match read {
+            Ok(_) => {}
+            Err(e) if stat_disappeared(&e) => continue,
+            Err(e) => return Err(e.to_string()),
+        }
         if s.len() > 8192 {
             return Err("truncated proc stat".into());
         }
@@ -126,4 +133,37 @@ pub(super) fn group_running(group: i32, deadline: Instant) -> Result<GroupObserv
     } else {
         GroupObservation::NoExecuting
     })
+}
+
+#[cfg(test)]
+mod stat_classification_tests {
+    use super::stat_disappeared;
+
+    #[test]
+    fn proc_stat_disappearance_errors() {
+        for errno in [libc::ENOENT, libc::ESRCH] {
+            assert!(stat_disappeared(&std::io::Error::from_raw_os_error(errno)));
+        }
+    }
+
+    #[test]
+    fn proc_stat_other_errors_remain_failures() {
+        for errno in [
+            libc::EACCES,
+            libc::EPERM,
+            libc::EIO,
+            libc::EBADF,
+            libc::EINVAL,
+            libc::ECHILD,
+            libc::EINTR,
+        ] {
+            assert!(
+                !stat_disappeared(&std::io::Error::from_raw_os_error(errno)),
+                "unexpected disappearance classification for errno {errno}"
+            );
+        }
+        assert!(!stat_disappeared(&std::io::Error::from(
+            std::io::ErrorKind::NotFound
+        )));
+    }
 }
