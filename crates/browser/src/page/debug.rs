@@ -8,16 +8,62 @@ use crate::rendering::{RenderPipelineDebugSnapshot, RetainedRenderStateDebugSnap
 #[cfg(test)]
 use css::ComputedStyleReuseStats;
 
-use super::{DomMutationFacts, PageState};
+use super::{DomMutationFacts, HtmlReferenceOutcome, PageState};
 #[cfg(test)]
 use super::{PageStyleGenerations, StyleRecalcKind};
+use addressing::ResourceOperation;
+use std::fmt::Write;
 
 impl PageState {
-    #[allow(dead_code)] // Internal diagnostic surface, with no automatic logging.
     pub(crate) fn document_address_debug_snapshot(&self) -> Option<String> {
-        self.addresses
-            .as_ref()
-            .map(super::DocumentAddressState::debug_snapshot)
+        let mut snapshot = self.addresses.as_ref()?.debug_snapshot();
+        if let Some(resources) = self.html_resource_address_debug_snapshot() {
+            snapshot.push('\n');
+            snapshot.push_str(&resources);
+        }
+        Some(snapshot)
+    }
+
+    /// On-demand observation consumed by the document-address diagnostic. Labels
+    /// are local to this snapshot; runtime IDs and authored contents stay private.
+    pub(crate) fn html_resource_address_debug_snapshot(&self) -> Option<String> {
+        let records = self.html_resource_references()?;
+        let mut snapshot = String::from("HtmlResourceReferences {\n");
+        let mut labels = std::collections::HashMap::new();
+        for (index, record) in records.iter().enumerate() {
+            let next_label = labels.len();
+            let label = labels.entry(record.element).or_insert(next_label);
+            write!(
+                snapshot,
+                "    [{index}] source=element[{label}] attribute={:?} kind={:?} outcome=",
+                record.attribute, record.kind,
+            )
+            .expect("writing to String");
+            match &record.outcome {
+                HtmlReferenceOutcome::Resolved {
+                    address,
+                    diagnostics,
+                } => {
+                    writeln!(
+                        snapshot,
+                        "Resolved {{ address: {address:?}, diagnostics: {diagnostics:?} }}"
+                    )
+                    .expect("writing to String");
+                    writeln!(
+                        snapshot,
+                        "        retrieval_scheme_capability={:?} navigation_scheme_capability={:?}",
+                        address.capability(ResourceOperation::Retrieval),
+                        address.capability(ResourceOperation::Navigation),
+                    ).expect("writing to String");
+                }
+                HtmlReferenceOutcome::EmptyReference => snapshot.push_str("EmptyReference\n"),
+                HtmlReferenceOutcome::Failed(failure) => {
+                    writeln!(snapshot, "Failed({failure:?})").expect("writing to String");
+                }
+            }
+        }
+        snapshot.push('}');
+        Some(snapshot)
     }
 
     /// Runs the bounded CSS-owned AF6 candidate/winner diagnostic through the

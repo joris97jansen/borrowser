@@ -9,6 +9,8 @@ pub enum ResourceKind {
     Document,
     Stylesheet,
     Image,
+    /// Authored classic/module JavaScript reference; does not enable execution.
+    Script,
     Font,
     Media,
     FormAction,

@@ -41,6 +41,7 @@ fn every_kind_preserves_complete_fragments_and_shares_retrieval_identity() {
         K::Document,
         K::Stylesheet,
         K::Image,
+        K::Script,
         K::Font,
         K::Media,
         K::FormAction,
@@ -94,11 +95,13 @@ fn capability_is_separate_from_parsing_and_operation_aware() {
         ("javascript:void(0)", C::Unsupported, C::Unsupported),
         ("custom:payload", C::Unsupported, C::Unsupported),
     ] {
-        let a = address(input, K::Unknown);
-        assert_eq!(a.capability(O::Retrieval), retrieval);
-        assert_eq!(a.capability(O::Navigation), navigation);
-        assert_eq!(a.url().as_str(), input);
-        assert!(!a.retrieval_key().as_str().is_empty());
+        for kind in [K::Unknown, K::Script] {
+            let a = address(input, kind);
+            assert_eq!(a.capability(O::Retrieval), retrieval);
+            assert_eq!(a.capability(O::Navigation), navigation);
+            assert_eq!(a.url().as_str(), input);
+            assert!(!a.retrieval_key().as_str().is_empty());
+        }
     }
     assert!(BrowserUrl::parse("http://[").is_err());
 }

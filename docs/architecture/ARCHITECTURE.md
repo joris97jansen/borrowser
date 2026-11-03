@@ -105,6 +105,14 @@ Checked command delivery settles failures locally. CSS buffering retirement is
 separate from generation-wide network cancellation. Image keys and bus schemas are
 unchanged. Wider AH work remains pending in the [feature-gap tracker](../engine-feature-gap-tracker.md).
 
+[AH7](../platform/ah7-html-resource-reference-discovery.md) adds an on-demand
+Browser inventory of supported authored HTML references, using committed DOM
+and AH4 document/base state. Entries retain source occurrences, complete AH6
+addresses and ordered diagnostics. `Tab::document_address_debug_snapshot()`
+reaches the existing page diagnostic and appended redacted resource inventory.
+Script is a purpose classification only. No loader, retained resource association,
+render invalidation, AG schema or execution behavior changes.
+
 ---
 
 # 📤 Message Bus (CoreCommand / CoreEvent)
