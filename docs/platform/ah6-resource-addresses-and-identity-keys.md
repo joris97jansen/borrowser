@@ -21,8 +21,10 @@ layout, or transport implementation.
 | Attachment identity | Browser-owned stylesheet slot, source owner, lifetime and cascade order. Equal keys never merge attachments. |
 | Future cache identity | Cache-owned composition using address identity and request/response/partition inputs. Matching keys do not establish reuse. |
 
-Kinds are document, stylesheet, image, font, media, form action, hyperlink and
-unknown. They describe producer purpose, not a Fetch destination or resource MIME
+AH6 introduced document, stylesheet, image, font, media, form action, hyperlink
+and unknown kinds. [AH7](ah7-html-resource-reference-discovery.md) adds Script for
+inert authored classic/module JavaScript references, with no transport route or
+execution support. Kinds describe producer purpose, not a Fetch destination or resource MIME
 type. Current `core_types::ResourceKind::{Html,Css,Image}` remains transport routing
 and limit classification. Only the known stylesheet consumer maps to `Css` here.
 Media cannot select audio versus video; hyperlinks/form actions are not separate
@@ -53,6 +55,7 @@ parameters, changing a value, or replacing no query with `?` changes the key.
 | Document | Excludes fragment | Retains navigation destination. |
 | Stylesheet | Excludes fragment | Retains selected source provenance. |
 | Image | Excludes fragment | Retains resource-specific interpretation. |
+| Script (AH7) | Excludes fragment | Retains complete inert authored reference; does not enable fetching/execution. |
 | Font | Excludes fragment | Retains applicable fragment semantics. |
 | Media | Excludes fragment | Retains media-fragment information. |
 | Form action | Excludes fragment | Retains target; method/body are separate. |

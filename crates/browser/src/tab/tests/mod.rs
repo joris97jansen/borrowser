@@ -11,4 +11,5 @@ mod stylesheets;
 mod support;
 
 mod document_addressing;
+mod html_resources;
 mod resource_associations;

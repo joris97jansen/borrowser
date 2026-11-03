@@ -557,6 +557,19 @@ Addressing architecture status:
   Existing CSS preview/cancellation behavior remains; image keys and the bus are
   unchanged. CssAbort clears buffers, not individual HTTP transfers; per-resource
   network cancellation and downstream worker acknowledgements remain unavailable.
+- AH7 implements the [authored HTML resource-reference inventory](platform/ah7-html-resource-reference-discovery.md):
+  on-demand ordinary-DOM traversal using committed document/base state, source
+  identity/attribute and kind, complete resource addresses, ordered recoverable
+  diagnostics, typed failures and explicit empty-reference outcomes. The finite
+  matrix covers stylesheet links, image src, media-parent source src, anchors,
+  forms, authored iframe src and inert classic/module script src. Script purpose
+  adds no transport route or execution. The existing document-address diagnostic
+  now appends redacted resource output, reachable through the runtime Tab accessor.
+  Occurrences are never deduplicated by URL/key, and current-base inventory does
+  not retarget existing loading associations or emit additional commands.
+  Picture/srcset parsing/selection, other deferred reference combinations,
+  media/nested-document loading, form submission, script loading/execution and
+  CSS resource extraction remain gaps. No AG or CI infrastructure changes.
 - AH behavior remains pending:
   inherited/override base contexts and full loading scheduling, stylesheet base provenance,
   remaining document-creation contexts, unified unsupported-capability diagnostics, and

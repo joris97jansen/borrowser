@@ -1,6 +1,21 @@
 use addressing::{BrowserUrl, ResourceAddress, ResourceKind};
 
 #[test]
+fn script_debug_uses_fixed_kind_and_existing_redaction() {
+    let address = ResourceAddress::new(
+        BrowserUrl::parse("https://private.test/private.js?secret#private")
+            .unwrap()
+            .url,
+        ResourceKind::Script,
+    );
+    assert_eq!(
+        format!("{address:?}"),
+        r#"ResourceAddress { url: BrowserUrl { scheme: "https", username: "", password: None, host_kind: Some("domain"), port: None, path: "<redacted>", query: Some("<redacted>"), fragment: Some("<redacted>"), authority: true, opaque_path: false }, kind: Script }"#,
+    );
+    assert!(!format!("{address:#?}").contains("private"));
+}
+
+#[test]
 fn resource_debug_is_deterministic_redacted_and_separate_from_semantics() {
     let address = ResourceAddress::new(
         BrowserUrl::parse(

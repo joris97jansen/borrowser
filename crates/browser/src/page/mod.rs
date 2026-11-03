@@ -2,6 +2,8 @@ mod addressing;
 mod debug;
 pub(crate) use addressing::{DocumentAddressError, DocumentAddressState};
 mod dom_mutation;
+mod html_resources;
+pub(crate) use html_resources::{HtmlReferenceOutcome, HtmlResourceReference};
 mod image_sources;
 mod retained_render_state;
 mod style_cache;
@@ -124,6 +126,15 @@ impl PageState {
         self.addresses
             .as_ref()
             .map(DocumentAddressState::active_base_url)
+    }
+
+    /// Observe the current committed DOM and active base, not previously selected
+    /// image/stylesheet URLs. None means no managed document is observable.
+    pub(crate) fn html_resource_references(&self) -> Option<Vec<HtmlResourceReference>> {
+        Some(html_resources::collect_html_resource_references(
+            self.dom.as_deref()?,
+            self.addresses.as_ref()?,
+        ))
     }
 
     #[cfg(test)]
