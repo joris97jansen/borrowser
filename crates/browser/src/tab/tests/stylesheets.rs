@@ -299,22 +299,8 @@ fn external_stylesheets_keep_document_order_when_network_arrives_out_of_order() 
 
     assert_ne!(a_slot, b_slot, "distinct stylesheet slots are required");
 
-    tab.on_core_event(CoreEvent::CssDecodedBlock {
-        tab_id: tab.tab_id,
-        request_id: 12,
-        stylesheet_slot_id: b_slot,
-        url: b_url.clone(),
-        css_block: "p { color: blue; }".to_string(),
-    })
-    .unwrap();
-    tab.on_core_event(CoreEvent::CssDecodedBlock {
-        tab_id: tab.tab_id,
-        request_id: 12,
-        stylesheet_slot_id: a_slot,
-        url: a_url.clone(),
-        css_block: "p { color: green; }".to_string(),
-    })
-    .unwrap();
+    super::support::complete_css(&mut tab, b_slot, &b_url, "p { color: blue; }");
+    super::support::complete_css(&mut tab, a_slot, &a_url, "p { color: green; }");
 
     let dom = tab.page.dom.as_deref().expect("dom installed");
     let styled = build_style_tree_with_stylesheets(
@@ -414,22 +400,8 @@ fn duplicate_same_url_stylesheets_participate_as_separate_cascade_slots() {
     let (first_slot, url) = slots[0].clone();
     let (second_slot, _) = slots[1].clone();
 
-    tab.on_core_event(CoreEvent::CssDecodedBlock {
-        tab_id: tab.tab_id,
-        request_id: 16,
-        stylesheet_slot_id: first_slot,
-        url: url.clone(),
-        css_block: "p { color: red; }".to_string(),
-    })
-    .unwrap();
-    tab.on_core_event(CoreEvent::CssDecodedBlock {
-        tab_id: tab.tab_id,
-        request_id: 16,
-        stylesheet_slot_id: second_slot,
-        url,
-        css_block: "p { color: blue; }".to_string(),
-    })
-    .unwrap();
+    super::support::complete_css(&mut tab, first_slot, &url, "p { color: red; }");
+    super::support::complete_css(&mut tab, second_slot, &url, "p { color: blue; }");
 
     let dom = tab.page.dom.as_deref().expect("dom installed");
     let styled = build_style_tree_with_stylesheets(
@@ -560,14 +532,7 @@ fn external_stylesheet_arrival_invalidates_cached_computed_style() {
     let before = tab.page.style_generations();
     assert!(!tab.page.style_dirty());
 
-    tab.on_core_event(CoreEvent::CssDecodedBlock {
-        tab_id: tab.tab_id,
-        request_id: 24,
-        stylesheet_slot_id: slot_id,
-        url,
-        css_block: "p { color: red; }".to_string(),
-    })
-    .unwrap();
+    super::support::complete_css(&mut tab, slot_id, &url, "p { color: red; }");
 
     let after = tab.page.style_generations();
     assert_eq!(after.stylesheets, before.stylesheets + 1);
@@ -610,14 +575,7 @@ fn loaded_external_media_only_change_preserves_source_without_refetch_and_invali
             _ => None,
         })
         .expect("initial external stylesheet fetch");
-    tab.on_core_event(CoreEvent::CssDecodedBlock {
-        tab_id: tab.tab_id,
-        request_id: 241,
-        stylesheet_slot_id: slot_id,
-        url,
-        css_block: "p { color: red; }".to_string(),
-    })
-    .unwrap();
+    super::support::complete_css(&mut tab, slot_id, &url, "p { color: red; }");
     assert_eq!(current_element_color(&mut tab, "p"), (0, 0, 0, 255));
 
     let source_before = tab

@@ -1,5 +1,11 @@
 # AH1: URL, Origin, And Resource Addressing Architecture Contract
 
+Current resource-address integration: [AH6](ah6-resource-addresses-and-identity-keys.md)
+adds typed complete references, fragmentless retrieval keys and operation capabilities.
+Browser's stylesheet handoff now retains references separately from issued request
+provenance, validates immutable CSS response metadata, and handles command delivery
+failures. Historical exclusions below describe the earlier issue's scope.
+
 Last updated: 2026-10-24
 Status: architecture contract complete; AH2–AH5 implementation references below
 Scope: Milestone AH ownership, semantics, integration boundaries, and evidence

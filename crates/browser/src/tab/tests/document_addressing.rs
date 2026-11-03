@@ -788,21 +788,81 @@ fn document_addressing_debug_is_structural_and_deterministic() {
 }
 
 #[test]
-fn document_addressing_identity_version_and_mode_rejections_preserve_all_address_state() {
-    for rejection in ["identity", "version", "mode"] {
-        let (mut tab, rx) = addressing_tab(
-            "<!doctype html><base id=b href='/original/'><img id=i src=image.png><link rel=stylesheet href=site.css>",
-        );
+fn document_addressing_publication_rejections_preserve_committed_state_and_scope_cleanup() {
+    use super::super::state::{DocumentParseStatus, StylesheetLoadPhase};
+    use core_types::NetworkResponseInfo;
+
+    for rejection in ["identity", "version", "mode", "replacement", "stale"] {
+        let (mut tab, rx) = addressing_tab(concat!(
+            "<!doctype html><base id=b href='/original/'><img id=i src=image.png>",
+            "<style>p{color:blue}</style>",
+            "<link rel=stylesheet href='loaded.css#complete'>",
+            "<link rel=stylesheet href='site.css?a=1&a=2#pending'><p>preview</p>",
+        ));
+        let fetched: Vec<_> = rx
+            .try_iter()
+            .filter_map(|command| match command {
+                CoreCommand::FetchStream {
+                    request_id,
+                    stylesheet_slot_id: Some(slot),
+                    url,
+                    kind: ResourceKind::Css,
+                    ..
+                } => Some((slot, request_id, url)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(fetched.len(), 2);
+        let (loaded, generation, loaded_url) = fetched[0].clone();
+        let (unfinished, unfinished_generation, issued_url) = fetched[1].clone();
+        assert_eq!(generation, tab.nav_gen);
+        assert_eq!(unfinished_generation, generation);
+        assert_eq!(issued_url, "https://example.test/original/site.css?a=1&a=2");
+        complete_css(&mut tab, loaded, &loaded_url, "p{color:red}");
         rx.try_iter().for_each(drop);
+        let response = NetworkResponseInfo {
+            requested_url: issued_url.clone(),
+            final_url: issued_url.clone(),
+            status_code: Some(200),
+            content_type: Some("text/css".into()),
+        };
+        tab.on_core_event(CoreEvent::NetworkStart {
+            tab_id: tab.tab_id,
+            request_id: generation,
+            stylesheet_slot_id: Some(unfinished),
+            kind: ResourceKind::Css,
+            response: response.clone(),
+        })
+        .unwrap();
+        tab.on_core_event(CoreEvent::NetworkChunk {
+            tab_id: tab.tab_id,
+            request_id: generation,
+            stylesheet_slot_id: Some(unfinished),
+            kind: ResourceKind::Css,
+            url: issued_url.clone(),
+            bytes: b"p{color:".to_vec(),
+        })
+        .unwrap();
+        assert!(matches!(rx.try_recv().unwrap(), CoreCommand::CssChunk {
+            request_id, stylesheet_slot_id, url, ..
+        } if request_id == generation && stylesheet_slot_id == unfinished && url == issued_url));
+        assert!(rx.try_recv().is_err());
+        assert_eq!(tab.page.pending_count(), 1);
+        assert_eq!(tab.page.css_stylesheets().len(), 2);
+        assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
+
         let base = element_id(tab.page.dom.as_deref().unwrap(), "b");
         let image = element_id(tab.page.dom.as_deref().unwrap(), "i");
         let before = tab.page.addresses.clone();
+        let handle = tab.dom_handle.unwrap();
         let version = tab.dom_version;
+        let dom_before = format!("{:?}", (&tab.page.dom, tab.dom_store.get_current(handle)));
+        let status_before = tab.last_status.clone();
         let image_before =
             crate::page::selected_image_source(&tab.page.image_sources, image, "image.png");
         let slots = tab.page.active_external_stylesheet_slots();
         let mut publication = no_quirks_patch_publication(
-            tab.dom_handle.unwrap(),
+            handle,
             version,
             version.next(),
             vec![attributes(base, &[("href", "/rejected/")])],
@@ -817,32 +877,169 @@ fn document_addressing_identity_version_and_mode_rejections_preserve_all_address
                 let bus::DocumentPublicationPayload::Patch { from, .. } = &mut publication.payload;
                 *from = DomVersion::INITIAL;
                 tab.on_core_event(CoreEvent::DomPatchUpdate {
-                    tab_id: 1,
-                    request_id: 7,
+                    tab_id: tab.tab_id,
+                    request_id: generation,
+                    publication,
+                })
+            }
+            "replacement" => {
+                let output = html::parse_document(
+                    "<!doctype html><base href='/rejected/'><link rel=stylesheet href=speculative.css><p>replacement</p>",
+                    Default::default(),
+                )
+                .unwrap();
+                publication = no_quirks_patch_publication_from_output(output);
+                let bus::DocumentPublicationPayload::Patch { patches, .. } =
+                    &mut publication.payload;
+                patches.push(DomPatch::RemoveNode {
+                    key: PatchKey(u32::MAX),
+                });
+                tab.on_core_event(CoreEvent::DomPatchUpdate {
+                    tab_id: tab.tab_id,
+                    request_id: generation,
                     publication,
                 })
             }
             _ => {
                 publication.document_mode = html::DocumentMode::Quirks;
                 tab.on_core_event(CoreEvent::DomPatchUpdate {
-                    tab_id: 1,
-                    request_id: 7,
+                    tab_id: tab.tab_id,
+                    request_id: if rejection == "stale" {
+                        generation - 1
+                    } else {
+                        generation
+                    },
                     publication,
                 })
             }
         };
-        assert!(result.is_err());
+        if rejection == "stale" {
+            assert!(
+                result.is_ok(),
+                "stale publications are ignored before validation"
+            );
+        } else {
+            assert!(result.is_err(), "{rejection}");
+        }
         assert_eq!(tab.page.addresses, before);
+        assert_eq!(tab.page.document_url().unwrap().as_str(), ADDRESS_URL);
+        assert_eq!(
+            tab.page.active_base_url().unwrap().as_str(),
+            "https://example.test/original/"
+        );
+        assert_eq!(tab.dom_handle, Some(handle));
         assert_eq!(tab.dom_version, version);
+        assert_eq!(
+            format!("{:?}", (&tab.page.dom, tab.dom_store.get_current(handle))),
+            dom_before
+        );
         assert_eq!(
             crate::page::selected_image_source(&tab.page.image_sources, image, "image.png"),
             image_before
         );
         assert_eq!(tab.page.active_external_stylesheet_slots(), slots);
+        assert_eq!(tab.page.css_stylesheets().len(), 2);
+        assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
+        let commands: Vec<_> = rx.try_iter().collect();
         assert!(
-            rx.try_iter()
+            commands
+                .iter()
                 .all(|command| !matches!(command, CoreCommand::FetchStream { .. }))
         );
+
+        // The direct staging probe never invokes the terminal failure wrapper;
+        // an old-generation event never reaches either staging or that wrapper.
+        if matches!(rejection, "identity" | "stale") {
+            assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Pending);
+            assert_eq!(tab.last_status, status_before);
+            assert_eq!(tab.page.pending_count(), 1);
+            assert_eq!(tab.stylesheet_loads.len(), 2);
+            assert!(matches!(
+                tab.stylesheet_loads[&unfinished].phase,
+                StylesheetLoadPhase::Receiving { .. }
+            ));
+            assert_eq!(tab.stylesheet_loads[&unfinished].request_id, generation);
+            assert_eq!(
+                tab.stylesheet_loads[&unfinished].issued_key.as_str(),
+                issued_url
+            );
+            assert!(commands.is_empty());
+            continue;
+        }
+
+        assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Failed);
+        assert!(!tab.loading);
+        assert_eq!(tab.page.pending_count(), 0);
+        assert!(!tab.stylesheet_loads.contains_key(&unfinished));
+        assert_eq!(tab.stylesheet_loads.len(), 1);
+        assert!(matches!(
+            tab.stylesheet_loads[&loaded].phase,
+            StylesheetLoadPhase::Complete { .. }
+        ));
+        // Only unfinished work is retired. Speculative replacement retirement
+        // would also abort the completed request and remove its preview style.
+        assert_eq!(commands.len(), 2, "{rejection}: {commands:?}");
+        assert!(
+            commands
+                .iter()
+                .any(|command| matches!(command, CoreCommand::CssAbort {
+            tab_id, request_id, stylesheet_slot_id, url,
+        } if *tab_id == tab.tab_id && *request_id == generation
+            && *stylesheet_slot_id == unfinished && url == &issued_url))
+        );
+        assert!(
+            commands
+                .iter()
+                .any(|command| matches!(command, CoreCommand::CancelRequest {
+            tab_id, request_id,
+        } if *tab_id == tab.tab_id && *request_id == generation))
+        );
+
+        for late in [
+            CoreEvent::NetworkStart {
+                tab_id: tab.tab_id,
+                request_id: generation,
+                stylesheet_slot_id: Some(unfinished),
+                kind: ResourceKind::Css,
+                response: response.clone(),
+            },
+            CoreEvent::NetworkChunk {
+                tab_id: tab.tab_id,
+                request_id: generation,
+                stylesheet_slot_id: Some(unfinished),
+                kind: ResourceKind::Css,
+                url: issued_url.clone(),
+                bytes: b"green}".to_vec(),
+            },
+            CoreEvent::NetworkDone {
+                tab_id: tab.tab_id,
+                request_id: generation,
+                stylesheet_slot_id: Some(unfinished),
+                kind: ResourceKind::Css,
+                response,
+                bytes_received: 14,
+            },
+            CoreEvent::CssDecodedBlock {
+                tab_id: tab.tab_id,
+                request_id: generation,
+                stylesheet_slot_id: unfinished,
+                url: issued_url.clone(),
+                css_block: "p{color:green}".into(),
+            },
+            CoreEvent::CssSheetDone {
+                tab_id: tab.tab_id,
+                request_id: generation,
+                stylesheet_slot_id: unfinished,
+                url: issued_url,
+            },
+        ] {
+            tab.on_core_event(late).unwrap();
+        }
+        assert!(!tab.stylesheet_loads.contains_key(&unfinished));
+        assert_eq!(tab.page.pending_count(), 0);
+        assert_eq!(tab.page.css_stylesheets().len(), 2);
+        assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
+        assert!(rx.try_recv().is_err(), "retired traffic must remain inert");
     }
 }
 

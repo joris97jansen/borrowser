@@ -1,4 +1,7 @@
-use addressing::BrowserUrl;
+use addressing::{
+    BrowserUrl, ResourceAddress, ResourceCapability, ResourceIdentityKey, ResourceKind,
+    ResourceOperation,
+};
 use core_types::StylesheetSlotId;
 use css::{
     ParseOptions, StylesheetCollectionInput, StylesheetCollectionInputBuildError,
@@ -30,12 +33,12 @@ head, title, meta, link, style, script {
 }
 "#;
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 enum StylesheetSlotSource {
     Inline(String),
     External {
         href: String,
-        url: Option<BrowserUrl>,
+        address: Option<ResourceAddress>,
     },
 }
 
@@ -43,16 +46,16 @@ impl std::fmt::Debug for StylesheetSlotSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Inline(_) => f.debug_tuple("Inline").field(&"<redacted>").finish(),
-            Self::External { href, url } => f
+            Self::External { href, address } => f
                 .debug_struct("External")
                 .field("href", &if href.is_empty() { "" } else { "<redacted>" })
-                .field("url", url)
+                .field("address", address)
                 .finish(),
         }
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 struct DiscoveredStylesheet {
     owner: Id,
     source: StylesheetSlotSource,
@@ -78,13 +81,13 @@ struct StylesheetSlot {
 #[derive(Clone, Debug)]
 pub(crate) struct StylesheetFetch {
     pub(crate) slot_id: StylesheetSlotId,
-    pub(crate) url: String,
+    pub(crate) key: ResourceIdentityKey,
 }
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct StylesheetReconcileResult {
     pub(crate) fetches: Vec<StylesheetFetch>,
-    pub(crate) retired: Vec<StylesheetFetch>,
+    pub(crate) retired: Vec<StylesheetSlotId>,
     pub(crate) changed: bool,
 }
 
@@ -112,7 +115,7 @@ impl DocumentStyleSet {
         dom: &Node,
         base_url: Option<&BrowserUrl>,
     ) -> StylesheetReconcileResult {
-        let previous_requests = self.external_stylesheet_requests();
+        let previous_slots = self.external_slot_ids();
         let mut discovered = Vec::new();
         collect_stylesheet_inputs(dom, &mut discovered);
         let changed = self.order.len() != discovered.len()
@@ -147,12 +150,16 @@ impl DocumentStyleSet {
                 StylesheetSlotSource::Inline(text) => StylesheetSlotState::Loaded(
                     parse_stylesheet_with_options(text, &ParseOptions::stylesheet()),
                 ),
-                StylesheetSlotSource::External { href, url } => {
-                    *url = resolve_url(base_url, href);
-                    if let Some(url) = url {
+                StylesheetSlotSource::External { href, address } => {
+                    *address = resolve_url(base_url, href)
+                        .map(|url| ResourceAddress::new(url, ResourceKind::Stylesheet));
+                    if let Some(address) = address
+                        && address.capability(ResourceOperation::Retrieval)
+                            == ResourceCapability::Supported
+                    {
                         fetches.push(StylesheetFetch {
                             slot_id: id,
-                            url: url.as_str().to_owned(),
+                            key: address.retrieval_key(),
                         });
                         StylesheetSlotState::Pending
                     } else {
@@ -174,10 +181,10 @@ impl DocumentStyleSet {
         self.slots = slots;
         self.order = order;
         self.rebuild_loaded_stylesheets();
-        let active = self.active_external_slots();
-        let retired = previous_requests
+        let active: HashSet<_> = self.external_slot_ids().into_iter().collect();
+        let retired = previous_slots
             .into_iter()
-            .filter(|request| !active.contains(&request.slot_id))
+            .filter(|id| !active.contains(id))
             .collect();
         StylesheetReconcileResult {
             fetches,
@@ -186,28 +193,11 @@ impl DocumentStyleSet {
         }
     }
 
-    pub(crate) fn external_stylesheet_requests(&self) -> Vec<StylesheetFetch> {
+    // Attachment membership, never evidence of an issued transport request.
+    fn external_slot_ids(&self) -> Vec<StylesheetSlotId> {
         self.ordered_slots()
-            .filter_map(|(id, slot)| match &slot.source {
-                StylesheetSlotSource::External { url: Some(url), .. } => Some(StylesheetFetch {
-                    slot_id: id,
-                    url: url.as_str().to_owned(),
-                }),
-                _ => None,
-            })
-            .collect()
-    }
-
-    pub(crate) fn active_external_slots(&self) -> HashSet<StylesheetSlotId> {
-        self.slots
-            .iter()
-            .filter(|(_, slot)| {
-                matches!(
-                    &slot.source,
-                    StylesheetSlotSource::External { url: Some(_), .. }
-                )
-            })
-            .map(|(id, _)| *id)
+            .filter(|(_, slot)| matches!(&slot.source, StylesheetSlotSource::External { .. }))
+            .map(|(id, _)| id)
             .collect()
     }
 
@@ -217,7 +207,10 @@ impl DocumentStyleSet {
         self.slots.get(&id).is_some_and(|slot| {
             matches!(
                 &slot.source,
-                StylesheetSlotSource::External { url: Some(_), .. }
+                StylesheetSlotSource::External {
+                    address: Some(_),
+                    ..
+                }
             ) && matches!(
                 slot.state,
                 StylesheetSlotState::Pending | StylesheetSlotState::Loaded(_)
@@ -225,23 +218,41 @@ impl DocumentStyleSet {
         })
     }
 
+    // Existing attachment-lifetime observation. It cannot authorize events or
+    // enumerate issued requests; dispatch provenance lives in Tab.
+    #[cfg(test)]
+    pub(crate) fn active_external_slots(&self) -> HashSet<StylesheetSlotId> {
+        self.ordered_slots()
+            .filter_map(|(id, slot)| match &slot.source {
+                StylesheetSlotSource::External {
+                    address: Some(address),
+                    ..
+                } if address.capability(ResourceOperation::Retrieval)
+                    == ResourceCapability::Supported =>
+                {
+                    Some(id)
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Cancel unfinished external transfers; accepted completions may still be
     /// waiting for their CSS runtime result and keep the preview's association.
     pub(crate) fn abort_pending_external(
         &mut self,
         completed: &HashSet<StylesheetSlotId>,
-    ) -> Vec<StylesheetFetch> {
+    ) -> Vec<StylesheetSlotId> {
         let mut aborted = Vec::new();
         for id in &self.order {
             let slot = self.slots.get_mut(id).expect("ordered stylesheet slot");
             if !completed.contains(id)
                 && matches!(slot.state, StylesheetSlotState::Pending)
-                && let StylesheetSlotSource::External { url: Some(url), .. } = &slot.source
+                && let StylesheetSlotSource::External {
+                    address: Some(_), ..
+                } = &slot.source
             {
-                aborted.push(StylesheetFetch {
-                    slot_id: *id,
-                    url: url.as_str().to_owned(),
-                });
+                aborted.push(*id);
                 slot.state = StylesheetSlotState::Aborted;
             }
         }
@@ -267,7 +278,10 @@ impl DocumentStyleSet {
                 owner: Id(u32::try_from(id.0).expect("synthetic stylesheet owner")),
                 source: StylesheetSlotSource::External {
                     href: url.to_string(),
-                    url: Some(BrowserUrl::parse(url).expect("test URL").url),
+                    address: Some(ResourceAddress::new(
+                        BrowserUrl::parse(url).expect("test URL").url,
+                        ResourceKind::Stylesheet,
+                    )),
                 },
                 media: None,
                 state: StylesheetSlotState::Pending,
@@ -442,7 +456,7 @@ fn collect_stylesheet_inputs(node: &Node, out: &mut Vec<DiscoveredStylesheet>) {
                     owner: node.id(),
                     source: StylesheetSlotSource::External {
                         href: href.to_owned(),
-                        url: None,
+                        address: None,
                     },
                     media: node.attr("media").map(str::to_string),
                 });
@@ -774,5 +788,53 @@ mod tests {
         );
         assert!(result.fetches.is_empty());
         assert!(set.stylesheets().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod ah6_tests {
+    use super::*;
+
+    #[test]
+    fn ah6_resolved_unsupported_sources_are_retained_without_request_descriptors() {
+        let base = BrowserUrl::parse("https://example.test/page").unwrap().url;
+        for reference in [
+            "about:blank",
+            "data:text/css,p{}",
+            "blob:https://h.test/id",
+            "ws://h.test/",
+            "ftp://h.test/sheet",
+            "custom:sheet",
+        ] {
+            let dom = html::parse_document(
+                format!("<!doctype html><link rel=stylesheet href='{reference}'>"),
+                Default::default(),
+            )
+            .unwrap()
+            .document;
+            let mut set = DocumentStyleSet::default();
+            let result = set.reconcile_from_dom(&dom, Some(&base));
+            assert!(result.fetches.is_empty());
+            assert_eq!(set.pending_count(), 0);
+            let (id, slot) = set.ordered_slots().next().unwrap();
+            let StylesheetSlotSource::External {
+                href,
+                address: Some(address),
+            } = &slot.source
+            else {
+                panic!("retained reference")
+            };
+            assert_eq!(href, reference);
+            assert_eq!(address.url().as_str(), reference);
+            assert_eq!(address.kind(), ResourceKind::Stylesheet);
+            assert!(matches!(slot.state, StylesheetSlotState::Failed));
+            assert!(!set.has_external_slot(id));
+            assert!(set.active_external_slots().is_empty());
+            assert!(set.abort_pending_external(&HashSet::new()).is_empty());
+            let changed_base = BrowserUrl::parse("https://other.test/new/").unwrap().url;
+            let again = set.reconcile_from_dom(&dom, Some(&changed_base));
+            assert!(again.fetches.is_empty());
+            assert!(again.retired.is_empty());
+        }
     }
 }

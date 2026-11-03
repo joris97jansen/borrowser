@@ -547,7 +547,17 @@ Addressing architecture status:
   `Loading` and prevent a later same-URL request, and legacy network error/status
   output can contain raw URLs including credentials. AH3's redacted structural
   snapshots do not cover those outputs. AH4 does not resolve these gaps.
-- AH behavior remains pending: normalized resource addressing and identity,
+- AH6 implements [typed resource addresses and retrieval identity](platform/ah6-resource-addresses-and-identity-keys.md):
+  complete normalized references, known purpose, operation-aware capabilities,
+  fragmentless equality/hash and content-redacted diagnostics. Stylesheet slots
+  retain complete references while Browser's dispatch records own exact issued
+  retrieval URLs/generations. Network/runtime admission validates provenance,
+  immutable response metadata and phase; failed command delivery settles locally.
+  Unsupported references create neither requests nor pending loads nor aborts.
+  Existing CSS preview/cancellation behavior remains; image keys and the bus are
+  unchanged. CssAbort clears buffers, not individual HTTP transfers; per-resource
+  network cancellation and downstream worker acknowledgements remain unavailable.
+- AH behavior remains pending:
   inherited/override base contexts and full loading scheduling, stylesheet base provenance,
   remaining document-creation contexts, unified unsupported-capability diagnostics, and
   wider URL/origin debug/conformance evidence. The current `url` dependency is not

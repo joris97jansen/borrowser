@@ -104,7 +104,7 @@ impl Tab {
                 kind: ResourceKind::Css,
                 response,
             } if self.is_current(tab_id, request_id) => {
-                self.on_css_network_start(stylesheet_slot_id, response);
+                self.on_css_network_start(stylesheet_slot_id, response, request_id);
             }
             CoreEvent::NetworkChunk {
                 tab_id,
@@ -182,10 +182,10 @@ impl Tab {
                 tab_id,
                 request_id,
                 stylesheet_slot_id,
+                url,
                 css_block,
-                ..
             } if self.is_current(tab_id, request_id) => {
-                self.on_css_decoded_block(stylesheet_slot_id, css_block);
+                self.on_css_decoded_block(stylesheet_slot_id, &url, css_block, request_id);
             }
             CoreEvent::CssSheetDone {
                 tab_id,
@@ -193,7 +193,7 @@ impl Tab {
                 stylesheet_slot_id,
                 url,
             } if self.is_current(tab_id, request_id) => {
-                self.on_css_sheet_done(stylesheet_slot_id, url);
+                self.on_css_sheet_done(stylesheet_slot_id, &url, request_id);
             }
 
             _ => {}
@@ -318,7 +318,9 @@ impl Tab {
 
         // Commit only after the candidate store and materialized DOM validate.
         let retired = if mutation_facts.document_replaced() {
-            self.page.external_stylesheet_requests()
+            let mut ids: Vec<_> = self.stylesheet_loads.keys().copied().collect();
+            ids.sort_by_key(|id| id.0);
+            ids
         } else {
             Vec::new()
         };
@@ -329,7 +331,7 @@ impl Tab {
         let render_work = self
             .page
             .commit_dom_publication(dom, document_mode, mutation_facts);
-        self.retire_stylesheet_requests(retired, request_id);
+        self.retire_stylesheet_requests(retired);
         self.page.update_head_metadata();
         self.page
             .seed_input_values_from_dom(&mut self.document_input.input_values);
