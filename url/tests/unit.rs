@@ -2207,7 +2207,6 @@ fn test_path_percent_encode() {
 
 #[test]
 fn unavailable_base_certifies_only_independent_interpretations_and_diagnostics() {
-    use std::cell::RefCell;
     for text in [
         "https:icons/logo.svg",
         "https:",
