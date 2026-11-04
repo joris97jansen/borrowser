@@ -104,3 +104,13 @@ Snapshot output intentionally excludes free-form diagnostic prose and uses only:
 - diagnostic kind
 - byte offset
 - stable stats fields
+
+## AH8 URL recognition and payload recovery
+
+[AH8](../platform/ah8-css-resource-reference-discovery.md) shares escaped-code-point
+consumption across name/string/URL token handlers. String continuations remain
+string-only. Token payloads preserve source spelling; CSS resource projection
+decodes semantics once. At EOF, usable string/URL payloads survive with diagnostics;
+unescaped string newlines still produce BadString, and genuinely bad URL forms
+retain BadUrl recovery. This supersedes the blanket EOF-unterminated-string
+BadString statement above, without claiming complete CSS Syntax conformance.

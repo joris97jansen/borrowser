@@ -21,21 +21,24 @@ class QualifiedUrlDependencies(unittest.TestCase):
         }
 
     def test_approved_main_and_fuzz_pass(self):
-        self.assertEqual(check.APPROVED_REVISION, "7dc4ecbf4d29817e723e04ae94b14f1326764f61")
+        self.assertEqual(check.APPROVED_REVISION, "92f7fb395f9ffb2f706e7c664283781fd3b294a2")
         for label, (metadata, lock) in self.resolutions.items():
             with self.subTest(workspace=label):
                 check.verify_resolution(metadata, lock, label)
 
     def test_ci_control_revision_is_rejected_even_with_matching_lock(self):
-        wrong = "32630e7b55f8ad75a3f92e96a48552dac755f35c"
-        for label, (metadata, lock) in self.resolutions.items():
-            with self.subTest(workspace=label):
-                # Change metadata identities and their lock entries together.
-                # The CI expectation must remain independent of both.
-                changed_metadata = json.loads(json.dumps(metadata).replace(check.APPROVED_REVISION, wrong))
-                changed_lock = json.loads(json.dumps(lock).replace(check.APPROVED_REVISION, wrong))
-                with self.assertRaisesRegex(ValueError, f"{label}: url must resolve"):
-                    check.verify_resolution(changed_metadata, changed_lock, label)
+        for wrong in [
+            "32630e7b55f8ad75a3f92e96a48552dac755f35c",
+            "823ba428f3a9883e8873e91d6cf46b7ac822c0a7",
+        ]:
+            for label, (metadata, lock) in self.resolutions.items():
+                with self.subTest(workspace=label, revision=wrong):
+                    # Change metadata identities and their lock entries together.
+                    # The CI expectation must remain independent of both.
+                    changed_metadata = json.loads(json.dumps(metadata).replace(check.APPROVED_REVISION, wrong))
+                    changed_lock = json.loads(json.dumps(lock).replace(check.APPROVED_REVISION, wrong))
+                    with self.assertRaisesRegex(ValueError, f"{label}: url must resolve"):
+                        check.verify_resolution(changed_metadata, changed_lock, label)
 
     def test_other_git_revision_and_repository_are_rejected(self):
         for label, (metadata, lock) in self.resolutions.items():

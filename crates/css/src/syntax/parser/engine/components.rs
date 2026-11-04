@@ -203,6 +203,12 @@ impl<'a> StylesheetParser<'a> {
                     };
                 }
                 CssTokenKind::Eof => {
+                    self.push_diagnostic(
+                        DiagnosticSeverity::Warning,
+                        DiagnosticKind::UnexpectedEof,
+                        token.span.start,
+                        "function recovered at EOF",
+                    );
                     let span = self.safe_span(
                         start_token.span.start,
                         token.span.start,

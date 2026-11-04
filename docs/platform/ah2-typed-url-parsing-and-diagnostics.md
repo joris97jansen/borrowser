@@ -1042,3 +1042,24 @@ remain in Browser. No addressing API, parser dependency, qualification fixture,
 or diagnostic taxonomy changes. Earlier document-integration deferrals describe
 the historical AH2/AH3 boundary. Full HTML resource scheduling and remaining AH
 origin/resource-identity/CSS-location work remain outside this implementation.
+
+## AH8 candidate: unavailable-base independence
+
+`BrowserUrl::parse_if_base_independent(&str)` returns
+`Result<Option<UrlParseOutcome>, UrlFailure>`. Some or Err requires parser-owned
+proof that value/failure and diagnostics are independent of an unavailable base;
+None is unresolved, not a null-base parse verdict. The candidate maintained-parser
+hook reuses preprocessing, scheme parsing and dispatch, conservatively certifying
+non-special and explicit authority branches. Unproven operations expose no
+callbacks. Ordinary parsing/resolution and redaction remain unchanged.
+
+AH8 now pins published parser revision
+`92f7fb395f9ffb2f706e7c664283781fd3b294a2` in both Cargo roots. Its required
+Linux/Windows/macOS native, address-sanitizer, consumer-fuzz, lint and audit lanes
+pass in [run 41777938203](https://github.com/joris97jansen/rust-url/actions/runs/41777938203).
+The same 35-package consumer closures and registry checksums were verified from
+actual locked Git resolution before advancing the frozen approval. The separate
+CI-control revision is `823ba428f3a9883e8873e91d6cf46b7ac822c0a7`, never the
+dependency pin. Earlier AH3 pins and local AH8 overrides above are historical
+evidence. Final Borrowser validation remains pending; see
+[AH8](ah8-css-resource-reference-discovery.md) for exact results and limits.

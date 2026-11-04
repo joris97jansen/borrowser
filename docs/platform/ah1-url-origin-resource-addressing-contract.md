@@ -560,3 +560,13 @@ freezing, atomic publication, stable existing consumer associations, and
 structural diagnostics. It uses the unchanged AH2/AH3 URL API. Full HTML loading
 scheduling, inherited about contexts, overrides and policy enforcement remain
 unsupported; the architecture and standards requirements above still apply.
+
+## AH8 candidate integration
+
+[AH8](ah8-css-resource-reference-discovery.md) resolves the stylesheet-resource
+base handoff for its authored inventory: the admitted response URL is retained
+on the external attachment, separately from original request identity and
+CSSOM location terminology. Inline sources observe committed document context.
+Historical unresolved labels above describe AH1; the bounded AH8 contract and
+its recorded immutable-source qualification now govern this consumer. Final
+required Borrowser validation remains pending.

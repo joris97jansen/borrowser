@@ -23,6 +23,7 @@
 mod compat;
 mod diagnostics;
 mod entry;
+pub(crate) mod escape;
 #[cfg(any(test, feature = "css-fuzzing"))]
 mod fuzz;
 mod input;

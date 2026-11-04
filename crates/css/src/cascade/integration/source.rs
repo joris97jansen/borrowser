@@ -71,6 +71,15 @@ impl<'a> StylesheetConditionInput<'a> {
         }
     }
 
+    /// Whether the current CSS condition subset leaves this source deferred.
+    /// Used by authored-resource observations without implying participation.
+    pub fn is_deferred(self) -> bool {
+        matches!(
+            self.classify(),
+            StylesheetConditionStatus::DeferredUnsupported { .. }
+        )
+    }
+
     pub(crate) fn classify(self) -> StylesheetConditionStatus<'a> {
         match self {
             Self::None => StylesheetConditionStatus::Active,

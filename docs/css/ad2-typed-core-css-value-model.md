@@ -172,3 +172,10 @@ browser/runtime.
 
 AD3 adds the current CSS-wide keyword representation and handling contract for
 supported properties. See `docs/css/ad3-css-wide-keyword-handling.md`.
+
+## AH8 candidate extension
+
+[AH8](../platform/ah8-css-resource-reference-discovery.md) uses CssUrlValue for
+decoded authored observations while leaving specified/computed acceptance
+unchanged. URL resolution remains addressing-owned and is never implemented
+by this wrapper. The existing resource-loading exclusions remain in force.

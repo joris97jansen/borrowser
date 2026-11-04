@@ -855,3 +855,12 @@ See [AG5 observation authority and domains](../conformance/ag5-phase-comparison-
 The [conformance guide](../../crates/conformance/README.md) documents the supported
 workflow and evidence limits. This is focused static HTML/CSS infrastructure,
 not broad WPT or browser compatibility.
+
+## AH8 authored CSS resource observation
+
+The [AH8 candidate contract](../platform/ah8-css-resource-reference-discovery.md)
+adds CSS-owned authored discovery, Browser attachment-owned admitted response
+bases and addressing-owned resolution/independence. The existing Tab diagnostic
+exposes it on demand without commands, effective dependencies or retained inventory.
+The parser dependency is integrated at its qualified immutable revision; final
+required Borrowser validation remains pending.

@@ -67,6 +67,7 @@ impl<'a> CssTokenizer<'a> {
                 && self
                     .input
                     .slice(span)
+                    .and_then(|text| crate::syntax::escape::decode(text, false))
                     .map(|text| text.eq_ignore_ascii_case("url"))
                     .unwrap_or(false)
                 && self.consume_url(start, span)
@@ -96,7 +97,7 @@ impl<'a> CssTokenizer<'a> {
             Some('"') | Some('\'') => return false,
             None => {
                 self.pos = probe;
-                self.push_bad_url(start, "unterminated url() recovered at EOF");
+                self.finish_url_at_eof(start, probe, probe);
                 return true;
             }
             _ => {}
@@ -129,14 +130,14 @@ impl<'a> CssTokenizer<'a> {
                     return true;
                 }
                 '\\' => {
-                    self.take_char();
-                    if self.consume_css_line_break_if_present() {
+                    if let Some((_, end)) =
+                        crate::syntax::escape::escaped_code_point(self.input.as_str(), self.pos)
+                    {
+                        self.pos = end;
+                        payload_end = end;
+                    } else {
                         self.push_bad_url(start, "bad url() recovered after invalid escape");
                         return true;
-                    }
-                    if self.peek_char().is_some() {
-                        self.take_char();
-                        payload_end = self.pos;
                     }
                 }
                 _ if is_css_whitespace(ch) => {
@@ -148,6 +149,10 @@ impl<'a> CssTokenizer<'a> {
                         if self.peek_char() == Some(next) {
                             self.take_char();
                         }
+                    }
+                    if self.peek_char().is_none() {
+                        self.finish_url_at_eof(start, payload_start, payload_end);
+                        return true;
                     }
                     if self.peek_char() == Some(')') {
                         let payload = self.safe_text_span(
@@ -183,8 +188,19 @@ impl<'a> CssTokenizer<'a> {
         }
 
         let _ = name_payload;
-        self.push_bad_url(start, "unterminated url() recovered at EOF");
+        self.finish_url_at_eof(start, payload_start, payload_end);
         true
+    }
+
+    fn finish_url_at_eof(&mut self, start: usize, payload_start: usize, payload_end: usize) {
+        let text = self.safe_text_span(payload_start, payload_end, "invalid URL EOF payload");
+        self.push_token_with_kind(CssTokenKind::Url(text), start, self.pos);
+        self.push_diagnostic(
+            DiagnosticSeverity::Warning,
+            DiagnosticKind::UnexpectedEof,
+            self.pos,
+            "URL token recovered at EOF",
+        );
     }
 
     fn push_bad_url(&mut self, start: usize, message: &str) {
@@ -225,9 +241,10 @@ impl<'a> CssTokenizer<'a> {
                 continue;
             }
             if self.is_valid_escape_at(self.pos) {
-                self.take_char();
-                if self.peek_char().is_some() {
-                    self.take_char();
+                if let Some((_, end)) =
+                    crate::syntax::escape::escaped_code_point(self.input.as_str(), self.pos)
+                {
+                    self.pos = end;
                 }
                 continue;
             }

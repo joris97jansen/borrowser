@@ -78,7 +78,12 @@ impl<'a> CssTokenizer<'a> {
                     continue;
                 }
                 if self.peek_char().is_some() {
-                    self.take_char();
+                    let slash = self.pos - 1;
+                    if let Some((_, end)) =
+                        crate::syntax::escape::escaped_code_point(self.input.as_str(), slash)
+                    {
+                        self.pos = end;
+                    }
                 }
                 continue;
             }
@@ -86,7 +91,8 @@ impl<'a> CssTokenizer<'a> {
             self.take_char();
         }
 
-        self.push_token(CssTokenKind::BadString, start, self.pos);
+        let payload = self.safe_text_span(payload_start, self.pos, "invalid EOF string payload");
+        self.push_token_with_kind(CssTokenKind::String(payload), start, self.pos);
         self.push_diagnostic(
             DiagnosticSeverity::Warning,
             DiagnosticKind::UnterminatedString,

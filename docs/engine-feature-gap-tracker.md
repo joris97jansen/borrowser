@@ -570,6 +570,18 @@ Addressing architecture status:
   Picture/srcset parsing/selection, other deferred reference combinations,
   media/nested-document loading, form submission, script loading/execution and
   CSS resource extraction remain gaps. No AG or CI infrastructure changes.
+- AH8 has an [implemented CSS authored-inventory candidate](platform/ah8-css-resource-reference-discovery.md):
+  parsed URL occurrences before cascade filtering, orthogonal shape/context and
+  completeness, admitted-response external bases, observation-time inline bases,
+  parser-backed unavailable-base independence, ordered diagnostics/capabilities,
+  and redacted no-command Browser output. No URL-valued property, resource loader,
+  effective dependency, or AG schema is added. Published parser revision
+  `92f7fb395f9ffb2f706e7c664283781fd3b294a2` is pinned in both Cargo roots after
+  required hosted source qualification and unchanged 35-package graph/checksum
+  checks; frozen policy advanced only afterward. The single final Borrowser CI
+  attempt still fails nine native macOS ownership tests; remaining independent
+  gates and direct consumer tests pass. Required clean CI/supported-host evidence
+  remains pending; AH8 is not closeable or merge-ready.
 - AH behavior remains pending:
   inherited/override base contexts and full loading scheduling, stylesheet base provenance,
   remaining document-creation contexts, unified unsupported-capability diagnostics, and

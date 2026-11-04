@@ -274,7 +274,10 @@ fn declaration_value_span(
     })
 }
 
-fn build_value_components(input: &CssInput, values: &[CssComponentValue]) -> Vec<ValueComponent> {
+pub(crate) fn build_value_components(
+    input: &CssInput,
+    values: &[CssComponentValue],
+) -> Vec<ValueComponent> {
     values
         .iter()
         .filter_map(|value| build_value_component(input, value))

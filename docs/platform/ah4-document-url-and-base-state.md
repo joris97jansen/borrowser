@@ -468,3 +468,11 @@ release warnings in untouched HTML, CSS and runtime-parse code remain. The host
 startup smoke reached the native executable and was intentionally interrupted;
 no manual visual inspection was performed. The historical native diagnostic
 remains unclassified.
+
+## AH8 authored CSS observation
+
+[AH8](ah8-css-resource-reference-discovery.md) adds observational CSS addressing.
+Style elements use the current committed active base when observed; attributes
+are freshly parsed at observation with that base. External attachment bases are
+retained from admitted responses and do not follow document-base changes. This
+does not change AH4 publication, frozen-base, loading or preview guarantees.

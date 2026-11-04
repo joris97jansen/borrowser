@@ -111,3 +111,10 @@ Snapshot guarantees:
 - stable span rendering
 - text payloads are resolved deterministically through `CssInput`
 - snapshot formatting does not depend on Rust derived `Debug`
+
+## AH8 source spelling and decoding
+
+Source-backed token payloads retain raw CSS spelling. Resolving a CssTokenText
+is not unescaping it. [AH8](../platform/ah8-css-resource-reference-discovery.md)
+uses the shared CSS escape primitive for its semantic reference projection and
+keeps the source input alive for spans. URL normalization remains separate.

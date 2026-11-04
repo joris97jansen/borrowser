@@ -322,3 +322,10 @@ implemented contract.
   semantics, not CSS semantics.
 - Unsupported and unimplemented CSS features remain explicit gaps rather than
   hidden fallback behavior.
+
+## AH8 authored-reference handoff
+
+CSS additionally supplies the [AH8 authored resource inventory](../platform/ah8-css-resource-reference-discovery.md)
+to Browser. This handoff is distinct from computed-style consumption: CSS retains
+syntax/decoding and meaning, Browser supplies association/base provenance, and
+addressing owns URL semantics. No downstream CSS parsing or new property acceptance.

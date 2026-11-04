@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enforce the AH3-qualified URL graph in both Cargo workspaces (Python 3.11+)."""
+"""Enforce the AH8-qualified URL source and frozen graph in both Cargo workspaces."""
 
 import json
 from pathlib import Path
@@ -10,8 +10,11 @@ import tomllib
 # Reviewed CI policy, independent of the manifests/locks being checked.
 # Qualification graph lock SHA-256:
 # a770f264be9656bcf64db971b60c2a09ee0a542600ead12b66f52f878db154d6
+# AH8 source qualification (2026-11-04), completed before advancing this policy:
+# https://github.com/joris97jansen/rust-url/actions/runs/41777938203
+# CI control 823ba428f3a9883e8873e91d6cf46b7ac822c0a7 is not the parser source.
 # Update only after dependency requalification; never substitute its CI-control SHA.
-APPROVED_REVISION = "7dc4ecbf4d29817e723e04ae94b14f1326764f61"
+APPROVED_REVISION = "92f7fb395f9ffb2f706e7c664283781fd3b294a2"
 APPROVED_REPOSITORY = "https://github.com/joris97jansen/rust-url.git"
 APPROVED_SOURCE = f"git+{APPROVED_REPOSITORY}?rev={APPROVED_REVISION}#{APPROVED_REVISION}"
 REGISTRY_SOURCE = "registry+https://github.com/rust-lang/crates.io-index"
