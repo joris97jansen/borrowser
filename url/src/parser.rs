@@ -375,7 +375,9 @@ impl Parser<'_> {
     pub fn parse_url(mut self, input: &str) -> ParseResult<Url> {
         let input = Input::new_trim_c0_control_and_space(input, self.violation_fn);
         if let Ok(remaining) = self.parse_scheme(input.clone()) {
-            return self.parse_with_scheme(remaining);
+            return self
+                .parse_with_scheme(remaining, false)
+                .map(|url| url.expect("ordinary parsing always selects a URL interpretation"));
         }
 
         // No-scheme state
@@ -394,6 +396,16 @@ impl Parser<'_> {
             }
         } else {
             Err(ParseError::RelativeUrlWithoutBase)
+        }
+    }
+
+    /// Unknown provenance is not the same operation as a null base. Dispatch
+    /// only branches whose value, failure and diagnostics do not consult a base.
+    pub fn parse_url_if_base_independent(mut self, input: &str) -> ParseResult<Option<Url>> {
+        let input = Input::new_trim_c0_control_and_space(input, self.violation_fn);
+        match self.parse_scheme(input) {
+            Ok(remaining) => self.parse_with_scheme(remaining, true),
+            Err(()) => Ok(None),
         }
     }
 
@@ -423,19 +435,34 @@ impl Parser<'_> {
         }
     }
 
-    fn parse_with_scheme(mut self, input: Input<'_>) -> ParseResult<Url> {
+    fn parse_with_scheme(
+        mut self,
+        input: Input<'_>,
+        base_unavailable: bool,
+    ) -> ParseResult<Option<Url>> {
         use crate::SyntaxViolation::{ExpectedDoubleSlash, ExpectedFileDoubleSlash};
         let scheme_end = to_u32(self.serialization.len())?;
         let scheme_type = SchemeType::from(&self.serialization);
         self.serialization.push(':');
         match scheme_type {
             SchemeType::File => {
+                // Only the explicit file-host branch is certified here. A
+                // single slash or drive-looking input can inherit host/drive.
+                if base_unavailable && !input.starts_with("//") {
+                    return Ok(None);
+                }
                 self.log_violation_if(ExpectedFileDoubleSlash, || !input.starts_with("//"));
                 let base_file_url = self.base_url.filter(|base| base.scheme() == "file");
                 self.serialization.clear();
-                self.parse_file(input, scheme_type, base_file_url)
+                self.parse_file(input, scheme_type, base_file_url).map(Some)
             }
             SchemeType::SpecialNotFile => {
+                // Literal authority slashes reach the same branch, with the
+                // same diagnostics, regardless of scheme equality with a base.
+                // Other recoverable spellings are deliberately uncertified.
+                if base_unavailable && !input.starts_with("//") {
+                    return Ok(None);
+                }
                 // special relative or authority state
                 let (slashes_count, remaining) = input.count_matching(|c| matches!(c, '/' | '\\'));
                 if let Some(base_url) = self.base_url {
@@ -445,7 +472,7 @@ impl Parser<'_> {
                         // "Cannot-be-a-base" URLs only happen with "not special" schemes.
                         debug_assert!(!base_url.cannot_be_a_base());
                         self.serialization.clear();
-                        return self.parse_relative(input, scheme_type, base_url);
+                        return self.parse_relative(input, scheme_type, base_url).map(Some);
                     }
                 }
                 // special authority slashes state
@@ -457,8 +484,11 @@ impl Parser<'_> {
                         != "//"
                 });
                 self.after_double_slash(remaining, scheme_type, scheme_end)
+                    .map(Some)
             }
-            SchemeType::NotSpecial => self.parse_non_special(input, scheme_type, scheme_end),
+            SchemeType::NotSpecial => self
+                .parse_non_special(input, scheme_type, scheme_end)
+                .map(Some),
         }
     }
 

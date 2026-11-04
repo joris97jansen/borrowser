@@ -2204,3 +2204,76 @@ fn test_path_percent_encode() {
     let url = Url::parse("http://localhost/a}b").unwrap();
     assert_eq!(url.path(), "/a%7Db");
 }
+
+#[test]
+fn unavailable_base_certifies_only_independent_interpretations_and_diagnostics() {
+    use std::cell::RefCell;
+    for text in [
+        "https:icons/logo.svg",
+        "https:",
+        "icons/logo.svg",
+        "file:icons/logo.svg",
+        "file:/icons/logo.svg",
+        "file:",
+        " https:",
+        "ht\ttps:",
+    ] {
+        let events = RefCell::new(Vec::new());
+        let record = |event| events.borrow_mut().push(event);
+        assert_eq!(
+            url::Url::options()
+                .syntax_violation_callback(Some(&record))
+                .parse_if_base_independent(text),
+            Ok(None),
+            "{text:?}"
+        );
+        assert!(events.into_inner().is_empty());
+    }
+    for text in [
+        "https://cdn.test/a",
+        "file:///icons/logo.svg",
+        "file://server/share/a",
+        "data:payload",
+        "custom:/path",
+        " https://u:p@h.test/a%zz%yy",
+        "https://[::1",
+        " https://u:p@[::1",
+        " ht\ttps://h.test/a%zz%zz",
+        "custom://[::1",
+    ] {
+        let ordinary_events = RefCell::new(Vec::new());
+        let record = |event| ordinary_events.borrow_mut().push(event);
+        let ordinary = url::Url::options()
+            .syntax_violation_callback(Some(&record))
+            .parse(text);
+        let events = RefCell::new(Vec::new());
+        let record = |event| events.borrow_mut().push(event);
+        let independent = url::Url::options()
+            .syntax_violation_callback(Some(&record))
+            .parse_if_base_independent(text);
+        assert_eq!(independent, ordinary.clone().map(Some), "{text:?}");
+        let ordinary_events = ordinary_events.into_inner();
+        assert_eq!(events.into_inner(), ordinary_events);
+        // These are concrete semantic witnesses, not the independence proof.
+        for base in [
+            "https://example.test/css/main.css",
+            "file://server/C:/css/main.css",
+            "about:blank",
+            "custom:/dir/base",
+        ] {
+            let base = url::Url::parse(base).unwrap();
+            let known_events = RefCell::new(Vec::new());
+            let record = |event| known_events.borrow_mut().push(event);
+            let known = url::Url::options()
+                .base_url(Some(&base))
+                .syntax_violation_callback(Some(&record))
+                .parse(text);
+            assert_eq!(known, ordinary, "{text:?} {base}");
+            assert_eq!(
+                known_events.into_inner(),
+                ordinary_events,
+                "{text:?} {base}"
+            );
+        }
+    }
+}

@@ -306,6 +306,35 @@ impl<'a> ParseOptions<'a> {
         self
     }
 
+    /// Parse only when the parser can establish independence from an unavailable
+    /// base, including the failure and ordered syntax violations. `Ok(None)` is
+    /// an unproven interpretation, not a parse error or a statement that the
+    /// reference is intrinsically relative. Any configured base is ignored.
+    ///
+    /// Non-special schemes and explicit `//` authority branches are certified;
+    /// other branches conservatively remain unproven. Ordinary parsing is
+    /// unchanged. No violations are delivered for an unproven operation.
+    pub fn parse_if_base_independent(self, input: &str) -> Result<Option<Url>, crate::ParseError> {
+        let violations = core::cell::RefCell::new(alloc::vec::Vec::new());
+        let record = |event| violations.borrow_mut().push(event);
+        let result = Parser {
+            serialization: String::with_capacity(input.len()),
+            base_url: None,
+            query_encoding_override: self.encoding_override,
+            violation_fn: Some(&record),
+            context: Context::UrlParser,
+        }
+        .parse_url_if_base_independent(input);
+        if !matches!(result, Ok(None)) {
+            if let Some(callback) = self.violation_fn {
+                for event in violations.into_inner() {
+                    callback(event);
+                }
+            }
+        }
+        result
+    }
+
     /// Parse an URL string with the configuration so far.
     pub fn parse(self, input: &str) -> Result<Url, crate::ParseError> {
         Parser {
