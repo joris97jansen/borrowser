@@ -984,3 +984,37 @@ are unresolved and are not established EICE regressions.
 AG6 preserves the completed AG4 contracts and validates its affected fixture and
 artifact integration. It does not reopen cloud qualification or perform live AWS
 work. Historical qualification records below retain their original scope.
+
+## AH9 URL, origin and resource-address fixtures
+
+The local `addressing` suite covers URL parsing/diagnostics/failures, explicit
+relative resolution, document/base/frozen-base state, origins and same-origin
+identity, retrieval keys/capabilities, and authored HTML/CSS discovery. It has 22
+runnable fixtures and two explicit unavailable document-creation contexts.
+
+```sh
+make conformance-addressing
+cargo run -q -p borrowser-conformance --locked -- addressing/origins-opaque
+cargo run -q -p borrowser-conformance --locked -- addressing/css-external
+cargo test -p borrowser-conformance --locked ah9_
+```
+
+Declarations and independently authored JSON snapshots live under
+`fixtures/addressing/`. Reports show exact controlled synthetic observations and
+field differences; production Debug remains redacted. Pure cases use addressing
+APIs only. Document cases use accepted Browser publication and bounded in-memory
+resource manifests; supplied CSS uses the real CSS runtime and admitted final
+response base. Pending unserved requests are observed and remain pending.
+
+See the [AH9 authoring and observation contract](../../docs/platform/ah9-addressing-conformance-fixtures-and-snapshots.md)
+for the four case kinds, source/span availability, expectation review, unsupported
+metadata, command accounting, stable labels, reproduction and failure meaning.
+Add a declaration/expectation, rebuild, run its exact identity, then run the suite.
+Suite membership is an explicit reviewed list, never inferred from passing cases.
+
+The original phase fixtures, accepted-frame authority, `ci`/`extended` suites and
+capture formats remain unchanged. Addressing-only comparison is explicitly
+unsupported (exit 3) and capture-only selection has no capturable documents
+(exit 2); required local assertions still run in the separate CI step. AH9 adds
+no Chromium addressing capture or new networking. Full AH milestone closeout
+belongs to AH10 / #1120; current qualification limitations must remain visible.

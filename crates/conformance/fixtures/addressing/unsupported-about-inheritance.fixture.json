@@ -1,0 +1,20 @@
+{
+  "id": "addressing/unsupported-about-inheritance",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "unsupported",
+    "reason": "Inherited about-document creation/base context is unavailable"
+  },
+  "addressing": {
+    "kind": "documents",
+    "rows": [
+      {
+        "html": "document-default.html",
+        "requested_url": "about:blank",
+        "final_url": "about:blank",
+        "requests": [],
+        "same_document_url": null
+      }
+    ]
+  }
+}

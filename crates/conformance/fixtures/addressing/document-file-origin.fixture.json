@@ -1,0 +1,26 @@
+{
+  "id": "addressing/document-file-origin",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "addressing": {
+    "kind": "documents",
+    "rows": [
+      {
+        "html": "document-default.html",
+        "requested_url": "file:///fixture/page.html#old",
+        "final_url": "file:///fixture/page.html#old",
+        "requests": [],
+        "same_document_url": "file:///fixture/page.html#new"
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "addressing",
+    "path": "document-file-origin.expected.json"
+  }
+}

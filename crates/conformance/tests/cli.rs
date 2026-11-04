@@ -44,6 +44,11 @@ fn ag8_suites_are_deterministic_in_independent_processes_without_backends() {
     let elsewhere = tempfile::tempdir().unwrap();
     for (suite, exit, summary) in [
         (
+            "addressing",
+            0,
+            "SUMMARY PASS=22 FAIL=0 XFAIL=0 XPASS=0 UNSUPPORTED=2 SKIP=0 ERROR=0 INCOMPLETE=0",
+        ),
+        (
             "ci",
             0,
             "SUMMARY PASS=7 FAIL=0 XFAIL=0 XPASS=0 UNSUPPORTED=0 SKIP=0 ERROR=0 INCOMPLETE=0",
@@ -71,7 +76,7 @@ fn ag8_suites_are_deterministic_in_independent_processes_without_backends() {
         assert_eq!(text.lines().last(), Some(summary));
         assert!(text.contains(&format!(
             "INDEPENDENT_EXPECTATIONS XFAIL={}\n",
-            if suite == "ci" { 0 } else { 2 }
+            if suite == "extended" { 2 } else { 0 }
         )));
         for _ in 0..2 {
             let next = run(elsewhere.path());

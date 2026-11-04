@@ -1,0 +1,118 @@
+{
+  "kind": "documents",
+  "rows": [
+    {
+      "requested_url": "file:///fixture/page.html#old",
+      "final_url": "file:///fixture/page.html#old",
+      "snapshots": [
+        {
+          "document_url": {
+            "serialization": "file:///fixture/page.html#old",
+            "scheme": "file",
+            "username": "",
+            "password": null,
+            "host": null,
+            "port": null,
+            "path": "/fixture/page.html",
+            "query": null,
+            "fragment": "old",
+            "authority": true,
+            "opaque_path": false
+          },
+          "document_origin": {
+            "kind": "opaque",
+            "serialization": "null"
+          },
+          "fallback_base": {
+            "serialization": "file:///fixture/page.html#old",
+            "scheme": "file",
+            "username": "",
+            "password": null,
+            "host": null,
+            "port": null,
+            "path": "/fixture/page.html",
+            "query": null,
+            "fragment": "old",
+            "authority": true,
+            "opaque_path": false
+          },
+          "active_base": {
+            "serialization": "file:///fixture/page.html#old",
+            "scheme": "file",
+            "username": "",
+            "password": null,
+            "host": null,
+            "port": null,
+            "path": "/fixture/page.html",
+            "query": null,
+            "fragment": "old",
+            "authority": true,
+            "opaque_path": false
+          },
+          "selected_base": {
+            "state": "inapplicable"
+          },
+          "html": [],
+          "css": [],
+          "css_scope": "available_parsed_sources"
+        },
+        {
+          "document_url": {
+            "serialization": "file:///fixture/page.html#new",
+            "scheme": "file",
+            "username": "",
+            "password": null,
+            "host": null,
+            "port": null,
+            "path": "/fixture/page.html",
+            "query": null,
+            "fragment": "new",
+            "authority": true,
+            "opaque_path": false
+          },
+          "document_origin": {
+            "kind": "opaque",
+            "serialization": "null"
+          },
+          "fallback_base": {
+            "serialization": "file:///fixture/page.html#new",
+            "scheme": "file",
+            "username": "",
+            "password": null,
+            "host": null,
+            "port": null,
+            "path": "/fixture/page.html",
+            "query": null,
+            "fragment": "new",
+            "authority": true,
+            "opaque_path": false
+          },
+          "active_base": {
+            "serialization": "file:///fixture/page.html#new",
+            "scheme": "file",
+            "username": "",
+            "password": null,
+            "host": null,
+            "port": null,
+            "path": "/fixture/page.html",
+            "query": null,
+            "fragment": "new",
+            "authority": true,
+            "opaque_path": false
+          },
+          "selected_base": {
+            "state": "inapplicable"
+          },
+          "html": [],
+          "css": [],
+          "css_scope": "available_parsed_sources"
+        }
+      ],
+      "retained_origin_same": {
+        "state": "present",
+        "value": true
+      },
+      "requests": []
+    }
+  ]
+}

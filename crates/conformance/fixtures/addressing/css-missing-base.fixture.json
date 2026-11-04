@@ -1,0 +1,35 @@
+{
+  "id": "addressing/css-missing-base",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "addressing": {
+    "kind": "documents",
+    "rows": [
+      {
+        "html": "css-external.html",
+        "requested_url": "https://document.test/dir/page?q=1#old",
+        "final_url": "https://document.test/dir/page?q=1#old",
+        "requests": [
+          {
+            "kind": "css",
+            "url": "https://base.test/assets/main.css",
+            "response": {
+              "css": "external-unavailable.css",
+              "final_url": ""
+            }
+          }
+        ],
+        "same_document_url": null
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "addressing",
+    "path": "css-missing-base.expected.json"
+  }
+}

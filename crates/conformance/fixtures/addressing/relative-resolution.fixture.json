@@ -1,0 +1,64 @@
+{
+  "id": "addressing/relative-resolution",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "addressing": {
+    "kind": "url",
+    "rows": [
+      {
+        "reference": "child",
+        "base": "https://example.test/dir/page?q=old#old",
+        "purpose": null
+      },
+      {
+        "reference": "../image.png",
+        "base": "https://example.test/dir/page?q=old#old",
+        "purpose": null
+      },
+      {
+        "reference": "/root",
+        "base": "https://example.test/dir/page?q=old#old",
+        "purpose": null
+      },
+      {
+        "reference": "//cdn.test/a",
+        "base": "https://example.test/dir/page?q=old#old",
+        "purpose": null
+      },
+      {
+        "reference": "?q=new",
+        "base": "https://example.test/dir/page?q=old#old",
+        "purpose": null
+      },
+      {
+        "reference": "#new",
+        "base": "https://example.test/dir/page?q=old#old",
+        "purpose": null
+      },
+      {
+        "reference": "",
+        "base": "https://example.test/dir/page?q=old#old",
+        "purpose": null
+      },
+      {
+        "reference": "https://other.test/a",
+        "base": "https://example.test/dir/page?q=old#old",
+        "purpose": null
+      },
+      {
+        "reference": "next",
+        "base": " https://example.test/a%zz ",
+        "purpose": null
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "addressing",
+    "path": "relative-resolution.expected.json"
+  }
+}

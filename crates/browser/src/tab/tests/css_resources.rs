@@ -325,6 +325,16 @@ fn css_resource_incomplete_source_blocks_resolution_without_erasing_context() {
     let (tab, commands) = fixture("https://cdn.test/main.css", &css);
     let sources = tab.page.css_resource_references().unwrap().unwrap();
     assert!(sources[0].discovery.stats.hit_limit);
+    #[cfg(feature = "conformance-observation")]
+    assert!(
+        tab.observe_document_addressing()
+            .unwrap()
+            .unwrap()
+            .css_sources()[0]
+            .discovery()
+            .stats
+            .hit_limit
+    );
     assert_eq!(
         sources[0].discovery.references[1].disposition.label(),
         "LocalFragment"

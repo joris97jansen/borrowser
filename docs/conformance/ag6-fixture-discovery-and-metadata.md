@@ -202,3 +202,21 @@ pinned browser, it also runs actual mixed-catalogue capture and comparison; with
 that variable it explicitly reports that additional native check as not executed.
 Normal native lifecycle tests and opt-in pinned Chromium checks retain their
 existing permission and standalone-process requirements.
+
+## AH9 local addressing declarations
+
+[AH9](../platform/ah9-addressing-conformance-fixtures-and-snapshots.md) adds a
+closed local addressing input alternative. Existing phase declarations and AG5
+projection semantics are unchanged. Addressing declarations have `addressing`
+instead of phase `input`/`observations`, use `expected.kind = "addressing"`, and
+embed referenced HTML/CSS assets. Tables must be nonempty; input/output family,
+cardinality and required observations are checked before selection/execution.
+The same safe-path, strict-field, independent-expectation and exclusion rules
+apply. Orphan CSS files now fail discovery alongside orphan HTML/expectations.
+
+The four addressing kinds, resource-command manifests, exact synthetic snapshots,
+source availability and authoring workflow are specified by the AH9 contract.
+Production Debug remains redacted. Addressing is local-only: comparison reports
+explicit unsupported coverage without inventing a capture or local PASS; this
+does not disable the required independent addressing suite. Existing Chromium
+and AG4 capture formats and phase subresource denial remain unchanged.

@@ -1,0 +1,602 @@
+{
+  "kind": "url",
+  "rows": [
+    {
+      "input": "child",
+      "base": {
+        "state": "present",
+        "value": {
+          "source": "explicit",
+          "input": {
+            "state": "present",
+            "value": "https://example.test/dir/page?q=old#old"
+          },
+          "url": {
+            "state": "present",
+            "value": {
+              "serialization": "https://example.test/dir/page?q=old#old",
+              "scheme": "https",
+              "username": "",
+              "password": null,
+              "host": {
+                "kind": "domain",
+                "value": "example.test"
+              },
+              "port": null,
+              "path": "/dir/page",
+              "query": "q=old",
+              "fragment": "old",
+              "authority": true,
+              "opaque_path": false
+            }
+          },
+          "diagnostics": [],
+          "failure": {
+            "state": "inapplicable"
+          }
+        }
+      },
+      "outcome": {
+        "kind": "parsed",
+        "url": {
+          "serialization": "https://example.test/dir/child",
+          "scheme": "https",
+          "username": "",
+          "password": null,
+          "host": {
+            "kind": "domain",
+            "value": "example.test"
+          },
+          "port": null,
+          "path": "/dir/child",
+          "query": null,
+          "fragment": null,
+          "authority": true,
+          "opaque_path": false
+        },
+        "diagnostics": [],
+        "origin": {
+          "kind": "tuple",
+          "serialization": "https://example.test"
+        },
+        "resource": {
+          "state": "inapplicable"
+        }
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    },
+    {
+      "input": "../image.png",
+      "base": {
+        "state": "present",
+        "value": {
+          "source": "explicit",
+          "input": {
+            "state": "present",
+            "value": "https://example.test/dir/page?q=old#old"
+          },
+          "url": {
+            "state": "present",
+            "value": {
+              "serialization": "https://example.test/dir/page?q=old#old",
+              "scheme": "https",
+              "username": "",
+              "password": null,
+              "host": {
+                "kind": "domain",
+                "value": "example.test"
+              },
+              "port": null,
+              "path": "/dir/page",
+              "query": "q=old",
+              "fragment": "old",
+              "authority": true,
+              "opaque_path": false
+            }
+          },
+          "diagnostics": [],
+          "failure": {
+            "state": "inapplicable"
+          }
+        }
+      },
+      "outcome": {
+        "kind": "parsed",
+        "url": {
+          "serialization": "https://example.test/image.png",
+          "scheme": "https",
+          "username": "",
+          "password": null,
+          "host": {
+            "kind": "domain",
+            "value": "example.test"
+          },
+          "port": null,
+          "path": "/image.png",
+          "query": null,
+          "fragment": null,
+          "authority": true,
+          "opaque_path": false
+        },
+        "diagnostics": [],
+        "origin": {
+          "kind": "tuple",
+          "serialization": "https://example.test"
+        },
+        "resource": {
+          "state": "inapplicable"
+        }
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    },
+    {
+      "input": "/root",
+      "base": {
+        "state": "present",
+        "value": {
+          "source": "explicit",
+          "input": {
+            "state": "present",
+            "value": "https://example.test/dir/page?q=old#old"
+          },
+          "url": {
+            "state": "present",
+            "value": {
+              "serialization": "https://example.test/dir/page?q=old#old",
+              "scheme": "https",
+              "username": "",
+              "password": null,
+              "host": {
+                "kind": "domain",
+                "value": "example.test"
+              },
+              "port": null,
+              "path": "/dir/page",
+              "query": "q=old",
+              "fragment": "old",
+              "authority": true,
+              "opaque_path": false
+            }
+          },
+          "diagnostics": [],
+          "failure": {
+            "state": "inapplicable"
+          }
+        }
+      },
+      "outcome": {
+        "kind": "parsed",
+        "url": {
+          "serialization": "https://example.test/root",
+          "scheme": "https",
+          "username": "",
+          "password": null,
+          "host": {
+            "kind": "domain",
+            "value": "example.test"
+          },
+          "port": null,
+          "path": "/root",
+          "query": null,
+          "fragment": null,
+          "authority": true,
+          "opaque_path": false
+        },
+        "diagnostics": [],
+        "origin": {
+          "kind": "tuple",
+          "serialization": "https://example.test"
+        },
+        "resource": {
+          "state": "inapplicable"
+        }
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    },
+    {
+      "input": "//cdn.test/a",
+      "base": {
+        "state": "present",
+        "value": {
+          "source": "explicit",
+          "input": {
+            "state": "present",
+            "value": "https://example.test/dir/page?q=old#old"
+          },
+          "url": {
+            "state": "present",
+            "value": {
+              "serialization": "https://example.test/dir/page?q=old#old",
+              "scheme": "https",
+              "username": "",
+              "password": null,
+              "host": {
+                "kind": "domain",
+                "value": "example.test"
+              },
+              "port": null,
+              "path": "/dir/page",
+              "query": "q=old",
+              "fragment": "old",
+              "authority": true,
+              "opaque_path": false
+            }
+          },
+          "diagnostics": [],
+          "failure": {
+            "state": "inapplicable"
+          }
+        }
+      },
+      "outcome": {
+        "kind": "parsed",
+        "url": {
+          "serialization": "https://cdn.test/a",
+          "scheme": "https",
+          "username": "",
+          "password": null,
+          "host": {
+            "kind": "domain",
+            "value": "cdn.test"
+          },
+          "port": null,
+          "path": "/a",
+          "query": null,
+          "fragment": null,
+          "authority": true,
+          "opaque_path": false
+        },
+        "diagnostics": [],
+        "origin": {
+          "kind": "tuple",
+          "serialization": "https://cdn.test"
+        },
+        "resource": {
+          "state": "inapplicable"
+        }
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    },
+    {
+      "input": "?q=new",
+      "base": {
+        "state": "present",
+        "value": {
+          "source": "explicit",
+          "input": {
+            "state": "present",
+            "value": "https://example.test/dir/page?q=old#old"
+          },
+          "url": {
+            "state": "present",
+            "value": {
+              "serialization": "https://example.test/dir/page?q=old#old",
+              "scheme": "https",
+              "username": "",
+              "password": null,
+              "host": {
+                "kind": "domain",
+                "value": "example.test"
+              },
+              "port": null,
+              "path": "/dir/page",
+              "query": "q=old",
+              "fragment": "old",
+              "authority": true,
+              "opaque_path": false
+            }
+          },
+          "diagnostics": [],
+          "failure": {
+            "state": "inapplicable"
+          }
+        }
+      },
+      "outcome": {
+        "kind": "parsed",
+        "url": {
+          "serialization": "https://example.test/dir/page?q=new",
+          "scheme": "https",
+          "username": "",
+          "password": null,
+          "host": {
+            "kind": "domain",
+            "value": "example.test"
+          },
+          "port": null,
+          "path": "/dir/page",
+          "query": "q=new",
+          "fragment": null,
+          "authority": true,
+          "opaque_path": false
+        },
+        "diagnostics": [],
+        "origin": {
+          "kind": "tuple",
+          "serialization": "https://example.test"
+        },
+        "resource": {
+          "state": "inapplicable"
+        }
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    },
+    {
+      "input": "#new",
+      "base": {
+        "state": "present",
+        "value": {
+          "source": "explicit",
+          "input": {
+            "state": "present",
+            "value": "https://example.test/dir/page?q=old#old"
+          },
+          "url": {
+            "state": "present",
+            "value": {
+              "serialization": "https://example.test/dir/page?q=old#old",
+              "scheme": "https",
+              "username": "",
+              "password": null,
+              "host": {
+                "kind": "domain",
+                "value": "example.test"
+              },
+              "port": null,
+              "path": "/dir/page",
+              "query": "q=old",
+              "fragment": "old",
+              "authority": true,
+              "opaque_path": false
+            }
+          },
+          "diagnostics": [],
+          "failure": {
+            "state": "inapplicable"
+          }
+        }
+      },
+      "outcome": {
+        "kind": "parsed",
+        "url": {
+          "serialization": "https://example.test/dir/page?q=old#new",
+          "scheme": "https",
+          "username": "",
+          "password": null,
+          "host": {
+            "kind": "domain",
+            "value": "example.test"
+          },
+          "port": null,
+          "path": "/dir/page",
+          "query": "q=old",
+          "fragment": "new",
+          "authority": true,
+          "opaque_path": false
+        },
+        "diagnostics": [],
+        "origin": {
+          "kind": "tuple",
+          "serialization": "https://example.test"
+        },
+        "resource": {
+          "state": "inapplicable"
+        }
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    },
+    {
+      "input": "",
+      "base": {
+        "state": "present",
+        "value": {
+          "source": "explicit",
+          "input": {
+            "state": "present",
+            "value": "https://example.test/dir/page?q=old#old"
+          },
+          "url": {
+            "state": "present",
+            "value": {
+              "serialization": "https://example.test/dir/page?q=old#old",
+              "scheme": "https",
+              "username": "",
+              "password": null,
+              "host": {
+                "kind": "domain",
+                "value": "example.test"
+              },
+              "port": null,
+              "path": "/dir/page",
+              "query": "q=old",
+              "fragment": "old",
+              "authority": true,
+              "opaque_path": false
+            }
+          },
+          "diagnostics": [],
+          "failure": {
+            "state": "inapplicable"
+          }
+        }
+      },
+      "outcome": {
+        "kind": "parsed",
+        "url": {
+          "serialization": "https://example.test/dir/page?q=old",
+          "scheme": "https",
+          "username": "",
+          "password": null,
+          "host": {
+            "kind": "domain",
+            "value": "example.test"
+          },
+          "port": null,
+          "path": "/dir/page",
+          "query": "q=old",
+          "fragment": null,
+          "authority": true,
+          "opaque_path": false
+        },
+        "diagnostics": [],
+        "origin": {
+          "kind": "tuple",
+          "serialization": "https://example.test"
+        },
+        "resource": {
+          "state": "inapplicable"
+        }
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    },
+    {
+      "input": "https://other.test/a",
+      "base": {
+        "state": "present",
+        "value": {
+          "source": "explicit",
+          "input": {
+            "state": "present",
+            "value": "https://example.test/dir/page?q=old#old"
+          },
+          "url": {
+            "state": "present",
+            "value": {
+              "serialization": "https://example.test/dir/page?q=old#old",
+              "scheme": "https",
+              "username": "",
+              "password": null,
+              "host": {
+                "kind": "domain",
+                "value": "example.test"
+              },
+              "port": null,
+              "path": "/dir/page",
+              "query": "q=old",
+              "fragment": "old",
+              "authority": true,
+              "opaque_path": false
+            }
+          },
+          "diagnostics": [],
+          "failure": {
+            "state": "inapplicable"
+          }
+        }
+      },
+      "outcome": {
+        "kind": "parsed",
+        "url": {
+          "serialization": "https://other.test/a",
+          "scheme": "https",
+          "username": "",
+          "password": null,
+          "host": {
+            "kind": "domain",
+            "value": "other.test"
+          },
+          "port": null,
+          "path": "/a",
+          "query": null,
+          "fragment": null,
+          "authority": true,
+          "opaque_path": false
+        },
+        "diagnostics": [],
+        "origin": {
+          "kind": "tuple",
+          "serialization": "https://other.test"
+        },
+        "resource": {
+          "state": "inapplicable"
+        }
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    },
+    {
+      "input": "next",
+      "base": {
+        "state": "present",
+        "value": {
+          "source": "explicit",
+          "input": {
+            "state": "present",
+            "value": " https://example.test/a%zz "
+          },
+          "url": {
+            "state": "present",
+            "value": {
+              "serialization": "https://example.test/a%zz",
+              "scheme": "https",
+              "username": "",
+              "password": null,
+              "host": {
+                "kind": "domain",
+                "value": "example.test"
+              },
+              "port": null,
+              "path": "/a%zz",
+              "query": null,
+              "fragment": null,
+              "authority": true,
+              "opaque_path": false
+            }
+          },
+          "diagnostics": [
+            "boundary_control_or_space_ignored",
+            "invalid_percent_encoding"
+          ],
+          "failure": {
+            "state": "inapplicable"
+          }
+        }
+      },
+      "outcome": {
+        "kind": "parsed",
+        "url": {
+          "serialization": "https://example.test/next",
+          "scheme": "https",
+          "username": "",
+          "password": null,
+          "host": {
+            "kind": "domain",
+            "value": "example.test"
+          },
+          "port": null,
+          "path": "/next",
+          "query": null,
+          "fragment": null,
+          "authority": true,
+          "opaque_path": false
+        },
+        "diagnostics": [],
+        "origin": {
+          "kind": "tuple",
+          "serialization": "https://example.test"
+        },
+        "resource": {
+          "state": "inapplicable"
+        }
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    }
+  ]
+}

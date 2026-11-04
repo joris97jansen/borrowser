@@ -103,7 +103,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn truth_table_uses_exact_present_semantic_values() {
-        let request = crate::fixtures::fixture("wpt-style/background-color-mismatch").request;
+        let request = crate::fixtures::fixture("wpt-style/background-color-mismatch").request();
         for kind in [RelationshipKind::Match, RelationshipKind::Mismatch] {
             for equal in [true, false] {
                 let left = color("probe", [0, 128, 0, 255]);
@@ -131,7 +131,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn invalid_color_payloads_never_establish_either_relationship() {
-        let request = crate::fixtures::fixture("wpt-style/background-color-mismatch").request;
+        let request = crate::fixtures::fixture("wpt-style/background-color-mismatch").request();
         let valid = color("probe", [0, 128, 0, 255]);
         let invalid = [
             StyleValue::CssPx(0.0),
@@ -167,7 +167,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn absent_targets_errors_and_unsupported_observations_never_satisfy() {
-        let request = crate::fixtures::fixture("wpt-style/background-color-mismatch").request;
+        let request = crate::fixtures::fixture("wpt-style/background-color-mismatch").request();
         let present = color("probe", [0, 128, 0, 255]);
         let mut absent = present.clone();
         absent.styles[0].value = Observation::Observed(TargetValue::MissingNode);

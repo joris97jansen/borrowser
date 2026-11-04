@@ -1,0 +1,63 @@
+{
+  "kind": "url",
+  "rows": [
+    {
+      "input": " https://example.test/a%zz%yy ",
+      "base": {
+        "state": "inapplicable"
+      },
+      "outcome": {
+        "kind": "parsed",
+        "url": {
+          "serialization": "https://example.test/a%zz%yy",
+          "scheme": "https",
+          "username": "",
+          "password": null,
+          "host": {
+            "kind": "domain",
+            "value": "example.test"
+          },
+          "port": null,
+          "path": "/a%zz%yy",
+          "query": null,
+          "fragment": null,
+          "authority": true,
+          "opaque_path": false
+        },
+        "diagnostics": [
+          "boundary_control_or_space_ignored",
+          "invalid_percent_encoding",
+          "invalid_percent_encoding"
+        ],
+        "origin": {
+          "kind": "tuple",
+          "serialization": "https://example.test"
+        },
+        "resource": {
+          "state": "inapplicable"
+        }
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    },
+    {
+      "input": " https://user:pass@xn--:70000/",
+      "base": {
+        "state": "inapplicable"
+      },
+      "outcome": {
+        "kind": "failed",
+        "diagnostics": [
+          "boundary_control_or_space_ignored",
+          "embedded_credentials",
+          "domain_to_ascii"
+        ],
+        "failure": "invalid_port"
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    }
+  ]
+}

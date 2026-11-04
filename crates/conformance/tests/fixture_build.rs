@@ -379,6 +379,23 @@ fn isolated_cargo_rebuild_and_standalone_execution() {
     )
     .unwrap();
     build(&source, &target);
+    let addressing_original = run(&exe, temp.path(), &["--suite", "addressing"]);
+    assert_eq!(addressing_original.status.code(), Some(0));
+    // Editing CSS bytes alone must invalidate Cargo's embedded source. The
+    // reviewed expectation is intentionally unchanged, so execution must fail.
+    let css_path = root.join("addressing/external.css");
+    let css_saved = fs::read_to_string(&css_path).unwrap();
+    fs::write(&css_path, css_saved.replace("icon.svg", "changed.svg")).unwrap();
+    build(&source, &target);
+    let changed_css = run(&exe, temp.path(), &["addressing/css-external"]);
+    assert_eq!(changed_css.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&changed_css.stdout).contains("difference:"));
+    fs::write(css_path, css_saved).unwrap();
+    build(&source, &target);
+    assert_eq!(
+        run(&exe, temp.path(), &["--suite", "addressing"]).stdout,
+        addressing_original.stdout
+    );
     let named_original: Vec<_> = ["ci", "extended"]
         .into_iter()
         .map(|suite| run(&exe, temp.path(), &["--suite", suite]))
@@ -756,6 +773,10 @@ fn isolated_cargo_rebuild_and_standalone_execution() {
     let standalone = temp.path().join("standalone");
     fs::copy(&exe, &standalone).unwrap();
     fs::remove_dir_all(&source).unwrap();
+    assert_eq!(
+        run(&standalone, temp.path(), &["--suite", "addressing"]).stdout,
+        addressing_original.stdout
+    );
     for (suite, original) in ["ci", "extended"].into_iter().zip(&named_original) {
         let next = run(&standalone, temp.path(), &["--suite", suite]);
         assert_eq!(next.status.code(), original.status.code());
@@ -918,4 +939,52 @@ fn isolated_cargo_rebuild_and_standalone_execution() {
     eprintln!(
         "AG6 isolated production rebuild: add/edit/remove, literal preservation, preflight, exclusions and source-free copied executable passed"
     );
+}
+
+#[test]
+fn ah9_addressing_declarations_are_strict_and_assets_are_embedded() {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let generated = fixture_build::generate(source).unwrap();
+    assert!(generated.contains("FixtureInput::Addressing"));
+    assert!(generated.contains("/fixtures/addressing/external.css"));
+    for mutation in [
+        "empty",
+        "phase_input",
+        "phase_observation",
+        "wrong_expectation",
+        "missing_css",
+        "orphan_css",
+        "duplicate_field",
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        copy_fixture_tree(&source.join("fixtures"), &temp.path().join("fixtures"));
+        let root = temp.path().join("fixtures/addressing");
+        let path = root.join("css-external.fixture.json");
+        let mut metadata: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        match mutation {
+            "empty" => metadata["addressing"]["rows"] = json!([]),
+            "phase_input" => metadata["input"] = json!("css-external.html"),
+            "phase_observation" => metadata["observations"] = json!({"canvas":{"kind":"compare"}}),
+            "wrong_expectation" => metadata["expected"]["kind"] = json!("projection"),
+            "missing_css" => {
+                metadata["addressing"]["rows"][0]["requests"][0]["response"]["css"] =
+                    json!("missing.css")
+            }
+            "orphan_css" => fs::write(root.join("orphan.css"), "p{}").unwrap(),
+            "duplicate_field" => {}
+            _ => unreachable!(),
+        }
+        let text = serde_json::to_string(&metadata).unwrap();
+        let text = if mutation == "duplicate_field" {
+            text.replacen(
+                "\"kind\":\"documents\"",
+                "\"kind\":\"documents\",\"kind\":\"url\"",
+                1,
+            )
+        } else {
+            text
+        };
+        fs::write(path, text).unwrap();
+        assert!(fixture_build::generate(temp.path()).is_err(), "{mutation}");
+    }
 }

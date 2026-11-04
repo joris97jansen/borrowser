@@ -1,0 +1,54 @@
+{
+  "id": "addressing/origins-tuples",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "addressing": {
+    "kind": "origins",
+    "rows": [
+      {
+        "left": "https://EXAMPLE.test:443/a?x#f",
+        "right": {
+          "kind": "independent",
+          "url": "https://example.test/b"
+        }
+      },
+      {
+        "left": "https://example.test/",
+        "right": {
+          "kind": "independent",
+          "url": "http://example.test/"
+        }
+      },
+      {
+        "left": "https://example.test/",
+        "right": {
+          "kind": "independent",
+          "url": "https://example.test:8443/"
+        }
+      },
+      {
+        "left": "https://[2001:0db8::1]/",
+        "right": {
+          "kind": "independent",
+          "url": "https://[2001:db8::1]:443/"
+        }
+      },
+      {
+        "left": "https://bücher.test/",
+        "right": {
+          "kind": "independent",
+          "url": "https://xn--bcher-kva.test/"
+        }
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "addressing",
+    "path": "origins-tuples.expected.json"
+  }
+}

@@ -522,3 +522,46 @@ fn ag8_real_chromium_suites_are_stable() {
         }
     }
 }
+
+#[test]
+fn ah9_local_only_comparison_is_explicit_and_does_not_launch_a_backend() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_borrowser-conformance"))
+        .args(["--compare", "--suite", "addressing"])
+        .env(
+            "BORROWSER_CHROMIUM_EXECUTABLE",
+            "/unavailable/ah9-must-not-launch",
+        )
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["schema"], "borrowser.cross-engine-phases.v3");
+    let cases = report["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 24);
+    for case in cases {
+        assert_eq!(case["borrowser_status"], "UNSUPPORTED");
+        assert_eq!(case["status"], "incomplete");
+        assert!(case["captures"].is_null());
+        assert!(case["descriptor"].is_null());
+        assert!(case["borrowser_expectation"].is_null());
+        assert_eq!(case["coverage"]["classification"], "unsupported");
+        assert!(!case["coverage"]["reason"].as_str().unwrap().is_empty());
+    }
+    let local = std::process::Command::new(env!("CARGO_BIN_EXE_borrowser-conformance"))
+        .args(["--suite", "addressing", "addressing/scheme-capabilities"])
+        .env(
+            "BORROWSER_CHROMIUM_EXECUTABLE",
+            "/unavailable/ah9-must-not-launch",
+        )
+        .output()
+        .unwrap();
+    assert_eq!(local.status.code(), Some(0));
+    assert!(
+        String::from_utf8_lossy(&local.stdout).starts_with("PASS addressing/scheme-capabilities\n")
+    );
+}

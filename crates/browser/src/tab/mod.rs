@@ -27,6 +27,24 @@ mod status;
 mod tests;
 mod ui;
 
+#[cfg(feature = "conformance-observation")]
+mod addressing_observation;
+#[cfg(feature = "conformance-observation")]
+pub use crate::page::addressing::BaseOutcome;
+#[cfg(feature = "conformance-observation")]
+pub use crate::page::css_resources::{
+    CssBase, CssReferenceOutcome, CssSource, CssSourceReferences,
+};
+#[cfg(feature = "conformance-observation")]
+pub use crate::page::html_resources::{
+    HtmlReferenceBase, HtmlReferenceOutcome, HtmlResourceReference,
+};
+#[cfg(feature = "conformance-observation")]
+pub use addressing_observation::{
+    AddressingObservationError, AddressingRequestState, BaseSelectionObservation,
+    DocumentAddressObservation,
+};
+
 pub use self::state::{HistoryEntry, Tab};
 pub use self::ui::PageFrameStatus;
 pub use dom_style::{inherited_color, page_background};

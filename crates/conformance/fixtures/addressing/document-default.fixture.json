@@ -1,0 +1,40 @@
+{
+  "id": "addressing/document-default",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "addressing": {
+    "kind": "documents",
+    "rows": [
+      {
+        "html": "document-default.html",
+        "requested_url": "https://document.test/dir/page?q=1#old",
+        "final_url": "https://document.test/dir/page?q=1#old",
+        "requests": [],
+        "same_document_url": null
+      },
+      {
+        "html": "document-default.html",
+        "requested_url": "https://request.test/original",
+        "final_url": "https://response.test/path/final?q=1#f",
+        "requests": [],
+        "same_document_url": null
+      },
+      {
+        "html": "document-default.html",
+        "requested_url": "https://document.test/dir/page?q=1#old",
+        "final_url": "",
+        "requests": [],
+        "same_document_url": null
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "addressing",
+    "path": "document-default.expected.json"
+  }
+}

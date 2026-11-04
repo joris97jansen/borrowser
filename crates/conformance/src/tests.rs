@@ -2,9 +2,14 @@ use crate::{model::*, report, run_fixture};
 
 fn runnable(expected: CanvasColor, expectation: Expectation) -> Fixture {
     Fixture {
-        document: crate::fixtures::fixture("canvas/root")
-            .document
-            .with_test_bytes(include_bytes!("../fixtures/root-canvas-color.html")),
+        input: crate::model::FixtureInput::Phases {
+            document: crate::fixtures::fixture("canvas/root")
+                .phase()
+                .unwrap()
+                .0
+                .with_test_bytes(include_bytes!("../fixtures/root-canvas-color.html")),
+            request: (*crate::fixtures::fixture("canvas/root")).request(),
+        },
         kind: FixtureKind::Runnable {
             checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
                 expected: Expected::Canvas(expected),
@@ -132,7 +137,7 @@ fn every_discovered_fixture_uses_the_production_execution_and_expectation_path()
 #[test]
 fn actual_capture_error_cannot_satisfy_known_failure_metadata() {
     let fixture = Fixture {
-document: crate::fixtures::fixture("canvas/root").document.with_test_bytes(b"<!doctype html><html><head><style>html,body{margin:0;padding:0;height:0}html{background-color:#123456}div{height:100px;background-color:red}</style></head><body><div></div></body></html>"),
+input: crate::model::FixtureInput::Phases { document: crate::fixtures::fixture("canvas/root").phase().unwrap().0.with_test_bytes(b"<!doctype html><html><head><style>html,body{margin:0;padding:0;height:0}html{background-color:#123456}div{height:100px;background-color:red}</style></head><body><div></div></body></html>"), request: (*crate::fixtures::fixture("canvas/root")).request() },
 kind: FixtureKind::Runnable { checks: crate::model::Checks::Independent(crate::model::IndependentExpectation { expected: crate::model::Expected::Canvas(CanvasColor([18, 52, 86])), disposition: Expectation::KnownFailure { reason: "must not hide capture failure" } }) },
 ..*crate::fixtures::fixture("canvas/root")
 };
@@ -147,17 +152,22 @@ kind: FixtureKind::Runnable { checks: crate::model::Checks::Independent(crate::m
 fn projection_local_typed_numeric_diagnostics_agree_with_status() {
     use crate::projection::{ObservationRequest, Request, StyleField, StyleProperty};
     let fixture = Fixture {
-        request: ObservationRequest {
-            styles: &[StyleField {
-                target: "x",
-                name: "font-size",
-                property: Request::Compare(StyleProperty::FontSize),
-            }],
-            ..ObservationRequest::NONE
+        input: crate::model::FixtureInput::Phases {
+            document: crate::fixtures::fixture("style/cascade-inheritance")
+                .phase()
+                .unwrap()
+                .0
+                .with_test_bytes(b"<!doctype html><div id=x style='font-size:20px'></div>"),
+            request: ObservationRequest {
+                styles: &[StyleField {
+                    target: "x",
+                    name: "font-size",
+                    property: Request::Compare(StyleProperty::FontSize),
+                }],
+                ..ObservationRequest::NONE
+            },
         },
-        document: crate::fixtures::fixture("style/cascade-inheritance")
-            .document
-            .with_test_bytes(b"<!doctype html><div id=x style='font-size:20px'></div>"),
+
         kind: FixtureKind::Runnable {
             checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
                 expected: Expected::Projection(
@@ -176,9 +186,14 @@ fn projection_local_typed_numeric_diagnostics_agree_with_status() {
     assert!(!String::from_utf8(bytes).unwrap().contains("difference:"));
     let expected = (fixture).independent().unwrap().expected;
     let changed = Fixture {
-        document: (fixture)
-            .document
-            .with_test_bytes(b"<!doctype html><div id=x style='font-size:21px'></div>"),
+        input: crate::model::FixtureInput::Phases {
+            document: (fixture)
+                .phase()
+                .unwrap()
+                .0
+                .with_test_bytes(b"<!doctype html><div id=x style='font-size:21px'></div>"),
+            request: (fixture).request(),
+        },
         kind: FixtureKind::Runnable {
             checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
                 expected,
@@ -202,29 +217,34 @@ fn projection_local_typed_numeric_diagnostics_agree_with_status() {
 fn projection_local_reports_partial_coverage_and_known_failure_reasons() {
     use crate::projection::{ObservationRequest, Request, StyleField, StyleProperty};
     let fixture = Fixture {
-        request: ObservationRequest {
-            dom: Request::Unsupported {
-                reason: "DOM excluded here",
-            },
-            styles: &[
-                StyleField {
-                    target: "x",
-                    name: "font-size",
-                    property: Request::Compare(StyleProperty::FontSize),
+        input: crate::model::FixtureInput::Phases {
+            document: crate::fixtures::fixture("style/cascade-inheritance")
+                .phase()
+                .unwrap()
+                .0
+                .with_test_bytes(b"<!doctype html><div id=x style='font-size:20px'></div>"),
+            request: ObservationRequest {
+                dom: Request::Unsupported {
+                    reason: "DOM excluded here",
                 },
-                StyleField {
-                    target: "x",
-                    name: "line-height",
-                    property: Request::Unsupported {
-                        reason: "line-height outside profile",
+                styles: &[
+                    StyleField {
+                        target: "x",
+                        name: "font-size",
+                        property: Request::Compare(StyleProperty::FontSize),
                     },
-                },
-            ],
-            ..ObservationRequest::NONE
+                    StyleField {
+                        target: "x",
+                        name: "line-height",
+                        property: Request::Unsupported {
+                            reason: "line-height outside profile",
+                        },
+                    },
+                ],
+                ..ObservationRequest::NONE
+            },
         },
-        document: crate::fixtures::fixture("style/cascade-inheritance")
-            .document
-            .with_test_bytes(b"<!doctype html><div id=x style='font-size:20px'></div>"),
+
         kind: FixtureKind::Runnable {
             checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
                 expected: Expected::Projection(
@@ -236,14 +256,17 @@ fn projection_local_reports_partial_coverage_and_known_failure_reasons() {
         ..*crate::fixtures::fixture("style/cascade-inheritance")
     };
     for differs in [false, true] {
-        let html = (fixture).document.html;
+        let html = (fixture).phase().unwrap().0.html;
         let expected = (fixture).independent().unwrap().expected;
         let fixture = Fixture {
-            document: (fixture).document.with_test_bytes(if differs {
-                b"<!doctype html><div id=x style='font-size:21px'></div>"
-            } else {
-                html
-            }),
+            input: crate::model::FixtureInput::Phases {
+                document: (fixture).phase().unwrap().0.with_test_bytes(if differs {
+                    b"<!doctype html><div id=x style='font-size:21px'></div>"
+                } else {
+                    html
+                }),
+                request: (fixture).request(),
+            },
             kind: FixtureKind::Runnable {
                 checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
                     expected,

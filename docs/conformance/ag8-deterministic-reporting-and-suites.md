@@ -213,3 +213,21 @@ That qualification is baseline evidence, not execution of AG8's new tests.
 AG8 excludes new fixtures/WPT coverage, rendering changes, generic suite/backends,
 retry/flaky-test machinery, scheduling, expected-difference lists, dashboards,
 analytics, automatic issue filing and AWS lifecycle redesign.
+
+## AH9 separate required local suite
+
+AH9 adds `--suite addressing` / `make conformance-addressing` with fixed reviewed
+membership in `fixtures.rs`: 22 runnable fixtures and two explicit deferred
+creation-context exclusions. Its mandatory coverage test asserts 22 PASS and two
+UNSUPPORTED. It runs in `make ci` and a bounded step of the existing Rust CI job.
+No original `ci`/`extended` member or verdict changes, and adding a discovered case
+does not automatically expand any suite. The additional cost is bounded local
+addressing plus small parser/CSS-runtime fixtures, with no frame, network runtime,
+Chromium or AWS dependency. Compilation remains outside the execution timeout.
+
+[AH9's contract](../platform/ah9-addressing-conformance-fixtures-and-snapshots.md)
+defines its exact synthetic observations and source/command accounting. Existing
+statuses and precedence are reused. Local-only comparison coverage is explicitly
+unsupported/incomplete and creates no independent local PASS. Addressing-only
+comparison returns 3 without backend work; capture-only has no capturable input
+and returns 2. Original named comparison suites remain fully available.

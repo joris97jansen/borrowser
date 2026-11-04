@@ -9,6 +9,7 @@ pub(crate) struct CaseReport<'a> {
     execution: Execution,
     comparison: Option<Comparison>,
     expected: Option<ProjectedObservations>,
+    addressing_expected: Option<crate::addressing::observations::AddressingObservation>,
     pub(crate) relationship: Option<crate::relationship::Evaluation>,
 }
 
@@ -20,14 +21,15 @@ pub(crate) fn evaluate(fixture: &Fixture, execution: Execution) -> CaseReport<'_
         other => (other, None),
     };
     let mut validated_expected = None;
+    let mut addressing_expected = None;
     let mut comparison = None;
     let mut relationship = None;
     if let Execution::Observed(actual) = &execution {
         let result = (|| {
-            actual.observations.validate(fixture.request)?;
+            actual.observations.validate(fixture.request())?;
             if let Some(independent) = fixture.independent() {
                 let expected = independent.expected.observations()?;
-                expected.validate(fixture.request)?;
+                expected.validate(fixture.request())?;
                 comparison = Some(if actual.observations == expected {
                     Comparison::Match
                 } else {
@@ -39,7 +41,7 @@ pub(crate) fn evaluate(fixture: &Fixture, execution: Execution) -> CaseReport<'_
                 (Some((kind, _)), Some(reference)) => {
                     relationship = Some(crate::relationship::evaluate(
                         kind,
-                        fixture.request,
+                        fixture.request(),
                         &actual.observations,
                         &reference.observations,
                     )?)
@@ -59,11 +61,48 @@ pub(crate) fn evaluate(fixture: &Fixture, execution: Execution) -> CaseReport<'_
             comparison = None;
         }
     }
+    if let Execution::AddressingObserved(actual) = &execution {
+        let result = (|| {
+            let crate::model::FixtureInput::Addressing(input) = fixture.input else {
+                return Err(crate::model::HarnessError::new(
+                    "addressing.required-data",
+                    "addressing result for phase input",
+                ));
+            };
+            let case = input.case()?;
+            actual.validate(&case)?;
+            let Some(independent) = fixture.independent() else {
+                return Err(crate::model::HarnessError::new(
+                    "addressing.required-data",
+                    "missing independent expectation",
+                ));
+            };
+            let Expected::Addressing(json) = independent.expected else {
+                return Err(crate::model::HarnessError::new(
+                    "addressing.required-data",
+                    "missing addressing expectation",
+                ));
+            };
+            let expected = crate::addressing::expected(json, &case)?;
+            comparison = Some(if *actual == expected {
+                Comparison::Match
+            } else {
+                Comparison::Mismatch
+            });
+            addressing_expected = Some(expected);
+            Ok(())
+        })();
+        if let Err(error) = result {
+            execution = Execution::Error(error);
+            comparison = None;
+        }
+    }
     CaseReport {
         fixture,
         execution,
         comparison,
         expected: validated_expected,
+        addressing_expected,
         relationship,
     }
 }
@@ -73,6 +112,15 @@ impl CaseReport<'_> {
         let independent = self.fixture.independent()?;
         if matches!(self.execution, Execution::Error(_)) {
             return Some("ERROR");
+        }
+        if let Execution::AddressingObserved(_) = &self.execution {
+            return Some(match (self.comparison, independent.disposition) {
+                (Some(Comparison::Match), Expectation::Match) => "PASS",
+                (Some(Comparison::Mismatch), Expectation::Match) => "FAIL",
+                (Some(Comparison::Match), Expectation::KnownFailure { .. }) => "XPASS",
+                (Some(Comparison::Mismatch), Expectation::KnownFailure { .. }) => "XFAIL",
+                _ => "ERROR",
+            });
         }
         if let Execution::Observed(capture) = &self.execution {
             if capture.observations.incomplete() && self.comparison == Some(Comparison::Match) {
@@ -93,7 +141,7 @@ impl CaseReport<'_> {
             Execution::Error(_) => "ERROR",
             Execution::Unsupported { .. } => "UNSUPPORTED",
             Execution::Skipped { .. } => "SKIP",
-            Execution::Observed(_) => {
+            Execution::Observed(_) | Execution::AddressingObserved(_) => {
                 let independent = self.independent_status();
                 if independent == Some("ERROR") {
                     return "ERROR";
@@ -237,7 +285,7 @@ pub(crate) fn write_suite_report(
         let status = report.status();
         counts.record(status);
         writeln!(out, "{status} {}", report.fixture.id.0)?;
-        writeln!(out, "  source: {}", report.fixture.document.source)?;
+        writeln!(out, "  source: {}", report.fixture.source())?;
         writeln!(out, "  metadata: {}", report.fixture.metadata_source)?;
         writeln!(out, "  suite: {}", suite.map_or("catalogue", |s| s.name()))?;
         writeln!(
@@ -249,6 +297,43 @@ pub(crate) fn write_suite_report(
             writeln!(out, "  reference source: {}", reference.source)?;
         }
         match (&report.execution, report.fixture.independent()) {
+            (
+                Execution::AddressingObserved(actual),
+                Some(IndependentExpectation {
+                    expected: Expected::Addressing(_),
+                    disposition,
+                }),
+            ) => {
+                writeln!(
+                    out,
+                    "  actual snapshot: {}",
+                    serde_json::to_string_pretty(actual)?
+                )?;
+                let expected = serde_json::to_value(
+                    report
+                        .addressing_expected
+                        .as_ref()
+                        .expect("validated addressing expectation"),
+                )?;
+                let actual = serde_json::to_value(actual)?;
+                for difference in crate::projection::differences("", &expected, &actual) {
+                    writeln!(
+                        out,
+                        "  difference: {} expected {}, actual {}",
+                        difference.path,
+                        difference
+                            .left
+                            .map_or_else(|| "<absent>".into(), |v| v.to_string()),
+                        difference
+                            .right
+                            .map_or_else(|| "<absent>".into(), |v| v.to_string())
+                    )?;
+                }
+                if let Expectation::KnownFailure { reason } = disposition {
+                    writeln!(out, "  known failure: {reason}")?;
+                }
+            }
+
             (
                 Execution::Observed(actual),
                 Some(IndependentExpectation {
@@ -363,19 +448,24 @@ pub(crate) fn write_suite_report(
                 upstream.form, upstream.unsupported_reason
             )?;
         }
-        if let Some(provenance) = report.fixture.document.provenance {
+        if let Some(provenance) = report.fixture.provenance() {
             writeln!(out, "  provenance: {}", serde_json::to_string(&provenance)?)?;
         }
     }
-    writeln!(
-        out,
-        "ENVIRONMENT viewport={}x{} device_scale_factor=1 sample_pixel=({}, {}) document_url={}",
-        crate::environment::WIDTH,
-        crate::environment::HEIGHT,
-        crate::environment::SAMPLE[0],
-        crate::environment::SAMPLE[1],
-        crate::environment::URL
-    )?;
+    if reports
+        .iter()
+        .any(|r| matches!(r.fixture.input, crate::model::FixtureInput::Phases { .. }))
+    {
+        writeln!(
+            out,
+            "ENVIRONMENT viewport={}x{} device_scale_factor=1 sample_pixel=({}, {}) document_url={}",
+            crate::environment::WIDTH,
+            crate::environment::HEIGHT,
+            crate::environment::SAMPLE[0],
+            crate::environment::SAMPLE[1],
+            crate::environment::URL
+        )?;
+    }
     writeln!(
         out,
         "INDEPENDENT_EXPECTATIONS XFAIL={}",

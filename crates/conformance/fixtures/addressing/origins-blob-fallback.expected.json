@@ -1,0 +1,221 @@
+{
+  "kind": "origins",
+  "rows": [
+    {
+      "left": {
+        "input": "blob:https://example.test/id",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "blob:https://example.test/id",
+            "scheme": "blob",
+            "username": "",
+            "password": null,
+            "host": null,
+            "port": null,
+            "path": "https://example.test/id",
+            "query": null,
+            "fragment": null,
+            "authority": false,
+            "opaque_path": true
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://example.test"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right": {
+        "input": "https://example.test/",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://example.test/",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "example.test"
+            },
+            "port": null,
+            "path": "/",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://example.test"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right_creation": "independent",
+      "same_origin": true
+    },
+    {
+      "left": {
+        "input": "blob:blob:https://example.test/id",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "blob:blob:https://example.test/id",
+            "scheme": "blob",
+            "username": "",
+            "password": null,
+            "host": null,
+            "port": null,
+            "path": "blob:https://example.test/id",
+            "query": null,
+            "fragment": null,
+            "authority": false,
+            "opaque_path": true
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "opaque",
+            "serialization": "null"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right": {
+        "input": "blob:blob:https://example.test/id",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "blob:blob:https://example.test/id",
+            "scheme": "blob",
+            "username": "",
+            "password": null,
+            "host": null,
+            "port": null,
+            "path": "blob:https://example.test/id",
+            "query": null,
+            "fragment": null,
+            "authority": false,
+            "opaque_path": true
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "opaque",
+            "serialization": "null"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right_creation": "independent",
+      "same_origin": false
+    },
+    {
+      "left": {
+        "input": "blob:ftp://example.test/id",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "blob:ftp://example.test/id",
+            "scheme": "blob",
+            "username": "",
+            "password": null,
+            "host": null,
+            "port": null,
+            "path": "ftp://example.test/id",
+            "query": null,
+            "fragment": null,
+            "authority": false,
+            "opaque_path": true
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "opaque",
+            "serialization": "null"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right": {
+        "input": "ftp://example.test/",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "ftp://example.test/",
+            "scheme": "ftp",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "example.test"
+            },
+            "port": null,
+            "path": "/",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "ftp://example.test"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right_creation": "independent",
+      "same_origin": false
+    }
+  ]
+}

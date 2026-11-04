@@ -243,3 +243,18 @@ fn ag8_capture_resolves_suites_before_entering_the_adapter() {
         assert!(text.contains("case_results=not_published"));
     }
 }
+
+#[test]
+fn ah9_capture_only_has_no_fabricated_addressing_documents() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_borrowser-conformance"))
+        .args(["--chromium", "--suite", "addressing"])
+        .env(
+            "BORROWSER_CHROMIUM_EXECUTABLE",
+            "/unavailable/ah9-must-not-launch",
+        )
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("launch failed"));
+}

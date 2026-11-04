@@ -570,7 +570,7 @@ Addressing architecture status:
   Picture/srcset parsing/selection, other deferred reference combinations,
   media/nested-document loading, form submission, script loading/execution and
   CSS resource extraction remain gaps. No AG or CI infrastructure changes.
-- AH8 has an [implemented CSS authored-inventory candidate](platform/ah8-css-resource-reference-discovery.md):
+- AH8 implements the [CSS authored inventory](platform/ah8-css-resource-reference-discovery.md):
   parsed URL occurrences before cascade filtering, orthogonal shape/context and
   completeness, admitted-response external bases, observation-time inline bases,
   parser-backed unavailable-base independence, ordered diagnostics/capabilities,
@@ -581,11 +581,30 @@ Addressing architecture status:
   checks; frozen policy advanced only afterward. The single final Borrowser CI
   attempt still fails nine native macOS ownership tests; remaining independent
   gates and direct consumer tests pass. Required clean CI/supported-host evidence
-  remains pending; AH8 is not closeable or merge-ready.
+  remained pending at that historical local checkpoint. AH8 subsequently merged
+  as PR #1449 / `1cef5bce`; this is not fresh AH9 qualification evidence.
+- AH9 adds [local addressing conformance fixtures and structured synthetic snapshots](platform/ah9-addressing-conformance-fixtures-and-snapshots.md):
+  22 runnable fixtures cover parsing/diagnostics/failures, resolution, committed
+  document/base/frozen state, tuple/opaque relationships, same-origin, retrieval
+  keys/capabilities and authored HTML/CSS discovery. Two unavailable creation
+  contexts have explicit unsupported metadata. A feature-gated borrowed Browser
+  observation uses production records; exact fixture snapshots preserve source
+  distinctions without weakening production Debug privacy. A bounded offline
+  driver validates every emitted and required declared request, preserves pending
+  unserved work and supplies CSS through actual admission/runtime paths with its
+  admitted final response base. The fixed local addressing suite is required in
+  CI; original phase suites and Chromium formats remain unchanged. Chromium
+  addressing capture is explicitly unsupported. Local targeted, subsystem,
+  embedding, CLI, lint, parser/fuzz and build checks pass. Full CI and the HTML5
+  aggregate retain nine reproduced native macOS ownership failures; required
+  native Linux x86-64 Chromium compatibility qualification remains pending.
+  AH9 is not closeable yet and neither AH9 nor Milestone AH is claimed complete.
+  Milestone-wide closeout remains AH10 / #1120.
 - AH behavior remains pending:
-  inherited/override base contexts and full loading scheduling, stylesheet base provenance,
+  inherited/override base contexts and full loading scheduling,
   remaining document-creation contexts, unified unsupported-capability diagnostics, and
-  wider URL/origin debug/conformance evidence. The current `url` dependency is not
+  broader URL/origin/discovery conformance beyond the representative AH9 surface.
+  The current `url` dependency is not
   fully qualified against WHATWG. Neither Milestone AH nor security-policy support is complete;
   AG remains unchanged at nine issues.
 

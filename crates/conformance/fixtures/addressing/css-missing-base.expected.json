@@ -1,0 +1,514 @@
+{
+  "kind": "documents",
+  "rows": [
+    {
+      "requested_url": "https://document.test/dir/page?q=1#old",
+      "final_url": "https://document.test/dir/page?q=1#old",
+      "snapshots": [
+        {
+          "document_url": {
+            "serialization": "https://document.test/dir/page?q=1#old",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/dir/page",
+            "query": "q=1",
+            "fragment": "old",
+            "authority": true,
+            "opaque_path": false
+          },
+          "document_origin": {
+            "kind": "tuple",
+            "serialization": "https://document.test"
+          },
+          "fallback_base": {
+            "serialization": "https://document.test/dir/page?q=1#old",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/dir/page",
+            "query": "q=1",
+            "fragment": "old",
+            "authority": true,
+            "opaque_path": false
+          },
+          "active_base": {
+            "serialization": "https://base.test/assets/",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "base.test"
+            },
+            "port": null,
+            "path": "/assets/",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "selected_base": {
+            "state": "present",
+            "value": {
+              "source": {
+                "node": "element[2]",
+                "attribute": {
+                  "state": "present",
+                  "value": "href"
+                },
+                "input_kind": "stored_dom_attribute",
+                "location": {
+                  "state": "unavailable",
+                  "value": "HTML DOM does not retain byte locations"
+                }
+              },
+              "href": "https://base.test/assets/",
+              "url": {
+                "serialization": "https://base.test/assets/",
+                "scheme": "https",
+                "username": "",
+                "password": null,
+                "host": {
+                  "kind": "domain",
+                  "value": "base.test"
+                },
+                "port": null,
+                "path": "/assets/",
+                "query": null,
+                "fragment": null,
+                "authority": true,
+                "opaque_path": false
+              },
+              "outcome": "resolved",
+              "diagnostics": []
+            }
+          },
+          "html": [
+            {
+              "input": "main.css#attachment",
+              "source": {
+                "node": "element[3]",
+                "attribute": {
+                  "state": "present",
+                  "value": "href"
+                },
+                "input_kind": "stored_dom_attribute",
+                "location": {
+                  "state": "unavailable",
+                  "value": "HTML DOM does not retain byte locations"
+                }
+              },
+              "kind": "stylesheet",
+              "base": {
+                "state": "present",
+                "value": {
+                  "source": "document_active",
+                  "input": {
+                    "state": "inapplicable"
+                  },
+                  "url": {
+                    "state": "present",
+                    "value": {
+                      "serialization": "https://base.test/assets/",
+                      "scheme": "https",
+                      "username": "",
+                      "password": null,
+                      "host": {
+                        "kind": "domain",
+                        "value": "base.test"
+                      },
+                      "port": null,
+                      "path": "/assets/",
+                      "query": null,
+                      "fragment": null,
+                      "authority": true,
+                      "opaque_path": false
+                    }
+                  },
+                  "diagnostics": [],
+                  "failure": {
+                    "state": "inapplicable"
+                  }
+                }
+              },
+              "outcome": {
+                "kind": "resolved",
+                "url": {
+                  "serialization": "https://base.test/assets/main.css#attachment",
+                  "scheme": "https",
+                  "username": "",
+                  "password": null,
+                  "host": {
+                    "kind": "domain",
+                    "value": "base.test"
+                  },
+                  "port": null,
+                  "path": "/assets/main.css",
+                  "query": null,
+                  "fragment": "attachment",
+                  "authority": true,
+                  "opaque_path": false
+                },
+                "diagnostics": [],
+                "origin": {
+                  "kind": "tuple",
+                  "serialization": "https://base.test"
+                },
+                "address": {
+                  "url": "https://base.test/assets/main.css#attachment",
+                  "kind": "stylesheet",
+                  "retrieval_key": "https://base.test/assets/main.css",
+                  "retrieval_capability": "supported",
+                  "navigation_capability": "supported"
+                }
+              }
+            }
+          ],
+          "css": [
+            {
+              "source": "stylesheet[0]",
+              "owner": "element[3]",
+              "base": {
+                "source": "admitted_stylesheet_response",
+                "input": {
+                  "state": "unavailable",
+                  "value": "missing final response URL"
+                },
+                "url": {
+                  "state": "unavailable",
+                  "value": "missing final response URL"
+                },
+                "diagnostics": [],
+                "failure": {
+                  "state": "inapplicable"
+                }
+              },
+              "condition_deferred": false,
+              "effective_participation": "unevaluated",
+              "incomplete": false,
+              "feature_notices_truncated": false,
+              "diagnostics": [],
+              "feature_notices": [],
+              "references": [
+                {
+                  "raw": "url(relative.svg)",
+                  "decoded": {
+                    "state": "present",
+                    "value": "relative.svg"
+                  },
+                  "shape": "literal",
+                  "contexts": [],
+                  "role": "image",
+                  "declaration": {
+                    "state": "present",
+                    "value": "unsupported_property"
+                  },
+                  "selector": {
+                    "state": "present",
+                    "value": "parsed"
+                  },
+                  "source": {
+                    "node": "element[3]",
+                    "attribute": {
+                      "state": "inapplicable"
+                    },
+                    "input_kind": "css_source_slice_and_decoded_reference",
+                    "location": {
+                      "state": "present",
+                      "value": {
+                        "start": 13,
+                        "end": 30,
+                        "line": 1,
+                        "column": 14
+                      }
+                    }
+                  },
+                  "outcome": {
+                    "kind": "unresolved_base"
+                  }
+                },
+                {
+                  "raw": "url(https:icons/logo.svg)",
+                  "decoded": {
+                    "state": "present",
+                    "value": "https:icons/logo.svg"
+                  },
+                  "shape": "literal",
+                  "contexts": [],
+                  "role": "image",
+                  "declaration": {
+                    "state": "present",
+                    "value": "unsupported_property"
+                  },
+                  "selector": {
+                    "state": "present",
+                    "value": "parsed"
+                  },
+                  "source": {
+                    "node": "element[3]",
+                    "attribute": {
+                      "state": "inapplicable"
+                    },
+                    "input_kind": "css_source_slice_and_decoded_reference",
+                    "location": {
+                      "state": "present",
+                      "value": {
+                        "start": 31,
+                        "end": 56,
+                        "line": 1,
+                        "column": 32
+                      }
+                    }
+                  },
+                  "outcome": {
+                    "kind": "unresolved_base"
+                  }
+                },
+                {
+                  "raw": "url(https://cdn.test/absolute.svg)",
+                  "decoded": {
+                    "state": "present",
+                    "value": "https://cdn.test/absolute.svg"
+                  },
+                  "shape": "literal",
+                  "contexts": [],
+                  "role": "image",
+                  "declaration": {
+                    "state": "present",
+                    "value": "unsupported_property"
+                  },
+                  "selector": {
+                    "state": "present",
+                    "value": "parsed"
+                  },
+                  "source": {
+                    "node": "element[3]",
+                    "attribute": {
+                      "state": "inapplicable"
+                    },
+                    "input_kind": "css_source_slice_and_decoded_reference",
+                    "location": {
+                      "state": "present",
+                      "value": {
+                        "start": 57,
+                        "end": 91,
+                        "line": 1,
+                        "column": 58
+                      }
+                    }
+                  },
+                  "outcome": {
+                    "kind": "resolved",
+                    "url": {
+                      "serialization": "https://cdn.test/absolute.svg",
+                      "scheme": "https",
+                      "username": "",
+                      "password": null,
+                      "host": {
+                        "kind": "domain",
+                        "value": "cdn.test"
+                      },
+                      "port": null,
+                      "path": "/absolute.svg",
+                      "query": null,
+                      "fragment": null,
+                      "authority": true,
+                      "opaque_path": false
+                    },
+                    "diagnostics": [],
+                    "origin": {
+                      "kind": "tuple",
+                      "serialization": "https://cdn.test"
+                    },
+                    "address": {
+                      "url": "https://cdn.test/absolute.svg",
+                      "kind": "image",
+                      "retrieval_key": "https://cdn.test/absolute.svg",
+                      "retrieval_capability": "supported",
+                      "navigation_capability": "supported"
+                    }
+                  }
+                },
+                {
+                  "raw": "url('https://[::1')",
+                  "decoded": {
+                    "state": "present",
+                    "value": "https://[::1"
+                  },
+                  "shape": "literal",
+                  "contexts": [],
+                  "role": "image",
+                  "declaration": {
+                    "state": "present",
+                    "value": "unsupported_property"
+                  },
+                  "selector": {
+                    "state": "present",
+                    "value": "parsed"
+                  },
+                  "source": {
+                    "node": "element[3]",
+                    "attribute": {
+                      "state": "inapplicable"
+                    },
+                    "input_kind": "css_source_slice_and_decoded_reference",
+                    "location": {
+                      "state": "present",
+                      "value": {
+                        "start": 92,
+                        "end": 111,
+                        "line": 1,
+                        "column": 93
+                      }
+                    }
+                  },
+                  "outcome": {
+                    "kind": "failed",
+                    "diagnostics": [],
+                    "failure": "invalid_ipv6_address"
+                  }
+                }
+              ]
+            },
+            {
+              "source": "stylesheet[1]",
+              "owner": "element[4]",
+              "base": {
+                "source": "document_active",
+                "input": {
+                  "state": "inapplicable"
+                },
+                "url": {
+                  "state": "present",
+                  "value": {
+                    "serialization": "https://base.test/assets/",
+                    "scheme": "https",
+                    "username": "",
+                    "password": null,
+                    "host": {
+                      "kind": "domain",
+                      "value": "base.test"
+                    },
+                    "port": null,
+                    "path": "/assets/",
+                    "query": null,
+                    "fragment": null,
+                    "authority": true,
+                    "opaque_path": false
+                  }
+                },
+                "diagnostics": [],
+                "failure": {
+                  "state": "inapplicable"
+                }
+              },
+              "condition_deferred": false,
+              "effective_participation": "unevaluated",
+              "incomplete": false,
+              "feature_notices_truncated": false,
+              "diagnostics": [],
+              "feature_notices": [],
+              "references": [
+                {
+                  "raw": "url(inline.svg)",
+                  "decoded": {
+                    "state": "present",
+                    "value": "inline.svg"
+                  },
+                  "shape": "literal",
+                  "contexts": [],
+                  "role": "image",
+                  "declaration": {
+                    "state": "present",
+                    "value": "unsupported_property"
+                  },
+                  "selector": {
+                    "state": "present",
+                    "value": "parsed"
+                  },
+                  "source": {
+                    "node": "element[4]",
+                    "attribute": {
+                      "state": "inapplicable"
+                    },
+                    "input_kind": "css_source_slice_and_decoded_reference",
+                    "location": {
+                      "state": "present",
+                      "value": {
+                        "start": 13,
+                        "end": 28,
+                        "line": 1,
+                        "column": 14
+                      }
+                    }
+                  },
+                  "outcome": {
+                    "kind": "resolved",
+                    "url": {
+                      "serialization": "https://base.test/assets/inline.svg",
+                      "scheme": "https",
+                      "username": "",
+                      "password": null,
+                      "host": {
+                        "kind": "domain",
+                        "value": "base.test"
+                      },
+                      "port": null,
+                      "path": "/assets/inline.svg",
+                      "query": null,
+                      "fragment": null,
+                      "authority": true,
+                      "opaque_path": false
+                    },
+                    "diagnostics": [],
+                    "origin": {
+                      "kind": "tuple",
+                      "serialization": "https://base.test"
+                    },
+                    "address": {
+                      "url": "https://base.test/assets/inline.svg",
+                      "kind": "image",
+                      "retrieval_key": "https://base.test/assets/inline.svg",
+                      "retrieval_capability": "supported",
+                      "navigation_capability": "supported"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "css_scope": "available_parsed_sources"
+        }
+      ],
+      "retained_origin_same": {
+        "state": "inapplicable"
+      },
+      "requests": [
+        {
+          "kind": "css",
+          "url": "https://base.test/assets/main.css",
+          "stylesheet": {
+            "state": "present",
+            "value": "stylesheet[0]"
+          },
+          "state": "complete",
+          "supplied_final_url": {
+            "state": "present",
+            "value": ""
+          }
+        }
+      ]
+    }
+  ]
+}

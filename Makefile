@@ -409,6 +409,7 @@ check-url-dependencies:
 ci:
 	@$(MAKE) check-url-dependencies
 	@$(MAKE) conformance-ci
+	@$(MAKE) conformance-addressing
 	@$(MAKE) fmt-check
 	@$(MAKE) lint
 	@$(MAKE) lint-html5
@@ -513,3 +514,8 @@ conformance-ci:
 # Intentionally propagates the suite command's failure; Make uses its own nonzero exit status.
 conformance-extended:
 	cargo run -q -p borrowser-conformance --locked -- --suite extended
+
+# AH9 local-only addressing; fixed required coverage and no rendering/network.
+.PHONY: conformance-addressing
+conformance-addressing:
+	cargo run -q -p borrowser-conformance --locked -- --suite addressing

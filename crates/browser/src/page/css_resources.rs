@@ -14,14 +14,14 @@ use css::{ParseOptions, StylesheetCollectionInputBuildError, StylesheetSourceId}
 use html::{Node, internal::Id};
 use std::{collections::HashMap, fmt::Write};
 
-pub(crate) enum CssSource {
+pub enum CssSource {
     Stylesheet {
         slot: core_types::StylesheetSlotId,
         id: StylesheetSourceId,
     },
     Attribute,
 }
-pub(crate) enum CssBase<'a> {
+pub enum CssBase<'a> {
     Document(Option<&'a BrowserUrl>),
     Response(Option<&'a Result<UrlParseOutcome, UrlFailure>>),
 }
@@ -34,7 +34,7 @@ impl CssBase<'_> {
         }
     }
 }
-pub(crate) enum CssReferenceOutcome {
+pub enum CssReferenceOutcome {
     IncompleteSource,
     BlockedContext,
     InvalidCss,
@@ -69,7 +69,7 @@ impl std::fmt::Debug for CssReferenceOutcome {
     }
 }
 
-pub(crate) struct CssSourceReferences<'a> {
+pub struct CssSourceReferences<'a> {
     pub(crate) owner: Id,
     pub(crate) source: CssSource,
     pub(crate) base: CssBase<'a>,
@@ -78,7 +78,7 @@ pub(crate) struct CssSourceReferences<'a> {
     pub(crate) discovery: CssResourceDiscovery<'a>,
 }
 impl CssSourceReferences<'_> {
-    pub(crate) fn outcome(&self, reference: &CssResourceReference) -> CssReferenceOutcome {
+    pub fn outcome(&self, reference: &CssResourceReference) -> CssReferenceOutcome {
         if self.discovery.stats.hit_limit {
             return CssReferenceOutcome::IncompleteSource;
         }

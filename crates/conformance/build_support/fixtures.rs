@@ -1,4 +1,6 @@
 //! AG6 build input only. Execution consumes the generated existing Fixture model.
+#[path = "../src/addressing/input.rs"]
+mod addressing_input;
 mod external;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -9,10 +11,11 @@ use std::path::Path;
 #[serde(deny_unknown_fields)]
 struct FixtureMetadata {
     id: String,
-    input: String,
+    input: Option<String>,
     requires_javascript: bool,
     classification: ClassificationMetadata,
-    observations: ObservationMetadata,
+    observations: Option<ObservationMetadata>,
+    addressing: Option<addressing_input::AddressingCase>,
     expectation: Option<ExpectationMetadata>,
     expected: Option<ExpectedMetadata>,
     provenance: Option<external::Provenance>,
@@ -40,6 +43,7 @@ enum ExpectationMetadata {
 enum ExpectedMetadata {
     Canvas { rgb8: [u8; 3] },
     Projection { path: String },
+    Addressing { path: String },
 }
 
 #[derive(Deserialize)]
@@ -316,8 +320,18 @@ pub fn generate(manifest_dir: &Path) -> Result<String, String> {
             }) {
                 return Err(format!("id: invalid fixture identity {:?}", metadata.id));
             }
-            let input =
-                reference(path, &metadata.input, &files).map_err(|e| format!("input: {e}"))?;
+            if let Some(case) = &metadata.addressing {
+                return compile_addressing(&root, path, &metadata, case, &files);
+            }
+            let input = reference(
+                path,
+                metadata
+                    .input
+                    .as_deref()
+                    .ok_or("input: required for phase fixtures")?,
+                &files,
+            )
+            .map_err(|e| format!("input: {e}"))?;
             if !input.ends_with(".html") {
                 return Err("input: expected an .html file".into());
             }
@@ -325,7 +339,11 @@ pub fn generate(manifest_dir: &Path) -> Result<String, String> {
             std::str::from_utf8(&html).map_err(|e| format!("input: expected UTF-8: {e}"))?;
             let mut references = vec![input.clone()];
             let runnable = matches!(metadata.classification, ClassificationMetadata::Runnable {});
-            let request = observations(&metadata.observations, runnable)?;
+            let selections = metadata
+                .observations
+                .as_ref()
+                .ok_or("observations: required for phase fixtures")?;
+            let request = observations(selections, runnable)?;
             if metadata.provenance.is_some() != metadata.upstream_assertion.is_some() {
                 return Err("provenance and upstream_assertion must be declared together".into());
             }
@@ -407,15 +425,12 @@ pub fn generate(manifest_dir: &Path) -> Result<String, String> {
                     {
                         return Err("reference chains/readiness/scripts are unsupported".into());
                     }
-                    if metadata.observations.dom.is_some()
-                        || metadata.observations.layout.is_some()
-                        || metadata.observations.canvas.is_some()
-                        || metadata.observations.styles.len() != 1
-                        || metadata.observations.styles[0].property != "background-color"
-                        || !matches!(
-                            metadata.observations.styles[0].selection,
-                            FamilyMetadata::Compare {}
-                        )
+                    if selections.dom.is_some()
+                        || selections.layout.is_some()
+                        || selections.canvas.is_some()
+                        || selections.styles.len() != 1
+                        || selections.styles[0].property != "background-color"
+                        || !matches!(selections.styles[0].selection, FamilyMetadata::Compare {})
                     {
                         return Err(
                             "relationship requires one present-target background-color observation"
@@ -473,6 +488,11 @@ pub fn generate(manifest_dir: &Path) -> Result<String, String> {
                                 }
                             };
                             let expected = match expected {
+                                ExpectedMetadata::Addressing { .. } => {
+                                    return Err(
+                                        "addressing expectation requires addressing input".into()
+                                    );
+                                }
                                 ExpectedMetadata::Canvas { rgb8 } => {
                                     format!("Expected::Canvas(CanvasColor({rgb8:?}))")
                                 }
@@ -540,7 +560,7 @@ pub fn generate(manifest_dir: &Path) -> Result<String, String> {
             Ok((
                 metadata.id.clone(),
                 format!(
-                    "Fixture {{ id: TestId({}), document: {document}, upstream: {upstream}, metadata_source: {}, requires_javascript: {}, request: {request}, kind: {kind} }}",
+                    "Fixture {{ id: TestId({}), input: crate::model::FixtureInput::Phases {{ document: {document}, request: {request} }}, upstream: {upstream}, metadata_source: {}, requires_javascript: {}, kind: {kind} }}",
                     literal(&metadata.id),
                     literal(&format!("fixtures/{path}")),
                     metadata.requires_javascript
@@ -558,7 +578,7 @@ pub fn generate(manifest_dir: &Path) -> Result<String, String> {
         referenced.extend(references);
     }
     for path in &files {
-        if (path.ends_with(".html") || path.ends_with(".expected.json"))
+        if (path.ends_with(".html") || path.ends_with(".css") || path.ends_with(".expected.json"))
             && !referenced.contains(path)
         {
             return Err(format!("fixtures/{path}: orphan fixture input/expectation"));
@@ -571,5 +591,102 @@ pub fn generate(manifest_dir: &Path) -> Result<String, String> {
             .map(|(_, source)| format!("{source},"))
             .collect::<Vec<_>>()
             .join("\n")
+    ))
+}
+
+fn compile_addressing(
+    root: &Path,
+    path: &str,
+    metadata: &FixtureMetadata,
+    case: &addressing_input::AddressingCase,
+    files: &BTreeSet<String>,
+) -> Result<(String, String, Vec<String>), String> {
+    case.validate()?;
+    if metadata.input.is_some()
+        || metadata.observations.is_some()
+        || metadata.provenance.is_some()
+        || metadata.upstream_assertion.is_some()
+        || metadata.relationship.is_some()
+    {
+        return Err(
+            "addressing input cannot contain phase inputs/observations or reference relationships"
+                .into(),
+        );
+    }
+    let mut references = Vec::new();
+    let mut assets = BTreeMap::new();
+    for (name, extension) in case.assets() {
+        let asset = reference(path, name, files)?;
+        if !asset.ends_with(extension) {
+            return Err(format!("asset {name:?}: expected {extension}"));
+        }
+        let bytes = fs::read(root.join(&asset)).map_err(|e| e.to_string())?;
+        std::str::from_utf8(&bytes).map_err(|e| format!("asset {name:?}: expected UTF-8: {e}"))?;
+        references.push(asset.clone());
+        assets.insert(name, asset);
+    }
+    let kind = match &metadata.classification {
+        ClassificationMetadata::Runnable {} => {
+            if metadata.requires_javascript {
+                return Err("runnable addressing fixture requires JavaScript".into());
+            }
+            let disposition = match metadata
+                .expectation
+                .as_ref()
+                .ok_or("expectation: required")?
+            {
+                ExpectationMetadata::Match {} => "Expectation::Match".to_string(),
+                ExpectationMetadata::KnownFailure { reason: text } => {
+                    reason(text)?;
+                    format!("Expectation::KnownFailure {{ reason: {} }}", literal(text))
+                }
+            };
+            let ExpectedMetadata::Addressing { path: expected } =
+                metadata.expected.as_ref().ok_or("expected: required")?
+            else {
+                return Err("addressing input requires an addressing expectation".into());
+            };
+            let expected = reference(path, expected, files)?;
+            if !expected.ends_with(".expected.json") {
+                return Err("expected: expected an .expected.json file".into());
+            }
+            references.push(expected.clone());
+            format!(
+                "FixtureKind::Runnable {{ checks: Checks::Independent(IndependentExpectation {{ expected: Expected::Addressing({}), disposition: {disposition} }}) }}",
+                embedded(&expected, true)
+            )
+        }
+        ClassificationMetadata::Unsupported { reason: text }
+        | ClassificationMetadata::Skipped { reason: text } => {
+            if metadata.expected.is_some() || metadata.expectation.is_some() {
+                return Err("excluded addressing fixtures must omit expectations".into());
+            }
+            reason(text)?;
+            let variant = if matches!(
+                metadata.classification,
+                ClassificationMetadata::Unsupported { .. }
+            ) {
+                "Unsupported"
+            } else {
+                "Skipped"
+            };
+            format!("FixtureKind::{variant} {{ reason: {} }}", literal(text))
+        }
+    };
+    let assets = assets
+        .iter()
+        .map(|(name, path)| format!("({}, {})", literal(name), embedded(path, true)))
+        .collect::<Vec<_>>()
+        .join(",");
+    Ok((
+        metadata.id.clone(),
+        format!(
+            "Fixture {{ id: TestId({}), input: crate::model::FixtureInput::Addressing(crate::addressing::AddressingInput {{ declaration: {}, assets: &[{assets}] }}), upstream: None, metadata_source: {}, requires_javascript: {}, kind: {kind} }}",
+            literal(&metadata.id),
+            embedded(path, true),
+            literal(&format!("fixtures/{path}")),
+            metadata.requires_javascript,
+        ),
+        references,
     ))
 }

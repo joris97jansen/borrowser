@@ -1,0 +1,34 @@
+{
+  "id": "addressing/opaque-base",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "addressing": {
+    "kind": "url",
+    "rows": [
+      {
+        "reference": "#new",
+        "base": "data:text/plain,hi#old",
+        "purpose": null
+      },
+      {
+        "reference": "child",
+        "base": "data:text/plain,hi#old",
+        "purpose": null
+      },
+      {
+        "reference": "",
+        "base": "data:text/plain,hi#old",
+        "purpose": null
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "addressing",
+    "path": "opaque-base.expected.json"
+  }
+}

@@ -1,0 +1,543 @@
+{
+  "kind": "documents",
+  "rows": [
+    {
+      "requested_url": "https://document.test/dir/page?q=1#old",
+      "final_url": "https://document.test/dir/page?q=1#old",
+      "snapshots": [
+        {
+          "document_url": {
+            "serialization": "https://document.test/dir/page?q=1#old",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/dir/page",
+            "query": "q=1",
+            "fragment": "old",
+            "authority": true,
+            "opaque_path": false
+          },
+          "document_origin": {
+            "kind": "tuple",
+            "serialization": "https://document.test"
+          },
+          "fallback_base": {
+            "serialization": "https://document.test/dir/page?q=1#old",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/dir/page",
+            "query": "q=1",
+            "fragment": "old",
+            "authority": true,
+            "opaque_path": false
+          },
+          "active_base": {
+            "serialization": "https://document.test/dir/page?q=1#old",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/dir/page",
+            "query": "q=1",
+            "fragment": "old",
+            "authority": true,
+            "opaque_path": false
+          },
+          "selected_base": {
+            "state": "inapplicable"
+          },
+          "html": [],
+          "css": [
+            {
+              "source": "stylesheet[0]",
+              "owner": "element[2]",
+              "base": {
+                "source": "document_active",
+                "input": {
+                  "state": "inapplicable"
+                },
+                "url": {
+                  "state": "present",
+                  "value": {
+                    "serialization": "https://document.test/dir/page?q=1#old",
+                    "scheme": "https",
+                    "username": "",
+                    "password": null,
+                    "host": {
+                      "kind": "domain",
+                      "value": "document.test"
+                    },
+                    "port": null,
+                    "path": "/dir/page",
+                    "query": "q=1",
+                    "fragment": "old",
+                    "authority": true,
+                    "opaque_path": false
+                  }
+                },
+                "diagnostics": [],
+                "failure": {
+                  "state": "inapplicable"
+                }
+              },
+              "condition_deferred": true,
+              "effective_participation": "unevaluated",
+              "incomplete": false,
+              "feature_notices_truncated": false,
+              "diagnostics": [
+                {
+                  "kind": "bad_url",
+                  "severity": "warning",
+                  "offset": 181
+                }
+              ],
+              "feature_notices": [
+                {
+                  "context": "import",
+                  "start": 0,
+                  "end": 20
+                },
+                {
+                  "context": "font_face",
+                  "start": 21,
+                  "end": 51
+                },
+                {
+                  "context": "custom_property",
+                  "start": 54,
+                  "end": 74
+                },
+                {
+                  "context": "image_set",
+                  "start": 85,
+                  "end": 111
+                },
+                {
+                  "context": "substitution",
+                  "start": 112,
+                  "end": 144
+                },
+                {
+                  "context": "substitution",
+                  "start": 117,
+                  "end": 143
+                },
+                {
+                  "context": "unsupported_function",
+                  "start": 198,
+                  "end": 223
+                },
+                {
+                  "context": "unsupported_rule",
+                  "start": 270,
+                  "end": 295
+                }
+              ],
+              "references": [
+                {
+                  "raw": "'theme.css'",
+                  "decoded": {
+                    "state": "present",
+                    "value": "theme.css"
+                  },
+                  "shape": "literal",
+                  "contexts": [
+                    "import"
+                  ],
+                  "role": "stylesheet_import",
+                  "declaration": {
+                    "state": "inapplicable"
+                  },
+                  "selector": {
+                    "state": "inapplicable"
+                  },
+                  "source": {
+                    "node": "element[2]",
+                    "attribute": {
+                      "state": "inapplicable"
+                    },
+                    "input_kind": "css_source_slice_and_decoded_reference",
+                    "location": {
+                      "state": "present",
+                      "value": {
+                        "start": 8,
+                        "end": 19,
+                        "line": 1,
+                        "column": 9
+                      }
+                    }
+                  },
+                  "outcome": {
+                    "kind": "blocked_context"
+                  }
+                },
+                {
+                  "raw": "url(font.woff)",
+                  "decoded": {
+                    "state": "present",
+                    "value": "font.woff"
+                  },
+                  "shape": "literal",
+                  "contexts": [
+                    "font_face"
+                  ],
+                  "role": "font",
+                  "declaration": {
+                    "state": "inapplicable"
+                  },
+                  "selector": {
+                    "state": "inapplicable"
+                  },
+                  "source": {
+                    "node": "element[2]",
+                    "attribute": {
+                      "state": "inapplicable"
+                    },
+                    "input_kind": "css_source_slice_and_decoded_reference",
+                    "location": {
+                      "state": "present",
+                      "value": {
+                        "start": 36,
+                        "end": 50,
+                        "line": 1,
+                        "column": 37
+                      }
+                    }
+                  },
+                  "outcome": {
+                    "kind": "blocked_context"
+                  }
+                },
+                {
+                  "raw": "url(custom.png)",
+                  "decoded": {
+                    "state": "present",
+                    "value": "custom.png"
+                  },
+                  "shape": "literal",
+                  "contexts": [
+                    "custom_property"
+                  ],
+                  "role": "unknown",
+                  "declaration": {
+                    "state": "present",
+                    "value": "custom_property"
+                  },
+                  "selector": {
+                    "state": "present",
+                    "value": "parsed"
+                  },
+                  "source": {
+                    "node": "element[2]",
+                    "attribute": {
+                      "state": "inapplicable"
+                    },
+                    "input_kind": "css_source_slice_and_decoded_reference",
+                    "location": {
+                      "state": "present",
+                      "value": {
+                        "start": 58,
+                        "end": 73,
+                        "line": 1,
+                        "column": 59
+                      }
+                    }
+                  },
+                  "outcome": {
+                    "kind": "blocked_context"
+                  }
+                },
+                {
+                  "raw": "url(set.png)",
+                  "decoded": {
+                    "state": "present",
+                    "value": "set.png"
+                  },
+                  "shape": "literal",
+                  "contexts": [
+                    "image_set"
+                  ],
+                  "role": "image",
+                  "declaration": {
+                    "state": "present",
+                    "value": "unsupported_property"
+                  },
+                  "selector": {
+                    "state": "present",
+                    "value": "parsed"
+                  },
+                  "source": {
+                    "node": "element[2]",
+                    "attribute": {
+                      "state": "inapplicable"
+                    },
+                    "input_kind": "css_source_slice_and_decoded_reference",
+                    "location": {
+                      "state": "present",
+                      "value": {
+                        "start": 95,
+                        "end": 107,
+                        "line": 1,
+                        "column": 96
+                      }
+                    }
+                  },
+                  "outcome": {
+                    "kind": "blocked_context"
+                  }
+                },
+                {
+                  "raw": "url(fallback.svg)",
+                  "decoded": {
+                    "state": "present",
+                    "value": "fallback.svg"
+                  },
+                  "shape": "literal",
+                  "contexts": [
+                    "substitution",
+                    "substitution"
+                  ],
+                  "role": "mask",
+                  "declaration": {
+                    "state": "present",
+                    "value": "unsupported_property"
+                  },
+                  "selector": {
+                    "state": "present",
+                    "value": "parsed"
+                  },
+                  "source": {
+                    "node": "element[2]",
+                    "attribute": {
+                      "state": "inapplicable"
+                    },
+                    "input_kind": "css_source_slice_and_decoded_reference",
+                    "location": {
+                      "state": "present",
+                      "value": {
+                        "start": 125,
+                        "end": 142,
+                        "line": 1,
+                        "column": 126
+                      }
+                    }
+                  },
+                  "outcome": {
+                    "kind": "blocked_context"
+                  }
+                },
+                {
+                  "raw": "url('')",
+                  "decoded": {
+                    "state": "present",
+                    "value": ""
+                  },
+                  "shape": "empty",
+                  "contexts": [],
+                  "role": "image",
+                  "declaration": {
+                    "state": "present",
+                    "value": "unsupported_property"
+                  },
+                  "selector": {
+                    "state": "present",
+                    "value": "parsed"
+                  },
+                  "source": {
+                    "node": "element[2]",
+                    "attribute": {
+                      "state": "inapplicable"
+                    },
+                    "input_kind": "css_source_slice_and_decoded_reference",
+                    "location": {
+                      "state": "present",
+                      "value": {
+                        "start": 152,
+                        "end": 159,
+                        "line": 1,
+                        "column": 153
+                      }
+                    }
+                  },
+                  "outcome": {
+                    "kind": "empty"
+                  }
+                },
+                {
+                  "raw": "url(#m)",
+                  "decoded": {
+                    "state": "present",
+                    "value": "#m"
+                  },
+                  "shape": "local_fragment",
+                  "contexts": [],
+                  "role": "unknown",
+                  "declaration": {
+                    "state": "present",
+                    "value": "unsupported_property"
+                  },
+                  "selector": {
+                    "state": "present",
+                    "value": "parsed"
+                  },
+                  "source": {
+                    "node": "element[2]",
+                    "attribute": {
+                      "state": "inapplicable"
+                    },
+                    "input_kind": "css_source_slice_and_decoded_reference",
+                    "location": {
+                      "state": "present",
+                      "value": {
+                        "start": 167,
+                        "end": 174,
+                        "line": 1,
+                        "column": 168
+                      }
+                    }
+                  },
+                  "outcome": {
+                    "kind": "local_fragment"
+                  }
+                },
+                {
+                  "raw": "url(bad\"x)",
+                  "decoded": {
+                    "state": "unavailable",
+                    "value": "invalid CSS URL has no decoded value"
+                  },
+                  "shape": "invalid_css",
+                  "contexts": [],
+                  "role": "unknown",
+                  "declaration": {
+                    "state": "present",
+                    "value": "invalid_value"
+                  },
+                  "selector": {
+                    "state": "present",
+                    "value": "parsed"
+                  },
+                  "source": {
+                    "node": "element[2]",
+                    "attribute": {
+                      "state": "inapplicable"
+                    },
+                    "input_kind": "css_source_slice_and_decoded_reference",
+                    "location": {
+                      "state": "present",
+                      "value": {
+                        "start": 181,
+                        "end": 191,
+                        "line": 1,
+                        "column": 182
+                      }
+                    }
+                  },
+                  "outcome": {
+                    "kind": "invalid_css"
+                  }
+                },
+                {
+                  "raw": "url(unknown.svg)",
+                  "decoded": {
+                    "state": "present",
+                    "value": "unknown.svg"
+                  },
+                  "shape": "literal",
+                  "contexts": [
+                    "unsupported_function"
+                  ],
+                  "role": "unknown",
+                  "declaration": {
+                    "state": "present",
+                    "value": "unsupported_property"
+                  },
+                  "selector": {
+                    "state": "present",
+                    "value": "parsed"
+                  },
+                  "source": {
+                    "node": "element[2]",
+                    "attribute": {
+                      "state": "inapplicable"
+                    },
+                    "input_kind": "css_source_slice_and_decoded_reference",
+                    "location": {
+                      "state": "present",
+                      "value": {
+                        "start": 206,
+                        "end": 222,
+                        "line": 1,
+                        "column": 207
+                      }
+                    }
+                  },
+                  "outcome": {
+                    "kind": "blocked_context"
+                  }
+                },
+                {
+                  "raw": "url(rule.svg)",
+                  "decoded": {
+                    "state": "present",
+                    "value": "rule.svg"
+                  },
+                  "shape": "literal",
+                  "contexts": [
+                    "unsupported_rule"
+                  ],
+                  "role": "unknown",
+                  "declaration": {
+                    "state": "inapplicable"
+                  },
+                  "selector": {
+                    "state": "inapplicable"
+                  },
+                  "source": {
+                    "node": "element[2]",
+                    "attribute": {
+                      "state": "inapplicable"
+                    },
+                    "input_kind": "css_source_slice_and_decoded_reference",
+                    "location": {
+                      "state": "present",
+                      "value": {
+                        "start": 281,
+                        "end": 294,
+                        "line": 1,
+                        "column": 282
+                      }
+                    }
+                  },
+                  "outcome": {
+                    "kind": "blocked_context"
+                  }
+                }
+              ]
+            }
+          ],
+          "css_scope": "available_parsed_sources"
+        }
+      ],
+      "retained_origin_same": {
+        "state": "inapplicable"
+      },
+      "requests": []
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "id": "addressing/resource-keys",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "addressing": {
+    "kind": "keys",
+    "rows": [
+      {
+        "left": {
+          "reference": "https://example.test/a?q=1#one",
+          "base": null,
+          "purpose": "image"
+        },
+        "right": {
+          "reference": "https://example.test/a?q=1#two",
+          "base": null,
+          "purpose": "stylesheet"
+        }
+      },
+      {
+        "left": {
+          "reference": "https://example.test/a?a=1&a=2",
+          "base": null,
+          "purpose": "image"
+        },
+        "right": {
+          "reference": "https://example.test/a?a=2&a=1",
+          "base": null,
+          "purpose": "image"
+        }
+      },
+      {
+        "left": {
+          "reference": "https://example.test/a",
+          "base": null,
+          "purpose": "image"
+        },
+        "right": {
+          "reference": "https://example.test/a?",
+          "base": null,
+          "purpose": "image"
+        }
+      },
+      {
+        "left": {
+          "reference": "https://u:p@example.test/a",
+          "base": null,
+          "purpose": "image"
+        },
+        "right": {
+          "reference": "https://u:q@example.test/a",
+          "base": null,
+          "purpose": "image"
+        }
+      },
+      {
+        "left": {
+          "reference": "https://example.test/a",
+          "base": null,
+          "purpose": "image"
+        },
+        "right": {
+          "reference": "https://example.test/a#",
+          "base": null,
+          "purpose": "image"
+        }
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "addressing",
+    "path": "resource-keys.expected.json"
+  }
+}

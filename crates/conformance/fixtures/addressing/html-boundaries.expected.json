@@ -1,0 +1,502 @@
+{
+  "kind": "documents",
+  "rows": [
+    {
+      "requested_url": "https://document.test/dir/page?q=1#old",
+      "final_url": "https://document.test/dir/page?q=1#old",
+      "snapshots": [
+        {
+          "document_url": {
+            "serialization": "https://document.test/dir/page?q=1#old",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/dir/page",
+            "query": "q=1",
+            "fragment": "old",
+            "authority": true,
+            "opaque_path": false
+          },
+          "document_origin": {
+            "kind": "tuple",
+            "serialization": "https://document.test"
+          },
+          "fallback_base": {
+            "serialization": "https://document.test/dir/page?q=1#old",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/dir/page",
+            "query": "q=1",
+            "fragment": "old",
+            "authority": true,
+            "opaque_path": false
+          },
+          "active_base": {
+            "serialization": "https://document.test/assets/",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/assets/",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "selected_base": {
+            "state": "present",
+            "value": {
+              "source": {
+                "node": "element[2]",
+                "attribute": {
+                  "state": "present",
+                  "value": "href"
+                },
+                "input_kind": "stored_dom_attribute",
+                "location": {
+                  "state": "unavailable",
+                  "value": "HTML DOM does not retain byte locations"
+                }
+              },
+              "href": "../assets/",
+              "url": {
+                "serialization": "https://document.test/assets/",
+                "scheme": "https",
+                "username": "",
+                "password": null,
+                "host": {
+                  "kind": "domain",
+                  "value": "document.test"
+                },
+                "port": null,
+                "path": "/assets/",
+                "query": null,
+                "fragment": null,
+                "authority": true,
+                "opaque_path": false
+              },
+              "outcome": "resolved",
+              "diagnostics": []
+            }
+          },
+          "html": [
+            {
+              "input": "",
+              "source": {
+                "node": "element[8]",
+                "attribute": {
+                  "state": "present",
+                  "value": "src"
+                },
+                "input_kind": "stored_dom_attribute",
+                "location": {
+                  "state": "unavailable",
+                  "value": "HTML DOM does not retain byte locations"
+                }
+              },
+              "kind": "image",
+              "base": {
+                "state": "inapplicable"
+              },
+              "outcome": {
+                "kind": "empty_reference"
+              }
+            },
+            {
+              "input": " ",
+              "source": {
+                "node": "element[9]",
+                "attribute": {
+                  "state": "present",
+                  "value": "src"
+                },
+                "input_kind": "stored_dom_attribute",
+                "location": {
+                  "state": "unavailable",
+                  "value": "HTML DOM does not retain byte locations"
+                }
+              },
+              "kind": "image",
+              "base": {
+                "state": "present",
+                "value": {
+                  "source": "document_active",
+                  "input": {
+                    "state": "inapplicable"
+                  },
+                  "url": {
+                    "state": "present",
+                    "value": {
+                      "serialization": "https://document.test/assets/",
+                      "scheme": "https",
+                      "username": "",
+                      "password": null,
+                      "host": {
+                        "kind": "domain",
+                        "value": "document.test"
+                      },
+                      "port": null,
+                      "path": "/assets/",
+                      "query": null,
+                      "fragment": null,
+                      "authority": true,
+                      "opaque_path": false
+                    }
+                  },
+                  "diagnostics": [],
+                  "failure": {
+                    "state": "inapplicable"
+                  }
+                }
+              },
+              "outcome": {
+                "kind": "resolved",
+                "url": {
+                  "serialization": "https://document.test/assets/",
+                  "scheme": "https",
+                  "username": "",
+                  "password": null,
+                  "host": {
+                    "kind": "domain",
+                    "value": "document.test"
+                  },
+                  "port": null,
+                  "path": "/assets/",
+                  "query": null,
+                  "fragment": null,
+                  "authority": true,
+                  "opaque_path": false
+                },
+                "diagnostics": [
+                  "boundary_control_or_space_ignored"
+                ],
+                "origin": {
+                  "kind": "tuple",
+                  "serialization": "https://document.test"
+                },
+                "address": {
+                  "url": "https://document.test/assets/",
+                  "kind": "image",
+                  "retrieval_key": "https://document.test/assets/",
+                  "retrieval_capability": "supported",
+                  "navigation_capability": "supported"
+                }
+              }
+            },
+            {
+              "input": "",
+              "source": {
+                "node": "element[10]",
+                "attribute": {
+                  "state": "present",
+                  "value": "href"
+                },
+                "input_kind": "stored_dom_attribute",
+                "location": {
+                  "state": "unavailable",
+                  "value": "HTML DOM does not retain byte locations"
+                }
+              },
+              "kind": "hyperlink",
+              "base": {
+                "state": "present",
+                "value": {
+                  "source": "document_active",
+                  "input": {
+                    "state": "inapplicable"
+                  },
+                  "url": {
+                    "state": "present",
+                    "value": {
+                      "serialization": "https://document.test/assets/",
+                      "scheme": "https",
+                      "username": "",
+                      "password": null,
+                      "host": {
+                        "kind": "domain",
+                        "value": "document.test"
+                      },
+                      "port": null,
+                      "path": "/assets/",
+                      "query": null,
+                      "fragment": null,
+                      "authority": true,
+                      "opaque_path": false
+                    }
+                  },
+                  "diagnostics": [],
+                  "failure": {
+                    "state": "inapplicable"
+                  }
+                }
+              },
+              "outcome": {
+                "kind": "resolved",
+                "url": {
+                  "serialization": "https://document.test/assets/",
+                  "scheme": "https",
+                  "username": "",
+                  "password": null,
+                  "host": {
+                    "kind": "domain",
+                    "value": "document.test"
+                  },
+                  "port": null,
+                  "path": "/assets/",
+                  "query": null,
+                  "fragment": null,
+                  "authority": true,
+                  "opaque_path": false
+                },
+                "diagnostics": [],
+                "origin": {
+                  "kind": "tuple",
+                  "serialization": "https://document.test"
+                },
+                "address": {
+                  "url": "https://document.test/assets/",
+                  "kind": "hyperlink",
+                  "retrieval_key": "https://document.test/assets/",
+                  "retrieval_capability": "supported",
+                  "navigation_capability": "supported"
+                }
+              }
+            },
+            {
+              "input": "http://[",
+              "source": {
+                "node": "element[11]",
+                "attribute": {
+                  "state": "present",
+                  "value": "href"
+                },
+                "input_kind": "stored_dom_attribute",
+                "location": {
+                  "state": "unavailable",
+                  "value": "HTML DOM does not retain byte locations"
+                }
+              },
+              "kind": "hyperlink",
+              "base": {
+                "state": "present",
+                "value": {
+                  "source": "document_active",
+                  "input": {
+                    "state": "inapplicable"
+                  },
+                  "url": {
+                    "state": "present",
+                    "value": {
+                      "serialization": "https://document.test/assets/",
+                      "scheme": "https",
+                      "username": "",
+                      "password": null,
+                      "host": {
+                        "kind": "domain",
+                        "value": "document.test"
+                      },
+                      "port": null,
+                      "path": "/assets/",
+                      "query": null,
+                      "fragment": null,
+                      "authority": true,
+                      "opaque_path": false
+                    }
+                  },
+                  "diagnostics": [],
+                  "failure": {
+                    "state": "inapplicable"
+                  }
+                }
+              },
+              "outcome": {
+                "kind": "failed",
+                "diagnostics": [],
+                "failure": "invalid_ipv6_address"
+              }
+            },
+            {
+              "input": "ok",
+              "source": {
+                "node": "element[12]",
+                "attribute": {
+                  "state": "present",
+                  "value": "href"
+                },
+                "input_kind": "stored_dom_attribute",
+                "location": {
+                  "state": "unavailable",
+                  "value": "HTML DOM does not retain byte locations"
+                }
+              },
+              "kind": "hyperlink",
+              "base": {
+                "state": "present",
+                "value": {
+                  "source": "document_active",
+                  "input": {
+                    "state": "inapplicable"
+                  },
+                  "url": {
+                    "state": "present",
+                    "value": {
+                      "serialization": "https://document.test/assets/",
+                      "scheme": "https",
+                      "username": "",
+                      "password": null,
+                      "host": {
+                        "kind": "domain",
+                        "value": "document.test"
+                      },
+                      "port": null,
+                      "path": "/assets/",
+                      "query": null,
+                      "fragment": null,
+                      "authority": true,
+                      "opaque_path": false
+                    }
+                  },
+                  "diagnostics": [],
+                  "failure": {
+                    "state": "inapplicable"
+                  }
+                }
+              },
+              "outcome": {
+                "kind": "resolved",
+                "url": {
+                  "serialization": "https://document.test/assets/ok",
+                  "scheme": "https",
+                  "username": "",
+                  "password": null,
+                  "host": {
+                    "kind": "domain",
+                    "value": "document.test"
+                  },
+                  "port": null,
+                  "path": "/assets/ok",
+                  "query": null,
+                  "fragment": null,
+                  "authority": true,
+                  "opaque_path": false
+                },
+                "diagnostics": [],
+                "origin": {
+                  "kind": "tuple",
+                  "serialization": "https://document.test"
+                },
+                "address": {
+                  "url": "https://document.test/assets/ok",
+                  "kind": "hyperlink",
+                  "retrieval_key": "https://document.test/assets/ok",
+                  "retrieval_capability": "supported",
+                  "navigation_capability": "supported"
+                }
+              }
+            },
+            {
+              "input": "",
+              "source": {
+                "node": "element[13]",
+                "attribute": {
+                  "state": "present",
+                  "value": "action"
+                },
+                "input_kind": "stored_dom_attribute",
+                "location": {
+                  "state": "unavailable",
+                  "value": "HTML DOM does not retain byte locations"
+                }
+              },
+              "kind": "form_action",
+              "base": {
+                "state": "present",
+                "value": {
+                  "source": "document_url",
+                  "input": {
+                    "state": "inapplicable"
+                  },
+                  "url": {
+                    "state": "present",
+                    "value": {
+                      "serialization": "https://document.test/dir/page?q=1#old",
+                      "scheme": "https",
+                      "username": "",
+                      "password": null,
+                      "host": {
+                        "kind": "domain",
+                        "value": "document.test"
+                      },
+                      "port": null,
+                      "path": "/dir/page",
+                      "query": "q=1",
+                      "fragment": "old",
+                      "authority": true,
+                      "opaque_path": false
+                    }
+                  },
+                  "diagnostics": [],
+                  "failure": {
+                    "state": "inapplicable"
+                  }
+                }
+              },
+              "outcome": {
+                "kind": "resolved",
+                "url": {
+                  "serialization": "https://document.test/dir/page?q=1#old",
+                  "scheme": "https",
+                  "username": "",
+                  "password": null,
+                  "host": {
+                    "kind": "domain",
+                    "value": "document.test"
+                  },
+                  "port": null,
+                  "path": "/dir/page",
+                  "query": "q=1",
+                  "fragment": "old",
+                  "authority": true,
+                  "opaque_path": false
+                },
+                "diagnostics": [],
+                "origin": {
+                  "kind": "tuple",
+                  "serialization": "https://document.test"
+                },
+                "address": {
+                  "url": "https://document.test/dir/page?q=1#old",
+                  "kind": "form_action",
+                  "retrieval_key": "https://document.test/dir/page?q=1",
+                  "retrieval_capability": "supported",
+                  "navigation_capability": "supported"
+                }
+              }
+            }
+          ],
+          "css": [],
+          "css_scope": "available_parsed_sources"
+        }
+      ],
+      "retained_origin_same": {
+        "state": "inapplicable"
+      },
+      "requests": []
+    }
+  ]
+}

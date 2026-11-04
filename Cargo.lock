@@ -246,6 +246,7 @@ dependencies = [
 name = "borrowser-conformance"
 version = "0.1.0"
 dependencies = [
+ "addressing",
  "base64",
  "browser",
  "bus",
@@ -258,6 +259,7 @@ dependencies = [
  "layout",
  "libc",
  "png",
+ "runtime_css",
  "runtime_parse",
  "serde",
  "serde_json",
