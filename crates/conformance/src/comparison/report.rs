@@ -205,22 +205,22 @@ impl Case {
         chromium: ChromiumCapture,
         reference: Option<(BorrowserCapture, ChromiumCapture)>,
     ) -> Result<Self, HarnessError> {
-        let right = projection::chromium(&chromium, fixture.request)?;
-        let fields = fields(&borrowser.observations, &right, fixture.request)?;
+        let right = projection::chromium(&chromium, fixture.request())?;
+        let fields = fields(&borrowser.observations, &right, fixture.request())?;
         let inputs = crate::chromium::inputs(&[fixture]);
         let (reference_document, relationships, execution) = match (fixture.reference(), reference)
         {
             (None, None) => (None, None, Execution::Observed(borrowser.clone())),
             (Some((kind, document)), Some((rb, rc))) => {
-                let rp = projection::chromium(&rc, fixture.request)?;
+                let rp = projection::chromium(&rc, fixture.request())?;
                 let br = crate::relationship::evaluate(
                     kind,
-                    fixture.request,
+                    fixture.request(),
                     &borrowser.observations,
                     &rb.observations,
                 )?;
-                let cr = crate::relationship::evaluate(kind, fixture.request, &right, &rp)?;
-                let fields = self::fields(&rb.observations, &rp, fixture.request)?;
+                let cr = crate::relationship::evaluate(kind, fixture.request(), &right, &rp)?;
+                let fields = self::fields(&rb.observations, &rp, fixture.request())?;
                 (
                     Some(ReferenceReport {
                         descriptor: inputs[1].descriptor(),
@@ -285,12 +285,12 @@ impl Case {
             borrowser_status: evaluation.status(),
             reproduce: crate::report::reproduction("--compare", None, fixture.id.0),
             test_id: fixture.id.0,
-            source: fixture.document.source,
+            source: fixture.source(),
             status,
             coverage: coverage(&borrowser.observations),
             descriptor: Some(inputs[0].descriptor()),
             upstream_assertion: upstream(fixture),
-            provenance: fixture.document.provenance,
+            provenance: fixture.provenance(),
             reference_document,
             relationships,
             projections: Some(json!({"borrowser":borrowser.observations,"chromium":right})),
@@ -312,18 +312,18 @@ impl Case {
                 true,
             ))
         };
-        if !matches!(fixture.request.dom, Request::NotRequested) {
+        if !matches!(fixture.request().dom, Request::NotRequested) {
             unsupported("dom".into());
         }
-        for field in fixture.request.styles {
+        for field in fixture.request().styles {
             if !matches!(field.property, Request::NotRequested) {
                 unsupported(format!("style:#{}/{}", field.target, field.name));
             }
         }
-        if !matches!(fixture.request.layout, Request::NotRequested) {
+        if !matches!(fixture.request().layout, Request::NotRequested) {
             unsupported("layout".into());
         }
-        if !matches!(fixture.request.canvas, Request::NotRequested) {
+        if !matches!(fixture.request().canvas, Request::NotRequested) {
             fields.push(Field::new(unavailable, unavailable));
         }
         Self {
@@ -331,9 +331,9 @@ impl Case {
                 .status(),
             reproduce: crate::report::reproduction("--compare", None, fixture.id.0),
             test_id: fixture.id.0,
-            source: fixture.document.source,
+            source: fixture.source(),
             descriptor: None,
-            provenance: fixture.document.provenance,
+            provenance: fixture.provenance(),
             upstream_assertion: upstream(fixture),
             reference_document: None,
             relationships: None,
@@ -352,9 +352,9 @@ impl Case {
                 .status(),
             reproduce: crate::report::reproduction("--compare", None, fixture.id.0),
             test_id: fixture.id.0,
-            source: fixture.document.source,
+            source: fixture.source(),
             descriptor: None,
-            provenance: fixture.document.provenance,
+            provenance: fixture.provenance(),
             upstream_assertion: upstream(fixture),
             reference_document: None,
             relationships: None,

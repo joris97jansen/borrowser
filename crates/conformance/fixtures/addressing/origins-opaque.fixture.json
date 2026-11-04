@@ -1,0 +1,39 @@
+{
+  "id": "addressing/origins-opaque",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "addressing": {
+    "kind": "origins",
+    "rows": [
+      {
+        "left": "file:///fixture/a",
+        "right": {
+          "kind": "independent",
+          "url": "file:///fixture/a"
+        }
+      },
+      {
+        "left": "file:///fixture/a",
+        "right": {
+          "kind": "clone_left"
+        }
+      },
+      {
+        "left": "file:///fixture/a",
+        "right": {
+          "kind": "independent",
+          "url": "data:text/plain,a"
+        }
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "addressing",
+    "path": "origins-opaque.expected.json"
+  }
+}

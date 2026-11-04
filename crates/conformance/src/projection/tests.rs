@@ -6,16 +6,16 @@ fn observe(html: &str, request: ObservationRequest) -> BorrowserCapture {
 #[test]
 fn projection_production_fixtures_match_independent_expectations() {
     for f in crate::fixtures::baseline() {
-        let html = (f).document.html;
+        let html = (f).phase().unwrap().0.html;
         let expected = (f).independent().unwrap().expected;
-        let capture = execute_fixture(html, f.request).unwrap();
+        let capture = execute_fixture(html, f.request()).unwrap();
         assert_eq!(
             capture.observations,
             expected.observations().unwrap(),
             "{}",
             f.id.0
         );
-        if f.request.needs_frame() {
+        if f.request().needs_frame() {
             assert_eq!(capture.layout_viewport_width, Some(640.0));
             assert_eq!(
                 capture.layout_artifact_source_width,
@@ -26,7 +26,7 @@ fn projection_production_fixtures_match_independent_expectations() {
 }
 #[test]
 fn projection_attributes_are_canonical_but_structure_text_and_templates_are_exact() {
-    let request = crate::fixtures::fixture("dom/structure").request;
+    let request = crate::fixtures::fixture("dom/structure").request();
     let a = observe("<!doctype html><div b='2' a='1'> x </div>", request);
     let b = observe("<!doctype html><div a='1' b='2'> x </div>", request);
     assert_eq!(a.observations, b.observations);
@@ -54,7 +54,7 @@ fn projection_canvas_is_requested_independently() {
     assert!(
         execute_fixture(
             html.as_bytes(),
-            crate::fixtures::fixture("dom/structure").request
+            crate::fixtures::fixture("dom/structure").request()
         )
         .is_ok()
     );
@@ -63,7 +63,7 @@ fn projection_canvas_is_requested_independently() {
             html.as_bytes(),
             ObservationRequest {
                 canvas: Request::Compare(()),
-                ..crate::fixtures::fixture("dom/structure").request
+                ..crate::fixtures::fixture("dom/structure").request()
             }
         )
         .is_err()
@@ -177,9 +177,9 @@ fn projection_required_family_states_and_expectations_are_validated() {
     };
     for index in [0, 2] {
         let fixture = &crate::fixtures::baseline()[index];
-        let html = (fixture).document.html;
-        let actual = execute_fixture(html, fixture.request).unwrap();
-        actual.observations.validate(fixture.request).unwrap();
+        let html = (fixture).phase().unwrap().0.html;
+        let actual = execute_fixture(html, fixture.request()).unwrap();
+        actual.observations.validate(fixture.request()).unwrap();
         for unsupported in [false, true] {
             let mut malformed = actual.clone();
             if index == 0 {
@@ -198,7 +198,7 @@ fn projection_required_family_states_and_expectations_are_validated() {
             assert_eq!(
                 malformed
                     .observations
-                    .validate(fixture.request)
+                    .validate(fixture.request())
                     .unwrap_err()
                     .code,
                 "observation.required_data"
@@ -209,7 +209,10 @@ fn projection_required_family_states_and_expectations_are_validated() {
             );
         }
         let invalid_expected = Fixture {
-            document: fixture.document.with_test_bytes(html),
+            input: crate::model::FixtureInput::Phases {
+                document: fixture.phase().unwrap().0.with_test_bytes(html),
+                request: (*fixture).request(),
+            },
             kind: FixtureKind::Runnable {
                 checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
                     expected: Expected::Projection(

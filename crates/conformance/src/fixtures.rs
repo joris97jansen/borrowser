@@ -34,12 +34,39 @@ fn validate_catalogue(fixtures: &[Fixture]) -> Result<(), HarnessError> {
                     "fixture identities must be unique and sorted",
                 ));
             }
-            projection::validate_request(fixture.request)?;
+            if let crate::model::FixtureInput::Addressing(input) = fixture.input {
+                let case = input.case()?;
+                if fixture.requires_javascript
+                    && matches!(fixture.kind, FixtureKind::Runnable { .. })
+                {
+                    return Err(HarnessError::new(
+                        "fixture.configuration",
+                        "runnable addressing fixture requires JavaScript",
+                    ));
+                }
+                if let FixtureKind::Runnable { checks } = fixture.kind {
+                    let crate::model::Checks::Independent(independent) = checks else {
+                        return Err(HarnessError::new(
+                            "fixture.configuration",
+                            "addressing does not support reference relationships",
+                        ));
+                    };
+                    let crate::model::Expected::Addressing(json) = independent.expected else {
+                        return Err(HarnessError::new(
+                            "fixture.configuration",
+                            "addressing requires addressing expectations",
+                        ));
+                    };
+                    crate::addressing::expected(json, &case)?;
+                }
+                return Ok(());
+            }
+            projection::validate_request(fixture.request())?;
             if matches!(fixture.kind, FixtureKind::Runnable { .. })
-                && matches!(fixture.request.dom, Request::NotRequested)
-                && fixture.request.styles.is_empty()
-                && matches!(fixture.request.layout, Request::NotRequested)
-                && matches!(fixture.request.canvas, Request::NotRequested)
+                && matches!(fixture.request().dom, Request::NotRequested)
+                && fixture.request().styles.is_empty()
+                && matches!(fixture.request().layout, Request::NotRequested)
+                && matches!(fixture.request().canvas, Request::NotRequested)
             {
                 return Err(HarnessError::new(
                     "fixture.configuration",
@@ -57,11 +84,11 @@ fn validate_catalogue(fixtures: &[Fixture]) -> Result<(), HarnessError> {
                     independent
                         .expected
                         .observations()?
-                        .validate(fixture.request)?;
+                        .validate(fixture.request())?;
                 }
-                let mut documents = vec![fixture.document];
+                let mut documents = vec![fixture.phase()?.0];
                 if let Some((_, reference)) = fixture.reference() {
-                    crate::relationship::validate_scope(fixture.request)?;
+                    crate::relationship::validate_scope(fixture.request())?;
                     documents.push(reference);
                 }
                 for doc in documents {
@@ -106,6 +133,7 @@ pub(crate) fn select(id: Option<&str>) -> Result<Vec<&'static Fixture>, HarnessE
 pub(crate) enum Suite {
     Ci,
     Extended,
+    Addressing,
 }
 
 const CI: &[&str] = &[
@@ -131,11 +159,39 @@ const EXTENDED: &[&str] = &[
     "wpt/unsupported/testdriver",
 ];
 
+const ADDRESSING: &[&str] = &[
+    "addressing/base-frozen",
+    "addressing/base-rejected",
+    "addressing/base-selection",
+    "addressing/css-contexts",
+    "addressing/css-external",
+    "addressing/css-inline",
+    "addressing/css-invalid-base",
+    "addressing/css-missing-base",
+    "addressing/document-default",
+    "addressing/document-file-origin",
+    "addressing/html-boundaries",
+    "addressing/html-resources",
+    "addressing/opaque-base",
+    "addressing/origins-blob-fallback",
+    "addressing/origins-opaque",
+    "addressing/origins-tuples",
+    "addressing/relative-resolution",
+    "addressing/resource-keys",
+    "addressing/scheme-capabilities",
+    "addressing/unsupported-about-inheritance",
+    "addressing/unsupported-blob-entry",
+    "addressing/url-diagnostics",
+    "addressing/url-failures",
+    "addressing/url-normalization",
+];
+
 impl Suite {
     pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Ci => "ci",
             Self::Extended => "extended",
+            Self::Addressing => "addressing",
         }
     }
 
@@ -143,6 +199,7 @@ impl Suite {
         match self {
             Self::Ci => CI,
             Self::Extended => EXTENDED,
+            Self::Addressing => ADDRESSING,
         }
     }
 }

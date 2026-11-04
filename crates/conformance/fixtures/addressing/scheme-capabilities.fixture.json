@@ -1,0 +1,74 @@
+{
+  "id": "addressing/scheme-capabilities",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "addressing": {
+    "kind": "url",
+    "rows": [
+      {
+        "reference": "http://example.test/a",
+        "base": null,
+        "purpose": "image"
+      },
+      {
+        "reference": "https://example.test/a",
+        "base": null,
+        "purpose": "image"
+      },
+      {
+        "reference": "file:///fixture/a",
+        "base": null,
+        "purpose": "image"
+      },
+      {
+        "reference": "about:blank",
+        "base": null,
+        "purpose": "image"
+      },
+      {
+        "reference": "data:text/plain,a",
+        "base": null,
+        "purpose": "image"
+      },
+      {
+        "reference": "blob:https://example.test/id",
+        "base": null,
+        "purpose": "image"
+      },
+      {
+        "reference": "ws://example.test/",
+        "base": null,
+        "purpose": "image"
+      },
+      {
+        "reference": "wss://example.test/",
+        "base": null,
+        "purpose": "image"
+      },
+      {
+        "reference": "ftp://example.test/",
+        "base": null,
+        "purpose": "image"
+      },
+      {
+        "reference": "javascript:x",
+        "base": null,
+        "purpose": "image"
+      },
+      {
+        "reference": "custom:opaque",
+        "base": null,
+        "purpose": "image"
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "addressing",
+    "path": "scheme-capabilities.expected.json"
+  }
+}

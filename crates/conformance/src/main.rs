@@ -1,3 +1,4 @@
+mod addressing;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod aws;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -48,7 +49,8 @@ fn options(args: &[String], chromium: bool) -> Result<Options<'_>, model::Harnes
                 options.suite = Some(match args.next().map(String::as_str) {
                     Some("ci") => fixtures::Suite::Ci,
                     Some("extended") => fixtures::Suite::Extended,
-                    _ => return Err(invalid("--suite requires ci or extended")),
+                    Some("addressing") => fixtures::Suite::Addressing,
+                    _ => return Err(invalid("--suite requires ci, extended or addressing")),
                 });
             }
             "--chromium-executable" if chromium && !explicit_executable => {
@@ -87,13 +89,17 @@ fn run_fixture(fixture: &Fixture) -> Execution {
                         "runnable JavaScript requirement",
                     ));
                 }
-                let test = execute::execute_fixture(fixture.document.html, fixture.request)
-                    .map_err(|e| e.with_document(fixture.id, "test", fixture.document.source))?;
+                if let model::FixtureInput::Addressing(input) = fixture.input {
+                    return addressing::execute(input).map(Execution::AddressingObserved);
+                }
+                let (document, request) = fixture.phase()?;
+                let test = execute::execute_fixture(document.html, request)
+                    .map_err(|e| e.with_document(fixture.id, "test", fixture.source()))?;
                 Ok(if let Some((_, reference)) = fixture.reference() {
                     Execution::ReferenceObserved {
                         test,
                         reference: Box::new(
-                            execute::execute_fixture(reference.html, fixture.request).map_err(
+                            execute::execute_fixture(reference.html, fixture.request()).map_err(
                                 |e| e.with_document(fixture.id, "reference", reference.source),
                             )?,
                         ),
@@ -159,7 +165,7 @@ fn run_selected(args: &[String], out: &mut impl Write) -> io::Result<u8> {
     if args == ["--help"] {
         writeln!(
             out,
-            "Usage: borrowser-conformance [--suite ci|extended] [TEST_ID]\nRun the embedded discovered fixture set, a bounded named suite, or one exact test identity.\n       borrowser-conformance --chromium [--suite ci|extended] [--chromium-executable PATH] [TEST_ID]\nCapture only, using the pinned Chrome for Testing (or BORROWSER_CHROMIUM_EXECUTABLE).\n       borrowser-conformance --compare [--suite ci|extended] [--chromium-executable PATH] [TEST_ID]\nCompare the requested static DOM, computed-style, fixed-layout, and guarded canvas observations.\n       borrowser-conformance --compare-aws --config PATH --artifact-dir PATH --state-dir PATH [TEST_ID]\n       borrowser-conformance --aws-cleanup --operation PATH --aws-cli PATH\nSee docs/conformance/ag4-disposable-aws-chromium-runner.md for AG4 prerequisites and qualification."
+            "Usage: borrowser-conformance [--suite ci|extended|addressing] [TEST_ID]\nRun the embedded discovered fixture set, a bounded named suite, or one exact test identity.\n       borrowser-conformance --chromium [--suite ci|extended|addressing] [--chromium-executable PATH] [TEST_ID]\nCapture only, using the pinned Chrome for Testing (or BORROWSER_CHROMIUM_EXECUTABLE).\n       borrowser-conformance --compare [--suite ci|extended|addressing] [--chromium-executable PATH] [TEST_ID]\nCompare the requested static DOM, computed-style, fixed-layout, and guarded canvas observations.\n       borrowser-conformance --compare-aws --config PATH --artifact-dir PATH --state-dir PATH [TEST_ID]\n       borrowser-conformance --aws-cleanup --operation PATH --aws-cli PATH\nSee docs/conformance/ag4-disposable-aws-chromium-runner.md for AG4 prerequisites and qualification."
         )?;
         return Ok(0);
     }

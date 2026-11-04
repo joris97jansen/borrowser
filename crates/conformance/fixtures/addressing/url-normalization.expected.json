@@ -1,0 +1,146 @@
+{
+  "kind": "url",
+  "rows": [
+    {
+      "input": "HTTPS://EXAMPLE.TEST:443/a/../b?x=1#part",
+      "base": {
+        "state": "inapplicable"
+      },
+      "outcome": {
+        "kind": "parsed",
+        "url": {
+          "serialization": "https://example.test/b?x=1#part",
+          "scheme": "https",
+          "username": "",
+          "password": null,
+          "host": {
+            "kind": "domain",
+            "value": "example.test"
+          },
+          "port": null,
+          "path": "/b",
+          "query": "x=1",
+          "fragment": "part",
+          "authority": true,
+          "opaque_path": false
+        },
+        "diagnostics": [],
+        "origin": {
+          "kind": "tuple",
+          "serialization": "https://example.test"
+        },
+        "resource": {
+          "state": "inapplicable"
+        }
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    },
+    {
+      "input": "https://bücher.test/é",
+      "base": {
+        "state": "inapplicable"
+      },
+      "outcome": {
+        "kind": "parsed",
+        "url": {
+          "serialization": "https://xn--bcher-kva.test/%C3%A9",
+          "scheme": "https",
+          "username": "",
+          "password": null,
+          "host": {
+            "kind": "domain",
+            "value": "xn--bcher-kva.test"
+          },
+          "port": null,
+          "path": "/%C3%A9",
+          "query": null,
+          "fragment": null,
+          "authority": true,
+          "opaque_path": false
+        },
+        "diagnostics": [],
+        "origin": {
+          "kind": "tuple",
+          "serialization": "https://xn--bcher-kva.test"
+        },
+        "resource": {
+          "state": "inapplicable"
+        }
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    },
+    {
+      "input": "https://[2001:0db8::1]:443/",
+      "base": {
+        "state": "inapplicable"
+      },
+      "outcome": {
+        "kind": "parsed",
+        "url": {
+          "serialization": "https://[2001:db8::1]/",
+          "scheme": "https",
+          "username": "",
+          "password": null,
+          "host": {
+            "kind": "ipv6",
+            "value": "2001:db8::1"
+          },
+          "port": null,
+          "path": "/",
+          "query": null,
+          "fragment": null,
+          "authority": true,
+          "opaque_path": false
+        },
+        "diagnostics": [],
+        "origin": {
+          "kind": "tuple",
+          "serialization": "https://[2001:db8::1]"
+        },
+        "resource": {
+          "state": "inapplicable"
+        }
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    },
+    {
+      "input": "custom:opaque?x#y",
+      "base": {
+        "state": "inapplicable"
+      },
+      "outcome": {
+        "kind": "parsed",
+        "url": {
+          "serialization": "custom:opaque?x#y",
+          "scheme": "custom",
+          "username": "",
+          "password": null,
+          "host": null,
+          "port": null,
+          "path": "opaque",
+          "query": "x",
+          "fragment": "y",
+          "authority": false,
+          "opaque_path": true
+        },
+        "diagnostics": [],
+        "origin": {
+          "kind": "opaque",
+          "serialization": "null"
+        },
+        "resource": {
+          "state": "inapplicable"
+        }
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    }
+  ]
+}

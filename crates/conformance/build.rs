@@ -4,6 +4,7 @@ mod fixtures;
 fn main() {
     println!("cargo:rerun-if-changed=fixtures");
     println!("cargo:rerun-if-changed=build_support");
+    println!("cargo:rerun-if-changed=src/addressing/input.rs");
     println!("cargo:rerun-if-changed=src/metadata_links.rs");
     let result = fixtures::generate(std::path::Path::new(
         &std::env::var_os("CARGO_MANIFEST_DIR").expect("Cargo manifest directory"),

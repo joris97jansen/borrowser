@@ -1,0 +1,42 @@
+{
+  "id": "addressing/html-resources",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "addressing": {
+    "kind": "documents",
+    "rows": [
+      {
+        "html": "html-resources.html",
+        "requested_url": "https://document.test/dir/page?q=1#old",
+        "final_url": "https://document.test/dir/page?q=1#old",
+        "requests": [
+          {
+            "kind": "css",
+            "url": "https://document.test/dir/site.css",
+            "response": null
+          },
+          {
+            "kind": "css",
+            "url": "https://document.test/dir/site.css",
+            "response": null
+          },
+          {
+            "kind": "image",
+            "url": "https://document.test/dir/image.png#one",
+            "response": null
+          }
+        ],
+        "same_document_url": null
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "addressing",
+    "path": "html-resources.expected.json"
+  }
+}

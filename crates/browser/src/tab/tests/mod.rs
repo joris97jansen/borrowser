@@ -14,3 +14,6 @@ mod support;
 mod document_addressing;
 mod html_resources;
 mod resource_associations;
+
+#[cfg(feature = "conformance-observation")]
+mod addressing_observation;

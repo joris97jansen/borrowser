@@ -1,0 +1,423 @@
+{
+  "kind": "documents",
+  "rows": [
+    {
+      "requested_url": "https://document.test/dir/page?q=1#old",
+      "final_url": "https://document.test/dir/page?q=1#old",
+      "snapshots": [
+        {
+          "document_url": {
+            "serialization": "https://document.test/dir/page?q=1#old",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/dir/page",
+            "query": "q=1",
+            "fragment": "old",
+            "authority": true,
+            "opaque_path": false
+          },
+          "document_origin": {
+            "kind": "tuple",
+            "serialization": "https://document.test"
+          },
+          "fallback_base": {
+            "serialization": "https://document.test/dir/page?q=1#old",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/dir/page",
+            "query": "q=1",
+            "fragment": "old",
+            "authority": true,
+            "opaque_path": false
+          },
+          "active_base": {
+            "serialization": "https://document.test/assets/",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/assets/",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "selected_base": {
+            "state": "present",
+            "value": {
+              "source": {
+                "node": "element[2]",
+                "attribute": {
+                  "state": "present",
+                  "value": "href"
+                },
+                "input_kind": "stored_dom_attribute",
+                "location": {
+                  "state": "unavailable",
+                  "value": "HTML DOM does not retain byte locations"
+                }
+              },
+              "href": "../assets/",
+              "url": {
+                "serialization": "https://document.test/assets/",
+                "scheme": "https",
+                "username": "",
+                "password": null,
+                "host": {
+                  "kind": "domain",
+                  "value": "document.test"
+                },
+                "port": null,
+                "path": "/assets/",
+                "query": null,
+                "fragment": null,
+                "authority": true,
+                "opaque_path": false
+              },
+              "outcome": "resolved",
+              "diagnostics": []
+            }
+          },
+          "html": [],
+          "css": [
+            {
+              "source": "stylesheet[0]",
+              "owner": "element[3]",
+              "base": {
+                "source": "document_active",
+                "input": {
+                  "state": "inapplicable"
+                },
+                "url": {
+                  "state": "present",
+                  "value": {
+                    "serialization": "https://document.test/assets/",
+                    "scheme": "https",
+                    "username": "",
+                    "password": null,
+                    "host": {
+                      "kind": "domain",
+                      "value": "document.test"
+                    },
+                    "port": null,
+                    "path": "/assets/",
+                    "query": null,
+                    "fragment": null,
+                    "authority": true,
+                    "opaque_path": false
+                  }
+                },
+                "diagnostics": [],
+                "failure": {
+                  "state": "inapplicable"
+                }
+              },
+              "condition_deferred": false,
+              "effective_participation": "unevaluated",
+              "incomplete": false,
+              "feature_notices_truncated": false,
+              "diagnostics": [],
+              "feature_notices": [],
+              "references": [
+                {
+                  "raw": "url(icon.svg)",
+                  "decoded": {
+                    "state": "present",
+                    "value": "icon.svg"
+                  },
+                  "shape": "literal",
+                  "contexts": [],
+                  "role": "image",
+                  "declaration": {
+                    "state": "present",
+                    "value": "unsupported_property"
+                  },
+                  "selector": {
+                    "state": "present",
+                    "value": "parsed"
+                  },
+                  "source": {
+                    "node": "element[3]",
+                    "attribute": {
+                      "state": "inapplicable"
+                    },
+                    "input_kind": "css_source_slice_and_decoded_reference",
+                    "location": {
+                      "state": "present",
+                      "value": {
+                        "start": 13,
+                        "end": 26,
+                        "line": 1,
+                        "column": 14
+                      }
+                    }
+                  },
+                  "outcome": {
+                    "kind": "resolved",
+                    "url": {
+                      "serialization": "https://document.test/assets/icon.svg",
+                      "scheme": "https",
+                      "username": "",
+                      "password": null,
+                      "host": {
+                        "kind": "domain",
+                        "value": "document.test"
+                      },
+                      "port": null,
+                      "path": "/assets/icon.svg",
+                      "query": null,
+                      "fragment": null,
+                      "authority": true,
+                      "opaque_path": false
+                    },
+                    "diagnostics": [],
+                    "origin": {
+                      "kind": "tuple",
+                      "serialization": "https://document.test"
+                    },
+                    "address": {
+                      "url": "https://document.test/assets/icon.svg",
+                      "kind": "image",
+                      "retrieval_key": "https://document.test/assets/icon.svg",
+                      "retrieval_capability": "supported",
+                      "navigation_capability": "supported"
+                    }
+                  }
+                },
+                {
+                  "raw": "url(icon.svg)",
+                  "decoded": {
+                    "state": "present",
+                    "value": "icon.svg"
+                  },
+                  "shape": "literal",
+                  "contexts": [],
+                  "role": "image",
+                  "declaration": {
+                    "state": "present",
+                    "value": "unsupported_property"
+                  },
+                  "selector": {
+                    "state": "present",
+                    "value": "parsed"
+                  },
+                  "source": {
+                    "node": "element[3]",
+                    "attribute": {
+                      "state": "inapplicable"
+                    },
+                    "input_kind": "css_source_slice_and_decoded_reference",
+                    "location": {
+                      "state": "present",
+                      "value": {
+                        "start": 27,
+                        "end": 40,
+                        "line": 1,
+                        "column": 28
+                      }
+                    }
+                  },
+                  "outcome": {
+                    "kind": "resolved",
+                    "url": {
+                      "serialization": "https://document.test/assets/icon.svg",
+                      "scheme": "https",
+                      "username": "",
+                      "password": null,
+                      "host": {
+                        "kind": "domain",
+                        "value": "document.test"
+                      },
+                      "port": null,
+                      "path": "/assets/icon.svg",
+                      "query": null,
+                      "fragment": null,
+                      "authority": true,
+                      "opaque_path": false
+                    },
+                    "diagnostics": [],
+                    "origin": {
+                      "kind": "tuple",
+                      "serialization": "https://document.test"
+                    },
+                    "address": {
+                      "url": "https://document.test/assets/icon.svg",
+                      "kind": "image",
+                      "retrieval_key": "https://document.test/assets/icon.svg",
+                      "retrieval_capability": "supported",
+                      "navigation_capability": "supported"
+                    }
+                  }
+                },
+                {
+                  "raw": "url('#m')",
+                  "decoded": {
+                    "state": "present",
+                    "value": "#m"
+                  },
+                  "shape": "local_fragment",
+                  "contexts": [],
+                  "role": "mask",
+                  "declaration": {
+                    "state": "present",
+                    "value": "unsupported_property"
+                  },
+                  "selector": {
+                    "state": "present",
+                    "value": "parsed"
+                  },
+                  "source": {
+                    "node": "element[3]",
+                    "attribute": {
+                      "state": "inapplicable"
+                    },
+                    "input_kind": "css_source_slice_and_decoded_reference",
+                    "location": {
+                      "state": "present",
+                      "value": {
+                        "start": 46,
+                        "end": 55,
+                        "line": 1,
+                        "column": 47
+                      }
+                    }
+                  },
+                  "outcome": {
+                    "kind": "local_fragment"
+                  }
+                }
+              ]
+            },
+            {
+              "source": "style_attribute[element[5]]",
+              "owner": "element[5]",
+              "base": {
+                "source": "document_active",
+                "input": {
+                  "state": "inapplicable"
+                },
+                "url": {
+                  "state": "present",
+                  "value": {
+                    "serialization": "https://document.test/assets/",
+                    "scheme": "https",
+                    "username": "",
+                    "password": null,
+                    "host": {
+                      "kind": "domain",
+                      "value": "document.test"
+                    },
+                    "port": null,
+                    "path": "/assets/",
+                    "query": null,
+                    "fragment": null,
+                    "authority": true,
+                    "opaque_path": false
+                  }
+                },
+                "diagnostics": [],
+                "failure": {
+                  "state": "inapplicable"
+                }
+              },
+              "condition_deferred": false,
+              "effective_participation": "unevaluated",
+              "incomplete": false,
+              "feature_notices_truncated": false,
+              "diagnostics": [],
+              "feature_notices": [],
+              "references": [
+                {
+                  "raw": "url(c\\75rsor.png)",
+                  "decoded": {
+                    "state": "present",
+                    "value": "cursor.png"
+                  },
+                  "shape": "literal",
+                  "contexts": [],
+                  "role": "cursor",
+                  "declaration": {
+                    "state": "present",
+                    "value": "unsupported_property"
+                  },
+                  "selector": {
+                    "state": "inapplicable"
+                  },
+                  "source": {
+                    "node": "element[5]",
+                    "attribute": {
+                      "state": "present",
+                      "value": "style"
+                    },
+                    "input_kind": "css_source_slice_and_decoded_reference",
+                    "location": {
+                      "state": "present",
+                      "value": {
+                        "start": 7,
+                        "end": 24,
+                        "line": 1,
+                        "column": 8
+                      }
+                    }
+                  },
+                  "outcome": {
+                    "kind": "resolved",
+                    "url": {
+                      "serialization": "https://document.test/assets/cursor.png",
+                      "scheme": "https",
+                      "username": "",
+                      "password": null,
+                      "host": {
+                        "kind": "domain",
+                        "value": "document.test"
+                      },
+                      "port": null,
+                      "path": "/assets/cursor.png",
+                      "query": null,
+                      "fragment": null,
+                      "authority": true,
+                      "opaque_path": false
+                    },
+                    "diagnostics": [],
+                    "origin": {
+                      "kind": "tuple",
+                      "serialization": "https://document.test"
+                    },
+                    "address": {
+                      "url": "https://document.test/assets/cursor.png",
+                      "kind": "image",
+                      "retrieval_key": "https://document.test/assets/cursor.png",
+                      "retrieval_capability": "supported",
+                      "navigation_capability": "supported"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "css_scope": "available_parsed_sources"
+        }
+      ],
+      "retained_origin_same": {
+        "state": "inapplicable"
+      },
+      "requests": []
+    }
+  ]
+}

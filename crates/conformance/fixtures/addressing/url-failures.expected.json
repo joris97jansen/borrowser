@@ -1,0 +1,75 @@
+{
+  "kind": "url",
+  "rows": [
+    {
+      "input": "http://[",
+      "base": {
+        "state": "inapplicable"
+      },
+      "outcome": {
+        "kind": "failed",
+        "diagnostics": [],
+        "failure": "invalid_ipv6_address"
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    },
+    {
+      "input": "https://example.test:70000/",
+      "base": {
+        "state": "inapplicable"
+      },
+      "outcome": {
+        "kind": "failed",
+        "diagnostics": [],
+        "failure": "invalid_port"
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    },
+    {
+      "input": "relative/path",
+      "base": {
+        "state": "inapplicable"
+      },
+      "outcome": {
+        "kind": "failed",
+        "diagnostics": [],
+        "failure": "relative_without_base"
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    },
+    {
+      "input": "child",
+      "base": {
+        "state": "present",
+        "value": {
+          "source": "explicit",
+          "input": {
+            "state": "present",
+            "value": "https://example.test:bad/"
+          },
+          "url": {
+            "state": "unavailable",
+            "value": "base_parse_failed"
+          },
+          "diagnostics": [],
+          "failure": {
+            "state": "present",
+            "value": "invalid_port"
+          }
+        }
+      },
+      "outcome": {
+        "kind": "unresolved_base"
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    }
+  ]
+}

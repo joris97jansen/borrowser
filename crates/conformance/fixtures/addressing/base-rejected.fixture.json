@@ -1,0 +1,40 @@
+{
+  "id": "addressing/base-rejected",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "addressing": {
+    "kind": "documents",
+    "rows": [
+      {
+        "html": "base-invalid.html",
+        "requested_url": "https://document.test/dir/page?q=1#old",
+        "final_url": "https://document.test/dir/page?q=1#old",
+        "requests": [],
+        "same_document_url": null
+      },
+      {
+        "html": "base-data.html",
+        "requested_url": "https://document.test/dir/page?q=1#old",
+        "final_url": "https://document.test/dir/page?q=1#old",
+        "requests": [],
+        "same_document_url": null
+      },
+      {
+        "html": "base-javascript.html",
+        "requested_url": "https://document.test/dir/page?q=1#old",
+        "final_url": "https://document.test/dir/page?q=1#old",
+        "requests": [],
+        "same_document_url": null
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "addressing",
+    "path": "base-rejected.expected.json"
+  }
+}

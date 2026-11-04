@@ -37,14 +37,17 @@ fn viewport_accepts_observed_linux_dom_scrollbar_dimensions() {
     metrics["cssVisualViewport"]["clientWidth"] = json!(625);
     metrics["cssContentSize"] = json!({"x":0,"y":0,"width":625,"height":647});
     for fixture in &crate::fixtures::baseline()[2..] {
-        assert_eq!(validate_viewport(&metrics, fixture.request).unwrap(), 625.0);
+        assert_eq!(
+            validate_viewport(&metrics, fixture.request()).unwrap(),
+            625.0
+        );
     }
     // Any requested canvas keeps the original full client-size requirement.
     for request in [
         crate::projection::ObservationRequest::CANVAS,
         crate::projection::ObservationRequest {
             canvas: crate::projection::Request::Compare(()),
-            ..crate::fixtures::fixture("dom/template-namespaces").request
+            ..crate::fixtures::fixture("dom/template-namespaces").request()
         },
     ] {
         assert!(validate_viewport(&metrics, request).is_err());
@@ -53,7 +56,7 @@ fn viewport_accepts_observed_linux_dom_scrollbar_dimensions() {
 
 #[test]
 fn viewport_native_dimensions_are_exact_bounded_and_not_a_scrollbar_constant() {
-    let request = crate::fixtures::fixture("layout/block-boxes").request;
+    let request = crate::fixtures::fixture("layout/block-boxes").request();
     for width in [640, 637, 625, 320] {
         let mut metrics = viewport_metrics();
         for object in ["cssLayoutViewport", "cssVisualViewport"] {
@@ -75,7 +78,7 @@ fn viewport_native_dimensions_are_exact_bounded_and_not_a_scrollbar_constant() {
 
 #[test]
 fn viewport_rejects_invalid_dimensions_scroll_offsets_scale_and_malformed_data() {
-    let request = crate::fixtures::fixture("dom/template-namespaces").request;
+    let request = crate::fixtures::fixture("dom/template-namespaces").request();
     for (object, field, values) in [
         (
             "cssLayoutViewport",
@@ -128,9 +131,9 @@ fn viewport_failure_diagnostic_attributes_fixture_metrics_and_cleanup() {
         role: crate::chromium::DocumentRole::Test,
         metadata_links: "[]",
         id: fixture.id,
-        source: fixture.document.source,
+        source: fixture.phase().unwrap().0.source,
         html: b"must never appear in diagnostics",
-        request: fixture.request,
+        request: fixture.request(),
     };
     let failure = attribute_capture_failure(
         Failure {
@@ -2102,7 +2105,7 @@ fn real_chromium_capture_and_scripts() {
     let config = ChromiumConfig::new(PathBuf::from(path));
     let cancel = Cancellation::default();
     for fixture in &crate::fixtures::baseline()[..2] {
-        let html = (fixture).document.html;
+        let html = (fixture).phase().unwrap().0.html;
         let crate::model::Expected::Canvas(expected) = (fixture).independent().unwrap().expected
         else {
             unreachable!()
@@ -2152,7 +2155,11 @@ fn real_chromium_capture_and_scripts() {
     .into_iter()
     .enumerate()
     {
-        let html = (crate::fixtures::fixture("canvas/root")).document.html;
+        let html = (crate::fixtures::fixture("canvas/root"))
+            .phase()
+            .unwrap()
+            .0
+            .html;
         let crate::model::Expected::Canvas(expected) = (crate::fixtures::fixture("canvas/root"))
             .independent()
             .unwrap()
@@ -2746,7 +2753,7 @@ fn real_chromium_ag5_profile() {
 #[test]
 fn metadata_links_policy_rejects_mixed_attributes_namespaces_and_order() {
     let fixture = crate::fixtures::fixture("wpt/rgb-comments-p6");
-    let links = fixture.document.links().unwrap();
+    let links = fixture.phase().unwrap().0.links().unwrap();
     crate::metadata_links::validate(&links).unwrap();
     for change in 0..5 {
         let mut bad = links.clone();
@@ -2815,7 +2822,7 @@ fn real_chromium_ag7_inert_links() {
         ],
     }];
     let html=b"<!doctype html><link title='A &amp; B' rel=' HeLp ' href='?a=1&amp;b=2'><div id=probe style='background-color:green'></div>";
-    let request = crate::fixtures::fixture("wpt-style/background-color-mismatch").request;
+    let request = crate::fixtures::fixture("wpt-style/background-color-mismatch").request();
     assert_eq!(
         capture_document(html, request, &expected, &config, &cancel)
             .unwrap()

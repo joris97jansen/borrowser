@@ -1,0 +1,20 @@
+{
+  "id": "addressing/unsupported-blob-entry",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "unsupported",
+    "reason": "Associated blob-entry document creation context is unavailable"
+  },
+  "addressing": {
+    "kind": "documents",
+    "rows": [
+      {
+        "html": "document-default.html",
+        "requested_url": "blob:https://document.test/id",
+        "final_url": "blob:https://document.test/id",
+        "requests": [],
+        "same_document_url": null
+      }
+    ]
+  }
+}

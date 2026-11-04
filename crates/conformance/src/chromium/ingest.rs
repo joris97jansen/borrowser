@@ -145,8 +145,16 @@ mod tests {
             metadata_links: "[]",
             request: crate::projection::ObservationRequest::CANVAS,
             id: crate::fixtures::fixture("canvas/root").id,
-            source: crate::fixtures::fixture("canvas/root").document.source,
-            html: crate::fixtures::fixture("canvas/root").document.html,
+            source: crate::fixtures::fixture("canvas/root")
+                .phase()
+                .unwrap()
+                .0
+                .source,
+            html: crate::fixtures::fixture("canvas/root")
+                .phase()
+                .unwrap()
+                .0
+                .html,
         };
         decode(serde_json::to_vec(v).unwrap().as_slice(), &[input])
     }
@@ -189,7 +197,11 @@ mod tests {
             request: crate::projection::ObservationRequest::CANVAS,
             id: crate::fixtures::fixture("canvas/root").id,
             source: "fixtures/root-canvas-color.html",
-            html: crate::fixtures::fixture("canvas/root").document.html,
+            html: crate::fixtures::fixture("canvas/root")
+                .phase()
+                .unwrap()
+                .0
+                .html,
         };
         let wire = serde_json::to_string(&report()).unwrap().replacen(
             "{",
@@ -210,10 +222,10 @@ mod tests {
             .map(|f| CaptureInput {
                 role: crate::chromium::DocumentRole::Test,
                 metadata_links: "[]",
-                request: f.request,
+                request: f.request(),
                 id: f.id,
-                source: f.document.source,
-                html: f.document.html,
+                source: f.phase().unwrap().0.source,
+                html: f.phase().unwrap().0.html,
             })
             .collect();
         let mut wire = report();
@@ -283,9 +295,9 @@ mod phase_tests {
                 role: crate::chromium::DocumentRole::Test,
                 metadata_links: "[]",
                 id: f.id,
-                source: f.document.source,
+                source: f.phase().unwrap().0.source,
                 html: b"",
-                request: f.request,
+                request: f.request(),
             })
             .collect();
         let observations:Vec<_>=inputs.iter().map(|input|{
@@ -382,7 +394,11 @@ mod mixed_presence_tests {
             role: crate::chromium::DocumentRole::Test,
             metadata_links: "[]",
             id: crate::fixtures::fixture("dom/structure").id,
-            source: crate::fixtures::fixture("dom/structure").document.source,
+            source: crate::fixtures::fixture("dom/structure")
+                .phase()
+                .unwrap()
+                .0
+                .source,
             html: b"",
             request,
         };

@@ -1,0 +1,267 @@
+{
+  "kind": "documents",
+  "rows": [
+    {
+      "requested_url": "https://document.test/dir/page?q=1#old",
+      "final_url": "https://document.test/dir/page?q=1#old",
+      "snapshots": [
+        {
+          "document_url": {
+            "serialization": "https://document.test/dir/page?q=1#old",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/dir/page",
+            "query": "q=1",
+            "fragment": "old",
+            "authority": true,
+            "opaque_path": false
+          },
+          "document_origin": {
+            "kind": "tuple",
+            "serialization": "https://document.test"
+          },
+          "fallback_base": {
+            "serialization": "https://document.test/dir/page?q=1#old",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/dir/page",
+            "query": "q=1",
+            "fragment": "old",
+            "authority": true,
+            "opaque_path": false
+          },
+          "active_base": {
+            "serialization": "https://document.test/assets/",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/assets/",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "selected_base": {
+            "state": "present",
+            "value": {
+              "source": {
+                "node": "element[7]",
+                "attribute": {
+                  "state": "present",
+                  "value": "href"
+                },
+                "input_kind": "stored_dom_attribute",
+                "location": {
+                  "state": "unavailable",
+                  "value": "HTML DOM does not retain byte locations"
+                }
+              },
+              "href": "../assets/",
+              "url": {
+                "serialization": "https://document.test/assets/",
+                "scheme": "https",
+                "username": "",
+                "password": null,
+                "host": {
+                  "kind": "domain",
+                  "value": "document.test"
+                },
+                "port": null,
+                "path": "/assets/",
+                "query": null,
+                "fragment": null,
+                "authority": true,
+                "opaque_path": false
+              },
+              "outcome": "resolved",
+              "diagnostics": []
+            }
+          },
+          "html": [
+            {
+              "input": "icon.svg#one",
+              "source": {
+                "node": "element[9]",
+                "attribute": {
+                  "state": "present",
+                  "value": "href"
+                },
+                "input_kind": "stored_dom_attribute",
+                "location": {
+                  "state": "unavailable",
+                  "value": "HTML DOM does not retain byte locations"
+                }
+              },
+              "kind": "hyperlink",
+              "base": {
+                "state": "present",
+                "value": {
+                  "source": "document_active",
+                  "input": {
+                    "state": "inapplicable"
+                  },
+                  "url": {
+                    "state": "present",
+                    "value": {
+                      "serialization": "https://document.test/assets/",
+                      "scheme": "https",
+                      "username": "",
+                      "password": null,
+                      "host": {
+                        "kind": "domain",
+                        "value": "document.test"
+                      },
+                      "port": null,
+                      "path": "/assets/",
+                      "query": null,
+                      "fragment": null,
+                      "authority": true,
+                      "opaque_path": false
+                    }
+                  },
+                  "diagnostics": [],
+                  "failure": {
+                    "state": "inapplicable"
+                  }
+                }
+              },
+              "outcome": {
+                "kind": "resolved",
+                "url": {
+                  "serialization": "https://document.test/assets/icon.svg#one",
+                  "scheme": "https",
+                  "username": "",
+                  "password": null,
+                  "host": {
+                    "kind": "domain",
+                    "value": "document.test"
+                  },
+                  "port": null,
+                  "path": "/assets/icon.svg",
+                  "query": null,
+                  "fragment": "one",
+                  "authority": true,
+                  "opaque_path": false
+                },
+                "diagnostics": [],
+                "origin": {
+                  "kind": "tuple",
+                  "serialization": "https://document.test"
+                },
+                "address": {
+                  "url": "https://document.test/assets/icon.svg#one",
+                  "kind": "hyperlink",
+                  "retrieval_key": "https://document.test/assets/icon.svg",
+                  "retrieval_capability": "supported",
+                  "navigation_capability": "supported"
+                }
+              }
+            },
+            {
+              "input": "icon.svg#two",
+              "source": {
+                "node": "element[10]",
+                "attribute": {
+                  "state": "present",
+                  "value": "href"
+                },
+                "input_kind": "stored_dom_attribute",
+                "location": {
+                  "state": "unavailable",
+                  "value": "HTML DOM does not retain byte locations"
+                }
+              },
+              "kind": "hyperlink",
+              "base": {
+                "state": "present",
+                "value": {
+                  "source": "document_active",
+                  "input": {
+                    "state": "inapplicable"
+                  },
+                  "url": {
+                    "state": "present",
+                    "value": {
+                      "serialization": "https://document.test/assets/",
+                      "scheme": "https",
+                      "username": "",
+                      "password": null,
+                      "host": {
+                        "kind": "domain",
+                        "value": "document.test"
+                      },
+                      "port": null,
+                      "path": "/assets/",
+                      "query": null,
+                      "fragment": null,
+                      "authority": true,
+                      "opaque_path": false
+                    }
+                  },
+                  "diagnostics": [],
+                  "failure": {
+                    "state": "inapplicable"
+                  }
+                }
+              },
+              "outcome": {
+                "kind": "resolved",
+                "url": {
+                  "serialization": "https://document.test/assets/icon.svg#two",
+                  "scheme": "https",
+                  "username": "",
+                  "password": null,
+                  "host": {
+                    "kind": "domain",
+                    "value": "document.test"
+                  },
+                  "port": null,
+                  "path": "/assets/icon.svg",
+                  "query": null,
+                  "fragment": "two",
+                  "authority": true,
+                  "opaque_path": false
+                },
+                "diagnostics": [],
+                "origin": {
+                  "kind": "tuple",
+                  "serialization": "https://document.test"
+                },
+                "address": {
+                  "url": "https://document.test/assets/icon.svg#two",
+                  "kind": "hyperlink",
+                  "retrieval_key": "https://document.test/assets/icon.svg",
+                  "retrieval_capability": "supported",
+                  "navigation_capability": "supported"
+                }
+              }
+            }
+          ],
+          "css": [],
+          "css_scope": "available_parsed_sources"
+        }
+      ],
+      "retained_origin_same": {
+        "state": "inapplicable"
+      },
+      "requests": []
+    }
+  ]
+}

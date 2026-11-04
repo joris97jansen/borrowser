@@ -540,6 +540,10 @@ jobs:
       - name: Build conformance execution binary
         run: cargo build -p borrowser-conformance --locked
 
+      - name: AH9 bounded offline addressing suite
+        timeout-minutes: 2
+        run: make conformance-addressing
+
       - name: AG8 bounded Borrowser-only suite
         timeout-minutes: 2
         run: make conformance-ci

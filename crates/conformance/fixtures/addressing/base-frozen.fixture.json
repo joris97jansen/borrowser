@@ -1,0 +1,26 @@
+{
+  "id": "addressing/base-frozen",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "addressing": {
+    "kind": "documents",
+    "rows": [
+      {
+        "html": "base-frozen.html",
+        "requested_url": "https://document.test/dir/page?q=1#old",
+        "final_url": "https://document.test/dir/page?q=1#old",
+        "requests": [],
+        "same_document_url": "https://document.test/dir/page?q=1#new"
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "addressing",
+    "path": "base-frozen.expected.json"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "id": "addressing/origins-blob-fallback",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "addressing": {
+    "kind": "origins",
+    "rows": [
+      {
+        "left": "blob:https://example.test/id",
+        "right": {
+          "kind": "independent",
+          "url": "https://example.test/"
+        }
+      },
+      {
+        "left": "blob:blob:https://example.test/id",
+        "right": {
+          "kind": "independent",
+          "url": "blob:blob:https://example.test/id"
+        }
+      },
+      {
+        "left": "blob:ftp://example.test/id",
+        "right": {
+          "kind": "independent",
+          "url": "ftp://example.test/"
+        }
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "addressing",
+    "path": "origins-blob-fallback.expected.json"
+  }
+}

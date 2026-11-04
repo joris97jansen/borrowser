@@ -24,7 +24,7 @@ struct FrozenBase {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum BaseOutcome {
+pub enum BaseOutcome {
     Resolved,
     InvalidHref(UrlParseError),
     ProhibitedData,
@@ -65,6 +65,14 @@ impl DocumentAddressState {
     }
     pub(crate) fn selected_key(&self) -> Option<PatchKey> {
         self.selected_base.as_ref().map(|(key, _)| *key)
+    }
+    #[cfg(feature = "conformance-observation")]
+    pub(crate) fn selected_base_facts(
+        &self,
+    ) -> Option<(PatchKey, &BrowserUrl, &BaseOutcome, &[UrlDiagnostic])> {
+        self.selected_base
+            .as_ref()
+            .map(|(key, base)| (*key, &base.url, &base.outcome, base.diagnostics.as_slice()))
     }
     pub(crate) fn reset_selection(&mut self) {
         self.selected_base = None;

@@ -684,6 +684,9 @@ pub(crate) fn inputs(fixtures: &[&crate::model::Fixture]) -> Vec<CaptureInput<'s
         if !matches!(fixture.kind, FixtureKind::Runnable { .. }) {
             continue;
         }
+        let Ok((document, request)) = fixture.phase() else {
+            continue;
+        };
         let mut push = |role, doc: crate::model::DocumentInput| {
             inputs.push(CaptureInput {
                 id: fixture.id,
@@ -691,10 +694,10 @@ pub(crate) fn inputs(fixtures: &[&crate::model::Fixture]) -> Vec<CaptureInput<'s
                 source: doc.source,
                 html: doc.html,
                 metadata_links: doc.metadata_links,
-                request: fixture.request,
+                request,
             })
         };
-        push(DocumentRole::Test, fixture.document);
+        push(DocumentRole::Test, document);
         if let Some((_, reference)) = fixture.reference() {
             push(DocumentRole::Reference, reference);
         }

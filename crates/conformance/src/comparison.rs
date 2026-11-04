@@ -166,28 +166,32 @@ fn compare_captured(
     // Phase 2 never launches children or calls the native launcher/reaper.
     for fixture in fixtures {
         let case = match fixture.kind {
+            FixtureKind::Runnable { .. }
+                if matches!(fixture.input, crate::model::FixtureInput::Addressing(_)) =>
+            {
+                report::Case::unsupported(fixture, crate::addressing::COMPARISON_UNSUPPORTED)
+            }
             FixtureKind::Runnable { .. } => {
                 let capture = captures
                     .next()
                     .ok_or_else(|| HarnessError::new("required-data", "missing Chromium sample"))?;
-                let observed = execute::execute_fixture(fixture.document.html, fixture.request)
-                    .map_err(|e| e.with_document(fixture.id, "test", fixture.document.source))?;
+                let observed = execute::execute_fixture(fixture.phase()?.0.html, fixture.request())
+                    .map_err(|e| e.with_document(fixture.id, "test", fixture.source()))?;
                 let reference = if let Some((_, document)) = fixture.reference() {
                     let captured = captures.next().ok_or_else(|| {
                         HarnessError::new("required-data", "missing reference capture")
                     })?;
                     Some((
-                        execute::execute_fixture(document.html, fixture.request).map_err(|e| {
-                            e.with_document(fixture.id, "reference", document.source)
-                        })?,
+                        execute::execute_fixture(document.html, fixture.request()).map_err(
+                            |e| e.with_document(fixture.id, "reference", document.source),
+                        )?,
                         captured.capture,
                     ))
                 } else {
                     None
                 };
-                report::Case::observed_pair(fixture, observed, capture.capture, reference).map_err(
-                    |e| e.with_document(fixture.id, "test/reference", fixture.document.source),
-                )?
+                report::Case::observed_pair(fixture, observed, capture.capture, reference)
+                    .map_err(|e| e.with_document(fixture.id, "test/reference", fixture.source()))?
             }
             FixtureKind::Unsupported { reason } => report::Case::unsupported(fixture, reason),
             FixtureKind::Skipped { reason } => report::Case::skipped(fixture, reason),

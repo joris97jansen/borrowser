@@ -1,0 +1,39 @@
+{
+  "id": "addressing/url-failures",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "addressing": {
+    "kind": "url",
+    "rows": [
+      {
+        "reference": "http://[",
+        "base": null,
+        "purpose": null
+      },
+      {
+        "reference": "https://example.test:70000/",
+        "base": null,
+        "purpose": null
+      },
+      {
+        "reference": "relative/path",
+        "base": null,
+        "purpose": null
+      },
+      {
+        "reference": "child",
+        "base": "https://example.test:bad/",
+        "purpose": null
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "addressing",
+    "path": "url-failures.expected.json"
+  }
+}

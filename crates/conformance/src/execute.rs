@@ -79,20 +79,12 @@ pub(crate) fn execute_html(html: &[u8]) -> Result<CanvasColor, HarnessError> {
     }
 }
 
-pub(crate) fn execute_fixture(
-    html: &[u8],
-    request: crate::projection::ObservationRequest,
-) -> Result<crate::projection::BorrowserCapture, HarnessError> {
-    crate::projection::validate_request(request)?;
-    let (commands, command_rx) = mpsc::channel();
-    let (parser, parser_rx) = mpsc::channel();
-    let (events, event_rx) = mpsc::channel();
-    #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
-    crate::comparison::tests::record(crate::comparison::tests::Event::WorkerStarted);
-    runtime_parse::start_parse_runtime(parser_rx, events);
-    let mut tab = Tab::new(1);
-    tab.set_bus_sender(commands);
-    tab.navigate_to_new(URL.into());
+pub(crate) fn begin_document(
+    tab: &mut Tab,
+    command_rx: &Receiver<CoreCommand>,
+    requested_url: &str,
+) -> Result<(), HarnessError> {
+    tab.navigate_to_new(requested_url.into());
     let request_id = tab.nav_gen;
     match command_rx.try_recv() {
         Ok(CoreCommand::FetchStream {
@@ -101,7 +93,7 @@ pub(crate) fn execute_fixture(
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
             url,
-        }) if id == request_id && url == URL => {}
+        }) if id == request_id && url == requested_url => {}
         _ => {
             return Err(HarnessError::new(
                 "execution.navigation",
@@ -109,14 +101,19 @@ pub(crate) fn execute_fixture(
             ));
         }
     }
-    let response = NetworkResponseInfo {
-        requested_url: URL.into(),
-        final_url: URL.into(),
-        status_code: Some(200),
-        content_type: Some(CONTENT_TYPE.into()),
-    };
+    Ok(())
+}
+
+pub(crate) fn publish_document(
+    tab: &mut Tab,
+    html: &[u8],
+    response: NetworkResponseInfo,
+    event_rx: &Receiver<CoreEvent>,
+    mut forward: impl FnMut(&mut Tab) -> Result<(), HarnessError>,
+) -> Result<(), HarnessError> {
+    let request_id = tab.nav_gen;
     apply(
-        &mut tab,
+        tab,
         CoreEvent::NetworkStart {
             tab_id: 1,
             request_id,
@@ -125,24 +122,24 @@ pub(crate) fn execute_fixture(
             response: response.clone(),
         },
     )?;
-    forward_commands(&command_rx, &parser)?;
+    forward(tab)?;
     // Fixed chunk boundaries are transport inputs, not parser policy.
     for bytes in html.chunks(128) {
         apply(
-            &mut tab,
+            tab,
             CoreEvent::NetworkChunk {
                 tab_id: 1,
                 request_id,
                 stylesheet_slot_id: None,
                 kind: ResourceKind::Html,
-                url: URL.into(),
+                url: response.requested_url.clone(),
                 bytes: bytes.to_vec(),
             },
         )?;
-        forward_commands(&command_rx, &parser)?;
+        forward(tab)?;
     }
     apply(
-        &mut tab,
+        tab,
         CoreEvent::NetworkDone {
             tab_id: 1,
             request_id,
@@ -152,7 +149,7 @@ pub(crate) fn execute_fixture(
             bytes_received: html.len(),
         },
     )?;
-    forward_commands(&command_rx, &parser)?;
+    forward(tab)?;
     let deadline = Instant::now() + DEADLINE;
     loop {
         let event = event_rx
@@ -185,8 +182,8 @@ pub(crate) fn execute_fixture(
                 ));
             }
         };
-        apply(&mut tab, event)?;
-        forward_commands(&command_rx, &parser)?;
+        apply(tab, event)?;
+        forward(tab)?;
         if let Some(result) = terminal {
             result.map_err(parser_failure)?;
             break;
@@ -198,6 +195,33 @@ pub(crate) fn execute_fixture(
             "navigation changed before rendering",
         ));
     }
+    Ok(())
+}
+
+pub(crate) fn execute_fixture(
+    html: &[u8],
+    request: crate::projection::ObservationRequest,
+) -> Result<crate::projection::BorrowserCapture, HarnessError> {
+    crate::projection::validate_request(request)?;
+    let (commands, command_rx) = mpsc::channel();
+    let (parser, parser_rx) = mpsc::channel();
+    let (events, event_rx) = mpsc::channel();
+    #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+    crate::comparison::tests::record(crate::comparison::tests::Event::WorkerStarted);
+    runtime_parse::start_parse_runtime(parser_rx, events);
+    let mut tab = Tab::new(1);
+    tab.set_bus_sender(commands);
+    begin_document(&mut tab, &command_rx, URL)?;
+    let request_id = tab.nav_gen;
+    let response = NetworkResponseInfo {
+        requested_url: URL.into(),
+        final_url: URL.into(),
+        status_code: Some(200),
+        content_type: Some(CONTENT_TYPE.into()),
+    };
+    publish_document(&mut tab, html, response, &event_rx, |_| {
+        forward_commands(&command_rx, &parser)
+    })?;
     let ctx = egui::Context::default();
     ctx.set_zoom_factor(1.0);
     let mut input = RawInput {

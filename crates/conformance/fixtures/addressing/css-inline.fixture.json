@@ -1,0 +1,26 @@
+{
+  "id": "addressing/css-inline",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "addressing": {
+    "kind": "documents",
+    "rows": [
+      {
+        "html": "css-inline.html",
+        "requested_url": "https://document.test/dir/page?q=1#old",
+        "final_url": "https://document.test/dir/page?q=1#old",
+        "requests": [],
+        "same_document_url": null
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "addressing",
+    "path": "css-inline.expected.json"
+  }
+}

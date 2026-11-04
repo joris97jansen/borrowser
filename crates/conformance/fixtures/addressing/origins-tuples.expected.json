@@ -1,0 +1,385 @@
+{
+  "kind": "origins",
+  "rows": [
+    {
+      "left": {
+        "input": "https://EXAMPLE.test:443/a?x#f",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://example.test/a?x#f",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "example.test"
+            },
+            "port": null,
+            "path": "/a",
+            "query": "x",
+            "fragment": "f",
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://example.test"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right": {
+        "input": "https://example.test/b",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://example.test/b",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "example.test"
+            },
+            "port": null,
+            "path": "/b",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://example.test"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right_creation": "independent",
+      "same_origin": true
+    },
+    {
+      "left": {
+        "input": "https://example.test/",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://example.test/",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "example.test"
+            },
+            "port": null,
+            "path": "/",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://example.test"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right": {
+        "input": "http://example.test/",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "http://example.test/",
+            "scheme": "http",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "example.test"
+            },
+            "port": null,
+            "path": "/",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "http://example.test"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right_creation": "independent",
+      "same_origin": false
+    },
+    {
+      "left": {
+        "input": "https://example.test/",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://example.test/",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "example.test"
+            },
+            "port": null,
+            "path": "/",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://example.test"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right": {
+        "input": "https://example.test:8443/",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://example.test:8443/",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "example.test"
+            },
+            "port": 8443,
+            "path": "/",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://example.test:8443"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right_creation": "independent",
+      "same_origin": false
+    },
+    {
+      "left": {
+        "input": "https://[2001:0db8::1]/",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://[2001:db8::1]/",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "ipv6",
+              "value": "2001:db8::1"
+            },
+            "port": null,
+            "path": "/",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://[2001:db8::1]"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right": {
+        "input": "https://[2001:db8::1]:443/",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://[2001:db8::1]/",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "ipv6",
+              "value": "2001:db8::1"
+            },
+            "port": null,
+            "path": "/",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://[2001:db8::1]"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right_creation": "independent",
+      "same_origin": true
+    },
+    {
+      "left": {
+        "input": "https://bücher.test/",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://xn--bcher-kva.test/",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "xn--bcher-kva.test"
+            },
+            "port": null,
+            "path": "/",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://xn--bcher-kva.test"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right": {
+        "input": "https://xn--bcher-kva.test/",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://xn--bcher-kva.test/",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "xn--bcher-kva.test"
+            },
+            "port": null,
+            "path": "/",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://xn--bcher-kva.test"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right_creation": "independent",
+      "same_origin": true
+    }
+  ]
+}

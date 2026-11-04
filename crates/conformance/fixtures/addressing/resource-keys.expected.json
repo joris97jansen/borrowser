@@ -1,0 +1,459 @@
+{
+  "kind": "keys",
+  "rows": [
+    {
+      "left": {
+        "input": "https://example.test/a?q=1#one",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://example.test/a?q=1#one",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "example.test"
+            },
+            "port": null,
+            "path": "/a",
+            "query": "q=1",
+            "fragment": "one",
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://example.test"
+          },
+          "resource": {
+            "state": "present",
+            "value": {
+              "url": "https://example.test/a?q=1#one",
+              "kind": "image",
+              "retrieval_key": "https://example.test/a?q=1",
+              "retrieval_capability": "supported",
+              "navigation_capability": "supported"
+            }
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right": {
+        "input": "https://example.test/a?q=1#two",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://example.test/a?q=1#two",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "example.test"
+            },
+            "port": null,
+            "path": "/a",
+            "query": "q=1",
+            "fragment": "two",
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://example.test"
+          },
+          "resource": {
+            "state": "present",
+            "value": {
+              "url": "https://example.test/a?q=1#two",
+              "kind": "stylesheet",
+              "retrieval_key": "https://example.test/a?q=1",
+              "retrieval_capability": "supported",
+              "navigation_capability": "supported"
+            }
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "equal_keys": true,
+      "equal_urls": false
+    },
+    {
+      "left": {
+        "input": "https://example.test/a?a=1&a=2",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://example.test/a?a=1&a=2",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "example.test"
+            },
+            "port": null,
+            "path": "/a",
+            "query": "a=1&a=2",
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://example.test"
+          },
+          "resource": {
+            "state": "present",
+            "value": {
+              "url": "https://example.test/a?a=1&a=2",
+              "kind": "image",
+              "retrieval_key": "https://example.test/a?a=1&a=2",
+              "retrieval_capability": "supported",
+              "navigation_capability": "supported"
+            }
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right": {
+        "input": "https://example.test/a?a=2&a=1",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://example.test/a?a=2&a=1",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "example.test"
+            },
+            "port": null,
+            "path": "/a",
+            "query": "a=2&a=1",
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://example.test"
+          },
+          "resource": {
+            "state": "present",
+            "value": {
+              "url": "https://example.test/a?a=2&a=1",
+              "kind": "image",
+              "retrieval_key": "https://example.test/a?a=2&a=1",
+              "retrieval_capability": "supported",
+              "navigation_capability": "supported"
+            }
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "equal_keys": false,
+      "equal_urls": false
+    },
+    {
+      "left": {
+        "input": "https://example.test/a",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://example.test/a",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "example.test"
+            },
+            "port": null,
+            "path": "/a",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://example.test"
+          },
+          "resource": {
+            "state": "present",
+            "value": {
+              "url": "https://example.test/a",
+              "kind": "image",
+              "retrieval_key": "https://example.test/a",
+              "retrieval_capability": "supported",
+              "navigation_capability": "supported"
+            }
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right": {
+        "input": "https://example.test/a?",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://example.test/a?",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "example.test"
+            },
+            "port": null,
+            "path": "/a",
+            "query": "",
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://example.test"
+          },
+          "resource": {
+            "state": "present",
+            "value": {
+              "url": "https://example.test/a?",
+              "kind": "image",
+              "retrieval_key": "https://example.test/a?",
+              "retrieval_capability": "supported",
+              "navigation_capability": "supported"
+            }
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "equal_keys": false,
+      "equal_urls": false
+    },
+    {
+      "left": {
+        "input": "https://u:p@example.test/a",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://u:p@example.test/a",
+            "scheme": "https",
+            "username": "u",
+            "password": "p",
+            "host": {
+              "kind": "domain",
+              "value": "example.test"
+            },
+            "port": null,
+            "path": "/a",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [
+            "embedded_credentials"
+          ],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://example.test"
+          },
+          "resource": {
+            "state": "present",
+            "value": {
+              "url": "https://u:p@example.test/a",
+              "kind": "image",
+              "retrieval_key": "https://u:p@example.test/a",
+              "retrieval_capability": "supported",
+              "navigation_capability": "supported"
+            }
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right": {
+        "input": "https://u:q@example.test/a",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://u:q@example.test/a",
+            "scheme": "https",
+            "username": "u",
+            "password": "q",
+            "host": {
+              "kind": "domain",
+              "value": "example.test"
+            },
+            "port": null,
+            "path": "/a",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [
+            "embedded_credentials"
+          ],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://example.test"
+          },
+          "resource": {
+            "state": "present",
+            "value": {
+              "url": "https://u:q@example.test/a",
+              "kind": "image",
+              "retrieval_key": "https://u:q@example.test/a",
+              "retrieval_capability": "supported",
+              "navigation_capability": "supported"
+            }
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "equal_keys": false,
+      "equal_urls": false
+    },
+    {
+      "left": {
+        "input": "https://example.test/a",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://example.test/a",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "example.test"
+            },
+            "port": null,
+            "path": "/a",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://example.test"
+          },
+          "resource": {
+            "state": "present",
+            "value": {
+              "url": "https://example.test/a",
+              "kind": "image",
+              "retrieval_key": "https://example.test/a",
+              "retrieval_capability": "supported",
+              "navigation_capability": "supported"
+            }
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right": {
+        "input": "https://example.test/a#",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "https://example.test/a#",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "example.test"
+            },
+            "port": null,
+            "path": "/a",
+            "query": null,
+            "fragment": "",
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "tuple",
+            "serialization": "https://example.test"
+          },
+          "resource": {
+            "state": "present",
+            "value": {
+              "url": "https://example.test/a#",
+              "kind": "image",
+              "retrieval_key": "https://example.test/a",
+              "retrieval_capability": "supported",
+              "navigation_capability": "supported"
+            }
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "equal_keys": true,
+      "equal_urls": false
+    }
+  ]
+}

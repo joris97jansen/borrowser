@@ -5,15 +5,24 @@ use html::{ElementNamespace, Node, internal::Id};
 
 /// IDs refer only to the originating committed document. This ephemeral
 /// inventory neither deduplicates addresses nor represents issued requests.
-pub(crate) struct HtmlResourceReference {
+pub struct HtmlResourceReference {
     pub(crate) element: Id,
     pub(crate) attribute: &'static str,
     pub(crate) kind: ResourceKind,
     pub(crate) outcome: HtmlReferenceOutcome,
+    #[cfg(feature = "conformance-observation")]
+    pub(crate) base: HtmlReferenceBase,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HtmlReferenceBase {
+    ActiveDocument,
+    DocumentUrl,
+    Inapplicable,
 }
 
 #[derive(Debug)]
-pub(crate) enum HtmlReferenceOutcome {
+pub enum HtmlReferenceOutcome {
     Resolved {
         address: ResourceAddress,
         diagnostics: Vec<UrlDiagnostic>,
@@ -67,29 +76,38 @@ pub(super) fn collect_html_resource_references(
         let Some(value) = node.attr(attribute) else {
             continue;
         };
-        let outcome = if value.is_empty() && kind == ResourceKind::FormAction {
-            HtmlReferenceOutcome::Resolved {
-                address: ResourceAddress::new(addresses.document_url().clone(), kind),
-                diagnostics: Vec::new(),
-            }
+        let (outcome, _base) = if value.is_empty() && kind == ResourceKind::FormAction {
+            (
+                HtmlReferenceOutcome::Resolved {
+                    address: ResourceAddress::new(addresses.document_url().clone(), kind),
+                    diagnostics: Vec::new(),
+                },
+                HtmlReferenceBase::DocumentUrl,
+            )
         } else if value.is_empty() && kind != ResourceKind::Hyperlink {
-            HtmlReferenceOutcome::EmptyReference
+            (
+                HtmlReferenceOutcome::EmptyReference,
+                HtmlReferenceBase::Inapplicable,
+            )
         } else {
             // No universal trimming: preserve URL-parser diagnostics and the
             // distinction between exactly empty and nonempty whitespace values.
-            match addresses.active_base_url().resolve(value) {
+            let outcome = match addresses.active_base_url().resolve(value) {
                 Ok(parsed) => HtmlReferenceOutcome::Resolved {
                     address: ResourceAddress::new(parsed.url, kind),
                     diagnostics: parsed.diagnostics,
                 },
                 Err(failure) => HtmlReferenceOutcome::Failed(failure),
-            }
+            };
+            (outcome, HtmlReferenceBase::ActiveDocument)
         };
         records.push(HtmlResourceReference {
             element: node.id(),
             attribute,
             kind,
             outcome,
+            #[cfg(feature = "conformance-observation")]
+            base: _base,
         });
     }
     records

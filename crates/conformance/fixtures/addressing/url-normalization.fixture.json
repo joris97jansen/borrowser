@@ -1,0 +1,39 @@
+{
+  "id": "addressing/url-normalization",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "addressing": {
+    "kind": "url",
+    "rows": [
+      {
+        "reference": "HTTPS://EXAMPLE.TEST:443/a/../b?x=1#part",
+        "base": null,
+        "purpose": null
+      },
+      {
+        "reference": "https://bücher.test/é",
+        "base": null,
+        "purpose": null
+      },
+      {
+        "reference": "https://[2001:0db8::1]:443/",
+        "base": null,
+        "purpose": null
+      },
+      {
+        "reference": "custom:opaque?x#y",
+        "base": null,
+        "purpose": null
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "addressing",
+    "path": "url-normalization.expected.json"
+  }
+}

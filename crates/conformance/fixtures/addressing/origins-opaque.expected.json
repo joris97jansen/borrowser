@@ -1,0 +1,215 @@
+{
+  "kind": "origins",
+  "rows": [
+    {
+      "left": {
+        "input": "file:///fixture/a",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "file:///fixture/a",
+            "scheme": "file",
+            "username": "",
+            "password": null,
+            "host": null,
+            "port": null,
+            "path": "/fixture/a",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "opaque",
+            "serialization": "null"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right": {
+        "input": "file:///fixture/a",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "file:///fixture/a",
+            "scheme": "file",
+            "username": "",
+            "password": null,
+            "host": null,
+            "port": null,
+            "path": "/fixture/a",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "opaque",
+            "serialization": "null"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right_creation": "independent",
+      "same_origin": false
+    },
+    {
+      "left": {
+        "input": "file:///fixture/a",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "file:///fixture/a",
+            "scheme": "file",
+            "username": "",
+            "password": null,
+            "host": null,
+            "port": null,
+            "path": "/fixture/a",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "opaque",
+            "serialization": "null"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right": {
+        "input": "file:///fixture/a",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "file:///fixture/a",
+            "scheme": "file",
+            "username": "",
+            "password": null,
+            "host": null,
+            "port": null,
+            "path": "/fixture/a",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "opaque",
+            "serialization": "null"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right_creation": "clone_left",
+      "same_origin": true
+    },
+    {
+      "left": {
+        "input": "file:///fixture/a",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "file:///fixture/a",
+            "scheme": "file",
+            "username": "",
+            "password": null,
+            "host": null,
+            "port": null,
+            "path": "/fixture/a",
+            "query": null,
+            "fragment": null,
+            "authority": true,
+            "opaque_path": false
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "opaque",
+            "serialization": "null"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right": {
+        "input": "data:text/plain,a",
+        "base": {
+          "state": "inapplicable"
+        },
+        "outcome": {
+          "kind": "parsed",
+          "url": {
+            "serialization": "data:text/plain,a",
+            "scheme": "data",
+            "username": "",
+            "password": null,
+            "host": null,
+            "port": null,
+            "path": "text/plain,a",
+            "query": null,
+            "fragment": null,
+            "authority": false,
+            "opaque_path": true
+          },
+          "diagnostics": [],
+          "origin": {
+            "kind": "opaque",
+            "serialization": "null"
+          },
+          "resource": {
+            "state": "inapplicable"
+          }
+        },
+        "source": {
+          "state": "inapplicable"
+        }
+      },
+      "right_creation": "independent",
+      "same_origin": false
+    }
+  ]
+}

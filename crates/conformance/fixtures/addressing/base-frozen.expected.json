@@ -1,0 +1,202 @@
+{
+  "kind": "documents",
+  "rows": [
+    {
+      "requested_url": "https://document.test/dir/page?q=1#old",
+      "final_url": "https://document.test/dir/page?q=1#old",
+      "snapshots": [
+        {
+          "document_url": {
+            "serialization": "https://document.test/dir/page?q=1#old",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/dir/page",
+            "query": "q=1",
+            "fragment": "old",
+            "authority": true,
+            "opaque_path": false
+          },
+          "document_origin": {
+            "kind": "tuple",
+            "serialization": "https://document.test"
+          },
+          "fallback_base": {
+            "serialization": "https://document.test/dir/page?q=1#old",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/dir/page",
+            "query": "q=1",
+            "fragment": "old",
+            "authority": true,
+            "opaque_path": false
+          },
+          "active_base": {
+            "serialization": "https://document.test/dir/page?q=1#old",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/dir/page",
+            "query": "q=1",
+            "fragment": "old",
+            "authority": true,
+            "opaque_path": false
+          },
+          "selected_base": {
+            "state": "present",
+            "value": {
+              "source": {
+                "node": "element[2]",
+                "attribute": {
+                  "state": "present",
+                  "value": "href"
+                },
+                "input_kind": "stored_dom_attribute",
+                "location": {
+                  "state": "unavailable",
+                  "value": "HTML DOM does not retain byte locations"
+                }
+              },
+              "href": "http://[",
+              "url": {
+                "serialization": "https://document.test/dir/page?q=1#old",
+                "scheme": "https",
+                "username": "",
+                "password": null,
+                "host": {
+                  "kind": "domain",
+                  "value": "document.test"
+                },
+                "port": null,
+                "path": "/dir/page",
+                "query": "q=1",
+                "fragment": "old",
+                "authority": true,
+                "opaque_path": false
+              },
+              "outcome": "invalid_href:invalid_ipv6_address",
+              "diagnostics": []
+            }
+          },
+          "html": [],
+          "css": [],
+          "css_scope": "available_parsed_sources"
+        },
+        {
+          "document_url": {
+            "serialization": "https://document.test/dir/page?q=1#new",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/dir/page",
+            "query": "q=1",
+            "fragment": "new",
+            "authority": true,
+            "opaque_path": false
+          },
+          "document_origin": {
+            "kind": "tuple",
+            "serialization": "https://document.test"
+          },
+          "fallback_base": {
+            "serialization": "https://document.test/dir/page?q=1#new",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/dir/page",
+            "query": "q=1",
+            "fragment": "new",
+            "authority": true,
+            "opaque_path": false
+          },
+          "active_base": {
+            "serialization": "https://document.test/dir/page?q=1#old",
+            "scheme": "https",
+            "username": "",
+            "password": null,
+            "host": {
+              "kind": "domain",
+              "value": "document.test"
+            },
+            "port": null,
+            "path": "/dir/page",
+            "query": "q=1",
+            "fragment": "old",
+            "authority": true,
+            "opaque_path": false
+          },
+          "selected_base": {
+            "state": "present",
+            "value": {
+              "source": {
+                "node": "element[2]",
+                "attribute": {
+                  "state": "present",
+                  "value": "href"
+                },
+                "input_kind": "stored_dom_attribute",
+                "location": {
+                  "state": "unavailable",
+                  "value": "HTML DOM does not retain byte locations"
+                }
+              },
+              "href": "http://[",
+              "url": {
+                "serialization": "https://document.test/dir/page?q=1#old",
+                "scheme": "https",
+                "username": "",
+                "password": null,
+                "host": {
+                  "kind": "domain",
+                  "value": "document.test"
+                },
+                "port": null,
+                "path": "/dir/page",
+                "query": "q=1",
+                "fragment": "old",
+                "authority": true,
+                "opaque_path": false
+              },
+              "outcome": "invalid_href:invalid_ipv6_address",
+              "diagnostics": []
+            }
+          },
+          "html": [],
+          "css": [],
+          "css_scope": "available_parsed_sources"
+        }
+      ],
+      "retained_origin_same": {
+        "state": "present",
+        "value": true
+      },
+      "requests": []
+    }
+  ]
+}

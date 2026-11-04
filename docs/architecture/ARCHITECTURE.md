@@ -864,3 +864,21 @@ bases and addressing-owned resolution/independence. The existing Tab diagnostic
 exposes it on demand without commands, effective dependencies or retained inventory.
 The parser dependency is integrated at its qualified immutable revision; final
 required Borrowser validation remains pending.
+
+## AH9 local addressing conformance observation
+
+[AH9](../platform/ah9-addressing-conformance-fixtures-and-snapshots.md) adds a closed
+local input alternative to the existing conformance catalogue. Addressing owns
+all URL/origin/key semantics; Browser owns committed document/base lifetime and
+HTML discovery; CSS owns source parsing/decoding and authored CSS discovery.
+The harness selects and serializes these production values, without recomputing
+engine rules. Existing AG5 observations retain accepted-frame authority.
+
+The existing `conformance-observation` feature exposes a borrowed, read-only
+addressing observation and command-state correlation. It has no ordinary UI
+consumer, retained inventory or raw Debug mode. Synthetic exact snapshots stay in
+tooling. HTML/CSS source labels are observation-local and do not expose runtime
+identities; opaque comparison uses actual origin values. A bounded offline driver
+accounts for issued commands in both directions and supplies declared CSS through
+the existing admission and runtime protocol. The phase path still denies resources.
+No network runtime, general loader, capture schema or renderer change follows.

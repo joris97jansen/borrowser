@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::{Execution, Expectation, TestId};
+use crate::model::{Execution, Expectation, FixtureInput, TestId};
 use serde_json::{Value, json};
 use std::{cell::RefCell, process::Command};
 
@@ -88,13 +88,13 @@ fn imported_capture_uses_the_existing_projection_and_no_operational_metadata() {
     let inputs: Vec<_> = fixtures
         .iter()
         .map(|f| {
-            let html = f.document.html;
+            let html = f.phase().unwrap().0.html;
             CaptureInput {
                 role: crate::chromium::DocumentRole::Test,
                 metadata_links: "[]",
                 request: crate::projection::ObservationRequest::CANVAS,
                 id: f.id,
-                source: f.document.source,
+                source: f.phase().unwrap().0.source,
                 html,
             }
         })
@@ -219,7 +219,11 @@ fn unit_complete_correspondence_required() {
             metadata_links: "[]",
             request: crate::projection::ObservationRequest::CANVAS,
             id: crate::fixtures::fixture("canvas/root").id,
-            source: crate::fixtures::fixture("canvas/root").document.source,
+            source: crate::fixtures::fixture("canvas/root")
+                .phase()
+                .unwrap()
+                .0
+                .source,
             html: b"",
         },
         CaptureInput {
@@ -227,7 +231,11 @@ fn unit_complete_correspondence_required() {
             metadata_links: "[]",
             request: crate::projection::ObservationRequest::CANVAS,
             id: crate::fixtures::fixture("canvas/cascade").id,
-            source: crate::fixtures::fixture("canvas/cascade").document.source,
+            source: crate::fixtures::fixture("canvas/cascade")
+                .phase()
+                .unwrap()
+                .0
+                .source,
             html: b"",
         },
     ];
@@ -280,15 +288,24 @@ fn unit_expectations_are_independent_and_precedence_is_explicit() {
             1,
         ),
     ] {
-        let html = (crate::fixtures::fixture("canvas/cascade")).document.html;
+        let html = (crate::fixtures::fixture("canvas/cascade"))
+            .phase()
+            .unwrap()
+            .0
+            .html;
         let expected = (crate::fixtures::fixture("canvas/cascade"))
             .independent()
             .unwrap()
             .expected;
         let fixture = Fixture {
-            document: crate::fixtures::fixture("canvas/cascade")
-                .document
-                .with_test_bytes(html),
+            input: crate::model::FixtureInput::Phases {
+                document: crate::fixtures::fixture("canvas/cascade")
+                    .phase()
+                    .unwrap()
+                    .0
+                    .with_test_bytes(html),
+                request: (*crate::fixtures::fixture("canvas/cascade")).request(),
+            },
             kind: FixtureKind::Runnable {
                 checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
                     expected,
@@ -631,6 +648,106 @@ fn unit_publication_and_diagnostic_errors_preserve_partial_output() {
     }
 }
 
+// Share the exact mutated inputs with nonnative regressions. Native lifecycle
+// injection stays in isolated_case; this only constructs its four document cases.
+fn composition_mutation_fixture(scenario: &str) -> Fixture {
+    let mut fixture = crate::fixtures::baseline()[1];
+    let FixtureInput::Phases { document, .. } = &mut fixture.input else {
+        panic!("composition requires a phase fixture")
+    };
+    let html: &'static [u8] = match scenario {
+        "css" => Box::leak(
+            std::str::from_utf8(document.html)
+                .unwrap()
+                .replace("#345678", "#2468ac")
+                .into_bytes()
+                .into_boxed_slice(),
+        ),
+        "later-capture-failure" => b"<!doctype html><link rel=canonical href=/inert>",
+        "borrowser-failure" | "borrowser-failure-delayed" => b"<!doctype html><html><head><style>html,body{margin:0;padding:0;height:0}html{background-color:#123456}div{height:100px;background-color:red}</style></head><body><div></div></body></html>",
+        _ => panic!("unknown document mutation scenario"),
+    };
+    *document = document.with_test_bytes(html);
+    if scenario != "css" {
+        fixture.kind = FixtureKind::Runnable {
+            checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
+                expected: crate::model::Expected::Canvas(CanvasColor([0, 0, 0])),
+                disposition: Expectation::Match,
+            }),
+        };
+    }
+    fixture
+}
+
+#[test]
+fn ah9_composition_mutations_update_stored_documents_and_capture_inputs() {
+    use sha2::{Digest, Sha256};
+    let baseline = crate::fixtures::baseline()[1];
+    let original = baseline.phase().unwrap().0;
+    for scenario in [
+        "css",
+        "later-capture-failure",
+        "borrowser-failure",
+        "borrowser-failure-delayed",
+    ] {
+        let expected = match scenario {
+            "css" => std::str::from_utf8(original.html)
+                .unwrap()
+                .replace("#345678", "#2468ac")
+                .into_bytes(),
+            "later-capture-failure" => b"<!doctype html><link rel=canonical href=/inert>".to_vec(),
+            _ => b"<!doctype html><html><head><style>html,body{margin:0;padding:0;height:0}html{background-color:#123456}div{height:100px;background-color:red}</style></head><body><div></div></body></html>".to_vec(),
+        };
+        let fixture = composition_mutation_fixture(scenario);
+        let document = fixture.phase().unwrap().0;
+        assert_eq!(document.html, expected, "{scenario}");
+        assert_ne!(document.html, original.html, "{scenario}");
+        assert_eq!(document.sha256, format!("{:x}", Sha256::digest(&expected)));
+        assert_ne!(document.sha256, original.sha256, "{scenario}");
+        let inputs = chromium::inputs(&[&fixture]);
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(inputs[0].html, expected, "{scenario}: capture handoff");
+        assert_eq!(inputs[0].descriptor().source_sha256, document.sha256);
+        assert_eq!(baseline.phase().unwrap().0.html, original.html);
+    }
+}
+
+#[test]
+fn ah9_composition_mutations_reach_borrowser_execution() {
+    use crate::projection::Observation;
+    for scenario in [
+        "css",
+        "later-capture-failure",
+        "borrowser-failure",
+        "borrowser-failure-delayed",
+    ] {
+        let fixture = composition_mutation_fixture(scenario);
+        let execution = crate::run_fixture(&fixture);
+        match (&execution, scenario) {
+            (Execution::Observed(actual), "css" | "later-capture-failure") => {
+                let expected = if scenario == "css" {
+                    CanvasColor([36, 104, 172])
+                } else {
+                    CanvasColor([255, 255, 255])
+                };
+                assert_eq!(actual.observations.canvas, Observation::Observed(expected));
+                assert_eq!(
+                    crate::report::evaluate(&fixture, execution).status(),
+                    "FAIL"
+                );
+            }
+            (Execution::Error(error), "borrowser-failure" | "borrowser-failure-delayed") => {
+                assert_eq!(error.code, "capture.overlap");
+                assert_eq!(
+                    crate::report::evaluate(&fixture, execution).status(),
+                    "ERROR"
+                );
+            }
+            _ => panic!("{scenario}: unexpected execution {execution:?}"),
+        }
+    }
+}
+
 #[test]
 #[ignore = "requires pinned Chromium; outer wrapper launches isolated composition scenarios"]
 fn real_chromium_comparison_composition() {
@@ -709,49 +826,14 @@ fn isolated_case() {
             }
             fixtures = vec![fixture];
         }
-        "css" => {
-            let html = (fixtures[1]).document.html;
-            let expected = (fixtures[1]).independent().unwrap().expected;
-            let expectation = (fixtures[1]).independent().unwrap().disposition;
-            let changed = std::str::from_utf8(html)
-                .unwrap()
-                .replace("#345678", "#2468ac");
-            {
-                fixtures[1].document = fixtures[1]
-                    .document
-                    .with_test_bytes(Box::leak(changed.into_bytes().into_boxed_slice()));
-                fixtures[1].kind = FixtureKind::Runnable {
-                    checks: crate::model::Checks::Independent(
-                        crate::model::IndependentExpectation {
-                            expected,
-                            disposition: expectation,
-                        },
-                    ),
-                };
-            };
-        }
-        "later-capture-failure" => {
-            fixtures[1].document = fixtures[1]
-                .document
-                .with_test_bytes(b"<!doctype html><link rel=canonical href=/inert>");
-            fixtures[1].kind = FixtureKind::Runnable {
-                checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
-                    expected: crate::model::Expected::Canvas(CanvasColor([0, 0, 0])),
-                    disposition: Expectation::Match,
-                }),
-            };
+        "css" | "later-capture-failure" => {
+            fixtures[1] = composition_mutation_fixture(&scenario);
         }
         "borrowser-failure" | "borrowser-failure-delayed" => {
             if scenario == "borrowser-failure-delayed" {
                 chromium::tests::arm_second_shutdown_read_pause();
             }
-            fixtures[1].document=fixtures[1].document.with_test_bytes(b"<!doctype html><html><head><style>html,body{margin:0;padding:0;height:0}html{background-color:#123456}div{height:100px;background-color:red}</style></head><body><div></div></body></html>");
-            fixtures[1].kind = FixtureKind::Runnable {
-                checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
-                    expected: crate::model::Expected::Canvas(CanvasColor([0, 0, 0])),
-                    disposition: Expectation::Match,
-                }),
-            };
+            fixtures[1] = composition_mutation_fixture(&scenario);
         }
         "second-shutdown-cancel" => chromium::tests::arm_shutdown_ack_cancellation(2),
         "second-shutdown-expired" => chromium::tests::arm_second_shutdown_expiry(),
@@ -950,10 +1032,15 @@ fn unit_phase_partial_coverage_never_reports_full_pass() {
         ..ObservationRequest::NONE
     };
     let fixture = Fixture {
-        request,
-        document: crate::fixtures::fixture("style/cascade-inheritance")
-            .document
-            .with_test_bytes(b"<!doctype html><div id=parent style='color:#123456'></div>"),
+        input: crate::model::FixtureInput::Phases {
+            document: crate::fixtures::fixture("style/cascade-inheritance")
+                .phase()
+                .unwrap()
+                .0
+                .with_test_bytes(b"<!doctype html><div id=parent style='color:#123456'></div>"),
+            request,
+        },
+
         kind: FixtureKind::Runnable {
             checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
                 expected: crate::model::Expected::Projection(
@@ -964,7 +1051,7 @@ fn unit_phase_partial_coverage_never_reports_full_pass() {
         },
         ..*crate::fixtures::fixture("style/cascade-inheritance")
     };
-    let html = (fixture).document.html;
+    let html = (fixture).phase().unwrap().0.html;
     let actual = execute::execute_fixture(html, request).unwrap();
     let mut reference = capture([0, 0, 0]);
     reference.color = None;
@@ -986,8 +1073,8 @@ fn unit_phase_partial_coverage_never_reports_full_pass() {
 #[test]
 fn unit_phase_layout_difference_is_localized_and_missing_capture_is_error() {
     let fixture = crate::fixtures::fixture("layout/block-boxes");
-    let html = (fixture).document.html;
-    let actual = execute::execute_fixture(html, fixture.request).unwrap();
+    let html = (fixture).phase().unwrap().0.html;
+    let actual = execute::execute_fixture(html, fixture.request()).unwrap();
     let mut reference = capture([0, 0, 0]);
     reference.color = None;
     reference.inspection = Some(
@@ -1026,10 +1113,15 @@ fn unit_phase_layout_difference_is_localized_and_missing_capture_is_error() {
 #[test]
 fn unit_unrequested_and_unsupported_families_are_not_canvas_equality() {
     let fixture = Fixture {
-        request: crate::projection::ObservationRequest::NONE,
-        document: crate::fixtures::fixture("dom/structure")
-            .document
-            .with_test_bytes(b"<!doctype html><div></div>"),
+        input: crate::model::FixtureInput::Phases {
+            document: crate::fixtures::fixture("dom/structure")
+                .phase()
+                .unwrap()
+                .0
+                .with_test_bytes(b"<!doctype html><div></div>"),
+            request: crate::projection::ObservationRequest::NONE,
+        },
+
         kind: FixtureKind::Runnable {
             checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
                 expected: crate::model::Expected::Projection(
@@ -1040,8 +1132,8 @@ fn unit_unrequested_and_unsupported_families_are_not_canvas_equality() {
         },
         ..*crate::fixtures::fixture("dom/structure")
     };
-    let html = (fixture).document.html;
-    let actual = execute::execute_fixture(html, fixture.request).unwrap();
+    let html = (fixture).phase().unwrap().0.html;
+    let actual = execute::execute_fixture(html, fixture.request()).unwrap();
     let mut reference = capture([0, 0, 0]);
     reference.color = None;
     let report = report::Report::new(vec![
@@ -1079,10 +1171,13 @@ fn unit_phase_required_records_cannot_be_truncated_duplicated_or_misidentified()
     use crate::projection::{Observation, TargetValue};
     for index in [4, 5] {
         let mut fixture = crate::fixtures::baseline()[index];
-        let html = (fixture).document.html;
+        let html = (fixture).phase().unwrap().0.html;
         let expected = (fixture).independent().unwrap().expected;
         {
-            fixture.document = fixture.document.with_test_bytes(html);
+            let FixtureInput::Phases { document, .. } = &mut fixture.input else {
+                panic!("required-record validation requires a phase fixture")
+            };
+            *document = document.with_test_bytes(html);
             fixture.kind = FixtureKind::Runnable {
                 checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
                     expected,
@@ -1092,7 +1187,9 @@ fn unit_phase_required_records_cannot_be_truncated_duplicated_or_misidentified()
                 }),
             };
         };
-        let actual = execute::execute_fixture(html, fixture.request).unwrap();
+        let (document, request) = fixture.phase().unwrap();
+        assert_eq!(document.html, html);
+        let actual = execute::execute_fixture(document.html, request).unwrap();
         let mut reference = style_reference();
         if index == 5 {
             reference.inspection = Some(
@@ -1222,8 +1319,8 @@ pub(crate) fn expected_profile_fields(id: &str) -> Vec<String> {
 #[test]
 fn unit_phase_single_style_property_difference_retains_all_twelve_fields() {
     let fixture = crate::fixtures::fixture("style/cascade-inheritance");
-    let html = (fixture).document.html;
-    let actual = execute::execute_fixture(html, fixture.request).unwrap();
+    let html = (fixture).phase().unwrap().0.html;
+    let actual = execute::execute_fixture(html, fixture.request()).unwrap();
     for differs in [false, true] {
         let mut reference = style_reference();
         if differs {
@@ -1301,8 +1398,8 @@ fn unit_phase_dom_common_comparison_preserves_meaningful_structure() {
         ],
     );
     let fixture = crate::fixtures::fixture("dom/structure");
-    let html = (fixture).document.html;
-    let actual = execute::execute_fixture(html, fixture.request).unwrap();
+    let html = (fixture).phase().unwrap().0.html;
+    let actual = execute::execute_fixture(html, fixture.request()).unwrap();
     for mutation in [
         "none",
         "attribute_order",
@@ -1370,7 +1467,8 @@ fn unit_phase_dom_common_comparison_preserves_meaningful_structure() {
 #[test]
 fn ag8_v3_counts_case_verdicts_separately_from_comparison_facts() {
     let fixture = crate::fixtures::fixture("style/cascade-inheritance");
-    let actual = execute::execute_fixture(fixture.document.html, fixture.request).unwrap();
+    let actual =
+        execute::execute_fixture(fixture.phase().unwrap().0.html, fixture.request()).unwrap();
     let mut reference = style_reference();
     reference.inspection.as_mut().unwrap().styles[0]
         .values
@@ -1426,7 +1524,7 @@ fn ag8_invocation_failure_publishes_no_case_totals() {
 fn ag8_late_borrowser_failure_does_not_publish_earlier_cases() {
     let first = crate::fixtures::fixture("canvas/cascade");
     let bad = Fixture {
-        document: crate::fixtures::fixture("canvas/root").document.with_test_bytes(b"<!doctype html><html><head><style>html,body{margin:0;padding:0;height:0}html{background-color:#123456}div{height:100px;background-color:red}</style></head><body><div></div></body></html>"),
+        input: crate::model::FixtureInput::Phases { document: crate::fixtures::fixture("canvas/root").phase().unwrap().0.with_test_bytes(b"<!doctype html><html><head><style>html,body{margin:0;padding:0;height:0}html{background-color:#123456}div{height:100px;background-color:red}</style></head><body><div></div></body></html>"), request: (*crate::fixtures::fixture("canvas/root")).request() },
         ..*crate::fixtures::fixture("canvas/root")
     };
     let fixtures = [first, &bad];

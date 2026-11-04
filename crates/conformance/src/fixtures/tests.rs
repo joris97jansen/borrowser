@@ -17,13 +17,16 @@ fn discovered_catalogue_is_nonempty_sorted_and_selects_exactly() {
 #[test]
 fn malformed_expectations_fail_preflight_even_for_known_failures() {
     let original = *fixture("dom/structure");
-    let html = (original).document.html;
+    let html = (original).phase().unwrap().0.html;
     for json in [
         "{",
         r#"{"dom":{"state":"not_requested"},"styles":[],"layout":{"state":"not_requested"},"canvas":{"state":"not_requested"}}"#,
     ] {
         let f = Fixture {
-            document: (original).document.with_test_bytes(html),
+            input: crate::model::FixtureInput::Phases {
+                document: (original).phase().unwrap().0.with_test_bytes(html),
+                request: (original).request(),
+            },
             kind: FixtureKind::Runnable {
                 checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
                     expected: Expected::Projection(json),
@@ -88,9 +91,12 @@ fn malformed_background_expectations_fail_catalogue_preflight() {
 #[test]
 fn legitimate_expected_content_disagreement_is_not_invalid_metadata() {
     let original = *fixture("canvas/root");
-    let html = (original).document.html;
+    let html = (original).phase().unwrap().0.html;
     let f = Fixture {
-        document: (original).document.with_test_bytes(html),
+        input: crate::model::FixtureInput::Phases {
+            document: (original).phase().unwrap().0.with_test_bytes(html),
+            request: (original).request(),
+        },
         kind: FixtureKind::Runnable {
             checks: crate::model::Checks::Independent(crate::model::IndependentExpectation {
                 expected: Expected::Canvas(crate::model::CanvasColor([0, 0, 0])),
@@ -152,7 +158,10 @@ fn invalid_requests_fail_catalogue_preflight_before_expected_comparison() {
         },
     ] {
         let error = validate_catalogue(&[Fixture {
-            request,
+            input: crate::model::FixtureInput::Phases {
+                document: (original).phase().unwrap().0,
+                request,
+            },
             ..original
         }])
         .unwrap_err();

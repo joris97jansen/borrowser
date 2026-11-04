@@ -1,0 +1,147 @@
+{
+  "kind": "url",
+  "rows": [
+    {
+      "input": "#new",
+      "base": {
+        "state": "present",
+        "value": {
+          "source": "explicit",
+          "input": {
+            "state": "present",
+            "value": "data:text/plain,hi#old"
+          },
+          "url": {
+            "state": "present",
+            "value": {
+              "serialization": "data:text/plain,hi#old",
+              "scheme": "data",
+              "username": "",
+              "password": null,
+              "host": null,
+              "port": null,
+              "path": "text/plain,hi",
+              "query": null,
+              "fragment": "old",
+              "authority": false,
+              "opaque_path": true
+            }
+          },
+          "diagnostics": [],
+          "failure": {
+            "state": "inapplicable"
+          }
+        }
+      },
+      "outcome": {
+        "kind": "parsed",
+        "url": {
+          "serialization": "data:text/plain,hi#new",
+          "scheme": "data",
+          "username": "",
+          "password": null,
+          "host": null,
+          "port": null,
+          "path": "text/plain,hi",
+          "query": null,
+          "fragment": "new",
+          "authority": false,
+          "opaque_path": true
+        },
+        "diagnostics": [],
+        "origin": {
+          "kind": "opaque",
+          "serialization": "null"
+        },
+        "resource": {
+          "state": "inapplicable"
+        }
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    },
+    {
+      "input": "child",
+      "base": {
+        "state": "present",
+        "value": {
+          "source": "explicit",
+          "input": {
+            "state": "present",
+            "value": "data:text/plain,hi#old"
+          },
+          "url": {
+            "state": "present",
+            "value": {
+              "serialization": "data:text/plain,hi#old",
+              "scheme": "data",
+              "username": "",
+              "password": null,
+              "host": null,
+              "port": null,
+              "path": "text/plain,hi",
+              "query": null,
+              "fragment": "old",
+              "authority": false,
+              "opaque_path": true
+            }
+          },
+          "diagnostics": [],
+          "failure": {
+            "state": "inapplicable"
+          }
+        }
+      },
+      "outcome": {
+        "kind": "failed",
+        "diagnostics": [],
+        "failure": "relative_against_opaque_base"
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    },
+    {
+      "input": "",
+      "base": {
+        "state": "present",
+        "value": {
+          "source": "explicit",
+          "input": {
+            "state": "present",
+            "value": "data:text/plain,hi#old"
+          },
+          "url": {
+            "state": "present",
+            "value": {
+              "serialization": "data:text/plain,hi#old",
+              "scheme": "data",
+              "username": "",
+              "password": null,
+              "host": null,
+              "port": null,
+              "path": "text/plain,hi",
+              "query": null,
+              "fragment": "old",
+              "authority": false,
+              "opaque_path": true
+            }
+          },
+          "diagnostics": [],
+          "failure": {
+            "state": "inapplicable"
+          }
+        }
+      },
+      "outcome": {
+        "kind": "failed",
+        "diagnostics": [],
+        "failure": "relative_against_opaque_base"
+      },
+      "source": {
+        "state": "inapplicable"
+      }
+    }
+  ]
+}

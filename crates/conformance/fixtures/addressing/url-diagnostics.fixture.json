@@ -1,0 +1,29 @@
+{
+  "id": "addressing/url-diagnostics",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "addressing": {
+    "kind": "url",
+    "rows": [
+      {
+        "reference": " https://example.test/a%zz%yy ",
+        "base": null,
+        "purpose": null
+      },
+      {
+        "reference": " https://user:pass@xn--:70000/",
+        "base": null,
+        "purpose": null
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "addressing",
+    "path": "url-diagnostics.expected.json"
+  }
+}

@@ -30,12 +30,53 @@ pub(crate) struct TestId(pub(crate) &'static str);
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Fixture {
     pub(crate) id: TestId,
-    pub(crate) document: DocumentInput,
+    pub(crate) input: FixtureInput,
     pub(crate) upstream: Option<UpstreamAssertion>,
     pub(crate) metadata_source: &'static str,
     pub(crate) requires_javascript: bool,
     pub(crate) kind: FixtureKind,
-    pub(crate) request: ObservationRequest,
+}
+
+#[derive(Clone, Copy, Debug)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "The embedded static catalogue retains Copy phase inputs without heap allocation, as in the existing AG fixture representation"
+)]
+pub(crate) enum FixtureInput {
+    Phases {
+        document: DocumentInput,
+        request: ObservationRequest,
+    },
+    Addressing(crate::addressing::AddressingInput),
+}
+impl Fixture {
+    pub(crate) fn phase(self) -> Result<(DocumentInput, ObservationRequest), HarnessError> {
+        match self.input {
+            FixtureInput::Phases { document, request } => Ok((document, request)),
+            FixtureInput::Addressing(_) => Err(HarnessError::new(
+                "fixture.input",
+                "addressing input is not a phase document",
+            )),
+        }
+    }
+    pub(crate) fn request(self) -> ObservationRequest {
+        match self.input {
+            FixtureInput::Phases { request, .. } => request,
+            FixtureInput::Addressing(_) => ObservationRequest::NONE,
+        }
+    }
+    pub(crate) fn source(self) -> &'static str {
+        match self.input {
+            FixtureInput::Phases { document, .. } => document.source,
+            FixtureInput::Addressing(_) => self.metadata_source,
+        }
+    }
+    pub(crate) fn provenance(self) -> Option<UpstreamSource> {
+        match self.input {
+            FixtureInput::Phases { document, .. } => document.provenance,
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -177,6 +218,7 @@ pub(crate) enum Expectation {
 #[derive(Debug)]
 pub(crate) enum Execution {
     Observed(BorrowserCapture),
+    AddressingObserved(crate::addressing::observations::AddressingObservation),
     ReferenceObserved {
         test: BorrowserCapture,
         reference: Box<BorrowserCapture>,
@@ -200,10 +242,15 @@ pub(crate) enum Comparison {
 pub(crate) enum Expected {
     Canvas(CanvasColor),
     Projection(&'static str),
+    Addressing(&'static str),
 }
 impl Expected {
     pub(crate) fn observations(self) -> Result<ProjectedObservations, HarnessError> {
         match self {
+            Self::Addressing(_) => Err(HarnessError::new(
+                "expectation.invalid",
+                "addressing expectation used as a phase projection",
+            )),
             Self::Canvas(color) => Ok(ProjectedObservations {
                 canvas: Observation::Observed(color),
                 ..Default::default()

@@ -274,6 +274,15 @@ pub fn declarations(root: &Path) -> BTreeMap<String, Value> {
             } else if path.to_string_lossy().ends_with(".fixture.json") {
                 let mut m: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
                 let expected = match m["expected"]["kind"].as_str() {
+                    Some("addressing") => serde_json::from_slice(
+                        &std::fs::read(
+                            path.parent()
+                                .unwrap()
+                                .join(m["expected"]["path"].as_str().unwrap()),
+                        )
+                        .unwrap(),
+                    )
+                    .unwrap(),
                     Some("projection") => decode_projection_numbers(
                         serde_json::from_slice(
                             &std::fs::read(
@@ -440,6 +449,30 @@ pub fn assert_catalogue(
             assert!(c["upstream_assertion"].is_null());
         }
 
+        if !m["addressing"].is_null() {
+            assert_eq!(c["status"], "incomplete");
+            assert_eq!(c["borrowser_status"], "UNSUPPORTED");
+            assert_eq!(c["coverage"]["classification"], "unsupported");
+            if classification == "runnable" {
+                assert!(
+                    c["coverage"]["reason"]
+                        .as_str()
+                        .unwrap()
+                        .contains("local-only")
+                );
+            }
+            for key in [
+                "descriptor",
+                "captures",
+                "projections",
+                "reference_document",
+                "relationships",
+                "borrowser_expectation",
+            ] {
+                assert!(c[key].is_null(), "local-only addressing {id}: {key}");
+            }
+            continue;
+        }
         if classification != "runnable" {
             assert_eq!(c["status"], "incomplete");
             assert_eq!(c["coverage"]["classification"], classification);

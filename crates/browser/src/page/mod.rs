@@ -1,9 +1,9 @@
-mod addressing;
+pub(crate) mod addressing;
 pub(crate) mod css_resources;
 mod debug;
 pub(crate) use addressing::{DocumentAddressError, DocumentAddressState};
 mod dom_mutation;
-mod html_resources;
+pub(crate) mod html_resources;
 pub(crate) use html_resources::{HtmlReferenceOutcome, HtmlResourceReference};
 mod image_sources;
 mod retained_render_state;
