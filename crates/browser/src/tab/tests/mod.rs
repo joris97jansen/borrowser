@@ -1,4 +1,5 @@
 mod css_provenance;
+mod css_resources;
 mod document_lifecycle;
 mod dom_patches;
 mod navigation;

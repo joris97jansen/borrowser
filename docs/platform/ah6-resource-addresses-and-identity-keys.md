@@ -322,3 +322,11 @@ document generation. No shortcut or demo-specific engine behavior was introduced
 All AH6 functional exit criteria have implementation and deterministic evidence.
 The independent native macOS full-CI failure remains unresolved; this document does
 not waive a clean-CI requirement or claim unconditional issue-close approval.
+
+## AH8 candidate handoff
+
+[AH8](ah8-css-resource-reference-discovery.md) passes admitted response metadata
+through accepted decoded-block installation and retains a typed effective base
+on each external stylesheet attachment. Issued-request authentication and complete
+reference/identity projections remain unchanged. CSS-specific purpose stays in
+CSS roles; no new ResourceKind or transport route is added.

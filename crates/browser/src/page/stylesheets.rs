@@ -75,11 +75,12 @@ impl PageState {
         &mut self,
         slot_id: StylesheetSlotId,
         block: &str,
+        response: &core_types::NetworkResponseInfo,
     ) -> Option<RenderInvalidationRequest> {
         let changed = self
             .rendering
             .document_styles
-            .install_external_stylesheet(slot_id, block);
+            .install_external_stylesheet(slot_id, block, response);
         if changed {
             Some(self.apply_stylesheet_set_change())
         } else {

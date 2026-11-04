@@ -32,7 +32,7 @@ pub use self::ui::PageFrameStatus;
 pub use dom_style::{inherited_color, page_background};
 
 impl Tab {
-    /// Inspect committed document/base state and authored HTML references without
+    /// Inspect committed document/base state and authored HTML/CSS references without
     /// issuing commands. Contents are redacted; this internal regression text is
     /// not a stable public schema or URL serialization interface.
     pub fn document_address_debug_snapshot(&self) -> Option<String> {

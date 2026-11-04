@@ -418,7 +418,12 @@ fn ah6_css_redirect_control_duplicate_starts_and_terminal_events_preserve_respon
             Some(&admitted)
         );
     }
-    runtime_block(&mut tab, slot, &url, "p{color:red}");
+    runtime_block(
+        &mut tab,
+        slot,
+        &url,
+        "p{color:red;background-image:url(icon.png)}",
+    );
     let generation = tab.page.style_generations();
     runtime_block(&mut tab, slot, &url, "p{color:blue}");
     assert_eq!(tab.page.style_generations(), generation);
@@ -435,6 +440,13 @@ fn ah6_css_redirect_control_duplicate_starts_and_terminal_events_preserve_respon
     );
     assert_eq!(tab.page.style_generations(), generation);
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
+    let sources = tab.page.css_resource_references().unwrap().unwrap();
+    let crate::page::css_resources::CssReferenceOutcome::Resolved { address, .. } =
+        sources[0].outcome(&sources[0].discovery.references[0])
+    else {
+        panic!("retained admitted base");
+    };
+    assert_eq!(address.url().as_str(), "https://cdn.test/icon.png");
     assert!(rx.try_recv().is_err());
 }
 

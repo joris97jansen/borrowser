@@ -168,7 +168,7 @@ impl<'a> CssTokenizer<'a> {
         let next = self.peek_char_at_after(byte_offset);
         match next {
             Some(ch) => !is_css_line_break_start(ch),
-            None => false,
+            None => true,
         }
     }
 

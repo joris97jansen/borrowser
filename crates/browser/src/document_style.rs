@@ -1,6 +1,6 @@
 use addressing::{
     BrowserUrl, ResourceAddress, ResourceCapability, ResourceIdentityKey, ResourceKind,
-    ResourceOperation,
+    ResourceOperation, UrlFailure, UrlParseOutcome,
 };
 use core_types::StylesheetSlotId;
 use css::{
@@ -39,6 +39,7 @@ enum StylesheetSlotSource {
     External {
         href: String,
         address: Option<ResourceAddress>,
+        resource_base: Option<Box<Result<UrlParseOutcome, UrlFailure>>>,
     },
 }
 
@@ -46,13 +47,30 @@ impl std::fmt::Debug for StylesheetSlotSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Inline(_) => f.debug_tuple("Inline").field(&"<redacted>").finish(),
-            Self::External { href, address } => f
+            Self::External {
+                href,
+                address,
+                resource_base,
+            } => f
                 .debug_struct("External")
                 .field("href", &if href.is_empty() { "" } else { "<redacted>" })
                 .field("address", address)
+                .field("resource_base", resource_base)
                 .finish(),
         }
     }
+}
+
+pub(crate) enum StylesheetResourceBase<'a> {
+    Document,
+    Response(Option<&'a Result<UrlParseOutcome, UrlFailure>>),
+}
+pub(crate) struct StylesheetResourceSource<'a> {
+    pub(crate) slot: StylesheetSlotId,
+    pub(crate) owner: Id,
+    pub(crate) parse: &'a StylesheetParse,
+    pub(crate) media: Option<&'a str>,
+    pub(crate) base: StylesheetResourceBase<'a>,
 }
 
 #[derive(Clone, Debug)]
@@ -150,7 +168,7 @@ impl DocumentStyleSet {
                 StylesheetSlotSource::Inline(text) => StylesheetSlotState::Loaded(
                     parse_stylesheet_with_options(text, &ParseOptions::stylesheet()),
                 ),
-                StylesheetSlotSource::External { href, address } => {
+                StylesheetSlotSource::External { href, address, .. } => {
                     *address = resolve_url(base_url, href)
                         .map(|url| ResourceAddress::new(url, ResourceKind::Stylesheet));
                     if let Some(address) = address
@@ -278,6 +296,7 @@ impl DocumentStyleSet {
                 owner: Id(u32::try_from(id.0).expect("synthetic stylesheet owner")),
                 source: StylesheetSlotSource::External {
                     href: url.to_string(),
+                    resource_base: None,
                     address: Some(ResourceAddress::new(
                         BrowserUrl::parse(url).expect("test URL").url,
                         ResourceKind::Stylesheet,
@@ -294,6 +313,7 @@ impl DocumentStyleSet {
         &mut self,
         slot_id: StylesheetSlotId,
         css_text: &str,
+        response: &core_types::NetworkResponseInfo,
     ) -> bool {
         let Some(slot) = self.slot_mut(slot_id) else {
             return false;
@@ -306,6 +326,10 @@ impl DocumentStyleSet {
             StylesheetSlotState::Pending | StylesheetSlotState::Loaded(_)
         ) {
             return false;
+        }
+        if let StylesheetSlotSource::External { resource_base, .. } = &mut slot.source {
+            *resource_base = (!response.final_url.is_empty())
+                .then(|| Box::new(BrowserUrl::parse(&response.final_url)));
         }
         slot.state = StylesheetSlotState::Loaded(parse_stylesheet_with_options(
             css_text,
@@ -401,6 +425,28 @@ impl DocumentStyleSet {
         Ok(inputs)
     }
 
+    /// Borrow actual available attachments, never the provenance-free flattened
+    /// style projection. Pending/failed sources have no CSS input to observe.
+    pub(crate) fn resource_sources(&self) -> impl Iterator<Item = StylesheetResourceSource<'_>> {
+        self.ordered_slots().filter_map(|(slot_id, slot)| {
+            let StylesheetSlotState::Loaded(parse) = &slot.state else {
+                return None;
+            };
+            Some(StylesheetResourceSource {
+                slot: slot_id,
+                owner: slot.owner,
+                parse,
+                media: slot.media.as_deref(),
+                base: match &slot.source {
+                    StylesheetSlotSource::Inline(_) => StylesheetResourceBase::Document,
+                    StylesheetSlotSource::External { resource_base, .. } => {
+                        StylesheetResourceBase::Response(resource_base.as_deref())
+                    }
+                },
+            })
+        })
+    }
+
     fn allocate_slot_id(&mut self) -> StylesheetSlotId {
         self.next_slot_id = self
             .next_slot_id
@@ -457,6 +503,7 @@ fn collect_stylesheet_inputs(node: &Node, out: &mut Vec<DiscoveredStylesheet>) {
                     source: StylesheetSlotSource::External {
                         href: href.to_owned(),
                         address: None,
+                        resource_base: None,
                     },
                     media: node.attr("media").map(str::to_string),
                 });
@@ -510,6 +557,16 @@ fn resolve_url(base_url: Option<&BrowserUrl>, href: &str) -> Option<BrowserUrl> 
 }
 
 #[cfg(test)]
+fn test_response() -> core_types::NetworkResponseInfo {
+    core_types::NetworkResponseInfo {
+        requested_url: "https://example.com/a.css".into(),
+        final_url: "https://example.com/a.css".into(),
+        status_code: Some(200),
+        content_type: Some("text/css".into()),
+    }
+}
+
+#[cfg(test)]
 mod af5_tests {
     use super::*;
     use html::{HtmlParseOptions, parse_document};
@@ -550,7 +607,7 @@ mod af5_tests {
         let second = set.stylesheet_collection_inputs().unwrap();
         assert_eq!(second[1].source_id(), inline_source);
 
-        assert!(set.install_external_stylesheet(external, "p { color: blue; }"));
+        assert!(set.install_external_stylesheet(external, "p { color: blue; }", &test_response()));
         let complete = set.stylesheet_collection_inputs().unwrap();
         assert_eq!(
             complete
@@ -607,7 +664,7 @@ mod af5_tests {
         );
         assert_eq!(first.fetches.len(), 1);
         let slot_id = first.fetches[0].slot_id;
-        assert!(set.install_external_stylesheet(slot_id, "p { color: red; }"));
+        assert!(set.install_external_stylesheet(slot_id, "p { color: red; }", &test_response()));
         let source_id = set.stylesheet_collection_inputs().unwrap()[1].source_id();
 
         let changed = set.reconcile_from_dom(
@@ -654,7 +711,7 @@ mod af5_tests {
         let second = reconcile.fetches[1].slot_id;
         assert_ne!(first, second);
 
-        assert!(set.install_external_stylesheet(second, "p { color: blue; }"));
+        assert!(set.install_external_stylesheet(second, "p { color: blue; }", &test_response()));
         let one_available = set.stylesheet_collection_inputs().unwrap();
         assert_eq!(
             one_available
@@ -664,7 +721,7 @@ mod af5_tests {
             vec![0, 2]
         );
 
-        assert!(set.install_external_stylesheet(first, "p { color: red; }"));
+        assert!(set.install_external_stylesheet(first, "p { color: red; }", &test_response()));
         let all_available = set.stylesheet_collection_inputs().unwrap();
         assert_eq!(
             all_available
@@ -820,6 +877,7 @@ mod ah6_tests {
             let StylesheetSlotSource::External {
                 href,
                 address: Some(address),
+                ..
             } = &slot.source
             else {
                 panic!("retained reference")

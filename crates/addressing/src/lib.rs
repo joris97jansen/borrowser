@@ -59,6 +59,35 @@ impl BrowserUrl {
         Self::parse_with_base(input, None)
     }
 
+    /// Parse the original reference only if the parser proves that its result,
+    /// failure and diagnostics are independent of an unavailable base.
+    /// `Ok(None)` is explicitly unresolved, never a hypothetical null-base
+    /// verdict. The consumer retains missing/invalid source provenance.
+    pub fn parse_if_base_independent(input: &str) -> Result<Option<UrlParseOutcome>, UrlFailure> {
+        let diagnostics = RefCell::new(Vec::new());
+        let callback = |event| {
+            diagnostics
+                .borrow_mut()
+                .push(UrlDiagnostic::from_backend(event))
+        };
+        let result = url::Url::options()
+            .syntax_violation_callback(Some(&callback))
+            .parse_if_base_independent(input);
+        let diagnostics = diagnostics.into_inner();
+        match result {
+            Ok(Some(inner)) => Ok(Some(UrlParseOutcome {
+                url: Self { inner },
+                diagnostics,
+            })),
+            Ok(None) => Ok(None),
+            Err(error) => Err(UrlFailure {
+                kind: UrlFailureKind::from_backend(error),
+                diagnostics,
+                base: None,
+            }),
+        }
+    }
+
     /// Resolve a reference against this explicit base. Absolute references are
     /// also accepted. The base is never mutated, and its earlier parse diagnostics
     /// are not replayed. Opaque bases can resolve fragments but not relative paths.

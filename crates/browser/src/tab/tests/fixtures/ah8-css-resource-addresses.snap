@@ -1,0 +1,6 @@
+CssResourceReferences {
+    source=StyleAttribute owner=element[0] condition_deferred=false effective_participation=Unevaluated incomplete=false feature_notices_truncated=false
+        base=DocumentActive(Some(BrowserUrl { scheme: "https", username: "", password: None, host_kind: Some("domain"), port: None, path: "<redacted>", query: Some("<redacted>"), fragment: Some("<redacted>"), authority: true, opaque_path: false }))
+        [0] role=Image shape=Literal contexts=[] acceptance=Some(UnsupportedProperty) selector=None outcome=Resolved { address: ResourceAddress { url: BrowserUrl { scheme: "https", username: "", password: None, host_kind: Some("domain"), port: None, path: "<redacted>", query: None, fragment: None, authority: true, opaque_path: false }, kind: Image }, diagnostics: [] }
+            retrieval_scheme_capability=Supported navigation_scheme_capability=Supported
+}

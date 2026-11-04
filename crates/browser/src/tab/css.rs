@@ -241,12 +241,12 @@ impl Tab {
             self.fail_css_request(slot, "Decoded stylesheet does not match the issued request");
             return;
         }
-        match &load.phase {
+        let response = match &load.phase {
             StylesheetLoadPhase::AwaitingRuntime {
                 accept_body: true,
                 progress: CssRuntimeProgress::AwaitingBlock,
-                ..
-            } => {}
+                response,
+            } => response.clone(),
             StylesheetLoadPhase::AwaitingRuntime {
                 progress: CssRuntimeProgress::BlockReceived,
                 ..
@@ -255,8 +255,8 @@ impl Tab {
                 self.fail_css_request(slot, "Unexpected stylesheet runtime block");
                 return;
             }
-        }
-        let work = self.page.apply_css_block(slot, &css_block);
+        };
+        let work = self.page.apply_css_block(slot, &css_block, &response);
         if let StylesheetLoadPhase::AwaitingRuntime { progress, .. } = &mut self
             .stylesheet_loads
             .get_mut(&slot)

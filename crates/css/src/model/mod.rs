@@ -29,7 +29,7 @@ use crate::syntax::{
     CssSpan, CssUnicodeRange, ParseStats, SyntaxDiagnostic,
 };
 
-pub(crate) use self::entry::parse_declaration_list_with_options;
+pub(crate) use self::entry::{build_value_components, parse_declaration_list_with_options};
 pub use self::entry::{parse_stylesheet, parse_stylesheet_with_options};
 #[cfg(test)]
 pub(crate) use self::serialize::serialize_declaration_list_parse_for_snapshot;

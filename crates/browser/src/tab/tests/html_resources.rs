@@ -343,7 +343,7 @@ fn html_resource_debug_literal_labels_and_outcomes_are_deterministic() {
     assert!(
         tab.document_address_debug_snapshot()
             .unwrap()
-            .ends_with(&expected)
+            .contains(&expected)
     );
 }
 

@@ -42,14 +42,26 @@ pub(super) fn complete_css(
     url: &str,
     text: &str,
 ) {
-    use bus::CoreEvent;
-    use core_types::{NetworkResponseInfo, ResourceKind};
+    use core_types::NetworkResponseInfo;
     let response = NetworkResponseInfo {
         requested_url: url.into(),
         final_url: url.into(),
         status_code: Some(200),
         content_type: Some("text/css".into()),
     };
+    complete_css_with_response(tab, slot, response, text);
+}
+
+pub(super) fn complete_css_with_response(
+    tab: &mut Tab,
+    slot: core_types::StylesheetSlotId,
+    response: core_types::NetworkResponseInfo,
+    text: &str,
+) {
+    use bus::CoreEvent;
+    use core_types::ResourceKind;
+    let request_url = response.requested_url.clone();
+    let url = request_url.as_str();
     let tab_id = tab.tab_id;
     let request_id = tab.nav_gen;
     tab.on_core_event(CoreEvent::NetworkStart {

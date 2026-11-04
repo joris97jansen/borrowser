@@ -21,6 +21,10 @@ impl PageState {
             snapshot.push('\n');
             snapshot.push_str(&resources);
         }
+        if let Some(resources) = self.css_resource_address_debug_snapshot() {
+            snapshot.push('\n');
+            snapshot.push_str(&resources);
+        }
         Some(snapshot)
     }
 

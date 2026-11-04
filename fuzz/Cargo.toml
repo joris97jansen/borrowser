@@ -103,4 +103,4 @@ doc = false
 bench = false
 
 [patch.crates-io]
-url = { git = "https://github.com/joris97jansen/rust-url.git", rev = "7dc4ecbf4d29817e723e04ae94b14f1326764f61" }
+url = { git = "https://github.com/joris97jansen/rust-url.git", rev = "92f7fb395f9ffb2f706e7c664283781fd3b294a2" }

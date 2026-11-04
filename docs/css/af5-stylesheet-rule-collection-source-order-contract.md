@@ -279,3 +279,12 @@ filters, fast rejection, style sharing, cross-pass collection caching, networkin
 cascade layers, runtime user stylesheets, animations, transitions, CSSOM, or
 new selector/property coverage. AF6 winner selection is documented separately;
 inheritance/defaulting and computed-style construction remain downstream.
+
+## AH8 effective resource base
+
+The [AH8 candidate](../platform/ah8-css-resource-reference-discovery.md) resolves
+the effective resource-base handoff above using the admitted response URL retained
+on the Browser attachment. It is distinct from original-request/CSSOM-location
+provenance. Authored discovery precedes collection filtering, preserves source
+identities/order and makes no effective-participation claim. No base fields or
+new acceptance rules are added to RuleCollection.

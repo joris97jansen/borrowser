@@ -1,4 +1,5 @@
 mod addressing;
+pub(crate) mod css_resources;
 mod debug;
 pub(crate) use addressing::{DocumentAddressError, DocumentAddressState};
 mod dom_mutation;

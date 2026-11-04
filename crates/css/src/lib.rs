@@ -19,6 +19,7 @@ mod document_selector_matching;
 mod dom_attributes;
 pub mod model;
 pub mod properties;
+pub mod resource_references;
 pub mod selectors;
 pub mod specified;
 pub mod style_invalidation;

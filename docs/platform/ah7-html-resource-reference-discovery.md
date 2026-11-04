@@ -226,3 +226,11 @@ The full Browser suite was also run directly because workspace execution stopped
 in conformance before reaching it. Existing release-only debug-guard and fuzz
 instrumentation warnings remain outside AH7. No windowed smoke was needed for
 this on-demand diagnostic feature. Full CI remains an explicit qualification gap.
+
+## AH8 extension
+
+[AH8](ah8-css-resource-reference-discovery.md) appends authored CSS observations
+after this HTML inventory in the same document-address diagnostic. AH7's HTML
+matrix and no-command behavior remain unchanged; its CSS exclusion above is
+historical issue scope. AH8's qualified immutable parser is integrated; final
+required Borrowser validation remains pending.

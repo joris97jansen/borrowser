@@ -188,3 +188,11 @@ AD8 deliberately excludes:
 - media queries and container queries;
 - animations and transitions;
 - Browser/runtime, Layout, Paint, or GFX property-name handling.
+
+## AH8 observation and recovery
+
+[AH8](../platform/ah8-css-resource-reference-discovery.md) observes model
+declarations before candidate filtering. Supported parsers and shorthand
+expansion still determine acceptance. Contextual escape consumption and usable
+EOF URL/string/function recovery retain diagnostics; unrelated BadString tokens
+do not manufacture resource occurrences. There is no new property acceptance.
