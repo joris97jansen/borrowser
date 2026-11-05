@@ -3,6 +3,36 @@
 Issue: #1119. Milestone AH; milestone closeout remains AH10 / #1120.
 Baseline: master `1cef5bceafd79c872fe6edc9750384e8281a338a` (AH7 and AH8 merged).
 
+## Completion and qualification update (2026-11-04)
+
+[PR #1450](https://github.com/joris97jansen/borrowser/pull/1450) is merged and
+[issue #1119](https://github.com/joris97jansen/borrowser/issues/1119) is closed as
+completed. [Hosted CI run 41864987854, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/41864987854)
+passed for PR head `d26f44e732f2413422f57d791f31770fe1b19eaf` against the baseline
+above. The actual tested synthetic merge was
+`48322eafaa59f8f534bb59fa6eba03d36b9ded08`, tree
+`96995c3ff5b10e9ca3960d7a65f481f57ae94f12`. Published merge
+`b0e617eda1c6142c91cff3a3cc89ea538f4aa958` has that same tree.
+
+The Ubuntu Rust job passed the required addressing suite (22 PASS / 2 UNSUPPORTED),
+AG8 suite, dependency/static gates and default/HTML5 workspace lanes. The separate
+native Linux x86-64 job passed ownership and pinned real Chromium/composition/suite
+qualification, including explicit execution of required ignored browser tests.
+The Rust lanes filter duplicate native_procfs wrappers; native qualification
+runs in the required Linux job. Other fuzz/regression and AG4 synthesis jobs
+passed; the special-branch proxy timing job was skipped. This is not Chromium
+addressing capture/comparison support or a successful macOS `make ci` run.
+
+This later evidence supersedes the pending supported-host qualification and
+not-closeable conclusion at the historical local checkpoint below. The nine
+native macOS failures and ignores remain failures/ignores, not retrospective
+passes. [AH10](ah10-url-origin-resource-addressing-foundation-closeout.md#hosted-qualification-verified-on-2026-11-04)
+records exact job links, integration boundaries and milestone-wide limitations.
+AH9 qualification does not establish AH10 revision qualification or GitHub lifecycle
+state.
+
+## Implemented scope
+
 AH9 integrates existing addressing behavior with AG. It introduces no new URL,
 origin, discovery, loading, or security-policy semantics. The local addressing
 suite has 22 runnable fixtures (65 rows) and two explicitly unsupported creation-context

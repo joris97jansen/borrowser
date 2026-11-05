@@ -475,7 +475,28 @@ Notes:
 
 ## Browser Runtime / Platform
 
-Addressing architecture status:
+Addressing foundation status (2026-11-04):
+
+AH1–AH9 implement the documented URL, origin, base URL and resource-addressing
+foundation. [AH10 closeout](platform/ah10-url-origin-resource-addressing-foundation-closeout.md)
+consolidates the supported subset, evidence and limitations. Completion here
+refers only to the implemented addressing foundation, with the networking
+qualification below explicit; it does not establish complete Fetch, security,
+cache, navigation, scheme support, or standards conformance. AH10 separates
+implementation scope from dated verification records and GitHub lifecycle decisions.
+
+Typed `ResourceAddress`/`ResourceIdentityKey` inputs exist. Browser's stylesheet
+dispatch serializes retrieval keys into string commands; images and document
+navigation retain their existing string handoffs. `CoreCommand::FetchStream` and
+`net::fetch_stream()` still accept URL strings. **Project-owner acceptance
+(2026-11-05):** the owner explicitly approved interpretation A: AH supplies typed,
+normalized addressing foundations for future networking consumers, while
+end-to-end typed transport is outside AH's accepted scope. The original criterion
+“Future networking receives normalized typed resource addresses” is preserved;
+this scope decision does not claim literal end-to-end receipt. The string-based
+bus/network boundary remains incomplete, with typed integration deferred to AI.
+See [AH10's dated owner decision](platform/ah10-url-origin-resource-addressing-foundation-closeout.md#project-owner-acceptance-decision-2026-11-05)
+for its basis and the required eventual PR/issue traceability.
 
 - AH1 completes the [URL, origin, and resource-addressing architecture contract](platform/ah1-url-origin-resource-addressing-contract.md)
   only. It establishes logical addressing ownership, HTML/CSS reference
@@ -487,11 +508,11 @@ Addressing architecture status:
   fatal/implementation failures, ordered recoverable events, normalized
   serialization/equality, and credential-redacted debug output. The
   [AH2 contract](platform/ah2-typed-url-parsing-and-diagnostics.md) records the
-  revised decision to use published, locked `url 2.5.7` with known limitations,
+  historical decision to use published, locked `url 2.5.7` with known limitations,
   retained independent expectations, and validation. This is not full WHATWG
   compliance. The image-source helper uses the boundary without changing HTML
   preprocessing, relative fallback, or resource loading.
-- AH3 now integrates maintained `rust-url` revision
+- AH3 originally integrated maintained `rust-url` revision
   `7dc4ecbf4d29817e723e04ae94b14f1326764f61` using revision-pinned Cargo patches
   and the qualified consumer graph (adapter 1.2.1 / ICU 2.0). Production-API
   qualification matches 560/560 null-base and 336/336 explicit-base WPT outcomes.
@@ -499,7 +520,10 @@ Addressing architecture status:
   `DomainToAscii` callbacks are explicitly mapped; no resolver or consumer
   workaround is added. [Integration contract and reproduction](platform/ah2-typed-url-parsing-and-diagnostics.md#ah3-maintained-fork-integration-2026-10-28)
   record minimal patches, graph identity, corrected regressions and limitations.
-  The dependency-integration full CI passed. AH3 now adds production-safe
+  AH8 later advanced the current main/fuzz pin to
+  `92f7fb395f9ffb2f706e7c664283781fd3b294a2` after source/graph qualification;
+  earlier pins remain historical. The dependency-integration full CI passed.
+  AH3 also added production-safe
   structural operation debugging: a pure formatter over the existing input,
   explicit base and typed result, with content-redacted URL Debug, ordered
   diagnostics, fatal categories and a failure-base consistency check. Exact URL
@@ -510,11 +534,12 @@ Addressing architecture status:
   **AH3 acceptance is satisfied:** the final native audit covers missing/invalid
   bases, invalid references, opaque-base restrictions, unsupported schemes and
   deterministic diagnostics. Its two missing assertion groups now extend existing
-  native tests; no production behavior changed. All 32 addressing tests, 896/896
-  pinned WPT outcomes, dependency enforcement and full local CI pass. The
+  native tests; no production behavior changed. At that AH3 checkpoint all 32
+  addressing tests, 896/896 pinned WPT outcomes, dependency enforcement and full
+  local CI passed. The
   [completed acceptance matrix](platform/ah2-typed-url-parsing-and-diagnostics.md#ah3-final-native-acceptance-2026-10-29)
-  records the evidence and closeout recommendation for #1113; no GitHub closure or
-  merge is claimed. Document-level base integration remains later work.
+  records the historical closeout recommendation for #1113. Document-level base
+  integration subsequently landed in AH4; broader creation contexts remain gaps.
 - AH4 implements [Browser-owned document URL and frozen-base state](platform/ah4-document-url-and-base-state.md):
   typed document URLs, derived fallback, first applicable HTML base selection,
   relative/empty/rejected href behavior, ordered parser-publication facts, atomic
@@ -553,7 +578,8 @@ Addressing architecture status:
   retain complete references while Browser's dispatch records own exact issued
   retrieval URLs/generations. Network/runtime admission validates provenance,
   immutable response metadata and phase; failed command delivery settles locally.
-  Unsupported references create neither requests nor pending loads nor aborts.
+  Unsupported stylesheet references create neither requests nor pending loads
+  nor aborts in that integrated consumer.
   Existing CSS preview/cancellation behavior remains; image keys and the bus are
   unchanged. CssAbort clears buffers, not individual HTTP transfers; per-resource
   network cancellation and downstream worker acknowledgements remain unavailable.
@@ -568,8 +594,9 @@ Addressing architecture status:
   Occurrences are never deduplicated by URL/key, and current-base inventory does
   not retarget existing loading associations or emit additional commands.
   Picture/srcset parsing/selection, other deferred reference combinations,
-  media/nested-document loading, form submission, script loading/execution and
-  CSS resource extraction remain gaps. No AG or CI infrastructure changes.
+  media/nested-document loading, form submission and script loading/execution
+  remain gaps. CSS authored extraction subsequently landed in AH8. AH7 itself
+  added no AG or CI infrastructure.
 - AH8 implements the [CSS authored inventory](platform/ah8-css-resource-reference-discovery.md):
   parsed URL occurrences before cascade filtering, orthogonal shape/context and
   completeness, admitted-response external bases, observation-time inline bases,
@@ -578,9 +605,9 @@ Addressing architecture status:
   effective dependency, or AG schema is added. Published parser revision
   `92f7fb395f9ffb2f706e7c664283781fd3b294a2` is pinned in both Cargo roots after
   required hosted source qualification and unchanged 35-package graph/checksum
-  checks; frozen policy advanced only afterward. The single final Borrowser CI
-  attempt still fails nine native macOS ownership tests; remaining independent
-  gates and direct consumer tests pass. Required clean CI/supported-host evidence
+  checks; frozen policy advanced only afterward. Its historical local Borrowser
+  CI attempt failed nine native macOS ownership tests; remaining independent
+  gates and direct consumer tests passed. Required clean CI/supported-host evidence
   remained pending at that historical local checkpoint. AH8 subsequently merged
   as PR #1449 / `1cef5bce`; this is not fresh AH9 qualification evidence.
 - AH9 adds [local addressing conformance fixtures and structured synthetic snapshots](platform/ah9-addressing-conformance-fixtures-and-snapshots.md):
@@ -595,18 +622,26 @@ Addressing architecture status:
   admitted final response base. The fixed local addressing suite is required in
   CI; original phase suites and Chromium formats remain unchanged. Chromium
   addressing capture is explicitly unsupported. Local targeted, subsystem,
-  embedding, CLI, lint, parser/fuzz and build checks pass. Full CI and the HTML5
-  aggregate retain nine reproduced native macOS ownership failures; required
-  native Linux x86-64 Chromium compatibility qualification remains pending.
-  AH9 is not closeable yet and neither AH9 nor Milestone AH is claimed complete.
-  Milestone-wide closeout remains AH10 / #1120.
-- AH behavior remains pending:
+  embedding, CLI, lint, parser/fuzz and build checks passed. The historical local
+  checkpoint records failed full CI/HTML5 aggregates with nine reproduced native
+  macOS ownership failures, pending Linux qualification, and an AH9 not-closeable
+  conclusion. Those dated results remain in the AH9 contract.
+- **AH9 completion update (2026-11-04):** [PR #1450](https://github.com/joris97jansen/borrowser/pull/1450)
+  merged and #1119 closed. [Hosted run 41864987854, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/41864987854)
+  passed the Rust addressing/default/HTML5 gates and native Linux x86-64
+  ownership/pinned-Chromium qualification. Tested synthetic merge `48322eaf`
+  (head `d26f44e7`, base `1cef5bce`) and published merge `b0e617ed` share tree
+  `96995c3ff5b10e9ca3960d7a65f481f57ae94f12`; AH10 records full identities and
+  job links. This supersedes pending supported-host qualification, not the failed
+  macOS results, and does not qualify Chromium addressing comparison or an AH10
+  revision. The separate special-branch proxy timing job was skipped.
+- Remaining addressing limitations after the scoped foundation:
   inherited/override base contexts and full loading scheduling,
   remaining document-creation contexts, unified unsupported-capability diagnostics, and
   broader URL/origin/discovery conformance beyond the representative AH9 surface.
-  The current `url` dependency is not
-  fully qualified against WHATWG. Neither Milestone AH nor security-policy support is complete;
-  AG remains unchanged at nine issues.
+  The current `url` dependency is not fully qualified against WHATWG. Security
+  policy and typed transport integration remain incomplete. AG remains unchanged
+  at nine issues; AH9 adds local addressing evidence, not another AG milestone.
 
 ### AH-URL-001 — Upstream WHATWG URL parsing deviations
 
@@ -619,6 +654,12 @@ and nine fork setter findings remain documented limitations; immutable AH3
 parsing does not use mutation APIs. AH3 scoped acceptance is satisfied after the
 final native audit; this does not complete Milestone AH or library-wide URL
 qualification.
+
+**AH10 reconciliation (2026-11-04):** the preceding status is the AH3 checkpoint.
+The scoped foundation and current dependency/qualification status are consolidated
+in [AH10](platform/ah10-url-origin-resource-addressing-foundation-closeout.md).
+The observations and superseded decisions below remain historical; they do not
+describe the current maintained-parser pin or establish library-wide conformance.
 
 The following 2026-10-26/27 observations concern the earlier published dependency.
 The focused consumer checks reproduced pre-AH2 behavior; no AH2 normalization or
@@ -799,10 +840,20 @@ Missing or incomplete:
 - full DOM mutation APIs
 - full HTML parser conformance
 - broad WPT integration for rendering/runtime retained behavior
-- full form submission and navigation behavior
+- full form submission and navigation/history/session semantics, despite existing
+  navigation, fragment and back/forward machinery
 - focus management and keyboard navigation
-- origin/security policy model
-- storage, cookies, history, and session behavior
+- full security policy enforcement, including CORS, CSP, mixed-content and
+  filesystem access policies; AH5 supplies origin identity and same-origin
+  classification, not authorization
+- complete WHATWG Fetch/redirect/response handling, despite existing
+  HTTP/HTTPS/file transport, configured redirects and response metadata
+- MIME sniffing and complete response-type processing
+- cookies, HTTP cache, storage and service workers
+- end-to-end typed transport integration; ResourceAddress/ResourceIdentityKey
+  availability does not change existing string bus/network APIs
+- complete scheme/creation-context support and JavaScript-facing URL APIs
+- broad URL/origin/addressing WPT integration beyond pinned representative cases
 - resource loading for fonts, media, and broader image formats
 - accessibility tree
 
@@ -1167,7 +1218,7 @@ suite membership or execution backends. The supported claim is:
 | Dimension | Achieved scope and remaining boundary |
 | --- | --- |
 | Available infrastructure | Dedicated embedded/discovered fixture harness, explicit eligibility and expectation metadata, production Borrowser execution, pinned local Linux Chromium capture/comparison, optional existing AG4 disposable Linux runner, deterministic reports and fixed CI/extended suites. |
-| Supported observations | Committed DOM structure; selected computed `color`, `background-color`, `font-size`, `display`; selected direct DOM-backed fixed-block border boxes; guarded opaque sRGB canvas sample; one direct present-target background-color match/mismatch relationship. AG5/AG7 domains remain authoritative. |
+| Supported observations | Committed DOM structure; selected computed `color`, `background-color`, `font-size`, `display`; selected direct DOM-backed fixed-block border boxes; guarded opaque sRGB canvas sample; one direct present-target background-color match/mismatch relationship. AG5/AG7 domains remain authoritative. AH9 additionally provides local-only URL/origin/addressing observations and snapshots; Chromium addressing capture/comparison remains unsupported. |
 | Verified behavior | Original six fixtures have independent PASS results and 34 equal cross-engine fields in retained native Linux qualification. The seven-case CI suite executes eight documents and compares successfully; extended has eleven cases/twelve executable documents. Evidence provenance and fresh-vs-historical limits are linked below. |
 | Known mismatches | `wpt/rgb-alias-p6` and `wpt/rgb-comments-p6`, both test and reference roles, differ at `style:#p6/background-color`: Borrowser `[0,0,0,0]`, Chromium `[10,150,50,255]`. These are existing CSS functional-color gaps, not missing harness infrastructure. Correct independent expectations remain XFAIL; scoped relationships can be satisfied despite those differences. |
 | Unsupported tests/assertions | Two JS/testdriver cases are excluded before execution. The two runnable imported RGB cases retain unsupported original full visual assertions and aggregate INCOMPLETE. Extended local exit is 3; comparison exit is 1. Aggregate and independent results are separate. |

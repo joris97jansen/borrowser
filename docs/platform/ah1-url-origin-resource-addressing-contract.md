@@ -1,12 +1,21 @@
 # AH1: URL, Origin, And Resource Addressing Architecture Contract
 
+Current closeout reference (2026-11-04): [AH10](ah10-url-origin-resource-addressing-foundation-closeout.md)
+consolidates the implemented AH1–AH9 addressing foundation, current dependency
+and qualification provenance, remaining limitations, and the actual string-based
+transport boundary. The original decisions, unresolved labels, and pending
+validation statements below describe their dated checkpoints; later AH contracts
+and AH10 supply current status. Typed addressing inputs exist, but end-to-end
+typed transport and complete Fetch/security/cache semantics remain deferred.
+
 Current resource-address integration: [AH6](ah6-resource-addresses-and-identity-keys.md)
 adds typed complete references, fragmentless retrieval keys and operation capabilities.
 Browser's stylesheet handoff now retains references separately from issued request
 provenance, validates immutable CSS response metadata, and handles command delivery
 failures. Historical exclusions below describe the earlier issue's scope.
 
-Last updated: 2026-10-24
+Original AH1 contract last updated: 2026-10-24
+Closeout reference note added: 2026-11-04
 Status: architecture contract complete; AH2–AH5 implementation references below
 Scope: Milestone AH ownership, semantics, integration boundaries, and evidence
 
