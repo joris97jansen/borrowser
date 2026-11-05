@@ -498,6 +498,29 @@ bus/network boundary remains incomplete, with typed integration deferred to AI.
 See [AH10's dated owner decision](platform/ah10-url-origin-resource-addressing-foundation-closeout.md#project-owner-acceptance-decision-2026-11-05)
 for its basis and the required eventual PR/issue traceability.
 
+AI1 contract status (2026-11-05):
+
+The [Fetch, HTTP networking, and response-handling architecture contract](platform/ai1-fetch-http-networking-response-contract.md)
+is authored for #1121. This records a documentation deliverable, not a claim of
+merge or implemented AI networking. Review, merge, qualification, issue closure
+and Milestone AI completion remain separate; none is established by this entry.
+AI2–AI9 retain implementation of typed requests/responses/headers, backend/fake
+execution, controlled real HTTP(S), redirects, typed errors, centralized metadata
+and networking fixtures. Existing string transport, configured backend redirects,
+HTTP-status differences, partial streaming, file mapping, cancellation and legacy
+diagnostic limitations remain unchanged.
+
+AI1 defines incremental delivery and verified terminal outcomes while preserving
+AH6 exact issued provenance/attachment identity, AH8 final-response stylesheet
+bases and Browser document/base/origin lifetime. It distinguishes HTTP responses
+from transport/body failure and consumer rejection. Ordinary admitted metadata
+can survive origin-changing redirects; authorization and execution-derived fields
+require specific handling. AH continues to represent credential-bearing URLs;
+the intended initial AI admission limitation does not change URL syntax or enable
+implicit backend authentication. Future AT cache capability composes with Fetch
+coordination. Cache/cookies/security enforcement and broader AJ/AK loading remain
+pending; existing Rust asynchronous delivery is not excluded by the no-JS scope.
+
 - AH1 completes the [URL, origin, and resource-addressing architecture contract](platform/ah1-url-origin-resource-addressing-contract.md)
   only. It establishes logical addressing ownership, HTML/CSS reference
   production, Browser document/base coordination, future networking/cache/policy

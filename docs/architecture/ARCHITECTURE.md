@@ -113,6 +113,36 @@ reaches the existing page diagnostic and appended redacted resource inventory.
 Script is a purpose classification only. No loader, retained resource association,
 render invalidation, AG schema or execution behavior changes.
 
+## AI1: Fetch and networking ownership contract
+
+The [AI1 Fetch, HTTP networking, and response-handling contract](../platform/ai1-fetch-http-networking-response-contract.md)
+defines the intended handoff from AH addresses through Fetch coordination and
+individual backend attempts to document/resource consumers. Fetch owns request
+construction and metadata, redirects, response metadata and incremental bodies,
+typed failure semantics, diagnostics and deterministic internal debug output.
+Addressing retains URL/origin semantics. Browser retains issuance context,
+document/base/origin lifetime, response admission, attachment identity and
+invalidation; CSS, Layout and Paint keep their established responsibilities.
+
+AI1 authors documentation only. Current `FetchStream`/`net::fetch_stream` inputs
+remain strings; existing HTTP/HTTPS/file loading and Rust runtime events remain
+the implementation baseline. The target preserves streamed HTML, immutable
+response provenance, AH6 stylesheet correlation and AH8 final-response bases.
+HTTP error statuses remain conceptually distinct from body/network failures and
+consumer rejection; current image-status handling requires later migration.
+Ordinary admitted headers survive redirects where applicable, while target-derived
+fields are regenerated and authorization cannot leak across origins. AH still
+represents URL userinfo; initial AI Fetch admission rejects unsupported credentials
+before backend execution. These restrictions are initial capability limitations.
+
+Executable models/backends/redirects remain AI2–AI9. Future AT cache capability
+composes with Fetch coordination; no cache, cookie, CORS or authentication framework
+is introduced. JavaScript networking/event-loop integration is excluded; existing
+Rust workers, asynchronous commands/events and platform routing remain necessary.
+Contract authorship does not establish merge, implemented AI behavior or milestone
+completion; the [feature-gap tracker](../engine-feature-gap-tracker.md) retains
+those distinctions.
+
 ---
 
 # 📤 Message Bus (CoreCommand / CoreEvent)
