@@ -21,6 +21,20 @@ pub use diagnostics::{
 use std::cell::RefCell;
 use std::fmt;
 use std::net::{Ipv4Addr, Ipv6Addr};
+use std::path::PathBuf;
+
+/// A URL has no supported native file-path interpretation. No URL or path
+/// contents escape through this fixed error category.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FilePathConversionError;
+
+impl fmt::Display for FilePathConversionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("URL cannot be converted to a native file path")
+    }
+}
+
+impl std::error::Error for FilePathConversionError {}
 
 /// A normalized, immutable URL. No backend types or mutation are exposed.
 ///
@@ -127,6 +141,43 @@ impl BrowserUrl {
     /// Repeated serialization of this immutable value is always stable.
     pub fn as_str(&self) -> &str {
         self.inner.as_str()
+    }
+
+    /// Interpret a file URL using the pinned URL implementation's native path
+    /// conversion. Query and fragment remain URL metadata, not filename bytes.
+    /// Nonlocal authorities are unsupported on Unix; Windows uses drive/UNC
+    /// rules. This performs no I/O and grants no filesystem access permission.
+    pub fn to_file_path(&self) -> Result<PathBuf, FilePathConversionError> {
+        if self.scheme() != "file" {
+            return Err(FilePathConversionError);
+        }
+        #[cfg(any(
+            unix,
+            windows,
+            target_os = "redox",
+            target_os = "wasi",
+            target_os = "hermit"
+        ))]
+        {
+            let path = self
+                .inner
+                .to_file_path()
+                .map_err(|()| FilePathConversionError)?;
+            // The pinned implementation does not reject decoded NUL despite
+            // its documented contract. Never hand an invalid native path to I/O.
+            if path.as_os_str().as_encoded_bytes().contains(&0) {
+                return Err(FilePathConversionError);
+            }
+            Ok(path)
+        }
+        #[cfg(not(any(
+            unix,
+            windows,
+            target_os = "redox",
+            target_os = "wasi",
+            target_os = "hermit"
+        )))]
+        Err(FilePathConversionError)
     }
 
     /// Lowercase scheme without the colon. Parsing does not imply loader support.

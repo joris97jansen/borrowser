@@ -12,14 +12,15 @@ fn ah9_addressing_observation_borrows_committed_state_without_commands_or_raw_id
     assert_eq!(issued.len(), 1);
     let CoreCommand::FetchStream {
         kind: ResourceKind::Image,
-        request_id,
+        request,
         stylesheet_slot_id: None,
-        url,
         ..
     } = &issued[0]
     else {
         panic!("one deduplicated image command")
     };
+    let request_id = request.request_id();
+    let url = request.original_url().as_str();
     let before = tab.document_address_debug_snapshot();
     let generation = tab.nav_gen;
     let origin = {
@@ -45,7 +46,7 @@ fn ah9_addressing_observation_borrows_committed_state_without_commands_or_raw_id
         view.origin().clone()
     };
     assert_eq!(
-        tab.observe_addressing_request(ResourceKind::Image, url, *request_id, None),
+        tab.observe_addressing_request(ResourceKind::Image, url, request_id, None),
         Some(AddressingRequestState::Pending)
     );
     assert_eq!(tab.nav_gen, generation);

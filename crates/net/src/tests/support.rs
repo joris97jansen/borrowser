@@ -1,4 +1,8 @@
-use crate::{HttpClientPolicy, NetEvent, fetch::fetch_stream_with_policy};
+use crate::{
+    FetchRequest, HttpClientPolicy, HttpHeaders, NetEvent, RequestMethod,
+    fetch::fetch_stream_with_policy,
+};
+use addressing::{BrowserUrl, ResourceAddress, ResourceKind as Purpose};
 use core_types::{NetworkErrorKind, NetworkResponseInfo, ResourceKind};
 use rustls::pki_types::CertificateDer;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -47,15 +51,15 @@ pub(super) fn collect_fetch(
 ) -> FetchResult {
     let (tx, rx) = mpsc::channel();
     fetch_stream_with_policy(
-        1,
-        url.clone(),
+        request(&url, kind),
         kind,
         policy,
         Arc::new(AtomicBool::new(false)),
         Arc::new(move |event| {
             let _ = tx.send(event);
         }),
-    );
+    )
+    .expect("admitted test execution route");
 
     let mut start = None;
     let mut body = Vec::new();
@@ -93,15 +97,15 @@ pub(super) fn collect_fetch_error(
 ) -> ErrorEvent {
     let (tx, rx) = mpsc::channel();
     fetch_stream_with_policy(
-        1,
-        url,
+        request(&url, kind),
         kind,
         policy,
         Arc::new(AtomicBool::new(false)),
         Arc::new(move |event| {
             let _ = tx.send(event);
         }),
-    );
+    )
+    .expect("admitted test execution route");
 
     loop {
         match rx
@@ -133,15 +137,15 @@ pub(super) fn collect_fetch_terminal(
 ) -> FetchTerminal {
     let (tx, rx) = mpsc::channel();
     fetch_stream_with_policy(
-        1,
-        url,
+        request(&url, kind),
         kind,
         policy,
         Arc::new(AtomicBool::new(false)),
         Arc::new(move |event| {
             let _ = tx.send(event);
         }),
-    );
+    )
+    .expect("admitted test execution route");
 
     let mut start = None;
     let mut body = Vec::new();
@@ -192,6 +196,16 @@ pub(super) fn collect_fetch_terminal(
 
 pub(super) struct RequestParts {
     pub(super) path: String,
+    pub(super) headers: Vec<(String, String)>,
+}
+
+impl RequestParts {
+    pub(super) fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
+    }
 }
 
 pub(super) struct HttpReply {
@@ -322,13 +336,33 @@ fn read_request(stream: &mut impl Read) -> RequestParts {
         .expect("request path")
         .to_string();
 
+    let mut headers = Vec::new();
     loop {
         let mut line = String::new();
         reader.read_line(&mut line).expect("header line");
         if line == "\r\n" || line.is_empty() {
             break;
         }
+        let (name, value) = line.split_once(':').expect("synthetic request field");
+        headers.push((name.to_owned(), value.trim().to_owned()));
     }
 
-    RequestParts { path }
+    RequestParts { path, headers }
+}
+
+pub(super) fn request(url: &str, kind: ResourceKind) -> FetchRequest {
+    let purpose = match kind {
+        ResourceKind::Html => Purpose::Document,
+        ResourceKind::Css => Purpose::Stylesheet,
+        ResourceKind::Image => Purpose::Image,
+    };
+    FetchRequest::try_new(
+        1,
+        ResourceAddress::new(BrowserUrl::parse(url).unwrap().url, purpose),
+        RequestMethod::Get,
+        HttpHeaders::new(),
+        None,
+        None,
+    )
+    .unwrap()
 }

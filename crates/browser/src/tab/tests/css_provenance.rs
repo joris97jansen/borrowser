@@ -11,11 +11,14 @@ fn fixture() -> (Tab, Receiver<CoreCommand>, StylesheetSlotId, String) {
         .try_iter()
         .find_map(|cmd| match cmd {
             CoreCommand::FetchStream {
+                request: fetch_request,
                 stylesheet_slot_id: Some(slot),
-                url,
                 kind: ResourceKind::Css,
                 ..
-            } => Some((slot, url)),
+            } => {
+                let url = fetch_request.legacy_issued_url(ResourceKind::Css).unwrap();
+                Some((slot, url))
+            }
             _ => None,
         })
         .expect("production stylesheet dispatch");
@@ -671,11 +674,14 @@ fn ah6_css_fragment_keys_preserve_attachment_isolation_and_original_retirement_g
         .try_iter()
         .filter_map(|c| match c {
             CoreCommand::FetchStream {
+                request: fetch_request,
                 stylesheet_slot_id: Some(id),
-                url,
                 kind: ResourceKind::Css,
                 ..
-            } => Some((id, url)),
+            } => {
+                let url = fetch_request.legacy_issued_url(ResourceKind::Css).unwrap();
+                Some((id, url))
+            }
             _ => None,
         })
         .collect();
@@ -733,7 +739,7 @@ fn ah6_css_empty_and_rejected_mime_complete_without_a_decoded_block() {
 
 #[test]
 fn ah6_css_issued_state_debug_is_content_redacted_in_all_phases() {
-    let secret = "https://SECRET_USER:SECRET_PASSWORD@secret-host.test:8443/secret-path?secret-query#secret-fragment";
+    let secret = "https://secret-host.test:8443/SECRET_USER/SECRET_PASSWORD/secret-path?secret-query#secret-fragment";
     let (mut tab, rx) = addressing_tab(&format!(
         "<!doctype html><link rel=stylesheet href='{secret}'><p>preview</p>"
     ));
@@ -741,11 +747,14 @@ fn ah6_css_issued_state_debug_is_content_redacted_in_all_phases() {
         .try_iter()
         .find_map(|c| match c {
             CoreCommand::FetchStream {
+                request: fetch_request,
                 stylesheet_slot_id: Some(slot),
-                url,
                 kind: ResourceKind::Css,
                 ..
-            } => Some((slot, url)),
+            } => {
+                let url = fetch_request.legacy_issued_url(ResourceKind::Css).unwrap();
+                Some((slot, url))
+            }
             _ => None,
         })
         .unwrap();

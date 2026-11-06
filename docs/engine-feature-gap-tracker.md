@@ -485,7 +485,7 @@ qualification below explicit; it does not establish complete Fetch, security,
 cache, navigation, scheme support, or standards conformance. AH10 separates
 implementation scope from dated verification records and GitHub lifecycle decisions.
 
-Typed `ResourceAddress`/`ResourceIdentityKey` inputs exist. Browser's stylesheet
+At the AH10 checkpoint, typed `ResourceAddress`/`ResourceIdentityKey` inputs exist. Browser's stylesheet
 dispatch serializes retrieval keys into string commands; images and document
 navigation retain their existing string handoffs. `CoreCommand::FetchStream` and
 `net::fetch_stream()` still accept URL strings. **Project-owner acceptance
@@ -520,6 +520,50 @@ the intended initial AI admission limitation does not change URL syntax or enabl
 implicit backend authentication. Future AT cache capability composes with Fetch
 coordination. Cache/cookies/security enforcement and broader AJ/AK loading remain
 pending; existing Rust asynchronous delivery is not excluded by the no-JS scope.
+
+AI2 implementation candidate (#1122):
+
+[AI2's typed request contract](platform/ai2-typed-fetch-request-construction.md)
+replaces the production Browser/bus/runtime/Fetch raw request payload with an
+owned, admitted request. It preserves complete AH addresses and producer purpose,
+actual optional initiator/origin identity, method/no-body semantics, ordered fields,
+redirect intent and existing correlation. Purpose/route/slot combinations are
+validated before execution. Navigation rejection and failed enqueue preserve
+history, generation, committed documents and outstanding work. Address-bar
+host:decimal-port HTTPS interpretation is explicitly preserved; hyperlinks do
+not use that input policy. Request/field errors and command Debug are bounded and
+content-redacted. Shared field representation supports repetitions/raw bytes;
+executable requests reject unsupported duplicates, values and caller fields.
+
+This updates the current typed-input boundary; it does not rewrite AH10's dated
+scope acceptance. String response events and legacy backend adaptation remain.
+**Initial credential admission does not prevent backend-followed credential-bearing
+redirect targets from executing or generating Basic authentication.** AI5/AI6 own
+that inherited limitation; a separate synthetic loopback characterization records
+it. Current URL hop updates, the full redirect contract, typed responses/body,
+backend/fake abstraction, staged failures, centralized metadata, cache/cookies,
+security policy and broader AJ/AK lifecycle remain open under their existing issues.
+AI2's local loader now converts the typed URL through Addressing's pinned native
+file-path conversion: decoding happens once, query/fragment stay out of filenames,
+and unsupported conversions/NUL fail without a literal-path fallback. This fixes
+the normalized document URL regression; historical prefix-stripping observations
+below describe the earlier loader. Native Windows/platform qualification,
+image-status, cancellation/delivery and raw backend-error limitations remain.
+Implementation/test coverage, final qualification, publication
+and GitHub closure remain separate; this candidate entry claims no full-CI pass,
+merge, issue closure or milestone completion.
+
+AI2 correction qualification (2026-11-06): the affected subsystem/observation run
+passes 463 tests, including native file decoding and the local document/CSS/image
+runtime smoke. An isolated archive of base `92ab2963` and the candidate reproduce
+the same nine native macOS ownership failures under identical serial commands on
+the same host, with identical native sources and locked dependency coordinates.
+The new full-CI attempt still fails at those nine tests; supplemental default and
+HTML5 `--no-fail-fast` runs report no other failed target. Every subsequent CI
+stage passes when run individually. This is reproducible baseline-failure
+evidence, not a full-CI or native Linux/Windows qualification pass. See the
+[AI2 qualification record](platform/ai2-typed-fetch-request-construction.md#focused-correction-qualification-2026-11-06)
+for command, platform, source fingerprint, limitations and results.
 
 - AH1 completes the [URL, origin, and resource-addressing architecture contract](platform/ah1-url-origin-resource-addressing-contract.md)
   only. It establishes logical addressing ownership, HTML/CSS reference

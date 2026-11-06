@@ -4,6 +4,8 @@ use bus::{CoreEvent, HtmlParseCompletion, HtmlParseFailure};
 use core_types::DomVersion;
 fn published() -> (Tab, HtmlParseCompletion) {
     let mut tab = Tab::new(1);
+    let (sender, _commands) = std::sync::mpsc::channel();
+    tab.set_bus_sender(sender);
     tab.navigate_to_new("https://example.com/ag5".into());
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: 1,
@@ -177,6 +179,8 @@ fn observation_rejects_stale_or_mismatched_artifacts() {
     draft.paint_key.paint_input_generation -= 1;
     let other = completed();
     assert!(!other.page.accepts_observed_artifacts(&draft));
+    let (sender, _commands) = std::sync::mpsc::channel();
+    tab.set_bus_sender(sender);
     tab.navigate_to_new("https://example.com/other".into());
     assert!(!tab.page.accepts_observed_artifacts(&draft));
     assert!(matches!(

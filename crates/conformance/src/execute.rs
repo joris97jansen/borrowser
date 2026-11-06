@@ -89,11 +89,11 @@ pub(crate) fn begin_document(
     match command_rx.try_recv() {
         Ok(CoreCommand::FetchStream {
             tab_id: 1,
-            request_id: id,
+            request,
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
-            url,
-        }) if id == request_id && url == requested_url => {}
+        }) if request.request_id() == request_id
+            && request.original_url().as_str() == requested_url => {}
         _ => {
             return Err(HarnessError::new(
                 "execution.navigation",

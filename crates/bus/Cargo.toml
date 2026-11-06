@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+net = { path = "../net" }
 core_types = { path = "../core_types" }
 html = { path = "../html", features = ["internal-api"] }

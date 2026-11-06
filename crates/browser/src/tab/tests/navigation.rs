@@ -95,8 +95,8 @@ fn history_expect_fetch(
     assert!(
         commands.iter().any(|command| matches!(
             command,
-            CoreCommand::FetchStream { request_id, url, kind: ResourceKind::Html, .. }
-                if *request_id == generation && url == expected_url
+            CoreCommand::FetchStream { request: fetch_request, kind: ResourceKind::Html, .. }
+                if fetch_request.request_id() == generation && fetch_request.legacy_issued_url(ResourceKind::Html).unwrap() == expected_url
         )),
         "missing document request for {expected_url}: {commands:?}"
     );
@@ -742,8 +742,8 @@ fn navigation_history_rejects_current_response_with_wrong_requested_url() {
 
 #[test]
 fn redirected_document_response_updates_tab_base_url_and_status() {
-    let mut tab = Tab::new(1);
-    let requested = "https://example.com".to_string();
+    let (mut tab, _commands) = history_test_tab();
+    let requested = "https://example.com/".to_string();
     tab.navigate_to_new(requested.clone());
     let final_url = "https://example.com/landing".to_string();
     let response = NetworkResponseInfo {
@@ -810,7 +810,7 @@ fn redirected_document_response_updates_tab_base_url_and_status() {
 
 #[test]
 fn starting_new_navigation_clears_pending_render_work_and_last_trace() {
-    let mut tab = Tab::new(1);
+    let (mut tab, _commands) = history_test_tab();
     tab.nav_gen = 32;
     tab.page.start_nav("https://example.com/");
 

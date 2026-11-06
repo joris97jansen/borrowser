@@ -9,3 +9,6 @@ bus = { path = "../bus" }
 net = { path = "../net" }
 html = { path = "../html", features = ["internal-api"] }
 core_types = { path = "../core_types" }
+
+[dev-dependencies]
+addressing = { path = "../addressing" }

@@ -282,7 +282,7 @@ fn html_resource_rejected_and_stale_publications_keep_the_committed_observation(
 
 #[test]
 fn html_resource_replacement_clear_and_navigation_have_no_retained_inventory() {
-    let (mut tab, _) = addressing_tab("<!doctype html><a href=old>x</a>");
+    let (mut tab, _commands) = addressing_tab("<!doctype html><a href=old>x</a>");
     let output =
         html::parse_document("<!doctype html><a href=new>x</a>", Default::default()).unwrap();
     tab.on_core_event(CoreEvent::DomPatchUpdate {

@@ -276,11 +276,14 @@ fn external_stylesheets_keep_document_order_when_network_arrives_out_of_order() 
         .iter()
         .filter_map(|cmd| match cmd {
             CoreCommand::FetchStream {
+                request: fetch_request,
                 stylesheet_slot_id: Some(slot_id),
-                url,
                 kind: ResourceKind::Css,
                 ..
-            } => Some((*slot_id, url.clone())),
+            } => {
+                let url = fetch_request.legacy_issued_url(ResourceKind::Css).unwrap();
+                Some((*slot_id, url.clone()))
+            }
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -346,11 +349,17 @@ fn duplicate_same_url_stylesheets_keep_distinct_document_slots() {
         .try_iter()
         .filter_map(|cmd| match cmd {
             CoreCommand::FetchStream {
+                request: fetch_request,
                 stylesheet_slot_id: Some(slot_id),
-                url,
                 kind: ResourceKind::Css,
                 ..
-            } if url.ends_with("/theme.css") => Some(slot_id),
+            } if fetch_request
+                .legacy_issued_url(ResourceKind::Css)
+                .unwrap()
+                .ends_with("/theme.css") =>
+            {
+                Some(slot_id)
+            }
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -387,11 +396,18 @@ fn duplicate_same_url_stylesheets_participate_as_separate_cascade_slots() {
         .try_iter()
         .filter_map(|cmd| match cmd {
             CoreCommand::FetchStream {
+                request: fetch_request,
                 stylesheet_slot_id: Some(slot_id),
-                url,
                 kind: ResourceKind::Css,
                 ..
-            } if url.ends_with("/theme.css") => Some((slot_id, url)),
+            } if fetch_request
+                .legacy_issued_url(ResourceKind::Css)
+                .unwrap()
+                .ends_with("/theme.css") =>
+            {
+                let url = fetch_request.legacy_issued_url(ResourceKind::Css).unwrap();
+                Some((slot_id, url))
+            }
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -445,11 +461,18 @@ fn decoded_css_for_removed_stylesheet_slot_is_ignored() {
         .try_iter()
         .find_map(|cmd| match cmd {
             CoreCommand::FetchStream {
+                request: fetch_request,
                 stylesheet_slot_id: Some(slot_id),
-                url,
                 kind: ResourceKind::Css,
                 ..
-            } if url.ends_with("/removed.css") => Some((slot_id, url)),
+            } if fetch_request
+                .legacy_issued_url(ResourceKind::Css)
+                .unwrap()
+                .ends_with("/removed.css") =>
+            {
+                let url = fetch_request.legacy_issued_url(ResourceKind::Css).unwrap();
+                Some((slot_id, url))
+            }
             _ => None,
         })
         .expect("removed.css fetch");
@@ -519,11 +542,18 @@ fn external_stylesheet_arrival_invalidates_cached_computed_style() {
         .try_iter()
         .find_map(|cmd| match cmd {
             CoreCommand::FetchStream {
+                request: fetch_request,
                 stylesheet_slot_id: Some(slot_id),
-                url,
                 kind: ResourceKind::Css,
                 ..
-            } if url.ends_with("/site.css") => Some((slot_id, url)),
+            } if fetch_request
+                .legacy_issued_url(ResourceKind::Css)
+                .unwrap()
+                .ends_with("/site.css") =>
+            {
+                let url = fetch_request.legacy_issued_url(ResourceKind::Css).unwrap();
+                Some((slot_id, url))
+            }
             _ => None,
         })
         .expect("site.css fetch");
@@ -567,11 +597,14 @@ fn loaded_external_media_only_change_preserves_source_without_refetch_and_invali
         .try_iter()
         .find_map(|command| match command {
             CoreCommand::FetchStream {
+                request: fetch_request,
                 stylesheet_slot_id: Some(slot_id),
-                url,
                 kind: ResourceKind::Css,
                 ..
-            } => Some((slot_id, url)),
+            } => {
+                let url = fetch_request.legacy_issued_url(ResourceKind::Css).unwrap();
+                Some((slot_id, url))
+            }
             _ => None,
         })
         .expect("initial external stylesheet fetch");

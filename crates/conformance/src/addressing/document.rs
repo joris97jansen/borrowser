@@ -54,14 +54,19 @@ impl<'a> OfflineDocumentDriver<'a> {
     fn account(&mut self, tab: &Tab, command: CoreCommand) -> Result<(), HarnessError> {
         let CoreCommand::FetchStream {
             tab_id,
-            request_id,
             stylesheet_slot_id,
             kind,
-            url,
+            request,
         } = command
         else {
             return Err(error("unexpected non-parser/resource command"));
         };
+        let request_id = request.request_id();
+        let url = request
+            .legacy_issued_url(kind)
+            .map_err(|_| error("incompatible resource route"))?;
+        CoreCommand::validate_fetch_stream(&request, kind, stylesheet_slot_id)
+            .map_err(|_| error("incompatible resource attachment"))?;
         if tab_id != tab.tab_id || request_id != tab.nav_gen {
             return Err(error("resource request has wrong document identity"));
         }

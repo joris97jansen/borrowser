@@ -12,10 +12,15 @@ fn fixture(final_url: &str, css: &str) -> (Tab, std::sync::mpsc::Receiver<CoreCo
         .try_iter()
         .find_map(|c| match c {
             CoreCommand::FetchStream {
+                request: fetch_request,
                 stylesheet_slot_id: Some(slot),
-                url,
                 ..
-            } => Some((slot, url)),
+            } => {
+                let url = fetch_request
+                    .legacy_issued_url(core_types::ResourceKind::Css)
+                    .unwrap();
+                Some((slot, url))
+            }
             _ => None,
         })
         .unwrap();
@@ -205,10 +210,15 @@ fn css_resource_inline_observations_follow_committed_document_base() {
         .try_iter()
         .find_map(|c| match c {
             CoreCommand::FetchStream {
+                request: fetch_request,
                 stylesheet_slot_id: Some(slot),
-                url,
                 ..
-            } => Some((slot, url)),
+            } => {
+                let url = fetch_request
+                    .legacy_issued_url(core_types::ResourceKind::Css)
+                    .unwrap();
+                Some((slot, url))
+            }
             _ => None,
         })
         .unwrap();
@@ -365,10 +375,15 @@ fn css_resource_attachment_retirement_does_not_reuse_the_old_base() {
         .try_iter()
         .find_map(|c| match c {
             CoreCommand::FetchStream {
+                request: fetch_request,
                 stylesheet_slot_id: Some(slot),
-                url,
                 ..
-            } => Some((slot, url)),
+            } => {
+                let url = fetch_request
+                    .legacy_issued_url(core_types::ResourceKind::Css)
+                    .unwrap();
+                Some((slot, url))
+            }
             _ => None,
         })
         .unwrap();

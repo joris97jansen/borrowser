@@ -1,59 +1,81 @@
 use super::Tab;
 use super::state::{DocumentState, HistoryEntry};
 use addressing::{
-    BrowserUrl, ResourceAddress, ResourceCapability, ResourceKind as AddressResourceKind,
-    ResourceOperation,
+    BrowserUrl, Origin, ResourceAddress, ResourceKind as Purpose, UrlFailureKind, UrlParseError,
 };
 use bus::CoreCommand;
 use core_types::ResourceKind;
+use net::{FetchRequest, HttpHeaders, RequestAdmissionError, RequestMethod};
+
+// The two existing history actions; preparation never mutates either one.
+enum HistoryTarget {
+    Append,
+    Existing(usize),
+}
+
+#[derive(Debug)]
+enum NavigationError {
+    EmptyInput,
+    Url(UrlFailureKind),
+    Request(RequestAdmissionError),
+    DeliveryUnavailable,
+}
+
+impl NavigationError {
+    fn status(&self) -> String {
+        match self {
+            Self::EmptyInput => "Navigation rejected: empty input".into(),
+            Self::Url(kind) => format!("Navigation URL rejected: {kind:?}"),
+            Self::Request(kind) => kind.to_string(),
+            Self::DeliveryUnavailable => "Navigation request delivery failed".into(),
+        }
+    }
+}
 
 impl Tab {
-    // -- Navigation Methods ---
-    pub fn navigate_to_new(&mut self, url: String) {
-        let input_url = url;
-        let url = match self.normalize_url(&input_url) {
-            Ok(url) => url,
-            Err(err) => {
-                self.loading = false;
-                self.last_status = Some(err.to_string());
-                self.url = input_url;
-                self.poke_redraw();
-                return;
-            }
-        };
-        self.navigate_url(url);
+    pub fn navigate_to_new(&mut self, input: String) {
+        let result = normalize_address_bar(&input).and_then(|url| {
+            self.navigate_url(ResourceAddress::new(url, Purpose::Document), None, None)
+        });
+        self.report_navigation_result(result);
     }
 
-    // HTML hyperlinks already have URL semantics. They never enter address-bar
-    // guessing, including syntactically valid but unsupported absolute schemes.
     pub(crate) fn activate_link(&mut self, href: &str) {
         let Some(base) = self.page.active_base_url() else {
             self.last_status = Some("Cannot follow a link without document address state".into());
             return;
         };
-        let destination = match base.resolve(href) {
+        let target = match base.resolve(href) {
             Ok(parsed) => parsed.url,
             Err(error) => {
-                self.last_status = Some(format!("Invalid hyperlink URL: {error}"));
+                self.report_navigation_result(Err(NavigationError::Url(error.kind)));
                 return;
             }
         };
-        let destination = ResourceAddress::new(destination, AddressResourceKind::Hyperlink);
-        if destination.capability(ResourceOperation::Navigation) != ResourceCapability::Supported {
-            self.last_status = Some("Unsupported hyperlink navigation scheme".into());
-            return;
-        }
-        self.navigate_url(destination.url().as_str().to_owned());
+        let initiator = self.page.document_url().cloned();
+        let origin = self
+            .page
+            .addresses
+            .as_ref()
+            .map(|a| a.document_origin().clone());
+        let result = self.navigate_url(
+            ResourceAddress::new(target, Purpose::Hyperlink),
+            initiator,
+            origin,
+        );
+        self.report_navigation_result(result);
     }
 
-    fn navigate_url(&mut self, url: String) {
-        self.url = url.clone();
-
-        // New fragment navigation needs URL equivalence; traversal instead
-        // requires the target entry's actual document-state association.
-        if let Some((destination, document_state)) = self
-            .same_document_destination(&url)
-            .filter(|destination| destination.fragment().is_some())
+    fn navigate_url(
+        &mut self,
+        address: ResourceAddress,
+        initiator: Option<BrowserUrl>,
+        origin: Option<Origin>,
+    ) -> Result<(), NavigationError> {
+        let url = address.url().as_str().to_owned();
+        if let Some((destination, state)) = self
+            .same_document_destination(address.url())
+            .filter(|target| target.fragment().is_some())
             .zip(self.active_document_state())
         {
             self.page
@@ -64,53 +86,83 @@ impl Tab {
             self.history.truncate(self.history_index + 1);
             self.history.push(HistoryEntry {
                 url: url.clone(),
-                document_state: Some(document_state),
+                document_state: Some(state),
             });
             self.history_index = self.history.len() - 1;
+            self.url = url;
             self.poke_redraw();
-            return;
+            return Ok(());
         }
-
-        // record to history (truncate forward branch)
-        self.history.truncate(self.history_index + 1);
-        self.history.push(HistoryEntry {
-            url: url.clone(),
-            document_state: None,
-        });
-        self.history_index = self.history.len() - 1;
-
-        self.start_fetch(url);
+        let request = self.prepare_document_request(address, initiator, origin)?;
+        self.start_fetch(request, HistoryTarget::Append)
     }
 
     pub fn go_back(&mut self) {
         if self.history_index > 0 {
-            let previous_document = self.active_document_state();
-            self.history_index -= 1;
-            self.load_current(previous_document);
+            let result = self.load_current(self.history_index - 1, self.active_document_state());
+            self.report_navigation_result(result);
         }
     }
 
     pub fn go_forward(&mut self) {
         if self.history_index + 1 < self.history.len() {
-            let previous_document = self.active_document_state();
-            self.history_index += 1;
-            self.load_current(previous_document);
+            let result = self.load_current(self.history_index + 1, self.active_document_state());
+            self.report_navigation_result(result);
         }
     }
 
     pub fn refresh(&mut self) {
-        if let Some(url) = self
-            .history
-            .get(self.history_index)
-            .map(|entry| entry.url.clone())
-        {
-            self.url = url.clone();
-            self.start_fetch(url);
+        if let Some(entry) = self.history.get(self.history_index) {
+            let result = BrowserUrl::parse(&entry.url)
+                .map_err(|e| NavigationError::Url(e.kind))
+                .and_then(|parsed| {
+                    self.prepare_document_request(
+                        ResourceAddress::new(parsed.url, Purpose::Document),
+                        None,
+                        None,
+                    )
+                })
+                .and_then(|request| {
+                    self.start_fetch(request, HistoryTarget::Existing(self.history_index))
+                });
+            self.report_navigation_result(result);
         }
     }
 
-    // -- Internal Helpers ---
-    fn start_fetch(&mut self, url: String) {
+    fn prepare_document_request(
+        &self,
+        address: ResourceAddress,
+        initiator: Option<BrowserUrl>,
+        origin: Option<Origin>,
+    ) -> Result<FetchRequest, NavigationError> {
+        FetchRequest::try_new(
+            self.nav_gen.wrapping_add(1),
+            address,
+            RequestMethod::Get,
+            HttpHeaders::new(),
+            initiator,
+            origin,
+        )
+        .map_err(NavigationError::Request)
+    }
+
+    fn start_fetch(
+        &mut self,
+        request: FetchRequest,
+        history: HistoryTarget,
+    ) -> Result<(), NavigationError> {
+        let url = request.original_url().as_str().to_owned();
+        let generation = request.request_id();
+        let command = CoreCommand::try_fetch_stream(self.tab_id, None, ResourceKind::Html, request)
+            .map_err(NavigationError::Request)?;
+        // Queue acceptance precedes all navigation mutation. Exclusive &mut Tab
+        // prevents processing any fast response until commit completes. A failed
+        // send returns the command; never format that payload as an error.
+        self.cmd_tx
+            .as_ref()
+            .ok_or(NavigationError::DeliveryUnavailable)?
+            .send(command)
+            .map_err(|_| NavigationError::DeliveryUnavailable)?;
         self.retire_document_stylesheets();
         if self.nav_gen > 0 {
             self.send_cmd(CoreCommand::CancelRequest {
@@ -118,72 +170,80 @@ impl Tab {
                 request_id: self.nav_gen,
             });
         }
+        match history {
+            HistoryTarget::Append => {
+                self.history.truncate(self.history_index + 1);
+                self.history.push(HistoryEntry {
+                    url: url.clone(),
+                    document_state: None,
+                });
+                self.history_index = self.history.len() - 1;
+            }
+            HistoryTarget::Existing(index) => {
+                // Retain the old association for response-time group rebinding.
+                self.history[index].url = url.clone();
+                self.history_index = index;
+            }
+        }
+        self.url = url;
         self.document_input.clear_for_navigation();
-        self.nav_gen = self.nav_gen.wrapping_add(1);
-        let request_id = self.nav_gen;
-
+        self.nav_gen = generation;
         self.loading = true;
         self.document_load = Default::default();
         self.stylesheet_loads.clear();
-        self.last_status = Some(format!("Fetching {url} …"));
+        self.last_status = Some("Fetching document".into());
         self.page.reset_for_navigation();
         self.clear_render_orchestration_state();
-
-        self.send_cmd(CoreCommand::FetchStream {
-            tab_id: self.tab_id,
-            request_id,
-            stylesheet_slot_id: None,
-            url,
-            kind: ResourceKind::Html,
-        });
         self.poke_redraw();
+        Ok(())
     }
 
-    fn load_current(&mut self, previous_document: Option<DocumentState>) {
-        let entry = &self.history[self.history_index];
-        let url = entry.url.clone();
-        let same_document = previous_document.as_ref().is_some_and(|previous| {
+    fn load_current(
+        &mut self,
+        target_index: usize,
+        previous: Option<DocumentState>,
+    ) -> Result<(), NavigationError> {
+        let entry = &self.history[target_index];
+        let destination = BrowserUrl::parse(&entry.url)
+            .map_err(|e| NavigationError::Url(e.kind))?
+            .url;
+        let same_document = previous.as_ref().is_some_and(|active| {
             entry
                 .document_state
                 .as_ref()
-                .is_some_and(|target| previous.is_same(target))
+                .is_some_and(|target| active.is_same(target))
         });
-        if same_document && let Ok(destination) = BrowserUrl::parse(&url) {
+        if same_document {
+            let url = destination.as_str().to_owned();
             self.page
                 .addresses
                 .as_mut()
                 .expect("same-document address exists")
-                .set_document_url(destination.url);
+                .set_document_url(destination);
+            self.history_index = target_index;
+            self.history[target_index].url = url.clone();
             self.url = url;
             self.poke_redraw();
-            return;
+            return Ok(());
         }
-        self.url = url.clone();
-        self.start_fetch(url);
+        let request = self.prepare_document_request(
+            ResourceAddress::new(destination, Purpose::Document),
+            None,
+            None,
+        )?;
+        self.start_fetch(request, HistoryTarget::Existing(target_index))
     }
 
-    fn normalize_url(&mut self, url: &str) -> Result<String, &'static str> {
-        let trimmed = url.trim();
-        if trimmed.is_empty() {
-            return Err("Cannot navigate to an empty URL");
+    fn report_navigation_result(&mut self, result: Result<(), NavigationError>) {
+        if let Err(error) = result {
+            self.last_status = Some(error.status());
+            self.poke_redraw();
         }
-
-        // Already a full URL with scheme we support
-        if trimmed.starts_with("http://")
-            || trimmed.starts_with("https://")
-            || trimmed.starts_with("file://")
-        {
-            return Ok(trimmed.into());
-        }
-
-        // For everything else, keep your old "guess https" behavior
-        Ok(format!("https://{trimmed}"))
     }
 
-    fn same_document_destination(&self, next_url: &str) -> Option<BrowserUrl> {
+    fn same_document_destination(&self, next: &BrowserUrl) -> Option<BrowserUrl> {
         let current = self.page.document_url()?;
-        let next = BrowserUrl::parse(next_url).ok()?.url;
-        urls_equal_excluding_fragment(current, &next).then_some(next)
+        urls_equal_excluding_fragment(current, next).then(|| next.clone())
     }
 
     fn active_document_state(&self) -> Option<DocumentState> {
@@ -247,4 +307,35 @@ fn urls_equal_excluding_fragment(a: &BrowserUrl, b: &BrowserUrl) -> bool {
         && a.port() == b.port()
         && a.path() == b.path()
         && a.query() == b.query()
+}
+
+// Address-bar intent only. An authority with a decimal port takes precedence
+// over scheme parsing, including ambiguous `custom:3000`. AH still owns parsing
+// and validation of the HTTPS candidate; links never enter this input policy.
+fn normalize_address_bar(input: &str) -> Result<BrowserUrl, NavigationError> {
+    let input = input.trim();
+    if input.is_empty() {
+        return Err(NavigationError::EmptyInput);
+    }
+    let authority = input.split(['/', '?', '#']).next().unwrap_or("");
+    let host_port = !authority.contains('@')
+        && authority.rsplit_once(':').is_some_and(|(host, port)| {
+            !host.is_empty() && !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit())
+        });
+    if host_port {
+        return BrowserUrl::parse(&format!("https://{input}"))
+            .map(|p| p.url)
+            .map_err(|e| NavigationError::Url(e.kind));
+    }
+    match BrowserUrl::parse(input) {
+        Ok(parsed) => Ok(parsed.url),
+        Err(error)
+            if error.kind == UrlFailureKind::InvalidInput(UrlParseError::RelativeWithoutBase) =>
+        {
+            BrowserUrl::parse(&format!("https://{input}"))
+                .map(|p| p.url)
+                .map_err(|e| NavigationError::Url(e.kind))
+        }
+        Err(error) => Err(NavigationError::Url(error.kind)),
+    }
 }
