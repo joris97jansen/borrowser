@@ -10,15 +10,19 @@ mod content_type;
 mod event;
 mod fetch;
 mod file;
+mod headers;
 mod limits;
 mod log;
 mod policy;
+mod request;
 mod stream;
 mod tls;
 
 pub use event::NetEvent;
 pub use fetch::fetch_stream;
+pub use headers::{HeaderError, HttpHeaders};
 pub use policy::{HttpClientPolicy, HttpTimeoutPolicy, TlsTrustStore};
+pub use request::{FetchRequest, RedirectPolicy, RequestAdmissionError, RequestMethod};
 
 #[cfg(test)]
 mod tests;

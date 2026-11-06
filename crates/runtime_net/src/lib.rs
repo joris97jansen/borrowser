@@ -10,6 +10,9 @@ use std::thread;
 use bus::{CoreCommand, CoreEvent};
 use net::{NetEvent, fetch_stream};
 
+#[cfg(test)]
+mod tests;
+
 pub fn start_net_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent>) {
     thread::spawn(move || {
         // one cancel flag per navigation request_id
@@ -19,11 +22,19 @@ pub fn start_net_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
             match cmd {
                 CoreCommand::FetchStream {
                     tab_id,
-                    request_id,
                     stylesheet_slot_id,
-                    url,
                     kind,
+                    request,
                 } => {
+                    if CoreCommand::validate_fetch_stream(&request, kind, stylesheet_slot_id)
+                        .is_err()
+                    {
+                        // Never report a malformed command through its invalid
+                        // resource route, or create cancellation/worker state.
+                        eprintln!("Fetch command rejected: incompatible execution route");
+                        continue;
+                    }
+                    let request_id = request.request_id();
                     // Get or create the cancel flag in a short scope so the mutable borrow ends here:
                     let cancel = {
                         cancels
@@ -34,9 +45,8 @@ pub fn start_net_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
 
                     let evt_tx = evt_tx.clone();
 
-                    fetch_stream(
-                        request_id,
-                        url.clone(),
+                    let result = fetch_stream(
+                        *request,
                         kind,
                         cancel.clone(),
                         Arc::new(move |e: NetEvent| match e {
@@ -100,6 +110,9 @@ pub fn start_net_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
                             }
                         }),
                     );
+                    if result.is_err() {
+                        eprintln!("Fetch command rejected: incompatible execution route");
+                    }
                 }
 
                 CoreCommand::CancelRequest { tab_id, request_id } => {

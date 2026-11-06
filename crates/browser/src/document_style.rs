@@ -1,6 +1,6 @@
 use addressing::{
-    BrowserUrl, ResourceAddress, ResourceCapability, ResourceIdentityKey, ResourceKind,
-    ResourceOperation, UrlFailure, UrlParseOutcome,
+    BrowserUrl, ResourceAddress, ResourceCapability, ResourceKind, ResourceOperation, UrlFailure,
+    UrlParseOutcome,
 };
 use core_types::StylesheetSlotId;
 use css::{
@@ -99,7 +99,7 @@ struct StylesheetSlot {
 #[derive(Clone, Debug)]
 pub(crate) struct StylesheetFetch {
     pub(crate) slot_id: StylesheetSlotId,
-    pub(crate) key: ResourceIdentityKey,
+    pub(crate) address: ResourceAddress,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -177,7 +177,7 @@ impl DocumentStyleSet {
                     {
                         fetches.push(StylesheetFetch {
                             slot_id: id,
-                            key: address.retrieval_key(),
+                            address: address.clone(),
                         });
                         StylesheetSlotState::Pending
                     } else {

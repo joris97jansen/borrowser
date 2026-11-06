@@ -53,15 +53,13 @@ pub enum HtmlParseFailure {
     InputClosed,
 }
 
-#[derive(Debug)]
 pub enum CoreCommand {
     // Network requests
     FetchStream {
         tab_id: TabId,
-        request_id: u64,
         stylesheet_slot_id: Option<StylesheetSlotId>,
-        url: String,
         kind: ResourceKind,
+        request: Box<net::FetchRequest>,
     },
     CancelRequest {
         tab_id: TabId,
@@ -101,6 +99,113 @@ pub enum CoreCommand {
         stylesheet_slot_id: StylesheetSlotId,
         url: String,
     },
+}
+
+impl CoreCommand {
+    pub fn try_fetch_stream(
+        tab_id: TabId,
+        stylesheet_slot_id: Option<StylesheetSlotId>,
+        kind: ResourceKind,
+        request: net::FetchRequest,
+    ) -> Result<Self, net::RequestAdmissionError> {
+        Self::validate_fetch_stream(&request, kind, stylesheet_slot_id)?;
+        Ok(Self::FetchStream {
+            tab_id,
+            stylesheet_slot_id,
+            kind,
+            request: Box::new(request),
+        })
+    }
+
+    /// The runtime repeats this check because enum construction is public.
+    /// Purpose/route compatibility belongs to Fetch; attachment routing is bus
+    /// metadata and cannot authorize an incompatible request.
+    pub fn validate_fetch_stream(
+        request: &net::FetchRequest,
+        kind: ResourceKind,
+        stylesheet_slot_id: Option<StylesheetSlotId>,
+    ) -> Result<(), net::RequestAdmissionError> {
+        request.validate_route(kind)?;
+        match (kind, stylesheet_slot_id) {
+            (ResourceKind::Css, Some(_)) | (ResourceKind::Html | ResourceKind::Image, None) => {
+                Ok(())
+            }
+            _ => Err(net::RequestAdmissionError::IncompatibleExecutionRoute),
+        }
+    }
+}
+
+impl std::fmt::Debug for CoreCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::FetchStream {
+                tab_id,
+                stylesheet_slot_id,
+                kind,
+                request,
+            } => f
+                .debug_struct("FetchStream")
+                .field("tab_id", tab_id)
+                .field("stylesheet_slot_id", stylesheet_slot_id)
+                .field("kind", kind)
+                .field("request", request)
+                .finish(),
+            Self::CancelRequest { tab_id, request_id }
+            | Self::ParseHtmlStart { tab_id, request_id }
+            | Self::ParseHtmlDone { tab_id, request_id } => {
+                let name = match self {
+                    Self::CancelRequest { .. } => "CancelRequest",
+                    Self::ParseHtmlStart { .. } => "ParseHtmlStart",
+                    _ => "ParseHtmlDone",
+                };
+                f.debug_struct(name)
+                    .field("tab_id", tab_id)
+                    .field("request_id", request_id)
+                    .finish()
+            }
+            Self::ParseHtmlChunk {
+                tab_id, request_id, ..
+            } => f
+                .debug_struct("ParseHtmlChunk")
+                .field("tab_id", tab_id)
+                .field("request_id", request_id)
+                .field("bytes", &"<redacted>")
+                .finish(),
+            Self::CssChunk {
+                tab_id,
+                request_id,
+                stylesheet_slot_id,
+                ..
+            }
+            | Self::CssDone {
+                tab_id,
+                request_id,
+                stylesheet_slot_id,
+                ..
+            }
+            | Self::CssAbort {
+                tab_id,
+                request_id,
+                stylesheet_slot_id,
+                ..
+            } => {
+                let name = match self {
+                    Self::CssChunk { .. } => "CssChunk",
+                    Self::CssDone { .. } => "CssDone",
+                    _ => "CssAbort",
+                };
+                let mut out = f.debug_struct(name);
+                out.field("tab_id", tab_id)
+                    .field("request_id", request_id)
+                    .field("stylesheet_slot_id", stylesheet_slot_id)
+                    .field("url", &"<redacted>");
+                if matches!(self, Self::CssChunk { .. }) {
+                    out.field("bytes", &"<redacted>");
+                }
+                out.finish()
+            }
+        }
+    }
 }
 
 #[derive(Debug)]

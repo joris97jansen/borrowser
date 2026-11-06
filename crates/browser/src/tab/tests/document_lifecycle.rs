@@ -113,9 +113,11 @@ fn navigating_tab() -> (Tab, Receiver<CoreCommand>) {
     let (tx, rx) = mpsc::channel();
     tab.set_bus_sender(tx);
     tab.navigate_to_new(URL.into());
-    assert!(matches!(rx.try_recv().unwrap(), CoreCommand::FetchStream {
-        tab_id: 1, request_id, kind: ResourceKind::Html, ..
-    } if request_id == tab.nav_gen));
+    assert!(
+        matches!(rx.try_recv().unwrap(), CoreCommand::FetchStream { request: fetch_request,
+        tab_id: 1, kind: ResourceKind::Html, ..
+    } if fetch_request.request_id() == tab.nav_gen)
+    );
     (tab, rx)
 }
 
@@ -143,7 +145,7 @@ fn html_done(request_id: u64, response: NetworkResponseInfo, bytes_received: usi
 
 #[test]
 fn document_lifecycle_chunk_provenance_uses_requested_url_across_redirect_and_fragment() {
-    let requested = "https://request.test/a^b?q=1#requested";
+    let requested = "https://request.test/a%5Eb?q=1#requested";
     let final_url = "https://final.test/document";
     let mut tab = Tab::new(1);
     let (tx, rx) = mpsc::channel();
@@ -242,24 +244,24 @@ fn document_lifecycle_chunk_provenance_rejects_unrelated_and_final_urls() {
             "file:///tmp/unrelated.html",
         ),
         (
-            "https://request.test/a^b?q=1",
+            "https://request.test/a%5Eb?q=1",
             "https://final.test/document",
             "https://unrelated.test/",
         ),
         (
-            "https://request.test/a^b?q=1",
+            "https://request.test/a%5Eb?q=1",
             "https://final.test/document",
             "https://final.test/document",
         ),
         (
-            "https://request.test/a^b?q=1",
+            "https://request.test/a%5Eb?q=1",
             "https://final.test/document",
             "https://final.test/document#inflight",
         ),
         (
-            "https://request.test/a^b?q=1",
-            "https://final.test/document",
             "https://request.test/a%5Eb?q=1",
+            "https://final.test/document",
+            "https://request.test/a^b?q=1",
         ),
     ] {
         let mut tab = Tab::new(1);
@@ -805,7 +807,7 @@ fn streaming_addressed_preview() -> (Tab, Receiver<CoreCommand>) {
     assert!(tab.page.dom.is_some());
     assert!(matches!(
         rx.try_recv().unwrap(),
-        CoreCommand::FetchStream { request_id: id, kind: ResourceKind::Image, .. } if id == request_id
+        CoreCommand::FetchStream { request: fetch_request, kind: ResourceKind::Image, .. } if fetch_request.request_id() == request_id
     ));
     assert!(rx.try_recv().is_err());
     (tab, rx)
@@ -1083,14 +1085,14 @@ fn navigation_and_refresh_reset_terminal_state_but_fragment_navigation_does_not(
             assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Pending);
             assert!(tab.document_load.response.is_none());
             assert!(tab.loading);
+            assert!(matches!(rx.try_recv().unwrap(), CoreCommand::FetchStream {
+                request, kind: ResourceKind::Html, ..
+            } if request.request_id() == tab.nav_gen));
             assert!(
                 matches!(rx.try_recv().unwrap(), CoreCommand::CancelRequest {
                 request_id: id, ..
             } if id == request_id)
             );
-            assert!(matches!(rx.try_recv().unwrap(), CoreCommand::FetchStream {
-                request_id: id, kind: ResourceKind::Html, ..
-            } if id == tab.nav_gen));
             let before = document_snapshot(&tab);
             tab.on_core_event(start(request_id, response(URL))).unwrap();
             assert_eq!(
@@ -1195,8 +1197,8 @@ fn document_lifecycle_navigation_away_cannot_reuse_preview_or_accept_stale_publi
         assert!(tab.page.image_sources.is_empty());
         let commands: Vec<_> = rx.try_iter().collect();
         assert!(commands.iter().any(|command| matches!(command,
-            CoreCommand::FetchStream { request_id, url, kind: ResourceKind::Html, .. }
-                if *request_id == tab.nav_gen && url == next_url
+            CoreCommand::FetchStream { request: fetch_request, kind: ResourceKind::Html, .. }
+                if fetch_request.request_id() == tab.nav_gen && fetch_request.legacy_issued_url(ResourceKind::Html).unwrap() == next_url
         )));
 
         // An old response and old DOM publication cannot revive the preview.
@@ -1246,8 +1248,8 @@ fn document_lifecycle_navigation_away_cannot_reuse_preview_or_accept_stale_publi
         assert!(tab.page.document_url().is_none());
         assert!(tab.page.dom.is_none());
         assert!(rx.try_iter().any(|command| matches!(command,
-            CoreCommand::FetchStream { request_id, url, kind: ResourceKind::Html, .. }
-                if request_id == tab.nav_gen && url == format!("{URL}#preview")
+            CoreCommand::FetchStream { request: fetch_request, kind: ResourceKind::Html, .. }
+                if fetch_request.request_id() == tab.nav_gen && fetch_request.legacy_issued_url(ResourceKind::Html).unwrap() == format!("{URL}#preview")
         )));
     }
 }
@@ -1261,9 +1263,12 @@ fn document_lifecycle_unpublished_request_and_response_cannot_be_reused() {
     tab.navigate_to_new(format!("{URL}#before-response"));
     assert_eq!(tab.nav_gen, first_request + 1);
     assert!(rx.try_iter().any(|command| matches!(command,
-        CoreCommand::FetchStream { request_id, kind: ResourceKind::Html, .. } if request_id == tab.nav_gen
+        CoreCommand::FetchStream { request: fetch_request, kind: ResourceKind::Html, .. } if fetch_request.request_id() == tab.nav_gen
     )));
 
+    assert!(
+        matches!(rx.try_recv().unwrap(), CoreCommand::CancelRequest { request_id, .. } if request_id == first_request)
+    );
     let second_url = format!("{URL}#before-response");
     let second_request = tab.nav_gen;
     tab.on_core_event(start(second_request, response(&second_url)))
@@ -1279,6 +1284,6 @@ fn document_lifecycle_unpublished_request_and_response_cannot_be_reused() {
     assert!(tab.page.document_url().is_none());
     assert!(tab.page.dom.is_none());
     assert!(rx.try_iter().any(|command| matches!(command,
-        CoreCommand::FetchStream { request_id, kind: ResourceKind::Html, .. } if request_id == tab.nav_gen
+        CoreCommand::FetchStream { request: fetch_request, kind: ResourceKind::Html, .. } if fetch_request.request_id() == tab.nav_gen
     )));
 }

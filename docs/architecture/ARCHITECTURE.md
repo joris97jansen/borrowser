@@ -124,9 +124,9 @@ Addressing retains URL/origin semantics. Browser retains issuance context,
 document/base/origin lifetime, response admission, attachment identity and
 invalidation; CSS, Layout and Paint keep their established responsibilities.
 
-AI1 authors documentation only. Current `FetchStream`/`net::fetch_stream` inputs
-remain strings; existing HTTP/HTTPS/file loading and Rust runtime events remain
-the implementation baseline. The target preserves streamed HTML, immutable
+At AI1's documentation-only checkpoint, `FetchStream`/`net::fetch_stream` inputs
+were strings; existing HTTP/HTTPS/file loading and Rust runtime events formed
+the implementation baseline. AI2's implemented handoff is described below. The target preserves streamed HTML, immutable
 response provenance, AH6 stylesheet correlation and AH8 final-response bases.
 HTTP error statuses remain conceptually distinct from body/network failures and
 consumer rejection; current image-status handling requires later migration.
@@ -142,6 +142,33 @@ Rust workers, asynchronous commands/events and platform routing remain necessary
 Contract authorship does not establish merge, implemented AI behavior or milestone
 completion; the [feature-gap tracker](../engine-feature-gap-tracker.md) retains
 those distinctions.
+
+## AI2: Typed request construction and production handoff
+
+[AI2](../platform/ai2-typed-fetch-request-construction.md) implements Fetch-owned,
+I/O-free request admission using AH addresses and actual optional source context.
+Document, stylesheet and image producers hand owned requests through the bus and
+network runtime into the existing worker. Checked purpose/route/slot compatibility
+prevents unsupported or mismatched execution; raw request strings are no longer a
+parallel public dispatch API. Shared ordered HTTP fields preserve bytes/repetition,
+while executable request fields are restricted to the pinned adapter's capabilities.
+
+Cross-document navigation prepares and enqueues before committing history,
+generation or page reset; rejected preparation/send preserves available document
+state and outstanding work. Same-document identity and exact normalized issuance
+remain distinct contracts. Address-bar hostname:decimal-port input retains its
+explicit HTTPS authority interpretation; hyperlink parsing remains AH-owned.
+
+Local-file execution uses Addressing's pinned native path conversion, preserving
+normalized issued metadata while decoding filename bytes once and excluding
+query/fragment. Conversion never supplies a literal serialized-path fallback.
+
+Request/errors/CoreCommand Debug redact private contents. Legacy response events,
+native file platform qualification, backend redirects/authentication and failure
+diagnostics remain qualified migration boundaries. In particular initial URL credential rejection
+**does not prevent credentials introduced by backend-followed redirects**; AI5/AI6
+own full hop admission. The implementation contract and gap tracker distinguish
+request completion from future response/backend/security work and qualification.
 
 ---
 

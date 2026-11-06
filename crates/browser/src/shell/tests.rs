@@ -23,8 +23,8 @@ fn open_document(
     app.tabs[app.active].navigate_to_new(document_url.into());
     let request_id = app.tabs[app.active].nav_gen;
     assert!(rx.try_iter().any(|command| matches!(command,
-        CoreCommand::FetchStream { tab_id: id, request_id: request, kind: ResourceKind::Html, .. }
-            if id == tab_id && request == request_id
+        CoreCommand::FetchStream { request: fetch_request, tab_id: id, kind: ResourceKind::Html, .. }
+            if id == tab_id && fetch_request.request_id() == request_id
     )));
     app.on_core_event(CoreEvent::NetworkStart {
         tab_id,
@@ -55,11 +55,14 @@ fn open_document(
         .try_iter()
         .filter_map(|command| match command {
             CoreCommand::FetchStream {
+                request: fetch_request,
                 stylesheet_slot_id: Some(slot),
-                url,
                 kind: ResourceKind::Css,
                 ..
-            } => Some((slot, url)),
+            } => {
+                let url = fetch_request.legacy_issued_url(ResourceKind::Css).unwrap();
+                Some((slot, url))
+            }
             _ => None,
         })
         .collect();

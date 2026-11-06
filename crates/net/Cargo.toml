@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+addressing = { path = "../addressing" }
 tools = { path = "../tools" }
 core_types = { path = "../core_types" }
 

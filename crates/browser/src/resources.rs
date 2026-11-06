@@ -102,9 +102,9 @@ impl ResourceManager {
     /// Returns a stable `ImageId` and ensures the image is requested at most once.
     ///
     /// `start_fetch` should enqueue a `CoreCommand::FetchStream { kind: ResourceKind::Image, .. }`.
-    pub fn request_image<F>(&mut self, url: String, mut start_fetch: F) -> ImageId
+    pub fn request_image<F>(&mut self, url: String, start_fetch: F) -> ImageId
     where
-        F: FnMut(String),
+        F: FnOnce() -> Result<(), &'static str>,
     {
         if let Some(id) = self.image_id_by_url.get(&url).copied() {
             return id;
@@ -121,7 +121,12 @@ impl ResourceManager {
             },
         );
 
-        start_fetch(url);
+        if let Err(error) = start_fetch() {
+            let entry = self.images.get_mut(&id).expect("registered image");
+            entry.state = EntryState::Error {
+                error: error.into(),
+            };
+        }
         id
     }
 
@@ -472,7 +477,7 @@ mod tests {
     fn resource_limit_error_discards_buffered_image_bytes_and_blocks_decode() {
         let mut resources = ResourceManager::new();
         let url = "https://example.com/large.png".to_string();
-        let image_id = resources.request_image(url.clone(), |_| {});
+        let image_id = resources.request_image(url.clone(), || Ok(()));
 
         resources.on_network_chunk(&url, &[1, 2, 3, 4]);
         let entry = resources.images.get(&image_id).expect("image entry");
@@ -508,7 +513,7 @@ mod tests {
     fn on_network_chunk_over_local_limit_transitions_to_error_and_clears_buffer() {
         let mut resources = ResourceManager::new();
         let url = "https://example.com/too-large.png".to_string();
-        let image_id = resources.request_image(url.clone(), |_| {});
+        let image_id = resources.request_image(url.clone(), || Ok(()));
 
         resources.on_network_chunk(&url, &vec![0_u8; MAX_IMAGE_BYTES]);
         resources.on_network_chunk(&url, &[1]);

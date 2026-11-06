@@ -44,16 +44,26 @@ fn qualified_urls_reach_image_requests_and_resource_lookup_keys() {
             .try_iter()
             .filter_map(|command| match command {
                 CoreCommand::FetchStream {
-                    url,
+                    request: fetch_request,
                     kind: ResourceKind::Image,
                     ..
-                } => Some(url),
+                } => {
+                    let url = fetch_request
+                        .legacy_issued_url(ResourceKind::Image)
+                        .unwrap();
+                    Some(url)
+                }
                 _ => None,
             })
             .collect();
+        let executable = source != "non-special:opaque  ?hi";
         assert_eq!(
             requests,
-            observed.into_iter().map(str::to_owned).collect::<Vec<_>>(),
+            observed
+                .filter(|_| executable)
+                .into_iter()
+                .map(str::to_owned)
+                .collect::<Vec<_>>(),
             "{source}"
         );
         assert_eq!(
@@ -63,10 +73,17 @@ fn qualified_urls_reach_image_requests_and_resource_lookup_keys() {
             observed
         );
         if let Some(key) = observed {
-            assert!(matches!(
-                tab.resources.image_state_by_url(key),
-                ImageState::Loading { .. }
-            ));
+            if executable {
+                assert!(matches!(
+                    tab.resources.image_state_by_url(key),
+                    ImageState::Loading { .. }
+                ));
+            } else {
+                assert!(matches!(
+                    tab.resources.image_state_by_url(key),
+                    ImageState::Error { .. }
+                ));
+            }
             // Distinct authored paths must keep distinct request/lookup keys.
             if source == "file://host//w|/m" {
                 assert!(matches!(

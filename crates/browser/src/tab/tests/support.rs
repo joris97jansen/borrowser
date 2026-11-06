@@ -115,18 +115,33 @@ pub(super) fn addressing_tab_with_url(
     source: &str,
     document_url: &str,
 ) -> (Tab, std::sync::mpsc::Receiver<bus::CoreCommand>) {
+    addressing_tab_with_response_url(source, document_url, document_url)
+}
+
+/// Inject an explicit legacy final response, including the known backend's
+/// credential-bearing redirect limitation. Initial issuance still uses normal
+/// production admission; this helper never dispatches rejected initial URLs.
+pub(super) fn addressing_tab_with_response_url(
+    source: &str,
+    requested_url: &str,
+    document_url: &str,
+) -> (Tab, std::sync::mpsc::Receiver<bus::CoreCommand>) {
     let mut tab = Tab::new(1);
     tab.nav_gen = 6;
     let (tx, rx) = std::sync::mpsc::channel();
     tab.set_bus_sender(tx);
-    tab.navigate_to_new(document_url.into());
+    tab.navigate_to_new(requested_url.into());
     tab.on_core_event(bus::CoreEvent::NetworkStart {
         tab_id: 1,
         request_id: 7,
         stylesheet_slot_id: None,
         kind: core_types::ResourceKind::Html,
         response: core_types::NetworkResponseInfo {
-            requested_url: document_url.into(),
+            requested_url: addressing::BrowserUrl::parse(requested_url)
+                .unwrap()
+                .url
+                .as_str()
+                .to_owned(),
             final_url: document_url.into(),
             status_code: Some(200),
             content_type: Some("text/html".into()),

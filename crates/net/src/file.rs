@@ -1,47 +1,50 @@
 use std::fs::File;
-use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use core_types::{NetworkErrorKind, NetworkResponseInfo, ResourceKind};
 
-use crate::{NetEvent, content_type::guess_content_type_from_path, stream::stream_reader};
-
-pub(crate) fn is_file_url(url: &str) -> bool {
-    url.starts_with("file://")
-}
+use crate::{
+    FetchRequest, NetEvent, content_type::guess_content_type_from_path, stream::stream_reader,
+};
 
 pub(crate) fn fetch_file_url(
-    request_id: u64,
+    request: &FetchRequest,
     url: &str,
     kind: ResourceKind,
     cancel_token: &Arc<AtomicBool>,
     callback: &Arc<dyn Fn(NetEvent) + Send + Sync>,
 ) {
-    let mut path_str = url
-        .strip_prefix("file://")
-        .expect("file fetch called with file URL");
-    if cfg!(windows) {
-        path_str = path_str.strip_prefix('/').unwrap_or(path_str);
-    }
-
-    let path = Path::new(path_str);
+    let request_id = request.request_id();
+    let path = match request.current_url().to_file_path() {
+        Ok(path) => path,
+        Err(_) => {
+            callback(NetEvent::Error {
+                request_id,
+                url: url.to_owned(),
+                error_kind: NetworkErrorKind::LocalFile,
+                status_code: None,
+                error: "unsupported local file URL".into(),
+            });
+            return;
+        }
+    };
     let response = NetworkResponseInfo {
         requested_url: url.to_string(),
         final_url: url.to_string(),
         status_code: None,
-        content_type: guess_content_type_from_path(path),
+        content_type: guess_content_type_from_path(&path),
     };
 
-    let mut file = match File::open(path) {
+    let mut file = match File::open(&path) {
         Ok(file) => file,
-        Err(err) => {
+        Err(_) => {
             callback(NetEvent::Error {
                 request_id,
                 url: url.to_string(),
                 error_kind: NetworkErrorKind::LocalFile,
                 status_code: None,
-                error: format!("file open error: {err}"),
+                error: "local file open failed".into(),
             });
             return;
         }

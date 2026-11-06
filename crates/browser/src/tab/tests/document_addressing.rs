@@ -518,28 +518,35 @@ fn document_addressing_hyperlinks_and_history_are_separate_from_address_bar_gues
     tab.activate_link("#fragment");
     assert_eq!(tab.nav_gen, 8);
     assert!(tab.page.document_url().is_none());
-    assert!(rx.try_iter().any(|cmd| matches!(cmd, CoreCommand::FetchStream { url, kind: ResourceKind::Html, .. } if url == "https://other.test/different#fragment")));
+    assert!(rx.try_iter().any(|cmd| matches!(cmd, CoreCommand::FetchStream { request: fetch_request, kind: ResourceKind::Html, .. } if fetch_request.legacy_issued_url(ResourceKind::Html).unwrap() == "https://other.test/different#fragment")));
     let (mut tab, rx) = addressing_tab("<!doctype html><base href='../assets/'>");
     tab.activate_link("child");
-    assert!(rx.try_iter().any(|cmd| matches!(cmd, CoreCommand::FetchStream { url, .. } if url == "https://example.test/assets/child")));
+    assert!(rx.try_iter().any(|cmd| matches!(cmd, CoreCommand::FetchStream { request: fetch_request, .. } if fetch_request.legacy_issued_url(ResourceKind::Html).unwrap() == "https://example.test/assets/child")));
     let mut tab = Tab::new(1);
     tab.activate_link("relative");
     tab.activate_link("https://example.test/absolute");
     tab.activate_link("custom:opaque");
     assert_eq!(tab.nav_gen, 0);
     assert!(tab.page.document_url().is_none());
+    let (tx, rx) = std::sync::mpsc::channel();
+    tab.set_bus_sender(tx);
     tab.navigate_to_new("example.test".into());
-    assert_eq!(tab.url, "https://example.test");
+    assert_eq!(tab.url, "https://example.test/");
+    assert!(matches!(
+        rx.try_recv().unwrap(),
+        CoreCommand::FetchStream { .. }
+    ));
 }
 
 fn addressing_tab_at(
     document_url: &str,
     base_href: &str,
 ) -> (Tab, std::sync::mpsc::Receiver<CoreCommand>) {
-    addressing_tab_with_url(
+    addressing_tab_with_response_url(
         &format!(
             "<!doctype html><base href='{base_href}'><img id=old-image src=old.png><link rel=stylesheet href=old.css>"
         ),
+        "https://initial.test/navigation",
         document_url,
     )
 }
@@ -611,6 +618,35 @@ fn document_addressing_fragment_cross_document_navigation_replaces_address_and_a
                 .is_some()
         );
         let old_slots = tab.page.active_external_stylesheet_slots();
+        let credential_target = addressing::BrowserUrl::parse(destination).unwrap().url;
+        let has_credentials =
+            !credential_target.username().is_empty() || credential_target.password().is_some();
+        if has_credentials {
+            let addresses = tab.page.addresses.clone();
+            let history = tab
+                .history
+                .iter()
+                .map(|e| e.url().to_owned())
+                .collect::<Vec<_>>();
+            let visible = tab.url.clone();
+            let generation = tab.nav_gen;
+            tab.activate_link(href);
+            assert_eq!(
+                tab.nav_gen, generation,
+                "credentials never turn a cross-document destination into same-document navigation"
+            );
+            assert_eq!(tab.url, visible);
+            assert_eq!(tab.page.addresses, addresses);
+            assert_eq!(
+                tab.history
+                    .iter()
+                    .map(|e| e.url().to_owned())
+                    .collect::<Vec<_>>(),
+                history
+            );
+            assert!(rx.try_recv().is_err());
+            continue;
+        }
         assert_eq!(old_slots.len(), 1);
         let generation = tab.nav_gen;
         tab.activate_link(href);
@@ -626,8 +662,8 @@ fn document_addressing_fragment_cross_document_navigation_replaces_address_and_a
         assert!(tab.page.image_sources.is_empty());
         assert!(tab.page.active_external_stylesheet_slots().is_empty());
         assert!(rx.try_iter().any(|command| matches!(command,
-            CoreCommand::FetchStream { request_id, url, kind: ResourceKind::Html, .. }
-                if request_id == generation + 1 && url == destination
+            CoreCommand::FetchStream { request: fetch_request, kind: ResourceKind::Html, .. }
+                if fetch_request.request_id() == generation + 1 && fetch_request.legacy_issued_url(ResourceKind::Html).unwrap() == destination
         )));
 
         tab.on_core_event(CoreEvent::NetworkStart {
@@ -694,7 +730,13 @@ fn document_addressing_fragment_navigation_preserves_frozen_base_and_owner_assoc
     let image = crate::page::selected_image_source(&tab.page.image_sources, old_image, "old.png");
     let slots = tab.page.active_external_stylesheet_slots();
     assert!(image.is_some());
-    assert_eq!(slots.len(), 1);
+    assert_eq!(
+        slots.len(),
+        1,
+        "attachment association is retained even when Fetch rejects it"
+    );
+    assert!(tab.stylesheet_loads.is_empty());
+    assert_eq!(tab.page.pending_count(), 0);
 
     tab.activate_link("#one");
     assert_eq!(tab.page.document_url().unwrap().fragment(), Some("one"));
@@ -803,12 +845,15 @@ fn document_addressing_publication_rejections_preserve_committed_state_and_scope
             .try_iter()
             .filter_map(|command| match command {
                 CoreCommand::FetchStream {
-                    request_id,
+                    request: fetch_request,
                     stylesheet_slot_id: Some(slot),
-                    url,
                     kind: ResourceKind::Css,
                     ..
-                } => Some((slot, request_id, url)),
+                } => {
+                    let request_id = fetch_request.request_id();
+                    let url = fetch_request.legacy_issued_url(ResourceKind::Css).unwrap();
+                    Some((slot, request_id, url))
+                }
                 _ => None,
             })
             .collect();
@@ -1111,5 +1156,5 @@ fn document_addressing_production_pointer_activation_resolves_authored_href_in_b
             },
         );
     }
-    assert!(rx.try_iter().any(|command|matches!(command,CoreCommand::FetchStream{url,kind:ResourceKind::Html,..} if url=="https://example.test/assets/child")));
+    assert!(rx.try_iter().any(|command|matches!(command,CoreCommand::FetchStream { request: fetch_request, kind:ResourceKind::Html,..} if fetch_request.legacy_issued_url(ResourceKind::Html).unwrap()=="https://example.test/assets/child")));
 }

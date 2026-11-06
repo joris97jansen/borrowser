@@ -1,7 +1,9 @@
 use super::Tab;
 use super::state::{StylesheetLoadPhase, StylesheetLoadState};
+use addressing::ResourceAddress;
 use bus::CoreCommand;
 use core_types::{RequestId, ResourceKind, StylesheetSlotId};
+use net::{FetchRequest, HttpHeaders, RequestAdmissionError, RequestMethod};
 
 impl Tab {
     pub(crate) fn discover_resources(&mut self, request_id: RequestId) {
@@ -13,12 +15,29 @@ impl Tab {
         let outcome = self.page.reconcile_document_stylesheets();
         self.retire_stylesheet_requests(outcome.retired);
         for fetch in outcome.fetches {
-            let command = CoreCommand::FetchStream {
-                tab_id: self.tab_id,
-                request_id,
-                stylesheet_slot_id: Some(fetch.slot_id),
-                url: fetch.key.as_str().to_owned(),
-                kind: ResourceKind::Css,
+            let issued_key = fetch.address.retrieval_key();
+            let command = self
+                .resource_request(request_id, fetch.address)
+                .and_then(|request| {
+                    CoreCommand::try_fetch_stream(
+                        self.tab_id,
+                        Some(fetch.slot_id),
+                        ResourceKind::Css,
+                        request,
+                    )
+                });
+            let command = match command {
+                Ok(command) => command,
+                Err(_) => {
+                    let work = self.page.mark_css_failed(fetch.slot_id);
+                    self.request_optional_render_work(work);
+                    if self.document_load.parse_status != super::state::DocumentParseStatus::Failed
+                    {
+                        self.last_status = Some("Stylesheet request rejected".into());
+                    }
+                    self.update_loading();
+                    continue;
+                }
             };
             // Register before enqueueing. Event handlers require exclusive &mut
             // Tab access, so none can observe the provisional record during this
@@ -32,7 +51,7 @@ impl Tab {
             };
             entry.insert(StylesheetLoadState {
                 request_id,
-                issued_key: fetch.key,
+                issued_key,
                 phase: StylesheetLoadPhase::AwaitingStart,
             });
             if self
@@ -73,18 +92,41 @@ impl Tab {
         let sources = self.page.reconcile_image_sources();
         let cmd_tx = self.cmd_tx.clone();
         let tab_id = self.tab_id;
-        for url in sources {
-            self.resources.request_image(url, |url| {
-                if let Some(tx) = &cmd_tx {
-                    let _ = tx.send(CoreCommand::FetchStream {
-                        tab_id,
-                        request_id,
-                        stylesheet_slot_id: None,
-                        url,
-                        kind: ResourceKind::Image,
-                    });
-                }
+        for address in sources {
+            // Preserve the existing complete image lookup key, independently
+            // from AH's fragmentless transport/retrieval projection.
+            let key = address.url().as_str().to_owned();
+            let command = self
+                .resource_request(request_id, address)
+                .and_then(|request| {
+                    CoreCommand::try_fetch_stream(tab_id, None, ResourceKind::Image, request)
+                });
+            self.resources.request_image(key, || {
+                let command = command.map_err(|_| "Image request rejected")?;
+                cmd_tx
+                    .as_ref()
+                    .ok_or("Image request delivery failed")?
+                    .send(command)
+                    .map_err(|_| "Image request delivery failed")
             });
         }
+    }
+
+    fn resource_request(
+        &self,
+        request_id: RequestId,
+        address: ResourceAddress,
+    ) -> Result<FetchRequest, RequestAdmissionError> {
+        FetchRequest::try_new(
+            request_id,
+            address,
+            RequestMethod::Get,
+            HttpHeaders::new(),
+            self.page.document_url().cloned(),
+            self.page
+                .addresses
+                .as_ref()
+                .map(|state| state.document_origin().clone()),
+        )
     }
 }

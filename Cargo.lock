@@ -284,6 +284,8 @@ dependencies = [
  "layout",
  "net",
  "runtime_css",
+ "runtime_net",
+ "runtime_parse",
  "tools",
  "url",
 ]
@@ -300,6 +302,7 @@ version = "0.1.0"
 dependencies = [
  "core_types",
  "html",
+ "net",
 ]
 
 [[package]]
@@ -1611,6 +1614,7 @@ dependencies = [
 name = "net"
 version = "0.1.0"
 dependencies = [
+ "addressing",
  "core_types",
  "rustls",
  "rustls-native-certs 0.8.1",
@@ -2324,6 +2328,7 @@ dependencies = [
 name = "runtime_net"
 version = "0.1.0"
 dependencies = [
+ "addressing",
  "app_api",
  "bus",
  "core_types",

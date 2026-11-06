@@ -1,5 +1,5 @@
 use super::PageState;
-use addressing::BrowserUrl;
+use addressing::{BrowserUrl, ResourceAddress, ResourceKind};
 use html::{ElementNamespace, Node, internal::Id};
 use std::collections::HashMap;
 
@@ -11,7 +11,7 @@ pub(crate) struct ImageSourceBinding {
 }
 
 impl PageState {
-    pub(crate) fn reconcile_image_sources(&mut self) -> Vec<String> {
+    pub(crate) fn reconcile_image_sources(&mut self) -> Vec<ResourceAddress> {
         let mut old = std::mem::take(&mut self.image_sources);
         let mut next = HashMap::new();
         let mut requests = Vec::new();
@@ -36,7 +36,7 @@ impl PageState {
                             resolved_url: crate::resources::resolve_image_source(base, source),
                         });
                         if let Some(url) = &binding.resolved_url {
-                            requests.push(url.as_str().to_owned());
+                            requests.push(ResourceAddress::new(url.clone(), ResourceKind::Image));
                         }
                         next.insert(node.id(), binding);
                     }

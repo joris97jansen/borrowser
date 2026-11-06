@@ -5,39 +5,36 @@ use std::thread;
 use core_types::{NetworkErrorKind, NetworkResponseInfo, ResourceKind};
 
 use crate::{
-    HttpClientPolicy, NetEvent,
-    agent::agent_for_policy,
-    file::{fetch_file_url, is_file_url},
-    limits::should_stream_http_status,
-    log::log_network_error,
+    FetchRequest, HttpClientPolicy, NetEvent, RequestAdmissionError, agent::agent_for_policy,
+    file::fetch_file_url, limits::should_stream_http_status, log::log_network_error,
     stream::stream_reader,
 };
 
 pub fn fetch_stream(
-    request_id: u64,
-    url: String,
+    request: FetchRequest,
     kind: ResourceKind,
     cancel_token: Arc<AtomicBool>,
     callback: Arc<dyn Fn(NetEvent) + Send + Sync>,
-) {
+) -> Result<(), RequestAdmissionError> {
     fetch_stream_with_policy(
-        request_id,
-        url,
+        request,
         kind,
         HttpClientPolicy::default(),
         cancel_token,
         callback,
-    );
+    )
 }
 
 pub(crate) fn fetch_stream_with_policy(
-    request_id: u64,
-    url: String,
+    request: FetchRequest,
     kind: ResourceKind,
     policy: HttpClientPolicy,
     cancel_token: Arc<AtomicBool>,
     callback: Arc<dyn Fn(NetEvent) + Send + Sync>,
-) {
+) -> Result<(), RequestAdmissionError> {
+    request.validate_route(kind)?;
+    let url = request.legacy_issued_url(kind)?;
+    let request_id = request.request_id();
     let agent = agent_for_policy(&policy);
 
     thread::spawn(move || {
@@ -52,12 +49,12 @@ pub(crate) fn fetch_stream_with_policy(
             return;
         }
 
-        if is_file_url(&url) {
-            fetch_file_url(request_id, &url, kind, &cancel_token, &callback);
+        if request.current_url().scheme() == "file" {
+            fetch_file_url(&request, &url, kind, &cancel_token, &callback);
             return;
         }
 
-        let response = match agent.get(&url).call() {
+        let response = match build_http_request(&agent, &request, kind).call() {
             Ok(response) => response,
             Err(ureq::Error::Status(code, response)) if should_stream_http_status(kind, code) => {
                 response
@@ -132,4 +129,25 @@ pub(crate) fn fetch_stream_with_policy(
             bytes_received,
         });
     });
+    Ok(())
+}
+
+// The full request stays owned by the worker. Only admitted fields enter ureq;
+// initiator/origin facts never implicitly generate policy or credential headers.
+// Keep the complete legacy input URL for response metadata compatibility; ureq
+// excludes the fragment from the wire request target. AI5 owns backend evolution.
+pub(crate) fn build_http_request(
+    agent: &ureq::Agent,
+    request: &FetchRequest,
+    kind: ResourceKind,
+) -> ureq::Request {
+    let url = request
+        .legacy_issued_url(kind)
+        .expect("validated execution route");
+    let mut built = agent.get(&url);
+    for (name, value) in request.headers().iter() {
+        let value = std::str::from_utf8(value).expect("admitted ASCII request field");
+        built = built.set(name, value);
+    }
+    built
 }

@@ -13,11 +13,14 @@ fn requests(
     rx.try_iter()
         .filter_map(|command| match command {
             CoreCommand::FetchStream {
+                request: fetch_request,
                 kind: actual,
                 stylesheet_slot_id,
-                url,
                 ..
-            } if kind.as_str() == actual.as_str() => Some((stylesheet_slot_id, url)),
+            } if kind.as_str() == actual.as_str() => {
+                let url = fetch_request.legacy_issued_url(actual).unwrap();
+                Some((stylesheet_slot_id, url))
+            }
             _ => None,
         })
         .collect()
@@ -408,8 +411,8 @@ fn resource_associations_recreated_sources_use_new_owners_and_current_base() {
     )
     .unwrap();
     let commands: Vec<_> = rx.try_iter().collect();
-    assert!(commands.iter().any(|command|matches!(command,CoreCommand::FetchStream{stylesheet_slot_id:Some(slot),url,kind:ResourceKind::Css,..} if *slot!=old_slot && url=="https://example.test/new/same.css")));
-    assert!(commands.iter().any(|command|matches!(command,CoreCommand::FetchStream{url,kind:ResourceKind::Image,..} if url=="https://example.test/new/same.png")));
+    assert!(commands.iter().any(|command|matches!(command,CoreCommand::FetchStream { request: fetch_request, stylesheet_slot_id:Some(slot),kind:ResourceKind::Css,..} if *slot!=old_slot && fetch_request.legacy_issued_url(ResourceKind::Css).unwrap()=="https://example.test/new/same.css")));
+    assert!(commands.iter().any(|command|matches!(command,CoreCommand::FetchStream { request: fetch_request, kind:ResourceKind::Image,..} if fetch_request.legacy_issued_url(ResourceKind::Image).unwrap()=="https://example.test/new/same.png")));
     assert!(!tab.page.image_sources.contains_key(&image));
     assert_eq!(tab.page.image_sources.len(), 1);
 }
@@ -571,11 +574,14 @@ fn stylesheet_fetch(commands: &[CoreCommand]) -> (StylesheetSlotId, String) {
         .iter()
         .filter_map(|command| match command {
             CoreCommand::FetchStream {
+                request: fetch_request,
                 stylesheet_slot_id: Some(slot),
-                url,
                 kind: ResourceKind::Css,
                 ..
-            } => Some((*slot, url.clone())),
+            } => {
+                let url = fetch_request.legacy_issued_url(ResourceKind::Css).unwrap();
+                Some((*slot, url.clone()))
+            }
             _ => None,
         })
         .collect();
@@ -727,7 +733,10 @@ fn resource_associations_runtime_retires_partial_css_on_document_lifecycle_bound
                     )
                 })
                 .unwrap();
-            assert!(aborts[0] < fetch, "retire before new document fetch");
+            assert!(
+                fetch < aborts[0],
+                "new fetch queue acceptance precedes retirement commit"
+            );
         } else {
             assert_eq!(tab.nav_gen, old_generation);
             let fetch = commands
@@ -753,16 +762,22 @@ fn resource_associations_runtime_retires_partial_css_on_document_lifecycle_bound
             match command {
                 command @ CoreCommand::CssAbort { .. } => runtime_tx.send(command).unwrap(),
                 CoreCommand::FetchStream {
-                    url,
+                    request: fetch_request,
                     kind: ResourceKind::Html,
                     ..
-                } => next_fetch = Some(url),
+                } => {
+                    let url = fetch_request.legacy_issued_url(ResourceKind::Html).unwrap();
+                    next_fetch = Some(url)
+                }
                 CoreCommand::FetchStream {
+                    request: fetch_request,
                     stylesheet_slot_id: Some(slot),
-                    url,
                     kind: ResourceKind::Css,
                     ..
-                } => new_stylesheet = Some((slot, url)),
+                } => {
+                    let url = fetch_request.legacy_issued_url(ResourceKind::Css).unwrap();
+                    new_stylesheet = Some((slot, url))
+                }
                 _ => {}
             }
         }
