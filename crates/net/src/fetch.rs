@@ -2,12 +2,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
-use core_types::{NetworkErrorKind, NetworkResponseInfo, ResourceKind};
+use crate::{
+    HttpHeaders, HttpStatus, NetworkErrorKind, NetworkResponseInfo, ResponseAdmissionError,
+};
+use core_types::ResourceKind;
 
 use crate::{
     FetchRequest, HttpClientPolicy, NetEvent, RequestAdmissionError, agent::agent_for_policy,
-    file::fetch_file_url, limits::should_stream_http_status, log::log_network_error,
-    stream::stream_reader,
+    file::fetch_file_url, log::log_network_error, stream::stream_reader,
 };
 
 pub fn fetch_stream(
@@ -43,7 +45,8 @@ pub(crate) fn fetch_stream_with_policy(
                 request_id,
                 url: url.clone(),
                 error_kind: NetworkErrorKind::Cancelled,
-                status_code: None,
+                response: None,
+                body: None,
                 error: "cancelled".into(),
             });
             return;
@@ -56,23 +59,15 @@ pub(crate) fn fetch_stream_with_policy(
 
         let response = match build_http_request(&agent, &request, kind).call() {
             Ok(response) => response,
-            Err(ureq::Error::Status(code, response)) if should_stream_http_status(kind, code) => {
-                response
-            }
-            Err(ureq::Error::Status(code, _)) => {
-                log_network_error(
-                    request_id,
-                    kind,
-                    &url,
-                    "http-status",
-                    &format!("HTTP {code}"),
-                );
+            Err(ureq::Error::Status(_, response)) => response,
+            Err(err) if err.kind() == ureq::ErrorKind::BadHeader => {
                 callback(NetEvent::Error {
                     request_id,
-                    url: url.clone(),
-                    error_kind: NetworkErrorKind::HttpStatus,
-                    status_code: Some(code),
-                    error: format!("HTTP {code}"),
+                    url,
+                    error_kind: NetworkErrorKind::MalformedResponse,
+                    response: None,
+                    body: None,
+                    error: "malformed HTTP response headers".into(),
                 });
                 return;
             }
@@ -82,51 +77,89 @@ pub(crate) fn fetch_stream_with_policy(
                     request_id,
                     url: url.clone(),
                     error_kind: NetworkErrorKind::Transport,
-                    status_code: None,
+                    response: None,
+                    body: None,
                     error: err.to_string(),
                 });
                 return;
             }
         };
 
-        let response_info = NetworkResponseInfo {
-            requested_url: url.clone(),
-            final_url: response.get_url().to_string(),
-            status_code: Some(response.status()),
-            content_type: response.header("Content-Type").map(ToOwned::to_owned),
+        let response_info = match response_metadata(&request, &url, &response) {
+            Ok(info) => info,
+            Err(error) => {
+                callback(NetEvent::Error {
+                    request_id,
+                    url,
+                    error_kind: admission_kind(error),
+                    response: None,
+                    body: None,
+                    error: error.to_string(),
+                });
+                return;
+            }
         };
+        if let Err(error) = response_info.validate_backend_http() {
+            callback(NetEvent::Error {
+                request_id,
+                url,
+                error_kind: admission_kind(error),
+                response: Some(response_info),
+                body: None,
+                error: error.to_string(),
+            });
+            return;
+        }
 
         callback(NetEvent::Start {
             request_id,
             response: response_info.clone(),
         });
 
-        let mut reader = response.into_reader();
-        let bytes_received = match stream_reader(
-            request_id,
-            &url,
-            kind,
-            &cancel_token,
-            &callback,
-            &mut reader,
-        ) {
-            Ok(total) => total,
-            Err(kind_and_error) => {
+        // Null-body completion describes consumer-visible semantics, not an
+        // independent framing or connection-reuse qualification of ureq.
+        let transfer = if response_info
+            .status()
+            .is_some_and(HttpStatus::has_null_body)
+        {
+            drop(response);
+            stream_reader(
+                request_id,
+                &url,
+                kind,
+                &cancel_token,
+                &callback,
+                &mut std::io::empty(),
+            )
+        } else {
+            let mut reader = response.into_reader();
+            stream_reader(
+                request_id,
+                &url,
+                kind,
+                &cancel_token,
+                &callback,
+                &mut reader,
+            )
+        };
+        let body = match transfer {
+            Ok(body) => body,
+            Err(failure) => {
                 callback(NetEvent::Error {
                     request_id,
-                    url: url.clone(),
-                    error_kind: kind_and_error.0,
-                    status_code: response_info.status_code,
-                    error: kind_and_error.1,
+                    url,
+                    error_kind: failure.kind,
+                    response: Some(response_info),
+                    body: Some(failure.body),
+                    error: failure.error,
                 });
                 return;
             }
         };
-
         callback(NetEvent::Done {
             request_id,
             response: response_info,
-            bytes_received,
+            body,
         });
     });
     Ok(())
@@ -150,4 +183,62 @@ pub(crate) fn build_http_request(
         built = built.set(name, value);
     }
     built
+}
+
+// This projects ureq's exposed list, not wire bytes: ureq trims values and
+// removes encoding/length during gzip processing. The pinned parser correction
+// rejects malformed field construction before any backend accessor runs.
+// Reconstruct interleaved occurrences without sorting, joining, or omission.
+pub(crate) fn response_metadata(
+    request: &FetchRequest,
+    issued_url: &str,
+    response: &ureq::Response,
+) -> Result<NetworkResponseInfo, ResponseAdmissionError> {
+    let status = HttpStatus::try_from(response.status())?;
+    if status.is_informational() {
+        return Err(ResponseAdmissionError::InformationalResponseUnsupported);
+    }
+    let names = response.headers_names();
+    let mut fields = HttpHeaders::new();
+    for (index, name) in names.iter().enumerate() {
+        let occurrence = names[..index]
+            .iter()
+            .filter(|n| n.eq_ignore_ascii_case(name))
+            .count();
+        let values = response.all(name);
+        let count = names
+            .iter()
+            .filter(|n| n.eq_ignore_ascii_case(name))
+            .count();
+        if values.len() != count {
+            return Err(ResponseAdmissionError::HeaderValuesUnavailable);
+        }
+        fields
+            .append(name, values[occurrence].as_bytes())
+            .map_err(ResponseAdmissionError::Headers)?;
+    }
+    NetworkResponseInfo::http(
+        request.original_url().clone(),
+        issued_url.to_owned(),
+        Some(response.get_url().to_owned()),
+        status,
+        fields,
+    )
+}
+
+fn admission_kind(error: ResponseAdmissionError) -> NetworkErrorKind {
+    match error {
+        ResponseAdmissionError::InformationalResponseUnsupported
+        | ResponseAdmissionError::HeaderValuesUnavailable
+        | ResponseAdmissionError::UnsupportedResponseScheme => {
+            NetworkErrorKind::UnsupportedResponse
+        }
+        ResponseAdmissionError::Headers(
+            crate::HeaderError::TooManyFields
+            | crate::HeaderError::NameTooLong
+            | crate::HeaderError::ValueTooLong
+            | crate::HeaderError::ListTooLarge,
+        ) => NetworkErrorKind::ResourceLimit,
+        _ => NetworkErrorKind::MalformedResponse,
+    }
 }

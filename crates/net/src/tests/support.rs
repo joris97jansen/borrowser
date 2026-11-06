@@ -2,8 +2,9 @@ use crate::{
     FetchRequest, HttpClientPolicy, HttpHeaders, NetEvent, RequestMethod,
     fetch::fetch_stream_with_policy,
 };
+use crate::{NetworkErrorKind, NetworkResponseInfo};
 use addressing::{BrowserUrl, ResourceAddress, ResourceKind as Purpose};
-use core_types::{NetworkErrorKind, NetworkResponseInfo, ResourceKind};
+use core_types::ResourceKind;
 use rustls::pki_types::CertificateDer;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
@@ -41,6 +42,8 @@ pub(super) struct DoneEvent {
 pub(super) struct ErrorEvent {
     pub(super) error_kind: NetworkErrorKind,
     pub(super) status_code: Option<u16>,
+    pub(super) response: Option<NetworkResponseInfo>,
+    pub(super) body: Option<crate::BodyProgress>,
     pub(super) error: String,
 }
 
@@ -75,10 +78,16 @@ pub(super) fn collect_fetch(
             }
             NetEvent::Chunk { chunk, .. } => body.extend_from_slice(&chunk),
             NetEvent::Done {
-                response: _response,
-                bytes_received,
+                response,
+                body: progress,
                 ..
             } => {
+                let bytes_received = progress.delivered_bytes();
+                assert!(progress.matches_route(kind));
+                assert_eq!(
+                    start.as_ref().map(|s: &StartEvent| &s.response),
+                    Some(&response)
+                );
                 return FetchResult {
                     start: start.expect("start event"),
                     done: DoneEvent { bytes_received },
@@ -114,13 +123,16 @@ pub(super) fn collect_fetch_error(
         {
             NetEvent::Error {
                 error_kind,
-                status_code,
+                response,
+                body: progress,
                 error,
                 ..
             } => {
                 return ErrorEvent {
                     error_kind,
-                    status_code,
+                    status_code: response.as_ref().and_then(NetworkResponseInfo::status_code),
+                    response,
+                    body: progress,
                     error,
                 };
             }
@@ -157,7 +169,8 @@ pub(super) fn collect_fetch_terminal(
         {
             NetEvent::Start { response, .. } => start = Some(StartEvent { response }),
             NetEvent::Chunk { chunk, .. } => body.extend_from_slice(&chunk),
-            NetEvent::Done { bytes_received, .. } => {
+            NetEvent::Done { body: progress, .. } => {
+                let bytes_received = progress.delivered_bytes();
                 assert!(
                     rx.recv_timeout(Duration::from_millis(200)).is_err(),
                     "unexpected extra event after successful fetch"
@@ -171,7 +184,8 @@ pub(super) fn collect_fetch_terminal(
             }
             NetEvent::Error {
                 error_kind,
-                status_code,
+                response,
+                body: progress,
                 error,
                 ..
             } => {
@@ -185,7 +199,9 @@ pub(super) fn collect_fetch_terminal(
                     body,
                     error: Some(ErrorEvent {
                         error_kind,
-                        status_code,
+                        status_code: response.as_ref().and_then(NetworkResponseInfo::status_code),
+                        response,
+                        body: progress,
                         error,
                     }),
                 };
@@ -227,6 +243,21 @@ impl HttpReply {
             headers: built_headers,
             body,
         }
+    }
+
+    pub(super) fn truncated(status: &str, body: Vec<u8>, declared_length: usize) -> Self {
+        let mut reply = Self::response(
+            status,
+            vec![("Content-Type", "application/octet-stream".into())],
+            body,
+        );
+        reply
+            .headers
+            .iter_mut()
+            .find(|(name, _)| name == "Content-Length")
+            .unwrap()
+            .1 = declared_length.to_string();
+        reply
     }
 
     fn write_to(&self, mut stream: impl Write) {

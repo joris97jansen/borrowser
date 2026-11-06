@@ -440,7 +440,9 @@ impl AddressingObservation {
             (Self::Documents(rows), AddressingCase::Documents { rows: inputs }) => {
                 for (row, input) in rows.iter().zip(inputs) {
                     if row.snapshots.len()
-                        != if input.same_document_url.is_some() {
+                        != if input.final_url.is_empty() {
+                            0
+                        } else if input.same_document_url.is_some() {
                             2
                         } else {
                             1

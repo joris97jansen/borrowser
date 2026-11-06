@@ -2,7 +2,8 @@ use super::Tab;
 use super::state::DocumentParseStatus;
 use super::status::{format_network_error, response_summary};
 use bus::CoreCommand;
-use core_types::{NetworkErrorKind, NetworkResponseInfo, RequestId};
+use core_types::RequestId;
+use net::{BodyProgress, NetworkErrorKind, NetworkResponseInfo};
 
 impl Tab {
     pub(super) fn on_html_network_start(
@@ -18,14 +19,14 @@ impl Tab {
         {
             return;
         }
-        if !self.response_matches_history_request(&response.requested_url) {
+        if !self.response_matches_history_request(response.requested_url()) {
             self.fail_document("Document response does not match the current request".into());
             return;
         }
-        let document_url = match addressing::BrowserUrl::parse(response.display_url()) {
-            Ok(parsed) => parsed.url,
-            Err(error) => {
-                self.fail_document(format!("Invalid document response URL: {error}"));
+        let document_url = match response.response_url() {
+            Some(Ok(parsed)) => parsed.url.clone(),
+            _ => {
+                self.fail_document("Document response URL is missing or invalid".into());
                 return;
             }
         };
@@ -48,7 +49,10 @@ impl Tab {
         self.document_load.response = Some(response.clone());
         self.document_load.bytes_received = 0;
         self.stylesheet_loads.clear();
-        self.url = response.final_url.clone();
+        self.url = response
+            .reported_response_url()
+            .expect("admitted response URL")
+            .to_owned();
         self.page.reset_for_navigation();
         self.page.begin_document(addresses);
         self.clear_render_orchestration_state();
@@ -81,7 +85,7 @@ impl Tab {
         };
         // Producers label chunks with the original requested URL, even after
         // redirects or same-document URL changes. Preserve that exact provenance.
-        if url != accepted.requested_url.as_str() {
+        if url != accepted.requested_url() {
             self.fail_document("HTML chunk does not match the accepted response".into());
             return;
         }
@@ -99,7 +103,7 @@ impl Tab {
     pub(super) fn on_html_network_done(
         &mut self,
         response: NetworkResponseInfo,
-        bytes_received: usize,
+        body: BodyProgress,
         request_id: RequestId,
     ) {
         if self.document_load.parse_status != DocumentParseStatus::Pending {
@@ -117,6 +121,15 @@ impl Tab {
             self.fail_document("HTML completion does not match the accepted response".into());
             return;
         }
+        if !body.matches_route(core_types::ResourceKind::Html)
+            || body.delivered_bytes() != self.document_load.bytes_received
+        {
+            self.fail_document(
+                "Document completion body accounting does not match delivery".into(),
+            );
+            return;
+        }
+        let bytes_received = body.delivered_bytes();
         self.document_load.bytes_received = bytes_received;
         self.send_cmd(CoreCommand::ParseHtmlDone {
             tab_id: self.tab_id,

@@ -3,7 +3,7 @@ use super::support::*;
 use crate::page::css_resources::{CssBase, CssReferenceOutcome as O, CssSource};
 use addressing::{UrlDiagnostic as D, UrlFailureKind, UrlParseError as E};
 use bus::CoreCommand;
-use core_types::NetworkResponseInfo;
+
 fn fixture(final_url: &str, css: &str) -> (Tab, std::sync::mpsc::Receiver<CoreCommand>) {
     let (mut tab, commands) = addressing_tab(
         "<!doctype html><link id=sheet rel=stylesheet href=site.css><p id=p>hello</p>",
@@ -27,12 +27,7 @@ fn fixture(final_url: &str, css: &str) -> (Tab, std::sync::mpsc::Receiver<CoreCo
     complete_css_with_response(
         &mut tab,
         slot,
-        NetworkResponseInfo {
-            requested_url: url,
-            final_url: final_url.into(),
-            status_code: Some(200),
-            content_type: Some("text/css".into()),
-        },
+        super::support::response_facts(url, final_url.into(), Some(200), Some("text/css".into())),
         css,
     );
     commands.try_iter().for_each(drop);
@@ -225,12 +220,12 @@ fn css_resource_inline_observations_follow_committed_document_base() {
     complete_css_with_response(
         &mut tab,
         slot,
-        NetworkResponseInfo {
-            requested_url: url.clone(),
-            final_url: "https://cdn.test/css/main.css".into(),
-            status_code: Some(200),
-            content_type: Some("text/css".into()),
-        },
+        super::support::response_facts(
+            url.clone(),
+            "https://cdn.test/css/main.css".into(),
+            Some(200),
+            Some("text/css".into()),
+        ),
         "p{mask-image:url(external.svg)}",
     );
     commands.try_iter().for_each(drop);
@@ -392,12 +387,12 @@ fn css_resource_attachment_retirement_does_not_reuse_the_old_base() {
     complete_css_with_response(
         &mut tab,
         new_slot,
-        NetworkResponseInfo {
-            requested_url: url,
-            final_url: "https://new-cdn.test/other/main.css".into(),
-            status_code: Some(200),
-            content_type: Some("text/css".into()),
-        },
+        super::support::response_facts(
+            url,
+            "https://new-cdn.test/other/main.css".into(),
+            Some(200),
+            Some("text/css".into()),
+        ),
         "p{background:url(a)}",
     );
     assert_eq!(address(&outcomes(&tab)[0]), "https://new-cdn.test/other/a");

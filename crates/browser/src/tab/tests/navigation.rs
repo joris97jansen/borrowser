@@ -2,9 +2,10 @@ use super::super::Tab;
 use super::support::no_quirks_patch_publication_from_output;
 use crate::rendering::{RenderInvalidationEntryPoint, render_invalidation_request};
 use bus::{CoreCommand, CoreEvent};
-use core_types::{NetworkErrorKind, NetworkResponseInfo, ResourceKind};
+use core_types::ResourceKind;
 use egui::Context;
 use html::{HtmlParseOptions, parse_document};
+use net::NetworkErrorKind;
 
 fn history_test_tab() -> (Tab, std::sync::mpsc::Receiver<CoreCommand>) {
     let mut tab = Tab::new(1);
@@ -114,12 +115,21 @@ fn history_expect_no_document_fetch(rx: &std::sync::mpsc::Receiver<CoreCommand>)
 
 fn history_accept_document(tab: &mut Tab, requested: &str, final_url: &str, markup: &str) {
     let request_id = tab.nav_gen;
-    let response = NetworkResponseInfo {
-        requested_url: requested.into(),
-        final_url: final_url.into(),
-        status_code: Some(200),
-        content_type: Some("text/html".into()),
-    };
+    let response = super::support::response_facts(
+        requested.into(),
+        final_url.into(),
+        if addressing::BrowserUrl::parse(requested)
+            .unwrap()
+            .url
+            .scheme()
+            == "file"
+        {
+            None
+        } else {
+            Some(200)
+        },
+        Some("text/html".into()),
+    );
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: tab.tab_id,
         request_id,
@@ -128,13 +138,22 @@ fn history_accept_document(tab: &mut Tab, requested: &str, final_url: &str, mark
         response: response.clone(),
     })
     .unwrap();
+    tab.on_core_event(CoreEvent::NetworkChunk {
+        tab_id: tab.tab_id,
+        request_id,
+        stylesheet_slot_id: None,
+        kind: ResourceKind::Html,
+        url: requested.into(),
+        bytes: markup.as_bytes().to_vec(),
+    })
+    .unwrap();
     tab.on_core_event(CoreEvent::NetworkDone {
         tab_id: tab.tab_id,
         request_id,
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
         response,
-        bytes_received: markup.len(),
+        body: net::BodyProgress::try_new(ResourceKind::Html, markup.len()).unwrap(),
     })
     .unwrap();
     let output = parse_document(markup, HtmlParseOptions::default()).unwrap();
@@ -579,12 +598,12 @@ fn navigation_history_pending_failed_and_stale_responses_cannot_bind_the_wrong_d
         request_id: cancelled,
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
-        response: NetworkResponseInfo {
-            requested_url: b.into(),
-            final_url: b.into(),
-            status_code: Some(200),
-            content_type: Some("text/html".into()),
-        },
+        response: super::support::response_facts(
+            b.into(),
+            b.into(),
+            Some(200),
+            Some("text/html".into()),
+        ),
     })
     .unwrap();
     assert!(
@@ -598,7 +617,8 @@ fn navigation_history_pending_failed_and_stale_responses_cannot_bind_the_wrong_d
         kind: ResourceKind::Html,
         url: a.into(),
         error_kind: NetworkErrorKind::Cancelled,
-        status_code: None,
+        response: None,
+        body: None,
         error: "synthetic failure".into(),
     })
     .unwrap();
@@ -649,12 +669,12 @@ fn navigation_history_does_not_reuse_a_response_without_a_published_document() {
             request_id,
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
-            response: NetworkResponseInfo {
-                requested_url: two.into(),
-                final_url: two.into(),
-                status_code: Some(200),
-                content_type: Some("text/html".into()),
-            },
+            response: super::support::response_facts(
+                two.into(),
+                two.into(),
+                Some(200),
+                Some("text/html".into()),
+            ),
         })
         .unwrap();
         assert!(tab.page.dom.is_none());
@@ -666,7 +686,8 @@ fn navigation_history_does_not_reuse_a_response_without_a_published_document() {
                 kind: ResourceKind::Html,
                 url: two.into(),
                 error_kind: NetworkErrorKind::Cancelled,
-                status_code: None,
+                response: None,
+                body: None,
                 error: "synthetic failure".into(),
             })
             .unwrap();
@@ -698,12 +719,12 @@ fn navigation_history_rejects_current_response_with_wrong_requested_url() {
         request_id,
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
-        response: NetworkResponseInfo {
-            requested_url: "https://example.test/not-b".into(),
-            final_url: b.into(),
-            status_code: Some(200),
-            content_type: Some("text/html".into()),
-        },
+        response: super::support::response_facts(
+            "https://example.test/not-b".into(),
+            b.into(),
+            Some(200),
+            Some("text/html".into()),
+        ),
     })
     .unwrap();
     assert!(tab.page.document_url().is_none());
@@ -724,12 +745,12 @@ fn navigation_history_rejects_current_response_with_wrong_requested_url() {
         request_id,
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
-        response: NetworkResponseInfo {
-            requested_url: b.into(),
-            final_url: b.into(),
-            status_code: Some(200),
-            content_type: Some("text/html".into()),
-        },
+        response: super::support::response_facts(
+            b.into(),
+            b.into(),
+            Some(200),
+            Some("text/html".into()),
+        ),
     })
     .unwrap();
     assert!(tab.page.document_url().is_none());
@@ -746,12 +767,12 @@ fn redirected_document_response_updates_tab_base_url_and_status() {
     let requested = "https://example.com/".to_string();
     tab.navigate_to_new(requested.clone());
     let final_url = "https://example.com/landing".to_string();
-    let response = NetworkResponseInfo {
-        requested_url: requested,
-        final_url: final_url.clone(),
-        status_code: Some(200),
-        content_type: Some("text/html; charset=utf-8".to_string()),
-    };
+    let response = super::support::response_facts(
+        requested,
+        final_url.clone(),
+        Some(200),
+        Some("text/html; charset=utf-8".to_string()),
+    );
 
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: tab.tab_id,
@@ -762,6 +783,16 @@ fn redirected_document_response_updates_tab_base_url_and_status() {
     })
     .unwrap();
 
+    let markup = "<!doctype html><title>Example Domain</title><h1>Example Domain</h1>";
+    tab.on_core_event(CoreEvent::NetworkChunk {
+        tab_id: tab.tab_id,
+        request_id: 1,
+        stylesheet_slot_id: None,
+        kind: ResourceKind::Html,
+        url: response.requested_url().into(),
+        bytes: markup.as_bytes().to_vec(),
+    })
+    .unwrap();
     let output = parse_document(
         "<!doctype html><title>Example Domain</title><h1>Example Domain</h1>",
         HtmlParseOptions::default(),
@@ -774,7 +805,7 @@ fn redirected_document_response_updates_tab_base_url_and_status() {
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
         response,
-        bytes_received: 63,
+        body: net::BodyProgress::try_new(ResourceKind::Html, markup.len()).unwrap(),
     })
     .unwrap();
     tab.on_core_event(CoreEvent::DomPatchUpdate {

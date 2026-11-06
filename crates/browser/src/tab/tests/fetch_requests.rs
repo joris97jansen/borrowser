@@ -2,7 +2,8 @@ use super::super::Tab;
 use super::support::*;
 use addressing::{BrowserUrl, ResourceAddress, ResourceKind as Purpose};
 use bus::{CoreCommand, CoreEvent};
-use core_types::{NetworkResponseInfo, ResourceKind as Route, StylesheetSlotId};
+use core_types::{ResourceKind as Route, StylesheetSlotId};
+use net::NetworkResponseInfo;
 use net::{FetchRequest, HttpHeaders, RequestAdmissionError, RequestMethod};
 use std::sync::mpsc;
 
@@ -14,12 +15,16 @@ fn tab() -> (Tab, mpsc::Receiver<CoreCommand>) {
 }
 
 fn metadata(requested: &str, final_url: &str) -> NetworkResponseInfo {
-    NetworkResponseInfo {
-        requested_url: requested.into(),
-        final_url: final_url.into(),
-        status_code: Some(200),
-        content_type: Some("text/html".into()),
-    }
+    super::support::response_facts(
+        requested.into(),
+        final_url.into(),
+        if BrowserUrl::parse(requested).unwrap().url.scheme() == "file" {
+            None
+        } else {
+            Some(200)
+        },
+        Some("text/html".into()),
+    )
 }
 
 fn start(tab: &mut Tab, response: NetworkResponseInfo) {

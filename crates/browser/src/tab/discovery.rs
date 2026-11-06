@@ -101,7 +101,7 @@ impl Tab {
                 .and_then(|request| {
                     CoreCommand::try_fetch_stream(tab_id, None, ResourceKind::Image, request)
                 });
-            self.resources.request_image(key, || {
+            self.resources.request_image(request_id, key, || {
                 let command = command.map_err(|_| "Image request rejected")?;
                 cmd_tx
                     .as_ref()

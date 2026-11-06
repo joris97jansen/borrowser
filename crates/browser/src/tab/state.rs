@@ -5,7 +5,8 @@ use crate::rendering::{PendingRenderWork, RenderFrameExecutionTrace, RenderInval
 use crate::resources::ResourceManager;
 use app_api::RepaintHandle;
 use bus::CoreCommand;
-use core_types::{DomHandle, DomVersion, NetworkResponseInfo, RequestId, StylesheetSlotId, TabId};
+use core_types::{DomHandle, DomVersion, RequestId, StylesheetSlotId, TabId};
+use net::NetworkResponseInfo;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::mpsc;

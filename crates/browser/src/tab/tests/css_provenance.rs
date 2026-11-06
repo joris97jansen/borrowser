@@ -1,7 +1,8 @@
 use super::super::Tab;
 use super::support::*;
 use bus::{CoreCommand, CoreEvent};
-use core_types::{NetworkResponseInfo, ResourceKind, StylesheetSlotId};
+use core_types::{ResourceKind, StylesheetSlotId};
+use net::NetworkResponseInfo;
 use std::sync::mpsc::Receiver;
 
 fn fixture() -> (Tab, Receiver<CoreCommand>, StylesheetSlotId, String) {
@@ -26,12 +27,12 @@ fn fixture() -> (Tab, Receiver<CoreCommand>, StylesheetSlotId, String) {
 }
 
 fn response(url: &str) -> NetworkResponseInfo {
-    NetworkResponseInfo {
-        requested_url: url.into(),
-        final_url: "https://cdn.test/redirected.css".into(),
-        status_code: Some(200),
-        content_type: Some("text/css".into()),
-    }
+    super::support::response_facts(
+        url.into(),
+        "https://cdn.test/redirected.css".into(),
+        Some(200),
+        Some("text/css".into()),
+    )
 }
 
 fn start(tab: &mut Tab, slot: StylesheetSlotId, response: NetworkResponseInfo) {
@@ -64,7 +65,7 @@ fn done(tab: &mut Tab, slot: StylesheetSlotId, response: NetworkResponseInfo) {
         stylesheet_slot_id: Some(slot),
         kind: ResourceKind::Css,
         response,
-        bytes_received: 12,
+        body: net::BodyProgress::try_new(ResourceKind::Css, 12).unwrap(),
     })
     .unwrap();
 }
@@ -92,8 +93,13 @@ fn ah6_css_start_must_match_the_issued_url() {
 fn ah6_css_duplicate_start_preserves_the_admitted_mime_decision() {
     let (mut tab, rx, slot, url) = fixture();
     start(&mut tab, slot, response(&url));
-    let mut conflicting = response(&url);
-    conflicting.content_type = Some("text/html".into());
+    let base = response(&url);
+    let conflicting = super::support::response_facts(
+        base.requested_url().into(),
+        base.reported_response_url().unwrap().into(),
+        base.status_code(),
+        Some("text/html".into()),
+    );
     start(&mut tab, slot, conflicting);
     chunk(&mut tab, slot, &url);
     assert_eq!(
@@ -109,13 +115,18 @@ fn ah6_css_done_requires_the_immutable_response_snapshot() {
     for field in ["requested", "final", "status", "content_type"] {
         let (mut tab, rx, slot, url) = fixture();
         start(&mut tab, slot, response(&url));
-        let mut changed = response(&url);
+        let base = response(&url);
+        let mut requested = base.requested_url().to_owned();
+        let mut reported = base.reported_response_url().unwrap().to_owned();
+        let mut status = base.status_code();
+        let mut mime = base.legacy_content_type().map(str::to_owned);
         match field {
-            "requested" => changed.requested_url.push_str("?changed"),
-            "final" => changed.final_url.push_str("?changed"),
-            "status" => changed.status_code = Some(201),
-            _ => changed.content_type = Some("text/css; charset=utf-8".into()),
+            "requested" => requested.push_str("?changed"),
+            "final" => reported.push_str("?changed"),
+            "status" => status = Some(201),
+            _ => mime = Some("text/css; charset=utf-8".into()),
         }
+        let changed = super::support::response_facts(requested, reported, status, mime);
         done(&mut tab, slot, changed);
         assert!(
             rx.try_iter()
@@ -194,7 +205,7 @@ fn event(
             stylesheet_slot_id: Some(slot),
             kind: ResourceKind::Css,
             response: response(url),
-            bytes_received: 13,
+            body: net::BodyProgress::try_new(ResourceKind::Css, 13).unwrap(),
         },
         Event::Error => CoreEvent::NetworkError {
             tab_id,
@@ -202,8 +213,9 @@ fn event(
             stylesheet_slot_id: Some(slot),
             kind: ResourceKind::Css,
             url: url.into(),
-            error_kind: core_types::NetworkErrorKind::Cancelled,
-            status_code: None,
+            error_kind: net::NetworkErrorKind::Cancelled,
+            response: None,
+            body: None,
             error: "cancelled".into(),
         },
         Event::Block => CoreEvent::CssDecodedBlock {
@@ -586,14 +598,37 @@ fn ah6_css_unsupported_references_never_accept_events_or_emit_retirement_aborts(
         );
         let slot = StylesheetSlotId(1);
         for case in EVENTS {
-            tab.on_core_event(event(
+            // Forge an unissued correlation label on otherwise valid HTTP
+            // facts. A fake HTTP response whose original scheme is data: is
+            // no longer constructible; the unissued-slot invariant is unchanged.
+            let mut injected = event(
                 case,
                 tab.tab_id,
                 tab.nav_gen,
                 slot,
-                "data:text/css,p{}",
-            ))
-            .unwrap();
+                "https://unissued.test/sheet",
+            );
+            match &mut injected {
+                CoreEvent::NetworkStart { response, .. }
+                | CoreEvent::NetworkDone { response, .. } => {
+                    *response = net::NetworkResponseInfo::http(
+                        addressing::BrowserUrl::parse("https://unissued.test/sheet")
+                            .unwrap()
+                            .url,
+                        "data:text/css,p{}".into(),
+                        Some("https://cdn.test/redirected.css".into()),
+                        net::HttpStatus::try_from(200).unwrap(),
+                        net::HttpHeaders::new(),
+                    )
+                    .unwrap();
+                }
+                CoreEvent::NetworkChunk { url, .. }
+                | CoreEvent::NetworkError { url, .. }
+                | CoreEvent::CssDecodedBlock { url, .. }
+                | CoreEvent::CssSheetDone { url, .. } => *url = "data:text/css,p{}".into(),
+                _ => unreachable!("fixture network/CSS event"),
+            }
+            tab.on_core_event(injected).unwrap();
         }
         assert_eq!(tab.page.pending_count(), 0);
         assert!(tab.stylesheet_loads.is_empty());
@@ -710,8 +745,13 @@ fn ah6_css_fragment_keys_preserve_attachment_isolation_and_original_retirement_g
 fn ah6_css_empty_and_rejected_mime_complete_without_a_decoded_block() {
     for mime in [None, Some("text/css"), Some("text/html")] {
         let (mut tab, rx, slot, url) = fixture();
-        let mut admitted = response(&url);
-        admitted.content_type = mime.map(str::to_owned);
+        let base = response(&url);
+        let admitted = super::support::response_facts(
+            base.requested_url().into(),
+            base.reported_response_url().unwrap().into(),
+            base.status_code(),
+            mime.map(str::to_owned),
+        );
         start(&mut tab, slot, admitted.clone());
         done(&mut tab, slot, admitted);
         assert!(matches!(
@@ -725,8 +765,13 @@ fn ah6_css_empty_and_rejected_mime_complete_without_a_decoded_block() {
         assert!(rx.try_recv().is_err());
     }
     let (mut tab, rx, slot, url) = fixture();
-    let mut rejected = response(&url);
-    rejected.content_type = Some("text/html".into());
+    let base = response(&url);
+    let rejected = super::support::response_facts(
+        base.requested_url().into(),
+        base.reported_response_url().unwrap().into(),
+        base.status_code(),
+        Some("text/html".into()),
+    );
     start(&mut tab, slot, rejected.clone());
     chunk(&mut tab, slot, &url);
     assert!(rx.try_recv().is_err());

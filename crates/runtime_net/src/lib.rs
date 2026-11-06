@@ -79,24 +79,49 @@ pub fn start_net_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
                             NetEvent::Done {
                                 request_id,
                                 response,
-                                bytes_received,
+                                body,
                             } => {
+                                if !body.matches_route(kind) {
+                                    let _ = evt_tx.send(CoreEvent::NetworkError {
+                                        tab_id,
+                                        request_id,
+                                        stylesheet_slot_id,
+                                        kind,
+                                        url: response.requested_url().to_owned(),
+                                        error_kind: net::NetworkErrorKind::MalformedResponse,
+                                        response: Some(response),
+                                        body: None,
+                                        error: "network body route mismatch".into(),
+                                    });
+                                    return;
+                                }
                                 let _ = evt_tx.send(CoreEvent::NetworkDone {
                                     tab_id,
                                     request_id,
                                     stylesheet_slot_id,
                                     kind,
                                     response,
-                                    bytes_received,
+                                    body,
                                 });
                             }
                             NetEvent::Error {
                                 request_id,
                                 url,
                                 error_kind,
-                                status_code,
+                                response,
+                                body,
                                 error,
                             } => {
+                                let (error_kind, body, error) =
+                                    if body.is_some_and(|p| !p.matches_route(kind)) {
+                                        (
+                                            net::NetworkErrorKind::MalformedResponse,
+                                            None,
+                                            "network body route mismatch".into(),
+                                        )
+                                    } else {
+                                        (error_kind, body, error)
+                                    };
                                 let _ = evt_tx.send(CoreEvent::NetworkError {
                                     tab_id,
                                     request_id,
@@ -104,7 +129,8 @@ pub fn start_net_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
                                     kind,
                                     url,
                                     error_kind,
-                                    status_code,
+                                    response,
+                                    body,
                                     error,
                                 });
                             }

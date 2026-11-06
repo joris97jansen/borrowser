@@ -193,12 +193,21 @@ fn document_addressing_unsupported_response_never_partially_accepts() {
             let requested = tab.history[history_index].url.clone();
             let request_id = tab.nav_gen;
             rx.try_iter().for_each(drop);
-            let rejected = core_types::NetworkResponseInfo {
-                requested_url: requested.clone(),
-                final_url: unsupported.into(),
-                status_code: Some(200),
-                content_type: Some("text/html".into()),
-            };
+            let rejected = super::support::response_facts(
+                requested.clone(),
+                unsupported.into(),
+                if addressing::BrowserUrl::parse(&requested)
+                    .unwrap()
+                    .url
+                    .scheme()
+                    == "file"
+                {
+                    None
+                } else {
+                    Some(200)
+                },
+                Some("text/html".into()),
+            );
             tab.on_core_event(CoreEvent::NetworkStart {
                 tab_id: 1,
                 request_id,
@@ -235,10 +244,12 @@ fn document_addressing_unsupported_response_never_partially_accepts() {
                 matches!(commands[0], CoreCommand::CancelRequest { request_id: id, .. } if id == request_id)
             );
             // Failure is terminal even if the next start would be supported.
-            let supported = core_types::NetworkResponseInfo {
-                final_url: requested.clone(),
-                ..rejected
-            };
+            let supported = super::support::response_facts(
+                rejected.requested_url().into(),
+                requested.clone(),
+                rejected.status_code(),
+                rejected.legacy_content_type().map(str::to_owned),
+            );
             tab.on_core_event(CoreEvent::NetworkStart {
                 tab_id: 1,
                 request_id,
@@ -262,7 +273,7 @@ fn document_addressing_unsupported_response_never_partially_accepts() {
                 stylesheet_slot_id: None,
                 kind: ResourceKind::Html,
                 response: supported,
-                bytes_received: 7,
+                body: net::BodyProgress::try_new(ResourceKind::Html, 7).unwrap(),
             })
             .unwrap();
             let parsed =
@@ -289,12 +300,12 @@ fn document_addressing_unsupported_response_never_partially_accepts() {
                 request_id: tab.nav_gen,
                 stylesheet_slot_id: None,
                 kind: ResourceKind::Html,
-                response: core_types::NetworkResponseInfo {
-                    requested_url: "https://recovery.test/".into(),
-                    final_url: "https://recovery.test/".into(),
-                    status_code: Some(200),
-                    content_type: None,
-                },
+                response: super::support::response_facts(
+                    "https://recovery.test/".into(),
+                    "https://recovery.test/".into(),
+                    Some(200),
+                    None,
+                ),
             })
             .unwrap();
             assert_eq!(
@@ -671,12 +682,12 @@ fn document_addressing_fragment_cross_document_navigation_replaces_address_and_a
             request_id: generation + 1,
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
-            response: core_types::NetworkResponseInfo {
-                requested_url: destination.into(),
-                final_url: destination.into(),
-                status_code: Some(200),
-                content_type: Some("text/html".into()),
-            },
+            response: super::support::response_facts(
+                destination.into(),
+                destination.into(),
+                Some(200),
+                Some("text/html".into()),
+            ),
         })
         .unwrap();
         assert_eq!(tab.page.document_url().unwrap().as_str(), destination);
@@ -783,26 +794,21 @@ fn document_addressing_response_validation_and_no_synthetic_base() {
             request_id: tab.nav_gen,
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
-            response: core_types::NetworkResponseInfo {
-                requested_url: "https://example.test/requested".into(),
-                final_url: final_url.into(),
-                status_code: Some(200),
-                content_type: None,
-            },
+            response: super::support::response_facts(
+                "https://example.test/requested".into(),
+                final_url.into(),
+                Some(200),
+                None,
+            ),
         })
         .unwrap();
-        if final_url.is_empty() {
-            assert_eq!(
-                tab.page.document_url().unwrap().as_str(),
-                "https://example.test/requested"
-            );
-        } else {
-            assert!(tab.page.document_url().is_none());
-            assert_eq!(
-                tab.document_load.parse_status,
-                super::super::state::DocumentParseStatus::Failed
-            );
-        }
+        // AI3 removes the old empty-final-URL fallback: absent provenance must
+        // not synthesize a document address from the request.
+        assert!(tab.page.document_url().is_none());
+        assert_eq!(
+            tab.document_load.parse_status,
+            super::super::state::DocumentParseStatus::Failed
+        );
     }
 }
 
@@ -832,7 +838,6 @@ fn document_addressing_debug_is_structural_and_deterministic() {
 #[test]
 fn document_addressing_publication_rejections_preserve_committed_state_and_scope_cleanup() {
     use super::super::state::{DocumentParseStatus, StylesheetLoadPhase};
-    use core_types::NetworkResponseInfo;
 
     for rejection in ["identity", "version", "mode", "replacement", "stale"] {
         let (mut tab, rx) = addressing_tab(concat!(
@@ -865,12 +870,12 @@ fn document_addressing_publication_rejections_preserve_committed_state_and_scope
         assert_eq!(issued_url, "https://example.test/original/site.css?a=1&a=2");
         complete_css(&mut tab, loaded, &loaded_url, "p{color:red}");
         rx.try_iter().for_each(drop);
-        let response = NetworkResponseInfo {
-            requested_url: issued_url.clone(),
-            final_url: issued_url.clone(),
-            status_code: Some(200),
-            content_type: Some("text/css".into()),
-        };
+        let response = super::support::response_facts(
+            issued_url.clone(),
+            issued_url.clone(),
+            Some(200),
+            Some("text/css".into()),
+        );
         tab.on_core_event(CoreEvent::NetworkStart {
             tab_id: tab.tab_id,
             request_id: generation,
@@ -1062,7 +1067,7 @@ fn document_addressing_publication_rejections_preserve_committed_state_and_scope
                 stylesheet_slot_id: Some(unfinished),
                 kind: ResourceKind::Css,
                 response,
-                bytes_received: 14,
+                body: net::BodyProgress::try_new(ResourceKind::Css, 14).unwrap(),
             },
             CoreEvent::CssDecodedBlock {
                 tab_id: tab.tab_id,

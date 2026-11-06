@@ -18,3 +18,5 @@ mod resource_associations;
 
 #[cfg(feature = "conformance-observation")]
 mod addressing_observation;
+
+mod ai3_responses;

@@ -71,8 +71,8 @@ fn ai2_real_runtime_local_file_handoff_preserves_ids_and_body() {
             } => {
                 assert!(!started);
                 started = true;
-                assert_eq!(response.requested_url, url);
-                assert_eq!(response.status_code, None);
+                assert_eq!(response.requested_url(), url);
+                assert_eq!(response.status_code(), None);
             }
             CoreEvent::NetworkChunk {
                 tab_id: 2,
@@ -92,12 +92,13 @@ fn ai2_real_runtime_local_file_handoff_preserves_ids_and_body() {
                 stylesheet_slot_id: None,
                 kind: Route::Html,
                 response,
-                bytes_received,
+                body: progress,
             } => {
                 assert!(started);
-                assert_eq!(response.requested_url, url);
+                assert_eq!(response.requested_url(), url);
                 assert_eq!(body, b"AI2 local resource");
-                assert_eq!(bytes_received, body.len());
+                assert_eq!(progress.delivered_bytes(), body.len());
+                assert!(progress.matches_route(Route::Html));
                 break;
             }
             event => panic!("unexpected local-file event: {event:?}"),

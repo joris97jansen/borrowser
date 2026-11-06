@@ -1,8 +1,6 @@
-use core_types::{
-    DomHandle, DomVersion, NetworkErrorKind, NetworkResponseInfo, ResourceKind, StylesheetSlotId,
-    TabId,
-};
+use core_types::{DomHandle, DomVersion, ResourceKind, StylesheetSlotId, TabId};
 use html::DomPatch;
+use net::{BodyProgress, NetworkErrorKind, NetworkResponseInfo};
 use std::sync::mpsc::{Receiver, Sender};
 
 #[derive(Debug)]
@@ -208,7 +206,6 @@ impl std::fmt::Debug for CoreCommand {
     }
 }
 
-#[derive(Debug)]
 pub enum CoreEvent {
     // Network -> UI
     NetworkStart {
@@ -232,7 +229,7 @@ pub enum CoreEvent {
         stylesheet_slot_id: Option<StylesheetSlotId>,
         kind: ResourceKind,
         response: NetworkResponseInfo,
-        bytes_received: usize,
+        body: BodyProgress,
     },
     NetworkError {
         tab_id: TabId,
@@ -241,7 +238,8 @@ pub enum CoreEvent {
         kind: ResourceKind,
         url: String,
         error_kind: NetworkErrorKind,
-        status_code: Option<u16>,
+        response: Option<NetworkResponseInfo>,
+        body: Option<BodyProgress>,
         error: String,
     },
 
@@ -272,6 +270,57 @@ pub enum CoreEvent {
         stylesheet_slot_id: StylesheetSlotId,
         url: String,
     },
+}
+
+impl std::fmt::Debug for CoreEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NetworkStart { kind, response, .. } => f
+                .debug_struct("NetworkStart")
+                .field("kind", kind)
+                .field("response", response)
+                .finish_non_exhaustive(),
+            Self::NetworkChunk { kind, bytes, .. } => f
+                .debug_struct("NetworkChunk")
+                .field("kind", kind)
+                .field("bytes", &bytes.len())
+                .finish_non_exhaustive(),
+            Self::NetworkDone {
+                kind,
+                response,
+                body,
+                ..
+            } => f
+                .debug_struct("NetworkDone")
+                .field("kind", kind)
+                .field("response", response)
+                .field("body", body)
+                .finish_non_exhaustive(),
+            Self::NetworkError {
+                kind,
+                error_kind,
+                response,
+                body,
+                ..
+            } => f
+                .debug_struct("NetworkError")
+                .field("kind", kind)
+                .field("error_kind", error_kind)
+                .field("response", response)
+                .field("body", body)
+                .finish_non_exhaustive(),
+            Self::DomPatchUpdate { .. } => f.debug_struct("DomPatchUpdate").finish_non_exhaustive(),
+            Self::HtmlParseFinished { result, .. } => f
+                .debug_struct("HtmlParseFinished")
+                .field("success", &result.is_ok())
+                .finish_non_exhaustive(),
+            Self::CssDecodedBlock { css_block, .. } => f
+                .debug_struct("CssDecodedBlock")
+                .field("bytes", &css_block.len())
+                .finish_non_exhaustive(),
+            Self::CssSheetDone { .. } => f.debug_struct("CssSheetDone").finish_non_exhaustive(),
+        }
+    }
 }
 
 pub struct Bus {

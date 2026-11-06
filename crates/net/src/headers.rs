@@ -26,7 +26,7 @@ impl std::error::Error for HeaderError {}
 /// Canonical lowercase names and unchanged value bytes in insertion order.
 /// Repetitions are retained. Bounds include `name: value\r\n` overhead, but
 /// do not imply any particular backend or response-header capability.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct HttpHeaders {
     fields: Vec<(String, Vec<u8>)>,
     byte_count: usize,
@@ -76,6 +76,13 @@ impl HttpHeaders {
 
     pub fn is_empty(&self) -> bool {
         self.fields.is_empty()
+    }
+
+    /// Byte-exact values in original occurrence order; names match ASCII case-insensitively.
+    pub fn values<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a [u8]> + 'a {
+        self.iter()
+            .filter(move |(field, _)| field.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value)
     }
 }
 

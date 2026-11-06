@@ -1,6 +1,7 @@
 use super::support::{HttpReply, TestHttpServer, collect_fetch, collect_fetch_terminal};
+use crate::NetworkErrorKind;
 use crate::{HttpClientPolicy, limits::resource_byte_limit};
-use core_types::{NetworkErrorKind, ResourceKind};
+use core_types::ResourceKind;
 use tools::common::{MAX_DOCUMENT_BYTES, MAX_IMAGE_BYTES, MAX_STYLESHEET_BYTES};
 
 #[test]
@@ -46,7 +47,10 @@ fn oversized_document_response_emits_resource_limit_without_done() {
         HttpClientPolicy::default(),
     );
 
-    assert_eq!(result.start.expect("start").response.status_code, Some(200));
+    assert_eq!(
+        result.start.expect("start").response.status_code(),
+        Some(200)
+    );
     assert_eq!(result.body.len(), MAX_DOCUMENT_BYTES);
     assert!(result.done.is_none(), "unexpected Done after limit failure");
     let error = result.error.expect("resource limit error");
@@ -71,7 +75,10 @@ fn oversized_stylesheet_response_emits_resource_limit_without_done() {
         HttpClientPolicy::default(),
     );
 
-    assert_eq!(result.start.expect("start").response.status_code, Some(200));
+    assert_eq!(
+        result.start.expect("start").response.status_code(),
+        Some(200)
+    );
     assert_eq!(result.body.len(), MAX_STYLESHEET_BYTES);
     assert!(result.done.is_none(), "unexpected Done after limit failure");
     let error = result.error.expect("resource limit error");
@@ -96,7 +103,10 @@ fn oversized_image_response_emits_resource_limit_without_done() {
         HttpClientPolicy::default(),
     );
 
-    assert_eq!(result.start.expect("start").response.status_code, Some(200));
+    assert_eq!(
+        result.start.expect("start").response.status_code(),
+        Some(200)
+    );
     assert_eq!(result.body.len(), MAX_IMAGE_BYTES);
     assert!(result.done.is_none(), "unexpected Done after limit failure");
     let error = result.error.expect("resource limit error");
