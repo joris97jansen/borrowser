@@ -277,7 +277,7 @@ pub(super) struct TestHttpServer {
 }
 
 impl TestHttpServer {
-    pub(super) fn spawn(handler: fn(RequestParts) -> HttpReply) -> Self {
+    pub(super) fn spawn(handler: impl Fn(RequestParts) -> HttpReply + Send + 'static) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind http server");
         let addr = listener.local_addr().expect("http local addr");
         let thread = thread::spawn(move || {

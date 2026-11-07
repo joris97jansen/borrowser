@@ -515,3 +515,15 @@ evolves the production response events and consumers under this contract. Its
 backend-fidelity and consumer-lifecycle qualifications are explicit. Historical
 implementation observations above remain baseline evidence, not a claim of
 current end-to-end conformance or milestone completion.
+
+## AI4 implementation reference
+
+[AI4 response acquisition and deterministic fake networking](ai4-network-backend-and-deterministic-fake-network.md)
+introduces a private selected-response acquisition seam exercised by the existing
+production Fetch lifecycle. Real ureq acquisition still follows redirects internally;
+this is not the observable individual-attempt contract retained by AI5/AI6.
+The fake uses AH retrieval identity, existing request/response/body/error types,
+and shared response validation, streaming, cancellation, limits and terminal events.
+Direct local-file handling stays separate. No registry, runtime redesign, new
+timeout policy, credential-hop protection, or networking conformance expansion
+is claimed. The implementation reference records qualification independently.

@@ -1,5 +1,7 @@
 use super::support::{HttpReply, TestHttpServer, collect_fetch, collect_fetch_error, request};
-use crate::{HttpClientPolicy, NetworkErrorKind, ResponseAdmissionError, fetch::response_metadata};
+use crate::{
+    HttpClientPolicy, NetworkErrorKind, ResponseAdmissionError, backend::response_metadata,
+};
 use core_types::ResourceKind;
 
 #[test]

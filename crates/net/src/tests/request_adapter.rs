@@ -1,6 +1,6 @@
 use super::support::request;
 use crate::{
-    FetchRequest, HttpHeaders, RequestAdmissionError, RequestMethod, fetch::build_http_request,
+    FetchRequest, HttpHeaders, RequestAdmissionError, RequestMethod, backend::build_http_request,
 };
 use core_types::ResourceKind;
 use std::sync::{Arc, atomic::AtomicBool};
