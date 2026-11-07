@@ -172,6 +172,21 @@ request completion from future response/backend/security work and qualification.
 
 ---
 
+## AI4: Shared Fetch lifecycle and deterministic acquisition
+
+[AI4](../platform/ai4-network-backend-and-deterministic-fake-network.md) adds a
+private `HttpResponseBackend` for selected-response acquisition. The real adapter
+and immutable fake supply existing response facts and an owned fallible reader
+into one production HTTP lifecycle. Fetch retains metadata validation, null-body
+handling, streaming, byte limits, cancellation checkpoints and terminal events.
+The fake performs no network/file/native-TLS I/O and has no real fallback.
+Direct local-file dispatch stays separate. Agent initialization occurs only in
+real HTTP acquisition after pre-cancellation, rather than for file/fake requests.
+
+This seam does not expose real redirect hops: ureq still follows internally,
+including its documented credential-bearing redirect limitation. AI5/AI6 retain
+controlled attempts and hop admission. No runtime/bus injection or policy is added.
+
 # 📤 Message Bus (CoreCommand / CoreEvent)
 
 At the heart of the engine is a **message-driven architecture**.

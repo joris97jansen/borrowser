@@ -633,6 +633,30 @@ The exact URL-then-network sequence passed locally with an initially empty
 Cargo home and unchanged lockfiles; workflow lint and all 37 CI-tool tests passed.
 This is no claim that the edited hosted workflow or aggregate CI has passed.
 
+AI4 implementation candidate (#1124):
+
+[AI4's networking contract](platform/ai4-network-backend-and-deterministic-fake-network.md)
+adds a private selected-response backend seam and deterministic in-memory fake.
+Both real and fake acquisition feed the same production response admission,
+streaming, cancellation, limits, byte accounting and terminal event handling.
+Fake routes use AH fragmentless identity plus GET, preserve query distinctions,
+reject duplicates, and provide fresh readers and actual per-request provenance.
+Missing routes and configured pre-response/read failures settle predictably;
+404/500 remain responses. The fake has no transport/file/native-TLS execution
+or real fallback; direct files keep their separate loader.
+
+This does not implement observable individual attempts or per-hop credential
+protection. Existing ureq redirects/authentication limitations remain AI5/AI6;
+AI7 detailed failure policy, AI8 aggregate metadata and AI9 AG networking work
+remain deferred. Implementation, local validation, hosted CI, merge and closure
+are separate. Local qualification passed 506 affected-crate tests, the
+memory-only fake suite (21), three focused backend tests, rustdoc and the
+production local-file/frame smoke. Full CI still fails the nine native macOS
+Chromium ownership wrappers; unmodified master and candidate reproduce the same
+1 passed / 9 failed / 1 ignored serial native result. Other workspace targets
+and independent CI checks passed. Hosted qualification remains pending; see the
+contract's validation record for exact scope and evidence.
+
 - AH1 completes the [URL, origin, and resource-addressing architecture contract](platform/ah1-url-origin-resource-addressing-contract.md)
   only. It establishes logical addressing ownership, HTML/CSS reference
   production, Browser document/base coordination, future networking/cache/policy

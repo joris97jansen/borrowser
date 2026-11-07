@@ -6,9 +6,11 @@
 //! behind focused internal modules.
 
 mod agent;
+mod backend;
 mod body;
 mod content_type;
 mod event;
+pub mod fake;
 mod fetch;
 mod file;
 mod headers;
