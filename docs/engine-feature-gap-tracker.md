@@ -565,6 +565,74 @@ evidence, not a full-CI or native Linux/Windows qualification pass. See the
 [AI2 qualification record](platform/ai2-typed-fetch-request-construction.md#focused-correction-qualification-2026-11-06)
 for command, platform, source fingerprint, limitations and results.
 
+AI3 implementation candidate (#1123):
+
+[AI3's response contract](platform/ai3-typed-fetch-response-status-headers-body.md)
+relocates and evolves response facts in `net`, with validated HTTP status,
+ordered bounded fields, exact optional reported provenance plus immutable AH
+parsing, per-field declared MIME/charset, and route-bound body accounting. Start,
+Done and failure context share immutable metadata. HTTP 404/500 remain response
+facts on every route; complete valid image bodies can decode even with error
+status. Image response-start/terminal guards and typed cancellation replace the
+directly touched string-based control flow. Debug is bounded and content-redacted.
+
+Body delivery stays incremental under the existing 10/2/20 MiB caps. Null-body
+204/205/304 delivery does not establish independent wire-framing qualification;
+206 transfer completion does not imply a complete representation. The current
+backend's trimmed/transformed header information is not recoverable;
+AI5 retains framing, field-fidelity and interim-response qualification. AI6
+redirects, AI7 broader failures, AI8 aggregate metadata, and AI9 networking
+conformance remain open. No cache or security enforcement is claimed.
+
+The eager navigation reset and generation/history architecture are preserved.
+**204/205 active-document preservation is not implemented** (AJ2 #1133 / AJ3
+#1134). HTML 304/206 preparation remains AJ3, CSS HTTP-status/range policy AJ7
+#1138, full image results/lifetimes AK4 #1145, and 304 merge/cache integration
+AT5 #1245 / AT6 #1246. CSS may still accept HTTP-error text/css and existing
+HTML/CSS may misuse partial responses. AI3 neither labels those behaviors
+conformant nor introduces a navigation workaround. Implementation and validation
+are distinct from publication, issue closure and milestone completion.
+
+AI3's final affected-crate run passed 478 tests without ignores, and the final CI
+attempt passed all three lint lanes plus CI/addressing conformance before failing
+the nine native macOS ownership tests reproduced on base master `809a9b1e`.
+Remaining independent CI stages passed, including parser/golden/WPT/fuzz runners,
+debug/release builds, benchmark compilation and generated entities. Release and
+fuzz-runner warnings remain explicitly qualified in the
+[AI3 validation record](platform/ai3-typed-fetch-response-status-headers-body.md#local-validation-checkpoint-2026-11-06).
+This is no claim of a green aggregate or fresh supported-host qualification.
+
+AI3's subsequent response-header crash correction pins a local, checksum-traced
+`ureq 2.12.1` patch. It requires a colon and nonempty token name before Header
+construction and propagates parser errors before internal framing access.
+Typed BadHeader becomes a redacted MalformedResponse terminal event; malformed
+fields are no longer silently omitted. Direct-parser and actual loopback
+HTML/CSS/image tests cover rejection and settlement. Source-integrity checks
+enforce the reviewed two-file patch; all other locked packages/edges are unchanged.
+This corrects the identified release-abort path without qualifying broader AI5
+framing/encoding/interim behavior. Earlier validation above predates this patch;
+see the [correction record](platform/ai3-typed-fetch-response-status-headers-body.md#pinned-response-header-crash-correction-1123).
+
+Correction qualification passed 481 affected-crate tests, direct backend and
+eighteen production route/field cases, the runtime smoke, integrity/dependency
+checks, formatting and all three lint lanes. Isolated probes linked the actual
+release backend under panic=abort and safely rejected the five colonless-field
+examples. Full CI and both workspace aggregates still fail the native ownership
+gate; all remaining independent stages passed. The unchanged upstream middleware
+warning is newly visible through vendoring. These results qualify this specific
+correction without claiming complete AI5 backend qualification.
+
+The existing hosted Rust job now also invokes the complete
+`make check-network-dependencies` gate immediately after the URL check. That
+preceding check performs online locked metadata resolution before the network
+checker's offline locked selection validation. Source-integrity unit tests alone
+are not treated as proof of selected-package validation. See the
+[hosted-gate correction record](platform/ai3-typed-fetch-response-status-headers-body.md#hosted-network-dependency-gate-correction-1123)
+for local validation and remaining hosted qualification limits.
+The exact URL-then-network sequence passed locally with an initially empty
+Cargo home and unchanged lockfiles; workflow lint and all 37 CI-tool tests passed.
+This is no claim that the edited hosted workflow or aggregate CI has passed.
+
 - AH1 completes the [URL, origin, and resource-addressing architecture contract](platform/ah1-url-origin-resource-addressing-contract.md)
   only. It establishes logical addressing ownership, HTML/CSS reference
   production, Browser document/base coordination, future networking/cache/policy

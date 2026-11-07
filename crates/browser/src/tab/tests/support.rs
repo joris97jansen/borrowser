@@ -42,25 +42,19 @@ pub(super) fn complete_css(
     url: &str,
     text: &str,
 ) {
-    use core_types::NetworkResponseInfo;
-    let response = NetworkResponseInfo {
-        requested_url: url.into(),
-        final_url: url.into(),
-        status_code: Some(200),
-        content_type: Some("text/css".into()),
-    };
+    let response = response_facts(url.into(), url.into(), Some(200), Some("text/css".into()));
     complete_css_with_response(tab, slot, response, text);
 }
 
 pub(super) fn complete_css_with_response(
     tab: &mut Tab,
     slot: core_types::StylesheetSlotId,
-    response: core_types::NetworkResponseInfo,
+    response: net::NetworkResponseInfo,
     text: &str,
 ) {
     use bus::CoreEvent;
     use core_types::ResourceKind;
-    let request_url = response.requested_url.clone();
+    let request_url = response.requested_url().to_owned();
     let url = request_url.as_str();
     let tab_id = tab.tab_id;
     let request_id = tab.nav_gen;
@@ -87,7 +81,7 @@ pub(super) fn complete_css_with_response(
         stylesheet_slot_id: Some(slot),
         kind: ResourceKind::Css,
         response,
-        bytes_received: text.len(),
+        body: net::BodyProgress::try_new(ResourceKind::Css, text.len()).unwrap(),
     })
     .unwrap();
     tab.on_core_event(CoreEvent::CssDecodedBlock {
@@ -136,16 +130,25 @@ pub(super) fn addressing_tab_with_response_url(
         request_id: 7,
         stylesheet_slot_id: None,
         kind: core_types::ResourceKind::Html,
-        response: core_types::NetworkResponseInfo {
-            requested_url: addressing::BrowserUrl::parse(requested_url)
+        response: response_facts(
+            addressing::BrowserUrl::parse(requested_url)
                 .unwrap()
                 .url
                 .as_str()
                 .to_owned(),
-            final_url: document_url.into(),
-            status_code: Some(200),
-            content_type: Some("text/html".into()),
-        },
+            document_url.into(),
+            if addressing::BrowserUrl::parse(requested_url)
+                .unwrap()
+                .url
+                .scheme()
+                == "file"
+            {
+                None
+            } else {
+                Some(200)
+            },
+            Some("text/html".into()),
+        ),
     })
     .unwrap();
     rx.try_iter().for_each(drop);
@@ -507,5 +510,38 @@ pub(super) fn find_dom_element<'a>(node: &'a Node, want: &str) -> Option<&'a Nod
         | Node::Comment { .. }
         | Node::ProcessingInstruction { .. }
         | Node::DocumentType { .. } => None,
+    }
+}
+
+/// Construct fixture facts through the same validated response APIs as production.
+/// The explicit status distinguishes HTTP from local-resource facts.
+#[track_caller]
+pub(super) fn response_facts(
+    requested: String,
+    reported: String,
+    status: Option<u16>,
+    content_type: Option<String>,
+) -> net::NetworkResponseInfo {
+    let original = addressing::BrowserUrl::parse(&requested)
+        .expect("fixture request URL")
+        .url;
+    // AH8's existing fixture convention uses an empty string for absent provenance.
+    let reported = (!reported.is_empty()).then_some(reported);
+    if let Some(code) = status {
+        let mut headers = net::HttpHeaders::new();
+        if let Some(value) = content_type {
+            headers.append("content-type", value.as_bytes()).unwrap();
+        }
+        net::NetworkResponseInfo::http(
+            original,
+            requested,
+            reported,
+            net::HttpStatus::try_from(code).unwrap(),
+            headers,
+        )
+        .expect("HTTP fixture facts")
+    } else {
+        net::NetworkResponseInfo::local_file(original, requested, reported, content_type)
+            .expect("local fixture facts")
     }
 }

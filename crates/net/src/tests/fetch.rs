@@ -3,6 +3,34 @@ use crate::HttpClientPolicy;
 use core_types::ResourceKind;
 
 #[test]
+fn ai3_empty_and_binary_successful_bodies_complete_without_conversion() {
+    for kind in [ResourceKind::Html, ResourceKind::Css, ResourceKind::Image] {
+        let server = TestHttpServer::spawn(|req| {
+            HttpReply::response(
+                "200 OK",
+                vec![],
+                if req.path == "/empty" {
+                    vec![]
+                } else {
+                    vec![0, 0xff, 0x80, b'\n']
+                },
+            )
+        });
+        for path in ["/empty", "/binary"] {
+            let result = collect_fetch(server.url(path), kind, HttpClientPolicy::default());
+            let expected: &[u8] = if path == "/empty" {
+                &[]
+            } else {
+                &[0, 0xff, 0x80, b'\n']
+            };
+            assert_eq!(result.body, expected);
+            assert_eq!(result.start.response.status_code(), Some(200));
+            assert_eq!(result.done.bytes_received, expected.len());
+        }
+    }
+}
+
+#[test]
 fn image_requests_encode_raw_caret_before_transport() {
     // Both authored forms use the independently required encoded request path.
     // AH normalization now precedes both issuance and transport.
@@ -15,8 +43,11 @@ fn image_requests_encode_raw_caret_before_transport() {
             ResourceKind::Image,
             HttpClientPolicy::default(),
         );
-        assert_eq!(result.start.response.requested_url, server.url("/a%5Eb"));
-        assert_eq!(result.start.response.final_url, server.url("/a%5Eb"));
+        assert_eq!(result.start.response.requested_url(), server.url("/a%5Eb"));
+        assert_eq!(
+            result.start.response.reported_response_url().unwrap(),
+            server.url("/a%5Eb")
+        );
         assert_eq!(result.body, b"/a%5Eb");
     }
 }
@@ -65,9 +96,15 @@ fn follows_redirects_and_reports_final_url() {
         HttpClientPolicy::default(),
     );
 
-    assert_eq!(result.start.response.status_code, Some(200));
-    assert_eq!(result.start.response.requested_url, server.url("/redirect"));
-    assert_eq!(result.start.response.final_url, server.url("/final"));
+    assert_eq!(result.start.response.status_code(), Some(200));
+    assert_eq!(
+        result.start.response.requested_url(),
+        server.url("/redirect")
+    );
+    assert_eq!(
+        result.start.response.reported_response_url().unwrap(),
+        server.url("/final")
+    );
     assert_eq!(result.done.bytes_received, b"<p>ok</p>".len());
     assert_eq!(result.body, b"<p>ok</p>");
 }
@@ -91,7 +128,7 @@ fn ai2_existing_backend_wire_target_and_defaults_remain_explicitly_qualified() {
         ResourceKind::Html,
         HttpClientPolicy::default(),
     );
-    assert_eq!(result.start.response.requested_url, issued);
+    assert_eq!(result.start.response.requested_url(), issued);
     assert_eq!(result.body, b"defaults observed");
 }
 
@@ -120,5 +157,12 @@ fn ai2_legacy_backend_can_authenticate_a_credential_redirect_target_characteriza
         HttpClientPolicy::default(),
     );
     assert_eq!(result.body, b"legacy credential target reached");
-    assert!(result.start.response.final_url.contains("user:pass@"));
+    assert!(
+        result
+            .start
+            .response
+            .reported_response_url()
+            .unwrap()
+            .contains("user:pass@")
+    );
 }

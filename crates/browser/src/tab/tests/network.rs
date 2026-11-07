@@ -1,6 +1,6 @@
 use super::super::Tab;
 use bus::{CoreCommand, CoreEvent};
-use core_types::{NetworkResponseInfo, ResourceKind};
+use core_types::ResourceKind;
 use std::sync::mpsc;
 
 #[test]
@@ -104,12 +104,12 @@ fn css_with_html_content_type_is_not_forwarded_to_css_runtime() {
     let slot_id = super::support::append_stylesheet_link(&mut tab, &url);
     rx.try_iter().for_each(drop);
 
-    let response = NetworkResponseInfo {
-        requested_url: url.clone(),
-        final_url: url.clone(),
-        status_code: Some(404),
-        content_type: Some("text/html".to_string()),
-    };
+    let response = super::support::response_facts(
+        url.clone(),
+        url.clone(),
+        Some(404),
+        Some("text/html".to_string()),
+    );
 
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: tab.tab_id,
@@ -134,7 +134,7 @@ fn css_with_html_content_type_is_not_forwarded_to_css_runtime() {
         stylesheet_slot_id: Some(slot_id),
         kind: ResourceKind::Css,
         response,
-        bytes_received: 20,
+        body: net::BodyProgress::try_new(ResourceKind::Css, 20).unwrap(),
     })
     .unwrap();
 
@@ -169,19 +169,19 @@ fn resource_limit_document_error_surfaces_status_and_stops_loading() {
     let mut tab = Tab::new(1);
     tab.nav_gen = 3;
 
-    let response = NetworkResponseInfo {
-        requested_url: "https://example.com".to_string(),
-        final_url: "https://example.com".to_string(),
-        status_code: Some(200),
-        content_type: Some("text/html".to_string()),
-    };
+    let response = super::support::response_facts(
+        "https://example.com".to_string(),
+        "https://example.com".to_string(),
+        Some(200),
+        Some("text/html".to_string()),
+    );
 
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: tab.tab_id,
         request_id: 3,
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
-        response,
+        response: response.clone(),
     })
     .unwrap();
     tab.on_core_event(CoreEvent::NetworkError {
@@ -190,8 +190,9 @@ fn resource_limit_document_error_surfaces_status_and_stops_loading() {
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
         url: "https://example.com".to_string(),
-        error_kind: core_types::NetworkErrorKind::ResourceLimit,
-        status_code: Some(200),
+        error_kind: net::NetworkErrorKind::ResourceLimit,
+        response: Some(response.clone()),
+        body: None,
         error: "html response exceeded byte limit of 10485760 bytes".to_string(),
     })
     .unwrap();
@@ -216,19 +217,19 @@ fn stylesheet_resource_limit_aborts_partial_css_and_clears_pending_state() {
     let slot_id = super::support::append_stylesheet_link(&mut tab, &url);
     rx.try_iter().for_each(drop);
 
-    let response = NetworkResponseInfo {
-        requested_url: url.clone(),
-        final_url: url.clone(),
-        status_code: Some(200),
-        content_type: Some("text/css".to_string()),
-    };
+    let response = super::support::response_facts(
+        url.clone(),
+        url.clone(),
+        Some(200),
+        Some("text/css".to_string()),
+    );
 
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: tab.tab_id,
         request_id: 9,
         stylesheet_slot_id: Some(slot_id),
         kind: ResourceKind::Css,
-        response,
+        response: response.clone(),
     })
     .unwrap();
     tab.on_core_event(CoreEvent::NetworkChunk {
@@ -246,8 +247,9 @@ fn stylesheet_resource_limit_aborts_partial_css_and_clears_pending_state() {
         stylesheet_slot_id: Some(slot_id),
         kind: ResourceKind::Css,
         url: url.clone(),
-        error_kind: core_types::NetworkErrorKind::ResourceLimit,
-        status_code: Some(200),
+        error_kind: net::NetworkErrorKind::ResourceLimit,
+        response: Some(response.clone()),
+        body: None,
         error: "css response exceeded byte limit of 2097152 bytes".to_string(),
     })
     .unwrap();
@@ -290,19 +292,19 @@ fn decoded_css_for_aborted_stylesheet_slot_is_ignored() {
     let url = "https://example.com/aborted.css".to_string();
     let slot_id = super::support::append_stylesheet_link(&mut tab, &url);
     rx.try_iter().for_each(drop);
-    let response = NetworkResponseInfo {
-        requested_url: url.clone(),
-        final_url: url.clone(),
-        status_code: Some(200),
-        content_type: Some("text/css".to_string()),
-    };
+    let response = super::support::response_facts(
+        url.clone(),
+        url.clone(),
+        Some(200),
+        Some("text/css".to_string()),
+    );
 
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: tab.tab_id,
         request_id: 18,
         stylesheet_slot_id: Some(slot_id),
         kind: ResourceKind::Css,
-        response,
+        response: response.clone(),
     })
     .unwrap();
     tab.on_core_event(CoreEvent::NetworkError {
@@ -311,8 +313,9 @@ fn decoded_css_for_aborted_stylesheet_slot_is_ignored() {
         stylesheet_slot_id: Some(slot_id),
         kind: ResourceKind::Css,
         url: url.clone(),
-        error_kind: core_types::NetworkErrorKind::ResourceLimit,
-        status_code: Some(200),
+        error_kind: net::NetworkErrorKind::ResourceLimit,
+        response: Some(response.clone()),
+        body: None,
         error: "css response exceeded byte limit".to_string(),
     })
     .unwrap();
@@ -348,18 +351,28 @@ fn parser_completion_is_distinct_from_response_and_publication_and_failure_stays
     tab.set_bus_sender(tx);
     tab.navigate_to_new("https://example.com/".into());
     let request_id = tab.nav_gen;
-    let response = core_types::NetworkResponseInfo {
-        requested_url: tab.url.clone(),
-        final_url: tab.url.clone(),
-        status_code: Some(200),
-        content_type: Some("text/html".into()),
-    };
+    let response = super::support::response_facts(
+        tab.url.clone(),
+        tab.url.clone(),
+        Some(200),
+        Some("text/html".into()),
+    );
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: 1,
         request_id,
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
         response: response.clone(),
+    })
+    .unwrap();
+    let markup = "<!doctype html><p>ok";
+    tab.on_core_event(CoreEvent::NetworkChunk {
+        tab_id: 1,
+        request_id,
+        stylesheet_slot_id: None,
+        kind: ResourceKind::Html,
+        url: response.requested_url().into(),
+        bytes: markup.as_bytes().to_vec(),
     })
     .unwrap();
     let parsed =
@@ -389,7 +402,7 @@ fn parser_completion_is_distinct_from_response_and_publication_and_failure_stays
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
         response,
-        bytes_received: 26,
+        body: net::BodyProgress::try_new(ResourceKind::Html, markup.len()).unwrap(),
     })
     .unwrap();
     assert!(tab.loading);

@@ -507,3 +507,11 @@ The [feature-gap tracker](../engine-feature-gap-tracker.md) records an authored
 AI1 contract separately from pending executable AI scope. Existing addressing and
 networking limitations remain open. No new issue is required for an implementation
 step, a prospective abstraction, or a qualification phase.
+
+## AI3 implementation reference
+
+[AI3 typed response/status/header/body delivery](ai3-typed-fetch-response-status-headers-body.md)
+evolves the production response events and consumers under this contract. Its
+backend-fidelity and consumer-lifecycle qualifications are explicit. Historical
+implementation observations above remain baseline evidence, not a claim of
+current end-to-end conformance or milestone completion.

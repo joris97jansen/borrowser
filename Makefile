@@ -405,9 +405,14 @@ check-url-dependencies:
 	python3 tools/ci/check_url_dependencies.py
 	python3 -m unittest discover -s tools/ci/tests -v
 
+.PHONY: check-network-dependencies
+check-network-dependencies:
+	python3 tools/ci/check_ureq_patch.py
+
 # Full CI-equivalent pipeline
 ci:
 	@$(MAKE) check-url-dependencies
+	@$(MAKE) check-network-dependencies
 	@$(MAKE) conformance-ci
 	@$(MAKE) conformance-addressing
 	@$(MAKE) fmt-check

@@ -1,17 +1,24 @@
 use super::ShellApp;
 use app_api::UiApp;
 use bus::{CoreCommand, CoreEvent, DocumentPublication, DocumentPublicationPayload};
-use core_types::{DomHandle, DomVersion, NetworkResponseInfo, ResourceKind, StylesheetSlotId};
+use core_types::{DomHandle, DomVersion, ResourceKind, StylesheetSlotId};
+use net::NetworkResponseInfo;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
 fn response(url: &str, content_type: &str) -> NetworkResponseInfo {
-    NetworkResponseInfo {
-        requested_url: url.into(),
-        final_url: url.into(),
-        status_code: Some(200),
-        content_type: Some(content_type.into()),
-    }
+    let mut headers = net::HttpHeaders::new();
+    headers
+        .append("content-type", content_type.as_bytes())
+        .unwrap();
+    NetworkResponseInfo::http(
+        addressing::BrowserUrl::parse(url).unwrap().url,
+        url.into(),
+        Some(url.into()),
+        net::HttpStatus::try_from(200).unwrap(),
+        headers,
+    )
+    .unwrap()
 }
 
 fn open_document(
@@ -199,7 +206,7 @@ fn stylesheet_runtime_tab_close_discards_old_buffer_and_does_not_touch_new_tab()
             stylesheet_slot_id: Some(slot),
             kind: ResourceKind::Css,
             response: response(&url, "text/css"),
-            bytes_received: 14,
+            body: net::BodyProgress::try_new(ResourceKind::Css, 14).unwrap(),
         });
         runtime_tx
             .send(cmd_rx.try_recv().expect("Browser forwards CssDone"))

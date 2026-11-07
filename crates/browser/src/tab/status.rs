@@ -1,13 +1,13 @@
-use core_types::{NetworkErrorKind, NetworkResponseInfo};
+use net::{NetworkErrorKind, NetworkResponseInfo};
 
 pub(super) fn response_summary(response: &NetworkResponseInfo, bytes_received: usize) -> String {
     let mut parts = Vec::new();
 
-    if let Some(status_code) = response.status_code {
+    if let Some(status_code) = response.status_code() {
         parts.push(format!("HTTP {status_code}"));
     }
 
-    if let Some(content_type) = response.content_type.as_deref() {
+    if let Some(content_type) = response.legacy_content_type() {
         parts.push(content_type.to_string());
     }
 
@@ -15,11 +15,10 @@ pub(super) fn response_summary(response: &NetworkResponseInfo, bytes_received: u
         parts.push(format!("{bytes_received} B"));
     }
 
-    if response.was_redirected() {
-        parts.push(format!("final {}", response.final_url));
-    } else {
-        parts.push(response.display_url().to_string());
-    }
+    parts.push(match response.reported_response_url() {
+        Some(url) => url.to_owned(),
+        None => "response URL unavailable".into(),
+    });
 
     parts.join(" • ")
 }
@@ -31,14 +30,8 @@ pub(super) fn format_network_error(
     status_code: Option<u16>,
     error: &str,
 ) -> String {
-    match error_kind {
+    let message = match error_kind {
         NetworkErrorKind::Cancelled => format!("Cancelled {resource_label} load: {url}"),
-        NetworkErrorKind::HttpStatus => match status_code {
-            Some(status_code) => {
-                format!("HTTP {status_code} while loading {resource_label}: {url}")
-            }
-            None => format!("HTTP error while loading {resource_label}: {url}"),
-        },
         NetworkErrorKind::Transport => {
             format!("Transport error loading {resource_label}: {url} ({error})")
         }
@@ -46,8 +39,18 @@ pub(super) fn format_network_error(
             format!("Local file error loading {resource_label}: {url} ({error})")
         }
         NetworkErrorKind::Read => format!("Read error loading {resource_label}: {url} ({error})"),
+        NetworkErrorKind::MalformedResponse => {
+            format!("Malformed response loading {resource_label}: {url} ({error})")
+        }
+        NetworkErrorKind::UnsupportedResponse => {
+            format!("Unsupported response loading {resource_label}: {url} ({error})")
+        }
         NetworkErrorKind::ResourceLimit => {
             format!("Resource limit loading {resource_label}: {url} ({error})")
         }
+    };
+    match status_code {
+        Some(code) => format!("{message} [HTTP {code}]"),
+        None => message,
     }
 }

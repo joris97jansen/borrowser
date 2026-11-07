@@ -1,7 +1,8 @@
 use super::support::*;
 use bus::{CoreCommand, CoreEvent};
-use core_types::{NetworkResponseInfo, ResourceKind, StylesheetSlotId};
+use core_types::{ResourceKind, StylesheetSlotId};
 use html::{DomPatch, PatchKey};
+use net::NetworkResponseInfo;
 
 fn selected(tab: &super::super::Tab, owner: html::internal::Id, source: &str) -> Option<String> {
     crate::page::selected_image_source(&tab.page.image_sources, owner, source)
@@ -94,7 +95,9 @@ fn resource_associations_images_retain_selective_owners_and_retire_removed_nodes
         "https://example.test/new/changed.png"
     );
     tab.resources.on_network_error(
+        tab.nav_gen,
         "https://example.test/new/changed.png",
+        net::NetworkErrorKind::Transport,
         "fixture failure".into(),
     );
     publish_addressing_patches(
@@ -176,12 +179,12 @@ fn resource_associations_stylesheet_moves_media_source_changes_and_retired_respo
     assert_ne!(first, second);
     tab.on_css_network_start(
         first,
-        NetworkResponseInfo {
-            requested_url: fetched[0].1.clone(),
-            final_url: fetched[0].1.clone(),
-            status_code: Some(200),
-            content_type: Some("text/css".into()),
-        },
+        super::support::response_facts(
+            fetched[0].1.clone(),
+            fetched[0].1.clone(),
+            Some(200),
+            Some("text/css".into()),
+        ),
         tab.nav_gen,
     );
     complete_css(&mut tab, first, &fetched[0].1, "p{color:red}");
@@ -225,12 +228,7 @@ fn resource_associations_stylesheet_moves_media_source_changes_and_retired_respo
     assert!(!tab.stylesheet_loads.contains_key(&first));
     tab.on_css_network_start(
         first,
-        NetworkResponseInfo {
-            requested_url: fetched[0].1.clone(),
-            final_url: fetched[0].1.clone(),
-            status_code: Some(200),
-            content_type: None,
-        },
+        super::support::response_facts(fetched[0].1.clone(), fetched[0].1.clone(), Some(200), None),
         tab.nav_gen,
     );
     tab.on_css_decoded_block(first, &fetched[0].1, "p{color:blue}".into(), tab.nav_gen);
@@ -334,12 +332,12 @@ fn resource_associations_retirement_aborts_partial_css_and_late_events_cannot_re
     let slot = fetched[0].0.unwrap();
     let url = fetched[0].1.clone();
     let owner = element_id(tab.page.dom.as_deref().unwrap(), "sheet");
-    let response = NetworkResponseInfo {
-        requested_url: url.clone(),
-        final_url: url.clone(),
-        status_code: Some(200),
-        content_type: Some("text/css".into()),
-    };
+    let response = super::support::response_facts(
+        url.clone(),
+        url.clone(),
+        Some(200),
+        Some("text/css".into()),
+    );
     tab.on_css_network_start(slot, response.clone(), tab.nav_gen);
     tab.on_css_network_chunk(slot, url.clone(), b"p{".to_vec(), 7);
     assert!(
@@ -359,7 +357,12 @@ fn resource_associations_retirement_aborts_partial_css_and_late_events_cannot_re
     assert!(tab.stylesheet_loads.is_empty());
     tab.on_css_network_start(slot, response.clone(), tab.nav_gen);
     tab.on_css_network_chunk(slot, url.clone(), b"color:red}".to_vec(), 7);
-    tab.on_css_network_done(slot, response, 12, 7);
+    tab.on_css_network_done(
+        slot,
+        response,
+        net::BodyProgress::try_new(ResourceKind::Css, 12).unwrap(),
+        7,
+    );
     assert!(rx.try_recv().is_err());
     assert!(tab.stylesheet_loads.is_empty());
 }
@@ -490,12 +493,12 @@ fn resource_associations_streamed_css_uses_one_live_record_lookup_per_chunk() {
         let fetched = requests(&rx, ResourceKind::Css);
         let (slot, url) = fetched.last().unwrap();
         let slot = slot.unwrap();
-        let response = NetworkResponseInfo {
-            requested_url: url.clone(),
-            final_url: url.clone(),
-            status_code: Some(200),
-            content_type: Some("text/css".into()),
-        };
+        let response = super::support::response_facts(
+            url.clone(),
+            url.clone(),
+            Some(200),
+            Some("text/css".into()),
+        );
         tab.on_css_network_start(slot, response, tab.nav_gen);
         let before = tab.page.stylesheet_slot_lookup_count();
         for _ in 0..4096 {
@@ -537,12 +540,8 @@ fn resource_associations_streamed_css_uses_one_live_record_lookup_per_chunk() {
 }
 
 fn publish_network_document(tab: &mut super::super::Tab, url: &str, markup: &str) {
-    let response = NetworkResponseInfo {
-        requested_url: url.into(),
-        final_url: url.into(),
-        status_code: Some(200),
-        content_type: Some("text/html".into()),
-    };
+    let response =
+        super::support::response_facts(url.into(), url.into(), Some(200), Some("text/html".into()));
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: tab.tab_id,
         request_id: tab.nav_gen,
@@ -561,12 +560,7 @@ fn publish_network_document(tab: &mut super::super::Tab, url: &str, markup: &str
 }
 
 fn css_response(url: &str) -> NetworkResponseInfo {
-    NetworkResponseInfo {
-        requested_url: url.into(),
-        final_url: url.into(),
-        status_code: Some(200),
-        content_type: Some("text/css".into()),
-    }
+    super::support::response_facts(url.into(), url.into(), Some(200), Some("text/css".into()))
 }
 
 fn stylesheet_fetch(commands: &[CoreCommand]) -> (StylesheetSlotId, String) {
@@ -839,7 +833,7 @@ fn resource_associations_runtime_retires_partial_css_on_document_lifecycle_bound
             stylesheet_slot_id: Some(old_slot),
             kind: ResourceKind::Css,
             response: css_response(&old_url),
-            bytes_received: 5,
+            body: net::BodyProgress::try_new(ResourceKind::Css, 5).unwrap(),
         })
         .unwrap();
         assert!(
@@ -881,7 +875,7 @@ fn resource_associations_runtime_retires_partial_css_on_document_lifecycle_bound
             stylesheet_slot_id: Some(new_slot),
             kind: ResourceKind::Css,
             response: css_response(&new_url),
-            bytes_received: 14,
+            body: net::BodyProgress::try_new(ResourceKind::Css, 14).unwrap(),
         })
         .unwrap();
         runtime_tx.send(rx.try_recv().unwrap()).unwrap();
@@ -938,7 +932,7 @@ fn resource_associations_parser_failure_retires_runtime_buffer_but_keeps_preview
         stylesheet_slot_id: Some(loaded_slot),
         kind: ResourceKind::Css,
         response: css_response(&loaded_url),
-        bytes_received: 12,
+        body: net::BodyProgress::try_new(ResourceKind::Css, 12).unwrap(),
     })
     .unwrap();
     runtime_tx.send(rx.try_recv().unwrap()).unwrap();
@@ -1027,7 +1021,7 @@ fn resource_associations_parser_failure_retires_runtime_buffer_but_keeps_preview
         stylesheet_slot_id: Some(slot),
         kind: ResourceKind::Css,
         response: css_response(&url),
-        bytes_received: 5,
+        body: net::BodyProgress::try_new(ResourceKind::Css, 5).unwrap(),
     })
     .unwrap();
     assert!(
@@ -1069,7 +1063,7 @@ fn resource_associations_completed_css_queued_before_parser_failure_still_applie
         stylesheet_slot_id: Some(slot),
         kind: ResourceKind::Css,
         response: css_response(&url),
-        bytes_received: 12,
+        body: net::BodyProgress::try_new(ResourceKind::Css, 12).unwrap(),
     })
     .unwrap();
     let css_done = rx.try_recv().expect("completed transfer queues CssDone");
@@ -1150,10 +1144,13 @@ fn resource_associations_rejected_css_queued_before_parser_failure_settles_witho
     let (slot, url) = stylesheet_fetch(&rx.try_iter().collect::<Vec<_>>());
     let generation = tab.nav_gen;
     let handle = tab.dom_handle;
-    let response = NetworkResponseInfo {
-        content_type: Some("application/javascript".into()),
-        ..css_response(&url)
-    };
+    let base = css_response(&url);
+    let response = super::support::response_facts(
+        base.requested_url().into(),
+        base.reported_response_url().unwrap().into(),
+        base.status_code(),
+        Some("application/javascript".into()),
+    );
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: tab.tab_id,
         request_id: generation,
@@ -1181,7 +1178,7 @@ fn resource_associations_rejected_css_queued_before_parser_failure_settles_witho
         stylesheet_slot_id: Some(slot),
         kind: ResourceKind::Css,
         response,
-        bytes_received: 12,
+        body: net::BodyProgress::try_new(ResourceKind::Css, 12).unwrap(),
     })
     .unwrap();
     let css_done = rx.try_recv().expect("completion queues CssDone");

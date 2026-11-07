@@ -1,6 +1,7 @@
 use super::support::{TEST_ROOT_CA_PEM, TestHttpsServer, collect_fetch, collect_fetch_error};
+use crate::NetworkErrorKind;
 use crate::{HttpClientPolicy, TlsTrustStore};
-use core_types::{NetworkErrorKind, ResourceKind};
+use core_types::ResourceKind;
 
 #[test]
 fn https_rejects_untrusted_cert_by_default() {
@@ -34,6 +35,6 @@ fn https_accepts_explicit_test_root() {
     };
 
     let result = collect_fetch(server.url("/"), ResourceKind::Html, policy);
-    assert_eq!(result.start.response.status_code, Some(200));
+    assert_eq!(result.start.response.status_code(), Some(200));
     assert_eq!(result.body, b"<p>secure</p>");
 }

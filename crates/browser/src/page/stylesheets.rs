@@ -75,7 +75,7 @@ impl PageState {
         &mut self,
         slot_id: StylesheetSlotId,
         block: &str,
-        response: &core_types::NetworkResponseInfo,
+        response: &net::NetworkResponseInfo,
     ) -> Option<RenderInvalidationRequest> {
         let changed = self
             .rendering

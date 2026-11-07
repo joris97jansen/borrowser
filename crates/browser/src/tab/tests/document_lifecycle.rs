@@ -1,19 +1,24 @@
 use super::super::{Tab, state::DocumentParseStatus};
 use super::support::no_quirks_patch_publication_from_output;
 use bus::{CoreCommand, CoreEvent, HtmlParseCompletion, HtmlParseFailure};
-use core_types::{NetworkErrorKind, NetworkResponseInfo, ResourceKind};
+use core_types::ResourceKind;
+use net::{NetworkErrorKind, NetworkResponseInfo};
 use std::sync::mpsc::{self, Receiver};
 
 const URL: &str = "https://example.com/document";
 const HTML: &str = "<!doctype html><style>p { color: red }</style><p>streaming preview</p>";
 
 fn response(url: &str) -> NetworkResponseInfo {
-    NetworkResponseInfo {
-        requested_url: url.into(),
-        final_url: url.into(),
-        status_code: Some(200),
-        content_type: Some("text/html".into()),
-    }
+    super::support::response_facts(
+        url.into(),
+        url.into(),
+        if addressing::BrowserUrl::parse(url).unwrap().url.scheme() == "file" {
+            None
+        } else {
+            Some(200)
+        },
+        Some("text/html".into()),
+    )
 }
 
 #[test]
@@ -70,12 +75,8 @@ fn document_lifecycle_unsupported_stale_and_duplicate_starts_preserve_file_origi
         let version = tab.dom_version;
         let state = tab.document_load.parse_status;
         rx.try_iter().for_each(drop);
-        let unsupported = NetworkResponseInfo {
-            requested_url: file.into(),
-            final_url: "about:srcdoc".into(),
-            status_code: Some(200),
-            content_type: None,
-        };
+        let unsupported =
+            super::support::response_facts(file.into(), "about:srcdoc".into(), None, None);
         // Both wrong-tab and old-generation starts are filtered before admission.
         tab.on_core_event(CoreEvent::NetworkStart {
             tab_id: 2,
@@ -139,7 +140,7 @@ fn html_done(request_id: u64, response: NetworkResponseInfo, bytes_received: usi
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
         response,
-        bytes_received,
+        body: net::BodyProgress::try_new(ResourceKind::Html, bytes_received).unwrap(),
     }
 }
 
@@ -152,12 +153,21 @@ fn document_lifecycle_chunk_provenance_uses_requested_url_across_redirect_and_fr
     tab.set_bus_sender(tx);
     tab.navigate_to_new(requested.into());
     rx.try_iter().for_each(drop);
-    let accepted = NetworkResponseInfo {
-        requested_url: requested.into(),
-        final_url: final_url.into(),
-        status_code: Some(200),
-        content_type: Some("text/html".into()),
-    };
+    let accepted = super::support::response_facts(
+        requested.into(),
+        final_url.into(),
+        if addressing::BrowserUrl::parse(requested)
+            .unwrap()
+            .url
+            .scheme()
+            == "file"
+        {
+            None
+        } else {
+            Some(200)
+        },
+        Some("text/html".into()),
+    );
     tab.on_core_event(start(tab.nav_gen, accepted.clone()))
         .unwrap();
     let origin = tab
@@ -268,12 +278,21 @@ fn document_lifecycle_chunk_provenance_rejects_unrelated_and_final_urls() {
         let (tx, rx) = mpsc::channel();
         tab.set_bus_sender(tx);
         tab.navigate_to_new(requested.into());
-        let accepted = NetworkResponseInfo {
-            requested_url: requested.into(),
-            final_url: final_url.into(),
-            status_code: Some(200),
-            content_type: Some("text/html".into()),
-        };
+        let accepted = super::support::response_facts(
+            requested.into(),
+            final_url.into(),
+            if addressing::BrowserUrl::parse(requested)
+                .unwrap()
+                .url
+                .scheme()
+                == "file"
+            {
+                None
+            } else {
+                Some(200)
+            },
+            Some("text/html".into()),
+        );
         tab.on_core_event(start(tab.nav_gen, accepted.clone()))
             .unwrap();
         let body = "<!doctype html><p>retained preview";
@@ -435,7 +454,7 @@ fn document_lifecycle_html_stylesheet_slot_associations_are_unmatched_routes() {
                 stylesheet_slot_id: slot,
                 kind: ResourceKind::Html,
                 response: response(file),
-                bytes_received: 999,
+                body: net::BodyProgress::try_new(ResourceKind::Html, 999).unwrap(),
             },
             CoreEvent::NetworkError {
                 tab_id: 1,
@@ -444,7 +463,8 @@ fn document_lifecycle_html_stylesheet_slot_associations_are_unmatched_routes() {
                 kind: ResourceKind::Html,
                 url: file.into(),
                 error_kind: NetworkErrorKind::Cancelled,
-                status_code: None,
+                response: None,
+                body: None,
                 error: "invalid route".into(),
             },
         ] {
@@ -466,10 +486,12 @@ fn document_lifecycle_response_admission_is_required_before_chunk_or_done() {
         let request_id = tab.nav_gen;
         let history = tab.history.clone();
         let history_index = tab.history_index;
-        let rejected = NetworkResponseInfo {
-            final_url: "data:text/html,unadmitted".into(),
-            ..response(URL)
-        };
+        let rejected = super::support::response_facts(
+            URL.into(),
+            "data:text/html,unadmitted".into(),
+            Some(200),
+            Some("text/html".into()),
+        );
         // Stale events must be ignored even while waiting for admission.
         tab.on_core_event(html_chunk(request_id - 1, b"stale"))
             .unwrap();
@@ -542,16 +564,36 @@ fn document_lifecycle_response_completion_cannot_replace_accepted_provenance() {
         let (mut tab, rx) =
             super::support::addressing_tab_with_url("<!doctype html><p>retained preview", file);
         let accepted = tab.document_load.response.clone().unwrap();
-        let mut changed = accepted.clone();
-        match field {
-            "requested" => changed.requested_url = "file:///tmp/other-request.html".into(),
-            "final" => changed.final_url = "https://different.test/".into(),
-            "unsupported-final" => changed.final_url = "about:srcdoc".into(),
-            "empty-final" => changed.final_url.clear(),
-            "status" => changed.status_code = None,
-            "content-type" => changed.content_type = Some("text/plain".into()),
-            _ => changed.content_type = None,
+        if field == "status" {
+            // A local-file response with a fake HTTP status is now rejected at
+            // construction; genuine HTTP status replacement is covered by AI3.
+            assert_eq!(
+                net::NetworkResponseInfo::http(
+                    accepted.original_url().clone(),
+                    accepted.requested_url().into(),
+                    accepted.reported_response_url().map(str::to_owned),
+                    net::HttpStatus::try_from(200).unwrap(),
+                    net::HttpHeaders::new()
+                )
+                .unwrap_err(),
+                net::ResponseAdmissionError::IncompatibleOriginalScheme
+            );
+            assert_eq!(tab.document_load.response.as_ref(), Some(&accepted));
+            continue;
         }
+        let mut requested = accepted.requested_url().to_owned();
+        let mut reported = accepted.reported_response_url().unwrap().to_owned();
+        let mut mime = accepted.legacy_content_type().map(str::to_owned);
+        match field {
+            "requested" => requested = "file:///tmp/other-request.html".into(),
+            "final" => reported = "https://different.test/".into(),
+            "unsupported-final" => reported = "about:srcdoc".into(),
+            "empty-final" => reported.clear(),
+            "content-type" => mime = Some("text/plain".into()),
+            _ => mime = None,
+        }
+        let changed =
+            super::support::response_facts(requested, reported, accepted.status_code(), mime);
         let addresses = tab.page.addresses.clone();
         let origin = addresses.as_ref().unwrap().document_origin().clone();
         assert!(origin.is_opaque());
@@ -644,12 +686,8 @@ fn document_lifecycle_response_valid_stream_preserves_admitted_file_origin() {
     tab.set_bus_sender(tx);
     tab.navigate_to_new(file.into());
     rx.try_iter().for_each(drop);
-    let accepted = NetworkResponseInfo {
-        requested_url: file.into(),
-        final_url: file.into(),
-        status_code: None,
-        content_type: Some("text/html".into()),
-    };
+    let accepted =
+        super::support::response_facts(file.into(), file.into(), None, Some("text/html".into()));
     tab.on_core_event(start(tab.nav_gen, accepted.clone()))
         .unwrap();
     let origin = tab
@@ -820,7 +858,7 @@ fn finish_document(tab: &mut Tab, rx: &Receiver<CoreCommand>, completion: HtmlPa
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
         response: response(URL),
-        bytes_received: HTML.len(),
+        body: net::BodyProgress::try_new(ResourceKind::Html, HTML.len()).unwrap(),
     })
     .unwrap();
     assert!(matches!(
@@ -907,7 +945,7 @@ fn assert_late_network_events_ignored(tab: &mut Tab, rx: &Receiver<CoreCommand>)
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
             response: replacement,
-            bytes_received: 999,
+            body: net::BodyProgress::try_new(ResourceKind::Html, 999).unwrap(),
         },
         CoreEvent::NetworkError {
             tab_id: 1,
@@ -916,7 +954,8 @@ fn assert_late_network_events_ignored(tab: &mut Tab, rx: &Receiver<CoreCommand>)
             kind: ResourceKind::Html,
             url: URL.into(),
             error_kind: NetworkErrorKind::Cancelled,
-            status_code: None,
+            response: None,
+            body: None,
             error: "late cancellation".into(),
         },
     ] {
@@ -982,7 +1021,7 @@ fn repeated_document_start_preserves_streaming_preview_and_stylesheet_work() {
         stylesheet_slot_id: Some(slot),
         kind: ResourceKind::Css,
         response: response(css_url),
-        bytes_received: 0,
+        body: net::BodyProgress::try_new(ResourceKind::Css, 0).unwrap(),
     })
     .unwrap();
     assert!(matches!(
@@ -1045,7 +1084,8 @@ fn cancellation_before_response_start_cannot_be_reopened_by_late_start() {
         kind: ResourceKind::Html,
         url: URL.into(),
         error_kind: NetworkErrorKind::Cancelled,
-        status_code: None,
+        response: None,
+        body: None,
         error: "cancelled".into(),
     })
     .unwrap();

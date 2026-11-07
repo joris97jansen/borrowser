@@ -1,0 +1,53 @@
+--- a/src/header.rs
++++ b/src/header.rs
+@@ -35,21 +35,13 @@
+     }
+ 
+     pub fn into_header(self) -> Result<Header, Error> {
+-        // The header name should always be ascii, we can read anything up to the
+-        // ':' delimiter byte-by-byte.
+-        let mut index = 0;
+-
+-        for c in self.as_bytes() {
+-            if *c == b':' {
+-                break;
+-            }
+-            if !is_tchar(c) {
+-                return Err(Error::new(
+-                    ErrorKind::BadHeader,
+-                    Some(format!("Invalid char ({:0x?}) while looking for ':'", *c)),
+-                ));
+-            }
+-            index += 1;
++        let index = self
++            .as_bytes()
++            .iter()
++            .position(|&c| c == b':')
++            .ok_or_else(|| ErrorKind::BadHeader.msg("header field is missing a colon"))?;
++        if !valid_name(&self.as_bytes()[..index]) {
++            return Err(ErrorKind::BadHeader.msg("invalid header field name"));
+         }
+ 
+         Ok(Header { line: self, index })
+@@ -71,7 +63,7 @@
+     line: HeaderLine,
+     // Index is the position of the colon within the header field.
+     // Invariant: index > 0
+-    // Invariant: index + 1 < line.len()
++    // Invariant: index < line.len(); an empty value after ':' is valid.
+     index: usize,
+ }
+ 
+--- a/src/response.rs
++++ b/src/response.rs
+@@ -584,9 +584,7 @@
+             if line.is_empty() {
+                 break;
+             }
+-            if let Ok(header) = line.into_header() {
+-                headers.push(header);
+-            }
++            headers.push(line.into_header()?);
+         }
+ 
+         if headers.len() > MAX_HEADER_COUNT {

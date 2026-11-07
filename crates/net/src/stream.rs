@@ -1,10 +1,14 @@
+use crate::{BodyProgress, NetEvent, NetworkErrorKind, limits::resource_byte_limit};
+use core_types::ResourceKind;
 use std::io::Read;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use core_types::{NetworkErrorKind, ResourceKind};
-
-use crate::{NetEvent, limits::resource_byte_limit};
+pub(crate) struct StreamFailure {
+    pub kind: NetworkErrorKind,
+    pub body: BodyProgress,
+    pub error: String,
+}
 
 pub(crate) fn stream_reader<R: Read>(
     request_id: u64,
@@ -13,27 +17,23 @@ pub(crate) fn stream_reader<R: Read>(
     cancel_token: &Arc<AtomicBool>,
     callback: &Arc<dyn Fn(NetEvent) + Send + Sync>,
     reader: &mut R,
-) -> Result<usize, (NetworkErrorKind, String)> {
+) -> Result<BodyProgress, StreamFailure> {
     let mut buffer = [0_u8; 32 * 1024];
     let mut total = 0_usize;
     let byte_limit = resource_byte_limit(kind);
-
-    // Resource-limit policy is streaming-by-default: bytes up to the configured
-    // cap may already have been delivered before the over-limit read is
-    // observed. Callers must treat `ResourceLimit` as terminal failure and
-    // discard partial state where a complete resource is required. In
-    // Borrowser that means images clear buffered bytes, CSS aborts buffered
-    // parser state, and HTML never receives a terminal `Done` event.
     loop {
+        let progress = || BodyProgress::try_new(kind, total).expect("bounded stream accounting");
         if cancel_token.load(Ordering::Relaxed) {
-            return Err((NetworkErrorKind::Cancelled, "cancelled".into()));
+            return Err(StreamFailure {
+                kind: NetworkErrorKind::Cancelled,
+                body: progress(),
+                error: "cancelled".into(),
+            });
         }
-
         match reader.read(&mut buffer) {
-            Ok(0) => return Ok(total),
+            Ok(0) => return Ok(progress()),
             Ok(n) => {
-                let remaining = byte_limit.saturating_sub(total);
-                let take = n.min(remaining);
+                let take = n.min(byte_limit - total);
                 if take > 0 {
                     total += take;
                     callback(NetEvent::Chunk {
@@ -42,19 +42,26 @@ pub(crate) fn stream_reader<R: Read>(
                         chunk: buffer[..take].to_vec(),
                     });
                 }
-
                 if n > take {
-                    return Err((
-                        NetworkErrorKind::ResourceLimit,
-                        format!(
+                    return Err(StreamFailure {
+                        kind: NetworkErrorKind::ResourceLimit,
+                        body: BodyProgress::try_new(kind, total)
+                            .expect("bounded stream accounting"),
+                        error: format!(
                             "{} response exceeded byte limit of {} bytes",
                             kind.as_str(),
                             byte_limit
                         ),
-                    ));
+                    });
                 }
             }
-            Err(err) => return Err((NetworkErrorKind::Read, format!("read error: {err}"))),
+            Err(err) => {
+                return Err(StreamFailure {
+                    kind: NetworkErrorKind::Read,
+                    body: progress(),
+                    error: format!("read error: {err}"),
+                });
+            }
         }
     }
 }

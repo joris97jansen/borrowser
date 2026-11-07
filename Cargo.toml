@@ -40,7 +40,7 @@ members = [
   "crates/bus",
   "crates/input_core",
 ]
-exclude = ["fuzz"]
+exclude = ["fuzz", "vendor/ureq"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -51,8 +51,9 @@ egui-wgpu = "0.32"
 pollster = "0.4"
 url = "2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
-ureq = { version = "2", features = ["json", "charset", "gzip", "native-certs"] }
+ureq = { version = "=2.12.1", features = ["json", "charset", "gzip", "native-certs"] }
 
 [patch.crates-io]
+ureq = { path = "vendor/ureq" }
 url = { git = "https://github.com/joris97jansen/rust-url.git", rev = "92f7fb395f9ffb2f706e7c664283781fd3b294a2" }
 percent-encoding = { git = "https://github.com/joris97jansen/rust-url.git", rev = "92f7fb395f9ffb2f706e7c664283781fd3b294a2" }

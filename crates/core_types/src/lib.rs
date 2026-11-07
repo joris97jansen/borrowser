@@ -48,7 +48,7 @@ pub struct BrowserInput {
     pub enter_pressed: bool,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResourceKind {
     Html,
     Css,
@@ -70,36 +70,4 @@ impl ResourceKind {
             Self::Css | Self::Image => "subresource",
         }
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NetworkResponseInfo {
-    pub requested_url: String,
-    pub final_url: String,
-    pub status_code: Option<u16>,
-    pub content_type: Option<String>,
-}
-
-impl NetworkResponseInfo {
-    pub fn display_url(&self) -> &str {
-        if self.final_url.is_empty() {
-            &self.requested_url
-        } else {
-            &self.final_url
-        }
-    }
-
-    pub fn was_redirected(&self) -> bool {
-        self.final_url != self.requested_url
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NetworkErrorKind {
-    Cancelled,
-    Transport,
-    HttpStatus,
-    LocalFile,
-    Read,
-    ResourceLimit,
 }

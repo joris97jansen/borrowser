@@ -139,6 +139,15 @@ metadata exercises the existing response handoff, not redirect processing.
 `supplied_final_url` records the exact fixture transport input; the CSS base
 observation records what the retained production base can actually expose.
 
+AI3 migrates supplied responses to the immutable `net` contract and retains the
+actual issued `FetchRequest`. The historical empty final-URL sentinel denotes
+absent provenance at fixture ingestion. For HTML, the `document-default` missing
+provenance row now exercises production admission rejection: it must emit the
+matching cancellation, commit no addressing snapshot, and remain rejected after
+completion. Its expected snapshot list is empty rather than inventing the request
+URL as a selected response. The two valid-URL rows retain their original complete
+snapshots. CSS missing/invalid response-base observations remain unchanged.
+
 ## Exact snapshots and privacy
 
 The harness's structured observations contain exact controlled synthetic values.

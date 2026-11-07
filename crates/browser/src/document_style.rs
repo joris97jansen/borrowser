@@ -313,7 +313,7 @@ impl DocumentStyleSet {
         &mut self,
         slot_id: StylesheetSlotId,
         css_text: &str,
-        response: &core_types::NetworkResponseInfo,
+        response: &net::NetworkResponseInfo,
     ) -> bool {
         let Some(slot) = self.slot_mut(slot_id) else {
             return false;
@@ -328,8 +328,7 @@ impl DocumentStyleSet {
             return false;
         }
         if let StylesheetSlotSource::External { resource_base, .. } = &mut slot.source {
-            *resource_base = (!response.final_url.is_empty())
-                .then(|| Box::new(BrowserUrl::parse(&response.final_url)));
+            *resource_base = response.response_url().cloned().map(Box::new);
         }
         slot.state = StylesheetSlotState::Loaded(parse_stylesheet_with_options(
             css_text,
@@ -557,13 +556,18 @@ fn resolve_url(base_url: Option<&BrowserUrl>, href: &str) -> Option<BrowserUrl> 
 }
 
 #[cfg(test)]
-fn test_response() -> core_types::NetworkResponseInfo {
-    core_types::NetworkResponseInfo {
-        requested_url: "https://example.com/a.css".into(),
-        final_url: "https://example.com/a.css".into(),
-        status_code: Some(200),
-        content_type: Some("text/css".into()),
-    }
+fn test_response() -> net::NetworkResponseInfo {
+    let original = BrowserUrl::parse("https://example.com/a.css").unwrap().url;
+    let mut headers = net::HttpHeaders::new();
+    headers.append("content-type", b"text/css").unwrap();
+    net::NetworkResponseInfo::http(
+        original,
+        "https://example.com/a.css".into(),
+        Some("https://example.com/a.css".into()),
+        net::HttpStatus::try_from(200).unwrap(),
+        headers,
+    )
+    .unwrap()
 }
 
 #[cfg(test)]

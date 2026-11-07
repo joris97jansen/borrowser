@@ -2,7 +2,7 @@
 //! supplied CSS traverses the existing response protocol and CSS runtime.
 use super::{AddressingInput, base_result, input::*, observations::*};
 use crate::{
-    execute::{begin_document, publish_document},
+    execute::{begin_document, publish_document, supplied_response},
     model::HarnessError,
 };
 use browser::{
@@ -13,7 +13,7 @@ use browser::{
     },
 };
 use bus::{CoreCommand, CoreEvent};
-use core_types::{NetworkResponseInfo, RequestId, ResourceKind, StylesheetSlotId};
+use core_types::{RequestId, ResourceKind, StylesheetSlotId};
 use css::{
     resource_references::{CssReferenceDisposition, CssResourceContext, CssResourceRole},
     syntax::{DiagnosticKind, DiagnosticSeverity},
@@ -31,9 +31,10 @@ fn apply(tab: &mut Tab, event: CoreEvent) -> Result<(), HarnessError> {
     tab.on_core_event(event)
         .map_err(|e| error(format!("publication rejected: {e:?}")))
 }
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Issued {
     request: RequestId,
+    fetch: net::FetchRequest,
     slot: Option<StylesheetSlotId>,
 }
 struct OfflineDocumentDriver<'a> {
@@ -103,6 +104,7 @@ impl<'a> OfflineDocumentDriver<'a> {
         }
         self.seen[index] = Some(Issued {
             request: request_id,
+            fetch: *request,
             slot: stylesheet_slot_id,
         });
         self.order.push(index);
@@ -147,7 +149,9 @@ impl<'a> OfflineDocumentDriver<'a> {
             .iter()
             .map(|&index| {
                 let declared = &self.case.requests[index];
-                let actual = self.seen[index].ok_or_else(|| error("missing issued identity"))?;
+                let actual = self.seen[index]
+                    .as_ref()
+                    .ok_or_else(|| error("missing issued identity"))?;
                 let kind = match declared.kind {
                     RequestKind::Image => ResourceKind::Image,
                     RequestKind::Css => ResourceKind::Css,
@@ -205,17 +209,67 @@ pub(super) fn execute(
     runtime_parse::start_parse_runtime(parser_rx, events);
     let mut tab = Tab::new(1);
     tab.set_bus_sender(commands);
-    begin_document(&mut tab, &command_rx, &case.requested_url)?;
+    let request = begin_document(&mut tab, &command_rx, &case.requested_url)?;
     let mut driver = OfflineDocumentDriver::new(case);
+    let response = supplied_response(
+        &request,
+        ResourceKind::Html,
+        (!case.final_url.is_empty()).then(|| case.final_url.clone()),
+        "text/html; charset=utf-8",
+    )?;
+    // The historical empty fixture sentinel means absent provenance. AI3 no
+    // longer invents a selected URL from the issued URL: exercise production
+    // admission rejection instead of manufacturing a committed snapshot.
+    if case.final_url.is_empty() {
+        if !case.requests.is_empty() || case.same_document_url.is_some() {
+            return Err(error(
+                "rejected document cannot declare resources or traversal",
+            ));
+        }
+        let start = CoreEvent::NetworkStart {
+            tab_id: 1,
+            request_id: request.request_id(),
+            stylesheet_slot_id: None,
+            kind: ResourceKind::Html,
+            response: response.clone(),
+        };
+        apply(&mut tab, start)?;
+        if !matches!(command_rx.try_recv(), Ok(CoreCommand::CancelRequest { tab_id: 1, request_id }) if request_id == request.request_id())
+        {
+            return Err(error("missing provenance did not cancel document parsing"));
+        }
+        apply(
+            &mut tab,
+            CoreEvent::NetworkDone {
+                tab_id: 1,
+                request_id: request.request_id(),
+                stylesheet_slot_id: None,
+                kind: ResourceKind::Html,
+                response,
+                body: net::BodyProgress::try_new(ResourceKind::Html, 0)
+                    .map_err(|_| error("invalid empty body"))?,
+            },
+        )?;
+        if tab
+            .observe_document_addressing()
+            .map_err(|_| error("observation failed"))?
+            .is_some()
+            || command_rx.try_recv().is_ok()
+        {
+            return Err(error("rejected document was committed or reopened"));
+        }
+        return Ok(DocumentObservation {
+            requested_url: case.requested_url.clone(),
+            final_url: case.final_url.clone(),
+            snapshots: vec![],
+            retained_origin_same: Availability::Inapplicable,
+            requests: vec![],
+        });
+    }
     publish_document(
         &mut tab,
         input.asset(&case.html)?.as_bytes(),
-        NetworkResponseInfo {
-            requested_url: case.requested_url.clone(),
-            final_url: case.final_url.clone(),
-            status_code: Some(200),
-            content_type: Some("text/html; charset=utf-8".into()),
-        },
+        response,
         &event_rx,
         |tab| driver.forward_html(tab, &command_rx, &parser),
     )?;
@@ -227,17 +281,19 @@ pub(super) fn execute(
         let Some(response) = &declared.response else {
             continue;
         };
-        let issued = driver.seen[index].ok_or_else(|| error("missing issued stylesheet"))?;
+        let issued = driver.seen[index]
+            .clone()
+            .ok_or_else(|| error("missing issued stylesheet"))?;
         let slot = issued
             .slot
             .ok_or_else(|| error("CSS response has no issued slot"))?;
         let bytes = input.asset(&response.css)?.as_bytes();
-        let metadata = NetworkResponseInfo {
-            requested_url: declared.url.clone(),
-            final_url: response.final_url.clone(),
-            status_code: Some(200),
-            content_type: Some("text/css".into()),
-        };
+        let metadata = supplied_response(
+            &issued.fetch,
+            ResourceKind::Css,
+            (!response.final_url.is_empty()).then(|| response.final_url.clone()),
+            "text/css",
+        )?;
         apply(
             &mut tab,
             CoreEvent::NetworkStart {
@@ -267,7 +323,8 @@ pub(super) fn execute(
                 stylesheet_slot_id: Some(slot),
                 kind: ResourceKind::Css,
                 response: metadata,
-                bytes_received: bytes.len(),
+                body: net::BodyProgress::try_new(ResourceKind::Css, bytes.len())
+                    .map_err(|_| error("fixture stylesheet exceeds limit"))?,
             },
         )?;
         let (css, css_rx) = mpsc::channel();

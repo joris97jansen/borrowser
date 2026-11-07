@@ -369,3 +369,12 @@ Corrected candidate results at this checkpoint:
 All remaining CI stages were executed individually after the aggregate stopped;
 this does not convert either failed workspace aggregate or `make ci` into a pass.
 No supported-host native ownership or Windows execution qualification was added.
+
+## AI3 response handoff update
+
+[AI3](ai3-typed-fetch-response-status-headers-body.md) evolves the response side
+in `net` while preserving AI2 request admission, route validation, exact issued
+correlation, history timing and generation routing. HTTP error statuses no longer
+become image network errors. Shared ordered headers remain the single field
+representation. This later implementation does not retroactively qualify AI2's
+backend redirects, credentials, Windows behavior or earlier validation results.

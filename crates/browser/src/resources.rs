@@ -1,3 +1,5 @@
+use core_types::RequestId;
+use net::{BodyProgress, NetworkErrorKind, NetworkResponseInfo};
 use std::collections::HashMap;
 use std::sync::mpsc;
 
@@ -55,7 +57,9 @@ struct DecodeResult {
 }
 
 enum EntryState {
-    Loading,
+    Loading {
+        response: Option<NetworkResponseInfo>,
+    },
     Decoding,
     Ready {
         texture: TextureHandle,
@@ -68,6 +72,7 @@ enum EntryState {
 
 struct ImageEntry {
     url: String,
+    request_id: RequestId,
     state: EntryState,
     bytes: Vec<u8>,
 }
@@ -102,7 +107,12 @@ impl ResourceManager {
     /// Returns a stable `ImageId` and ensures the image is requested at most once.
     ///
     /// `start_fetch` should enqueue a `CoreCommand::FetchStream { kind: ResourceKind::Image, .. }`.
-    pub fn request_image<F>(&mut self, url: String, start_fetch: F) -> ImageId
+    pub fn request_image<F>(
+        &mut self,
+        request_id: RequestId,
+        url: String,
+        start_fetch: F,
+    ) -> ImageId
     where
         F: FnOnce() -> Result<(), &'static str>,
     {
@@ -116,7 +126,8 @@ impl ResourceManager {
             id,
             ImageEntry {
                 url: url.clone(),
-                state: EntryState::Loading,
+                request_id,
+                state: EntryState::Loading { response: None },
                 bytes: Vec::new(),
             },
         );
@@ -136,7 +147,7 @@ impl ResourceManager {
         };
 
         match &entry.state {
-            EntryState::Loading => ImageState::Loading { id },
+            EntryState::Loading { .. } => ImageState::Loading { id },
             EntryState::Decoding => ImageState::Decoding { id },
             EntryState::Ready { texture, size_px } => ImageState::Ready(ReadyImage {
                 id,
@@ -166,16 +177,64 @@ impl ResourceManager {
         }
     }
 
-    pub fn on_network_chunk(&mut self, url: &str, bytes: &[u8]) {
+    pub fn on_network_start(
+        &mut self,
+        request_id: RequestId,
+        response: NetworkResponseInfo,
+    ) -> bool {
+        let Some(id) = self.image_id_by_url.get(response.requested_url()).copied() else {
+            return false;
+        };
+        let entry = self.images.get_mut(&id).expect("registered image");
+        if entry.request_id != request_id
+            || !matches!(entry.state, EntryState::Loading { response: None })
+        {
+            return false;
+        }
+        let status = response.status();
+        let usable_url = match response.response_url() {
+            Some(Ok(parsed)) => {
+                if status.is_some() {
+                    matches!(parsed.url.scheme(), "http" | "https")
+                } else {
+                    parsed.url.scheme() == "file"
+                }
+            }
+            _ => false,
+        };
+        // HTTP error status does not invalidate image bytes. Range reconstruction
+        // and 304 cache merging are unsupported; null bodies cannot be images.
+        if !usable_url || status.is_some_and(|s| s.has_null_body() || s.code() == 206) {
+            entry.bytes.clear();
+            entry.state = EntryState::Error {
+                error: "image response has no supported complete representation".into(),
+            };
+            return true;
+        }
+        entry.state = EntryState::Loading {
+            response: Some(response),
+        };
+        false
+    }
+
+    pub fn on_network_chunk(&mut self, request_id: RequestId, url: &str, bytes: &[u8]) -> bool {
         let Some(id) = self.image_id_by_url.get(url).copied() else {
-            return;
+            return false;
         };
         let Some(entry) = self.images.get_mut(&id) else {
-            return;
+            return false;
         };
 
-        if !matches!(entry.state, EntryState::Loading) {
-            return;
+        if entry.request_id != request_id || !matches!(entry.state, EntryState::Loading { .. }) {
+            return false;
+        }
+
+        if matches!(entry.state, EntryState::Loading { response: None }) {
+            entry.bytes.clear();
+            entry.state = EntryState::Error {
+                error: "image bytes arrived before response admission".into(),
+            };
+            return true;
         }
 
         if entry.bytes.len().saturating_add(bytes.len()) > MAX_IMAGE_BYTES {
@@ -183,22 +242,46 @@ impl ResourceManager {
                 error: format!("image too large (>{} bytes)", MAX_IMAGE_BYTES),
             };
             entry.bytes.clear();
-            return;
+            return true;
         }
 
         entry.bytes.extend_from_slice(bytes);
+        false
     }
 
-    pub fn on_network_done(&mut self, url: &str, repaint: Option<RepaintHandle>) {
+    pub fn on_network_done(
+        &mut self,
+        request_id: RequestId,
+        response: NetworkResponseInfo,
+        body: BodyProgress,
+        repaint: Option<RepaintHandle>,
+    ) -> bool {
+        let url = response.requested_url();
         let Some(id) = self.image_id_by_url.get(url).copied() else {
-            return;
+            return false;
         };
         let Some(entry) = self.images.get_mut(&id) else {
-            return;
+            return false;
         };
 
-        if !matches!(entry.state, EntryState::Loading) {
-            return;
+        if entry.request_id != request_id || !matches!(entry.state, EntryState::Loading { .. }) {
+            return false;
+        }
+
+        let admitted = match &entry.state {
+            EntryState::Loading { response } => response.as_ref(),
+            _ => None,
+        };
+        if admitted != Some(&response)
+            || !body.matches_route(core_types::ResourceKind::Image)
+            || body.delivered_bytes() != entry.bytes.len()
+            || entry.bytes.is_empty()
+        {
+            entry.bytes.clear();
+            entry.state = EntryState::Error {
+                error: "image completion does not match admitted response and bytes".into(),
+            };
+            return true;
         }
 
         let bytes = std::mem::take(&mut entry.bytes);
@@ -213,23 +296,33 @@ impl ResourceManager {
                 r.request_now();
             }
         });
+        false
     }
 
-    pub fn on_network_error(&mut self, url: &str, error: String) {
-        if error == "cancelled" {
-            self.forget_image(url);
-            return;
-        }
-
+    pub fn on_network_error(
+        &mut self,
+        request_id: RequestId,
+        url: &str,
+        kind: NetworkErrorKind,
+        error: String,
+    ) -> bool {
         let Some(id) = self.image_id_by_url.get(url).copied() else {
-            return;
+            return false;
         };
-        let Some(entry) = self.images.get_mut(&id) else {
-            return;
+        let Some(entry) = self.images.get(&id) else {
+            return false;
         };
-
+        if entry.request_id != request_id || !matches!(entry.state, EntryState::Loading { .. }) {
+            return false;
+        }
+        if kind == NetworkErrorKind::Cancelled {
+            self.forget_image(url);
+            return true;
+        }
+        let entry = self.images.get_mut(&id).expect("registered image");
         entry.state = EntryState::Error { error };
         entry.bytes.clear();
+        true
     }
 
     /// Drains completed decode jobs and uploads textures via egui.
@@ -354,6 +447,8 @@ fn strip_surrounding_html_ascii_whitespace(value: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::{EntryState, ImageState, ResourceManager, strip_surrounding_html_ascii_whitespace};
+    use addressing::BrowserUrl;
+    use net::{BodyProgress, NetworkErrorKind, NetworkResponseInfo};
     use tools::common::MAX_IMAGE_BYTES;
 
     fn resolve_image_source(base: Option<&str>, source: &str) -> Option<String> {
@@ -361,6 +456,17 @@ mod tests {
             .and_then(|base| addressing::BrowserUrl::parse(base).ok())
             .map(|parsed| parsed.url);
         super::resolve_image_source(base.as_ref(), source).map(|url| url.as_str().to_owned())
+    }
+
+    fn image_response(url: &str) -> NetworkResponseInfo {
+        NetworkResponseInfo::http(
+            BrowserUrl::parse(url).unwrap().url,
+            url.into(),
+            Some(url.into()),
+            net::HttpStatus::try_from(200).unwrap(),
+            net::HttpHeaders::new(),
+        )
+        .unwrap()
     }
 
     #[test]
@@ -477,15 +583,18 @@ mod tests {
     fn resource_limit_error_discards_buffered_image_bytes_and_blocks_decode() {
         let mut resources = ResourceManager::new();
         let url = "https://example.com/large.png".to_string();
-        let image_id = resources.request_image(url.clone(), || Ok(()));
+        let image_id = resources.request_image(1, url.clone(), || Ok(()));
+        resources.on_network_start(1, image_response(&url));
 
-        resources.on_network_chunk(&url, &[1, 2, 3, 4]);
+        resources.on_network_chunk(1, &url, &[1, 2, 3, 4]);
         let entry = resources.images.get(&image_id).expect("image entry");
         assert_eq!(entry.bytes.len(), 4);
-        assert!(matches!(entry.state, EntryState::Loading));
+        assert!(matches!(entry.state, EntryState::Loading { .. }));
 
         resources.on_network_error(
+            1,
             &url,
+            NetworkErrorKind::ResourceLimit,
             format!(
                 "image response exceeded byte limit of {} bytes",
                 MAX_IMAGE_BYTES
@@ -502,7 +611,12 @@ mod tests {
             ImageState::Error { ref error, .. } if error.contains("exceeded byte limit")
         ));
 
-        resources.on_network_done(&url, None);
+        resources.on_network_done(
+            1,
+            image_response(&url),
+            BodyProgress::try_new(core_types::ResourceKind::Image, 4).unwrap(),
+            None,
+        );
         assert!(matches!(
             resources.image_state(image_id),
             ImageState::Error { ref error, .. } if error.contains("exceeded byte limit")
@@ -513,10 +627,11 @@ mod tests {
     fn on_network_chunk_over_local_limit_transitions_to_error_and_clears_buffer() {
         let mut resources = ResourceManager::new();
         let url = "https://example.com/too-large.png".to_string();
-        let image_id = resources.request_image(url.clone(), || Ok(()));
+        let image_id = resources.request_image(1, url.clone(), || Ok(()));
+        resources.on_network_start(1, image_response(&url));
 
-        resources.on_network_chunk(&url, &vec![0_u8; MAX_IMAGE_BYTES]);
-        resources.on_network_chunk(&url, &[1]);
+        resources.on_network_chunk(1, &url, &vec![0_u8; MAX_IMAGE_BYTES]);
+        resources.on_network_chunk(1, &url, &[1]);
 
         let entry = resources.images.get(&image_id).expect("image entry");
         assert!(

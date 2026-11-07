@@ -1,8 +1,10 @@
 //! Exercise the public typed Fetch handoff, not an independent decoder.
 #![cfg(unix)]
 
+use net::NetworkErrorKind;
+
 use addressing::{BrowserUrl, ResourceAddress, ResourceKind as Purpose};
-use core_types::{NetworkErrorKind, ResourceKind as Route};
+use core_types::ResourceKind as Route;
 use net::{FetchRequest, HttpHeaders, NetEvent, RequestMethod};
 use std::{
     path::PathBuf,
@@ -98,10 +100,10 @@ fn typed_local_file_execution_distinguishes_filenames_and_preserves_provenance()
                         response,
                     } => {
                         assert!(accepted.is_none());
-                        assert_eq!(response.requested_url, issued);
-                        assert_eq!(response.final_url, issued);
-                        assert_eq!(response.status_code, None);
-                        assert_eq!(response.content_type.as_deref(), Some("text/html"));
+                        assert_eq!(response.requested_url(), issued);
+                        assert_eq!(response.reported_response_url().unwrap(), issued);
+                        assert_eq!(response.status_code(), None);
+                        assert_eq!(response.legacy_content_type(), Some("text/html"));
                         accepted = Some(response);
                     }
                     NetEvent::Chunk {
@@ -116,10 +118,11 @@ fn typed_local_file_execution_distinguishes_filenames_and_preserves_provenance()
                     NetEvent::Done {
                         request_id: 41,
                         response,
-                        bytes_received,
+                        body: progress,
                     } => {
                         assert_eq!(accepted.as_ref(), Some(&response));
-                        assert_eq!(bytes_received, expected.len());
+                        assert_eq!(progress.delivered_bytes(), expected.len());
+                        assert!(progress.matches_route(route));
                         done = true;
                     }
                     _ => panic!("unexpected synthetic file event"),
@@ -135,7 +138,7 @@ fn typed_local_file_execution_distinguishes_filenames_and_preserves_provenance()
         Route::Html,
     );
     assert!(matches!(&events[0], NetEvent::Start { response, .. }
-        if response.requested_url == format!("{base}/My%20Page.html")));
+        if response.requested_url() == format!("{base}/My%20Page.html")));
     let body = events
         .iter()
         .filter_map(|event| match event {
@@ -164,7 +167,8 @@ fn local_file_conversion_failure_is_terminal_redacted_and_has_no_literal_fallbac
             request_id: 41,
             url,
             error_kind,
-            status_code,
+            response,
+            body,
             error,
         } = &events[0]
         else {
@@ -172,7 +176,8 @@ fn local_file_conversion_failure_is_terminal_redacted_and_has_no_literal_fallbac
         };
         assert_eq!(url, &BrowserUrl::parse(&input).unwrap().url.as_str());
         assert_eq!(*error_kind, NetworkErrorKind::LocalFile);
-        assert_eq!(*status_code, None);
+        assert!(response.is_none());
+        assert!(body.is_none());
         assert_eq!(error, "unsupported local file URL");
     }
     std::fs::remove_file(path).unwrap();

@@ -12,12 +12,7 @@ fn published() -> (Tab, HtmlParseCompletion) {
         request_id: tab.nav_gen,
         stylesheet_slot_id: None,
         kind: core_types::ResourceKind::Html,
-        response: core_types::NetworkResponseInfo {
-            requested_url: tab.url.clone(),
-            final_url: tab.url.clone(),
-            status_code: Some(200),
-            content_type: None,
-        },
+        response: super::support::response_facts(tab.url.clone(), tab.url.clone(), Some(200), None),
     })
     .unwrap();
     let parsed = html::parse_document(

@@ -1702,16 +1702,21 @@ fn stylesheet_update_discards_retained_style_artifacts() {
     drop(initial);
 
     let slot = page.register_css("https://example.com/style.css");
-    let invalidation = page.apply_css_block(
-        slot,
-        "p { color: red; }",
-        &core_types::NetworkResponseInfo {
-            requested_url: "https://example.com/style.css".into(),
-            final_url: "https://example.com/style.css".into(),
-            status_code: Some(200),
-            content_type: Some("text/css".into()),
-        },
-    );
+    let invalidation = page.apply_css_block(slot, "p { color: red; }", &{
+        let url = addressing::BrowserUrl::parse("https://example.com/style.css")
+            .unwrap()
+            .url;
+        let mut headers = net::HttpHeaders::new();
+        headers.append("content-type", b"text/css").unwrap();
+        net::NetworkResponseInfo::http(
+            url,
+            "https://example.com/style.css".into(),
+            Some("https://example.com/style.css".into()),
+            net::HttpStatus::try_from(200).unwrap(),
+            headers,
+        )
+        .unwrap()
+    });
     assert!(invalidation.is_some());
 
     let discarded = page.render_pipeline_debug_snapshot();

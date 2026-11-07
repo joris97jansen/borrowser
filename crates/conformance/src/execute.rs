@@ -1,9 +1,10 @@
+use net::NetworkResponseInfo;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
 use browser::{Tab, tab::PageFrameStatus};
 use bus::{CoreCommand, CoreEvent, HtmlParseFailure};
-use core_types::{NetworkResponseInfo, ResourceKind};
+use core_types::ResourceKind;
 use egui::{Color32, FullOutput, RawInput, Rect, Shape, pos2, vec2};
 
 use crate::environment::{CONTENT_TYPE, HEIGHT, URL, WIDTH};
@@ -83,7 +84,7 @@ pub(crate) fn begin_document(
     tab: &mut Tab,
     command_rx: &Receiver<CoreCommand>,
     requested_url: &str,
-) -> Result<(), HarnessError> {
+) -> Result<net::FetchRequest, HarnessError> {
     tab.navigate_to_new(requested_url.into());
     let request_id = tab.nav_gen;
     match command_rx.try_recv() {
@@ -93,15 +94,15 @@ pub(crate) fn begin_document(
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
         }) if request.request_id() == request_id
-            && request.original_url().as_str() == requested_url => {}
-        _ => {
-            return Err(HarnessError::new(
-                "execution.navigation",
-                "navigation did not request the fixture document",
-            ));
+            && request.original_url().as_str() == requested_url =>
+        {
+            Ok(*request)
         }
+        _ => Err(HarnessError::new(
+            "execution.navigation",
+            "navigation did not request the fixture document",
+        )),
     }
-    Ok(())
 }
 
 pub(crate) fn publish_document(
@@ -132,7 +133,7 @@ pub(crate) fn publish_document(
                 request_id,
                 stylesheet_slot_id: None,
                 kind: ResourceKind::Html,
-                url: response.requested_url.clone(),
+                url: response.requested_url().to_owned(),
                 bytes: bytes.to_vec(),
             },
         )?;
@@ -146,7 +147,9 @@ pub(crate) fn publish_document(
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
             response,
-            bytes_received: html.len(),
+            body: net::BodyProgress::try_new(ResourceKind::Html, html.len()).map_err(|_| {
+                HarnessError::new("execution.body-limit", "fixture document exceeds limit")
+            })?,
         },
     )?;
     forward(tab)?;
@@ -211,14 +214,14 @@ pub(crate) fn execute_fixture(
     runtime_parse::start_parse_runtime(parser_rx, events);
     let mut tab = Tab::new(1);
     tab.set_bus_sender(commands);
-    begin_document(&mut tab, &command_rx, URL)?;
+    let fetch_request = begin_document(&mut tab, &command_rx, URL)?;
     let request_id = tab.nav_gen;
-    let response = NetworkResponseInfo {
-        requested_url: URL.into(),
-        final_url: URL.into(),
-        status_code: Some(200),
-        content_type: Some(CONTENT_TYPE.into()),
-    };
+    let response = supplied_response(
+        &fetch_request,
+        ResourceKind::Html,
+        Some(URL.into()),
+        CONTENT_TYPE,
+    )?;
     publish_document(&mut tab, html, response, &event_rx, |_| {
         forward_commands(&command_rx, &parser)
     })?;
@@ -379,6 +382,43 @@ pub(crate) fn capture_canvas_color(output: &FullOutput) -> Result<CanvasColor, H
             "no eligible opaque viewport canvas rectangle",
         )
     })
+}
+
+/// Existing bounded fixture transport supplies a successful local or HTTP response
+/// for an actual Browser-issued request. This is not a backend abstraction.
+pub(crate) fn supplied_response(
+    request: &net::FetchRequest,
+    route: ResourceKind,
+    reported: Option<String>,
+    content_type: &str,
+) -> Result<NetworkResponseInfo, HarnessError> {
+    request
+        .validate_route(route)
+        .map_err(|_| HarnessError::new("execution.route", "fixture response route mismatch"))?;
+    let issued = request
+        .legacy_issued_url(route)
+        .map_err(|_| HarnessError::new("execution.route", "fixture response route mismatch"))?;
+    let response = if request.original_url().scheme() == "file" {
+        NetworkResponseInfo::local_file(
+            request.original_url().clone(),
+            issued,
+            reported,
+            Some(content_type.into()),
+        )
+    } else {
+        let mut headers = net::HttpHeaders::new();
+        headers
+            .append("content-type", content_type.as_bytes())
+            .map_err(|_| HarnessError::new("execution.headers", "invalid fixture content type"))?;
+        NetworkResponseInfo::http(
+            request.original_url().clone(),
+            issued,
+            reported,
+            net::HttpStatus::try_from(200).expect("fixed HTTP status"),
+            headers,
+        )
+    };
+    response.map_err(|_| HarnessError::new("execution.response", "invalid supplied response"))
 }
 
 #[cfg(test)]

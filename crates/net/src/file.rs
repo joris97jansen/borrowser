@@ -2,7 +2,8 @@ use std::fs::File;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use core_types::{NetworkErrorKind, NetworkResponseInfo, ResourceKind};
+use crate::{NetworkErrorKind, NetworkResponseInfo};
+use core_types::ResourceKind;
 
 use crate::{
     FetchRequest, NetEvent, content_type::guess_content_type_from_path, stream::stream_reader,
@@ -23,18 +24,20 @@ pub(crate) fn fetch_file_url(
                 request_id,
                 url: url.to_owned(),
                 error_kind: NetworkErrorKind::LocalFile,
-                status_code: None,
+                response: None,
+                body: None,
                 error: "unsupported local file URL".into(),
             });
             return;
         }
     };
-    let response = NetworkResponseInfo {
-        requested_url: url.to_string(),
-        final_url: url.to_string(),
-        status_code: None,
-        content_type: guess_content_type_from_path(&path),
-    };
+    let response = NetworkResponseInfo::local_file(
+        request.original_url().clone(),
+        url.to_owned(),
+        Some(url.to_owned()),
+        guess_content_type_from_path(&path),
+    )
+    .expect("validated file route and fixed local MIME");
 
     let mut file = match File::open(&path) {
         Ok(file) => file,
@@ -43,7 +46,8 @@ pub(crate) fn fetch_file_url(
                 request_id,
                 url: url.to_string(),
                 error_kind: NetworkErrorKind::LocalFile,
-                status_code: None,
+                response: None,
+                body: None,
                 error: "local file open failed".into(),
             });
             return;
@@ -55,24 +59,24 @@ pub(crate) fn fetch_file_url(
         response: response.clone(),
     });
 
-    let bytes_received =
-        match stream_reader(request_id, url, kind, cancel_token, callback, &mut file) {
-            Ok(total) => total,
-            Err(kind_and_error) => {
-                callback(NetEvent::Error {
-                    request_id,
-                    url: url.to_string(),
-                    error_kind: kind_and_error.0,
-                    status_code: None,
-                    error: kind_and_error.1,
-                });
-                return;
-            }
-        };
+    let body = match stream_reader(request_id, url, kind, cancel_token, callback, &mut file) {
+        Ok(body) => body,
+        Err(kind_and_error) => {
+            callback(NetEvent::Error {
+                request_id,
+                url: url.to_string(),
+                error_kind: kind_and_error.kind,
+                response: Some(response),
+                body: Some(kind_and_error.body),
+                error: kind_and_error.error,
+            });
+            return;
+        }
+    };
 
     callback(NetEvent::Done {
         request_id,
         response,
-        bytes_received,
+        body,
     });
 }

@@ -1,53 +1,41 @@
-use super::support::{HttpReply, TestHttpServer, collect_fetch, collect_fetch_error};
-use crate::{HttpClientPolicy, limits::should_stream_http_status};
-use core_types::{NetworkErrorKind, ResourceKind};
+use super::support::{HttpReply, TestHttpServer, collect_fetch};
+use crate::{HttpClientPolicy, HttpStatus};
+use core_types::ResourceKind;
 
 #[test]
-fn streams_error_documents_for_html_and_css() {
-    assert!(should_stream_http_status(ResourceKind::Html, 404));
-    assert!(should_stream_http_status(ResourceKind::Css, 500));
+fn ai3_http_errors_stream_for_every_resource_route() {
+    for kind in [ResourceKind::Html, ResourceKind::Css, ResourceKind::Image] {
+        for status in [404, 500] {
+            let server = TestHttpServer::spawn(|req| {
+                let status = if req.path.contains("500") {
+                    "500 Internal Server Error"
+                } else {
+                    "404 Not Found"
+                };
+                HttpReply::response(
+                    status,
+                    vec![("Content-Type", "text/plain".into())],
+                    b"error body".to_vec(),
+                )
+            });
+            let result = collect_fetch(
+                server.url(&format!("/{status}")),
+                kind,
+                HttpClientPolicy::default(),
+            );
+            assert_eq!(result.start.response.status_code(), Some(status));
+            assert_eq!(result.body, b"error body");
+            assert_eq!(result.done.bytes_received, result.body.len());
+        }
+    }
 }
 
 #[test]
-fn does_not_stream_error_documents_for_images() {
-    assert!(!should_stream_http_status(ResourceKind::Image, 404));
-}
-
-#[test]
-fn does_not_treat_non_error_status_as_special() {
-    assert!(!should_stream_http_status(ResourceKind::Html, 200));
-    assert!(!should_stream_http_status(ResourceKind::Css, 302));
-}
-
-#[test]
-fn streams_html_404_body_but_classifies_image_404_as_http_error() {
-    let server = TestHttpServer::spawn(|req| match req.path.as_str() {
-        "/missing.html" => HttpReply::response(
-            "404 Not Found",
-            vec![("Content-Type", "text/html".to_string())],
-            b"<h1>missing</h1>".to_vec(),
-        ),
-        "/missing.png" => HttpReply::response(
-            "404 Not Found",
-            vec![("Content-Type", "image/png".to_string())],
-            b"not an image".to_vec(),
-        ),
-        _ => HttpReply::response("500 Internal Server Error", Vec::new(), Vec::new()),
-    });
-
-    let html = collect_fetch(
-        server.url("/missing.html"),
-        ResourceKind::Html,
-        HttpClientPolicy::default(),
-    );
-    assert_eq!(html.start.response.status_code, Some(404));
-    assert_eq!(html.body, b"<h1>missing</h1>");
-
-    let image_err = collect_fetch_error(
-        server.url("/missing.png"),
-        ResourceKind::Image,
-        HttpClientPolicy::default(),
-    );
-    assert_eq!(image_err.error_kind, NetworkErrorKind::HttpStatus);
-    assert_eq!(image_err.status_code, Some(404));
+fn ai3_status_classification_does_not_confuse_redirects_and_null_bodies() {
+    for code in [200, 302, 304, 404, 500] {
+        let status = HttpStatus::try_from(code).unwrap();
+        assert_eq!(status.is_http_error(), code >= 400);
+        assert_eq!(status.is_redirect(), code == 302);
+        assert_eq!(status.has_null_body(), code == 304);
+    }
 }

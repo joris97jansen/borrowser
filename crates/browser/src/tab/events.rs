@@ -40,9 +40,9 @@ impl Tab {
                 stylesheet_slot_id: None,
                 kind: ResourceKind::Html,
                 response,
-                bytes_received,
+                body,
             } if self.is_current(tab_id, request_id) => {
-                self.on_html_network_done(response, bytes_received, request_id);
+                self.on_html_network_done(response, body, request_id);
             }
 
             CoreEvent::NetworkError {
@@ -52,10 +52,18 @@ impl Tab {
                 kind: ResourceKind::Html,
                 url,
                 error_kind,
-                status_code,
+                response,
+                body: _,
                 error,
             } if self.is_current(tab_id, request_id) => {
-                self.on_html_network_error(url, error_kind, status_code, error);
+                self.on_html_network_error(
+                    url,
+                    error_kind,
+                    response
+                        .as_ref()
+                        .and_then(net::NetworkResponseInfo::status_code),
+                    error,
+                );
             }
 
             CoreEvent::DomPatchUpdate {
@@ -116,15 +124,24 @@ impl Tab {
             } if self.is_current(tab_id, request_id) => {
                 self.on_css_network_chunk(stylesheet_slot_id, url, bytes, request_id);
             }
+            CoreEvent::NetworkStart {
+                tab_id,
+                request_id,
+                stylesheet_slot_id: None,
+                kind: ResourceKind::Image,
+                response,
+            } if self.is_current(tab_id, request_id) => {
+                self.on_image_network_start(request_id, response);
+            }
             CoreEvent::NetworkChunk {
                 tab_id,
                 request_id,
-                stylesheet_slot_id: _,
+                stylesheet_slot_id: None,
                 kind: ResourceKind::Image,
                 url,
                 bytes,
             } if self.is_current(tab_id, request_id) => {
-                self.on_image_network_chunk(url, bytes);
+                self.on_image_network_chunk(request_id, url, bytes);
             }
             CoreEvent::NetworkDone {
                 tab_id,
@@ -132,19 +149,20 @@ impl Tab {
                 stylesheet_slot_id: Some(stylesheet_slot_id),
                 kind: ResourceKind::Css,
                 response,
-                bytes_received,
+                body,
             } if self.is_current(tab_id, request_id) => {
-                self.on_css_network_done(stylesheet_slot_id, response, bytes_received, request_id);
+                self.on_css_network_done(stylesheet_slot_id, response, body, request_id);
             }
             CoreEvent::NetworkDone {
                 tab_id,
                 request_id,
-                stylesheet_slot_id: _,
+                stylesheet_slot_id: None,
                 kind: ResourceKind::Image,
                 response,
+                body,
                 ..
             } if self.is_current(tab_id, request_id) => {
-                self.on_image_network_done(response.requested_url);
+                self.on_image_network_done(request_id, response, body);
             }
             CoreEvent::NetworkError {
                 tab_id,
@@ -153,14 +171,17 @@ impl Tab {
                 kind: ResourceKind::Css,
                 url,
                 error_kind,
-                status_code,
+                response,
+                body: _,
                 error,
             } if self.is_current(tab_id, request_id) => {
                 self.on_css_network_error(
                     stylesheet_slot_id,
                     url,
                     error_kind,
-                    status_code,
+                    response
+                        .as_ref()
+                        .and_then(net::NetworkResponseInfo::status_code),
                     error,
                     request_id,
                 );
@@ -168,14 +189,15 @@ impl Tab {
             CoreEvent::NetworkError {
                 tab_id,
                 request_id,
-                stylesheet_slot_id: _,
+                stylesheet_slot_id: None,
                 kind: ResourceKind::Image,
                 url,
-                error_kind: _,
-                status_code: _,
+                error_kind,
+                response: _,
+                body: _,
                 error,
             } if self.is_current(tab_id, request_id) => {
-                self.on_image_network_error(url, error);
+                self.on_image_network_error(request_id, url, error_kind, error);
             }
 
             CoreEvent::CssDecodedBlock {

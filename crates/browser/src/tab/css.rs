@@ -4,7 +4,8 @@ use super::state::{
 };
 use super::status::format_network_error;
 use bus::CoreCommand;
-use core_types::{NetworkErrorKind, NetworkResponseInfo, RequestId, StylesheetSlotId};
+use core_types::{RequestId, StylesheetSlotId};
+use net::{BodyProgress, NetworkErrorKind, NetworkResponseInfo};
 
 impl Tab {
     fn accepts_css_network_event(&self, slot: StylesheetSlotId, request: RequestId) -> bool {
@@ -77,14 +78,14 @@ impl Tab {
         if !matches!(load.phase, StylesheetLoadPhase::AwaitingStart) {
             return;
         }
-        if response.requested_url != load.issued_key.as_str() {
+        if response.requested_url() != load.issued_key.as_str() {
             self.fail_css_request(
                 slot,
                 "Stylesheet response does not match the issued request",
             );
             return;
         }
-        let accept_body = should_accept_css_response(response.content_type.as_deref());
+        let accept_body = should_accept_css_response(response.legacy_content_type());
         self.stylesheet_loads
             .get_mut(&slot)
             .expect("issued request")
@@ -145,7 +146,7 @@ impl Tab {
         &mut self,
         slot: StylesheetSlotId,
         response: NetworkResponseInfo,
-        _bytes_received: usize,
+        body: BodyProgress,
         request: RequestId,
     ) {
         if !self.accepts_css_network_event(slot, request) {
@@ -172,6 +173,13 @@ impl Tab {
             self.fail_css_request(
                 slot,
                 "Stylesheet completion does not match the admitted response",
+            );
+            return;
+        }
+        if !body.matches_route(core_types::ResourceKind::Css) {
+            self.fail_css_request(
+                slot,
+                "Stylesheet completion body route does not match request",
             );
             return;
         }
@@ -322,7 +330,7 @@ impl Tab {
             self.last_status = Some(if !accept_body {
                 format!(
                     "Stylesheet ignored • unexpected content type {} ({} remaining)",
-                    response.content_type.unwrap_or_else(|| "unknown".into()),
+                    response.legacy_content_type().unwrap_or("unknown"),
                     self.page.pending_count()
                 )
             } else if self.page.pending_count() > 0 {
