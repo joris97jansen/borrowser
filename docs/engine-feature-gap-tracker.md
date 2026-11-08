@@ -657,6 +657,84 @@ Chromium ownership wrappers; unmodified master and candidate reproduce the same
 and independent CI checks passed. Hosted qualification remains pending; see the
 contract's validation record for exact scope and evidence.
 
+AI5 implementation candidate (#1125), 2026-11-08:
+
+The [AI5 acquisition/body-integrity contract](platform/ai5-real-http-response-acquisition-and-bounded-body-integrity.md)
+records the accepted A–F implementation and Step G provenance/CI reconciliation
+on the unmerged branch based on master `6c2789f3b90041fcc5dec2c53d5d2b1ee1c55194`.
+This supersedes the legacy execution limitations in the dated AI1–AI4 entries
+above; it does not imply those milestones originally supplied AI5 behavior.
+
+- Real and fake acquisition retain the existing typed contracts and shared
+  lifecycle. Backend redirects are disabled. 301/302/303/307/308 with any Location
+  fail before Start, with response context and zero progress; no credential-bearing
+  target or hidden replay is executed. Full traversal remains AI6 #1126.
+- Initial fields/framing are validated before reader/decoder construction, with
+  independent wire and typed-head budgets, checked u64 lengths and an explicit
+  transfer-coding subset. Fixed and chunked completion, bounded extensions/trailers,
+  payload progress and 205 zero-content verification replace earlier unqualified
+  null-body/EOF behavior. Close-delimited EOF cannot prove application completeness.
+- Shared identity/gzip/x-gzip processing preserves actual Content-Encoding and
+  Content-Length occurrences. Encoded caps are 20/4/40 MiB and decoded caps remain
+  10/2/20 MiB for HTML/CSS/images. Corruption, truncation and limits fail with
+  immutable metadata/progress; no Done follows failure.
+- HTTP/HTTPS persistence has positive and isolation tests, fail-closed observable
+  transport checks, public rustls state inspection, restored timeouts, proxy-aware
+  pool identity and atomic eviction. Private TLS encrypted buffers need not be
+  empty. Momentary eligibility cannot guarantee arbitrary future peer behavior.
+- Controlled diagnostics replace raw URL/prelude/header/decoder output. Concrete
+  causes survive until projection; failed stderr writes do not prevent settlement.
+  Real runtime tests qualify partial document/CSS/image failures, independent slots,
+  navigation image retirement and controlled image-decoder status.
+- The actual release panic=abort probe qualifies 36 HTTP/HTTPS workers, intentional
+  SIGABRT and six finite supervisor controls. Local macOS evidence is distinct
+  from hosted Linux execution. Windows/macOS hosted jobs are not enabled.
+- Cumulative provenance retains the original archive/VCS/54-file manifest, four
+  omissions and historical AI3 patch. The ten-file current patch is reverse/forward
+  reconstructed and final hashes/locked features are checked. The Rust CI job
+  retains existing gates and additionally runs the release probe and qualified
+  example lint. Wiring is implemented; a hosted pass is not claimed.
+
+Accepted local A–F baseline: 230 net and 394 Browser/runtime tests, with all 36
+release workers and abort/supervisor controls passing. Step G local reruns preserve
+those totals; 32 provenance tests and all 64 CI-tool tests pass, source/archive
+reconstruction and resolved features pass, and the release Make target passes.
+Formatting, affected Clippy and YAML wiring checks pass locally; actionlint and
+hosted execution are not qualified. This is not complete workspace CI. See the
+[Step G evidence matrix](platform/ai5-real-http-response-acquisition-and-bounded-body-integrity.md#step-g-local-qualification-record-2026-11-08).
+At that initial Step G checkpoint, five private vendor pool tests remained
+uncompiled/unexecuted because the isolated offline lane could not resolve
+hootbin. Their existence was not counted as qualification. Step G review,
+Step H, merge, issue closure and milestone completion remain separate.
+No new issue represents an implementation phase.
+AI7 #1127 retains broader failures/cancellation/timeouts; AI8 #1128 loader metadata
+and AI9 #1129 AG networking integration remain pending. AJ/AK consumer semantics,
+AT cache/304 merging and later platform/security features remain with their owners.
+
+AI5 Step H local qualification, 2026-11-08 (unmerged candidate; final review pending):
+
+- The accepted A–G production/configuration/test bytes remain unchanged. Fresh
+  execution passes all 230 net and 394 Browser/runtime tests, all 36 release
+  workers, intentional abort and bounded supervisor controls.
+- The private vendor gap is resolved: isolated dependency preparation, followed
+  by locked offline compilation of the actual unchanged vendor `#[cfg(test)]`
+  sources, passes all ten pool tests, including the five new tests. This does
+  not claim execution of the full upstream suite.
+- The corrected Step G verifier passes 38 provenance tests and all 70 CI-tool
+  tests. Published-archive verification, source reconstruction and all-feature /
+  all-target dependency selection pass. Actionlint 1.7.7 now passes locally;
+  the initial Step G actionlint limitation is superseded.
+- Full `make ci` remains **failed** at native macOS Chromium ownership tests.
+  Both complete default/HTML5 lanes report 2,929 passed, nine failed and 18
+  inherited ignored tests. Clean unchanged master independently reproduces the
+  same nine failing native wrappers. Every other Make CI gate was executed
+  independently and passed, including builds, lint, fixtures and smoke checks.
+- No hosted Linux/Windows evidence, publication, merge or issue closure is
+  claimed. The [Step H evidence and closeout conditions](platform/ai5-real-http-response-acquisition-and-bounded-body-integrity.md#step-h-final-local-qualification-2026-11-08)
+  distinguish the baseline-red local aggregate from readiness for final review
+  and separately authorized draft publication. Hosted checks and reconciliation
+  of their exact committed tree remain mandatory before merge/closure.
+
 - AH1 completes the [URL, origin, and resource-addressing architecture contract](platform/ah1-url-origin-resource-addressing-contract.md)
   only. It establishes logical addressing ownership, HTML/CSS reference
   production, Browser document/base coordination, future networking/cache/policy
@@ -726,11 +804,12 @@ contract's validation record for exact scope and evidence.
   determination implements the actual no-entry fallback only.
 - Navigation remains a Browser consumer. Other URL helpers and
   HTTP/HTTPS/file loading remain documented migration points.
-- Existing loader and diagnostics gaps remain: the file loader treats query or
-  fragment text as part of its local path, a cancelled in-flight image may remain
-  `Loading` and prevent a later same-URL request, and legacy network error/status
-  output can contain raw URLs including credentials. AH3's redacted structural
-  snapshots do not cover those outputs. AH4 does not resolve these gaps.
+- Historical AH4 loader/diagnostic observation: the old file loader included
+  query/fragment text in its local path, cancelled images could remain Loading,
+  and legacy diagnostics could expose raw URLs/credentials. AH4 did not resolve
+  these gaps. AI2's native conversion and the AI5 candidate's image retirement
+  and controlled diagnostics supersede those implementation observations; see
+  their dated entries above. Full downstream cancellation remains AI7/AJ/AK work.
 - AH6 implements [typed resource addresses and retrieval identity](platform/ah6-resource-addresses-and-identity-keys.md):
   complete normalized references, known purpose, operation-aware capabilities,
   fragmentless equality/hash and content-redacted diagnostics. Stylesheet slots
@@ -1005,12 +1084,13 @@ Missing or incomplete:
 - full security policy enforcement, including CORS, CSP, mixed-content and
   filesystem access policies; AH5 supplies origin identity and same-origin
   classification, not authorization
-- complete WHATWG Fetch/redirect/response handling, despite existing
-  HTTP/HTTPS/file transport, configured redirects and response metadata
+- complete WHATWG Fetch/redirect/response handling, despite AI2–AI5 typed
+  HTTP/HTTPS/file requests/responses; AI5 rejects traversal pending AI6
 - MIME sniffing and complete response-type processing
 - cookies, HTTP cache, storage and service workers
-- end-to-end typed transport integration; ResourceAddress/ResourceIdentityKey
-  availability does not change existing string bus/network APIs
+- complete networking integration beyond the AI2–AI5 typed transport subset;
+  redirect orchestration, aggregate loader metadata and AG networking fixtures
+  remain AI6/AI8/AI9, rather than legacy string-request migration
 - complete scheme/creation-context support and JavaScript-facing URL APIs
 - broad URL/origin/addressing WPT integration beyond pinned representative cases
 - resource loading for fonts, media, and broader image formats

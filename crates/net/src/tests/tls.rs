@@ -13,11 +13,12 @@ fn https_rejects_untrusted_cert_by_default() {
     );
 
     assert_eq!(error.error_kind, NetworkErrorKind::Transport);
-    assert!(
-        error.error.contains("certificate") || error.error.contains("UnknownIssuer"),
-        "expected certificate transport failure, got: {}",
-        error.error
-    );
+    // Backend exception text is no longer a public diagnostic contract. The
+    // dedicated AI5 test inspects the retained concrete certificate cause.
+    assert_eq!(error.error, "HTTP acquisition failed");
+    assert!(error.response.is_none());
+    assert!(error.body.is_none());
+    server.finish();
 }
 
 #[test]
@@ -37,4 +38,5 @@ fn https_accepts_explicit_test_root() {
     let result = collect_fetch(server.url("/"), ResourceKind::Html, policy);
     assert_eq!(result.start.response.status_code(), Some(200));
     assert_eq!(result.body, b"<p>secure</p>");
+    server.finish();
 }

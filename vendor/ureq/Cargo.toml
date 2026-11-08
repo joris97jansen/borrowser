@@ -157,7 +157,6 @@ version = "1"
 version = "0.23.19"
 features = [
     "ring",
-    "logging",
     "std",
     "tls12",
 ]

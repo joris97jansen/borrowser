@@ -69,7 +69,9 @@ fn ai2_backend_defaults_are_separate_from_fetch_fields_without_network_io() {
             _: ureq::MiddlewareNext<'_>,
         ) -> Result<ureq::Response, ureq::Error> {
             assert_eq!(r.all("accept"), ["*/*"]);
-            assert_eq!(r.all("accept-encoding"), ["gzip"]);
+            // AI5 disables ureq's automatic decoding/default header. The real
+            // acquisition backend now advertises shared gzip support itself.
+            assert!(!r.has("accept-encoding"));
             assert!(!r.has("user-agent")); // generated later by the wire serializer
             ureq::Response::new(200, "OK", "")
         }

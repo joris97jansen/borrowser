@@ -127,28 +127,6 @@ impl Unit {
     pub fn all(&self, name: &str) -> Vec<&str> {
         header::get_all_headers(&self.headers, name)
     }
-
-    // Returns true if this request, with the provided body, is retryable.
-    pub(crate) fn is_retryable(&self, body: &SizedReader) -> bool {
-        // Per https://tools.ietf.org/html/rfc7231#section-8.1.3
-        // these methods are idempotent.
-        let idempotent = match self.method.as_str() {
-            "DELETE" | "GET" | "HEAD" | "OPTIONS" | "PUT" | "TRACE" => true,
-            _ => false,
-        };
-        // Unsized bodies aren't retryable because we can't rewind the reader.
-        // Sized bodies are retryable only if they are zero-length because of
-        // coincidences of the current implementation - the function responsible
-        // for retries doesn't have a way to replay a Payload.
-        let retryable_body = match body.size {
-            BodySize::Unknown => false,
-            BodySize::Known(0) => true,
-            BodySize::Known(_) => false,
-            BodySize::Empty => true,
-        };
-
-        idempotent && retryable_body
-    }
 }
 
 /// Perform a connection. Follows redirects.
@@ -159,7 +137,7 @@ pub(crate) fn connect(
 ) -> Result<Response, Error> {
     let mut history = vec![];
     let mut resp = loop {
-        let resp = connect_inner(&unit, use_pooled, body, &history)?;
+        let resp = connect_inner(&unit, use_pooled, body)?;
 
         // handle redirects
         if !(300..399).contains(&resp.status()) || unit.agent.config.redirects == 0 {
@@ -209,7 +187,7 @@ pub(crate) fn connect(
             &new_url,
         );
 
-        debug!("redirect {} {} -> {}", resp.status(), url, new_url);
+        debug!("redirect response status={}", resp.status());
         history.push(unit.url);
         body = Payload::Empty.into_read();
 
@@ -239,79 +217,36 @@ pub(crate) fn connect(
 }
 
 /// Perform a connection. Does not follow redirects.
-fn connect_inner(
-    unit: &Unit,
-    use_pooled: bool,
-    body: SizedReader,
-    history: &[Url],
-) -> Result<Response, Error> {
+fn connect_inner(unit: &Unit, use_pooled: bool, body: SizedReader) -> Result<Response, Error> {
     let host = unit
         .url
         .host_str()
         // This unwrap is ok because Request::parse_url() ensure there is always a host present.
         .unwrap();
-    let url = &unit.url;
-    let method = &unit.method;
     // open socket
     let (mut stream, is_recycled) = connect_socket(unit, host, use_pooled)?;
 
     if is_recycled {
-        debug!("sending request (reused connection) {} {}", method, url);
+        debug!("sending request on reused connection");
     } else {
-        debug!("sending request {} {}", method, url);
+        debug!("sending request on fresh connection");
     }
 
-    let send_result = send_prelude(unit, &mut stream);
-
-    if let Err(err) = send_result {
-        if is_recycled {
-            debug!("retrying request early {} {}: {}", method, url, err);
-            // we try open a new connection, this time there will be
-            // no connection in the pool. don't use it.
-            // NOTE: this recurses at most once because `use_pooled` is `false`.
-            return connect_inner(unit, false, body, history);
-        } else {
-            // not a pooled connection, propagate the error.
-            return Err(err.into());
-        }
+    if header::connection_close(&unit.headers)? {
+        stream.set_unpoolable();
     }
-    let retryable = unit.is_retryable(&body);
-
-    // send the body (which can be empty now depending on redirects)
+    // Once transmission begins, all failures belong to this attempt. A stale
+    // idle candidate may be discarded at checkout, never replayed after writes.
+    send_prelude(unit, &mut stream)?;
     body::send_body(body, unit.is_chunked, &mut stream)?;
-
-    // start reading the response to process cookies and redirects.
-    // TODO: this unit.clone() bothers me. At this stage, we're not
-    // going to use the unit (much) anymore, and it should be possible
-    // to have ownership of it and pass it into the Response.
-    let result = Response::do_from_stream(stream, unit.clone());
-
-    // https://tools.ietf.org/html/rfc7230#section-6.3.1
-    // When an inbound connection is closed prematurely, a client MAY
-    // open a new connection and automatically retransmit an aborted
-    // sequence of requests if all of those requests have idempotent
-    // methods.
-    //
-    // We choose to retry only requests that used a recycled connection
-    // from the ConnectionPool, since those are most likely to have
-    // reached a server-side timeout. Note that this means we may do
-    // up to N+1 total tries, where N is max_idle_connections_per_host.
-    let resp = match result {
-        Err(err) if err.connection_closed() && retryable && is_recycled => {
-            debug!("retrying request {} {}: {}", method, url, err);
-            let empty = Payload::Empty.into_read();
-            // NOTE: this recurses at most once because `use_pooled` is `false`.
-            return connect_inner(unit, false, empty, history);
-        }
-        Err(e) => return Err(e),
-        Ok(resp) => resp,
-    };
+    stream.flush()?;
+    let resp = Response::do_from_stream(stream, unit.clone())?;
 
     // squirrel away cookies
     #[cfg(feature = "cookies")]
     save_cookies(unit, &resp);
 
-    debug!("response {} to {} {}", resp.status(), method, url);
+    debug!("response status={}", resp.status());
 
     // release the response
     Ok(resp)
@@ -329,7 +264,7 @@ fn extract_cookies(agent: &Agent, url: &Url) -> Option<Header> {
         .filter(|c| {
             let is_ok = is_cookie_rfc_compliant(c);
             if !is_ok {
-                debug!("do not send non compliant cookie: {:?}", c);
+                debug!("outgoing cookie rejected");
             }
             is_ok
         })
@@ -358,12 +293,13 @@ fn connect_socket(unit: &Unit, hostname: &str, use_pooled: bool) -> Result<(Stre
         // The connection may have been closed by the server
         // due to idle timeout while it was sitting in the pool.
         // Loop until we find one that is still good or run out of connections.
-        while let Some(stream) = pool.try_get_connection(&unit.url, proxy.clone()) {
-            let server_closed = stream.server_closed()?;
-            if !server_closed {
+        while let Some(mut stream) = pool.try_get_connection(&unit.url, proxy.clone()) {
+            if matches!(stream.is_idle_for_reuse(), Ok(true))
+                && stream.prepare_for_request(unit).is_ok()
+            {
                 return Ok((stream, true));
             }
-            debug!("dropping stream from pool; closed by server: {:?}", stream);
+            debug!("discarding ineligible idle connection: {:?}", stream);
         }
     }
     let stream = match unit.url.scheme() {
@@ -372,7 +308,11 @@ fn connect_socket(unit: &Unit, hostname: &str, use_pooled: bool) -> Result<(Stre
         "test" => connect_test(unit),
         scheme => Err(ErrorKind::UnknownScheme.msg(format!("unknown scheme {}", scheme))),
     };
-    Ok((stream?, false))
+    let stream = stream?;
+    // TLS/proxy establishment may have consumed part of a request deadline.
+    // Both fresh and recycled sockets enter request I/O in the same mode.
+    stream.prepare_for_request(unit)?;
+    Ok((stream, false))
 }
 
 fn can_propagate_authorization_on_redirect(
@@ -477,7 +417,7 @@ fn send_prelude(unit: &Unit, stream: &mut Stream) -> io::Result<()> {
     // finish
     prelude.finish()?;
 
-    debug!("writing prelude: {}", prelude);
+    debug!("writing HTTP request head");
     // write all to the wire
     stream.write_all(prelude.as_slice())?;
 
@@ -566,10 +506,7 @@ fn save_cookies(unit: &Unit, resp: &Response) {
         return;
     }
     let cookies = headers.into_iter().flat_map(|header_value| {
-        debug!(
-            "received 'set-cookie: {}' from {} {}",
-            header_value, unit.method, unit.url
-        );
+        debug!("received cookie field");
         match Cookie::parse(header_value.to_string()) {
             Err(_) => None,
             Ok(c) => {
@@ -577,7 +514,7 @@ fn save_cookies(unit: &Unit, resp: &Response) {
                 if is_cookie_rfc_compliant(&c) {
                     Some(c)
                 } else {
-                    debug!("ignore incoming non compliant cookie: {:?}", c);
+                    debug!("incoming cookie rejected");
                     None
                 }
             }
@@ -634,7 +571,7 @@ fn is_cookie_rfc_compliant(cookie: &Cookie) -> bool {
     let valid_name = name.iter().all(is_valid_name);
 
     if !valid_name {
-        log::trace!("cookie name is not valid: {:?}", cookie.name());
+        log::trace!("cookie name is not valid");
         return false;
     }
 
@@ -643,7 +580,7 @@ fn is_cookie_rfc_compliant(cookie: &Cookie) -> bool {
     let valid_value = value.iter().all(is_valid_value);
 
     if !valid_value {
-        log::trace!("cookie value is not valid: {:?}", cookie.value());
+        log::trace!("cookie value is not valid");
         return false;
     }
 

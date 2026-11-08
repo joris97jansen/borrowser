@@ -513,7 +513,11 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Verify qualified URL dependency sources and graphs
-        run: make check-url-dependencies
+        run: |
+          # Prepare every workspace feature/target edge before the offline
+          # networking verifier tests run in the existing CI-tool discovery.
+          cargo metadata --all-features --locked --format-version 1 > /dev/null
+          make check-url-dependencies
 
       # The URL check resolves both workspaces online with --locked first.
       # Keep this after it so offline metadata also works on cache misses.
@@ -526,7 +530,9 @@ jobs:
 
       - name: Clippy (deny warnings)
         if: matrix.run_lints
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: |
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo clippy -p browser --all-targets --features conformance-observation --locked -- -D warnings
 
       - name: Clippy (deny warnings, html5)
         if: matrix.run_lints
@@ -596,6 +602,12 @@ jobs:
 
       - name: Build (release, html5)
         run: cargo build --workspace --release --features html5 --locked
+
+      - name: AI5 bounded HTTP/HTTPS release-abort qualification
+        timeout-minutes: 6
+        # Builds the feature-qualified example once, reusing release dependency
+        # artifacts; executes the real panic=abort binary and its supervisor.
+        run: make qualify-network-release
 
       - name: Compile HTML5 Criterion benches
         run: cargo bench -p html --bench html_bench --features html5 --no-run --locked

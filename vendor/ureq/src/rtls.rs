@@ -12,40 +12,46 @@ use crate::{
     Error,
 };
 
-#[allow(deprecated)]
-fn is_close_notify(e: &std::io::Error) -> bool {
-    if e.kind() != io::ErrorKind::ConnectionAborted {
-        return false;
-    }
-
-    if let Some(msg) = e.get_ref() {
-        // :(
-
-        return msg.description().contains("CloseNotify");
-    }
-
-    false
-}
-
 struct RustlsStream(rustls::StreamOwned<rustls::ClientConnection, Box<dyn ReadWrite>>);
 
 impl ReadWrite for RustlsStream {
     fn socket(&self) -> Option<&TcpStream> {
         self.0.get_ref().socket()
     }
+
+    fn is_idle_for_reuse(&mut self) -> io::Result<bool> {
+        if self.0.conn.is_handshaking() || self.0.conn.wants_write() {
+            return Ok(false);
+        }
+        let state = self
+            .0
+            .conn
+            .process_new_packets()
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        if state.plaintext_bytes_to_read() != 0
+            || state.peer_has_closed()
+            || self.0.conn.is_handshaking()
+            || self.0.conn.wants_write()
+        {
+            return Ok(false);
+        }
+        match self.0.conn.reader().read(&mut [0]) {
+            // An open rustls reader with no plaintext reports WouldBlock.
+            // EOF and other errors instead report clean/unclean closure or
+            // failure. Retained incomplete encrypted records are legitimate;
+            // no private deframer-buffer inspection is needed or performed.
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                self.0.sock.is_idle_for_reuse()
+            }
+            Ok(_) => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
 }
 
-// TODO: After upgrading to rustls 0.20 or higher, we can remove these Read
-// and Write impls, leaving only `impl TlsStream for rustls::StreamOwned...`.
-// Currently we need to implement Read in order to treat close_notify specially.
-// The next release of rustls will handle close_notify in a more intuitive way.
 impl Read for RustlsStream {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match self.0.read(buf) {
-            Ok(size) => Ok(size),
-            Err(ref e) if is_close_notify(e) => Ok(0),
-            Err(e) => Err(e),
-        }
+        self.0.read(buf)
     }
 }
 
@@ -64,8 +70,8 @@ fn root_certs() -> rustls::RootCertStore {
     use log::error;
 
     let mut root_cert_store = rustls::RootCertStore::empty();
-    let native_certs = rustls_native_certs::load_native_certs().unwrap_or_else(|e| {
-        error!("loading native certificates: {}", e);
+    let native_certs = rustls_native_certs::load_native_certs().unwrap_or_else(|_| {
+        error!("native certificate loading failed");
         vec![]
     });
     let (valid_count, invalid_count) =

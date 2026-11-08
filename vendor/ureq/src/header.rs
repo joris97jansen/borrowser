@@ -2,6 +2,32 @@ use crate::error::{Error, ErrorKind};
 use std::fmt;
 use std::str::{from_utf8, FromStr};
 
+// Connection is a token list (RFC 9110 sections 7.6.1 and 5.6.1).
+// Validate every occurrence, ignoring empty recipient list members. The wire
+// head budget already bounds this linear scan. Keep the received fields intact.
+pub(crate) fn connection_close(headers: &[Header]) -> Result<bool, Error> {
+    let mut close = false;
+    for header in headers.iter().filter(|header| header.is_name("connection")) {
+        for member in header.value_raw().split(|byte| *byte == b',') {
+            let mut member = member;
+            while member.first().is_some_and(|b| matches!(b, b' ' | b'\t')) {
+                member = &member[1..];
+            }
+            while member.last().is_some_and(|b| matches!(b, b' ' | b'\t')) {
+                member = &member[..member.len() - 1];
+            }
+            if member.is_empty() {
+                continue;
+            }
+            if !member.iter().all(is_tchar) {
+                return Err(ErrorKind::BadHeader.msg("invalid Connection token list"));
+            }
+            close |= member.eq_ignore_ascii_case(b"close");
+        }
+    }
+    Ok(close)
+}
+
 /// Since a status line or header can contain non-utf8 characters the
 /// backing store is a `Vec<u8>`
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,6 +68,9 @@ impl HeaderLine {
             .ok_or_else(|| ErrorKind::BadHeader.msg("header field is missing a colon"))?;
         if !valid_name(&self.as_bytes()[..index]) {
             return Err(ErrorKind::BadHeader.msg("invalid header field name"));
+        }
+        if !valid_value(&self.as_bytes()[index + 1..]) {
+            return Err(ErrorKind::BadHeader.msg("invalid header field value"));
         }
 
         Ok(Header { line: self, index })
@@ -92,12 +121,9 @@ impl Header {
     ///
     /// For non-utf8 headers this returns [`None`] (use [`Header::value_raw()`]).
     pub fn value(&self) -> Option<&str> {
-        let bytes = &self.line.as_bytes()[self.index + 1..];
-        from_utf8(bytes)
-            .map(|s| s.trim())
+        from_utf8(self.value_raw())
             .ok()
-            // ensure all bytes are valid field name.
-            .filter(|s| s.as_bytes().iter().all(is_field_vchar_or_obs_fold))
+            .filter(|value| valid_value(value.as_bytes()))
     }
 
     /// The header value as a byte slice.
@@ -113,11 +139,11 @@ impl Header {
 
         if !bytes.is_empty() {
             // trim front
-            while !bytes.is_empty() && bytes[0].is_ascii_whitespace() {
+            while !bytes.is_empty() && matches!(bytes[0], b' ' | b'\t') {
                 bytes = &bytes[1..];
             }
             // trim back
-            while !bytes.is_empty() && bytes[bytes.len() - 1].is_ascii_whitespace() {
+            while !bytes.is_empty() && matches!(bytes[bytes.len() - 1], b' ' | b'\t') {
                 bytes = &bytes[..(bytes.len() - 1)];
             }
         }
@@ -136,7 +162,7 @@ impl Header {
         let value_raw = &bytes[self.index + 1..];
 
         if !valid_name(name_raw) || !valid_value(value_raw) {
-            Err(ErrorKind::BadHeader.msg(format!("invalid header '{}'", self.line)))
+            Err(ErrorKind::BadHeader.msg("invalid header field"))
         } else {
             Ok(())
         }
@@ -205,7 +231,8 @@ pub(crate) fn is_tchar(b: &u8) -> bool {
 // https://tools.ietf.org/html/rfc7230#section-3.2
 // Note that field-content has an errata:
 // https://www.rfc-editor.org/errata/eid4189
-// field-value    = *( field-content / obs-fold )
+// Field lines have already been separated. Obsolete folding and controls are
+// rejected; obs-text (0x80..=0xff) remains opaque field-value bytes.
 // field-content  = field-vchar [ 1*( SP / HTAB ) field-vchar ]
 // field-vchar    = VCHAR / obs-text
 //
@@ -216,14 +243,14 @@ pub(crate) fn is_tchar(b: &u8) -> bool {
 // VCHAR          =  %x21-7E
 //                        ; visible (printing) characters
 fn valid_value(value: &[u8]) -> bool {
-    value.iter().all(is_field_vchar_or_obs_fold)
+    value.iter().all(is_field_value_byte)
 }
 
 #[inline]
-fn is_field_vchar_or_obs_fold(b: &u8) -> bool {
+fn is_field_value_byte(b: &u8) -> bool {
     match b {
         b' ' | b'\t' => true,
-        0x21..=0x7E => true,
+        0x21..=0x7E | 0x80..=0xFF => true,
         _ => false,
     }
 }
@@ -330,9 +357,10 @@ mod tests {
     #[test]
     fn test_iso8859_utf8_mixup() {
         // C2 A5 is ¥ in UTF-8 and Â¥ in ISO-8859-1
-        let b = "header: \0xc2\0xa5".to_string().into_bytes();
+        let b = b"header: \xc2\xa5".to_vec();
         let l: HeaderLine = b.into();
         let h = l.into_header().unwrap();
-        assert_eq!(h.value(), None);
+        assert_eq!(h.value(), Some("¥"));
+        assert_eq!(h.value_raw(), b"\xc2\xa5");
     }
 }

@@ -301,30 +301,6 @@ impl Error {
             Error::Transport(Transport { kind: k, .. }) => *k,
         }
     }
-
-    /// Return true iff the error was due to a connection closing.
-    pub(crate) fn connection_closed(&self) -> bool {
-        if self.kind() != ErrorKind::Io {
-            return false;
-        }
-        let other_err = match self {
-            Error::Status(_, _) => return false,
-            Error::Transport(e) => e,
-        };
-        let source = match other_err.source.as_ref() {
-            Some(e) => e,
-            None => return false,
-        };
-        let ioe: &io::Error = match source.downcast_ref() {
-            Some(e) => e,
-            None => return false,
-        };
-        match ioe.kind() {
-            io::ErrorKind::ConnectionAborted => true,
-            io::ErrorKind::ConnectionReset => true,
-            _ => false,
-        }
-    }
 }
 
 /// One of the types of error the can occur when processing a Request.
@@ -346,6 +322,12 @@ pub enum ErrorKind {
     BadStatus,
     /// A header line that couldn't be parsed.
     BadHeader,
+    /// Response-head processing exceeded its bounded resource budget.
+    ResponseHeadTooLarge,
+    /// Chunk framing or trailer processing exceeded its resource budget.
+    BodyMetadataTooLarge,
+    /// A valid response uses a protocol capability outside the supported subset.
+    UnsupportedResponse,
     /// Some unspecified `std::io::Error`.
     Io,
     /// Proxy information was not properly formatted
@@ -411,6 +393,9 @@ impl fmt::Display for ErrorKind {
             ErrorKind::TooManyRedirects => write!(f, "Too Many Redirects"),
             ErrorKind::BadStatus => write!(f, "Bad Status"),
             ErrorKind::BadHeader => write!(f, "Bad Header"),
+            ErrorKind::ResponseHeadTooLarge => write!(f, "Response Head Too Large"),
+            ErrorKind::BodyMetadataTooLarge => write!(f, "Body Metadata Too Large"),
+            ErrorKind::UnsupportedResponse => write!(f, "Unsupported Response"),
             ErrorKind::Io => write!(f, "Network Error"),
             ErrorKind::InvalidProxyUrl => write!(f, "Malformed proxy"),
             ErrorKind::ProxyConnect => write!(f, "Proxy failed to connect"),
@@ -477,14 +462,19 @@ mod tests {
     }
 
     #[test]
-    fn connection_closed() {
-        let ioe = io::Error::new(io::ErrorKind::ConnectionReset, "connection reset");
-        let err = ErrorKind::Io.new().src(ioe);
-        assert!(err.connection_closed());
-
-        let ioe = io::Error::new(io::ErrorKind::ConnectionAborted, "connection aborted");
-        let err = ErrorKind::Io.new().src(ioe);
-        assert!(err.connection_closed());
+    fn connection_failure_retains_typed_io_cause() {
+        use std::error::Error as _;
+        for kind in [
+            io::ErrorKind::ConnectionReset,
+            io::ErrorKind::ConnectionAborted,
+        ] {
+            let error = ErrorKind::Io
+                .new()
+                .src(io::Error::new(kind, "connection failure"));
+            assert_eq!(error.kind(), ErrorKind::Io);
+            let source = error.source().unwrap().downcast_ref::<io::Error>().unwrap();
+            assert_eq!(source.kind(), kind);
+        }
     }
 
     #[test]

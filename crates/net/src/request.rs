@@ -20,8 +20,8 @@ impl TryFrom<&str> for RequestMethod {
     }
 }
 
-/// Follow intent only. The AI2 adapter still uses legacy backend redirects;
-/// AI5/AI6 own controlled attempts and per-hop admission. No policy override.
+/// Follow intent. AI5 rejects a selected redirect requiring another request;
+/// AI6 owns explicit per-hop admission and traversal. No policy override.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RedirectPolicy {
     Follow,

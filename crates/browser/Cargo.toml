@@ -28,3 +28,10 @@ html = { path = "../html", features = ["dom-snapshot", "test-harness", "html5"] 
 runtime_css = { path = "../runtime_css" }
 runtime_net = { path = "../runtime_net" }
 runtime_parse = { path = "../runtime_parse" }
+log = "0.4"
+rustls = { version = "0.23.32", default-features = false, features = ["std", "ring", "tls12"] }
+rustls-pemfile = "2"
+
+[[example]]
+name = "ai5_abort_probe"
+required-features = ["conformance-observation"]

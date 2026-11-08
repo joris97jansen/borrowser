@@ -1,6 +1,7 @@
-use std::io::{self, Cursor, Read};
+use std::convert::TryFrom;
+use std::io::{self, Read};
 use std::net::SocketAddr;
-use std::num::NonZeroUsize;
+use std::num::NonZeroU64;
 use std::str::FromStr;
 use std::{fmt, io::BufRead};
 
@@ -10,7 +11,7 @@ use url::Url;
 use crate::body::SizedReader;
 use crate::chunked::Decoder as ChunkDecoder;
 use crate::error::{Error, ErrorKind::BadStatus};
-use crate::header::{get_all_headers, get_header, Header, HeaderLine};
+use crate::header::{get_all_headers, get_header, is_tchar, Header, HeaderLine};
 use crate::pool::{PoolReturnRead, PoolReturner};
 use crate::stream::{DeadlineStream, ReadOnlyStream, Stream};
 use crate::unit::Unit;
@@ -31,10 +32,13 @@ use brotli_decompressor::Decompressor as BrotliDecoder;
 pub const DEFAULT_CONTENT_TYPE: &str = "text/plain";
 pub const DEFAULT_CHARACTER_SET: &str = "utf-8";
 const INTO_STRING_LIMIT: usize = 10 * 1_024 * 1_024;
-// Follow the example of curl and limit a single header to 100kB:
-// https://curl.se/libcurl/c/CURLOPT_HEADERFUNCTION.html
-const MAX_HEADER_SIZE: usize = 100 * 1_024;
+// Wire bytes in one response-head line, including its terminating CRLF. This
+// acquisition bound is independent of Borrowser's later typed-field bounds.
+const MAX_HEADER_SIZE: usize = 10 * 1_024;
 const MAX_HEADER_COUNT: usize = 100;
+// Includes the status line, every field line, and the terminating CRLF. This
+// bounds acquisition before framing or automatic decoding can inspect fields.
+const MAX_RESPONSE_HEAD_SIZE: usize = 64 * 1_024;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 enum ConnectionOption {
@@ -44,7 +48,7 @@ enum ConnectionOption {
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 enum BodyType {
-    LengthDelimited(usize),
+    LengthDelimited(u64),
     Chunked,
     CloseDelimited,
 }
@@ -193,6 +197,15 @@ impl Response {
         get_all_headers(&self.headers, name)
     }
 
+    /// Admitted field occurrences in response order, with opaque value bytes.
+    /// Only leading/trailing SP and HTAB have been removed from values. This
+    /// does not restore fields removed by automatic content decoding.
+    pub fn headers_bytes(&self) -> impl Iterator<Item = (&str, &[u8])> {
+        self.headers
+            .iter()
+            .map(|header| (header.name(), header.value_raw()))
+    }
+
     /// The content type part of the "Content-Type" header without
     /// the charset.
     ///
@@ -288,24 +301,16 @@ impl Response {
     // Determine what to do with the connection after we've read the body.
     fn connection_option(
         response_version: &str,
-        connection_header: Option<&str>,
-    ) -> ConnectionOption {
-        // https://datatracker.ietf.org/doc/html/rfc9112#name-tear-down
-        // "A client that receives a "close" connection option MUST cease sending requests on that
-        // connection and close the connection after reading the response message containing the "close"
-        // connection option"
-        //
-        // Per https://www.rfc-editor.org/rfc/rfc2068#section-19.7.1, an HTTP/1.0 response can explicitly
-        // say "Connection: keep-alive" in response to a request with "Connection: keep-alive". We don't
-        // send "Connection: keep-alive" in the request but are willing to accept in the response anyhow.
-        use ConnectionOption::*;
-        let is_http10 = response_version.eq_ignore_ascii_case("HTTP/1.0");
-        match (is_http10, connection_header) {
-            (true, Some(c)) if c.eq_ignore_ascii_case("keep-alive") => KeepAlive,
-            (true, _) => Close,
-            (false, Some(c)) if c.eq_ignore_ascii_case("close") => Close,
-            (false, _) => KeepAlive,
-        }
+        headers: &[Header],
+    ) -> Result<ConnectionOption, Error> {
+        let close = crate::header::connection_close(headers)?;
+        Ok(
+            if response_version.eq_ignore_ascii_case("HTTP/1.0") || close {
+                ConnectionOption::Close
+            } else {
+                ConnectionOption::KeepAlive
+            },
+        )
     }
 
     /// Determine how the body should be read, based on
@@ -315,39 +320,51 @@ impl Response {
         response_status: u16,
         response_version: &str,
         headers: &[Header],
-    ) -> BodyType {
-        let is_http10 = response_version.eq_ignore_ascii_case("HTTP/1.0");
-
-        let is_head = request_method.eq_ignore_ascii_case("head");
-        let has_no_body = is_head
-            || match response_status {
-                204 | 304 => true,
-                _ => false,
-            };
-
-        if has_no_body {
-            return BodyType::LengthDelimited(0);
+    ) -> Result<BodyType, Error> {
+        if !matches!(response_version, "HTTP/1.0" | "HTTP/1.1") {
+            return Err(ErrorKind::UnsupportedResponse.msg("unsupported HTTP response version"));
+        }
+        if !(100..=599).contains(&response_status) {
+            return Err(BadStatus.msg("invalid HTTP response status"));
+        }
+        if response_status < 200 {
+            return Err(
+                ErrorKind::UnsupportedResponse.msg("informational responses are unsupported")
+            );
         }
 
-        let is_chunked = get_header(headers, "transfer-encoding")
-            .map(|enc| !enc.is_empty()) // whatever it says, do chunked
-            .unwrap_or(false);
-
-        // https://www.rfc-editor.org/rfc/rfc2068#page-161
-        // > a persistent connection with an HTTP/1.0 client cannot make
-        // > use of the chunked transfer-coding
-        let use_chunked = !is_http10 && is_chunked;
-
-        if use_chunked {
-            return BodyType::Chunked;
+        let length = content_length(headers)?;
+        let has_transfer = headers
+            .iter()
+            .any(|header| header.is_name("transfer-encoding"));
+        if has_transfer && length.is_some() {
+            return Err(ErrorKind::BadHeader.msg("conflicting HTTP response framing fields"));
+        }
+        if response_status == 204 && (has_transfer || length.is_some()) {
+            return Err(ErrorKind::BadHeader.msg("prohibited framing fields on 204 response"));
+        }
+        if response_status == 205 && length.is_some_and(|length| length != 0) {
+            return Err(ErrorKind::BadHeader.msg("nonzero length on 205 response"));
+        }
+        if has_transfer && response_version == "HTTP/1.0" {
+            return Err(ErrorKind::BadHeader.msg("transfer encoding on HTTP/1.0 response"));
         }
 
-        let length = get_header(headers, "content-length").and_then(|v| v.parse::<usize>().ok());
-
-        match length {
-            Some(n) => BodyType::LengthDelimited(n),
-            None => BodyType::CloseDelimited,
+        let head_terminated =
+            request_method.eq_ignore_ascii_case("head") || matches!(response_status, 204 | 304);
+        validate_transfer_encoding(headers, head_terminated)?;
+        if head_terminated {
+            return Ok(BodyType::LengthDelimited(0));
         }
+        // A 205 still owns its framing reader. Consumer-visible no-content
+        // semantics do not establish chunk termination or transport EOF.
+        Ok(if has_transfer {
+            BodyType::Chunked
+        } else {
+            length
+                .map(BodyType::LengthDelimited)
+                .unwrap_or(BodyType::CloseDelimited)
+        })
     }
 
     fn stream_to_reader(
@@ -356,17 +373,14 @@ impl Response {
         body_type: BodyType,
         compression: Option<Compression>,
         connection_option: ConnectionOption,
-    ) -> Box<dyn Read + Send + Sync + 'static> {
-        if connection_option == ConnectionOption::Close {
+    ) -> Result<Box<dyn Read + Send + Sync + 'static>, Error> {
+        if connection_option == ConnectionOption::Close
+            || matches!(body_type, BodyType::CloseDelimited)
+        {
             stream.inner_mut().set_unpoolable();
         }
         let inner = stream.inner_ref();
-        let result = inner.set_read_timeout(unit.agent.config.timeout_read);
-        if let Err(e) = result {
-            return Box::new(ErrorReader(e));
-        }
-        let buffer_len = inner.buffer().len();
-
+        inner.set_read_timeout(unit.agent.config.timeout_read)?;
         let body_reader: Box<dyn Read + Send + Sync> = match body_type {
             // Chunked responses have an unknown length, but do have an end of body
             // marker. When we encounter the marker, we can return the underlying stream
@@ -379,33 +393,20 @@ impl Response {
             // of the body to the number of bytes in the header. Once done, we can
             // return the underlying stream to the connection pool.
             BodyType::LengthDelimited(len) => {
-                match NonZeroUsize::new(len) {
+                match NonZeroU64::new(len) {
                     None => {
                         debug!("zero-length body returning stream directly to pool");
                         let stream: Stream = stream.into();
-                        // TODO: This expect can actually panic if we get an error when
-                        // returning the stream to the pool. We reset the read timeouts
-                        // when we do that, and since that's a syscall it can fail.
-                        stream.return_to_pool().expect("returning stream to pool");
+                        // The validated head completes this HTTP message. The
+                        // optional pool return still checks all observable
+                        // buffering and transport eligibility before insertion.
+                        stream.return_to_pool();
                         Box::new(std::io::empty())
                     }
                     Some(len) => {
-                        let mut limited_read = LimitedRead::new(stream, len);
-
-                        if len.get() <= buffer_len {
-                            debug!("Body entirely buffered (length: {})", len);
-                            let mut buf = vec![0; len.get()];
-                            // TODO: This expect can actually panic if we get an error when
-                            // returning the stream to the pool. We reset the read timeouts
-                            // when we do that, and since that's a syscall it can fail.
-                            limited_read
-                                .read_exact(&mut buf)
-                                .expect("failed to read exact buffer length from stream");
-                            Box::new(Cursor::new(buf))
-                        } else {
-                            debug!("Streaming body until content-length: {}", len);
-                            Box::new(limited_read)
-                        }
+                        // Do not allocate from the declared length or eagerly
+                        // copy an already buffered fixed-length body here.
+                        Box::new(LimitedRead::new(stream, len))
                     }
                 }
             }
@@ -415,10 +416,10 @@ impl Response {
             }
         };
 
-        match compression {
+        Ok(match compression {
             None => body_reader,
             Some(c) => c.wrap_reader(body_reader),
-        }
+        })
     }
 
     /// Turn this response into a String of the response body. By default uses `utf-8`,
@@ -574,32 +575,37 @@ impl Response {
         let mut stream = stream::DeadlineStream::new(stream, unit.deadline);
 
         // The status line we can ignore non-utf8 chars and parse as_str_lossy().
-        let status_line = read_next_line(&mut stream, "the status line")?.into_string_lossy();
+        let mut remaining_head = MAX_RESPONSE_HEAD_SIZE;
+        let status_line = read_next_line(&mut stream, "the status line", &mut remaining_head)?
+            .into_string_lossy();
         let (index, status) = parse_status_line(status_line.as_str())?;
         let http_version = &status_line.as_str()[0..index.http_version];
 
         let mut headers: Vec<Header> = Vec::new();
-        while headers.len() <= MAX_HEADER_COUNT {
-            let line = read_next_line(&mut stream, "a header")?;
+        loop {
+            let line = read_next_line(&mut stream, "a header", &mut remaining_head)?;
             if line.is_empty() {
                 break;
             }
+            if headers.len() == MAX_HEADER_COUNT {
+                return Err(ErrorKind::ResponseHeadTooLarge.msg("too many HTTP response fields"));
+            }
             headers.push(line.into_header()?);
         }
+        // Framing is authoritative before constructing readers, decoding any
+        // body, or allowing a zero-length response to return its connection.
+        let body_type = Self::body_type(&unit.method, status, http_version, &headers)?;
+        let head_terminated =
+            unit.method.eq_ignore_ascii_case("head") || matches!(status, 204 | 304);
+        // 205 must verify that its framed HTTP payload is empty. Decoding a
+        // nonempty gzip member to zero bytes would conceal prohibited content.
+        let compression = if head_terminated || status == 205 {
+            None
+        } else {
+            get_header(&headers, "content-encoding").and_then(Compression::from_header_value)
+        };
 
-        if headers.len() > MAX_HEADER_COUNT {
-            return Err(ErrorKind::BadHeader.msg(
-                format!("more than {} header fields in response", MAX_HEADER_COUNT).as_str(),
-            ));
-        }
-
-        let compression =
-            get_header(&headers, "content-encoding").and_then(Compression::from_header_value);
-
-        let connection_option =
-            Self::connection_option(http_version, get_header(&headers, "connection"));
-
-        let body_type = Self::body_type(&unit.method, status, http_version, &headers);
+        let connection_option = Self::connection_option(http_version, &headers)?;
 
         // remove Content-Encoding and length due to automatic decompression
         if compression.is_some() {
@@ -607,7 +613,7 @@ impl Response {
         }
 
         let reader =
-            Self::stream_to_reader(stream, &unit, body_type, compression, connection_option);
+            Self::stream_to_reader(stream, &unit, body_type, compression, connection_option)?;
 
         let url = unit.url.clone();
 
@@ -701,20 +707,28 @@ fn parse_status_line(line: &str) -> Result<(ResponseStatusIndex, u16), Error> {
     if http_version.len() != 8 {
         return Err(BadStatus.msg("HTTP version was wrong length"));
     }
-    if !http_version.as_bytes()[5].is_ascii_digit() || !http_version.as_bytes()[7].is_ascii_digit()
+    if !http_version.as_bytes()[5].is_ascii_digit()
+        || http_version.as_bytes()[6] != b'.'
+        || !http_version.as_bytes()[7].is_ascii_digit()
     {
         return Err(BadStatus.msg("HTTP version did not match format"));
     }
 
     let status_str: &str = split[1];
+    if !split[2]
+        .bytes()
+        .all(|byte| byte == b'\t' || (byte >= b' ' && byte != 0x7f))
+    {
+        return Err(BadStatus.msg("invalid HTTP reason phrase"));
+    }
     //      status-code    = 3DIGIT
-    if status_str.len() != 3 {
+    if status_str.len() != 3 || !status_str.bytes().all(|byte| byte.is_ascii_digit()) {
         return Err(BadStatus.msg("Status code was wrong length"));
     }
 
     let status: u16 = status_str
         .parse()
-        .map_err(|_| BadStatus.msg(format!("unable to parse status as u16 ({})", status_str)))?;
+        .map_err(|_| BadStatus.msg("invalid HTTP status code"))?;
 
     Ok((
         ResponseStatusIndex {
@@ -768,96 +782,254 @@ impl FromStr for Response {
     }
 }
 
-fn read_next_line(reader: &mut impl BufRead, context: &str) -> io::Result<HeaderLine> {
+fn read_next_line(
+    reader: &mut impl BufRead,
+    context: &str,
+    remaining_head: &mut usize,
+) -> Result<HeaderLine, Error> {
     let mut buf = Vec::new();
-    let result = reader
-        .take((MAX_HEADER_SIZE + 1) as u64)
-        .read_until(b'\n', &mut buf);
-
-    match result {
-        Ok(0) => Err(io::Error::new(
-            io::ErrorKind::ConnectionAborted,
-            "Unexpected EOF",
-        )),
-        Ok(n) if n > MAX_HEADER_SIZE => Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("header field longer than {} bytes", MAX_HEADER_SIZE),
-        )),
-        Ok(_) => Ok(()),
-        Err(e) => {
-            // Provide context to errors encountered while reading the line.
-            let reason = format!("Error encountered in {}", context);
-
-            let kind = e.kind();
-
-            // Use an intermediate wrapper type which carries the error message
-            // as well as a .source() reference to the original error.
-            let wrapper = Error::new(ErrorKind::Io, Some(reason)).src(e);
-
-            Err(io::Error::new(kind, wrapper))
-        }
-    }?;
-
-    if !buf.ends_with(b"\n") {
+    let limit = MAX_HEADER_SIZE.min(*remaining_head);
+    let n = reader
+        .take((limit + 1) as u64)
+        .read_until(b'\n', &mut buf)
+        .map_err(|error| {
+            ErrorKind::Io
+                .msg(format!("error reading {context}"))
+                .src(error)
+        })?;
+    if n == 0 {
         return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("Header field didn't end with \\n: {:?}", buf),
-        ));
+            io::ErrorKind::ConnectionAborted,
+            "unexpected EOF in HTTP response head",
+        )
+        .into());
     }
-
-    buf.pop();
-    if buf.ends_with(b"\r") {
-        buf.pop();
+    if n > limit {
+        return Err(ErrorKind::ResponseHeadTooLarge.msg("HTTP response head limit exceeded"));
     }
-
+    *remaining_head -= n;
+    if !buf.ends_with(b"\r\n") {
+        return Err(ErrorKind::BadHeader.msg("HTTP response line requires CRLF"));
+    }
+    buf.truncate(buf.len() - 2);
     Ok(buf.into())
+}
+
+// RFC 9112 section 6.3: every occurrence participates in a single framing
+// decision. The original fields are retained rather than rewritten or joined.
+fn content_length(headers: &[Header]) -> Result<Option<u64>, Error> {
+    let mut length = None;
+    for header in headers
+        .iter()
+        .filter(|header| header.is_name("content-length"))
+    {
+        for value in header.value_raw().split(|byte| *byte == b',') {
+            let value = trim_ows(value);
+            if value.is_empty() || !value.iter().all(u8::is_ascii_digit) {
+                return Err(ErrorKind::BadHeader.msg("invalid Content-Length"));
+            }
+            let parsed = value
+                .iter()
+                .try_fold(0u64, |n, digit| {
+                    n.checked_mul(10)?.checked_add(u64::from(*digit - b'0'))
+                })
+                .ok_or_else(|| ErrorKind::BadHeader.msg("Content-Length overflow"))?;
+            if length.is_some_and(|length| length != parsed) {
+                return Err(ErrorKind::BadHeader.msg("conflicting Content-Length values"));
+            }
+            length = Some(parsed);
+        }
+    }
+    Ok(length)
+}
+
+fn trim_ows(mut value: &[u8]) -> &[u8] {
+    while matches!(value.first(), Some(b' ' | b'\t')) {
+        value = &value[1..];
+    }
+    while matches!(value.last(), Some(b' ' | b'\t')) {
+        value = &value[..value.len() - 1];
+    }
+    value
+}
+
+// Parse only Transfer-Encoding's concrete token/parameter/list grammar. A
+// head-terminated response may retain valid representation metadata without
+// requiring support for executing that coding stack.
+fn validate_transfer_encoding(headers: &[Header], head_terminated: bool) -> Result<(), Error> {
+    fn malformed() -> Error {
+        ErrorKind::BadHeader.msg("invalid Transfer-Encoding")
+    }
+    fn token<'a>(rest: &mut &'a [u8]) -> Result<&'a [u8], Error> {
+        let length = rest.iter().take_while(|byte| is_tchar(byte)).count();
+        if length == 0 {
+            return Err(malformed());
+        }
+        let (value, remaining) = rest.split_at(length);
+        *rest = remaining;
+        Ok(value)
+    }
+    let mut present = false;
+    let mut count = 0;
+    let mut chunked = false;
+    for header in headers
+        .iter()
+        .filter(|header| header.is_name("transfer-encoding"))
+    {
+        present = true;
+        let mut rest = trim_ows(header.value_raw());
+        loop {
+            // RFC 9110 section 5.6.1.2: ignore empty list members, including
+            // empty field occurrences. The existing 10 KiB line / 64 KiB head
+            // budgets bound this allocation-free, linear scan; no additional
+            // empty-member budget is needed. Only actual codings are counted.
+            if rest.is_empty() {
+                break;
+            }
+            if rest[0] == b',' {
+                rest = trim_ows(&rest[1..]);
+                continue;
+            }
+            let coding = token(&mut rest)?;
+            let is_chunked = coding.eq_ignore_ascii_case(b"chunked");
+            // RFC 9112 section 6.1 prohibits applying chunked more than once.
+            // Non-final chunked in a response is instead close-delimited under
+            // section 6.3; it is not malformed solely because of that order.
+            if is_chunked && chunked {
+                return Err(malformed());
+            }
+            chunked |= is_chunked;
+            rest = trim_ows(rest);
+            let mut parameters = false;
+            while rest.first() == Some(&b';') {
+                parameters = true;
+                rest = trim_ows(&rest[1..]);
+                token(&mut rest)?;
+                rest = trim_ows(rest);
+                if rest.first() != Some(&b'=') {
+                    return Err(malformed());
+                }
+                rest = trim_ows(&rest[1..]);
+                if rest.first() == Some(&b'"') {
+                    rest = &rest[1..];
+                    loop {
+                        match rest.first() {
+                            None => return Err(malformed()),
+                            Some(b'"') => {
+                                rest = &rest[1..];
+                                break;
+                            }
+                            Some(b'\\') => {
+                                if rest.len() < 2 {
+                                    return Err(malformed());
+                                }
+                                rest = &rest[2..];
+                            }
+                            Some(_) => rest = &rest[1..],
+                        }
+                    }
+                } else {
+                    token(&mut rest)?;
+                }
+                rest = trim_ows(rest);
+            }
+            // Sections 7.1 and 7.2 define no parameters for these codings and
+            // recommend treating their presence as an error. Use that strict
+            // policy for body-bearing responses and representation metadata.
+            if parameters
+                && (is_chunked
+                    || [
+                        b"gzip".as_slice(),
+                        b"x-gzip",
+                        b"compress",
+                        b"x-compress",
+                        b"deflate",
+                    ]
+                    .iter()
+                    .any(|name| coding.eq_ignore_ascii_case(name)))
+            {
+                return Err(malformed());
+            }
+            count += 1;
+            if rest.is_empty() {
+                break;
+            }
+            if rest[0] != b',' {
+                return Err(malformed());
+            }
+            rest = trim_ows(&rest[1..]);
+        }
+    }
+    // An absent field is valid. A present logical list with no actual coding
+    // remains rejected under AI5's explicit framing policy.
+    if present && count == 0 {
+        return Err(malformed());
+    }
+    if count != 0 && !(head_terminated || count == 1 && chunked) {
+        return Err(ErrorKind::UnsupportedResponse.msg("unsupported HTTP transfer coding"));
+    }
+    Ok(())
 }
 
 /// Limits a `Read` to a content size (as set by a "Content-Length" header).
 pub(crate) struct LimitedRead<R> {
     reader: Option<R>,
-    limit: usize,
-    position: usize,
+    limit: u64,
+    position: u64,
+    failed: bool,
 }
 
 impl<R: Read + Sized + Into<Stream>> LimitedRead<R> {
-    pub(crate) fn new(reader: R, limit: NonZeroUsize) -> Self {
+    pub(crate) fn new(reader: R, limit: NonZeroU64) -> Self {
         LimitedRead {
             reader: Some(reader),
             limit: limit.get(),
             position: 0,
+            failed: false,
         }
     }
 
-    pub(crate) fn remaining(&self) -> usize {
+    pub(crate) fn remaining(&self) -> u64 {
         self.limit - self.position
     }
 
-    fn return_stream_to_pool(&mut self) -> io::Result<()> {
+    fn return_stream_to_pool(&mut self) {
         if let Some(reader) = self.reader.take() {
-            // Convert back to a stream. If return_to_pool fails, the stream will
-            // drop and the connection will be closed.
+            // Transfer ownership for optional qualified reuse. Ineligibility
+            // drops the connection without failing the completed response.
             let stream: Stream = reader.into();
-            stream.return_to_pool()?;
+            stream.return_to_pool();
         }
-
-        Ok(())
     }
 }
 
 impl<R: Read + Sized + Into<Stream>> Read for LimitedRead<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        if self.failed {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "response body previously failed",
+            ));
+        }
         if self.remaining() == 0 {
             return Ok(0);
         }
-        let from = if self.remaining() < buf.len() {
-            &mut buf[0..self.remaining()]
-        } else {
-            buf
-        };
+        // A declared length can exceed addressable memory. Narrow only the
+        // per-call slice bound, never the stored framing length or progress.
+        let amount = usize::try_from(self.remaining())
+            .unwrap_or(usize::MAX)
+            .min(buf.len());
+        let from = &mut buf[..amount];
         let reader = match self.reader.as_mut() {
-            // If the reader has already been taken, return Ok(0) to all reads.
-            None => return Ok(0),
+            None => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "missing response reader",
+                ))
+            }
             Some(r) => r,
         };
         match reader.read(from) {
@@ -866,19 +1038,32 @@ impl<R: Read + Sized + Into<Stream>> Read for LimitedRead<R> {
             // the recipient times out before the indicated number of octets are
             // received, the recipient MUST consider the message to be
             // incomplete and close the connection.
-            // TODO: actually close the connection by dropping the stream
-            Ok(0) => Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "response body closed before all bytes were read",
-            )),
+            Ok(0) => {
+                self.failed = true;
+                self.reader.take();
+                Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "response body closed before all bytes were read",
+                ))
+            }
             Ok(amount) => {
-                self.position += amount;
+                self.position += u64::try_from(amount).map_err(|_| {
+                    io::Error::new(io::ErrorKind::InvalidData, "response read size exceeds u64")
+                })?;
                 if self.remaining() == 0 {
-                    self.return_stream_to_pool()?;
+                    // HTTP framing is complete. Failed optional pool
+                    // maintenance discards the connection, never the payload.
+                    self.return_stream_to_pool();
                 }
                 Ok(amount)
             }
-            Err(e) => Err(e),
+            Err(e) => {
+                if e.kind() != io::ErrorKind::Interrupted {
+                    self.failed = true;
+                    self.reader.take();
+                }
+                Err(e)
+            }
         }
     }
 }
@@ -900,17 +1085,6 @@ pub(crate) fn charset_from_content_type(header: Option<&str>) -> &str {
         .unwrap_or(DEFAULT_CHARACTER_SET)
 }
 
-// ErrorReader returns an error for every read.
-// The error is as close to a clone of the underlying
-// io::Error as we can get.
-struct ErrorReader(io::Error);
-
-impl Read for ErrorReader {
-    fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
-        Err(io::Error::new(self.0.kind(), self.0.to_string()))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
@@ -928,7 +1102,7 @@ mod tests {
             "1.1.1.1:4343".parse().unwrap(),
             PoolReturner::none(),
         );
-        let mut lr = LimitedRead::new(stream, std::num::NonZeroUsize::new(10).unwrap());
+        let mut lr = LimitedRead::new(stream, std::num::NonZeroU64::new(10).unwrap());
         let mut buf = vec![0; 1000];
         let result = lr.read_to_end(&mut buf);
         assert!(result.err().unwrap().kind() == io::ErrorKind::UnexpectedEof);
@@ -1076,36 +1250,23 @@ mod tests {
         const LEN: usize = MAX_HEADER_SIZE + 1;
         let s = format!("Long-Header: {}\r\n", "A".repeat(LEN),);
         let mut cursor = Cursor::new(s);
-        let result = read_next_line(&mut cursor, "some context");
+        let mut budget = MAX_HEADER_SIZE + 1;
+        let result = read_next_line(&mut cursor, "some context", &mut budget);
         let err = result.expect_err("did not error on too-large header");
-        assert_eq!(err.kind(), io::ErrorKind::Other);
-        assert_eq!(
-            err.to_string(),
-            format!("header field longer than {} bytes", MAX_HEADER_SIZE)
-        );
+        assert_eq!(err.kind(), ErrorKind::ResponseHeadTooLarge);
     }
 
     #[test]
     fn too_many_headers() {
         const LEN: usize = MAX_HEADER_COUNT + 1;
         let s = format!(
-            "HTTP/1.1 200 OK\r\n\
-                 {}
-                 \r\n
-                 hi",
+            "HTTP/1.1 200 OK\r\n{}\r\nhi",
             "Header: value\r\n".repeat(LEN),
         );
         let err = s
             .parse::<Response>()
             .expect_err("did not error on too many headers");
-        assert_eq!(err.kind(), ErrorKind::BadHeader);
-        assert_eq!(
-            err.to_string(),
-            format!(
-                "Bad Header: more than {} header fields in response",
-                MAX_HEADER_COUNT
-            )
-        );
+        assert_eq!(err.kind(), ErrorKind::ResponseHeadTooLarge);
     }
 
     #[test]
@@ -1115,7 +1276,8 @@ mod tests {
             encoding_rs::WINDOWS_1252.encode("HTTP/1.1 302 Déplacé Temporairement\r\n");
         let bytes = cow.to_vec();
         let mut reader = io::BufReader::new(io::Cursor::new(bytes));
-        let r = read_next_line(&mut reader, "test status line");
+        let mut budget = MAX_RESPONSE_HEAD_SIZE;
+        let r = read_next_line(&mut reader, "test status line", &mut budget);
         let h = r.unwrap();
         assert_eq!(h.to_string(), "HTTP/1.1 302 D�plac� Temporairement");
     }
@@ -1253,132 +1415,110 @@ mod tests {
     #[test]
     fn connection_option() {
         use ConnectionOption::*;
-        assert_eq!(Response::connection_option("HTTP/1.0", None), Close);
-        assert_eq!(Response::connection_option("HtTp/1.0", None), Close);
-        assert_eq!(Response::connection_option("HTTP/1.0", Some("blah")), Close);
-        assert_eq!(
-            Response::connection_option("HTTP/1.0", Some("keep-ALIVE")),
-            KeepAlive
-        );
-        assert_eq!(
-            Response::connection_option("http/1.0", Some("keep-alive")),
-            KeepAlive
-        );
-
-        assert_eq!(Response::connection_option("http/1.1", None), KeepAlive);
-        assert_eq!(
-            Response::connection_option("http/1.1", Some("blah")),
-            KeepAlive
-        );
-        assert_eq!(
-            Response::connection_option("http/1.1", Some("keep-alive")),
-            KeepAlive
-        );
-        assert_eq!(
-            Response::connection_option("http/1.1", Some("CLOSE")),
-            Close
+        for (version, values, expected) in [
+            ("HTTP/1.0", vec![], Close),
+            ("HTTP/1.0", vec!["keep-alive"], Close),
+            ("HTTP/1.1", vec![], KeepAlive),
+            ("HTTP/1.1", vec!["keep-alive"], KeepAlive),
+            ("HTTP/1.1", vec!["x-close"], KeepAlive),
+            ("HTTP/1.1", vec!["keep-alive", "CLOSE"], Close),
+            ("HTTP/1.1", vec![" , keep-alive,\tClOsE ,"], Close),
+        ] {
+            let headers: Vec<_> = values
+                .iter()
+                .map(|v| Header::new("Connection", v))
+                .collect();
+            assert_eq!(
+                Response::connection_option(version, &headers).unwrap(),
+                expected
+            );
+        }
+        assert!(
+            Response::connection_option("HTTP/1.1", &[Header::new("Connection", "close;bad")])
+                .is_err()
         );
     }
 
     #[test]
     fn body_type() {
         use BodyType::*;
-        assert_eq!(
-            Response::body_type("GET", 200, "HTTP/1.1", &[]),
-            CloseDelimited
-        );
-        assert_eq!(
-            Response::body_type("HEAD", 200, "HTTP/1.1", &[]),
-            LengthDelimited(0)
-        );
-        assert_eq!(
-            Response::body_type("hEaD", 200, "HTTP/1.1", &[]),
-            LengthDelimited(0)
-        );
-        assert_eq!(
-            Response::body_type("head", 200, "HTTP/1.1", &[]),
-            LengthDelimited(0)
-        );
-        assert_eq!(
-            Response::body_type("GET", 304, "HTTP/1.1", &[]),
-            LengthDelimited(0)
-        );
-        assert_eq!(
-            Response::body_type("GET", 204, "HTTP/1.1", &[]),
-            LengthDelimited(0)
-        );
-        assert_eq!(
-            Response::body_type(
+        for (method, status, version, headers, expected) in [
+            ("GET", 200, "HTTP/1.1", vec![], CloseDelimited),
+            ("HEAD", 200, "HTTP/1.1", vec![], LengthDelimited(0)),
+            ("hEaD", 200, "HTTP/1.1", vec![], LengthDelimited(0)),
+            ("head", 200, "HTTP/1.1", vec![], LengthDelimited(0)),
+            ("GET", 204, "HTTP/1.1", vec![], LengthDelimited(0)),
+            ("GET", 304, "HTTP/1.1", vec![], LengthDelimited(0)),
+            (
                 "GET",
-                200,
+                304,
                 "HTTP/1.1",
-                &[Header::new("Transfer-Encoding", "chunked"),]
+                vec![Header::new("Transfer-Encoding", "gzip, chunked")],
+                LengthDelimited(0),
             ),
-            Chunked
-        );
-        assert_eq!(
-            Response::body_type(
+            (
                 "GET",
                 200,
                 "HTTP/1.1",
-                &[Header::new("Content-Length", "123"),]
+                vec![Header::new("Transfer-Encoding", "Chunked")],
+                Chunked,
             ),
-            LengthDelimited(123)
-        );
-        assert_eq!(
-            Response::body_type(
+            (
+                "GET",
+                205,
+                "HTTP/1.1",
+                vec![Header::new("Transfer-Encoding", "chunked")],
+                Chunked,
+            ),
+            (
                 "GET",
                 200,
                 "HTTP/1.1",
-                &[
+                vec![Header::new("Content-Length", "123")],
+                LengthDelimited(123),
+            ),
+            (
+                "GET",
+                200,
+                "HTTP/1.0",
+                vec![Header::new("Content-Length", "123")],
+                LengthDelimited(123),
+            ),
+        ] {
+            assert_eq!(
+                Response::body_type(method, status, version, &headers).unwrap(),
+                expected
+            );
+        }
+        for method in ["GET", "HEAD"] {
+            for headers in [
+                vec![
                     Header::new("Content-Length", "123"),
                     Header::new("Transfer-Encoding", "chunked"),
-                ]
-            ),
-            Chunked
-        );
-        assert_eq!(
-            Response::body_type(
-                "GET",
-                200,
-                "HTTP/1.1",
-                &[
+                ],
+                vec![
                     Header::new("Transfer-Encoding", "chunked"),
                     Header::new("Content-Length", "123"),
-                ]
-            ),
-            Chunked
-        );
-        assert_eq!(
-            Response::body_type(
-                "HEAD",
-                200,
-                "HTTP/1.1",
-                &[
-                    Header::new("Transfer-Encoding", "chunked"),
-                    Header::new("Content-Length", "123"),
-                ]
-            ),
-            LengthDelimited(0)
-        );
+                ],
+            ] {
+                assert_eq!(
+                    Response::body_type(method, 200, "HTTP/1.1", &headers)
+                        .unwrap_err()
+                        .kind(),
+                    ErrorKind::BadHeader
+                );
+            }
+        }
         assert_eq!(
             Response::body_type(
                 "GET",
                 200,
                 "HTTP/1.0",
-                &[Header::new("Transfer-Encoding", "chunked"),]
-            ),
-            CloseDelimited,
-            "HTTP/1.0 did not support chunked encoding"
-        );
-        assert_eq!(
-            Response::body_type(
-                "GET",
-                200,
-                "HTTP/1.0",
-                &[Header::new("Content-Length", "123"),]
-            ),
-            LengthDelimited(123)
+                &[Header::new("Transfer-Encoding", "chunked")]
+            )
+            .unwrap_err()
+            .kind(),
+            ErrorKind::BadHeader
         );
     }
 }

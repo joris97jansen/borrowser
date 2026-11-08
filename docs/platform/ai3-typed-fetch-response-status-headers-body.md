@@ -491,3 +491,14 @@ Local validation (2026-11-06):
 - [HTML image status independence](https://html.spec.whatwg.org/multipage/images.html#updating-the-image-data),
   [linked-resource processing](https://html.spec.whatwg.org/multipage/semantics.html#fetching-and-processing-a-resource-from-a-link-element),
   and [navigation](https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigating-across-documents).
+
+## AI5 implementation qualification (2026-11-08)
+
+Typed immutable response facts, ordered bounded fields and BodyProgress remain authoritative. AI5 now retains original admitted encoding/length fields and opaque values, validates framing before reader construction, verifies body completion and 205 zero content, and performs shared bounded gzip decoding. The AI3 two-file patch remains historical evidence; the cumulative ten-file provenance record supersedes its current-scope description.
+
+The [AI5 implementation contract](ai5-real-http-response-acquisition-and-bounded-body-integrity.md)
+records the implemented subset, exact resource limits, controlled diagnostics,
+connection safety and release-abort qualification. It supersedes conflicting
+legacy execution qualifications above without rewriting these historical records.
+This unmerged candidate is not a hosted-CI, merge, issue-closure or milestone-
+completion claim. AI6–AI9 retain their stated independent responsibilities.

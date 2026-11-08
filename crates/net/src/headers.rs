@@ -86,7 +86,7 @@ impl HttpHeaders {
     }
 }
 
-fn is_token_byte(b: u8) -> bool {
+pub(crate) fn is_token_byte(b: u8) -> bool {
     b.is_ascii_alphanumeric()
         || matches!(
             b,

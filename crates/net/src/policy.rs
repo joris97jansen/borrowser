@@ -28,7 +28,6 @@ pub enum TlsTrustStore {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HttpClientPolicy {
     pub user_agent: String,
-    pub redirects: u32,
     pub timeouts: HttpTimeoutPolicy,
     pub tls: TlsTrustStore,
 }
@@ -37,7 +36,6 @@ impl Default for HttpClientPolicy {
     fn default() -> Self {
         Self {
             user_agent: default_user_agent(),
-            redirects: 10,
             timeouts: HttpTimeoutPolicy::default(),
             tls: TlsTrustStore::NativeRoots,
         }

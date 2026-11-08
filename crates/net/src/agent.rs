@@ -24,7 +24,9 @@ fn build_http_agent(policy: &HttpClientPolicy) -> ureq::Agent {
         .timeout_connect(policy.timeouts.connect)
         .timeout_read(policy.timeouts.read)
         .timeout_write(policy.timeouts.write)
-        .redirects(policy.redirects)
+        // A backend attempt must never execute a redirect before shared Fetch
+        // admission. AI6 owns explicit traversal; AI5 rejects Follow on Location.
+        .redirects(0)
         .tls_config(tls_config)
         .build()
 }

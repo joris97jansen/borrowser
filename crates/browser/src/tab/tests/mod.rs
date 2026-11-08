@@ -20,3 +20,4 @@ mod resource_associations;
 mod addressing_observation;
 
 mod ai3_responses;
+mod ai5_failures;

@@ -409,6 +409,11 @@ check-url-dependencies:
 check-network-dependencies:
 	python3 tools/ci/check_ureq_patch.py
 
+.PHONY: qualify-network-release
+qualify-network-release:
+	cargo build -p browser --example ai5_abort_probe --features conformance-observation --release --locked
+	target/release/examples/ai5_abort_probe
+
 # Full CI-equivalent pipeline
 ci:
 	@$(MAKE) check-url-dependencies
@@ -440,6 +445,7 @@ ci:
 	@$(MAKE) build-html5
 	@$(MAKE) build-release
 	@$(MAKE) build-release-html5
+	@$(MAKE) qualify-network-release
 	@$(MAKE) compile-html5-benches
 	@$(MAKE) compile-css-benches
 	@$(MAKE) html-entities-check

@@ -527,3 +527,14 @@ and shared response validation, streaming, cancellation, limits and terminal eve
 Direct local-file handling stays separate. No registry, runtime redesign, new
 timeout policy, credential-hop protection, or networking conformance expansion
 is claimed. The implementation reference records qualification independently.
+
+## AI5 implementation qualification (2026-11-08)
+
+AI1 remains the milestone architecture and intended later redirect/metadata contract. Its descriptions of inherited real-backend redirects, gzip field removal and unsafe diagnostics describe the pre-AI5 implementation, not the current selected backend.
+
+The [AI5 implementation contract](ai5-real-http-response-acquisition-and-bounded-body-integrity.md)
+records the implemented subset, exact resource limits, controlled diagnostics,
+connection safety and release-abort qualification. It supersedes conflicting
+legacy execution qualifications above without rewriting these historical records.
+This unmerged candidate is not a hosted-CI, merge, issue-closure or milestone-
+completion claim. AI6–AI9 retain their stated independent responsibilities.

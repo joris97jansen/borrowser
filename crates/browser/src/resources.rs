@@ -53,7 +53,7 @@ struct DecodedImage {
 
 struct DecodeResult {
     id: ImageId,
-    decoded: Result<DecodedImage, String>,
+    decoded: Result<DecodedImage, image::ImageError>,
 }
 
 enum EntryState {
@@ -363,14 +363,34 @@ impl ResourceManager {
                     };
                     changed = true;
                 }
-                Err(error) => {
-                    entry.state = EntryState::Error { error };
+                Err(_cause) => {
+                    // Image decoder diagnostics can quote attacker-selected
+                    // chunk names. Keep the typed cause until this boundary.
+                    entry.state = EntryState::Error {
+                        error: "image decoding failed".into(),
+                    };
                     changed = true;
                 }
             }
         }
 
         changed
+    }
+
+    // Navigation retires these operations before stale terminal events are
+    // filtered by Tab. Completed/decoding resources are not pending transfers.
+    pub(crate) fn retire_pending_images(&mut self, request_id: RequestId) {
+        let retired: Vec<_> = self
+            .images
+            .values()
+            .filter(|entry| {
+                entry.request_id == request_id && matches!(entry.state, EntryState::Loading { .. })
+            })
+            .map(|entry| entry.url.clone())
+            .collect();
+        for url in retired {
+            self.forget_image(&url);
+        }
     }
 
     fn forget_image(&mut self, url: &str) {
@@ -387,12 +407,8 @@ impl Default for ResourceManager {
     }
 }
 
-fn decode_image(bytes: Vec<u8>) -> Result<DecodedImage, String> {
-    if bytes.is_empty() {
-        return Err("empty image response".to_string());
-    }
-
-    let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
+fn decode_image(bytes: Vec<u8>) -> Result<DecodedImage, image::ImageError> {
+    let img = image::load_from_memory(&bytes)?;
     let rgba = img.to_rgba8();
     let (w, h) = rgba.dimensions();
 
@@ -450,6 +466,45 @@ mod tests {
     use addressing::BrowserUrl;
     use net::{BodyProgress, NetworkErrorKind, NetworkResponseInfo};
     use tools::common::MAX_IMAGE_BYTES;
+
+    #[test]
+    fn ai5f_decoder_cause_is_typed_but_attacker_chunk_names_never_reach_image_status() {
+        let mut valid = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgb8(image::RgbImage::new(1, 1))
+            .write_to(&mut valid, image::ImageFormat::Png)
+            .unwrap();
+        // Insert an unknown critical chunk after the valid IHDR. Its CRC32
+        // covers the four attacker-selected type bytes "PRIV".
+        let mut bytes = valid.get_ref()[..33].to_vec();
+        bytes.extend_from_slice(b"\0\0\0\0PRIV\x26\xc2\x2a\xed");
+        bytes.extend_from_slice(&valid.get_ref()[33..]);
+        let mut resources = ResourceManager::new();
+        let url = "https://example.test/PRIVATE.png";
+        let id = resources.request_image(1, url.into(), || Ok(()));
+        resources.on_network_start(1, image_response(url));
+        resources.on_network_chunk(1, url, &bytes);
+        resources.on_network_done(
+            1,
+            image_response(url),
+            BodyProgress::try_new(core_types::ResourceKind::Image, bytes.len()).unwrap(),
+            None,
+        );
+        let done = resources
+            .decode_done_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        let cause = done.decoded.as_ref().err().expect("malformed PNG");
+        assert!(matches!(cause, image::ImageError::Decoding(_)));
+        assert!(
+            cause.to_string().contains("PRIV"),
+            "fixture must establish the original diagnostic leak"
+        );
+        assert!(resources.decode_done_tx.send(done).is_ok());
+        assert!(resources.pump(&egui::Context::default()));
+        assert!(
+            matches!(resources.image_state(id), ImageState::Error { error, .. } if error == "image decoding failed")
+        );
+    }
 
     fn resolve_image_source(base: Option<&str>, source: &str) -> Option<String> {
         let base = base
