@@ -11,18 +11,13 @@ import signal
 import subprocess
 import sys
 import tempfile
-import tomllib
 import unicodedata
 
+import check_url_dependencies as url_policy
+
 UPSTREAM = "https://github.com/servo/rust-url.git"
-FORK = "https://github.com/joris97jansen/rust-url.git"
-REGISTRY = "registry+https://github.com/rust-lang/crates.io-index"
-FORK_PACKAGES = {"url", "idna", "form_urlencoded", "percent-encoding"}
+FORK = url_policy.APPROVED_REPOSITORY
 REVISION = re.compile(r"[0-9a-f]{40}")
-LOCK_SOURCE = re.compile(
-    r"git\+https://github\.com/joris97jansen/rust-url(?:\.git)?"
-    r"\?rev=([0-9a-f]{40})#([0-9a-f]{40})"
-)
 EXIT_CODES = {"notice": 0, "warning": 1, "error": 2}
 
 
@@ -65,65 +60,15 @@ def escaped(value, limit=4096):
     return html.escape(text)
 
 
-def workspace_pin(manifest, lock):
-    """Read only the existing Cargo patch form; Cargo CI owns actual resolution."""
-    patches = manifest.get("patch", {}).get("crates-io", {})
-    for dependencies in (manifest.get("dependencies", {}),
-                         manifest.get("workspace", {}).get("dependencies", {})):
-        declaration = dependencies.get("url")
-        if declaration is not None and not isinstance(declaration, (str, dict)):
-            raise ValueError("url dependency declaration must be a version string or table")
-        if isinstance(declaration, dict) and ({"git", "path", "rev", "branch", "tag", "registry"} & declaration.keys()
-                                               or declaration.get("package", "url") != "url"):
-            raise ValueError("url source overrides outside [patch.crates-io] are unsupported")
-    packages = lock.get("package", [])
-    urls = [p for p in packages if p.get("name") == "url"]
-    if len(urls) != 1:
-        raise ValueError("expected exactly one locked url package")
-    patch = patches.get("url")
-    if patch is None:
-        if urls[0].get("source") != REGISTRY:
-            raise ValueError("url has no fork patch but its lock source is not crates.io")
-        for name in patches:
-            if name in FORK_PACKAGES:
-                raise ValueError("partial or unsupported rust-url patch configuration")
-        if any(p.get("name") in FORK_PACKAGES and p.get("source") != REGISTRY for p in packages):
-            raise ValueError("partial or unsupported rust-url lock configuration")
-        return None
-    if not isinstance(patch, dict) or not isinstance(patch.get("rev"), str):
-        raise ValueError("url patch requires a full Git revision")
-    pin = patch["rev"]
-    if REVISION.fullmatch(pin) is None:
-        raise ValueError("url patch requires a full lowercase 40-character Git revision")
-    for name in FORK_PACKAGES & patches.keys():
-        entry = patches[name]
-        if (not isinstance(entry, dict) or entry.get("git") not in (FORK, FORK.removesuffix(".git"))
-                or entry.get("rev") != pin
-                or {"branch", "tag", "path", "registry"} & entry.keys()
-                or entry.get("package", name) != name):
-            raise ValueError("conflicting or unsupported rust-url patch declaration")
-    for package in packages:
-        source = package.get("source", "")
-        if package.get("name") in FORK_PACKAGES or "github.com/joris97jansen/rust-url" in source:
-            match = LOCK_SOURCE.fullmatch(source)
-            if match is None or match.groups() != (pin, pin):
-                raise ValueError("rust-url manifest and locked sources must use the same revision")
-    return pin
-
-
-def consumer_pin(root):
-    pins = []
-    for directory in (root, root / "fuzz"):
-        try:
-            manifest = tomllib.loads((directory / "Cargo.toml").read_text())
-            lock = tomllib.loads((directory / "Cargo.lock").read_text())
-            pins.append(workspace_pin(manifest, lock))
-        except (OSError, ValueError, TypeError, AttributeError, KeyError) as error:
-            label = "main" if directory == root else "fuzz"
-            raise ValueError(f"{label} consumer configuration: {error}") from error
-    if pins[0] != pins[1]:
-        raise ValueError("main and fuzz workspaces have conflicting rust-url adoption or revisions")
-    return pins[0]
+def consumer_snapshot(root):
+    """Use the same frozen source/configuration policy as PR CI, without Cargo."""
+    try:
+        record = url_policy.check_sources(root)
+        for label in ("main", "fuzz"):
+            url_policy.check_workspace_records(root, label)
+        return record["fork"]
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.CalledProcessError) as error:
+        raise ValueError(f"vendored consumer configuration: {error}") from error
 
 
 def compare(repo, left, right):
@@ -182,10 +127,11 @@ def monitor(root):
     pin = None
     configured = False
     try:
-        pin = consumer_pin(root)
+        snapshot = consumer_snapshot(root)
+        pin = snapshot["revision"]
         configured = True
-        lines.extend([f"Main/fuzz consumer pin: [{pin}]({FORK.removesuffix('.git')}/commit/{pin})"
-                      if pin else "Consumer: not adopted (crates.io).", ""])
+        lines.extend([f"Main/fuzz consumer pin: [{pin}]({FORK.removesuffix('.git')}/commit/{pin})",
+                      f"Approved original Git tree: `{snapshot['tree']}`. Local materialized source verified offline.", ""])
     except ValueError as error:
         finding("error", "Consumer configuration error.")
         lines.append(f"<pre>{escaped(error)}</pre>")
@@ -250,8 +196,11 @@ def monitor(root):
                     if git(repo, "cat-file", "-e", f"{pin}^{{commit}}", allowed=(0, 1, 128)).returncode:
                         git(repo, "fetch", "--no-tags", "--no-recurse-submodules", FORK, pin, timeout=60)
                     git(repo, "rev-parse", "--verify", f"{pin}^{{commit}}")
+                    tree = git(repo, "rev-parse", "--verify", f"{pin}^{{tree}}").stdout.strip()
+                    if tree != snapshot["tree"]:
+                        raise GitError("approved commit tree differs from the vendored provenance identity")
                 except GitError as error:
-                    finding("error", "Consumer pin is unavailable for comparison.")
+                    finding("error", "Consumer pin is unavailable or its tree identity is invalid.")
                     lines.append(f"<pre>{escaped(error)}</pre>")
                 else:
                     state = inspect("Consumer pin (left) / maintained fork (right)", pin, refs.get("maintained"), FORK, FORK)

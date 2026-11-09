@@ -512,15 +512,17 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Verify qualified URL dependency sources and graphs
+      - name: Prepare locked main and fuzz dependency caches
         run: |
-          # Prepare every workspace feature/target edge before the offline
-          # networking verifier tests run in the existing CI-tool discovery.
-          cargo metadata --all-features --locked --format-version 1 > /dev/null
-          make check-url-dependencies
+          cargo fetch --locked
+          cargo fetch --manifest-path fuzz/Cargo.toml --locked
 
-      # The URL check resolves both workspaces online with --locked first.
-      # Keep this after it so offline metadata also works on cache misses.
+      - name: Verify approved URL snapshot and qualified local dependency graphs
+        env:
+          CARGO_NET_OFFLINE: 'true'
+        run: make check-url-dependencies
+
+      # Both locked caches are populated before the offline URL/network gates.
       - name: Verify pinned network dependency source and locked selection
         run: make check-network-dependencies
 

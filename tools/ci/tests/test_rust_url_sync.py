@@ -5,6 +5,7 @@ import io
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -56,21 +57,25 @@ class RustUrlSynchronization(unittest.TestCase):
         self.command(self.fork, "update-ref", "refs/heads/main", mirror)
 
     def write_pins(self, pin):
-        for directory in (self.upstream, self.upstream / "fuzz"):
+        self.snapshot_pin = pin
+        self.snapshot_tree = self.tree
+        for label, directory in (("main", self.upstream), ("fuzz", self.upstream / "fuzz")):
             directory.mkdir(exist_ok=True)
+            prefix = "" if label == "main" else "../"
+            manifest = ('[workspace]\nexclude = ["vendor/rust-url"]\n[patch.crates-io]\n'
+                        f'url = {{ path = "{prefix}vendor/rust-url/url" }}\n')
+            if label == "main":
+                manifest += 'percent-encoding = { path = "vendor/rust-url/percent_encoding" }\n'
+            lock = "\n".join(f'[[package]]\nname = "{name}"\nversion = "{version}"\n'
+                             for name, version in sorted(check.url_policy.FORK_VERSIONS.items()))
             if pin is None:
-                manifest = '[workspace]\n'
-                source = check.REGISTRY
-            else:
-                manifest = ('[patch.crates-io]\n'
-                            f'url = {{ git = "{check.FORK}", rev = "{pin}" }}\n')
-                if directory == self.upstream:
-                    manifest += f'percent-encoding = {{ git = "{check.FORK}", rev = "{pin}" }}\n'
-                source = f"git+{check.FORK}?rev={pin}#{pin}"
-            lock = "\n".join(f'[[package]]\nname = "{name}"\nversion = "1.0.0"\nsource = "{source}"\n'
-                             for name in sorted(check.FORK_PACKAGES))
+                lock += 'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
             (directory / "Cargo.toml").write_text(manifest)
             (directory / "Cargo.lock").write_text(lock)
+        for name in check.url_policy.LOCAL_CRATES.values():
+            path = self.upstream / "vendor/rust-url" / name / "Cargo.toml"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("# fixture manifest; actual source validation is tested separately\n")
 
     def observe(self, failure=None):
         real_git = check.git
@@ -83,7 +88,11 @@ class RustUrlSynchronization(unittest.TestCase):
                              str(self.fork) if a == check.FORK else a for a in args)
             return real_git(repo, *args, **kwargs)
 
-        with mock.patch.object(check, "git", side_effect=local_git):
+        with (mock.patch.object(check, "git", side_effect=local_git),
+              mock.patch.object(check.url_policy, "check_sources", return_value={
+                  "fork": {"revision": self.snapshot_pin, "tree": self.snapshot_tree}})):
+            # Only the approved-source accessor is substituted for synthetic Git
+            # histories. Static Cargo configuration and all Git operations are real.
             return check.monitor(self.upstream)
 
     def test_equal_histories_are_healthy(self):
@@ -185,78 +194,78 @@ class RustUrlSynchronization(unittest.TestCase):
                 self.assertEqual(code, 2)
                 self.assertIn("Unrelated histories; synchronization cannot be established", summary)
 
-    def test_registry_configuration_is_not_adopted(self):
+    def test_registry_configuration_is_rejected(self):
         self.write_pins(None)
-        code, summary, findings = self.observe()
-        self.assertEqual(code, 0)
-        self.assertIn("Consumer: not adopted (crates.io)", summary)
-        self.assertNotIn("### Consumer pin", summary)
-        self.assertEqual(findings, [])
+        code, summary, _ = self.observe()
+        self.assertEqual(code, 2)
+        self.assertIn("Consumer configuration error", summary)
 
     def test_invalid_patch_declarations_are_configuration_errors(self):
-        declarations = [
-            '"2"',
-            f'{{ git = "{check.FORK}", rev = "short" }}',
-            f'{{ git = "{check.FORK}", rev = "{"G" * 40}" }}',
-            f'{{ git = "{check.FORK}", branch = "borrowser" }}',
-            f'{{ git = "{check.FORK}", rev = "{self.base}", tag = "v1" }}',
-            f'{{ git = "{check.UPSTREAM}", rev = "{self.base}" }}',
-            '{ path = "../rust-url" }',
-            f'{{ git = "{check.FORK}", rev = "{self.base}", package = "other" }}',
-        ]
-        for declaration in declarations:
-            with self.subTest(declaration=declaration):
-                self.write_pins(self.base)
-                (self.upstream / "Cargo.toml").write_text(f"[patch.crates-io]\nurl = {declaration}\n")
-                code, summary, _ = self.observe()
-                self.assertEqual(code, 2)
-                self.assertIn("Consumer configuration error", summary)
-
-    def test_conflicting_patch_workspace_and_lock_revisions_are_errors(self):
-        other = "1" * 40
-        for file in ("Cargo.toml", "Cargo.lock", "fuzz/Cargo.toml", "fuzz/Cargo.lock"):
-            with self.subTest(file=file):
-                self.write_pins(self.base)
-                path = self.upstream / file
-                # One root patch or lock record differs; fuzz cases also cover workspace conflicts.
-                path.write_text(path.read_text().replace(self.base, other, 1))
-                code, summary, _ = self.observe()
-                self.assertEqual(code, 2)
-                self.assertIn("Consumer configuration error", summary)
-        self.write_pins(self.base)
-        for file in ("Cargo.toml", "Cargo.lock"):
-            path = self.upstream / "fuzz" / file
-            path.write_text(path.read_text().replace(self.base, other))
-        self.assertEqual(self.observe()[0], 2)
-
-    def test_partial_adoption_and_unsupported_direct_source_are_errors(self):
-        self.write_pins(None)
-        for file in ("Cargo.toml", "Cargo.lock"):
-            path = self.upstream / "fuzz" / file
-            saved = path.read_text()
+        for declaration in ('42', '{ path = "elsewhere" }', '{ git = "https://example.invalid", rev = "bad" }'):
             self.write_pins(self.base)
-            path.write_text(saved)
+            (self.upstream / "Cargo.toml").write_text(f"[patch.crates-io]\nurl = {declaration}\n")
             self.assertEqual(self.observe()[0], 2)
-            self.write_pins(None)
-        (self.upstream / "Cargo.toml").write_text(
-            f'[workspace.dependencies]\nurl = {{ git = "{check.FORK}", rev = "{self.base}" }}\n')
-        self.assertEqual(self.observe()[0], 2)
-        (self.upstream / "Cargo.toml").write_text('[workspace.dependencies]\nurl = 42\n')
-        self.assertEqual(self.observe()[0], 2)
+
+    def test_main_and_fuzz_source_disagreements_are_errors(self):
+        for workspace, name, error in (
+            ("main", "Cargo.toml", "unsupported rust-url path patch configuration"),
+            ("fuzz", "fuzz/Cargo.toml", "unsupported rust-url path patch configuration"),
+            ("main", "Cargo.lock", "locked url must select the approved local version"),
+            ("fuzz", "fuzz/Cargo.lock", "locked url must select the approved local version"),
+        ):
+            with self.subTest(workspace=workspace, path=name):
+                self.write_pins(self.base)
+                code, _, findings = self.observe()
+                self.assertEqual(code, 0)
+                self.assertEqual(findings, [])
+
+                path = self.upstream / name
+                original = path.read_text()
+                if name.endswith(".toml"):
+                    changed = original.replace("vendor/rust-url/url", "vendor/other/url")
+                else:
+                    changed = original.replace('name = "url"\n', 'name = "url"\nsource = "git+unexpected"\n')
+                self.assertNotEqual(changed, original)
+                try:
+                    path.write_text(changed)
+                    code, summary, findings = self.observe()
+                    self.assertEqual(code, 2)
+                    self.assertEqual(findings, [("error", "Consumer configuration error.")])
+                    self.assertIn(f"vendored consumer configuration: {workspace}: {error}", summary)
+                finally:
+                    path.write_text(original)
+
+                code, _, findings = self.observe()
+                self.assertEqual(code, 0)
+                self.assertEqual(findings, [])
 
     def test_missing_malformed_and_ambiguous_cargo_records_are_errors(self):
-        for contents in ('[patch', '[patch]\ncrates-io = "invalid"',
-                         '[patch.crates-io]\nurl = 42'):
-            with self.subTest(contents=contents):
-                self.write_pins(self.base)
-                (self.upstream / "Cargo.toml").write_text(contents)
-                self.assertEqual(self.observe()[0], 2)
+        for contents in ('[patch', '[patch]\ncrates-io = "invalid"', '[patch.crates-io]\nurl = 42'):
+            self.write_pins(self.base)
+            (self.upstream / "Cargo.toml").write_text(contents)
+            self.assertEqual(self.observe()[0], 2)
         self.write_pins(self.base)
         lock = self.upstream / "Cargo.lock"
         lock.write_text(lock.read_text() * 2)
         self.assertEqual(self.observe()[0], 2)
         lock.unlink()
         self.assertEqual(self.observe()[0], 2)
+
+    def test_unapproved_commit_tree_is_an_error(self):
+        self.snapshot_tree = "0" * 40
+        code, summary, _ = self.observe()
+        self.assertEqual(code, 2)
+        self.assertIn("tree identity is invalid", summary)
+
+    def test_real_snapshot_corruption_is_a_configuration_error(self):
+        # Exercise the real frozen loader, rather than the synthetic accessor.
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        shutil.copytree(check.url_policy.ROOT / "vendor/rust-url", root / "vendor/rust-url")
+        (root / "vendor/rust-url/url/src/lib.rs").write_bytes(b"altered")
+        with self.assertRaisesRegex(ValueError, "source hash"):
+            check.consumer_snapshot(root)
 
     def test_missing_remote_or_branch_is_never_healthy(self):
         self.command(self.fork, "update-ref", "-d", "refs/heads/main")

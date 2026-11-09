@@ -899,6 +899,12 @@ in [AH10](platform/ah10-url-origin-resource-addressing-foundation-closeout.md).
 The observations and superseded decisions below remain historical; they do not
 describe the current maintained-parser pin or establish library-wide conformance.
 
+**#1457 provenance update (2026-11-09):** the same approved implementation is now
+selected from the [verified local snapshot](../vendor/rust-url/BORROWSER-PATCH.md).
+The [AH2 amendment](platform/ah2-typed-url-parsing-and-diagnostics.md#1457-source-governance-migration-2026-11-09)
+records source/graph qualification. No parsing-deviation status, known IDNA/setter
+finding, or conformance expectation changes.
+
 The following 2026-10-26/27 observations concern the earlier published dependency.
 The focused consumer checks reproduced pre-AH2 behavior; no AH2 normalization or
 loading regression was found. The earlier

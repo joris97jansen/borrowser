@@ -62,8 +62,8 @@ unavailable base: Some is an independent result, Err an independent failure,
 and None means unresolved. Consumers do not guess an absent base, install a
 dummy base, or infer independence from a scheme prefix.
 
-The current main/fuzz Cargo pins are maintained-parser revision
-`92f7fb395f9ffb2f706e7c664283781fd3b294a2`, checked by the frozen
+The current main/fuzz Cargo source is the [approved local snapshot](../../vendor/rust-url/BORROWSER-PATCH.md)
+of maintained-parser revision `92f7fb395f9ffb2f706e7c664283781fd3b294a2`, checked by the frozen
 [dependency policy](../../tools/ci/check_url_dependencies.py). AH2's published
 2.5.7 decision and AH3's earlier fork pin are historical. The qualified consumer
 graph uses adapter 1.2.1 / ICU 2.0, with the same approved 35-package closures.

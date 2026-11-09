@@ -40,7 +40,7 @@ members = [
   "crates/bus",
   "crates/input_core",
 ]
-exclude = ["fuzz", "vendor/ureq"]
+exclude = ["fuzz", "vendor/ureq", "vendor/rust-url"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -56,5 +56,5 @@ flate2 = { version = "=1.1.2", default-features = false, features = ["rust_backe
 
 [patch.crates-io]
 ureq = { path = "vendor/ureq" }
-url = { git = "https://github.com/joris97jansen/rust-url.git", rev = "92f7fb395f9ffb2f706e7c664283781fd3b294a2" }
-percent-encoding = { git = "https://github.com/joris97jansen/rust-url.git", rev = "92f7fb395f9ffb2f706e7c664283781fd3b294a2" }
+url = { path = "vendor/rust-url/url" }
+percent-encoding = { path = "vendor/rust-url/percent_encoding" }

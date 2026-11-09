@@ -1,0 +1,2326 @@
+{
+  "configurations": {
+    "fuzz-all-features": {
+      "arguments": [
+        "--all-features"
+      ],
+      "workspace": "fuzz"
+    },
+    "fuzz-default": {
+      "arguments": [],
+      "workspace": "fuzz"
+    },
+    "main-all-features": {
+      "arguments": [
+        "--all-features"
+      ],
+      "workspace": "main"
+    },
+    "main-default": {
+      "arguments": [],
+      "workspace": "main"
+    },
+    "main-hardening": {
+      "arguments": [
+        "--features",
+        "html5 html5-fuzzing parser-conformance parser_invariants parser-failure-injection"
+      ],
+      "workspace": "main"
+    },
+    "main-html5": {
+      "arguments": [
+        "--features",
+        "html5"
+      ],
+      "workspace": "main"
+    },
+    "main-observation": {
+      "arguments": [
+        "--features",
+        "conformance-observation"
+      ],
+      "workspace": "main"
+    }
+  },
+  "graphs": {
+    "fuzz": [
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "proc_macro2",
+            "package": "proc-macro2"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "quote",
+            "package": "quote"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "syn",
+            "package": "syn"
+          }
+        ],
+        "features": [],
+        "package": "displaydoc"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "percent_encoding",
+            "package": "percent-encoding"
+          }
+        ],
+        "features": [
+          "alloc",
+          "std"
+        ],
+        "package": "form_urlencoded"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "displaydoc",
+            "package": "displaydoc"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "potential_utf",
+            "package": "potential_utf"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "yoke",
+            "package": "yoke"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerofrom",
+            "package": "zerofrom"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerovec",
+            "package": "zerovec"
+          }
+        ],
+        "features": [],
+        "package": "icu_collections"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "displaydoc",
+            "package": "displaydoc"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "litemap",
+            "package": "litemap"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "tinystr",
+            "package": "tinystr"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "writeable",
+            "package": "writeable"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerovec",
+            "package": "zerovec"
+          }
+        ],
+        "features": [
+          "zerovec"
+        ],
+        "package": "icu_locale_core"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "displaydoc",
+            "package": "displaydoc"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_collections",
+            "package": "icu_collections"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_normalizer_data",
+            "package": "icu_normalizer_data"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_properties",
+            "package": "icu_properties"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_provider",
+            "package": "icu_provider"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "smallvec",
+            "package": "smallvec"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerovec",
+            "package": "zerovec"
+          }
+        ],
+        "features": [
+          "compiled_data"
+        ],
+        "package": "icu_normalizer"
+      },
+      {
+        "edges": [],
+        "features": [],
+        "package": "icu_normalizer_data"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "displaydoc",
+            "package": "displaydoc"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_collections",
+            "package": "icu_collections"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_locale_core",
+            "package": "icu_locale_core"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_properties_data",
+            "package": "icu_properties_data"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_provider",
+            "package": "icu_provider"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "potential_utf",
+            "package": "potential_utf"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerotrie",
+            "package": "zerotrie"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerovec",
+            "package": "zerovec"
+          }
+        ],
+        "features": [
+          "compiled_data"
+        ],
+        "package": "icu_properties"
+      },
+      {
+        "edges": [],
+        "features": [],
+        "package": "icu_properties_data"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "displaydoc",
+            "package": "displaydoc"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_locale_core",
+            "package": "icu_locale_core"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "stable_deref_trait",
+            "package": "stable_deref_trait"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "tinystr",
+            "package": "tinystr"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "writeable",
+            "package": "writeable"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "yoke",
+            "package": "yoke"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerofrom",
+            "package": "zerofrom"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerotrie",
+            "package": "zerotrie"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerovec",
+            "package": "zerovec"
+          }
+        ],
+        "features": [
+          "baked",
+          "zerotrie"
+        ],
+        "package": "icu_provider"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "idna_adapter",
+            "package": "idna_adapter"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "smallvec",
+            "package": "smallvec"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "utf8_iter",
+            "package": "utf8_iter"
+          }
+        ],
+        "features": [
+          "alloc",
+          "compiled_data",
+          "std"
+        ],
+        "package": "idna"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_normalizer",
+            "package": "icu_normalizer"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_properties",
+            "package": "icu_properties"
+          }
+        ],
+        "features": [
+          "compiled_data"
+        ],
+        "package": "idna_adapter"
+      },
+      {
+        "edges": [],
+        "features": [
+          "alloc"
+        ],
+        "package": "litemap"
+      },
+      {
+        "edges": [],
+        "features": [
+          "alloc",
+          "std"
+        ],
+        "package": "percent-encoding"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerovec",
+            "package": "zerovec"
+          }
+        ],
+        "features": [
+          "zerovec"
+        ],
+        "package": "potential_utf"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "unicode_ident",
+            "package": "unicode-ident"
+          }
+        ],
+        "features": [
+          "default",
+          "proc-macro"
+        ],
+        "package": "proc-macro2"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "proc_macro2",
+            "package": "proc-macro2"
+          }
+        ],
+        "features": [
+          "default",
+          "proc-macro"
+        ],
+        "package": "quote"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "serde_core",
+            "package": "serde_core"
+          }
+        ],
+        "features": [
+          "alloc",
+          "std"
+        ],
+        "package": "serde"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": "cfg(any())"
+              }
+            ],
+            "name": "serde_derive",
+            "package": "serde_derive"
+          }
+        ],
+        "features": [
+          "alloc",
+          "result",
+          "std"
+        ],
+        "package": "serde_core"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "proc_macro2",
+            "package": "proc-macro2"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "quote",
+            "package": "quote"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "syn",
+            "package": "syn"
+          }
+        ],
+        "features": [
+          "default"
+        ],
+        "package": "serde_derive"
+      },
+      {
+        "edges": [],
+        "features": [
+          "const_generics"
+        ],
+        "package": "smallvec"
+      },
+      {
+        "edges": [],
+        "features": [
+          "alloc"
+        ],
+        "package": "stable_deref_trait"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "proc_macro2",
+            "package": "proc-macro2"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "quote",
+            "package": "quote"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "unicode_ident",
+            "package": "unicode-ident"
+          }
+        ],
+        "features": [
+          "clone-impls",
+          "default",
+          "derive",
+          "extra-traits",
+          "fold",
+          "parsing",
+          "printing",
+          "proc-macro",
+          "visit"
+        ],
+        "package": "syn"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "proc_macro2",
+            "package": "proc-macro2"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "quote",
+            "package": "quote"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "syn",
+            "package": "syn"
+          }
+        ],
+        "features": [
+          "default",
+          "proc-macro"
+        ],
+        "package": "synstructure"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "displaydoc",
+            "package": "displaydoc"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerovec",
+            "package": "zerovec"
+          }
+        ],
+        "features": [
+          "alloc",
+          "zerovec"
+        ],
+        "package": "tinystr"
+      },
+      {
+        "edges": [],
+        "features": [],
+        "package": "unicode-ident"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "form_urlencoded",
+            "package": "form_urlencoded"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "idna",
+            "package": "idna"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "percent_encoding",
+            "package": "percent-encoding"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "serde",
+            "package": "serde"
+          }
+        ],
+        "features": [
+          "default",
+          "std"
+        ],
+        "package": "url"
+      },
+      {
+        "edges": [],
+        "features": [],
+        "package": "utf8_iter"
+      },
+      {
+        "edges": [],
+        "features": [],
+        "package": "writeable"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "serde",
+            "package": "serde"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "stable_deref_trait",
+            "package": "stable_deref_trait"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "yoke_derive",
+            "package": "yoke-derive"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerofrom",
+            "package": "zerofrom"
+          }
+        ],
+        "features": [
+          "alloc",
+          "derive",
+          "zerofrom"
+        ],
+        "package": "yoke"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "proc_macro2",
+            "package": "proc-macro2"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "quote",
+            "package": "quote"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "syn",
+            "package": "syn"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "synstructure",
+            "package": "synstructure"
+          }
+        ],
+        "features": [],
+        "package": "yoke-derive"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerofrom_derive",
+            "package": "zerofrom-derive"
+          }
+        ],
+        "features": [
+          "alloc",
+          "derive"
+        ],
+        "package": "zerofrom"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "proc_macro2",
+            "package": "proc-macro2"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "quote",
+            "package": "quote"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "syn",
+            "package": "syn"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "synstructure",
+            "package": "synstructure"
+          }
+        ],
+        "features": [],
+        "package": "zerofrom-derive"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "displaydoc",
+            "package": "displaydoc"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "yoke",
+            "package": "yoke"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerofrom",
+            "package": "zerofrom"
+          }
+        ],
+        "features": [
+          "yoke",
+          "zerofrom"
+        ],
+        "package": "zerotrie"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "yoke",
+            "package": "yoke"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerofrom",
+            "package": "zerofrom"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerovec_derive",
+            "package": "zerovec-derive"
+          }
+        ],
+        "features": [
+          "alloc",
+          "derive",
+          "yoke"
+        ],
+        "package": "zerovec"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "proc_macro2",
+            "package": "proc-macro2"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "quote",
+            "package": "quote"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "syn",
+            "package": "syn"
+          }
+        ],
+        "features": [],
+        "package": "zerovec-derive"
+      }
+    ],
+    "main": [
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "proc_macro2",
+            "package": "proc-macro2"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "quote",
+            "package": "quote"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "syn",
+            "package": "syn"
+          }
+        ],
+        "features": [],
+        "package": "displaydoc"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "percent_encoding",
+            "package": "percent-encoding"
+          }
+        ],
+        "features": [
+          "alloc",
+          "std"
+        ],
+        "package": "form_urlencoded"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "displaydoc",
+            "package": "displaydoc"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "potential_utf",
+            "package": "potential_utf"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "yoke",
+            "package": "yoke"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerofrom",
+            "package": "zerofrom"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerovec",
+            "package": "zerovec"
+          }
+        ],
+        "features": [],
+        "package": "icu_collections"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "displaydoc",
+            "package": "displaydoc"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "litemap",
+            "package": "litemap"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "tinystr",
+            "package": "tinystr"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "writeable",
+            "package": "writeable"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerovec",
+            "package": "zerovec"
+          }
+        ],
+        "features": [
+          "zerovec"
+        ],
+        "package": "icu_locale_core"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "displaydoc",
+            "package": "displaydoc"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_collections",
+            "package": "icu_collections"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_normalizer_data",
+            "package": "icu_normalizer_data"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_properties",
+            "package": "icu_properties"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_provider",
+            "package": "icu_provider"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "smallvec",
+            "package": "smallvec"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerovec",
+            "package": "zerovec"
+          }
+        ],
+        "features": [
+          "compiled_data"
+        ],
+        "package": "icu_normalizer"
+      },
+      {
+        "edges": [],
+        "features": [],
+        "package": "icu_normalizer_data"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "displaydoc",
+            "package": "displaydoc"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_collections",
+            "package": "icu_collections"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_locale_core",
+            "package": "icu_locale_core"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_properties_data",
+            "package": "icu_properties_data"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_provider",
+            "package": "icu_provider"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "potential_utf",
+            "package": "potential_utf"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerotrie",
+            "package": "zerotrie"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerovec",
+            "package": "zerovec"
+          }
+        ],
+        "features": [
+          "compiled_data"
+        ],
+        "package": "icu_properties"
+      },
+      {
+        "edges": [],
+        "features": [],
+        "package": "icu_properties_data"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "displaydoc",
+            "package": "displaydoc"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_locale_core",
+            "package": "icu_locale_core"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "stable_deref_trait",
+            "package": "stable_deref_trait"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "tinystr",
+            "package": "tinystr"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "writeable",
+            "package": "writeable"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "yoke",
+            "package": "yoke"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerofrom",
+            "package": "zerofrom"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerotrie",
+            "package": "zerotrie"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerovec",
+            "package": "zerovec"
+          }
+        ],
+        "features": [
+          "baked",
+          "zerotrie"
+        ],
+        "package": "icu_provider"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "idna_adapter",
+            "package": "idna_adapter"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "smallvec",
+            "package": "smallvec"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "utf8_iter",
+            "package": "utf8_iter"
+          }
+        ],
+        "features": [
+          "alloc",
+          "compiled_data",
+          "std"
+        ],
+        "package": "idna"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_normalizer",
+            "package": "icu_normalizer"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "icu_properties",
+            "package": "icu_properties"
+          }
+        ],
+        "features": [
+          "compiled_data"
+        ],
+        "package": "idna_adapter"
+      },
+      {
+        "edges": [],
+        "features": [
+          "alloc"
+        ],
+        "package": "litemap"
+      },
+      {
+        "edges": [],
+        "features": [
+          "alloc",
+          "default",
+          "std"
+        ],
+        "package": "percent-encoding"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerovec",
+            "package": "zerovec"
+          }
+        ],
+        "features": [
+          "zerovec"
+        ],
+        "package": "potential_utf"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "unicode_ident",
+            "package": "unicode-ident"
+          }
+        ],
+        "features": [
+          "default",
+          "proc-macro"
+        ],
+        "package": "proc-macro2"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "proc_macro2",
+            "package": "proc-macro2"
+          }
+        ],
+        "features": [
+          "default",
+          "proc-macro"
+        ],
+        "package": "quote"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "serde_core",
+            "package": "serde_core"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "serde_derive",
+            "package": "serde_derive"
+          }
+        ],
+        "features": [
+          "alloc",
+          "default",
+          "derive",
+          "serde_derive",
+          "std"
+        ],
+        "package": "serde"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": "cfg(any())"
+              }
+            ],
+            "name": "serde_derive",
+            "package": "serde_derive"
+          }
+        ],
+        "features": [
+          "alloc",
+          "result",
+          "std"
+        ],
+        "package": "serde_core"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "proc_macro2",
+            "package": "proc-macro2"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "quote",
+            "package": "quote"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "syn",
+            "package": "syn"
+          }
+        ],
+        "features": [
+          "default"
+        ],
+        "package": "serde_derive"
+      },
+      {
+        "edges": [],
+        "features": [
+          "const_generics",
+          "const_new",
+          "union"
+        ],
+        "package": "smallvec"
+      },
+      {
+        "edges": [],
+        "features": [
+          "alloc"
+        ],
+        "package": "stable_deref_trait"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "proc_macro2",
+            "package": "proc-macro2"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "quote",
+            "package": "quote"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "unicode_ident",
+            "package": "unicode-ident"
+          }
+        ],
+        "features": [
+          "clone-impls",
+          "default",
+          "derive",
+          "extra-traits",
+          "fold",
+          "full",
+          "parsing",
+          "printing",
+          "proc-macro",
+          "visit",
+          "visit-mut"
+        ],
+        "package": "syn"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "proc_macro2",
+            "package": "proc-macro2"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "quote",
+            "package": "quote"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "syn",
+            "package": "syn"
+          }
+        ],
+        "features": [
+          "default",
+          "proc-macro"
+        ],
+        "package": "synstructure"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "displaydoc",
+            "package": "displaydoc"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerovec",
+            "package": "zerovec"
+          }
+        ],
+        "features": [
+          "alloc",
+          "zerovec"
+        ],
+        "package": "tinystr"
+      },
+      {
+        "edges": [],
+        "features": [],
+        "package": "unicode-ident"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "form_urlencoded",
+            "package": "form_urlencoded"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "idna",
+            "package": "idna"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "percent_encoding",
+            "package": "percent-encoding"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "serde",
+            "package": "serde"
+          }
+        ],
+        "features": [
+          "default",
+          "std"
+        ],
+        "package": "url"
+      },
+      {
+        "edges": [],
+        "features": [],
+        "package": "utf8_iter"
+      },
+      {
+        "edges": [],
+        "features": [],
+        "package": "writeable"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "serde",
+            "package": "serde"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "stable_deref_trait",
+            "package": "stable_deref_trait"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "yoke_derive",
+            "package": "yoke-derive"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerofrom",
+            "package": "zerofrom"
+          }
+        ],
+        "features": [
+          "alloc",
+          "derive",
+          "zerofrom"
+        ],
+        "package": "yoke"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "proc_macro2",
+            "package": "proc-macro2"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "quote",
+            "package": "quote"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "syn",
+            "package": "syn"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "synstructure",
+            "package": "synstructure"
+          }
+        ],
+        "features": [],
+        "package": "yoke-derive"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerofrom_derive",
+            "package": "zerofrom-derive"
+          }
+        ],
+        "features": [
+          "alloc",
+          "derive"
+        ],
+        "package": "zerofrom"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "proc_macro2",
+            "package": "proc-macro2"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "quote",
+            "package": "quote"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "syn",
+            "package": "syn"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "synstructure",
+            "package": "synstructure"
+          }
+        ],
+        "features": [],
+        "package": "zerofrom-derive"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "displaydoc",
+            "package": "displaydoc"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "yoke",
+            "package": "yoke"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerofrom",
+            "package": "zerofrom"
+          }
+        ],
+        "features": [
+          "yoke",
+          "zerofrom"
+        ],
+        "package": "zerotrie"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "yoke",
+            "package": "yoke"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerofrom",
+            "package": "zerofrom"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "zerovec_derive",
+            "package": "zerovec-derive"
+          }
+        ],
+        "features": [
+          "alloc",
+          "derive",
+          "yoke"
+        ],
+        "package": "zerovec"
+      },
+      {
+        "edges": [
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "proc_macro2",
+            "package": "proc-macro2"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "quote",
+            "package": "quote"
+          },
+          {
+            "kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ],
+            "name": "syn",
+            "package": "syn"
+          }
+        ],
+        "features": [],
+        "package": "zerovec-derive"
+      }
+    ]
+  },
+  "schema": 1
+}

@@ -399,11 +399,12 @@ build-release:
 build-release-html5:
 	cargo build --workspace --release --features html5 --locked
 
-# Enforce the independently frozen AH3 URL source and graph in both workspaces.
+# Offline verification of the frozen rust-url snapshot and both qualified graphs.
+# Prepare locked main/fuzz registry caches before invoking this gate on a fresh host.
 .PHONY: check-url-dependencies
 check-url-dependencies:
-	python3 tools/ci/check_url_dependencies.py
-	python3 -m unittest discover -s tools/ci/tests -v
+	python3 -B tools/ci/check_url_dependencies.py
+	python3 -B -m unittest discover -s tools/ci/tests -v
 
 .PHONY: check-network-dependencies
 check-network-dependencies:

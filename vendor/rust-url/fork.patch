@@ -1,0 +1,2112 @@
+diff --git a/url/src/host.rs b/url/src/host.rs
+index a8e98e5a735742cad31ca296c3e1424bc3be4504..fe171c3697dbfe7d3e0d1bf9da4cc003ded7d2aa 100644
+--- a/url/src/host.rs
++++ b/url/src/host.rs
+@@ -18,7 +18,7 @@ use percent_encoding::{percent_decode, utf8_percent_encode, CONTROLS};
+ #[cfg(feature = "serde")]
+ use serde_derive::{Deserialize, Serialize};
+ 
+-use crate::parser::{ParseError, ParseResult};
++use crate::parser::{ParseError, ParseResult, SyntaxViolation};
+ 
+ #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+ #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+@@ -79,7 +79,7 @@ impl Host<String> {
+     ///
+     /// <https://url.spec.whatwg.org/#host-parsing>
+     pub fn parse(input: &str) -> Result<Self, ParseError> {
+-        Host::<Cow<str>>::parse_cow(input.into()).map(|i| i.into_owned())
++        Host::<Cow<str>>::parse_cow(input.into(), None).map(|i| i.into_owned())
+     }
+ 
+     /// <https://url.spec.whatwg.org/#concept-opaque-host-parser>
+@@ -89,7 +89,10 @@ impl Host<String> {
+ }
+ 
+ impl<'a> Host<Cow<'a, str>> {
+-    pub(crate) fn parse_cow(input: Cow<'a, str>) -> Result<Self, ParseError> {
++    pub(crate) fn parse_cow(
++        input: Cow<'a, str>,
++        violation_fn: Option<&dyn Fn(SyntaxViolation)>,
++    ) -> Result<Self, ParseError> {
+         if input.starts_with('[') {
+             if !input.ends_with(']') {
+                 return Err(ParseError::InvalidIpv6Address);
+@@ -106,7 +109,67 @@ impl<'a> Host<Cow<'a, str>> {
+             },
+         };
+ 
+-        let domain = idna::domain_to_ascii_from_cow(domain, idna::AsciiDenyList::URL)?;
++        // WHATWG domain parsing reports strict ToASCII failure before deciding
++        // whether non-strict URL parsing can still accept the domain.
++        if let Some(violation_fn) = violation_fn {
++            if idna::uts46::Uts46::new()
++                .to_ascii(
++                    &domain,
++                    idna::AsciiDenyList::STD3,
++                    idna::uts46::Hyphens::Check,
++                    idna::uts46::DnsLength::Verify,
++                )
++                .is_err()
++            {
++                violation_fn(SyntaxViolation::DomainToAscii);
++            }
++        }
++
++        // The URL Standard's non-strict domain parser preserves an entirely
++        // ASCII domain (apart from case), including invalid Punycode labels.
++        // The decision applies to the whole percent-decoded domain, not to
++        // individual labels. Non-ASCII domains still undergo UTS #46.
++        let domain = if domain.is_ascii() {
++            if domain.iter().any(|&b| {
++                b <= b' '
++                    || b == 0x7f
++                    || matches!(
++                        b,
++                        b'#' | b'%'
++                            | b'/'
++                            | b':'
++                            | b'<'
++                            | b'>'
++                            | b'?'
++                            | b'@'
++                            | b'['
++                            | b'\\'
++                            | b']'
++                            | b'^'
++                            | b'|'
++                    )
++            }) {
++                return Err(ParseError::IdnaError);
++            }
++            match domain {
++                Cow::Borrowed(bytes) => {
++                    // ASCII is valid UTF-8. Keep the common lowercase case borrowed.
++                    let ascii = core::str::from_utf8(bytes).unwrap();
++                    if bytes.iter().any(u8::is_ascii_uppercase) {
++                        Cow::Owned(ascii.to_ascii_lowercase())
++                    } else {
++                        Cow::Borrowed(ascii)
++                    }
++                }
++                Cow::Owned(bytes) => {
++                    let mut ascii = String::from_utf8(bytes).unwrap();
++                    ascii.make_ascii_lowercase();
++                    Cow::Owned(ascii)
++                }
++            }
++        } else {
++            idna::domain_to_ascii_from_cow(domain, idna::AsciiDenyList::URL)?
++        };
+ 
+         if domain.is_empty() {
+             return Err(ParseError::EmptyHost);
+@@ -183,6 +246,17 @@ impl<'a> Host<Cow<'a, str>> {
+     }
+ }
+ 
++/// URL Standard domain-to-Unicode: a failed conversion preserves the ASCII
++/// domain. Generic IDNA error-marker output must not escape through URL APIs.
++pub(crate) fn domain_to_unicode(domain: &str) -> String {
++    let (unicode, result) = idna::domain_to_unicode(domain);
++    if result.is_err() {
++        domain.into()
++    } else {
++        unicode
++    }
++}
++
+ impl<S: AsRef<str>> fmt::Display for Host<S> {
+     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+         match *self {
+diff --git a/url/src/lib.rs b/url/src/lib.rs
+index fa2803681263e6b9790d61c7d14f7a85630eb11f..aa88e6c1b39460d95c9faaad7d150422e41ee056 100644
+--- a/url/src/lib.rs
++++ b/url/src/lib.rs
+@@ -279,6 +279,11 @@ impl<'a> ParseOptions<'a> {
+     /// `Fn`, the caller might need to utilize _interior mutability_, such as with
+     /// a `RefCell`, to collect the violations.
+     ///
++    /// [`SyntaxViolation::DomainToAscii`] reports a strict UTS #46 validation
++    /// failure even when non-strict URL parsing accepts the host. Attaching a
++    /// callback does not change parsing results. The callback can also run
++    /// before a fatal parsing error; a diagnostic does not imply success.
++    ///
+     /// ## Example
+     /// ```
+     /// use std::cell::RefCell;
+@@ -301,6 +306,35 @@ impl<'a> ParseOptions<'a> {
+         self
+     }
+ 
++    /// Parse only when the parser can establish independence from an unavailable
++    /// base, including the failure and ordered syntax violations. `Ok(None)` is
++    /// an unproven interpretation, not a parse error or a statement that the
++    /// reference is intrinsically relative. Any configured base is ignored.
++    ///
++    /// Non-special schemes and explicit `//` authority branches are certified;
++    /// other branches conservatively remain unproven. Ordinary parsing is
++    /// unchanged. No violations are delivered for an unproven operation.
++    pub fn parse_if_base_independent(self, input: &str) -> Result<Option<Url>, crate::ParseError> {
++        let violations = core::cell::RefCell::new(alloc::vec::Vec::new());
++        let record = |event| violations.borrow_mut().push(event);
++        let result = Parser {
++            serialization: String::with_capacity(input.len()),
++            base_url: None,
++            query_encoding_override: self.encoding_override,
++            violation_fn: Some(&record),
++            context: Context::UrlParser,
++        }
++        .parse_url_if_base_independent(input);
++        if !matches!(result, Ok(None)) {
++            if let Some(callback) = self.violation_fn {
++                for event in violations.into_inner() {
++                    callback(event);
++                }
++            }
++        }
++        result
++    }
++
+     /// Parse an URL string with the configuration so far.
+     pub fn parse(self, input: &str) -> Result<Url, crate::ParseError> {
+         Parser {
+@@ -2044,7 +2078,7 @@ impl Url {
+                 }
+             }
+             if SchemeType::from(self.scheme()).is_special() {
+-                self.set_host_internal(Host::parse_cow(host_substr.into())?, None);
++                self.set_host_internal(Host::parse_cow(host_substr.into(), None)?, None);
+             } else {
+                 self.set_host_internal(Host::parse_opaque_cow(host_substr.into())?, None);
+             }
+@@ -3018,7 +3052,8 @@ fn path_to_file_url_segments_windows(
+                 serialization.push(':');
+             }
+             Prefix::UNC(server, share) | Prefix::VerbatimUNC(server, share) => {
+-                let host = Host::parse_cow(server.to_str().ok_or(())?.into()).map_err(|_| ())?;
++                let host =
++                    Host::parse_cow(server.to_str().ok_or(())?.into(), None).map_err(|_| ())?;
+                 write!(serialization, "{host}").unwrap();
+                 host_end = to_u32(serialization.len()).unwrap();
+                 host_internal = host.into();
+diff --git a/url/src/origin.rs b/url/src/origin.rs
+index 52e41cba245cf3657bb05f06794ca0b39d9dd3c6..e5d2f8359706e5895489f4d79fd182b585ba6f1c 100644
+--- a/url/src/origin.rs
++++ b/url/src/origin.rs
+@@ -95,8 +95,7 @@ impl Origin {
+             Self::Tuple(ref scheme, ref host, port) => {
+                 let host = match *host {
+                     Host::Domain(ref domain) => {
+-                        let (domain, _errors) = idna::domain_to_unicode(domain);
+-                        Host::Domain(domain)
++                        Host::Domain(crate::host::domain_to_unicode(domain))
+                     }
+                     _ => host.clone(),
+                 };
+diff --git a/url/src/parser.rs b/url/src/parser.rs
+index 6ccfa9b4633072be27d2c5df4af83b9214661a9b..061067cc11db0287ac5c5f0fffb1294db99a701e 100644
+--- a/url/src/parser.rs
++++ b/url/src/parser.rs
+@@ -136,6 +136,7 @@ syntax_violation_enum! {
+     Backslash => "backslash",
+     C0SpaceIgnored =>
+         "leading or trailing control or space character are ignored in URLs",
++    DomainToAscii => "domain-to-ASCII validation error",
+     EmbeddedCredentials =>
+         "embedding authentication information (username or password) \
+          in an URL is not recommended",
+@@ -374,7 +375,9 @@ impl Parser<'_> {
+     pub fn parse_url(mut self, input: &str) -> ParseResult<Url> {
+         let input = Input::new_trim_c0_control_and_space(input, self.violation_fn);
+         if let Ok(remaining) = self.parse_scheme(input.clone()) {
+-            return self.parse_with_scheme(remaining);
++            return self
++                .parse_with_scheme(remaining, false)
++                .map(|url| url.expect("ordinary parsing always selects a URL interpretation"));
+         }
+ 
+         // No-scheme state
+@@ -396,6 +399,16 @@ impl Parser<'_> {
+         }
+     }
+ 
++    /// Unknown provenance is not the same operation as a null base. Dispatch
++    /// only branches whose value, failure and diagnostics do not consult a base.
++    pub fn parse_url_if_base_independent(mut self, input: &str) -> ParseResult<Option<Url>> {
++        let input = Input::new_trim_c0_control_and_space(input, self.violation_fn);
++        match self.parse_scheme(input) {
++            Ok(remaining) => self.parse_with_scheme(remaining, true),
++            Err(()) => Ok(None),
++        }
++    }
++
+     pub fn parse_scheme<'i>(&mut self, mut input: Input<'i>) -> Result<Input<'i>, ()> {
+         // starts_with will also fail for empty strings so we can skip that comparison for perf
+         if !input.starts_with(ascii_alpha) {
+@@ -422,19 +435,34 @@ impl Parser<'_> {
+         }
+     }
+ 
+-    fn parse_with_scheme(mut self, input: Input<'_>) -> ParseResult<Url> {
++    fn parse_with_scheme(
++        mut self,
++        input: Input<'_>,
++        base_unavailable: bool,
++    ) -> ParseResult<Option<Url>> {
+         use crate::SyntaxViolation::{ExpectedDoubleSlash, ExpectedFileDoubleSlash};
+         let scheme_end = to_u32(self.serialization.len())?;
+         let scheme_type = SchemeType::from(&self.serialization);
+         self.serialization.push(':');
+         match scheme_type {
+             SchemeType::File => {
++                // Only the explicit file-host branch is certified here. A
++                // single slash or drive-looking input can inherit host/drive.
++                if base_unavailable && !input.starts_with("//") {
++                    return Ok(None);
++                }
+                 self.log_violation_if(ExpectedFileDoubleSlash, || !input.starts_with("//"));
+                 let base_file_url = self.base_url.filter(|base| base.scheme() == "file");
+                 self.serialization.clear();
+-                self.parse_file(input, scheme_type, base_file_url)
++                self.parse_file(input, scheme_type, base_file_url).map(Some)
+             }
+             SchemeType::SpecialNotFile => {
++                // Literal authority slashes reach the same branch, with the
++                // same diagnostics, regardless of scheme equality with a base.
++                // Other recoverable spellings are deliberately uncertified.
++                if base_unavailable && !input.starts_with("//") {
++                    return Ok(None);
++                }
+                 // special relative or authority state
+                 let (slashes_count, remaining) = input.count_matching(|c| matches!(c, '/' | '\\'));
+                 if let Some(base_url) = self.base_url {
+@@ -444,7 +472,7 @@ impl Parser<'_> {
+                         // "Cannot-be-a-base" URLs only happen with "not special" schemes.
+                         debug_assert!(!base_url.cannot_be_a_base());
+                         self.serialization.clear();
+-                        return self.parse_relative(input, scheme_type, base_url);
++                        return self.parse_relative(input, scheme_type, base_url).map(Some);
+                     }
+                 }
+                 // special authority slashes state
+@@ -456,8 +484,11 @@ impl Parser<'_> {
+                         != "//"
+                 });
+                 self.after_double_slash(remaining, scheme_type, scheme_end)
++                    .map(Some)
+             }
+-            SchemeType::NotSpecial => self.parse_non_special(input, scheme_type, scheme_end),
++            SchemeType::NotSpecial => self
++                .parse_non_special(input, scheme_type, scheme_end)
++                .map(Some),
+         }
+     }
+ 
+@@ -549,16 +580,18 @@ impl Parser<'_> {
+                 let host_start = "file://".len();
+                 let mut host_end = host_start;
+                 let mut host = HostInternal::None;
+-                if !starts_with_windows_drive_letter_segment(&input_after_first_char) {
+-                    if let Some(base_url) = base_file_url {
++                if let Some(base_url) = base_file_url {
++                    // File-slash state inherits the host independently of
++                    // whether the path inherits or replaces a drive segment.
++                    self.serialization
++                        .push_str(base_url.slice(base_url.host_start..base_url.host_end));
++                    host_end = self.serialization.len();
++                    host = base_url.host;
++                    if !starts_with_windows_drive_letter_segment(&input_after_first_char) {
+                         let first_segment = base_url.path_segments().unwrap().next().unwrap();
+                         if is_normalized_windows_drive_letter(first_segment) {
+                             self.serialization.push('/');
+                             self.serialization.push_str(first_segment);
+-                        } else if let Some(host_str) = base_url.host_str() {
+-                            self.serialization.push_str(host_str);
+-                            host_end = self.serialization.len();
+-                            host = base_url.host;
+                         }
+                     }
+                 }
+@@ -636,6 +669,12 @@ impl Parser<'_> {
+                         };
+                         self.serialization.push_str(before_query);
+                         self.shorten_path(SchemeType::File, base_url.path_start as usize);
++                        // A sole drive survives shortening without a trailing
++                        // slash. Start the next segment before reading its
++                        // buffer, which may be flushed by ignored characters.
++                        if !self.serialization.ends_with('/') {
++                            self.serialization.push('/');
++                        }
+                         let remaining = self.parse_path(
+                             SchemeType::File,
+                             &mut true,
+@@ -654,26 +693,28 @@ impl Parser<'_> {
+                             remaining,
+                         )
+                     } else {
+-                        self.serialization.push_str("file:///");
+-                        let scheme_end = "file".len() as u32;
+-                        let path_start = "file://".len();
+-                        let remaining =
+-                            self.parse_path(SchemeType::File, &mut false, path_start, input);
+-                        let (query_start, fragment_start) =
+-                            self.parse_query_and_fragment(SchemeType::File, scheme_end, remaining)?;
+-                        let path_start = path_start as u32;
+-                        Ok(Url {
+-                            serialization: self.serialization,
+-                            scheme_end,
+-                            username_end: path_start,
+-                            host_start: path_start,
+-                            host_end: path_start,
+-                            host: HostInternal::None,
+-                            port: None,
+-                            path_start,
+-                            query_start,
+-                            fragment_start,
+-                        })
++                        // A leading drive clears the inherited path, not
++                        // the host. Preserve the base's serialized authority.
++                        self.serialization
++                            .push_str(base_url.slice(..base_url.path_start));
++                        self.serialization.push('/');
++                        let remaining = self.parse_path(
++                            SchemeType::File,
++                            &mut false,
++                            base_url.path_start as usize,
++                            input,
++                        );
++                        self.with_query_and_fragment(
++                            SchemeType::File,
++                            base_url.scheme_end,
++                            base_url.username_end,
++                            base_url.host_start,
++                            base_url.host_end,
++                            base_url.host,
++                            base_url.port,
++                            base_url.path_start,
++                            remaining,
++                        )
+                     }
+                 }
+             }
+@@ -740,23 +781,31 @@ impl Parser<'_> {
+                 })
+             }
+             Some('#') => self.fragment_only(base_url, input),
+-            Some('/') | Some('\\') => {
+-                let (slashes_count, remaining) = input.count_matching(|c| matches!(c, '/' | '\\'));
+-                if slashes_count >= 2 {
+-                    self.log_violation_if(SyntaxViolation::ExpectedDoubleSlash, || {
+-                        input
+-                            .clone()
+-                            .take_while(|&c| matches!(c, '/' | '\\'))
+-                            .collect::<String>()
+-                            != "//"
+-                    });
++            Some(c) if c == '/' || (c == '\\' && scheme_type.is_special()) => {
++                self.log_violation_if(SyntaxViolation::Backslash, || c == '\\');
++                // Relative slash state. Only special URLs treat a backslash as
++                // a separator; non-special backslashes remain path input.
++                let (next_char, mut remaining) = input_after_first_char.split_first();
++                if next_char == Some('/') || (next_char == Some('\\') && scheme_type.is_special()) {
++                    if scheme_type.is_special() {
++                        self.log_violation_if(SyntaxViolation::Backslash, || {
++                            next_char == Some('\\')
++                        });
++                        // Special authority ignore slashes state. Consume all
++                        // excess separators before entering the authority state.
++                        loop {
++                            let (c, after_separator) = remaining.split_first();
++                            if !matches!(c, Some('/') | Some('\\')) {
++                                break;
++                            }
++                            self.log_violation(SyntaxViolation::ExpectedDoubleSlash);
++                            remaining = after_separator;
++                        }
++                    }
+                     let scheme_end = base_url.scheme_end;
+                     debug_assert!(base_url.byte_at(scheme_end) == b':');
+                     self.serialization
+                         .push_str(base_url.slice(..scheme_end + 1));
+-                    if let Some(after_prefix) = input.split_prefix("//") {
+-                        return self.after_double_slash(after_prefix, scheme_type, scheme_end);
+-                    }
+                     return self.after_double_slash(remaining, scheme_type, scheme_end);
+                 }
+                 let path_start = base_url.path_start;
+@@ -937,7 +986,7 @@ impl Parser<'_> {
+         scheme_end: u32,
+         scheme_type: SchemeType,
+     ) -> ParseResult<(u32, HostInternal, Option<u16>, Input<'i>)> {
+-        let (host, remaining) = Parser::parse_host(input, scheme_type)?;
++        let (host, remaining) = Parser::parse_host(input, scheme_type, self.violation_fn)?;
+         write!(&mut self.serialization, "{host}").unwrap();
+         let host_end = to_u32(self.serialization.len())?;
+         if let Host::Domain(h) = &host {
+@@ -968,12 +1017,13 @@ impl Parser<'_> {
+         Ok((host_end, host.into(), port, remaining))
+     }
+ 
+-    pub fn parse_host(
+-        mut input: Input<'_>,
++    pub fn parse_host<'i>(
++        mut input: Input<'i>,
+         scheme_type: SchemeType,
+-    ) -> ParseResult<(Host<Cow<'_, str>>, Input<'_>)> {
++        violation_fn: Option<&dyn Fn(SyntaxViolation)>,
++    ) -> ParseResult<(Host<Cow<'i, str>>, Input<'i>)> {
+         if scheme_type.is_file() {
+-            return Parser::get_file_host(input);
++            return Parser::get_file_host(input, violation_fn);
+         }
+         // Undo the Input abstraction here to avoid allocating in the common case
+         // where the host part of the input does not contain any tab or newline
+@@ -1019,15 +1069,18 @@ impl Parser<'_> {
+             let host = Host::parse_opaque_cow(host_str)?;
+             return Ok((host, input));
+         }
+-        let host = Host::parse_cow(host_str)?;
++        let host = Host::parse_cow(host_str, violation_fn)?;
+         Ok((host, input))
+     }
+ 
+-    fn get_file_host(input: Input<'_>) -> ParseResult<(Host<Cow<'_, str>>, Input<'_>)> {
++    fn get_file_host<'i>(
++        input: Input<'i>,
++        violation_fn: Option<&dyn Fn(SyntaxViolation)>,
++    ) -> ParseResult<(Host<Cow<'i, str>>, Input<'i>)> {
+         let (_, host_str, remaining) = Parser::file_host(input)?;
+-        let host = match Host::parse(&host_str)? {
++        let host = match Host::parse_cow(host_str, violation_fn)? {
+             Host::Domain(ref d) if d == "localhost" => Host::Domain(Cow::Borrowed("")),
+-            Host::Domain(s) => Host::Domain(Cow::Owned(s)),
++            Host::Domain(s) => Host::Domain(s),
+             Host::Ipv4(ip) => Host::Ipv4(ip),
+             Host::Ipv6(ip) => Host::Ipv6(ip),
+         };
+@@ -1038,25 +1091,19 @@ impl Parser<'_> {
+         &mut self,
+         input: Input<'i>,
+     ) -> ParseResult<(bool, HostInternal, Input<'i>)> {
+-        let has_host;
+-        let (_, host_str, remaining) = Parser::file_host(input)?;
++        let (continue_with_path_start, host_str, remaining) = Parser::file_host(input)?;
+         let host = if host_str.is_empty() {
+-            has_host = false;
+-            HostInternal::None
++            return Ok((continue_with_path_start, HostInternal::None, remaining));
+         } else {
+-            match Host::parse_cow(host_str)? {
+-                Host::Domain(ref d) if d == "localhost" => {
+-                    has_host = false;
+-                    HostInternal::None
+-                }
++            match Host::parse_cow(host_str, self.violation_fn)? {
++                Host::Domain(ref d) if d == "localhost" => HostInternal::None,
+                 host => {
+                     write!(&mut self.serialization, "{host}").unwrap();
+-                    has_host = true;
+                     host.into()
+                 }
+             }
+         };
+-        Ok((has_host, host, remaining))
++        Ok((continue_with_path_start, host, remaining))
+     }
+ 
+     pub fn file_host(input: Input<'_>) -> ParseResult<(bool, Cow<'_, str>, Input<'_>)> {
+@@ -1138,17 +1185,18 @@ impl Parser<'_> {
+         // If url is special, then:
+         if scheme_type.is_special() {
+             if maybe_c == Some('\\') {
+-                // If c is U+005C (\), validation error.
+                 self.log_violation(SyntaxViolation::Backslash);
+             }
+-            // A special URL always has a non-empty path.
+-            if !self.serialization.ends_with('/') {
+-                self.serialization.push('/');
+-                // We have already made sure the forward slash is present.
+-                if maybe_c == Some('/') || maybe_c == Some('\\') {
+-                    return self.parse_path(scheme_type, has_host, path_start, remaining);
+-                }
++
++            // Establish the path root independently of the authority.
++            self.serialization.push('/');
++
++            // Consume the initial path separator if one is present.
++            if maybe_c == Some('/') || maybe_c == Some('\\') {
++                return self.parse_path(scheme_type, has_host, path_start, remaining);
+             }
++
++            // Otherwise, preserve the current input character.
+             return self.parse_path(scheme_type, has_host, path_start, input);
+         } else if maybe_c == Some('?') || maybe_c == Some('#') {
+             // Otherwise, if state override is not given and c is U+003F (?),
+@@ -1268,7 +1316,10 @@ impl Parser<'_> {
+                     }
+                     _ => {
+                         self.check_url_code_point(c, &input);
+-                        if scheme_type.is_file()
++                        // Retain state-override behavior for setters. URL
++                        // parsing establishes separators before this buffer.
++                        if self.context != Context::UrlParser
++                            && scheme_type.is_file()
+                             && self.serialization.len() > path_start
+                             && is_normalized_windows_drive_letter(
+                                 &self.serialization[path_start + 1..],
+@@ -1301,7 +1352,11 @@ impl Parser<'_> {
+                     debug_assert!(self.serialization.as_bytes()[segment_start - 1] == b'/');
+                     self.serialization.truncate(segment_start);
+                     if self.serialization.ends_with('/')
+-                        && Parser::last_slash_can_be_removed(&self.serialization, path_start)
++                        && Parser::last_slash_can_be_removed(
++                            &self.serialization,
++                            scheme_type,
++                            path_start,
++                        )
+                     {
+                         self.serialization.pop();
+                     }
+@@ -1348,26 +1403,23 @@ impl Parser<'_> {
+                 break;
+             }
+         }
+-        if scheme_type.is_file() {
+-            // while url’s path’s size is greater than 1
+-            // and url’s path[0] is the empty string,
+-            // validation error, remove the first item from url’s path.
+-            //FIXME: log violation
+-            let path = self.serialization.split_off(path_start);
+-            self.serialization.push('/');
+-            self.serialization.push_str(path.trim_start_matches('/'));
+-        }
+ 
+         input
+     }
+ 
+-    fn last_slash_can_be_removed(serialization: &str, path_start: usize) -> bool {
++    fn last_slash_can_be_removed(
++        serialization: &str,
++        scheme_type: SchemeType,
++        path_start: usize,
++    ) -> bool {
+         let url_before_segment = &serialization[..serialization.len() - 1];
+         if let Some(segment_before_start) = url_before_segment.rfind('/') {
+             // Do not remove the root slash
+             segment_before_start >= path_start
+-                // Or a windows drive letter slash
+-                && !path_starts_with_windows_drive_letter(&serialization[segment_before_start..])
++                // Only a file path's first drive segment protects its slash.
++                && !(scheme_type.is_file()
++                    && segment_before_start == path_start
++                    && is_normalized_windows_drive_letter(&url_before_segment[path_start + 1..]))
+         } else {
+             false
+         }
+@@ -1381,7 +1433,7 @@ impl Parser<'_> {
+         }
+         // If url’s scheme is "file", path’s size is 1, and path[0] is a normalized Windows drive letter, then return.
+         if scheme_type.is_file()
+-            && is_normalized_windows_drive_letter(&self.serialization[path_start..])
++            && is_normalized_windows_drive_letter(&self.serialization[path_start + 1..])
+         {
+             return;
+         }
+@@ -1397,6 +1449,7 @@ impl Parser<'_> {
+             let segment_start = path_start + slash_position + 1;
+             // Don’t pop a Windows drive letter
+             if !(scheme_type.is_file()
++                && segment_start == path_start + 1
+                 && is_normalized_windows_drive_letter(&self.serialization[segment_start..]))
+             {
+                 self.serialization.truncate(segment_start);
+@@ -1411,6 +1464,17 @@ impl Parser<'_> {
+                 Some(('?', _)) | Some(('#', _)) if self.context == Context::UrlParser => {
+                     return input_before_c
+                 }
++                Some((' ', _)) if self.context == Context::UrlParser => {
++                    self.log_violation(SyntaxViolation::NonUrlCodePoint);
++                    // Opaque-path state encodes only the space immediately
++                    // preceding a query or fragment. Input lookahead skips
++                    // tabs/newlines just as the parser's preprocessing does.
++                    if matches!(input.split_first().0, Some('?') | Some('#')) {
++                        self.serialization.push_str("%20");
++                    } else {
++                        self.serialization.push(' ');
++                    }
++                }
+                 Some((c, utf8_c)) => {
+                     self.check_url_code_point(c, &input);
+                     self.serialization
+@@ -1758,16 +1822,6 @@ pub fn is_windows_drive_letter(segment: &str) -> bool {
+     segment.len() == 2 && starts_with_windows_drive_letter(segment)
+ }
+ 
+-/// Whether path starts with a root slash
+-/// and a windows drive letter eg: "/c:" or "/a:/"
+-fn path_starts_with_windows_drive_letter(s: &str) -> bool {
+-    if let Some(c) = s.as_bytes().first() {
+-        matches!(c, b'/' | b'\\' | b'?' | b'#') && starts_with_windows_drive_letter(&s[1..])
+-    } else {
+-        false
+-    }
+-}
+-
+ fn starts_with_windows_drive_letter(s: &str) -> bool {
+     s.len() >= 2
+         && ascii_alpha(s.as_bytes()[0] as char)
+diff --git a/url/src/quirks.rs b/url/src/quirks.rs
+index 55853c7f1acf544e104de8b177538f216b3aced0..f5cc6cc7bd919e1cd83dbd6e18101171b9c97e84 100644
+--- a/url/src/quirks.rs
++++ b/url/src/quirks.rs
+@@ -70,10 +70,7 @@ pub fn domain_to_ascii(domain: &str) -> String {
+ /// <https://url.spec.whatwg.org/#dom-url-domaintounicode>
+ pub fn domain_to_unicode(domain: &str) -> String {
+     match Host::parse(domain) {
+-        Ok(Host::Domain(ref domain)) => {
+-            let (unicode, _errors) = idna::domain_to_unicode(domain);
+-            unicode
+-        }
++        Ok(Host::Domain(ref domain)) => crate::host::domain_to_unicode(domain),
+         _ => String::new(),
+     }
+ }
+@@ -165,7 +162,7 @@ pub fn set_host(url: &mut Url, new_host: &str) -> Result<(), ()> {
+             return Ok(());
+         }
+ 
+-        if let Ok((h, remaining)) = Parser::parse_host(input, scheme_type) {
++        if let Ok((h, remaining)) = Parser::parse_host(input, scheme_type, None) {
+             host = h;
+             opt_port = if let Some(remaining) = remaining.split_prefix(':') {
+                 if remaining.is_empty() {
+@@ -212,7 +209,7 @@ pub fn set_hostname(url: &mut Url, new_hostname: &str) -> Result<(), ()> {
+         return Ok(());
+     }
+ 
+-    if let Ok((host, remaining)) = Parser::parse_host(input, scheme_type) {
++    if let Ok((host, remaining)) = Parser::parse_host(input, scheme_type, None) {
+         if remaining.starts_with(':') {
+             return Err(());
+         };
+diff --git a/url/tests/domain.rs b/url/tests/domain.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..34a56416c1e0297ed1c1ae5e08eae2dd9aaf46a4
+--- /dev/null
++++ b/url/tests/domain.rs
+@@ -0,0 +1,257 @@
++// Copyright The rust-url developers.
++// Licensed under the Apache License, Version 2.0 or the MIT license.
++
++//! WHATWG domain parsing and its strict ToASCII validation diagnostic.
++#![no_std]
++
++extern crate alloc;
++
++use alloc::{format, vec::Vec};
++use core::cell::RefCell;
++use url::{Host, ParseError, SyntaxViolation, Url};
++
++#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
++use wasm_bindgen_test::wasm_bindgen_test as test;
++
++fn parse(input: &str) -> (Result<Url, ParseError>, Vec<SyntaxViolation>) {
++    let events = RefCell::new(Vec::new());
++    let callback = |event| events.borrow_mut().push(event);
++    let result = Url::options()
++        .syntax_violation_callback(Some(&callback))
++        .parse(input);
++    (result, events.into_inner())
++}
++
++fn stable(url: &Url) {
++    url.check_invariants().unwrap();
++    let reparsed = Url::parse(url.as_str()).unwrap();
++    reparsed.check_invariants().unwrap();
++    assert_eq!(url, &reparsed);
++    assert_eq!(url.host(), reparsed.host());
++    assert_eq!(
++        url.origin().ascii_serialization(),
++        reparsed.origin().ascii_serialization()
++    );
++    assert_eq!(
++        url.origin().unicode_serialization(),
++        reparsed.origin().unicode_serialization()
++    );
++    assert_eq!(url.path(), reparsed.path());
++    assert_eq!(url.query(), reparsed.query());
++    assert_eq!(url.fragment(), reparsed.fragment());
++}
++
++#[test]
++fn ascii_punycode_wpt_regressions() {
++    // Exact identities from WPT c48d58747e1f211527fb695fd60548a997fae617,
++    // url/resources/urltestdata.json, indices 310, 311, 313-316, 839, 921.
++    // The diagnostic follows the independent strict domain-parser step.
++    for (input, expected) in [
++        ("http://a.b.c.xn--pokxncvks", "http://a.b.c.xn--pokxncvks/"),
++        (
++            "http://10.0.0.xn--pokxncvks",
++            "http://10.0.0.xn--pokxncvks/",
++        ),
++        ("http://a.b.c.XN--pokxncvks", "http://a.b.c.xn--pokxncvks/"),
++        ("http://a.b.c.Xn--pokxncvks", "http://a.b.c.xn--pokxncvks/"),
++        (
++            "http://10.0.0.XN--pokxncvks",
++            "http://10.0.0.xn--pokxncvks/",
++        ),
++        (
++            "http://10.0.0.xN--pokxncvks",
++            "http://10.0.0.xn--pokxncvks/",
++        ),
++        ("file://xn--/p", "file://xn--/p"),
++        ("https://xn--/", "https://xn--/"),
++        ("https://%78%6e--/", "https://xn--/"),
++        ("https://xn--8i7caa/", "https://xn--8i7caa/"),
++    ] {
++        let (result, events) = parse(input);
++        let url = result.unwrap();
++        assert_eq!(url.as_str(), expected);
++        assert_eq!(events, [SyntaxViolation::DomainToAscii]);
++        assert!(matches!(url.host(), Some(Host::Domain(_))));
++        for _ in 0..3 {
++            assert_eq!(parse(input), (Ok(url.clone()), events.clone()));
++        }
++        assert_eq!(Url::parse(input).unwrap(), url, "callback isolation");
++        stable(&url);
++    }
++}
++
++#[test]
++fn domain_security_boundary() {
++    for input in [
++        "https://xn--.é/",
++        "https://xn--8i7caa.é/",
++        "https://xn--pokxncvks.é/",
++        "https://xn--.%C3%A9/",
++        "https://exa%23mple.test/",
++        "https://%FF/",
++        "https://%EF%BF%BD/",
++        "https://a%00b/",
++        "https://a%7Fb/",
++        "https://a%25b/",
++        "https://a\u{200d}b.test/",
++        "https://aא.test/",
++        "https://\u{0301}a.test/",
++    ] {
++        let (result, events) = parse(input);
++        assert_eq!(result, Err(ParseError::IdnaError), "{input:?}");
++        assert_eq!(events, [SyntaxViolation::DomainToAscii], "{input:?}");
++        assert_eq!(Url::parse(input), result, "callback isolation");
++    }
++    assert_eq!(
++        parse("https://xn--.123/").0,
++        Err(ParseError::InvalidIpv4Address)
++    );
++    assert_eq!(
++        parse("https://999.1/"),
++        (Err(ParseError::InvalidIpv4Address), Vec::new())
++    );
++    assert_eq!(
++        parse("https://[invalid]/"),
++        (Err(ParseError::InvalidIpv6Address), Vec::new())
++    );
++
++    // This enumerates the Standard's forbidden domain bytes independently of
++    // IDNA validity: other ASCII may be accepted with a strict diagnostic.
++    for byte in 0u8..=127 {
++        let host = format!("a%{byte:02X}b.test");
++        let forbidden = byte <= b' ' || byte == 127 || b"#%/:<>?@[\\]^|".contains(&byte);
++        assert_eq!(Host::parse(&host).is_err(), forbidden, "ASCII {byte}");
++        let input = format!("https://{host}/");
++        let (result, events) = parse(&input);
++        assert_eq!(result.is_err(), forbidden, "ASCII {byte}");
++        let decoded = format!("a{}b.test", char::from(byte));
++        let strict_failure = idna::domain_to_ascii_strict(&decoded).is_err();
++        assert_eq!(events.len(), usize::from(strict_failure), "ASCII {byte}");
++        assert!(events
++            .iter()
++            .all(|event| *event == SyntaxViolation::DomainToAscii));
++    }
++    // The generic IDNA API remains a conversion/validation API.
++    assert!(idna::domain_to_ascii("xn--").is_err());
++    assert!(idna::domain_to_ascii("xn--8i7caa").is_err());
++}
++
++#[test]
++fn strict_domain_validation_is_recoverable() {
++    for host in ["a_b.test", "-a.test", "ab--cd.test", "a..test"] {
++        assert!(idna::domain_to_ascii_strict(host).is_err());
++        let (result, events) = parse(&format!("https://{host}/"));
++        assert_eq!(result.unwrap().host_str(), Some(host));
++        assert_eq!(events, [SyntaxViolation::DomainToAscii]);
++    }
++    let long_host = format!("{}.test", "a".repeat(64));
++    let (result, events) = parse(&format!("https://{long_host}/"));
++    assert_eq!(result.unwrap().host_str(), Some(long_host.as_str()));
++    assert_eq!(events, [SyntaxViolation::DomainToAscii]);
++
++    for (input, expected) in [
++        ("https://faß.de/", "https://xn--fa-hia.de/"),
++        ("https://%66%61%C3%9F.de/", "https://xn--fa-hia.de/"),
++        ("https://ｗｗｗ.test/", "https://www.test/"),
++        ("https://0x7f.1/", "https://127.0.0.1/"),
++        ("https://[2001:0db8::1]/", "https://[2001:db8::1]/"),
++        ("custom://XN--/", "custom://XN--/"),
++    ] {
++        let (result, events) = parse(input);
++        let url = result.unwrap();
++        assert_eq!(url.as_str(), expected);
++        assert_eq!(events, []);
++        stable(&url);
++    }
++}
++
++#[test]
++fn domain_unicode_serialization_preserves_identity() {
++    for domain in ["xn--", "xn--8i7caa", "a.xn--pokxncvks"] {
++        assert_eq!(url::quirks::domain_to_unicode(domain), domain);
++        assert_eq!(url::quirks::domain_to_ascii(domain), domain);
++        let url = Url::parse(&format!("https://{domain}/")).unwrap();
++        assert_eq!(
++            url.origin().ascii_serialization(),
++            format!("https://{domain}")
++        );
++        assert_eq!(
++            url.origin().unicode_serialization(),
++            format!("https://{domain}")
++        );
++        stable(&url);
++    }
++    let url = Url::parse("https://faß.de/").unwrap();
++    assert_eq!(url.origin().unicode_serialization(), "https://faß.de");
++    assert_eq!(url::quirks::domain_to_unicode("xn--fa-hia.de"), "faß.de");
++    assert_eq!(url::quirks::domain_to_unicode("xn--.é"), "");
++    assert!(!Url::parse("file://xn--/p").unwrap().origin().is_tuple());
++}
++
++#[test]
++fn domain_setters_preserve_failure_atomicity() {
++    let mut url = Url::parse("https://original.test/path?query#fragment").unwrap();
++    url.set_host(Some("XN--")).unwrap();
++    assert_eq!(url.as_str(), "https://xn--/path?query#fragment");
++    stable(&url);
++    let original = url.clone();
++    assert!(url.set_host(Some("xn--.é")).is_err());
++    assert_eq!(url, original);
++    url::quirks::set_host(&mut url, "xn--8i7caa:8443").unwrap();
++    assert_eq!(url.host_str(), Some("xn--8i7caa"));
++    assert_eq!(url.port(), Some(8443));
++    stable(&url);
++    url::quirks::set_hostname(&mut url, "XN--").unwrap();
++    assert_eq!(url.host_str(), Some("xn--"));
++    let original = url.clone();
++    for host in ["xn--.é", "a%23b", "xn--:80"] {
++        assert!(url::quirks::set_hostname(&mut url, host).is_err());
++        assert_eq!(url, original);
++    }
++    let mut file = Url::parse("file://original.test/path").unwrap();
++    url::quirks::set_host(&mut file, "XN--").unwrap();
++    assert_eq!(file.as_str(), "file://xn--/path");
++    stable(&file);
++}
++
++#[test]
++fn domain_diagnostic_order_and_base_isolation() {
++    use SyntaxViolation::{DomainToAscii, EmbeddedCredentials, PercentDecode, TabOrNewlineIgnored};
++    let (result, events) = parse("https://user:pw@x\tn--/a%zz");
++    assert!(result.is_ok());
++    assert_eq!(
++        events,
++        [
++            TabOrNewlineIgnored,
++            EmbeddedCredentials,
++            DomainToAscii,
++            PercentDecode
++        ]
++    );
++    assert_eq!(
++        parse("https://xn--:bad/"),
++        (Err(ParseError::InvalidPort), alloc::vec![DomainToAscii])
++    );
++
++    for base in ["https://xn--/dir/page", "file://xn--/dir/page"] {
++        let base = Url::parse(base).unwrap();
++        let original = base.clone();
++        for (input, expected_events) in [("leaf", &[][..]), ("//xn--/leaf", &[DomainToAscii][..])] {
++            let events = RefCell::new(Vec::new());
++            let callback = |event| events.borrow_mut().push(event);
++            let url = Url::options()
++                .base_url(Some(&base))
++                .syntax_violation_callback(Some(&callback))
++                .parse(input)
++                .unwrap();
++            assert_eq!(*events.borrow(), expected_events);
++            assert_eq!(base, original);
++            assert_eq!(url, base.join(input).unwrap());
++            stable(&url);
++        }
++    }
++    assert_eq!(
++        DomainToAscii.description(),
++        "domain-to-ASCII validation error"
++    );
++}
+diff --git a/url/tests/expected_failures.txt b/url/tests/expected_failures.txt
+index 314adad598cd324ceeeadc751d2048488d24a998..991c5d3978ce2c06d3806873345276d537518cee 100644
+--- a/url/tests/expected_failures.txt
++++ b/url/tests/expected_failures.txt
+@@ -1,67 +1,9 @@
+-</> against <file://h/C:/a/b>
+-<file:\\\\//>
+-<file:\\\\\\\\>
+-<file:\\\\\\\\?fox>
+-<file:\\\\\\\\#guppy>
+-<file://spider///>
+-<file:\\\\localhost//>
+-<file://\\/localhost//cat>
+-<file://localhost//a//../..//>
+-</////mouse> against <file:///elephant>
+-<\\/localhost//pig> against <file://lion/>
+-<//localhost//pig> against <file://lion/>
+-</..//localhost//pig> against <file://lion/>
+-<C|> against <file://host/dir/file>
+-<C|> against <file://host/D:/dir1/dir2/file>
+-<C|#> against <file://host/dir/file>
+-<C|?> against <file://host/dir/file>
+-<C|/> against <file://host/dir/file>
+-<C|\n/> against <file://host/dir/file>
+-<C|\\> against <file://host/dir/file>
+-</c:/foo/bar> against <file://host/path>
+-<C|/> against <file://host/>
+-</C:/> against <file://host/>
+-<file:C:/> against <file://host/>
+-<file:/C:/> against <file://host/>
+-<file://localhost//a//../..//foo>
+-<file://localhost////foo>
+-<file:////foo>
+-<file:////one/two> against <file:///>
+-<////one/two> against <file:///>
+-<file:///.//> against <file:////>
+-<file:.//p>
+-<file:/.//p>
+ <non-spec:/.//p> set hostname to <h>
+ <non-spec:/.//p> set hostname to <>
+ <foo:///some/path> set pathname to <>
+ <file:///var/log/system.log> set href to <http://0300.168.0xF0>
+-<file://monkey/> set pathname to <\\\\>
+-<file:///unicorn> set pathname to <//\\/>
+-<file:///unicorn> set pathname to <//monkey/..//>
+ <non-spec:/> set pathname to </.//p>
+ <non-spec:/> set pathname to </..//p>
+ <non-spec:/> set pathname to <//p>
+ <non-spec:/.//> set pathname to <p>
+-<file:///w|/m>
+-<non-special:opaque  ?hi>
+-<non-special:opaque  #hi>
+-<non-special:opaque \t\t  \t#hi>
+-<non-special:opaque \t\t  #hi>
+-<non-special:opaque\t\t  \r #hi>
+-<///test> against <http://example.org/>
+-<///\\//\\//test> against <http://example.org/>
+-<///example.org/path> against <http://example.org/>
+-<///example.org/../path> against <http://example.org/>
+-<///example.org/../../> against <http://example.org/>
+-<///example.org/../path/../../> against <http://example.org/>
+-<///example.org/../path/../../path> against <http://example.org/>
+-</\\//\\/a/../> against <file:///>
+-<data:space                                                                                                                                  #fragment> set hash to <>
+-<sc:space    #fragment> set hash to <>
+-<data:space  ?query#fragment> set hash to <>
+-<sc:space  ?query#fragment> set hash to <>
+-<data:space ?query> set search to <>
+-<sc:space ?query> set search to <>
+-<data:space  ?query#fragment> set search to <>
+-<sc:space  ?query#fragment> set search to <>
+ <https://domain.com:3000> set port to <\n\n\t\t>
+diff --git a/url/tests/setters_tests.json b/url/tests/setters_tests.json
+index 5fefffea7e53e99e653162ec0b9b793782fc6004..48a535e4e2c0e7d7bb53ed0459cca771139fd588 100644
+--- a/url/tests/setters_tests.json
++++ b/url/tests/setters_tests.json
+@@ -1,5 +1,6 @@
+ {
+     "comment": [
++        "ASCII xn-- host/hostname expectations updated from WPT c48d58747e1f211527fb695fd60548a997fae617.",
+         "# Pulled from https://github.com/web-platform-tests/wpt/blob/876fe001f2279b96e7c6b9e8970dc92c484835ff/url/resources/setters_tests.json",
+         "## Tests for setters of https://url.spec.whatwg.org/#urlutils-members",
+         "",
+@@ -1138,9 +1139,9 @@
+             "href": "https://example.com/",
+             "new_value": "xn--",
+             "expected": {
+-                "href": "https://example.com/",
+-                "host": "example.com",
+-                "hostname": "example.com"
++                "href": "https://xn--/",
++                "host": "xn--",
++                "hostname": "xn--"
+             }
+         },
+         {
+@@ -1612,9 +1613,9 @@
+             "href": "https://example.com/",
+             "new_value": "xn--",
+             "expected": {
+-                "href": "https://example.com/",
+-                "host": "example.com",
+-                "hostname": "example.com"
++                "href": "https://xn--/",
++                "host": "xn--",
++                "hostname": "xn--"
+             }
+         },
+         {
+diff --git a/url/tests/unit.rs b/url/tests/unit.rs
+index faeb7c5f4b6586bec5fda4102abfe0f6a653e925..bee320cd9b9b1156d5527b16754fd1dd3af0f063 100644
+--- a/url/tests/unit.rs
++++ b/url/tests/unit.rs
+@@ -68,13 +68,768 @@ fn test_relative_empty() {
+ }
+ 
+ #[test]
++fn test_path_shortening_protects_only_a_file_root_drive() {
++    // WHATWG shorten-a-urls-path protects a normalized drive only when it is
++    // the sole segment of a file path. Later drive-like segments are ordinary.
++    for (input, expected) in [
++        ("file:///C:/../a", "file:///C:/a"),
++        ("file:///C:/..", "file:///C:/"),
++        ("file:///C:/../", "file:///C:/"),
++        ("file:///C:/../../a", "file:///C:/a"),
++        ("file:///x/C:/../a", "file:///x/a"),
++        ("file:///x/C:/..", "file:///x/"),
++        ("file:////C:/../a", "file:////a"),
++        ("file:////C:/..", "file:////"),
++        ("file://host//C|/../a", "file://host//a"),
++        ("file:///x/C:/%2e%2e/a", "file:///x/a"),
++        ("http://host/C:/../a", "http://host/a"),
++        ("http://host/C:/..", "http://host/"),
++        ("custom://host/C:/../a", "custom://host/a"),
++    ] {
++        let url = Url::parse(input).unwrap();
++        assert_eq!(url.as_str(), expected, "{input:?}");
++        url.check_invariants().unwrap();
++        assert_eq!(Url::parse(url.as_str()).unwrap(), url);
++    }
++}
++
++#[test]
++fn test_relative_path_shortening_drive_segments() {
++    // First case: WPT c48d58747e1f211527fb695fd60548a997fae617,
++    // url/resources/urltestdata.json, index 659. Remaining expectations follow
++    // the same shortening algorithm for file and non-file hierarchical URLs.
++    for (base, input, expected) in [
++        ("abc://x/y/z/C:/", "..", "abc://x/y/z/"),
++        ("abc://x/C:/", "../leaf", "abc://x/leaf"),
++        ("abc://x/C:", "leaf", "abc://x/leaf"),
++        ("abc:/C:/", "..", "abc:/"),
++        ("http://host/C:/", "..", "http://host/"),
++        ("file:///C:/", "..", "file:///C:/"),
++        ("file:///C:", "leaf", "file:///C:/leaf"),
++        ("file:///x/C:/", "..", "file:///x/"),
++        ("file:///x/C:", "leaf", "file:///x/leaf"),
++        ("file:////C:/", "..", "file:////"),
++    ] {
++        let base = Url::parse(base).unwrap();
++        let original = base.clone();
++        let (result, diagnostics) = parse_relative_with_diagnostics(&base, input);
++        let url = result.unwrap();
++        assert_eq!(url.as_str(), expected, "{input:?} against {base}");
++        assert_eq!(diagnostics, [], "{input:?} against {base}");
++        assert_eq!(base, original);
++        assert_eq!(base.join(input).unwrap(), url);
++        base.check_invariants().unwrap();
++        url.check_invariants().unwrap();
++        assert_eq!(Url::parse(url.as_str()).unwrap(), url);
++    }
++}
++
++#[test]
++fn test_file_partial_drive_segments() {
++    use url::SyntaxViolation::{
++        Backslash, ExpectedFileDoubleSlash, NonUrlCodePoint, TabOrNewlineIgnored,
++    };
++
++    // WHATWG preprocessing removes tabs/newlines without completing a path
++    // segment. A flushed prefix such as x: must not become a drive root.
++    // First case: fuzz artifact fe6c3ec5c573b7ab17eed33d7c58a78b28d260d8.
++    let cases: &[(&str, &str, &[url::SyntaxViolation])] = &[
++        (
++            "file:/x:\r./\r\0./",
++            "file:///x:./%00./",
++            &[
++                TabOrNewlineIgnored,
++                ExpectedFileDoubleSlash,
++                NonUrlCodePoint,
++            ],
++        ),
++        ("file:///x:\r.", "file:///x:.", &[TabOrNewlineIgnored]),
++        (
++            "file:/x:\r.",
++            "file:///x:.",
++            &[TabOrNewlineIgnored, ExpectedFileDoubleSlash],
++        ),
++        (
++            "file://host/x:\r.",
++            "file://host/x:.",
++            &[TabOrNewlineIgnored],
++        ),
++        (
++            "file:/C:\tfoo",
++            "file:///C:foo",
++            &[TabOrNewlineIgnored, ExpectedFileDoubleSlash],
++        ),
++        ("file:///C:\r/..", "file:///C:/", &[TabOrNewlineIgnored]),
++        ("file:///x:\n.", "file:///x:.", &[TabOrNewlineIgnored]),
++        ("file:///x:\t.", "file:///x:.", &[TabOrNewlineIgnored]),
++        ("file:///x:\r\n\t.", "file:///x:.", &[TabOrNewlineIgnored]),
++        (
++            "file:///C\r\n\t:foo",
++            "file:///C:foo",
++            &[TabOrNewlineIgnored],
++        ),
++        (
++            "file:///C\r\n\t|/leaf",
++            "file:///C:/leaf",
++            &[TabOrNewlineIgnored, NonUrlCodePoint],
++        ),
++        (
++            "file:///C:\r\n\t/../../leaf",
++            "file:///C:/leaf",
++            &[TabOrNewlineIgnored],
++        ),
++        (
++            "file:///C:\r\n\t\\leaf",
++            "file:///C:/leaf",
++            &[TabOrNewlineIgnored, Backslash],
++        ),
++        (
++            "file:///C:\r\n\t//leaf",
++            "file:///C://leaf",
++            &[TabOrNewlineIgnored],
++        ),
++        (
++            "file:///x:\r\n\t./../leaf",
++            "file:///leaf",
++            &[TabOrNewlineIgnored],
++        ),
++        (
++            "file:///C:\r\n\t/%2e%2e/leaf",
++            "file:///C:/leaf",
++            &[TabOrNewlineIgnored],
++        ),
++        (
++            "file:///x:\r\n\t.?q#f",
++            "file:///x:.?q#f",
++            &[TabOrNewlineIgnored],
++        ),
++        (
++            "http://host/x:\r./\r\0./",
++            "http://host/x:./%00./",
++            &[TabOrNewlineIgnored, NonUrlCodePoint],
++        ),
++        ("custom:/x:\r.", "custom:/x:.", &[TabOrNewlineIgnored]),
++    ];
++    for &(input, expected, diagnostics) in cases {
++        let preprocessed: String = input
++            .chars()
++            .filter(|c| !matches!(c, '\r' | '\n' | '\t'))
++            .collect();
++        for _ in 0..3 {
++            let events = RefCell::new(Vec::new());
++            let callback = |event| events.borrow_mut().push(event);
++            let url = Url::options()
++                .syntax_violation_callback(Some(&callback))
++                .parse(input)
++                .unwrap();
++            assert_eq!(url.as_str(), expected, "{input:?}");
++            assert_eq!(*events.borrow(), diagnostics, "{input:?}");
++            assert_eq!(Url::parse(input).unwrap(), url, "callback isolation");
++            assert_eq!(Url::parse(&preprocessed).unwrap(), url, "preprocessing");
++            url.check_invariants().unwrap();
++            let reparsed = Url::parse(url.as_str()).unwrap();
++            assert_eq!(url, reparsed, "serialization fixed point");
++            assert_eq!(url.host(), reparsed.host());
++            assert_eq!(url.path(), reparsed.path());
++        }
++    }
++}
++
++#[test]
++fn test_file_partial_drive_resolution() {
++    use url::SyntaxViolation::{Backslash, C0SpaceIgnored, TabOrNewlineIgnored};
++
++    // Shortening a sole drive retains it. The next segment needs its own
++    // separator regardless of whether the base originally ended with one.
++    for (base, root) in [
++        ("file:///C:", "file:///C:/"),
++        ("file:///C:/", "file:///C:/"),
++        ("file:///C:/a", "file:///C:/"),
++        ("file://host/C:", "file://host/C:/"),
++        ("file://host/C:/", "file://host/C:/"),
++        ("file://host/C:/a", "file://host/C:/"),
++    ] {
++        let base = Url::parse(base).unwrap();
++        for (input, suffix, diagnostics) in [
++            ("leaf", "leaf", &[][..]),
++            ("./leaf", "leaf", &[][..]),
++            ("../leaf", "leaf", &[][..]),
++            ("..", "", &[][..]),
++            ("le\r\n\taf", "leaf", &[TabOrNewlineIgnored][..]),
++            ("leaf\r\n\t", "leaf", &[C0SpaceIgnored][..]),
++            ("leaf\\next", "leaf/next", &[Backslash][..]),
++        ] {
++            assert_file_resolution(&base, input, Ok(&format!("{root}{suffix}")), diagnostics);
++        }
++    }
++}
++
++fn parse_relative_with_diagnostics(
++    base: &Url,
++    input: &str,
++) -> (Result<Url, url::ParseError>, Vec<url::SyntaxViolation>) {
++    let events = RefCell::new(Vec::new());
++    let callback = |event| events.borrow_mut().push(event);
++    let result = Url::options()
++        .base_url(Some(base))
++        .syntax_violation_callback(Some(&callback))
++        .parse(input);
++    (result, events.into_inner())
++}
++
++#[test]
++fn test_relative_separator_wpt_regressions() {
++    use url::SyntaxViolation::{ExpectedDoubleSlash, NonUrlCodePoint};
++
++    // Exact input/base/href identities from WPT c48d58747e1f211527fb695fd60548a997fae617,
++    // url/resources/urltestdata.json, indices 984-990 and 1004-1006.
++    // Callback assertions additionally test the corresponding parser states;
++    // the WPT fixture itself defines URL outcomes, not these callback enums.
++    let cases: &[(&str, &str, &str, &[url::SyntaxViolation])] = &[
++        (
++            "http://example.org/",
++            "///test",
++            "http://test/",
++            &[ExpectedDoubleSlash],
++        ),
++        (
++            "http://example.org/",
++            r"///\//\//test",
++            "http://test/",
++            &[
++                ExpectedDoubleSlash,
++                ExpectedDoubleSlash,
++                ExpectedDoubleSlash,
++                ExpectedDoubleSlash,
++                ExpectedDoubleSlash,
++                ExpectedDoubleSlash,
++                ExpectedDoubleSlash,
++            ],
++        ),
++        (
++            "http://example.org/",
++            "///example.org/path",
++            "http://example.org/path",
++            &[ExpectedDoubleSlash],
++        ),
++        (
++            "http://example.org/",
++            "///example.org/../path",
++            "http://example.org/path",
++            &[ExpectedDoubleSlash],
++        ),
++        (
++            "http://example.org/",
++            "///example.org/../../",
++            "http://example.org/",
++            &[ExpectedDoubleSlash],
++        ),
++        (
++            "http://example.org/",
++            "///example.org/../path/../../",
++            "http://example.org/",
++            &[ExpectedDoubleSlash],
++        ),
++        (
++            "http://example.org/",
++            "///example.org/../path/../../path",
++            "http://example.org/path",
++            &[ExpectedDoubleSlash],
++        ),
++        ("foo://foo/a", r"\a", r"foo://foo/\a", &[NonUrlCodePoint]),
++        ("foo://foo/a", r"\/a", r"foo://foo/\/a", &[NonUrlCodePoint]),
++        (
++            "foo://foo/a",
++            r"\\a",
++            r"foo://foo/\\a",
++            &[NonUrlCodePoint, NonUrlCodePoint],
++        ),
++    ];
++    for &(base, input, href, events) in cases {
++        let base = Url::parse(base).unwrap();
++        let original = base.clone();
++        for _ in 0..3 {
++            let (result, actual_events) = parse_relative_with_diagnostics(&base, input);
++            assert_eq!(result.unwrap().as_str(), href, "{input:?}");
++            assert_eq!(actual_events, events, "{input:?}");
++            assert_eq!(base.join(input).unwrap().as_str(), href);
++            assert_eq!(base, original);
++        }
++    }
++}
++
++#[test]
++fn test_relative_separator_scheme_matrix() {
++    use url::SyntaxViolation::{
++        Backslash, EmbeddedCredentials, ExpectedDoubleSlash, NonUrlCodePoint, PercentDecode,
++    };
++
++    // Expected suffixes are literal state-machine expectations, never generated
++    // by joining/parsing the input. The same reference grammar applies to each
++    // special non-file scheme, independently of transport availability.
++    let special: &[(&str, &str, &[url::SyntaxViolation])] = &[
++        ("/a", "//u:p@base.test:8123/a", &[]),
++        (r"\a", "//u:p@base.test:8123/a", &[Backslash]),
++        ("//other.test/a", "//other.test/a", &[]),
++        ("///other.test/a", "//other.test/a", &[ExpectedDoubleSlash]),
++        (
++            "////other.test/a",
++            "//other.test/a",
++            &[ExpectedDoubleSlash, ExpectedDoubleSlash],
++        ),
++        (r"\\other.test/a", "//other.test/a", &[Backslash, Backslash]),
++        (r"/\other.test/a", "//other.test/a", &[Backslash]),
++        (r"\/other.test/a", "//other.test/a", &[Backslash]),
++        (r"//\other.test/a", "//other.test/a", &[ExpectedDoubleSlash]),
++        (
++            "//new:pw@other.test:8443/a%20b?x#f",
++            "//new:pw@other.test:8443/a%20b?x#f",
++            &[EmbeddedCredentials],
++        ),
++        ("//[::1]:8443/a", "//[::1]:8443/a", &[]),
++        ("?next", "//u:p@base.test:8123/dir/page?next", &[]),
++        ("#after", "//u:p@base.test:8123/dir/page?old#after", &[]),
++        ("", "//u:p@base.test:8123/dir/page?old", &[]),
++        (
++            "child%2Fname%20ok?q=2#f",
++            "//u:p@base.test:8123/dir/child%2Fname%20ok?q=2#f",
++            &[],
++        ),
++        (
++            "child%zz",
++            "//u:p@base.test:8123/dir/child%zz",
++            &[PercentDecode],
++        ),
++    ];
++    for scheme in ["http", "https", "ftp", "ws", "wss"] {
++        let base = Url::parse(&format!(
++            "{scheme}://u:p@base.test:8123/dir/page?old#before"
++        ))
++        .unwrap();
++        let original = base.clone();
++        for &(input, suffix, events) in special {
++            let (result, actual_events) = parse_relative_with_diagnostics(&base, input);
++            assert_eq!(
++                result.unwrap().as_str(),
++                format!("{scheme}:{suffix}"),
++                "{scheme}: {input:?}"
++            );
++            assert_eq!(actual_events, events, "{scheme}: {input:?}");
++            assert_eq!(base, original);
++        }
++    }
++
++    let non_special: &[(&str, &str, &[url::SyntaxViolation])] = &[
++        (r"\a", r"//u:p@base.test:8123/dir/\a", &[NonUrlCodePoint]),
++        (
++            r"\\a",
++            r"//u:p@base.test:8123/dir/\\a",
++            &[NonUrlCodePoint, NonUrlCodePoint],
++        ),
++        (r"\/a", r"//u:p@base.test:8123/dir/\/a", &[NonUrlCodePoint]),
++        (r"/\a", r"//u:p@base.test:8123/\a", &[NonUrlCodePoint]),
++        ("//other.test/a", "//other.test/a", &[]),
++        ("///other.test/a", "///other.test/a", &[]),
++        ("////other.test/a", "////other.test/a", &[]),
++        (r"///\a", r"///\a", &[NonUrlCodePoint]),
++        (
++            "//new:pw@other.test:8443/a%20b?x#f",
++            "//new:pw@other.test:8443/a%20b?x#f",
++            &[EmbeddedCredentials],
++        ),
++        ("?next", "//u:p@base.test:8123/dir/page?next", &[]),
++        ("#after", "//u:p@base.test:8123/dir/page?old#after", &[]),
++        ("", "//u:p@base.test:8123/dir/page?old", &[]),
++    ];
++    for scheme in ["foo", "git", "custom"] {
++        let base = Url::parse(&format!(
++            "{scheme}://u:p@base.test:8123/dir/page?old#before"
++        ))
++        .unwrap();
++        let original = base.clone();
++        for &(input, suffix, events) in non_special {
++            let (result, actual_events) = parse_relative_with_diagnostics(&base, input);
++            assert_eq!(
++                result.unwrap().as_str(),
++                format!("{scheme}:{suffix}"),
++                "{scheme}: {input:?}"
++            );
++            assert_eq!(actual_events, events, "{scheme}: {input:?}");
++            assert_eq!(base, original);
++        }
++    }
++}
++
++#[test]
++fn test_relative_separator_failures() {
++    use url::ParseError::{
++        EmptyHost, InvalidDomainCharacter, InvalidIpv6Address, InvalidPort,
++        RelativeUrlWithCannotBeABaseBase,
++    };
++    use url::SyntaxViolation::{Backslash, EmbeddedCredentials, ExpectedDoubleSlash};
++
++    let cases: &[(&str, &str, url::ParseError, &[url::SyntaxViolation])] = &[
++        ("http://base.test/a", "//", EmptyHost, &[]),
++        (
++            "http://base.test/a",
++            "///",
++            EmptyHost,
++            &[ExpectedDoubleSlash],
++        ),
++        (
++            "http://base.test/a",
++            r"\\",
++            EmptyHost,
++            &[Backslash, Backslash],
++        ),
++        ("http://base.test/a", "//[::1", InvalidIpv6Address, &[]),
++        ("http://base.test/a", "//other:70000", InvalidPort, &[]),
++        (
++            "http://base.test/a",
++            "///user:pw@other:70000",
++            InvalidPort,
++            &[ExpectedDoubleSlash, EmbeddedCredentials],
++        ),
++        (
++            "foo://base.test/a",
++            r"//\other",
++            InvalidDomainCharacter,
++            &[],
++        ),
++        ("foo:payload", r"\a", RelativeUrlWithCannotBeABaseBase, &[]),
++    ];
++    for &(base, input, error, events) in cases {
++        let base = Url::parse(base).unwrap();
++        let original = base.clone();
++        for _ in 0..3 {
++            let (result, actual_events) = parse_relative_with_diagnostics(&base, input);
++            assert_eq!(result.unwrap_err(), error, "{input:?}");
++            assert_eq!(actual_events, events, "{input:?}");
++            assert_eq!(base.join(input).unwrap_err(), error);
++            assert_eq!(base, original);
++        }
++    }
++}
++
++#[test]
++fn test_relative_separator_diagnostic_order() {
++    use url::SyntaxViolation::{
++        Backslash, EmbeddedCredentials, ExpectedDoubleSlash, NullInFragment, PercentDecode,
++        TabOrNewlineIgnored,
++    };
++
++    let base = Url::parse("http://base:secret@base.test:8123/dir/page?old#before").unwrap();
++    let original = base.clone();
++    let input = "\\\\/\\u:p@ho\tst/a%zz\\b#x\0y";
++    let expected = [
++        TabOrNewlineIgnored,
++        Backslash,
++        Backslash,
++        ExpectedDoubleSlash,
++        ExpectedDoubleSlash,
++        EmbeddedCredentials,
++        PercentDecode,
++        Backslash,
++        NullInFragment,
++    ];
++    for _ in 0..3 {
++        let (result, events) = parse_relative_with_diagnostics(&base, input);
++        assert_eq!(result.unwrap().as_str(), "http://u:p@host/a%zz/b#x%00y");
++        assert_eq!(events, expected);
++        assert_eq!(base, original);
++    }
++}
++
++// Resolution expectations follow the WHATWG file/file-slash states. Callback
++// sequences specify rust-url's existing diagnostic contract, not WPT metadata.
++fn assert_file_resolution(
++    base: &Url,
++    input: &str,
++    expected: Result<&str, url::ParseError>,
++    diagnostics: &[url::SyntaxViolation],
++) {
++    let original = base.clone();
++    let actual = parse_relative_with_diagnostics(base, input);
++    assert_eq!(actual.1, diagnostics, "{input:?} against {base}");
++    assert_eq!(
++        actual.0.as_ref().map(Url::as_str).map_err(|error| *error),
++        expected,
++        "{input:?} against {base}"
++    );
++    for _ in 0..3 {
++        assert_eq!(parse_relative_with_diagnostics(base, input), actual);
++        assert_eq!(base, &original);
++    }
++    assert_eq!(base.join(input), actual.0, "callback isolation");
++    base.check_invariants().unwrap();
++    if let Ok(url) = actual.0 {
++        url.check_invariants().unwrap();
++        let reparsed = Url::parse(url.as_str()).unwrap();
++        reparsed.check_invariants().unwrap();
++        assert_eq!(url, reparsed, "serialization fixed point");
++        assert_eq!(url.host(), reparsed.host());
++        assert_eq!(url.path(), reparsed.path());
++        assert_eq!(url.query(), reparsed.query());
++        assert_eq!(url.fragment(), reparsed.fragment());
++    }
++}
++
++#[test]
++fn test_file_resolution_host_inheritance_wpt() {
++    use url::SyntaxViolation::{
++        Backslash, ExpectedFileDoubleSlash, NonUrlCodePoint, TabOrNewlineIgnored,
++    };
++    // Exact identities from WPT c48d58747e1f211527fb695fd60548a997fae617,
++    // url/resources/urltestdata.json: 613, 645-651, 658, 666-669.
++    let cases: &[(&str, &str, &str, &[url::SyntaxViolation])] = &[
++        ("file://h/C:/a/b", "/", "file://h/C:/", &[]),
++        (
++            "file://host/dir/file",
++            "C|",
++            "file://host/C:",
++            &[NonUrlCodePoint],
++        ),
++        (
++            "file://host/D:/dir1/dir2/file",
++            "C|",
++            "file://host/C:",
++            &[NonUrlCodePoint],
++        ),
++        (
++            "file://host/dir/file",
++            "C|#",
++            "file://host/C:#",
++            &[NonUrlCodePoint],
++        ),
++        (
++            "file://host/dir/file",
++            "C|?",
++            "file://host/C:?",
++            &[NonUrlCodePoint],
++        ),
++        (
++            "file://host/dir/file",
++            "C|/",
++            "file://host/C:/",
++            &[NonUrlCodePoint],
++        ),
++        (
++            "file://host/dir/file",
++            "C|\n/",
++            "file://host/C:/",
++            &[TabOrNewlineIgnored, NonUrlCodePoint],
++        ),
++        (
++            "file://host/dir/file",
++            "C|\\",
++            "file://host/C:/",
++            &[NonUrlCodePoint, Backslash],
++        ),
++        (
++            "file://host/path",
++            "/c:/foo/bar",
++            "file://host/c:/foo/bar",
++            &[],
++        ),
++        ("file://host/", "C|/", "file://host/C:/", &[NonUrlCodePoint]),
++        ("file://host/", "/C:/", "file://host/C:/", &[]),
++        (
++            "file://host/",
++            "file:C:/",
++            "file://host/C:/",
++            &[ExpectedFileDoubleSlash],
++        ),
++        (
++            "file://host/",
++            "file:/C:/",
++            "file://host/C:/",
++            &[ExpectedFileDoubleSlash],
++        ),
++    ];
++    for &(base, input, expected, diagnostics) in cases {
++        assert_file_resolution(&Url::parse(base).unwrap(), input, Ok(expected), diagnostics);
++    }
++}
++
++#[test]
++fn test_file_resolution_host_inheritance_controls() {
++    use url::SyntaxViolation::{Backslash, ExpectedFileDoubleSlash, NonUrlCodePoint};
++    // Host inheritance and drive/path selection are independent on every OS.
++    // The expected components below follow file and file-slash state rules.
++    for (authored, host) in [
++        ("", ""),
++        ("localhost", ""),
++        ("host", "host"),
++        ("127.0.0.1", "127.0.0.1"),
++        ("[::1]", "[::1]"),
++    ] {
++        let base = Url::parse(&format!("file://{authored}/D:/dir/file?old#old")).unwrap();
++        for (input, path, diagnostics) in [
++            ("/leaf", "/D:/leaf", &[][..]),
++            ("/c:/leaf", "/c:/leaf", &[][..]),
++            ("c|/leaf", "/c:/leaf", &[NonUrlCodePoint][..]),
++            ("C|\\leaf", "/C:/leaf", &[NonUrlCodePoint, Backslash][..]),
++            ("file:C:/leaf", "/C:/leaf", &[ExpectedFileDoubleSlash][..]),
++            ("file:/C:/leaf", "/C:/leaf", &[ExpectedFileDoubleSlash][..]),
++            ("/", "/D:/", &[][..]),
++            ("?", "/D:/dir/file?", &[][..]),
++            ("#", "/D:/dir/file?old#", &[][..]),
++            ("", "/D:/dir/file?old", &[][..]),
++        ] {
++            let expected = format!("file://{host}{path}");
++            assert_file_resolution(&base, input, Ok(&expected), diagnostics);
++        }
++    }
++    // Explicit file authorities are handled before inheritance, even when
++    // the base has a host and a normalized drive segment.
++    let base = Url::parse("file://host/D:/dir/file?old#old").unwrap();
++    for (input, expected) in [
++        ("//other/path", "file://other/path"),
++        ("///path", "file:///path"),
++        ("//localhost/path", "file:///path"),
++        ("file://other/path", "file://other/path"),
++    ] {
++        assert_file_resolution(&base, input, Ok(expected), &[]);
++    }
++    // Fatal authority errors remain failures rather than inheriting the base.
++    for input in ["//user:pass@other/path", "//other:80/path"] {
++        assert_file_resolution(
++            &base,
++            input,
++            Err(url::ParseError::IdnaError),
++            &[url::SyntaxViolation::DomainToAscii],
++        );
++    }
++}
++
++#[test]
++fn test_opaque_path_space_boundary() {
++    use url::SyntaxViolation::{C0SpaceIgnored, NonUrlCodePoint, TabOrNewlineIgnored};
++
++    // The first five identities are WPT c48d58747e1f211527fb695fd60548a997fae617,
++    // url/resources/urltestdata.json, indices 292, 293, 296-298. Diagnostics
++    // additionally specify rust-url's callback contract, not WPT metadata.
++    let cases: &[(&str, &str, &[url::SyntaxViolation])] = &[
++        (
++            "non-special:opaque  ?hi",
++            "non-special:opaque %20?hi",
++            &[NonUrlCodePoint, NonUrlCodePoint],
++        ),
++        (
++            "non-special:opaque  #hi",
++            "non-special:opaque %20#hi",
++            &[NonUrlCodePoint, NonUrlCodePoint],
++        ),
++        (
++            "non-special:opaque \t\t  \t#hi",
++            "non-special:opaque  %20#hi",
++            &[
++                TabOrNewlineIgnored,
++                NonUrlCodePoint,
++                NonUrlCodePoint,
++                NonUrlCodePoint,
++            ],
++        ),
++        (
++            "non-special:opaque \t\t  #hi",
++            "non-special:opaque  %20#hi",
++            &[
++                TabOrNewlineIgnored,
++                NonUrlCodePoint,
++                NonUrlCodePoint,
++                NonUrlCodePoint,
++            ],
++        ),
++        (
++            "non-special:opaque\t\t  \r #hi",
++            "non-special:opaque  %20#hi",
++            &[
++                TabOrNewlineIgnored,
++                NonUrlCodePoint,
++                NonUrlCodePoint,
++                NonUrlCodePoint,
++            ],
++        ),
++        (
++            "custom:a b  c",
++            "custom:a b  c",
++            &[NonUrlCodePoint, NonUrlCodePoint, NonUrlCodePoint],
++        ),
++        ("custom:a  ", "custom:a", &[C0SpaceIgnored]),
++        ("custom:a ?", "custom:a%20?", &[NonUrlCodePoint]),
++        ("custom:a #", "custom:a%20#", &[NonUrlCodePoint]),
++        ("custom:a %20?", "custom:a %20?", &[NonUrlCodePoint]),
++        (
++            "custom:a \n?",
++            "custom:a%20?",
++            &[TabOrNewlineIgnored, NonUrlCodePoint],
++        ),
++        (
++            "custom:a  ?",
++            "custom:a %20?",
++            &[NonUrlCodePoint, NonUrlCodePoint],
++        ),
++        (
++            "custom:a \t ?",
++            "custom:a %20?",
++            &[TabOrNewlineIgnored, NonUrlCodePoint, NonUrlCodePoint],
++        ),
++    ];
++    for &(input, expected, diagnostics) in cases {
++        for _ in 0..3 {
++            let events = RefCell::new(Vec::new());
++            let callback = |event| events.borrow_mut().push(event);
++            let url = Url::options()
++                .syntax_violation_callback(Some(&callback))
++                .parse(input)
++                .unwrap();
++            assert_eq!(url.as_str(), expected, "{input:?}");
++            assert_eq!(*events.borrow(), diagnostics, "{input:?}");
++            assert_eq!(Url::parse(input).unwrap(), url, "callback isolation");
++            url.check_invariants().unwrap();
++            let reparsed = Url::parse(url.as_str()).unwrap();
++            reparsed.check_invariants().unwrap();
++            assert_eq!(url, reparsed, "serialization fixed point");
++            assert_eq!(url.path(), reparsed.path());
++            assert_eq!(url.query(), reparsed.query());
++            assert_eq!(url.fragment(), reparsed.fragment());
++        }
++    }
++}
++
++#[test]
++fn test_opaque_path_space_setters() {
++    let mut url = Url::parse("custom:old?q#f").unwrap();
++    url.set_path("new  body");
++    assert_eq!(url.as_str(), "custom:new  body?q#f");
++    url.check_invariants().unwrap();
++    assert_eq!(Url::parse(url.as_str()).unwrap(), url);
++
++    let mut url = Url::parse("custom:a ?q#f").unwrap();
++    url.set_query(None);
++    url.set_fragment(None);
++    assert_eq!(url.as_str(), "custom:a%20");
++    url.check_invariants().unwrap();
++    assert_eq!(Url::parse(url.as_str()).unwrap(), url);
++}
++
++#[test]
+ fn test_strip_trailing_spaces_from_opaque_path() {
++    // The final space before a query/fragment is encoded in opaque-path state.
++    // Removing that component cannot strip the resulting percent-encoded data.
+     let mut url: Url = "data:space   ?query".parse().unwrap();
+     url.set_query(None);
+-    assert_eq!(url.as_str(), "data:space");
++    assert_eq!(url.as_str(), "data:space  %20");
+ 
+     let mut url: Url = "data:space   #hash".parse().unwrap();
+     url.set_fragment(None);
++    assert_eq!(url.as_str(), "data:space  %20");
++
++    // Literal trailing spaces introduced through the Rust path setter still
++    // follow the existing stripping rule once query and fragment are absent.
++    let mut url: Url = "data:space?query".parse().unwrap();
++    url.set_path("space   ");
++    url.set_query(None);
+     assert_eq!(url.as_str(), "data:space");
+ }
+ 
+@@ -921,6 +1676,7 @@ fn test_syntax_violation_callback_types() {
+         (" http://mozilla.org", C0SpaceIgnored, "leading or trailing control or space character are ignored in URLs"),
+         ("http://user:pass@mozilla.org", EmbeddedCredentials, "embedding authentication information (username or password) in an URL is not recommended"),
+         ("http:///mozilla.org", ExpectedDoubleSlash, "expected //"),
++        ("https://xn--/", DomainToAscii, "domain-to-ASCII validation error"),
+         ("file:/foo.txt", ExpectedFileDoubleSlash, "expected // after file:"),
+         ("file://mozilla.org/c:/file.txt", FileWithHostAndWindowsDrive, "file: with host and Windows drive letter"),
+         ("http://mozilla.org/^", NonUrlCodePoint, "non-URL code point"),
+@@ -1351,6 +2107,42 @@ fn test_file_with_drive_and_path() {
+     assert_eq!(url2.to_string(), "file:///p:/a");
+ }
+ 
++#[test]
++fn test_file_drive_segment_empty_host_first() {
++    let url = Url::parse("file:///w|/m").unwrap();
++
++    assert_eq!(url.as_str(), "file:///w:/m");
++    assert_eq!(url.host_str(), None);
++    assert_eq!(url.path(), "/w:/m");
++}
++
++#[test]
++fn test_file_drive_segment_with_host_first() {
++    let url = Url::parse("file://host/w|/m").unwrap();
++
++    assert_eq!(url.as_str(), "file://host/w:/m");
++    assert_eq!(url.host_str(), Some("host"));
++    assert_eq!(url.path(), "/w:/m");
++}
++
++#[test]
++fn test_file_drive_segment_with_host_second() {
++    let url = Url::parse("file://host//w|/m").unwrap();
++
++    assert_eq!(url.as_str(), "file://host//w|/m");
++    assert_eq!(url.host_str(), Some("host"));
++    assert_eq!(url.path(), "//w|/m");
++}
++
++#[test]
++fn test_file_drive_segment_empty_host_second() {
++    let url = Url::parse("file:////w|/m").unwrap();
++
++    assert_eq!(url.as_str(), "file:////w|/m");
++    assert_eq!(url.host_str(), None);
++    assert_eq!(url.path(), "//w|/m");
++}
++
+ #[cfg(feature = "std")]
+ #[test]
+ fn issue_864() {
+@@ -1412,3 +2204,75 @@ fn test_path_percent_encode() {
+     let url = Url::parse("http://localhost/a}b").unwrap();
+     assert_eq!(url.path(), "/a%7Db");
+ }
++
++#[test]
++fn unavailable_base_certifies_only_independent_interpretations_and_diagnostics() {
++    for text in [
++        "https:icons/logo.svg",
++        "https:",
++        "icons/logo.svg",
++        "file:icons/logo.svg",
++        "file:/icons/logo.svg",
++        "file:",
++        " https:",
++        "ht\ttps:",
++    ] {
++        let events = RefCell::new(Vec::new());
++        let record = |event| events.borrow_mut().push(event);
++        assert_eq!(
++            url::Url::options()
++                .syntax_violation_callback(Some(&record))
++                .parse_if_base_independent(text),
++            Ok(None),
++            "{text:?}"
++        );
++        assert!(events.into_inner().is_empty());
++    }
++    for text in [
++        "https://cdn.test/a",
++        "file:///icons/logo.svg",
++        "file://server/share/a",
++        "data:payload",
++        "custom:/path",
++        " https://u:p@h.test/a%zz%yy",
++        "https://[::1",
++        " https://u:p@[::1",
++        " ht\ttps://h.test/a%zz%zz",
++        "custom://[::1",
++    ] {
++        let ordinary_events = RefCell::new(Vec::new());
++        let record = |event| ordinary_events.borrow_mut().push(event);
++        let ordinary = url::Url::options()
++            .syntax_violation_callback(Some(&record))
++            .parse(text);
++        let events = RefCell::new(Vec::new());
++        let record = |event| events.borrow_mut().push(event);
++        let independent = url::Url::options()
++            .syntax_violation_callback(Some(&record))
++            .parse_if_base_independent(text);
++        assert_eq!(independent, ordinary.clone().map(Some), "{text:?}");
++        let ordinary_events = ordinary_events.into_inner();
++        assert_eq!(events.into_inner(), ordinary_events);
++        // These are concrete semantic witnesses, not the independence proof.
++        for base in [
++            "https://example.test/css/main.css",
++            "file://server/C:/css/main.css",
++            "about:blank",
++            "custom:/dir/base",
++        ] {
++            let base = url::Url::parse(base).unwrap();
++            let known_events = RefCell::new(Vec::new());
++            let record = |event| known_events.borrow_mut().push(event);
++            let known = url::Url::options()
++                .base_url(Some(&base))
++                .syntax_violation_callback(Some(&record))
++                .parse(text);
++            assert_eq!(known, ordinary, "{text:?} {base}");
++            assert_eq!(
++                known_events.into_inner(),
++                ordinary_events,
++                "{text:?} {base}"
++            );
++        }
++    }
++}
+diff --git a/url/tests/urltestdata.json b/url/tests/urltestdata.json
+index 161072da839c433f4236029be3d334d8d31b38b5..ee2f7d7bbbb00233c04d6ed8ccd39284ebe66d51 100644
+--- a/url/tests/urltestdata.json
++++ b/url/tests/urltestdata.json
+@@ -1,4 +1,5 @@
+ [
++  "# Eight ASCII/Punycode domain expectations updated from WPT c48d58747e1f211527fb695fd60548a997fae617.",
+   "# Pulled from https://github.com/web-platform-tests/wpt/blob/876fe001f2279b96e7c6b9e8970dc92c484835ff/url/resources/urltestdata.json",
+   {
+     "input": "http://example\t.\norg",
+@@ -3956,33 +3957,93 @@
+   {
+     "input": "http://a.b.c.xn--pokxncvks",
+     "base": null,
+-    "failure": true
++    "href": "http://a.b.c.xn--pokxncvks/",
++    "origin": "http://a.b.c.xn--pokxncvks",
++    "protocol": "http:",
++    "username": "",
++    "password": "",
++    "host": "a.b.c.xn--pokxncvks",
++    "hostname": "a.b.c.xn--pokxncvks",
++    "port": "",
++    "pathname": "/",
++    "search": "",
++    "hash": ""
+   },
+   {
+     "input": "http://10.0.0.xn--pokxncvks",
+     "base": null,
+-    "failure": true
++    "href": "http://10.0.0.xn--pokxncvks/",
++    "origin": "http://10.0.0.xn--pokxncvks",
++    "protocol": "http:",
++    "username": "",
++    "password": "",
++    "host": "10.0.0.xn--pokxncvks",
++    "hostname": "10.0.0.xn--pokxncvks",
++    "port": "",
++    "pathname": "/",
++    "search": "",
++    "hash": ""
+   },
+   "IDNA labels should be matched case-insensitively",
+   {
+     "input": "http://a.b.c.XN--pokxncvks",
+     "base": null,
+-    "failure": true
++    "href": "http://a.b.c.xn--pokxncvks/",
++    "origin": "http://a.b.c.xn--pokxncvks",
++    "protocol": "http:",
++    "username": "",
++    "password": "",
++    "host": "a.b.c.xn--pokxncvks",
++    "hostname": "a.b.c.xn--pokxncvks",
++    "port": "",
++    "pathname": "/",
++    "search": "",
++    "hash": ""
+   },
+   {
+     "input": "http://a.b.c.Xn--pokxncvks",
+     "base": null,
+-    "failure": true
++    "href": "http://a.b.c.xn--pokxncvks/",
++    "origin": "http://a.b.c.xn--pokxncvks",
++    "protocol": "http:",
++    "username": "",
++    "password": "",
++    "host": "a.b.c.xn--pokxncvks",
++    "hostname": "a.b.c.xn--pokxncvks",
++    "port": "",
++    "pathname": "/",
++    "search": "",
++    "hash": ""
+   },
+   {
+     "input": "http://10.0.0.XN--pokxncvks",
+     "base": null,
+-    "failure": true
++    "href": "http://10.0.0.xn--pokxncvks/",
++    "origin": "http://10.0.0.xn--pokxncvks",
++    "protocol": "http:",
++    "username": "",
++    "password": "",
++    "host": "10.0.0.xn--pokxncvks",
++    "hostname": "10.0.0.xn--pokxncvks",
++    "port": "",
++    "pathname": "/",
++    "search": "",
++    "hash": ""
+   },
+   {
+     "input": "http://10.0.0.xN--pokxncvks",
+     "base": null,
+-    "failure": true
++    "href": "http://10.0.0.xn--pokxncvks/",
++    "origin": "http://10.0.0.xn--pokxncvks",
++    "protocol": "http:",
++    "username": "",
++    "password": "",
++    "host": "10.0.0.xn--pokxncvks",
++    "hostname": "10.0.0.xn--pokxncvks",
++    "port": "",
++    "pathname": "/",
++    "search": "",
++    "hash": ""
+   },
+   "Test name prepping, fullwidth input should be converted to ASCII and NOT IDN-ized. This is 'Go' in fullwidth UTF-8/UTF-16.",
+   {
+@@ -8594,7 +8655,16 @@
+   {
+     "input": "file://xn--/p",
+     "base": null,
+-    "failure": true
++    "href": "file://xn--/p",
++    "protocol": "file:",
++    "username": "",
++    "password": "",
++    "host": "xn--",
++    "hostname": "xn--",
++    "port": "",
++    "pathname": "/p",
++    "search": "",
++    "hash": ""
+   },
+   "https://bugzilla.mozilla.org/show_bug.cgi?id=1647058",
+   {
+@@ -9340,7 +9410,17 @@
+   {
+     "input": "https://xn--/",
+     "base": null,
+-    "failure": true
++    "href": "https://xn--/",
++    "origin": "https://xn--",
++    "protocol": "https:",
++    "username": "",
++    "password": "",
++    "host": "xn--",
++    "hostname": "xn--",
++    "port": "",
++    "pathname": "/",
++    "search": "",
++    "hash": ""
+   },
+   "Non-special schemes that some implementations might incorrectly treat as special",
+   {

@@ -696,3 +696,16 @@ cargo run -p css --features css-fuzzing --bin css_fuzz_regression_summary -- \
 The promoted CSS regression fixtures are intentionally version-controlled and
 checked in normal test runs so fuzz-discovered failures remain reproducible even
 without libFuzzer.
+
+## Qualified URL source
+
+This separate workspace uses the approved snapshot in `../vendor/rust-url/`.
+Its URL-only path patch preserves the original sibling IDNA, form and encoding
+dependencies. The main workspace additionally patches percent-encoding for its
+other consumers. Their unified features are qualified separately.
+
+Prepare a fresh cache with `cargo fetch --manifest-path fuzz/Cargo.toml --locked`
+from the repository root, then run `make check-url-dependencies` after preparing
+the main cache too. That offline gate verifies the exact snapshot and all seven
+recorded configurations without changing either lockfile. See
+[the source provenance and maintenance record](../vendor/rust-url/BORROWSER-PATCH.md).

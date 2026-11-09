@@ -1063,3 +1063,169 @@ CI-control revision is `823ba428f3a9883e8873e91d6cf46b7ac822c0a7`, never the
 dependency pin. Earlier AH3 pins and local AH8 overrides above are historical
 evidence. Final Borrowser validation remains pending; see
 [AH8](ah8-css-resource-reference-discovery.md) for exact results and limits.
+
+## #1457 source-governance migration (2026-11-09)
+
+The current consumer source is the approved local snapshot under
+[`vendor/rust-url`](../../vendor/rust-url/BORROWSER-PATCH.md), derived from the
+same qualified parser revision `92f7fb395f9ffb2f706e7c664283781fd3b294a2`.
+Earlier Git-patch instructions and source-selection results above are historical.
+No parser, serialization, diagnostic, origin, resource-identity, or consumer
+behavior change is authorized by #1457.
+
+The complete 80-entry tracked fork workspace preserves all original Cargo
+manifests, Rust source, tests and fixtures, including parent-relative README and
+debugger metadata. Eight original license symlinks are explicitly materialized
+with the exact root license bytes; this directory does not claim the original
+Git tree identity. The source record retains the upstream baseline
+`00a6ce58d02f4e0d43c5ca0702c0bedb8b1ebf3a`, both original Git trees, all eleven
+contribution objects including merge parents, exact inventories, and the ten-path
+cumulative patch. It distinguishes recorded Git ancestry from offline local-byte
+verification. The fork remains available for upstream work.
+
+Root patches remain minimal: local `url` plus `percent-encoding`; the separate
+fuzz root patches only local `url`. Actual pre/post locked offline metadata was
+compared for main default, HTML5, hardening, conformance-observation and all-feature
+configurations, and fuzz default/all-features. After normalizing only the four
+approved Git-to-local identities, the complete resolved graphs and workspace
+membership are identical in every corresponding configuration. Main retains 415
+metadata packages and fuzz 53; both retain the four original versions and the
+35-package URL runtime closure with all 31 registry checksums unchanged. Main's
+86 named closure edges and fuzz's 85, including their distinct unified features,
+are independently frozen. Each lockfile changes only by removal of the four
+original Git source lines; no Cargo update was used.
+
+`make check-url-dependencies` now verifies frozen source/record hashes, exact entry
+types and inventory before content admission, upstream reconstruction and fork
+replay in disposable storage, exact selected local manifest paths, package
+uniqueness, versions, checksums, edges, target predicates and per-configuration
+features. Cargo inspection is explicitly offline and locked, and the checker
+verifies lock bytes remain unchanged. CI prepares both locked caches separately
+before this required Rust-job gate. The ureq checker and source are unchanged.
+
+The weekly workflow retains its existing schedule, permissions and command. Its
+monitor reuses the same approved source/configuration policy, verifies the fetched
+approved commit's original tree, and retains upstream/fork ancestry, availability
+notices, warnings and incomplete-monitoring errors. It never updates source or
+approval records. Advancing checker anchors is an explicit requalification action.
+The existing required Rust status check enforces technical integrity, but the
+master ruleset's zero-review setting does not independently approve changed policy;
+require an independent current review externally. No repository settings changed.
+
+Qualification results and remaining hosted requirements are recorded below.
+
+### #1457 local qualification and remaining hosted evidence
+
+This is the uncommitted candidate based on master
+`4a997e93cafeb9d6223b3eb034300e7f950a6bd6`, not a publication, merge, issue
+closure or hosted-CI claim. No existing Rust source, conformance expectation or
+snapshot was edited. Only the qualified upstream snapshot is added.
+
+| Check | Local result |
+| --- | --- |
+| Final `CARGO_NET_OFFLINE=true make check-url-dependencies` | 99 tests: 16 source/provenance, 21 Cargo-selection/graph, 24 monitor, 38 unchanged ureq checks. All seven real Cargo configurations are verified. |
+| `make check-network-dependencies` | Pass; unchanged ureq source, reconstruction, selection and feature policy. |
+| Exact pre/post normalized metadata | Pass for all seven configurations, including complete resolved nodes, named edges, dependency kinds/targets, features and workspace membership. Only four approved source identities are normalized. Both locks contain only the four original Git-source-line deletions. |
+| `cargo test -p addressing --locked` | 51 passed, zero failed or ignored. Pinned WPT, origin, resource, unavailable-base and debug expectations unchanged. |
+| Browser/CSS/net library tests | 984 passed: Browser 375, CSS 480, net 129. |
+| Browser conformance-observation feature | 384 passed; matching all-target Clippy lane passed. |
+| Existing AG8 and AH9 suites | AG8: seven PASS. AH9: 22 PASS and two existing UNSUPPORTED. No expectation changes. |
+| Formatting and default/HTML5/hardening lints | Pass before the aggregate workspace failure. |
+| Full `make ci` | **FAIL, exit 2.** Default workspace conformance binary: 186 passed, nine native macOS ownership failures, 13 existing ignores. These remain failures. |
+| Unmodified master control | An untouched `git archive` of the exact base, using its original Git dependency and lock, reproduces the exact same nine named native failures (targeted native filter: one pass, nine failures, one ignore). |
+| Full HTML5 workspace aggregate | **FAIL, exit 2**, with the same nine native conformance failures. |
+| Coverage after aggregate aborts | Default and HTML5 commands repeated with `--exclude borrowser-conformance`: 2,702 pass in each configuration, zero failures/ignores. Conformance remains separately failed; these supplemental commands do not turn either aggregate green or alter repository test configuration. |
+| Remaining CI stages | All separately executed parser conformance/external/fatal/golden/smoke/WPT lanes, HTML5 regression/fuzz smokes, debug/release/default/HTML5 builds, AI5 release-abort network qualification, bench compilation and generated-entity check pass. |
+| Separate fuzz qualification | All fuzz bins build. CSS promoted regressions, all six deterministic CSS corpus lanes, and bounded tokenizer/parser/values smokes pass. |
+| Live observational monitor | Exit 1 with three synchronization warnings; approved local bytes and fetched original commit tree verify. Unmodified master monitor with captured original Cargo records reproduces all three warnings. |
+
+The native failure inventory is `native_capture_failure_diagnostics`,
+`native_cleanup_diagnostic_failures`, `native_lifecycle_regressions`,
+`native_macos_bsd_ownership_states`, `native_process_and_pipe_contract`,
+`native_resource_completion_and_shutdown`, `native_shutdown_uses_capture_deadline`,
+`native_startup_exit_event_classification`, and
+`native_temporary_artifact_containment`, all under `chromium::tests`. Existing
+macOS process-ownership limitations are recorded in AH9/AH10. No runtime repair,
+test weakening, changed ignore, or altered expected snapshot is included here.
+
+Live monitor observations on 2026-11-09: upstream `main` is
+`13b385b299238306d2601ddc1c0043afcd2f2046`; maintained `borrowser` is
+`7dc4ecbf4d29817e723e04ae94b14f1326764f61`; fork `main` remains the original
+`00a6ce58d02f4e0d43c5ca0702c0bedb8b1ebf3a`. Upstream has three commits absent
+from maintained ancestry; the mirror is behind; the approved snapshot is two
+commits ahead of the maintained branch. These are genuine pre-existing review
+warnings, not adopted upgrades or source-verification errors.
+
+Local logs, before/after metadata and exact comparisons are retained in
+`target/1457-validation/`; commands and essential results are recorded here so
+the scope does not depend on those untracked artifacts. The candidate still
+requires successful hosted PR CI on the actual proposed merge, a hosted monitor
+run with its findings reviewed, and confirmation of scheduled monitoring after
+merge. Issue #1457 is not complete or merge-ready on this local evidence.
+The current issue is assigned to existing Milestone AI (#95); no GitHub records
+or repository settings were changed during implementation.
+
+### #1457 registry-origin review correction (2026-11-09)
+
+The independent review found that registry identity and lock checksums alone
+did not establish the effective source location of the 31 registry packages in
+the frozen URL closure. Cargo 1.92's
+[source replacement](https://doc.rust-lang.org/cargo/reference/source-replacement.html)
+retains the original registry package identity when loading a directory source.
+An offline disposable fixture demonstrated that Cargo accepts modified source
+bytes with a regenerated directory checksum map while retaining the original
+package checksum in an unchanged lockfile. Those editable records are not
+independent approval of replacement bytes.
+
+The existing URL checker now requires each selected registry manifest to be
+`registry/src/<approved-index-cache>/<name>-<version>/Cargo.toml` beneath the
+effective Cargo home. The approved Cargo 1.92 cache names are
+`index.crates.io-1949cf8c6b5b557f` (official sparse index) and
+`github.com-25cdd57fae9f0462` (official Git index). Cargo's
+[registry implementation](https://github.com/rust-lang/cargo/blob/rust-1.92.0/src/cargo/sources/registry/mod.rs)
+defines the extraction layout and cache naming; its
+[source identity test](https://github.com/rust-lang/cargo/blob/rust-1.92.0/src/cargo/core/source_id.rs)
+anchors the Git-index hash. Unexpected layouts fail closed and require explicit
+qualification before this policy changes.
+
+Cargo home follows Cargo's environment rules: a nonempty `CARGO_HOME` is absolute
+or relative to the invocation directory; otherwise use the user's `.cargo`.
+The explicitly configured home boundary is resolved, permitting relocated homes
+and home aliases. Every subsequent registry/cache/package directory and the
+manifest must be real entries, without symlinks. Missing, nonregular, unknown
+registry or alternate package paths are rejected. The checker also rejects any
+`.cargo-checksum.json` entry beside a selected manifest. Cargo 1.92's
+[directory source implementation](https://github.com/rust-lang/cargo/blob/rust-1.92.0/src/cargo/sources/directory.rs)
+requires that record, so a directory replacement disguised inside an approved
+cache layout is rejected as well. The current qualified registry extractions
+contain no such record. This checks the effective selected location without
+reimplementing Cargo's configuration precedence or relying only on source labels.
+
+This is a source-location guarantee, not cryptographic verification of every
+extracted registry-cache file. The Cargo installation, configured home, cache
+contents and host filesystem remain trusted; hostile concurrent filesystem
+changes are outside this check. Registry mirrors, directory replacements and
+unqualified cache layouts are not approved origins for this URL closure. The
+four vendored manifests, frozen versions, checksums, edges, aliases, targets and
+distinct main/fuzz feature baselines retain their existing checks. Verification
+remains locked and offline, without source, manifest or lockfile changes.
+
+Fresh correction qualification passes all 29 URL-selection tests and the full
+mandatory gate's 107 tests (16 source/provenance, 29 Cargo-selection/origin/graph,
+24 monitor and 38 unchanged ureq checks), including all seven real Cargo
+configurations. Isolated main and fuzz mutations reject alternate manifest paths
+for each of the 31 registry packages with package identity, version and complete
+lock records unchanged. Positive cache relocation and sparse/Git layout fixtures,
+path/symlink failures and directory-checksum markers are covered. A real locked,
+offline Cargo fixture resolves and builds both ordinary and cache-disguised
+directory replacements with the original apparent registry identity; the new
+policy rejects both. It uses the already prepared dependency cache and disposable
+files only, with no test-time downloads.
+
+The approved vendored source and records, both consumer manifests and lockfiles,
+all seven normalized dependency graphs, runtime code and conformance expectations
+are unchanged from the reviewed candidate. Earlier Browser, addressing and fuzz
+qualification above remains applicable and was not rerun for this tooling-only
+correction. The nine documented native macOS failures remain failures. Successful
+hosted PR CI, hosted monitor review, explicit approval and post-merge scheduled
+monitor confirmation remain outstanding.

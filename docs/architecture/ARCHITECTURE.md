@@ -934,8 +934,9 @@ The [AH8 candidate contract](../platform/ah8-css-resource-reference-discovery.md
 adds CSS-owned authored discovery, Browser attachment-owned admitted response
 bases and addressing-owned resolution/independence. The existing Tab diagnostic
 exposes it on demand without commands, effective dependencies or retained inventory.
-The parser dependency is integrated at its qualified immutable revision; final
-required Borrowser validation remains pending.
+The parser dependency is selected from the [approved local snapshot](../../vendor/rust-url/BORROWSER-PATCH.md)
+of its qualified immutable revision. The #1457 source-governance migration preserves
+engine behavior; its local and remaining hosted qualification are recorded in AH2.
 
 ## AH9 local addressing conformance observation
 

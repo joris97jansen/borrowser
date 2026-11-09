@@ -346,3 +346,12 @@ commit/publication authorization.
 The recorded host failures do not waive a gate. AH8 and Milestone AH remain open;
 Borrowser was uncommitted and unpublished at that checkpoint. Required CI must
 pass before merge readiness is established.
+
+## #1457 source provenance update (2026-11-09)
+
+The same approved `92f7fb395f9ffb2f706e7c664283781fd3b294a2` implementation is
+now selected through the [local source-governance record](../../vendor/rust-url/BORROWSER-PATCH.md).
+The original source qualification above remains historical evidence. This
+migration preserves parser-owned independence, CSS discovery, Browser response
+provenance, fixtures and expectations. See the [current AH2 amendment](ah2-typed-url-parsing-and-diagnostics.md#1457-source-governance-migration-2026-11-09)
+for exact source transformations, graph equivalence and qualification limits.
