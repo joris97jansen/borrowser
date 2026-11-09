@@ -21,11 +21,36 @@ use crate::{error::Error, proxy::Proto};
 /// Trait for things implementing [std::io::Read] + [std::io::Write]. Used in [TlsConnector].
 pub trait ReadWrite: Read + Write + Send + Sync + fmt::Debug + 'static {
     fn socket(&self) -> Option<&TcpStream>;
+
+    /// Positive, momentary eligibility under exclusive connection ownership.
+    /// `Ok(true)` permits reuse; `Ok(false)` reports surplus, closure, or
+    /// unsupported/uncertain inspection. `Err` reports an inspection failure.
+    /// Both negative outcomes discard the connection. No implementation can
+    /// promise the absence of input that a peer might send after this probe.
+    fn is_idle_for_reuse(&mut self) -> io::Result<bool> {
+        Ok(false)
+    }
 }
 
 impl ReadWrite for TcpStream {
     fn socket(&self) -> Option<&TcpStream> {
         Some(self)
+    }
+
+    fn is_idle_for_reuse(&mut self) -> io::Result<bool> {
+        // Even a failed mode transition leaves the state uncertain: attempt
+        // restoration on every path and discard if restoration itself fails.
+        if let Err(error) = self.set_nonblocking(true) {
+            self.set_nonblocking(false)?;
+            return Err(error);
+        }
+        let result = match self.peek(&mut [0]) {
+            Ok(_) => Ok(false), // queued input or EOF; never consume it
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(true),
+            Err(error) => Err(error),
+        };
+        self.set_nonblocking(false)?;
+        result
     }
 }
 
@@ -48,13 +73,17 @@ impl<T: ReadWrite + ?Sized> ReadWrite for Box<T> {
     fn socket(&self) -> Option<&TcpStream> {
         ReadWrite::socket(self.as_ref())
     }
+
+    fn is_idle_for_reuse(&mut self) -> io::Result<bool> {
+        ReadWrite::is_idle_for_reuse(self.as_mut())
+    }
 }
 
 // DeadlineStream wraps a stream such that read() will return an error
 // after the provided deadline, and sets timeouts on the underlying
 // TcpStream to ensure read() doesn't block beyond the deadline.
 // When the From trait is used to turn a DeadlineStream back into a
-// Stream (by PoolReturnRead), the timeouts are removed.
+// Stream (by PoolReturnRead), the next request restores its own timeouts.
 pub(crate) struct DeadlineStream {
     stream: Stream,
     deadline: Option<Instant>,
@@ -85,8 +114,10 @@ impl BufRead for DeadlineStream {
         if let Some(deadline) = self.deadline {
             let timeout = time_until_deadline(deadline)?;
             if let Some(socket) = self.stream.socket() {
-                socket.set_read_timeout(Some(timeout))?;
-                socket.set_write_timeout(Some(timeout))?;
+                socket
+                    .set_read_timeout(effective_timeout(socket.read_timeout()?, Some(timeout)))?;
+                socket
+                    .set_write_timeout(effective_timeout(socket.write_timeout()?, Some(timeout)))?;
             }
         }
         self.stream.fill_buf().map_err(|e| {
@@ -95,7 +126,7 @@ impl BufRead for DeadlineStream {
             // Since the socket most definitely not set_nonblocking(true),
             // we can safely normalize WouldBlock to TimedOut
             if e.kind() == io::ErrorKind::WouldBlock {
-                return io_err_timeout("timed out reading response".to_string());
+                return io::Error::new(io::ErrorKind::TimedOut, e);
             }
             e
         })
@@ -131,8 +162,26 @@ impl Read for DeadlineStream {
     }
 }
 
-// If the deadline is in the future, return the remaining time until
-// then. Otherwise return a TimedOut error.
+// Keep configured finite I/O limits even when an overall deadline is longer.
+fn effective_timeout(configured: Option<Duration>, deadline: Option<Duration>) -> Option<Duration> {
+    match (configured, deadline) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
+}
+
+fn configure_socket(socket: &TcpStream, unit: &Unit) -> io::Result<()> {
+    let remaining = unit.deadline.map(time_until_deadline).transpose()?;
+    socket.set_nonblocking(false)?;
+    socket.set_read_timeout(effective_timeout(unit.agent.config.timeout_read, remaining))?;
+    socket.set_write_timeout(effective_timeout(
+        unit.agent.config.timeout_write,
+        remaining,
+    ))?;
+    Ok(())
+}
+
+// If the deadline is in the future, return the remaining time until then.
 fn time_until_deadline(deadline: Instant) -> io::Result<Duration> {
     let now = Instant::now();
     match deadline.checked_duration_since(now) {
@@ -178,10 +227,9 @@ impl ReadWrite for ReadOnlyStream {
 
 impl fmt::Debug for Stream {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.inner.get_ref().socket() {
-            Some(_) => write!(f, "Stream({:?})", self.inner.get_ref()),
-            None => write!(f, "Stream(Test)"),
-        }
+        f.debug_struct("Stream")
+            .field("buffered_bytes", &self.inner.buffer().len())
+            .finish_non_exhaustive()
     }
 }
 
@@ -207,65 +255,30 @@ impl Stream {
         self.inner.buffer()
     }
 
-    // Check if the server has closed a stream by performing a one-byte
-    // non-blocking read. If this returns EOF, the server has closed the
-    // connection: return true. If this returns a successful read, there are
-    // some bytes on the connection even though there was no inflight request.
-    // For plain HTTP streams, that might mean an HTTP 408 was pushed; it
-    // could also mean a buggy server that sent more bytes than a response's
-    // Content-Length. For HTTPS streams, that might mean a close_notify alert,
-    // which is the proper way to shut down an idle stream.
-    // Either way, bytes available on the stream before we've made a request
-    // means the stream is not usable, so we should discard it.
-    // If this returns WouldBlock (aka EAGAIN),
-    // that means the connection is still open: return false. Otherwise
-    // return an error.
-    fn serverclosed_stream(stream: &std::net::TcpStream) -> io::Result<bool> {
-        let mut buf = [0; 1];
-        stream.set_nonblocking(true)?;
-
-        let result = match stream.peek(&mut buf) {
-            Ok(n) => {
-                debug!(
-                    "peek on reused connection returned {}, not WouldBlock; discarding",
-                    n
-                );
-                Ok(true)
-            }
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(false),
-            Err(e) => Err(e),
-        };
-        stream.set_nonblocking(false)?;
-
-        result
-    }
-    // Return true if the server has closed this connection.
-    pub(crate) fn server_closed(&self) -> io::Result<bool> {
-        match self.socket() {
-            Some(socket) => Stream::serverclosed_stream(socket),
-            None => Ok(false),
+    pub(crate) fn is_idle_for_reuse(&mut self) -> io::Result<bool> {
+        if !self.buffer().is_empty() {
+            return Ok(false);
         }
+        self.inner.get_mut().is_idle_for_reuse()
     }
 
     pub(crate) fn set_unpoolable(&mut self) {
         self.pool_returner = PoolReturner::none();
     }
 
-    pub(crate) fn return_to_pool(mut self) -> io::Result<()> {
-        // ensure stream can be reused
-        self.reset()?;
-        self.pool_returner.clone().return_to_pool(self);
-        Ok(())
+    // Only framing readers call this after verified HTTP completion. Eligibility
+    // and maintenance are optional: any failure discards this owned stream, not
+    // the completed response. Never clear finite timeouts on the idle socket.
+    pub(crate) fn return_to_pool(mut self) {
+        if self.pool_returner.is_enabled() && matches!(self.is_idle_for_reuse(), Ok(true)) {
+            self.pool_returner.clone().return_to_pool(self);
+        }
     }
 
-    pub(crate) fn reset(&mut self) -> io::Result<()> {
-        // When we are turning this back into a regular, non-deadline Stream,
-        // remove any timeouts we set.
+    pub(crate) fn prepare_for_request(&self, unit: &Unit) -> io::Result<()> {
         if let Some(socket) = self.socket() {
-            socket.set_read_timeout(None)?;
-            socket.set_write_timeout(None)?;
+            configure_socket(socket, unit)?;
         }
-
         Ok(())
     }
 
@@ -326,7 +339,7 @@ impl Drop for Stream {
 pub(crate) fn connect_http(unit: &Unit, hostname: &str) -> Result<Stream, Error> {
     //
     let port = unit.url.port().unwrap_or(80);
-    let pool_key = PoolKey::from_parts("http", hostname, port);
+    let pool_key = PoolKey::new(&unit.url, unit.agent.config.proxy.clone());
     let pool_returner = PoolReturner::new(&unit.agent, pool_key);
     connect_host(unit, hostname, port).map(|(t, r)| Stream::new(t, r, pool_returner))
 }
@@ -338,7 +351,7 @@ pub(crate) fn connect_https(unit: &Unit, hostname: &str) -> Result<Stream, Error
 
     let tls_conf = &unit.agent.config.tls_config;
     let https_stream = tls_conf.connect(hostname, Box::new(sock))?;
-    let pool_key = PoolKey::from_parts("https", hostname, port);
+    let pool_key = PoolKey::new(&unit.url, unit.agent.config.proxy.clone());
     let pool_returner = PoolReturner::new(&unit.agent, pool_key);
     Ok(Stream::new(https_stream, remote_addr, pool_returner))
 }
@@ -349,12 +362,15 @@ pub(crate) fn connect_host(
     hostname: &str,
     port: u16,
 ) -> Result<(TcpStream, SocketAddr), Error> {
-    let connect_deadline: Option<Instant> =
-        if let Some(timeout_connect) = unit.agent.config.timeout_connect {
-            Instant::now().checked_add(timeout_connect)
-        } else {
-            unit.deadline
-        };
+    let configured_deadline = unit
+        .agent
+        .config
+        .timeout_connect
+        .and_then(|timeout| Instant::now().checked_add(timeout));
+    let connect_deadline = match (configured_deadline, unit.deadline) {
+        (Some(configured), Some(request)) => Some(configured.min(request)),
+        (configured, request) => configured.or(request),
+    };
     let proxy: Option<Proxy> = unit.agent.config.proxy.clone();
     let netloc = match proxy {
         Some(ref proxy) => format!("{}:{}", proxy.server, proxy.port),
@@ -392,7 +408,7 @@ pub(crate) fn connect_host(
             None => None,
         };
 
-        debug!("connecting to {} at {}", netloc, &sock_addr);
+        debug!("connecting to resolved endpoint");
 
         // connect with a configured timeout.
         #[allow(clippy::unnecessary_unwrap)]
@@ -430,17 +446,7 @@ pub(crate) fn connect_host(
 
     stream.set_nodelay(unit.agent.config.no_delay)?;
 
-    if let Some(deadline) = unit.deadline {
-        stream.set_read_timeout(Some(time_until_deadline(deadline)?))?;
-    } else {
-        stream.set_read_timeout(unit.agent.config.timeout_read)?;
-    }
-
-    if let Some(deadline) = unit.deadline {
-        stream.set_write_timeout(Some(time_until_deadline(deadline)?))?;
-    } else {
-        stream.set_write_timeout(unit.agent.config.timeout_write)?;
-    }
+    configure_socket(&stream, unit)?;
 
     if proto == Some(Proto::HTTP) && unit.url.scheme() == "https" {
         if let Some(ref proxy) = proxy {
@@ -448,14 +454,13 @@ pub(crate) fn connect_host(
                 stream,
                 "{}",
                 proxy.connect(hostname, port, &unit.agent.config.user_agent)
-            )
-            .unwrap();
+            )?;
             stream.flush()?;
 
             let s = stream.try_clone()?;
-            let pool_key = PoolKey::from_parts(unit.url.scheme(), hostname, port);
-            let pool_returner = PoolReturner::new(&unit.agent, pool_key);
-            let s = Stream::new(s, remote_addr, pool_returner);
+            // CONNECT admission is not an origin HTTP response. Its cloned
+            // pre-TLS socket must never enter the HTTPS connection pool.
+            let s = Stream::new(s, remote_addr, PoolReturner::none());
             let response = Response::do_from_stream(s, unit.clone())?;
             Proxy::verify_response(&response)?;
         }

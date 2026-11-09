@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::sync::Arc;
 
 use rustls::pki_types::CertificateDer;
@@ -40,13 +41,21 @@ fn add_native_root_certs(store: &mut rustls::RootCertStore) {
     let result = rustls_native_certs::load_native_certs();
     let (valid, invalid) = store.add_parsable_certificates(result.certs);
     if invalid > 0 {
-        eprintln!("[net][tls][native-roots] ignored {invalid} unparsable native certificate(s)");
+        let _ = writeln!(
+            std::io::stderr().lock(),
+            "[net][tls][native-roots] ignored {invalid} unparsable native certificate(s)"
+        );
     }
-    for err in result.errors {
-        eprintln!("[net][tls][native-roots] failed to load platform root: {err}");
+    if !result.errors.is_empty() {
+        let _ = writeln!(
+            std::io::stderr().lock(),
+            "[net][tls][native-roots] platform root loading reported {} failure(s)",
+            result.errors.len()
+        );
     }
     if valid == 0 {
-        eprintln!(
+        let _ = writeln!(
+            std::io::stderr().lock(),
             "[net][tls][native-roots] no valid native root certificates loaded; HTTPS validation will fail"
         );
     }
@@ -54,12 +63,18 @@ fn add_native_root_certs(store: &mut rustls::RootCertStore) {
 
 fn add_explicit_root_certs(store: &mut rustls::RootCertStore, roots: &[Vec<u8>]) {
     for der in roots {
-        if let Err(err) = store.add(CertificateDer::from(der.clone())) {
-            eprintln!("[net][tls][explicit-roots] rejected root certificate: {err}");
+        if store.add(CertificateDer::from(der.clone())).is_err() {
+            let _ = writeln!(
+                std::io::stderr().lock(),
+                "[net][tls][explicit-roots] rejected root certificate"
+            );
         }
     }
 
     if roots.is_empty() && store.is_empty() {
-        eprintln!("[net][tls][explicit-roots] configured with an empty trust store");
+        let _ = writeln!(
+            std::io::stderr().lock(),
+            "[net][tls][explicit-roots] configured with an empty trust store"
+        );
     }
 }

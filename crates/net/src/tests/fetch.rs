@@ -1,6 +1,10 @@
-use super::support::{HttpReply, TestHttpServer, collect_fetch};
-use crate::HttpClientPolicy;
+use super::support::{HttpReply, TestHttpServer, collect_fetch, collect_fetch_terminal};
+use crate::{HttpClientPolicy, NetworkErrorKind};
 use core_types::ResourceKind;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 
 #[test]
 fn ai3_empty_and_binary_successful_bodies_complete_without_conversion() {
@@ -73,40 +77,37 @@ fn unsupported_and_rejected_urls_fail_before_a_resource_response() {
 }
 
 #[test]
-fn follows_redirects_and_reports_final_url() {
-    let server = TestHttpServer::spawn(|req| {
-        if req.path == "/redirect" {
-            HttpReply::response(
-                "302 Found",
-                vec![("Location", "/final".to_string())],
-                Vec::new(),
-            )
-        } else {
-            HttpReply::response(
-                "200 OK",
-                vec![("Content-Type", "text/html".to_string())],
-                b"<p>ok</p>".to_vec(),
-            )
-        }
+fn ai5_selected_redirect_preserves_url_without_traversal() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let observed = attempts.clone();
+    let server = TestHttpServer::spawn(move |req| {
+        observed.fetch_add(1, Ordering::SeqCst);
+        assert_eq!(req.path, "/redirect", "no redirect target may be contacted");
+        HttpReply::response("302 Found", vec![("Location", "/final".into())], Vec::new())
     });
-
-    let result = collect_fetch(
-        server.url("/redirect"),
+    let issued = server.url("/redirect");
+    let result = collect_fetch_terminal(
+        issued.clone(),
         ResourceKind::Html,
         HttpClientPolicy::default(),
     );
-
-    assert_eq!(result.start.response.status_code(), Some(200));
+    assert!(result.start.is_none());
+    assert!(result.done.is_none());
+    assert!(result.body.is_empty());
+    let error = result
+        .error
+        .expect("Follow is unsupported until explicit traversal exists");
+    assert_eq!(error.error_kind, NetworkErrorKind::UnsupportedResponse);
+    assert_eq!(error.body.unwrap().delivered_bytes(), 0);
+    let response = error.response.unwrap();
+    assert_eq!(response.status_code(), Some(302));
+    assert_eq!(response.requested_url(), issued);
+    assert_eq!(response.reported_response_url(), Some(issued.as_str()));
     assert_eq!(
-        result.start.response.requested_url(),
-        server.url("/redirect")
+        response.headers().values("location").next(),
+        Some(b"/final".as_slice())
     );
-    assert_eq!(
-        result.start.response.reported_response_url().unwrap(),
-        server.url("/final")
-    );
-    assert_eq!(result.done.bytes_received, b"<p>ok</p>".len());
-    assert_eq!(result.body, b"<p>ok</p>");
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -132,37 +133,46 @@ fn ai2_existing_backend_wire_target_and_defaults_remain_explicitly_qualified() {
     assert_eq!(result.body, b"defaults observed");
 }
 
-// Characterization of an inherited limitation, not the intended AI1 policy.
-// AI5/AI6 must replace this expectation with rejection before target execution.
+// Replaces AI2's inherited credential-forwarding characterization with AI5's
+// required rejection, retaining the same hostile target and provenance checks.
 #[test]
-fn ai2_legacy_backend_can_authenticate_a_credential_redirect_target_characterization() {
-    let server = TestHttpServer::spawn(|req| {
-        if req.path == "/redirect-userinfo" {
-            assert!(req.header("authorization").is_none());
-            let location = format!("http://user:pass@{}/target", req.header("host").unwrap());
-            HttpReply::response("302 Found", vec![("Location", location)], Vec::new())
-        } else {
-            assert_eq!(req.path, "/target");
-            assert_eq!(req.header("authorization"), Some("Basic dXNlcjpwYXNz"));
-            HttpReply::response(
-                "200 OK",
-                vec![],
-                b"legacy credential target reached".to_vec(),
-            )
-        }
+fn ai5_credential_redirect_is_rejected_without_authenticating_target() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let observed = attempts.clone();
+    let server = TestHttpServer::spawn(move |req| {
+        observed.fetch_add(1, Ordering::SeqCst);
+        assert_eq!(
+            req.path, "/redirect-userinfo",
+            "credential target must remain uncontacted"
+        );
+        assert!(req.header("authorization").is_none());
+        let location = format!("http://user:pass@{}/target", req.header("host").unwrap());
+        HttpReply::response("302 Found", vec![("Location", location)], Vec::new())
     });
-    let result = collect_fetch(
-        server.url("/redirect-userinfo"),
+    let issued = server.url("/redirect-userinfo");
+    let result = collect_fetch_terminal(
+        issued.clone(),
         ResourceKind::Html,
         HttpClientPolicy::default(),
     );
-    assert_eq!(result.body, b"legacy credential target reached");
+    assert!(result.start.is_none());
+    assert!(result.done.is_none());
+    assert!(result.body.is_empty());
+    let error = result.error.unwrap();
+    assert_eq!(error.error_kind, NetworkErrorKind::UnsupportedResponse);
+    assert_eq!(error.body.unwrap().delivered_bytes(), 0);
+    assert!(!error.error.contains("user:pass"));
+    let response = error.response.unwrap();
+    assert_eq!(response.status_code(), Some(302));
+    assert_eq!(response.requested_url(), issued);
+    assert_eq!(response.reported_response_url(), Some(issued.as_str()));
     assert!(
-        result
-            .start
-            .response
-            .reported_response_url()
+        response
+            .headers()
+            .values("location")
+            .next()
             .unwrap()
-            .contains("user:pass@")
+            .starts_with(b"http://user:pass@")
     );
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
 }

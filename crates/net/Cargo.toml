@@ -9,8 +9,10 @@ tools = { path = "../tools" }
 core_types = { path = "../core_types" }
 
 ureq = { workspace = true }
+flate2 = { workspace = true }
 rustls = { version = "0.23.32", default-features = false, features = ["std", "ring", "tls12"] }
 rustls-native-certs = "0.8.1"
 
 [dev-dependencies]
 rustls-pemfile = "2"
+log = "0.4"

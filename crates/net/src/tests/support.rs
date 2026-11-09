@@ -335,8 +335,25 @@ impl TestHttpsServer {
 
         let thread = thread::spawn(move || {
             let (tcp, _) = listener.accept().expect("accept tls client");
+            tcp.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            tcp.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
             let conn = rustls::ServerConnection::new(server_config).expect("server conn");
             let mut tls = rustls::StreamOwned::new(conn, tcp);
+            while tls.conn.is_handshaking() {
+                if let Err(error) = tls.conn.complete_io(&mut tls.sock) {
+                    // Certificate-rejection tests intentionally receive this
+                    // alert. It is not a malformed HTTP request or a panic.
+                    assert!(matches!(
+                        error
+                            .get_ref()
+                            .and_then(|e| e.downcast_ref::<rustls::Error>()),
+                        Some(rustls::Error::AlertReceived(
+                            rustls::AlertDescription::UnknownCA
+                        ))
+                    ));
+                    return;
+                }
+            }
             let _ = read_request(&mut tls);
             HttpReply::response(
                 "200 OK",
@@ -354,6 +371,10 @@ impl TestHttpsServer {
 
     pub(super) fn url(&self, path: &str) -> String {
         format!("https://localhost:{}{}", self.addr.port(), path)
+    }
+
+    pub(super) fn finish(self) {
+        self._thread.join().expect("TLS fixture worker");
     }
 }
 

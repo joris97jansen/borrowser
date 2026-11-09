@@ -665,7 +665,7 @@ fn ai3_malformed_response_heads_settle_every_production_resource_route() {
                         "a rejected head is not an admitted HTTP response"
                     );
                     assert!(body.is_none());
-                    assert_eq!(error, "malformed HTTP response headers");
+                    assert_eq!(error, "malformed HTTP response head");
                 }
                 _ => panic!("head rejection must be the first event: {event:?}"),
             }

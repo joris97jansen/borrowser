@@ -147,6 +147,7 @@ fn collect(
             NetEvent::Error {
                 request_id,
                 url,
+                error_kind,
                 response,
                 body,
                 ..
@@ -157,7 +158,17 @@ fn collect(
                     assert_eq!(response.as_ref(), Some(started));
                 }
                 if let Some(body) = body {
-                    assert!(start.is_some());
+                    if start.is_none() {
+                        // Shared response admission can reject before Start,
+                        // retaining acquired facts and exactly zero progress.
+                        assert!(response.is_some());
+                        assert_eq!(delivered, 0);
+                        assert!(matches!(
+                            error_kind,
+                            NetworkErrorKind::UnsupportedResponse
+                                | NetworkErrorKind::MalformedResponse
+                        ));
+                    }
                     assert!(body.matches_route(route));
                     assert_eq!(body.delivered_bytes(), delivered);
                 } else {
@@ -405,12 +416,26 @@ fn ai4_location_is_preserved_without_following() {
         Route::Html,
         CancelAt::Never,
     );
-    assert_eq!(success(&events).status_code(), Some(302));
+    // AI4 preserved Location without traversing it. AI5's shared Follow
+    // admission now rejects this operation before Start, retaining those facts.
+    let [
+        NetEvent::Error {
+            error_kind: NetworkErrorKind::UnsupportedResponse,
+            response: Some(response),
+            body: Some(progress),
+            ..
+        },
+    ] = events.as_slice()
+    else {
+        panic!("redirect admission must be terminal: {events:?}");
+    };
+    assert_eq!(response.status_code(), Some(302));
     assert_eq!(
-        success(&events).headers().values("location").next(),
+        response.headers().values("location").next(),
         Some(b"/target".as_slice())
     );
-    assert_eq!(body(&events), b"redirect body");
+    assert_eq!(progress.delivered_bytes(), 0);
+    assert!(body(&events).is_empty());
 }
 
 #[test]
@@ -513,10 +538,19 @@ fn ai4_null_body_statuses_ignore_fixture_reader() {
             Route::Html,
             CancelAt::Never,
         );
-        assert_eq!(success(&events).status_code(), Some(status));
-        assert!(
-            matches!(&events[..], [NetEvent::Start { .. }, NetEvent::Done { body, .. }] if body.delivered_bytes() == 0)
-        );
+        if status == 205 {
+            // Historical fixture: 205 must now verify its reader and surface
+            // this configured failure; 204/304 remain head-terminated.
+            failure(&events, NetworkErrorKind::Read);
+            assert!(
+                matches!(&events[..], [NetEvent::Start { .. }, NetEvent::Error { response: Some(response), body: Some(body), .. }] if response.status_code() == Some(205) && body.delivered_bytes() == 0)
+            );
+        } else {
+            assert_eq!(success(&events).status_code(), Some(status));
+            assert!(
+                matches!(&events[..], [NetEvent::Start { .. }, NetEvent::Done { body, .. }] if body.delivered_bytes() == 0)
+            );
+        }
         let cancelled = collect(
             &network,
             request(URL, Route::Html, 1),
@@ -524,6 +558,24 @@ fn ai4_null_body_statuses_ignore_fixture_reader() {
             CancelAt::Start,
         );
         failure(&cancelled, NetworkErrorKind::Cancelled);
+    }
+}
+
+#[test]
+fn ai5c_fake_205_verifies_content_on_every_route() {
+    for route in [Route::Html, Route::Css, Route::Image] {
+        for content in [vec![], vec![1]] {
+            let network = network(URL, reply(205, content.clone()));
+            let events = collect(&network, request(URL, route, 42), route, CancelAt::Never);
+            if content.is_empty() {
+                assert_eq!(success(&events).status_code(), Some(205));
+            } else {
+                failure(&events, NetworkErrorKind::MalformedResponse);
+            }
+            assert!(body(&events).is_empty());
+            let cancelled = collect(&network, request(URL, route, 42), route, CancelAt::Start);
+            failure(&cancelled, NetworkErrorKind::Cancelled);
+        }
     }
 }
 
@@ -545,7 +597,7 @@ fn ai4_partial_read_failure_retains_facts_and_counts() {
         failure(&events, NetworkErrorKind::Read);
         assert_eq!(body(&events), [0, 255, 128]);
         assert!(
-            matches!(events.last(), Some(NetEvent::Error { response: Some(info), body: Some(progress), error, .. }) if info.status_code() == Some(500) && progress.delivered_bytes() == 3 && error == "read error: fake body read failure")
+            matches!(events.last(), Some(NetEvent::Error { response: Some(info), body: Some(progress), error, .. }) if info.status_code() == Some(500) && progress.delivered_bytes() == 3 && error == "response body read failed")
         );
     }
 }

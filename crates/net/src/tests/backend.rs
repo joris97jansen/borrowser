@@ -24,7 +24,7 @@ impl HttpResponseBackend for MustNotAcquire {
     }
 }
 
-fn events_until_closed(rx: mpsc::Receiver<NetEvent>) -> Vec<NetEvent> {
+pub(super) fn events_until_closed(rx: mpsc::Receiver<NetEvent>) -> Vec<NetEvent> {
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut events = Vec::new();
     loop {

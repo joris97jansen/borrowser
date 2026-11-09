@@ -41,12 +41,14 @@ impl Tab {
         request_id: RequestId,
         url: String,
         kind: NetworkErrorKind,
-        error: String,
+        _error: String,
     ) {
-        if self
-            .resources
-            .on_network_error(request_id, &url, kind, error)
-        {
+        if self.resources.on_network_error(
+            request_id,
+            &url,
+            kind,
+            super::status::format_network_error("image", &url, kind, None, ""),
+        ) {
             self.image_resource_state_changed();
         }
     }

@@ -1,5 +1,9 @@
 {
   "archive_sha256": "02d1a66277ed75f640d608235660df48c8e3c19f3b4edb6a263315626cc3c01d",
+  "historical_ai3_patched_files": {
+    "src/header.rs": "ad98c082d99e254933ffefb76993e33d05b260199b93dc5afed017d313f6dc04",
+    "src/response.rs": "b76021c6141e35959da014d4f5dc56557a6182d3c2259ed6eb4b7d7099b0d9ea"
+  },
   "omitted_files": [
     ".github/dependabot.yml",
     ".github/workflows/test.yml",
@@ -8,8 +12,16 @@
   ],
   "package": "ureq",
   "patched_files": {
-    "src/header.rs": "ad98c082d99e254933ffefb76993e33d05b260199b93dc5afed017d313f6dc04",
-    "src/response.rs": "b76021c6141e35959da014d4f5dc56557a6182d3c2259ed6eb4b7d7099b0d9ea"
+    "Cargo.toml": "951740b830b7d500ef746a4976760f2e654ea52fdea7aecc1ac40e6795843d85",
+    "Cargo.toml.orig": "daf1ef0f9dcd5cf91c7b7ee6a5c90f8764bce8fab50da5f46a9d802d9fe7055d",
+    "src/chunked/decoder.rs": "7093193b02699c7dcb08eb5e2661876e2ff84c6a040b4034447dcbf379665232",
+    "src/error.rs": "aa61b9094bfd50d4765a53a11a62fb13c664e55ab19f1a8d90ba9c957adb3fdf",
+    "src/header.rs": "a6624865a441db7ee8bbe6a38d7ddd3913a2d3936e2d649e6db005bd4c5fd43b",
+    "src/pool.rs": "8696b2a98f0a308b14cbb707b057e4e37ea5822bbf6633bde92935b4457b40ab",
+    "src/response.rs": "928ce31f2569dea387430185a26b9dbaf37f33996b81d058f9f5c98844914a82",
+    "src/rtls.rs": "357723be24c0bbbbbdef1d6cc466c20b6c027269e722c9c1f57ce00574f926d3",
+    "src/stream.rs": "326f33e25cd13a2a7c0c5dda0947dae9e140ef2aceaf9848956e7fd0c07dcdc3",
+    "src/unit.rs": "33cfeb8c0e93f827a967b35e9037ce24f78b1ac0d4c1eeee99010bd62beb75e4"
   },
   "upstream_files": {
     ".cargo_vcs_info.json": "48770cf891895effce230f402f7a17f7df1ecd242a1c71677d6783576d1582b7",

@@ -378,3 +378,14 @@ correlation, history timing and generation routing. HTTP error statuses no longe
 become image network errors. Shared ordered headers remain the single field
 representation. This later implementation does not retroactively qualify AI2's
 backend redirects, credentials, Windows behavior or earlier validation results.
+
+## AI5 implementation qualification (2026-11-08)
+
+The initial typed request and Follow intent remain unchanged. AI5 disables backend redirect execution and rejects supported redirect statuses carrying any Location before Start. The prior credential-bearing redirect characterization is now a zero-target-request rejection regression; no implicit authentication is executed. AI6 still owns traversal. HttpClientPolicy no longer exposes a misleading redirect-count knob.
+
+The [AI5 implementation contract](ai5-real-http-response-acquisition-and-bounded-body-integrity.md)
+records the implemented subset, exact resource limits, controlled diagnostics,
+connection safety and release-abort qualification. It supersedes conflicting
+legacy execution qualifications above without rewriting these historical records.
+This unmerged candidate is not a hosted-CI, merge, issue-closure or milestone-
+completion claim. AI6–AI9 retain their stated independent responsibilities.

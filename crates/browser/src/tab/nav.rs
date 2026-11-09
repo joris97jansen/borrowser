@@ -164,6 +164,7 @@ impl Tab {
             .send(command)
             .map_err(|_| NavigationError::DeliveryUnavailable)?;
         self.retire_document_stylesheets();
+        self.resources.retire_pending_images(self.nav_gen);
         if self.nav_gen > 0 {
             self.send_cmd(CoreCommand::CancelRequest {
                 tab_id: self.tab_id,

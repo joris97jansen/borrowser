@@ -5,11 +5,10 @@ use core_types::ResourceKind;
 
 use crate::{
     FetchRequest, HttpClientPolicy, HttpHeaders, HttpStatus, NetworkErrorKind, NetworkResponseInfo,
-    ResponseAdmissionError, agent::agent_for_policy, log::log_network_error,
+    ResponseAdmissionError, agent::agent_for_policy,
 };
 
-/// Acquire a selected HTTP response. The current ureq backend may follow redirects
-/// internally; AI5/AI6 retain controlled attempts and per-hop admission.
+/// Acquire one HTTP response without redirects or content decompression.
 /// Backends never publish events or implement consumer body/terminal policy.
 pub(crate) trait HttpResponseBackend: Send + 'static {
     fn acquire(
@@ -28,6 +27,9 @@ pub(crate) struct AcquiredHttpResponse {
 
 pub(crate) enum HttpAcquireError {
     Response(ResponseAdmissionError),
+    // Keep the concrete source until the worker's diagnostic boundary. Neither
+    // its URL nor Display/source messages are safe diagnostic input.
+    Backend(Box<ureq::Error>),
     Network {
         kind: NetworkErrorKind,
         error: String,
@@ -56,22 +58,14 @@ impl HttpResponseBackend for UreqBackend {
             .legacy_issued_url(kind)
             .expect("validated HTTP route");
         let agent = agent_for_policy(&self.policy);
-        let response = match build_http_request(&agent, request, kind).call() {
+        // Advertise the shared decoder's supported compression explicitly. This
+        // is an execution capability, separate from admitted author fields.
+        let response = match build_http_request(&agent, request, kind)
+            .set("Accept-Encoding", "gzip")
+            .call()
+        {
             Ok(response) | Err(ureq::Error::Status(_, response)) => response,
-            Err(err) if err.kind() == ureq::ErrorKind::BadHeader => {
-                return Err(HttpAcquireError::Network {
-                    kind: NetworkErrorKind::MalformedResponse,
-                    error: "malformed HTTP response headers".into(),
-                });
-            }
-            Err(err) => {
-                let error = err.to_string();
-                log_network_error(request.request_id(), kind, &issued_url, "transport", &error);
-                return Err(HttpAcquireError::Network {
-                    kind: NetworkErrorKind::Transport,
-                    error,
-                });
-            }
+            Err(error) => return Err(HttpAcquireError::Backend(Box::new(error))),
         };
         let metadata = response_metadata(request, &issued_url, &response)
             .map_err(HttpAcquireError::Response)?;
@@ -79,6 +73,24 @@ impl HttpResponseBackend for UreqBackend {
             metadata,
             reader: response.into_reader(),
         })
+    }
+}
+
+pub(crate) fn backend_failure(error: &ureq::Error) -> (NetworkErrorKind, &'static str) {
+    match error.kind() {
+        ureq::ErrorKind::ResponseHeadTooLarge => (
+            NetworkErrorKind::ResourceLimit,
+            "HTTP response head limit exceeded",
+        ),
+        ureq::ErrorKind::UnsupportedResponse => (
+            NetworkErrorKind::UnsupportedResponse,
+            "unsupported HTTP response",
+        ),
+        ureq::ErrorKind::BadHeader | ureq::ErrorKind::BadStatus => (
+            NetworkErrorKind::MalformedResponse,
+            "malformed HTTP response head",
+        ),
+        _ => (NetworkErrorKind::Transport, "HTTP acquisition failed"),
     }
 }
 
@@ -102,10 +114,11 @@ pub(crate) fn build_http_request(
     built
 }
 
-// This projects ureq's exposed list, not wire bytes: ureq trims values and
-// removes encoding/length during gzip processing. The pinned parser correction
-// rejects malformed field construction before any backend accessor runs.
-// Reconstruct interleaved occurrences without sorting, joining, or omission.
+// The selected ureq feature set performs no content decompression. Preserve its
+// admitted head, including encoded Content-Length and Content-Encoding. The
+// pinned parser rejects malformed fields before any backend accessor runs.
+// The byte accessor retains interleaved occurrences and obs-text without sorting,
+// joining, UTF-8 filtering, or reconstructing fields through string accessors.
 pub(crate) fn response_metadata(
     request: &FetchRequest,
     issued_url: &str,
@@ -115,23 +128,10 @@ pub(crate) fn response_metadata(
     if status.is_informational() {
         return Err(ResponseAdmissionError::InformationalResponseUnsupported);
     }
-    let names = response.headers_names();
     let mut fields = HttpHeaders::new();
-    for (index, name) in names.iter().enumerate() {
-        let occurrence = names[..index]
-            .iter()
-            .filter(|n| n.eq_ignore_ascii_case(name))
-            .count();
-        let values = response.all(name);
-        let count = names
-            .iter()
-            .filter(|n| n.eq_ignore_ascii_case(name))
-            .count();
-        if values.len() != count {
-            return Err(ResponseAdmissionError::HeaderValuesUnavailable);
-        }
+    for (name, value) in response.headers_bytes() {
         fields
-            .append(name, values[occurrence].as_bytes())
+            .append(name, value)
             .map_err(ResponseAdmissionError::Headers)?;
     }
     NetworkResponseInfo::http(

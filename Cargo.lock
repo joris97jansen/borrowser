@@ -283,10 +283,13 @@ dependencies = [
  "image",
  "input_core",
  "layout",
+ "log",
  "net",
  "runtime_css",
  "runtime_net",
  "runtime_parse",
+ "rustls",
+ "rustls-pemfile",
  "tools",
  "url",
 ]
@@ -1617,6 +1620,8 @@ version = "0.1.0"
 dependencies = [
  "addressing",
  "core_types",
+ "flate2",
+ "log",
  "rustls",
  "rustls-native-certs 0.8.1",
  "rustls-pemfile",
@@ -2392,7 +2397,6 @@ version = "0.23.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd3c25631629d034ce7cd9940adc9d45762d46de2b0f57193c4443b92c6d4d40"
 dependencies = [
- "log",
  "once_cell",
  "ring",
  "rustls-pki-types",
@@ -3057,7 +3061,6 @@ version = "2.12.1"
 dependencies = [
  "base64",
  "encoding_rs",
- "flate2",
  "log",
  "once_cell",
  "rustls",

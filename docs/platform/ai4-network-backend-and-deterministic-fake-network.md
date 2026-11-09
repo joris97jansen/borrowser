@@ -235,3 +235,14 @@ identity and cleanup/timeouts. This establishes reproduced baseline failure,
 not native macOS qualification or a green CI aggregate. No native assertion,
 ignore, allowance, or CI gate changed. No hosted CI, PR merge, or GitHub issue
 closure is claimed.
+
+## AI5 implementation qualification (2026-11-08)
+
+The private selected-response seam and deterministic fake remain unchanged in ownership. AI5 makes real acquisition single-attempt without hidden redirect traversal/replay or backend decompression. FakeResponse bytes are content-encoded bytes after transfer framing, so gzip fixtures provide gzip data; shared Fetch applies the same coding/redirect admission and budgets to both backends. Earlier redirect and diagnostic limitations in this document describe AI4 only.
+
+The [AI5 implementation contract](ai5-real-http-response-acquisition-and-bounded-body-integrity.md)
+records the implemented subset, exact resource limits, controlled diagnostics,
+connection safety and release-abort qualification. It supersedes conflicting
+legacy execution qualifications above without rewriting these historical records.
+This unmerged candidate is not a hosted-CI, merge, issue-closure or milestone-
+completion claim. AI6–AI9 retain their stated independent responsibilities.

@@ -137,9 +137,12 @@ impl FakeNetwork {
     }
 }
 
-/// Acquired HTTP facts and finite content bytes, not a completed Fetch result.
+/// Acquired HTTP facts and finite content-encoded bytes after transfer framing,
+/// not a completed Fetch result. gzip fixtures supply gzip bytes; shared Fetch
+/// performs the same decoding as real HTTP. Content-Length remains encoded.
 /// Reported URL provenance is explicit: missing/empty/invalid values reach the
-/// same production response validation as real acquisition. Location is inert.
+/// same production response validation as real acquisition. Location participates
+/// in shared redirect admission and never executes another fake or real route.
 #[derive(Clone)]
 pub struct FakeResponse {
     status: HttpStatus,
@@ -165,17 +168,17 @@ impl FakeResponse {
         }
     }
 
-    /// Fail reading at exactly this content-byte offset, including zero or EOF.
-    /// An offset beyond the finite fixture body is rejected. Null-body statuses
-    /// bypass this reader under Fetch's existing body semantics.
+    /// Fail at this encoded-byte offset, including zero or EOF. An offset beyond
+    /// the finite fixture body is rejected. 204/304 bypass this reader; 205 must
+    /// verify its framing source contains no content before any decoding.
     pub fn with_read_failure_after(
         mut self,
-        delivered_bytes: usize,
+        encoded_bytes: usize,
     ) -> Result<Self, FakeFixtureError> {
-        if delivered_bytes > self.body.len() {
+        if encoded_bytes > self.body.len() {
             return Err(FakeFixtureError::InvalidBodyFailureOffset);
         }
-        self.read_failure_after = Some(delivered_bytes);
+        self.read_failure_after = Some(encoded_bytes);
         Ok(self)
     }
 }
