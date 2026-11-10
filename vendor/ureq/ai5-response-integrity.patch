@@ -1,0 +1,2725 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -158,5 +158,4 @@
+ features = [
+     "ring",
+-    "logging",
+     "std",
+     "tls12",
+--- a/Cargo.toml.orig
++++ b/Cargo.toml.orig
+@@ -59,5 +59,5 @@
+ http = { version = "1.1", optional = true }
+ url = "2.5.0"
+-rustls = { version = "0.23.19", optional = true, default-features = false, features = ["ring", "logging", "std", "tls12"] }
++rustls = { version = "0.23.19", optional = true, default-features = false, features = ["ring", "std", "tls12"] }
+
+ # This can't be in dev-dependencies due to doc tests.
+--- a/src/chunked/decoder.rs
++++ b/src/chunked/decoder.rs
+@@ -4,205 +4,290 @@
+ // Forked under dual MIT and Apache 2.0 license (see adjacent LICENSE-MIT and LICENSE-APACHE file)
+
+-use std::error::Error;
+-use std::fmt;
+-use std::io::Error as IoError;
+-use std::io::ErrorKind;
+-use std::io::Read;
+-use std::io::Result as IoResult;
+-
+-/// Reads HTTP chunks and sends back real data.
+-///
+-/// # Example
+-///
+-/// ```no_compile
+-/// use chunked_transfer::Decoder;
+-/// use std::io::Read;
+-///
+-/// let encoded = b"3\r\nhel\r\nb\r\nlo world!!!\r\n0\r\n\r\n";
+-/// let mut decoded = String::new();
+-///
+-/// let mut decoder = Decoder::new(encoded as &[u8]);
+-/// decoder.read_to_string(&mut decoded);
+-///
+-/// assert_eq!(decoded, "hello world!!!");
+-/// ```
++use std::convert::TryFrom;
++use std::io::{self, Read};
++
++use crate::header::{is_tchar, HeaderLine};
++
++// Wire budgets include CRLF. Framing includes size/extension lines, payload
++// delimiters and trailers, but never content bytes. No allocation uses a size
++// declared by the peer; at most one bounded metadata line is retained.
++const MAX_METADATA_LINE: usize = 8 * 1024;
++const MAX_TRAILERS: usize = 64 * 1024;
++const MAX_TRAILER_FIELDS: usize = 64;
++const MAX_FRAMING: usize = 1024 * 1024;
++
++#[derive(Clone, Copy)]
++enum State {
++    Size,
++    Data(u64),
++    DataCrlf,
++    Trailers,
++    End,
++    Failed,
++}
++
++/// Reads payload bytes only after parsing bounded HTTP chunk framing.
+ pub struct Decoder<R> {
+-    // where the chunks come from
+     source: R,
+-
+-    // remaining size of the chunk being read
+-    // none if we are not in a chunk
+-    remaining_chunks_size: Option<usize>,
+-}
+-
+-impl<R> Decoder<R>
+-where
+-    R: Read,
+-{
+-    pub fn new(source: R) -> Decoder<R> {
+-        Decoder {
++    state: State,
++    framing_bytes: usize,
++    trailer_bytes: usize,
++    trailer_fields: usize,
++}
++
++fn malformed() -> io::Error {
++    io::Error::new(io::ErrorKind::InvalidData, "invalid HTTP chunk framing")
++}
++
++fn metadata_limit() -> io::Error {
++    io::Error::new(
++        io::ErrorKind::InvalidData,
++        crate::ErrorKind::BodyMetadataTooLarge.msg("HTTP chunk metadata limit exceeded"),
++    )
++}
++
++fn skip_ows(bytes: &[u8]) -> &[u8] {
++    let length = bytes
++        .iter()
++        .take_while(|b| matches!(b, b' ' | b'\t'))
++        .count();
++    &bytes[length..]
++}
++
++fn token(rest: &mut &[u8]) -> io::Result<()> {
++    let length = rest.iter().take_while(|b| is_tchar(b)).count();
++    if length == 0 {
++        return Err(malformed());
++    }
++    *rest = &rest[length..];
++    Ok(())
++}
++
++impl<R: Read> Decoder<R> {
++    pub fn new(source: R) -> Self {
++        Self {
+             source,
+-            remaining_chunks_size: None,
+-        }
+-    }
+-
+-    /// Unwraps the Decoder into its inner `Read` source.
++            state: State::Size,
++            framing_bytes: 0,
++            trailer_bytes: 0,
++            trailer_fields: 0,
++        }
++    }
++
+     pub fn into_inner(self) -> R {
+         self.source
+     }
+
+-    fn read_chunk_size(&mut self) -> IoResult<usize> {
+-        let mut chunk_size_bytes = Vec::new();
+-        let mut has_ext = false;
+-
++    fn metadata_byte(&mut self, trailer: bool) -> io::Result<u8> {
++        if self.framing_bytes == MAX_FRAMING || (trailer && self.trailer_bytes == MAX_TRAILERS) {
++            return Err(metadata_limit());
++        }
++        let mut byte = [0];
++        self.source.read_exact(&mut byte)?;
++        self.framing_bytes += 1;
++        if trailer {
++            self.trailer_bytes += 1;
++        }
++        Ok(byte[0])
++    }
++
++    fn metadata_line(&mut self, trailer: bool) -> io::Result<Vec<u8>> {
++        let mut line = Vec::new();
+         loop {
+-            let byte = match self.source.by_ref().bytes().next() {
+-                Some(b) => b?,
+-                None => return Err(IoError::new(ErrorKind::InvalidInput, DecoderError)),
+-            };
+-
+-            if byte == b'\r' {
+-                break;
++            if line.len() == MAX_METADATA_LINE {
++                return Err(metadata_limit());
+             }
+-
+-            if byte == b';' {
+-                has_ext = true;
+-                break;
++            line.push(self.metadata_byte(trailer)?);
++            if line.last() == Some(&b'\n') {
++                if !line.ends_with(b"\r\n") {
++                    return Err(malformed());
++                }
++                line.truncate(line.len() - 2);
++                return Ok(line);
+             }
+-
+-            chunk_size_bytes.push(byte);
+-        }
+-
+-        // Ignore extensions for now
+-        if has_ext {
+-            loop {
+-                let byte = match self.source.by_ref().bytes().next() {
+-                    Some(b) => b?,
+-                    None => return Err(IoError::new(ErrorKind::InvalidInput, DecoderError)),
++        }
++    }
++
++    fn read_chunk_size(&mut self) -> io::Result<u64> {
++        let line = self.metadata_line(false)?;
++        let digits = line.iter().take_while(|b| b.is_ascii_hexdigit()).count();
++        if digits == 0 {
++            return Err(malformed());
++        }
++        let size = line[..digits]
++            .iter()
++            .try_fold(0u64, |size, byte| {
++                let digit = match byte {
++                    b'0'..=b'9' => byte - b'0',
++                    b'a'..=b'f' => byte - b'a' + 10,
++                    _ => byte - b'A' + 10,
+                 };
+-                if byte == b'\r' {
+-                    break;
+-                }
++                size.checked_mul(16)?.checked_add(u64::from(digit))
++            })
++            .ok_or_else(malformed)?;
++        let mut rest = &line[digits..];
++        // RFC 9112 section 7.1.1: BWS is accepted at extension delimiters,
++        // extension names are tokens and values are tokens or quoted strings.
++        while !rest.is_empty() {
++            rest = skip_ows(rest);
++            if rest.first() != Some(&b';') {
++                return Err(malformed());
+             }
+-        }
+-
+-        self.read_line_feed()?;
+-
+-        let chunk_size = String::from_utf8(chunk_size_bytes)
+-            .ok()
+-            .and_then(|c| usize::from_str_radix(c.trim(), 16).ok())
+-            .ok_or_else(|| IoError::new(ErrorKind::InvalidInput, DecoderError))?;
+-
+-        Ok(chunk_size)
+-    }
+-
+-    fn read_carriage_return(&mut self) -> IoResult<()> {
+-        match self.source.by_ref().bytes().next() {
+-            Some(Ok(b'\r')) => Ok(()),
+-            _ => Err(IoError::new(ErrorKind::InvalidInput, DecoderError)),
+-        }
+-    }
+-
+-    fn read_line_feed(&mut self) -> IoResult<()> {
+-        match self.source.by_ref().bytes().next() {
+-            Some(Ok(b'\n')) => Ok(()),
+-            _ => Err(IoError::new(ErrorKind::InvalidInput, DecoderError)),
+-        }
+-    }
+-
+-    // Sometimes the last \r\n is missing.
+-    fn read_end(&mut self) -> IoResult<()> {
+-        fn expect_or_end(
+-            bytes: &mut impl Iterator<Item = IoResult<u8>>,
+-            expected: u8,
+-        ) -> IoResult<()> {
+-            match bytes.next() {
+-                Some(Ok(c)) => {
+-                    if c == expected {
+-                        Ok(())
++            rest = skip_ows(&rest[1..]);
++            token(&mut rest)?;
++            let after_name = skip_ows(rest);
++            if after_name.first() == Some(&b'=') {
++                rest = skip_ows(&after_name[1..]);
++                if rest.first() == Some(&b'"') {
++                    rest = &rest[1..];
++                    loop {
++                        match rest.first() {
++                            Some(b'"') => {
++                                rest = &rest[1..];
++                                break;
++                            }
++                            Some(b'\\') => {
++                                if rest.len() < 2
++                                    || !matches!(rest[1], b'\t' | b' '..=b'~' | 0x80..=0xff)
++                                {
++                                    return Err(malformed());
++                                }
++                                rest = &rest[2..];
++                            }
++                            Some(b'\t' | b' ' | b'!' | b'#'..=b'[' | b']'..=b'~' | 0x80..=0xff) => {
++                                rest = &rest[1..]
++                            }
++                            _ => return Err(malformed()),
++                        }
++                    }
++                } else {
++                    token(&mut rest)?;
++                }
++            }
++        }
++        Ok(size)
++    }
++
++    fn read_body(&mut self, buf: &mut [u8]) -> io::Result<usize> {
++        loop {
++            match self.state {
++                State::Size => {
++                    let size = self.read_chunk_size()?;
++                    self.state = if size == 0 {
++                        State::Trailers
+                     } else {
+-                        Err(IoError::new(ErrorKind::InvalidInput, DecoderError))
+-                    }
+-                }
+-                Some(Err(e)) => {
+-                    match e.kind() {
+-                        // Closed connections are ok.
+-                        ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted => Ok(()),
+-                        _ => Err(IoError::new(ErrorKind::InvalidInput, DecoderError)),
+-                    }
+-                }
+-                None => Ok(()), // End of iterator is ok
++                        State::Data(size)
++                    };
++                }
++                State::Data(remaining) => {
++                    let amount = usize::try_from(remaining)
++                        .unwrap_or(usize::MAX)
++                        .min(buf.len());
++                    let count = self.source.read(&mut buf[..amount])?;
++                    if count == 0 {
++                        return Err(io::Error::new(
++                            io::ErrorKind::UnexpectedEof,
++                            "incomplete HTTP chunk payload",
++                        ));
++                    }
++                    let remaining = remaining - u64::try_from(count).map_err(|_| malformed())?;
++                    self.state = if remaining == 0 {
++                        State::DataCrlf
++                    } else {
++                        State::Data(remaining)
++                    };
++                    // Return payload before attempting any subsequent framing:
++                    // Read cannot report both payload bytes and an error.
++                    return Ok(count);
++                }
++                State::DataCrlf => {
++                    if self.metadata_byte(false)? != b'\r' || self.metadata_byte(false)? != b'\n' {
++                        return Err(malformed());
++                    }
++                    self.state = State::Size;
++                }
++                State::Trailers => {
++                    let line = self.metadata_line(true)?;
++                    if line.is_empty() {
++                        self.state = State::End;
++                        continue;
++                    }
++                    // The terminating empty line is framing, not a field.
++                    // Count nonempty lines independently of the byte budgets.
++                    if self.trailer_fields == MAX_TRAILER_FIELDS {
++                        return Err(metadata_limit());
++                    }
++                    self.trailer_fields += 1;
++                    let header = HeaderLine::from(line)
++                        .into_header()
++                        .map_err(|_| malformed())?;
++                    // Validate and discard trailer fields separately. Framing,
++                    // routing, authentication, response control and content
++                    // processing fields cannot replace admitted head facts.
++                    if [
++                        "content-length",
++                        "transfer-encoding",
++                        "host",
++                        "connection",
++                        "keep-alive",
++                        "proxy-connection",
++                        "te",
++                        "trailer",
++                        "upgrade",
++                        "authorization",
++                        "proxy-authorization",
++                        "www-authenticate",
++                        "proxy-authenticate",
++                        "authentication-info",
++                        "proxy-authentication-info",
++                        "cookie",
++                        "set-cookie",
++                        "content-encoding",
++                        "content-type",
++                        "content-range",
++                        "content-location",
++                        "cache-control",
++                        "age",
++                        "expires",
++                        "date",
++                        "location",
++                        "retry-after",
++                        "vary",
++                        "range",
++                        "if-range",
++                        "if-match",
++                        "if-none-match",
++                        "if-modified-since",
++                        "if-unmodified-since",
++                        "expect",
++                        "max-forwards",
++                    ]
++                    .iter()
++                    .any(|name| header.is_name(name))
++                    {
++                        return Err(malformed());
++                    }
++                }
++                State::End => return Ok(0),
++                State::Failed => return Err(malformed()),
+             }
+         }
+-
+-        let mut bytes = self.source.by_ref().bytes();
+-
+-        expect_or_end(&mut bytes, b'\r')?;
+-        expect_or_end(&mut bytes, b'\n')?;
+-
+-        Ok(())
+-    }
+-}
+-
+-impl<R> Read for Decoder<R>
+-where
+-    R: Read,
+-{
+-    fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
+-        let remaining_chunks_size = match self.remaining_chunks_size {
+-            Some(c) => c,
+-            None => {
+-                // first possibility: we are not in a chunk, so we'll attempt to determine
+-                // the chunks size
+-                let chunk_size = self.read_chunk_size()?;
+-
+-                // if the chunk size is 0, we are at EOF
+-                if chunk_size == 0 {
+-                    self.read_end()?;
+-                    return Ok(0);
+-                }
+-
+-                chunk_size
+-            }
+-        };
+-
+-        // second possibility: we continue reading from a chunk
+-        if buf.len() < remaining_chunks_size {
+-            let read = self.source.read(buf)?;
+-            self.remaining_chunks_size = Some(remaining_chunks_size - read);
+-            return Ok(read);
+-        }
+-
+-        // third possibility: the read request goes further than the current chunk
+-        // we simply read until the end of the chunk and return
+-        assert!(buf.len() >= remaining_chunks_size);
+-
+-        let buf = &mut buf[..remaining_chunks_size];
+-        let read = self.source.read(buf)?;
+-
+-        self.remaining_chunks_size = if read == remaining_chunks_size {
+-            self.read_carriage_return()?;
+-            self.read_line_feed()?;
+-            None
+-        } else {
+-            Some(remaining_chunks_size - read)
+-        };
+-
+-        Ok(read)
+-    }
+-}
+-
+-#[derive(Debug, Copy, Clone)]
+-struct DecoderError;
+-
+-impl fmt::Display for DecoderError {
+-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+-        write!(fmt, "Error while decoding chunks")
+-    }
+-}
+-
+-impl Error for DecoderError {
+-    fn description(&self) -> &str {
+-        "Error while decoding chunks"
++    }
++}
++
++impl<R: Read> Read for Decoder<R> {
++    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
++        // Empty reads do not consume framing, report completion, or mutate state.
++        if buf.is_empty() {
++            return Ok(0);
++        }
++        let result = self.read_body(buf);
++        if result
++            .as_ref()
++            .is_err_and(|error| error.kind() != io::ErrorKind::Interrupted)
++        {
++            self.state = State::Failed;
++        }
++        result
+     }
+ }
+@@ -219,45 +304,47 @@
+     #[test]
+     fn test_read_chunk_size() {
+-        fn read(s: &str, expected: usize) {
++        fn read(s: &str, expected: u64) {
+             let mut decoded = Decoder::new(s.as_bytes());
+-            let actual = decoded.read_chunk_size().unwrap();
+-            assert_eq!(expected, actual);
+-        }
+-
+-        fn read_err(s: &str) {
++            assert_eq!(expected, decoded.read_chunk_size().unwrap());
++        }
++        fn read_err(s: &str, expected: io::ErrorKind) {
+             let mut decoded = Decoder::new(s.as_bytes());
+-            let err_kind = decoded.read_chunk_size().unwrap_err().kind();
+-            assert_eq!(err_kind, io::ErrorKind::InvalidInput);
+-        }
+-
+-        read("1\r\n", 1);
+-        read("01\r\n", 1);
+-        read("0\r\n", 0);
+-        read("00\r\n", 0);
+-        read("A\r\n", 10);
+-        read("a\r\n", 10);
+-        read("Ff\r\n", 255);
+-        read("Ff   \r\n", 255);
+-        // Missing LF or CRLF
+-        read_err("F\rF");
+-        read_err("F");
+-        // Invalid hex digit
+-        read_err("X\r\n");
+-        read_err("1X\r\n");
+-        read_err("-\r\n");
+-        read_err("-1\r\n");
+-        // Acceptable (if not fully valid) extensions do not influence the size
+-        read("1;extension\r\n", 1);
+-        read("a;ext name=value\r\n", 10);
+-        read("1;extension;extension2\r\n", 1);
+-        read("1;;;  ;\r\n", 1);
+-        read("2; extension...\r\n", 2);
+-        read("3   ; extension=123\r\n", 3);
+-        read("3   ;\r\n", 3);
+-        read("3   ;   \r\n", 3);
+-        // Invalid extensions cause an error
+-        read_err("1 invalid extension\r\n");
+-        read_err("1 A\r\n");
+-        read_err("1;no CRLF");
++            assert_eq!(decoded.read_chunk_size().unwrap_err().kind(), expected);
++        }
++        for (wire, size) in [
++            ("1\r\n", 1),
++            ("01\r\n", 1),
++            ("0\r\n", 0),
++            ("00\r\n", 0),
++            ("A\r\n", 10),
++            ("a\r\n", 10),
++            ("Ff\r\n", 255),
++            ("1;extension\r\n", 1),
++            ("1;extension;extension2\r\n", 1),
++            ("2; extension...\r\n", 2),
++            ("3   ; extension=123\r\n", 3),
++        ] {
++            read(wire, size);
++        }
++        for wire in ["F\rF", "F", "1;no CRLF"] {
++            read_err(wire, io::ErrorKind::UnexpectedEof);
++        }
++        // Former compatibility recovery accepted invalid syntax. Preserve the
++        // inputs as rejection cases under AI5's supported RFC 9112 grammar.
++        for wire in [
++            "Ff   \r\n",
++            "X\r\n",
++            "1X\r\n",
++            "-\r\n",
++            "-1\r\n",
++            "a;ext name=value\r\n",
++            "1;;;  ;\r\n",
++            "3   ;\r\n",
++            "3   ;   \r\n",
++            "1 invalid extension\r\n",
++            "1 A\r\n",
++        ] {
++            read_err(wire, io::ErrorKind::InvalidData);
++        }
+     }
+
+@@ -335,5 +422,8 @@
+
+         let mut string = String::new();
+-        decoded.read_to_string(&mut string).unwrap();
++        assert_eq!(
++            decoded.read_to_string(&mut string).unwrap_err().kind(),
++            io::ErrorKind::UnexpectedEof
++        );
+
+         assert_eq!(string, "hello world!!!");
+--- a/src/error.rs
++++ b/src/error.rs
+@@ -300,28 +300,4 @@
+             Error::Status(_, _) => ErrorKind::HTTP,
+             Error::Transport(Transport { kind: k, .. }) => *k,
+-        }
+-    }
+-
+-    /// Return true iff the error was due to a connection closing.
+-    pub(crate) fn connection_closed(&self) -> bool {
+-        if self.kind() != ErrorKind::Io {
+-            return false;
+-        }
+-        let other_err = match self {
+-            Error::Status(_, _) => return false,
+-            Error::Transport(e) => e,
+-        };
+-        let source = match other_err.source.as_ref() {
+-            Some(e) => e,
+-            None => return false,
+-        };
+-        let ioe: &io::Error = match source.downcast_ref() {
+-            Some(e) => e,
+-            None => return false,
+-        };
+-        match ioe.kind() {
+-            io::ErrorKind::ConnectionAborted => true,
+-            io::ErrorKind::ConnectionReset => true,
+-            _ => false,
+         }
+     }
+@@ -347,4 +323,10 @@
+     /// A header line that couldn't be parsed.
+     BadHeader,
++    /// Response-head processing exceeded its bounded resource budget.
++    ResponseHeadTooLarge,
++    /// Chunk framing or trailer processing exceeded its resource budget.
++    BodyMetadataTooLarge,
++    /// A valid response uses a protocol capability outside the supported subset.
++    UnsupportedResponse,
+     /// Some unspecified `std::io::Error`.
+     Io,
+@@ -412,4 +394,7 @@
+             ErrorKind::BadStatus => write!(f, "Bad Status"),
+             ErrorKind::BadHeader => write!(f, "Bad Header"),
++            ErrorKind::ResponseHeadTooLarge => write!(f, "Response Head Too Large"),
++            ErrorKind::BodyMetadataTooLarge => write!(f, "Body Metadata Too Large"),
++            ErrorKind::UnsupportedResponse => write!(f, "Unsupported Response"),
+             ErrorKind::Io => write!(f, "Network Error"),
+             ErrorKind::InvalidProxyUrl => write!(f, "Malformed proxy"),
+@@ -478,12 +463,17 @@
+
+     #[test]
+-    fn connection_closed() {
+-        let ioe = io::Error::new(io::ErrorKind::ConnectionReset, "connection reset");
+-        let err = ErrorKind::Io.new().src(ioe);
+-        assert!(err.connection_closed());
+-
+-        let ioe = io::Error::new(io::ErrorKind::ConnectionAborted, "connection aborted");
+-        let err = ErrorKind::Io.new().src(ioe);
+-        assert!(err.connection_closed());
++    fn connection_failure_retains_typed_io_cause() {
++        use std::error::Error as _;
++        for kind in [
++            io::ErrorKind::ConnectionReset,
++            io::ErrorKind::ConnectionAborted,
++        ] {
++            let error = ErrorKind::Io
++                .new()
++                .src(io::Error::new(kind, "connection failure"));
++            assert_eq!(error.kind(), ErrorKind::Io);
++            let source = error.source().unwrap().downcast_ref::<io::Error>().unwrap();
++            assert_eq!(source.kind(), kind);
++        }
+     }
+
+--- a/src/header.rs
++++ b/src/header.rs
+@@ -2,4 +2,30 @@
+ use std::fmt;
+ use std::str::{from_utf8, FromStr};
++
++// Connection is a token list (RFC 9110 sections 7.6.1 and 5.6.1).
++// Validate every occurrence, ignoring empty recipient list members. The wire
++// head budget already bounds this linear scan. Keep the received fields intact.
++pub(crate) fn connection_close(headers: &[Header]) -> Result<bool, Error> {
++    let mut close = false;
++    for header in headers.iter().filter(|header| header.is_name("connection")) {
++        for member in header.value_raw().split(|byte| *byte == b',') {
++            let mut member = member;
++            while member.first().is_some_and(|b| matches!(b, b' ' | b'\t')) {
++                member = &member[1..];
++            }
++            while member.last().is_some_and(|b| matches!(b, b' ' | b'\t')) {
++                member = &member[..member.len() - 1];
++            }
++            if member.is_empty() {
++                continue;
++            }
++            if !member.iter().all(is_tchar) {
++                return Err(ErrorKind::BadHeader.msg("invalid Connection token list"));
++            }
++            close |= member.eq_ignore_ascii_case(b"close");
++        }
++    }
++    Ok(close)
++}
+
+ /// Since a status line or header can contain non-utf8 characters the
+@@ -36,19 +62,14 @@
+
+     pub fn into_header(self) -> Result<Header, Error> {
+-        // The header name should always be ascii, we can read anything up to the
+-        // ':' delimiter byte-by-byte.
+-        let mut index = 0;
+-
+-        for c in self.as_bytes() {
+-            if *c == b':' {
+-                break;
+-            }
+-            if !is_tchar(c) {
+-                return Err(Error::new(
+-                    ErrorKind::BadHeader,
+-                    Some(format!("Invalid char ({:0x?}) while looking for ':'", *c)),
+-                ));
+-            }
+-            index += 1;
++        let index = self
++            .as_bytes()
++            .iter()
++            .position(|&c| c == b':')
++            .ok_or_else(|| ErrorKind::BadHeader.msg("header field is missing a colon"))?;
++        if !valid_name(&self.as_bytes()[..index]) {
++            return Err(ErrorKind::BadHeader.msg("invalid header field name"));
++        }
++        if !valid_value(&self.as_bytes()[index + 1..]) {
++            return Err(ErrorKind::BadHeader.msg("invalid header field value"));
+         }
+
+@@ -72,5 +93,5 @@
+     // Index is the position of the colon within the header field.
+     // Invariant: index > 0
+-    // Invariant: index + 1 < line.len()
++    // Invariant: index < line.len(); an empty value after ':' is valid.
+     index: usize,
+ }
+@@ -101,10 +122,7 @@
+     /// For non-utf8 headers this returns [`None`] (use [`Header::value_raw()`]).
+     pub fn value(&self) -> Option<&str> {
+-        let bytes = &self.line.as_bytes()[self.index + 1..];
+-        from_utf8(bytes)
+-            .map(|s| s.trim())
++        from_utf8(self.value_raw())
+             .ok()
+-            // ensure all bytes are valid field name.
+-            .filter(|s| s.as_bytes().iter().all(is_field_vchar_or_obs_fold))
++            .filter(|value| valid_value(value.as_bytes()))
+     }
+
+@@ -122,9 +140,9 @@
+         if !bytes.is_empty() {
+             // trim front
+-            while !bytes.is_empty() && bytes[0].is_ascii_whitespace() {
++            while !bytes.is_empty() && matches!(bytes[0], b' ' | b'\t') {
+                 bytes = &bytes[1..];
+             }
+             // trim back
+-            while !bytes.is_empty() && bytes[bytes.len() - 1].is_ascii_whitespace() {
++            while !bytes.is_empty() && matches!(bytes[bytes.len() - 1], b' ' | b'\t') {
+                 bytes = &bytes[..(bytes.len() - 1)];
+             }
+@@ -145,5 +163,5 @@
+
+         if !valid_name(name_raw) || !valid_value(value_raw) {
+-            Err(ErrorKind::BadHeader.msg(format!("invalid header '{}'", self.line)))
++            Err(ErrorKind::BadHeader.msg("invalid header field"))
+         } else {
+             Ok(())
+@@ -214,5 +232,6 @@
+ // Note that field-content has an errata:
+ // https://www.rfc-editor.org/errata/eid4189
+-// field-value    = *( field-content / obs-fold )
++// Field lines have already been separated. Obsolete folding and controls are
++// rejected; obs-text (0x80..=0xff) remains opaque field-value bytes.
+ // field-content  = field-vchar [ 1*( SP / HTAB ) field-vchar ]
+ // field-vchar    = VCHAR / obs-text
+@@ -225,12 +244,12 @@
+ //                        ; visible (printing) characters
+ fn valid_value(value: &[u8]) -> bool {
+-    value.iter().all(is_field_vchar_or_obs_fold)
++    value.iter().all(is_field_value_byte)
+ }
+
+ #[inline]
+-fn is_field_vchar_or_obs_fold(b: &u8) -> bool {
++fn is_field_value_byte(b: &u8) -> bool {
+     match b {
+         b' ' | b'\t' => true,
+-        0x21..=0x7E => true,
++        0x21..=0x7E | 0x80..=0xFF => true,
+         _ => false,
+     }
+@@ -339,8 +358,9 @@
+     fn test_iso8859_utf8_mixup() {
+         // C2 A5 is ¥ in UTF-8 and Â¥ in ISO-8859-1
+-        let b = "header: \0xc2\0xa5".to_string().into_bytes();
++        let b = b"header: \xc2\xa5".to_vec();
+         let l: HeaderLine = b.into();
+         let h = l.into_header().unwrap();
+-        assert_eq!(h.value(), None);
+-    }
+-}
++        assert_eq!(h.value(), Some("¥"));
++        assert_eq!(h.value_raw(), b"\xc2\xa5");
++    }
++}
+--- a/src/pool.rs
++++ b/src/pool.rs
+@@ -131,5 +131,5 @@
+
+         let mut inner = self.inner.lock().unwrap();
+-        match inner.recycle.entry(key.clone()) {
++        let per_host_evicted = match inner.recycle.entry(key.clone()) {
+             Entry::Occupied(mut occupied_entry) => {
+                 let streams = occupied_entry.get_mut();
+@@ -146,22 +146,34 @@
+                     remove_first_match(&mut inner.lru, key)
+                         .expect("invariant failed: key in recycle but not in lru");
++                    Some(stream)
++                } else {
++                    None
+                 }
+             }
+             Entry::Vacant(vacant_entry) => {
+                 vacant_entry.insert(vec![stream].into());
+-            }
+-        }
++                None
++            }
++        };
+         inner.lru.push_back(key.clone());
+-        if inner.lru.len() > self.max_idle_connections {
+-            drop(inner);
+-            self.remove_oldest()
+-        }
++        // The capacity decision and both indexes' eviction share this guard.
++        // Checkout cannot invalidate the decision between checking and removal.
++        let global_evicted = if inner.lru.len() > self.max_idle_connections {
++            Some(Self::remove_oldest(&mut inner))
++        } else {
++            None
++        };
++        drop(inner);
++        // Transport destruction is optional maintenance too. Neither eviction
++        // path runs a transport destructor while holding the pool mutex.
++        drop(per_host_evicted);
++        drop(global_evicted);
+     }
+
+     /// Find the oldest stream in the pool. Remove its representation from lru,
+-    /// and the stream itself from `recycle`. Drops the stream, which closes it.
+-    fn remove_oldest(&self) {
+-        assert!(!self.noop(), "remove_oldest called on Pool with max of 0");
+-        let mut inner = self.inner.lock().unwrap();
++    /// and the stream itself from `recycle`. The caller holds the pool mutex
++    /// from its capacity check through this removal, and drops the returned
++    /// stream after releasing that guard.
++    fn remove_oldest(inner: &mut Inner) -> Stream {
+         let key = inner.lru.pop_front();
+         let key = key.expect("tried to remove oldest but no entries found!");
+@@ -176,4 +188,5 @@
+                     occupied_entry.remove();
+                 }
++                stream
+             }
+             Entry::Vacant(_) => panic!("invariant failed: key existed in lru but not in recycle"),
+@@ -199,15 +212,13 @@
+ impl fmt::Debug for PoolKey {
+     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+-        f.write_fmt(format_args!(
+-            "{}|{}|{}",
+-            self.scheme,
+-            self.hostname,
+-            self.port.unwrap_or(0)
+-        ))
++        f.debug_struct("PoolKey")
++            .field("tls", &(self.scheme == "https"))
++            .field("proxy", &self.proxy.is_some())
++            .finish_non_exhaustive()
+     }
+ }
+
+ impl PoolKey {
+-    fn new(url: &Url, proxy: Option<Proxy>) -> Self {
++    pub(crate) fn new(url: &Url, proxy: Option<Proxy>) -> Self {
+         let port = url.port_or_known_default();
+         PoolKey {
+@@ -219,4 +230,5 @@
+     }
+
++    #[cfg(test)]
+     pub(crate) fn from_parts(scheme: &str, hostname: &str, port: u16) -> Self {
+         PoolKey {
+@@ -238,4 +250,7 @@
+
+ impl PoolReturner {
++    pub(crate) fn is_enabled(&self) -> bool {
++        self.inner.is_some()
++    }
+     /// A PoolReturner that returns to the given Agent's Pool.
+     pub(crate) fn new(agent: &Agent, pool_key: PoolKey) -> Self {
+@@ -267,4 +282,5 @@
+     // upon returning the stream to the Agent.
+     reader: Option<R>,
++    failed: bool,
+ }
+
+@@ -273,16 +289,15 @@
+         PoolReturnRead {
+             reader: Some(reader),
+-        }
+-    }
+-
+-    fn return_connection(&mut self) -> io::Result<()> {
++            failed: false,
++        }
++    }
++
++    fn return_connection(&mut self) {
+         // guard we only do this once.
+         if let Some(reader) = self.reader.take() {
+             // bring back stream here to either go into pool or dealloc
+             let stream: Stream = reader.into();
+-            stream.return_to_pool()?;
+-        }
+-
+-        Ok(())
++            stream.return_to_pool();
++        }
+     }
+
+@@ -297,9 +312,27 @@
+ impl<R: Read + Sized + Into<Stream>> Read for PoolReturnRead<R> {
+     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+-        let amount = self.do_read(buf)?;
++        if buf.is_empty() {
++            return Ok(0);
++        }
++        if self.failed {
++            return Err(io::Error::new(
++                io::ErrorKind::InvalidData,
++                "response body previously failed",
++            ));
++        }
++        let amount = match self.do_read(buf) {
++            Ok(amount) => amount,
++            Err(error) => {
++                if error.kind() != io::ErrorKind::Interrupted {
++                    self.failed = true;
++                    self.reader.take();
++                }
++                return Err(error);
++            }
++        };
+         // only if the underlying reader is exhausted can we send a new
+         // request to the same socket. hence, we only return it now.
+         if amount == 0 {
+-            self.return_connection()?;
++            self.return_connection();
+         }
+         Ok(amount)
+@@ -317,9 +350,13 @@
+
+     #[derive(Debug)]
+-    struct NoopStream;
++    struct NoopStream(io::Cursor<Vec<u8>>);
+
+     impl NoopStream {
+         fn stream(pool_returner: PoolReturner) -> Stream {
+-            Stream::new(NoopStream, remote_addr_for_test(), pool_returner)
++            Stream::new(
++                NoopStream(io::Cursor::new(vec![0; 500])),
++                remote_addr_for_test(),
++                pool_returner,
++            )
+         }
+     }
+@@ -327,5 +364,5 @@
+     impl Read for NoopStream {
+         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+-            Ok(buf.len())
++            self.0.read(buf)
+         }
+     }
+@@ -344,4 +381,201 @@
+         fn socket(&self) -> Option<&std::net::TcpStream> {
+             None
++        }
++
++        fn is_idle_for_reuse(&mut self) -> io::Result<bool> {
++            Ok(self.0.position() == self.0.get_ref().len() as u64)
++        }
++    }
++
++    impl ConnectionPool {
++        // Inspect both indexes together, without exposing pool internals to
++        // production callers or relying on a separately maintained test model.
++        fn assert_invariants(&self) {
++            let inner = self.inner.lock().unwrap();
++            assert_eq!(
++                inner.lru.len(),
++                inner.recycle.values().map(VecDeque::len).sum::<usize>()
++            );
++            assert!(inner.lru.len() <= self.max_idle_connections);
++            if self.noop() {
++                assert!(inner.recycle.is_empty());
++            }
++            for (key, streams) in &inner.recycle {
++                assert!(!streams.is_empty());
++                assert!(streams.len() <= self.max_idle_connections_per_host);
++                assert_eq!(
++                    inner.lru.iter().filter(|entry| *entry == key).count(),
++                    streams.len()
++                );
++            }
++            assert!(inner.lru.iter().all(|key| inner.recycle.contains_key(key)));
++        }
++    }
++
++    fn key(host: &str) -> PoolKey {
++        PoolKey::from_parts("http", host, 80)
++    }
++
++    fn tagged(tag: u8) -> Stream {
++        Stream::new(
++            NoopStream(io::Cursor::new(vec![tag])),
++            remote_addr_for_test(),
++            PoolReturner::none(),
++        )
++    }
++
++    fn read_tag(mut stream: Stream) -> u8 {
++        let mut byte = [0];
++        stream.read_exact(&mut byte).unwrap();
++        assert_eq!(stream.read(&mut [0]).unwrap(), 0);
++        byte[0]
++    }
++
++    #[test]
++    fn global_eviction_and_checkout_preserve_both_indexes_and_order() {
++        let pool = ConnectionPool::new_with_limits(3, 3);
++        let (a, b, c, d) = (key("a"), key("b"), key("c"), key("d"));
++        for (key, tag) in [(&a, 1), (&b, 2), (&a, 3)] {
++            pool.add(key, tagged(tag));
++            pool.assert_invariants();
++        }
++        assert_eq!(read_tag(pool.remove(&a).unwrap()), 3); // newest A
++        pool.assert_invariants();
++        pool.add(&c, tagged(4));
++        pool.assert_invariants();
++        pool.add(&d, tagged(5)); // oldest is A1, not B2
++        pool.assert_invariants();
++        assert!(pool.remove(&a).is_none());
++        for (key, tag) in [(&b, 2), (&c, 4), (&d, 5)] {
++            assert_eq!(read_tag(pool.remove(key).unwrap()), tag);
++            assert!(pool.remove(key).is_none());
++            pool.assert_invariants();
++        }
++        assert_eq!(pool.len(), 0);
++    }
++
++    #[test]
++    fn per_host_eviction_preserves_the_oldest_surviving_entries() {
++        let pool = ConnectionPool::new_with_limits(4, 2);
++        let (a, b) = (key("a"), key("b"));
++        for (key, tag) in [(&a, 1), (&a, 2), (&b, 3), (&a, 4)] {
++            pool.add(key, tagged(tag));
++            pool.assert_invariants();
++        }
++        for (key, tag) in [(&a, 4), (&a, 2), (&b, 3)] {
++            assert_eq!(read_tag(pool.remove(key).unwrap()), tag);
++            pool.assert_invariants();
++        }
++        assert!(pool.remove(&a).is_none());
++        assert!(pool.remove(&b).is_none());
++    }
++
++    #[test]
++    fn zero_capacity_never_leaves_stale_index_entries() {
++        for (global, per_host) in [(0, 2), (2, 0), (0, 0)] {
++            let pool = ConnectionPool::new_with_limits(global, per_host);
++            let key = key("zero");
++            for tag in 0..4 {
++                pool.add(&key, tagged(tag));
++                pool.assert_invariants();
++                assert!(pool.remove(&key).is_none());
++            }
++        }
++    }
++
++    #[test]
++    fn concurrent_add_and_checkout_preserve_pool_invariants() {
++        use std::sync::{Arc, Barrier};
++        let pool = Arc::new(ConnectionPool::new_with_limits(2, 2));
++        let start = Arc::new(Barrier::new(4));
++        std::thread::scope(|scope| {
++            for worker in 0..4u8 {
++                let (pool, start) = (pool.clone(), start.clone());
++                scope.spawn(move || {
++                    start.wait();
++                    for round in 0..128 {
++                        let key = key(&format!("host{}", (usize::from(worker) + round) % 4));
++                        pool.add(&key, tagged(worker));
++                        pool.assert_invariants();
++                        if let Some(stream) = pool.try_get_connection(
++                            &Url::parse(&format!(
++                                "http://host{}/",
++                                (usize::from(worker) + round + 1) % 4
++                            ))
++                            .unwrap(),
++                            None,
++                        ) {
++                            assert!(read_tag(stream) < 4);
++                        }
++                        pool.assert_invariants();
++                    }
++                });
++            }
++        });
++        pool.assert_invariants();
++        for host in 0..4 {
++            let key = key(&format!("host{host}"));
++            while let Some(stream) = pool.remove(&key) {
++                assert!(read_tag(stream) < 4);
++                pool.assert_invariants();
++            }
++        }
++        assert_eq!(pool.len(), 0);
++    }
++
++    #[derive(Debug)]
++    struct DropProbe {
++        pool: std::sync::Weak<ConnectionPool>,
++        observed: std::sync::mpsc::Sender<bool>,
++    }
++    impl Read for DropProbe {
++        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
++            Ok(0)
++        }
++    }
++    impl io::Write for DropProbe {
++        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
++            Ok(buf.len())
++        }
++        fn flush(&mut self) -> io::Result<()> {
++            Ok(())
++        }
++    }
++    impl ReadWrite for DropProbe {
++        fn socket(&self) -> Option<&std::net::TcpStream> {
++            None
++        }
++    }
++    impl Drop for DropProbe {
++        fn drop(&mut self) {
++            let unlocked = self
++                .pool
++                .upgrade()
++                .is_some_and(|pool| pool.inner.try_lock().is_ok());
++            // A prior assertion failure can already have closed the receiver.
++            // Avoid a second fixture panic during unwinding.
++            let _ = self.observed.send(unlocked);
++        }
++    }
++
++    #[test]
++    fn evicted_transport_destruction_happens_outside_the_pool_lock() {
++        use std::sync::{mpsc, Arc};
++        for per_host in [false, true] {
++            let pool = Arc::new(ConnectionPool::new_with_limits(1, 1));
++            let (tx, rx) = mpsc::channel();
++            let a = key("a");
++            let victim = Stream::new(
++                DropProbe {
++                    pool: Arc::downgrade(&pool),
++                    observed: tx,
++                },
++                remote_addr_for_test(),
++                PoolReturner::none(),
++            );
++            pool.add(&a, victim);
++            pool.add(&if per_host { a } else { key("b") }, tagged(1));
++            assert!(rx.try_recv().unwrap());
++            pool.assert_invariants();
+         }
+     }
+@@ -441,5 +675,5 @@
+         let pool_key = PoolKey::new(&url, None);
+         let stream = NoopStream::stream(PoolReturner::new(&agent, pool_key));
+-        let mut limited_read = LimitedRead::new(stream, std::num::NonZeroUsize::new(500).unwrap());
++        let mut limited_read = LimitedRead::new(stream, std::num::NonZeroU64::new(500).unwrap());
+
+         limited_read.read_exact(&mut out_buf).unwrap();
+@@ -475,5 +709,5 @@
+         assert_eq!(agent.state.pool.len(), 0);
+
+-        let ro = crate::test::TestStream::new(Cursor::new(gz_body), std::io::sink());
++        let ro = NoopStream(Cursor::new(gz_body));
+         let stream = Stream::new(
+             ro,
+--- a/src/response.rs
++++ b/src/response.rs
+@@ -1,5 +1,6 @@
+-use std::io::{self, Cursor, Read};
++use std::convert::TryFrom;
++use std::io::{self, Read};
+ use std::net::SocketAddr;
+-use std::num::NonZeroUsize;
++use std::num::NonZeroU64;
+ use std::str::FromStr;
+ use std::{fmt, io::BufRead};
+@@ -11,5 +12,5 @@
+ use crate::chunked::Decoder as ChunkDecoder;
+ use crate::error::{Error, ErrorKind::BadStatus};
+-use crate::header::{get_all_headers, get_header, Header, HeaderLine};
++use crate::header::{get_all_headers, get_header, is_tchar, Header, HeaderLine};
+ use crate::pool::{PoolReturnRead, PoolReturner};
+ use crate::stream::{DeadlineStream, ReadOnlyStream, Stream};
+@@ -32,8 +33,11 @@
+ pub const DEFAULT_CHARACTER_SET: &str = "utf-8";
+ const INTO_STRING_LIMIT: usize = 10 * 1_024 * 1_024;
+-// Follow the example of curl and limit a single header to 100kB:
+-// https://curl.se/libcurl/c/CURLOPT_HEADERFUNCTION.html
+-const MAX_HEADER_SIZE: usize = 100 * 1_024;
++// Wire bytes in one response-head line, including its terminating CRLF. This
++// acquisition bound is independent of Borrowser's later typed-field bounds.
++const MAX_HEADER_SIZE: usize = 10 * 1_024;
+ const MAX_HEADER_COUNT: usize = 100;
++// Includes the status line, every field line, and the terminating CRLF. This
++// bounds acquisition before framing or automatic decoding can inspect fields.
++const MAX_RESPONSE_HEAD_SIZE: usize = 64 * 1_024;
+
+ #[derive(Copy, Clone, Debug, PartialEq)]
+@@ -45,5 +49,5 @@
+ #[derive(Copy, Clone, Debug, PartialEq)]
+ enum BodyType {
+-    LengthDelimited(usize),
++    LengthDelimited(u64),
+     Chunked,
+     CloseDelimited,
+@@ -194,4 +198,13 @@
+     }
+
++    /// Admitted field occurrences in response order, with opaque value bytes.
++    /// Only leading/trailing SP and HTAB have been removed from values. This
++    /// does not restore fields removed by automatic content decoding.
++    pub fn headers_bytes(&self) -> impl Iterator<Item = (&str, &[u8])> {
++        self.headers
++            .iter()
++            .map(|header| (header.name(), header.value_raw()))
++    }
++
+     /// The content type part of the "Content-Type" header without
+     /// the charset.
+@@ -289,22 +302,14 @@
+     fn connection_option(
+         response_version: &str,
+-        connection_header: Option<&str>,
+-    ) -> ConnectionOption {
+-        // https://datatracker.ietf.org/doc/html/rfc9112#name-tear-down
+-        // "A client that receives a "close" connection option MUST cease sending requests on that
+-        // connection and close the connection after reading the response message containing the "close"
+-        // connection option"
+-        //
+-        // Per https://www.rfc-editor.org/rfc/rfc2068#section-19.7.1, an HTTP/1.0 response can explicitly
+-        // say "Connection: keep-alive" in response to a request with "Connection: keep-alive". We don't
+-        // send "Connection: keep-alive" in the request but are willing to accept in the response anyhow.
+-        use ConnectionOption::*;
+-        let is_http10 = response_version.eq_ignore_ascii_case("HTTP/1.0");
+-        match (is_http10, connection_header) {
+-            (true, Some(c)) if c.eq_ignore_ascii_case("keep-alive") => KeepAlive,
+-            (true, _) => Close,
+-            (false, Some(c)) if c.eq_ignore_ascii_case("close") => Close,
+-            (false, _) => KeepAlive,
+-        }
++        headers: &[Header],
++    ) -> Result<ConnectionOption, Error> {
++        let close = crate::header::connection_close(headers)?;
++        Ok(
++            if response_version.eq_ignore_ascii_case("HTTP/1.0") || close {
++                ConnectionOption::Close
++            } else {
++                ConnectionOption::KeepAlive
++            },
++        )
+     }
+
+@@ -316,37 +321,49 @@
+         response_version: &str,
+         headers: &[Header],
+-    ) -> BodyType {
+-        let is_http10 = response_version.eq_ignore_ascii_case("HTTP/1.0");
+-
+-        let is_head = request_method.eq_ignore_ascii_case("head");
+-        let has_no_body = is_head
+-            || match response_status {
+-                204 | 304 => true,
+-                _ => false,
+-            };
+-
+-        if has_no_body {
+-            return BodyType::LengthDelimited(0);
+-        }
+-
+-        let is_chunked = get_header(headers, "transfer-encoding")
+-            .map(|enc| !enc.is_empty()) // whatever it says, do chunked
+-            .unwrap_or(false);
+-
+-        // https://www.rfc-editor.org/rfc/rfc2068#page-161
+-        // > a persistent connection with an HTTP/1.0 client cannot make
+-        // > use of the chunked transfer-coding
+-        let use_chunked = !is_http10 && is_chunked;
+-
+-        if use_chunked {
+-            return BodyType::Chunked;
+-        }
+-
+-        let length = get_header(headers, "content-length").and_then(|v| v.parse::<usize>().ok());
+-
+-        match length {
+-            Some(n) => BodyType::LengthDelimited(n),
+-            None => BodyType::CloseDelimited,
+-        }
++    ) -> Result<BodyType, Error> {
++        if !matches!(response_version, "HTTP/1.0" | "HTTP/1.1") {
++            return Err(ErrorKind::UnsupportedResponse.msg("unsupported HTTP response version"));
++        }
++        if !(100..=599).contains(&response_status) {
++            return Err(BadStatus.msg("invalid HTTP response status"));
++        }
++        if response_status < 200 {
++            return Err(
++                ErrorKind::UnsupportedResponse.msg("informational responses are unsupported")
++            );
++        }
++
++        let length = content_length(headers)?;
++        let has_transfer = headers
++            .iter()
++            .any(|header| header.is_name("transfer-encoding"));
++        if has_transfer && length.is_some() {
++            return Err(ErrorKind::BadHeader.msg("conflicting HTTP response framing fields"));
++        }
++        if response_status == 204 && (has_transfer || length.is_some()) {
++            return Err(ErrorKind::BadHeader.msg("prohibited framing fields on 204 response"));
++        }
++        if response_status == 205 && length.is_some_and(|length| length != 0) {
++            return Err(ErrorKind::BadHeader.msg("nonzero length on 205 response"));
++        }
++        if has_transfer && response_version == "HTTP/1.0" {
++            return Err(ErrorKind::BadHeader.msg("transfer encoding on HTTP/1.0 response"));
++        }
++
++        let head_terminated =
++            request_method.eq_ignore_ascii_case("head") || matches!(response_status, 204 | 304);
++        validate_transfer_encoding(headers, head_terminated)?;
++        if head_terminated {
++            return Ok(BodyType::LengthDelimited(0));
++        }
++        // A 205 still owns its framing reader. Consumer-visible no-content
++        // semantics do not establish chunk termination or transport EOF.
++        Ok(if has_transfer {
++            BodyType::Chunked
++        } else {
++            length
++                .map(BodyType::LengthDelimited)
++                .unwrap_or(BodyType::CloseDelimited)
++        })
+     }
+
+@@ -357,15 +374,12 @@
+         compression: Option<Compression>,
+         connection_option: ConnectionOption,
+-    ) -> Box<dyn Read + Send + Sync + 'static> {
+-        if connection_option == ConnectionOption::Close {
++    ) -> Result<Box<dyn Read + Send + Sync + 'static>, Error> {
++        if connection_option == ConnectionOption::Close
++            || matches!(body_type, BodyType::CloseDelimited)
++        {
+             stream.inner_mut().set_unpoolable();
+         }
+         let inner = stream.inner_ref();
+-        let result = inner.set_read_timeout(unit.agent.config.timeout_read);
+-        if let Err(e) = result {
+-            return Box::new(ErrorReader(e));
+-        }
+-        let buffer_len = inner.buffer().len();
+-
++        inner.set_read_timeout(unit.agent.config.timeout_read)?;
+         let body_reader: Box<dyn Read + Send + Sync> = match body_type {
+             // Chunked responses have an unknown length, but do have an end of body
+@@ -380,31 +394,18 @@
+             // return the underlying stream to the connection pool.
+             BodyType::LengthDelimited(len) => {
+-                match NonZeroUsize::new(len) {
++                match NonZeroU64::new(len) {
+                     None => {
+                         debug!("zero-length body returning stream directly to pool");
+                         let stream: Stream = stream.into();
+-                        // TODO: This expect can actually panic if we get an error when
+-                        // returning the stream to the pool. We reset the read timeouts
+-                        // when we do that, and since that's a syscall it can fail.
+-                        stream.return_to_pool().expect("returning stream to pool");
++                        // The validated head completes this HTTP message. The
++                        // optional pool return still checks all observable
++                        // buffering and transport eligibility before insertion.
++                        stream.return_to_pool();
+                         Box::new(std::io::empty())
+                     }
+                     Some(len) => {
+-                        let mut limited_read = LimitedRead::new(stream, len);
+-
+-                        if len.get() <= buffer_len {
+-                            debug!("Body entirely buffered (length: {})", len);
+-                            let mut buf = vec![0; len.get()];
+-                            // TODO: This expect can actually panic if we get an error when
+-                            // returning the stream to the pool. We reset the read timeouts
+-                            // when we do that, and since that's a syscall it can fail.
+-                            limited_read
+-                                .read_exact(&mut buf)
+-                                .expect("failed to read exact buffer length from stream");
+-                            Box::new(Cursor::new(buf))
+-                        } else {
+-                            debug!("Streaming body until content-length: {}", len);
+-                            Box::new(limited_read)
+-                        }
++                        // Do not allocate from the declared length or eagerly
++                        // copy an already buffered fixed-length body here.
++                        Box::new(LimitedRead::new(stream, len))
+                     }
+                 }
+@@ -416,8 +417,8 @@
+         };
+
+-        match compression {
++        Ok(match compression {
+             None => body_reader,
+             Some(c) => c.wrap_reader(body_reader),
+-        }
++        })
+     }
+
+@@ -575,32 +576,35 @@
+
+         // The status line we can ignore non-utf8 chars and parse as_str_lossy().
+-        let status_line = read_next_line(&mut stream, "the status line")?.into_string_lossy();
++        let mut remaining_head = MAX_RESPONSE_HEAD_SIZE;
++        let status_line = read_next_line(&mut stream, "the status line", &mut remaining_head)?
++            .into_string_lossy();
+         let (index, status) = parse_status_line(status_line.as_str())?;
+         let http_version = &status_line.as_str()[0..index.http_version];
+
+         let mut headers: Vec<Header> = Vec::new();
+-        while headers.len() <= MAX_HEADER_COUNT {
+-            let line = read_next_line(&mut stream, "a header")?;
++        loop {
++            let line = read_next_line(&mut stream, "a header", &mut remaining_head)?;
+             if line.is_empty() {
+                 break;
+             }
+-            if let Ok(header) = line.into_header() {
+-                headers.push(header);
+-            }
+-        }
+-
+-        if headers.len() > MAX_HEADER_COUNT {
+-            return Err(ErrorKind::BadHeader.msg(
+-                format!("more than {} header fields in response", MAX_HEADER_COUNT).as_str(),
+-            ));
+-        }
+-
+-        let compression =
+-            get_header(&headers, "content-encoding").and_then(Compression::from_header_value);
+-
+-        let connection_option =
+-            Self::connection_option(http_version, get_header(&headers, "connection"));
+-
+-        let body_type = Self::body_type(&unit.method, status, http_version, &headers);
++            if headers.len() == MAX_HEADER_COUNT {
++                return Err(ErrorKind::ResponseHeadTooLarge.msg("too many HTTP response fields"));
++            }
++            headers.push(line.into_header()?);
++        }
++        // Framing is authoritative before constructing readers, decoding any
++        // body, or allowing a zero-length response to return its connection.
++        let body_type = Self::body_type(&unit.method, status, http_version, &headers)?;
++        let head_terminated =
++            unit.method.eq_ignore_ascii_case("head") || matches!(status, 204 | 304);
++        // 205 must verify that its framed HTTP payload is empty. Decoding a
++        // nonempty gzip member to zero bytes would conceal prohibited content.
++        let compression = if head_terminated || status == 205 {
++            None
++        } else {
++            get_header(&headers, "content-encoding").and_then(Compression::from_header_value)
++        };
++
++        let connection_option = Self::connection_option(http_version, &headers)?;
+
+         // remove Content-Encoding and length due to automatic decompression
+@@ -610,5 +614,5 @@
+
+         let reader =
+-            Self::stream_to_reader(stream, &unit, body_type, compression, connection_option);
++            Self::stream_to_reader(stream, &unit, body_type, compression, connection_option)?;
+
+         let url = unit.url.clone();
+@@ -704,5 +708,7 @@
+         return Err(BadStatus.msg("HTTP version was wrong length"));
+     }
+-    if !http_version.as_bytes()[5].is_ascii_digit() || !http_version.as_bytes()[7].is_ascii_digit()
++    if !http_version.as_bytes()[5].is_ascii_digit()
++        || http_version.as_bytes()[6] != b'.'
++        || !http_version.as_bytes()[7].is_ascii_digit()
+     {
+         return Err(BadStatus.msg("HTTP version did not match format"));
+@@ -710,6 +716,12 @@
+
+     let status_str: &str = split[1];
++    if !split[2]
++        .bytes()
++        .all(|byte| byte == b'\t' || (byte >= b' ' && byte != 0x7f))
++    {
++        return Err(BadStatus.msg("invalid HTTP reason phrase"));
++    }
+     //      status-code    = 3DIGIT
+-    if status_str.len() != 3 {
++    if status_str.len() != 3 || !status_str.bytes().all(|byte| byte.is_ascii_digit()) {
+         return Err(BadStatus.msg("Status code was wrong length"));
+     }
+@@ -717,5 +729,5 @@
+     let status: u16 = status_str
+         .parse()
+-        .map_err(|_| BadStatus.msg(format!("unable to parse status as u16 ({})", status_str)))?;
++        .map_err(|_| BadStatus.msg("invalid HTTP status code"))?;
+
+     Ok((
+@@ -771,47 +783,191 @@
+ }
+
+-fn read_next_line(reader: &mut impl BufRead, context: &str) -> io::Result<HeaderLine> {
++fn read_next_line(
++    reader: &mut impl BufRead,
++    context: &str,
++    remaining_head: &mut usize,
++) -> Result<HeaderLine, Error> {
+     let mut buf = Vec::new();
+-    let result = reader
+-        .take((MAX_HEADER_SIZE + 1) as u64)
+-        .read_until(b'\n', &mut buf);
+-
+-    match result {
+-        Ok(0) => Err(io::Error::new(
++    let limit = MAX_HEADER_SIZE.min(*remaining_head);
++    let n = reader
++        .take((limit + 1) as u64)
++        .read_until(b'\n', &mut buf)
++        .map_err(|error| {
++            ErrorKind::Io
++                .msg(format!("error reading {context}"))
++                .src(error)
++        })?;
++    if n == 0 {
++        return Err(io::Error::new(
+             io::ErrorKind::ConnectionAborted,
+-            "Unexpected EOF",
+-        )),
+-        Ok(n) if n > MAX_HEADER_SIZE => Err(io::Error::new(
+-            io::ErrorKind::Other,
+-            format!("header field longer than {} bytes", MAX_HEADER_SIZE),
+-        )),
+-        Ok(_) => Ok(()),
+-        Err(e) => {
+-            // Provide context to errors encountered while reading the line.
+-            let reason = format!("Error encountered in {}", context);
+-
+-            let kind = e.kind();
+-
+-            // Use an intermediate wrapper type which carries the error message
+-            // as well as a .source() reference to the original error.
+-            let wrapper = Error::new(ErrorKind::Io, Some(reason)).src(e);
+-
+-            Err(io::Error::new(kind, wrapper))
+-        }
+-    }?;
+-
+-    if !buf.ends_with(b"\n") {
+-        return Err(io::Error::new(
+-            io::ErrorKind::InvalidInput,
+-            format!("Header field didn't end with \\n: {:?}", buf),
+-        ));
+-    }
+-
+-    buf.pop();
+-    if buf.ends_with(b"\r") {
+-        buf.pop();
+-    }
+-
++            "unexpected EOF in HTTP response head",
++        )
++        .into());
++    }
++    if n > limit {
++        return Err(ErrorKind::ResponseHeadTooLarge.msg("HTTP response head limit exceeded"));
++    }
++    *remaining_head -= n;
++    if !buf.ends_with(b"\r\n") {
++        return Err(ErrorKind::BadHeader.msg("HTTP response line requires CRLF"));
++    }
++    buf.truncate(buf.len() - 2);
+     Ok(buf.into())
++}
++
++// RFC 9112 section 6.3: every occurrence participates in a single framing
++// decision. The original fields are retained rather than rewritten or joined.
++fn content_length(headers: &[Header]) -> Result<Option<u64>, Error> {
++    let mut length = None;
++    for header in headers
++        .iter()
++        .filter(|header| header.is_name("content-length"))
++    {
++        for value in header.value_raw().split(|byte| *byte == b',') {
++            let value = trim_ows(value);
++            if value.is_empty() || !value.iter().all(u8::is_ascii_digit) {
++                return Err(ErrorKind::BadHeader.msg("invalid Content-Length"));
++            }
++            let parsed = value
++                .iter()
++                .try_fold(0u64, |n, digit| {
++                    n.checked_mul(10)?.checked_add(u64::from(*digit - b'0'))
++                })
++                .ok_or_else(|| ErrorKind::BadHeader.msg("Content-Length overflow"))?;
++            if length.is_some_and(|length| length != parsed) {
++                return Err(ErrorKind::BadHeader.msg("conflicting Content-Length values"));
++            }
++            length = Some(parsed);
++        }
++    }
++    Ok(length)
++}
++
++fn trim_ows(mut value: &[u8]) -> &[u8] {
++    while matches!(value.first(), Some(b' ' | b'\t')) {
++        value = &value[1..];
++    }
++    while matches!(value.last(), Some(b' ' | b'\t')) {
++        value = &value[..value.len() - 1];
++    }
++    value
++}
++
++// Parse only Transfer-Encoding's concrete token/parameter/list grammar. A
++// head-terminated response may retain valid representation metadata without
++// requiring support for executing that coding stack.
++fn validate_transfer_encoding(headers: &[Header], head_terminated: bool) -> Result<(), Error> {
++    fn malformed() -> Error {
++        ErrorKind::BadHeader.msg("invalid Transfer-Encoding")
++    }
++    fn token<'a>(rest: &mut &'a [u8]) -> Result<&'a [u8], Error> {
++        let length = rest.iter().take_while(|byte| is_tchar(byte)).count();
++        if length == 0 {
++            return Err(malformed());
++        }
++        let (value, remaining) = rest.split_at(length);
++        *rest = remaining;
++        Ok(value)
++    }
++    let mut present = false;
++    let mut count = 0;
++    let mut chunked = false;
++    for header in headers
++        .iter()
++        .filter(|header| header.is_name("transfer-encoding"))
++    {
++        present = true;
++        let mut rest = trim_ows(header.value_raw());
++        loop {
++            // RFC 9110 section 5.6.1.2: ignore empty list members, including
++            // empty field occurrences. The existing 10 KiB line / 64 KiB head
++            // budgets bound this allocation-free, linear scan; no additional
++            // empty-member budget is needed. Only actual codings are counted.
++            if rest.is_empty() {
++                break;
++            }
++            if rest[0] == b',' {
++                rest = trim_ows(&rest[1..]);
++                continue;
++            }
++            let coding = token(&mut rest)?;
++            let is_chunked = coding.eq_ignore_ascii_case(b"chunked");
++            // RFC 9112 section 6.1 prohibits applying chunked more than once.
++            // Non-final chunked in a response is instead close-delimited under
++            // section 6.3; it is not malformed solely because of that order.
++            if is_chunked && chunked {
++                return Err(malformed());
++            }
++            chunked |= is_chunked;
++            rest = trim_ows(rest);
++            let mut parameters = false;
++            while rest.first() == Some(&b';') {
++                parameters = true;
++                rest = trim_ows(&rest[1..]);
++                token(&mut rest)?;
++                rest = trim_ows(rest);
++                if rest.first() != Some(&b'=') {
++                    return Err(malformed());
++                }
++                rest = trim_ows(&rest[1..]);
++                if rest.first() == Some(&b'"') {
++                    rest = &rest[1..];
++                    loop {
++                        match rest.first() {
++                            None => return Err(malformed()),
++                            Some(b'"') => {
++                                rest = &rest[1..];
++                                break;
++                            }
++                            Some(b'\\') => {
++                                if rest.len() < 2 {
++                                    return Err(malformed());
++                                }
++                                rest = &rest[2..];
++                            }
++                            Some(_) => rest = &rest[1..],
++                        }
++                    }
++                } else {
++                    token(&mut rest)?;
++                }
++                rest = trim_ows(rest);
++            }
++            // Sections 7.1 and 7.2 define no parameters for these codings and
++            // recommend treating their presence as an error. Use that strict
++            // policy for body-bearing responses and representation metadata.
++            if parameters
++                && (is_chunked
++                    || [
++                        b"gzip".as_slice(),
++                        b"x-gzip",
++                        b"compress",
++                        b"x-compress",
++                        b"deflate",
++                    ]
++                    .iter()
++                    .any(|name| coding.eq_ignore_ascii_case(name)))
++            {
++                return Err(malformed());
++            }
++            count += 1;
++            if rest.is_empty() {
++                break;
++            }
++            if rest[0] != b',' {
++                return Err(malformed());
++            }
++            rest = trim_ows(&rest[1..]);
++        }
++    }
++    // An absent field is valid. A present logical list with no actual coding
++    // remains rejected under AI5's explicit framing policy.
++    if present && count == 0 {
++        return Err(malformed());
++    }
++    if count != 0 && !(head_terminated || count == 1 && chunked) {
++        return Err(ErrorKind::UnsupportedResponse.msg("unsupported HTTP transfer coding"));
++    }
++    Ok(())
+ }
+
+@@ -819,30 +975,30 @@
+ pub(crate) struct LimitedRead<R> {
+     reader: Option<R>,
+-    limit: usize,
+-    position: usize,
++    limit: u64,
++    position: u64,
++    failed: bool,
+ }
+
+ impl<R: Read + Sized + Into<Stream>> LimitedRead<R> {
+-    pub(crate) fn new(reader: R, limit: NonZeroUsize) -> Self {
++    pub(crate) fn new(reader: R, limit: NonZeroU64) -> Self {
+         LimitedRead {
+             reader: Some(reader),
+             limit: limit.get(),
+             position: 0,
+-        }
+-    }
+-
+-    pub(crate) fn remaining(&self) -> usize {
++            failed: false,
++        }
++    }
++
++    pub(crate) fn remaining(&self) -> u64 {
+         self.limit - self.position
+     }
+
+-    fn return_stream_to_pool(&mut self) -> io::Result<()> {
++    fn return_stream_to_pool(&mut self) {
+         if let Some(reader) = self.reader.take() {
+-            // Convert back to a stream. If return_to_pool fails, the stream will
+-            // drop and the connection will be closed.
++            // Transfer ownership for optional qualified reuse. Ineligibility
++            // drops the connection without failing the completed response.
+             let stream: Stream = reader.into();
+-            stream.return_to_pool()?;
+-        }
+-
+-        Ok(())
++            stream.return_to_pool();
++        }
+     }
+ }
+@@ -850,15 +1006,29 @@
+ impl<R: Read + Sized + Into<Stream>> Read for LimitedRead<R> {
+     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
++        if buf.is_empty() {
++            return Ok(0);
++        }
++        if self.failed {
++            return Err(io::Error::new(
++                io::ErrorKind::InvalidData,
++                "response body previously failed",
++            ));
++        }
+         if self.remaining() == 0 {
+             return Ok(0);
+         }
+-        let from = if self.remaining() < buf.len() {
+-            &mut buf[0..self.remaining()]
+-        } else {
+-            buf
+-        };
++        // A declared length can exceed addressable memory. Narrow only the
++        // per-call slice bound, never the stored framing length or progress.
++        let amount = usize::try_from(self.remaining())
++            .unwrap_or(usize::MAX)
++            .min(buf.len());
++        let from = &mut buf[..amount];
+         let reader = match self.reader.as_mut() {
+-            // If the reader has already been taken, return Ok(0) to all reads.
+-            None => return Ok(0),
++            None => {
++                return Err(io::Error::new(
++                    io::ErrorKind::InvalidData,
++                    "missing response reader",
++                ))
++            }
+             Some(r) => r,
+         };
+@@ -869,17 +1039,30 @@
+             // received, the recipient MUST consider the message to be
+             // incomplete and close the connection.
+-            // TODO: actually close the connection by dropping the stream
+-            Ok(0) => Err(io::Error::new(
+-                io::ErrorKind::UnexpectedEof,
+-                "response body closed before all bytes were read",
+-            )),
++            Ok(0) => {
++                self.failed = true;
++                self.reader.take();
++                Err(io::Error::new(
++                    io::ErrorKind::UnexpectedEof,
++                    "response body closed before all bytes were read",
++                ))
++            }
+             Ok(amount) => {
+-                self.position += amount;
++                self.position += u64::try_from(amount).map_err(|_| {
++                    io::Error::new(io::ErrorKind::InvalidData, "response read size exceeds u64")
++                })?;
+                 if self.remaining() == 0 {
+-                    self.return_stream_to_pool()?;
++                    // HTTP framing is complete. Failed optional pool
++                    // maintenance discards the connection, never the payload.
++                    self.return_stream_to_pool();
+                 }
+                 Ok(amount)
+             }
+-            Err(e) => Err(e),
++            Err(e) => {
++                if e.kind() != io::ErrorKind::Interrupted {
++                    self.failed = true;
++                    self.reader.take();
++                }
++                Err(e)
++            }
+         }
+     }
+@@ -903,15 +1086,4 @@
+ }
+
+-// ErrorReader returns an error for every read.
+-// The error is as close to a clone of the underlying
+-// io::Error as we can get.
+-struct ErrorReader(io::Error);
+-
+-impl Read for ErrorReader {
+-    fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+-        Err(io::Error::new(self.0.kind(), self.0.to_string()))
+-    }
+-}
+-
+ #[cfg(test)]
+ mod tests {
+@@ -931,5 +1103,5 @@
+             PoolReturner::none(),
+         );
+-        let mut lr = LimitedRead::new(stream, std::num::NonZeroUsize::new(10).unwrap());
++        let mut lr = LimitedRead::new(stream, std::num::NonZeroU64::new(10).unwrap());
+         let mut buf = vec![0; 1000];
+         let result = lr.read_to_end(&mut buf);
+@@ -1079,11 +1251,8 @@
+         let s = format!("Long-Header: {}\r\n", "A".repeat(LEN),);
+         let mut cursor = Cursor::new(s);
+-        let result = read_next_line(&mut cursor, "some context");
++        let mut budget = MAX_HEADER_SIZE + 1;
++        let result = read_next_line(&mut cursor, "some context", &mut budget);
+         let err = result.expect_err("did not error on too-large header");
+-        assert_eq!(err.kind(), io::ErrorKind::Other);
+-        assert_eq!(
+-            err.to_string(),
+-            format!("header field longer than {} bytes", MAX_HEADER_SIZE)
+-        );
++        assert_eq!(err.kind(), ErrorKind::ResponseHeadTooLarge);
+     }
+
+@@ -1092,8 +1261,5 @@
+         const LEN: usize = MAX_HEADER_COUNT + 1;
+         let s = format!(
+-            "HTTP/1.1 200 OK\r\n\
+-                 {}
+-                 \r\n
+-                 hi",
++            "HTTP/1.1 200 OK\r\n{}\r\nhi",
+             "Header: value\r\n".repeat(LEN),
+         );
+@@ -1101,12 +1267,5 @@
+             .parse::<Response>()
+             .expect_err("did not error on too many headers");
+-        assert_eq!(err.kind(), ErrorKind::BadHeader);
+-        assert_eq!(
+-            err.to_string(),
+-            format!(
+-                "Bad Header: more than {} header fields in response",
+-                MAX_HEADER_COUNT
+-            )
+-        );
++        assert_eq!(err.kind(), ErrorKind::ResponseHeadTooLarge);
+     }
+
+@@ -1118,5 +1277,6 @@
+         let bytes = cow.to_vec();
+         let mut reader = io::BufReader::new(io::Cursor::new(bytes));
+-        let r = read_next_line(&mut reader, "test status line");
++        let mut budget = MAX_RESPONSE_HEAD_SIZE;
++        let r = read_next_line(&mut reader, "test status line", &mut budget);
+         let h = r.unwrap();
+         assert_eq!(h.to_string(), "HTTP/1.1 302 D�plac� Temporairement");
+@@ -1256,28 +1416,25 @@
+     fn connection_option() {
+         use ConnectionOption::*;
+-        assert_eq!(Response::connection_option("HTTP/1.0", None), Close);
+-        assert_eq!(Response::connection_option("HtTp/1.0", None), Close);
+-        assert_eq!(Response::connection_option("HTTP/1.0", Some("blah")), Close);
+-        assert_eq!(
+-            Response::connection_option("HTTP/1.0", Some("keep-ALIVE")),
+-            KeepAlive
+-        );
+-        assert_eq!(
+-            Response::connection_option("http/1.0", Some("keep-alive")),
+-            KeepAlive
+-        );
+-
+-        assert_eq!(Response::connection_option("http/1.1", None), KeepAlive);
+-        assert_eq!(
+-            Response::connection_option("http/1.1", Some("blah")),
+-            KeepAlive
+-        );
+-        assert_eq!(
+-            Response::connection_option("http/1.1", Some("keep-alive")),
+-            KeepAlive
+-        );
+-        assert_eq!(
+-            Response::connection_option("http/1.1", Some("CLOSE")),
+-            Close
++        for (version, values, expected) in [
++            ("HTTP/1.0", vec![], Close),
++            ("HTTP/1.0", vec!["keep-alive"], Close),
++            ("HTTP/1.1", vec![], KeepAlive),
++            ("HTTP/1.1", vec!["keep-alive"], KeepAlive),
++            ("HTTP/1.1", vec!["x-close"], KeepAlive),
++            ("HTTP/1.1", vec!["keep-alive", "CLOSE"], Close),
++            ("HTTP/1.1", vec![" , keep-alive,\tClOsE ,"], Close),
++        ] {
++            let headers: Vec<_> = values
++                .iter()
++                .map(|v| Header::new("Connection", v))
++                .collect();
++            assert_eq!(
++                Response::connection_option(version, &headers).unwrap(),
++                expected
++            );
++        }
++        assert!(
++            Response::connection_option("HTTP/1.1", &[Header::new("Connection", "close;bad")])
++                .is_err()
+         );
+     }
+@@ -1286,82 +1443,71 @@
+     fn body_type() {
+         use BodyType::*;
+-        assert_eq!(
+-            Response::body_type("GET", 200, "HTTP/1.1", &[]),
+-            CloseDelimited
+-        );
+-        assert_eq!(
+-            Response::body_type("HEAD", 200, "HTTP/1.1", &[]),
+-            LengthDelimited(0)
+-        );
+-        assert_eq!(
+-            Response::body_type("hEaD", 200, "HTTP/1.1", &[]),
+-            LengthDelimited(0)
+-        );
+-        assert_eq!(
+-            Response::body_type("head", 200, "HTTP/1.1", &[]),
+-            LengthDelimited(0)
+-        );
+-        assert_eq!(
+-            Response::body_type("GET", 304, "HTTP/1.1", &[]),
+-            LengthDelimited(0)
+-        );
+-        assert_eq!(
+-            Response::body_type("GET", 204, "HTTP/1.1", &[]),
+-            LengthDelimited(0)
+-        );
+-        assert_eq!(
+-            Response::body_type(
++        for (method, status, version, headers, expected) in [
++            ("GET", 200, "HTTP/1.1", vec![], CloseDelimited),
++            ("HEAD", 200, "HTTP/1.1", vec![], LengthDelimited(0)),
++            ("hEaD", 200, "HTTP/1.1", vec![], LengthDelimited(0)),
++            ("head", 200, "HTTP/1.1", vec![], LengthDelimited(0)),
++            ("GET", 204, "HTTP/1.1", vec![], LengthDelimited(0)),
++            ("GET", 304, "HTTP/1.1", vec![], LengthDelimited(0)),
++            (
++                "GET",
++                304,
++                "HTTP/1.1",
++                vec![Header::new("Transfer-Encoding", "gzip, chunked")],
++                LengthDelimited(0),
++            ),
++            (
+                 "GET",
+                 200,
+                 "HTTP/1.1",
+-                &[Header::new("Transfer-Encoding", "chunked"),]
++                vec![Header::new("Transfer-Encoding", "Chunked")],
++                Chunked,
+             ),
+-            Chunked
+-        );
+-        assert_eq!(
+-            Response::body_type(
++            (
++                "GET",
++                205,
++                "HTTP/1.1",
++                vec![Header::new("Transfer-Encoding", "chunked")],
++                Chunked,
++            ),
++            (
+                 "GET",
+                 200,
+                 "HTTP/1.1",
+-                &[Header::new("Content-Length", "123"),]
++                vec![Header::new("Content-Length", "123")],
++                LengthDelimited(123),
+             ),
+-            LengthDelimited(123)
+-        );
+-        assert_eq!(
+-            Response::body_type(
++            (
+                 "GET",
+                 200,
+-                "HTTP/1.1",
+-                &[
++                "HTTP/1.0",
++                vec![Header::new("Content-Length", "123")],
++                LengthDelimited(123),
++            ),
++        ] {
++            assert_eq!(
++                Response::body_type(method, status, version, &headers).unwrap(),
++                expected
++            );
++        }
++        for method in ["GET", "HEAD"] {
++            for headers in [
++                vec![
+                     Header::new("Content-Length", "123"),
+                     Header::new("Transfer-Encoding", "chunked"),
+-                ]
+-            ),
+-            Chunked
+-        );
+-        assert_eq!(
+-            Response::body_type(
+-                "GET",
+-                200,
+-                "HTTP/1.1",
+-                &[
++                ],
++                vec![
+                     Header::new("Transfer-Encoding", "chunked"),
+                     Header::new("Content-Length", "123"),
+-                ]
+-            ),
+-            Chunked
+-        );
+-        assert_eq!(
+-            Response::body_type(
+-                "HEAD",
+-                200,
+-                "HTTP/1.1",
+-                &[
+-                    Header::new("Transfer-Encoding", "chunked"),
+-                    Header::new("Content-Length", "123"),
+-                ]
+-            ),
+-            LengthDelimited(0)
+-        );
++                ],
++            ] {
++                assert_eq!(
++                    Response::body_type(method, 200, "HTTP/1.1", &headers)
++                        .unwrap_err()
++                        .kind(),
++                    ErrorKind::BadHeader
++                );
++            }
++        }
+         assert_eq!(
+             Response::body_type(
+@@ -1369,18 +1515,10 @@
+                 200,
+                 "HTTP/1.0",
+-                &[Header::new("Transfer-Encoding", "chunked"),]
+-            ),
+-            CloseDelimited,
+-            "HTTP/1.0 did not support chunked encoding"
++                &[Header::new("Transfer-Encoding", "chunked")]
++            )
++            .unwrap_err()
++            .kind(),
++            ErrorKind::BadHeader
+         );
+-        assert_eq!(
+-            Response::body_type(
+-                "GET",
+-                200,
+-                "HTTP/1.0",
+-                &[Header::new("Content-Length", "123"),]
+-            ),
+-            LengthDelimited(123)
+-        );
+-    }
+-}
++    }
++}
+--- a/src/rtls.rs
++++ b/src/rtls.rs
+@@ -13,19 +13,4 @@
+ };
+
+-#[allow(deprecated)]
+-fn is_close_notify(e: &std::io::Error) -> bool {
+-    if e.kind() != io::ErrorKind::ConnectionAborted {
+-        return false;
+-    }
+-
+-    if let Some(msg) = e.get_ref() {
+-        // :(
+-
+-        return msg.description().contains("CloseNotify");
+-    }
+-
+-    false
+-}
+-
+ struct RustlsStream(rustls::StreamOwned<rustls::ClientConnection, Box<dyn ReadWrite>>);
+
+@@ -34,17 +19,38 @@
+         self.0.get_ref().socket()
+     }
++
++    fn is_idle_for_reuse(&mut self) -> io::Result<bool> {
++        if self.0.conn.is_handshaking() || self.0.conn.wants_write() {
++            return Ok(false);
++        }
++        let state = self
++            .0
++            .conn
++            .process_new_packets()
++            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
++        if state.plaintext_bytes_to_read() != 0
++            || state.peer_has_closed()
++            || self.0.conn.is_handshaking()
++            || self.0.conn.wants_write()
++        {
++            return Ok(false);
++        }
++        match self.0.conn.reader().read(&mut [0]) {
++            // An open rustls reader with no plaintext reports WouldBlock.
++            // EOF and other errors instead report clean/unclean closure or
++            // failure. Retained incomplete encrypted records are legitimate;
++            // no private deframer-buffer inspection is needed or performed.
++            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
++                self.0.sock.is_idle_for_reuse()
++            }
++            Ok(_) => Ok(false),
++            Err(error) => Err(error),
++        }
++    }
+ }
+
+-// TODO: After upgrading to rustls 0.20 or higher, we can remove these Read
+-// and Write impls, leaving only `impl TlsStream for rustls::StreamOwned...`.
+-// Currently we need to implement Read in order to treat close_notify specially.
+-// The next release of rustls will handle close_notify in a more intuitive way.
+ impl Read for RustlsStream {
+     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+-        match self.0.read(buf) {
+-            Ok(size) => Ok(size),
+-            Err(ref e) if is_close_notify(e) => Ok(0),
+-            Err(e) => Err(e),
+-        }
++        self.0.read(buf)
+     }
+ }
+@@ -65,6 +71,6 @@
+
+     let mut root_cert_store = rustls::RootCertStore::empty();
+-    let native_certs = rustls_native_certs::load_native_certs().unwrap_or_else(|e| {
+-        error!("loading native certificates: {}", e);
++    let native_certs = rustls_native_certs::load_native_certs().unwrap_or_else(|_| {
++        error!("native certificate loading failed");
+         vec![]
+     });
+--- a/src/stream.rs
++++ b/src/stream.rs
+@@ -22,4 +22,13 @@
+ pub trait ReadWrite: Read + Write + Send + Sync + fmt::Debug + 'static {
+     fn socket(&self) -> Option<&TcpStream>;
++
++    /// Positive, momentary eligibility under exclusive connection ownership.
++    /// `Ok(true)` permits reuse; `Ok(false)` reports surplus, closure, or
++    /// unsupported/uncertain inspection. `Err` reports an inspection failure.
++    /// Both negative outcomes discard the connection. No implementation can
++    /// promise the absence of input that a peer might send after this probe.
++    fn is_idle_for_reuse(&mut self) -> io::Result<bool> {
++        Ok(false)
++    }
+ }
+
+@@ -27,4 +36,20 @@
+     fn socket(&self) -> Option<&TcpStream> {
+         Some(self)
++    }
++
++    fn is_idle_for_reuse(&mut self) -> io::Result<bool> {
++        // Even a failed mode transition leaves the state uncertain: attempt
++        // restoration on every path and discard if restoration itself fails.
++        if let Err(error) = self.set_nonblocking(true) {
++            self.set_nonblocking(false)?;
++            return Err(error);
++        }
++        let result = match self.peek(&mut [0]) {
++            Ok(_) => Ok(false), // queued input or EOF; never consume it
++            Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(true),
++            Err(error) => Err(error),
++        };
++        self.set_nonblocking(false)?;
++        result
+     }
+ }
+@@ -49,4 +74,8 @@
+         ReadWrite::socket(self.as_ref())
+     }
++
++    fn is_idle_for_reuse(&mut self) -> io::Result<bool> {
++        ReadWrite::is_idle_for_reuse(self.as_mut())
++    }
+ }
+
+@@ -55,5 +84,5 @@
+ // TcpStream to ensure read() doesn't block beyond the deadline.
+ // When the From trait is used to turn a DeadlineStream back into a
+-// Stream (by PoolReturnRead), the timeouts are removed.
++// Stream (by PoolReturnRead), the next request restores its own timeouts.
+ pub(crate) struct DeadlineStream {
+     stream: Stream,
+@@ -86,6 +115,8 @@
+             let timeout = time_until_deadline(deadline)?;
+             if let Some(socket) = self.stream.socket() {
+-                socket.set_read_timeout(Some(timeout))?;
+-                socket.set_write_timeout(Some(timeout))?;
++                socket
++                    .set_read_timeout(effective_timeout(socket.read_timeout()?, Some(timeout)))?;
++                socket
++                    .set_write_timeout(effective_timeout(socket.write_timeout()?, Some(timeout)))?;
+             }
+         }
+@@ -96,5 +127,5 @@
+             // we can safely normalize WouldBlock to TimedOut
+             if e.kind() == io::ErrorKind::WouldBlock {
+-                return io_err_timeout("timed out reading response".to_string());
++                return io::Error::new(io::ErrorKind::TimedOut, e);
+             }
+             e
+@@ -132,6 +163,24 @@
+ }
+
+-// If the deadline is in the future, return the remaining time until
+-// then. Otherwise return a TimedOut error.
++// Keep configured finite I/O limits even when an overall deadline is longer.
++fn effective_timeout(configured: Option<Duration>, deadline: Option<Duration>) -> Option<Duration> {
++    match (configured, deadline) {
++        (Some(a), Some(b)) => Some(a.min(b)),
++        (a, b) => a.or(b),
++    }
++}
++
++fn configure_socket(socket: &TcpStream, unit: &Unit) -> io::Result<()> {
++    let remaining = unit.deadline.map(time_until_deadline).transpose()?;
++    socket.set_nonblocking(false)?;
++    socket.set_read_timeout(effective_timeout(unit.agent.config.timeout_read, remaining))?;
++    socket.set_write_timeout(effective_timeout(
++        unit.agent.config.timeout_write,
++        remaining,
++    ))?;
++    Ok(())
++}
++
++// If the deadline is in the future, return the remaining time until then.
+ fn time_until_deadline(deadline: Instant) -> io::Result<Duration> {
+     let now = Instant::now();
+@@ -179,8 +228,7 @@
+ impl fmt::Debug for Stream {
+     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+-        match self.inner.get_ref().socket() {
+-            Some(_) => write!(f, "Stream({:?})", self.inner.get_ref()),
+-            None => write!(f, "Stream(Test)"),
+-        }
++        f.debug_struct("Stream")
++            .field("buffered_bytes", &self.inner.buffer().len())
++            .finish_non_exhaustive()
+     }
+ }
+@@ -208,42 +256,9 @@
+     }
+
+-    // Check if the server has closed a stream by performing a one-byte
+-    // non-blocking read. If this returns EOF, the server has closed the
+-    // connection: return true. If this returns a successful read, there are
+-    // some bytes on the connection even though there was no inflight request.
+-    // For plain HTTP streams, that might mean an HTTP 408 was pushed; it
+-    // could also mean a buggy server that sent more bytes than a response's
+-    // Content-Length. For HTTPS streams, that might mean a close_notify alert,
+-    // which is the proper way to shut down an idle stream.
+-    // Either way, bytes available on the stream before we've made a request
+-    // means the stream is not usable, so we should discard it.
+-    // If this returns WouldBlock (aka EAGAIN),
+-    // that means the connection is still open: return false. Otherwise
+-    // return an error.
+-    fn serverclosed_stream(stream: &std::net::TcpStream) -> io::Result<bool> {
+-        let mut buf = [0; 1];
+-        stream.set_nonblocking(true)?;
+-
+-        let result = match stream.peek(&mut buf) {
+-            Ok(n) => {
+-                debug!(
+-                    "peek on reused connection returned {}, not WouldBlock; discarding",
+-                    n
+-                );
+-                Ok(true)
+-            }
+-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(false),
+-            Err(e) => Err(e),
+-        };
+-        stream.set_nonblocking(false)?;
+-
+-        result
+-    }
+-    // Return true if the server has closed this connection.
+-    pub(crate) fn server_closed(&self) -> io::Result<bool> {
+-        match self.socket() {
+-            Some(socket) => Stream::serverclosed_stream(socket),
+-            None => Ok(false),
+-        }
++    pub(crate) fn is_idle_for_reuse(&mut self) -> io::Result<bool> {
++        if !self.buffer().is_empty() {
++            return Ok(false);
++        }
++        self.inner.get_mut().is_idle_for_reuse()
+     }
+
+@@ -252,19 +267,17 @@
+     }
+
+-    pub(crate) fn return_to_pool(mut self) -> io::Result<()> {
+-        // ensure stream can be reused
+-        self.reset()?;
+-        self.pool_returner.clone().return_to_pool(self);
+-        Ok(())
+-    }
+-
+-    pub(crate) fn reset(&mut self) -> io::Result<()> {
+-        // When we are turning this back into a regular, non-deadline Stream,
+-        // remove any timeouts we set.
++    // Only framing readers call this after verified HTTP completion. Eligibility
++    // and maintenance are optional: any failure discards this owned stream, not
++    // the completed response. Never clear finite timeouts on the idle socket.
++    pub(crate) fn return_to_pool(mut self) {
++        if self.pool_returner.is_enabled() && matches!(self.is_idle_for_reuse(), Ok(true)) {
++            self.pool_returner.clone().return_to_pool(self);
++        }
++    }
++
++    pub(crate) fn prepare_for_request(&self, unit: &Unit) -> io::Result<()> {
+         if let Some(socket) = self.socket() {
+-            socket.set_read_timeout(None)?;
+-            socket.set_write_timeout(None)?;
+-        }
+-
++            configure_socket(socket, unit)?;
++        }
+         Ok(())
+     }
+@@ -327,5 +340,5 @@
+     //
+     let port = unit.url.port().unwrap_or(80);
+-    let pool_key = PoolKey::from_parts("http", hostname, port);
++    let pool_key = PoolKey::new(&unit.url, unit.agent.config.proxy.clone());
+     let pool_returner = PoolReturner::new(&unit.agent, pool_key);
+     connect_host(unit, hostname, port).map(|(t, r)| Stream::new(t, r, pool_returner))
+@@ -339,5 +352,5 @@
+     let tls_conf = &unit.agent.config.tls_config;
+     let https_stream = tls_conf.connect(hostname, Box::new(sock))?;
+-    let pool_key = PoolKey::from_parts("https", hostname, port);
++    let pool_key = PoolKey::new(&unit.url, unit.agent.config.proxy.clone());
+     let pool_returner = PoolReturner::new(&unit.agent, pool_key);
+     Ok(Stream::new(https_stream, remote_addr, pool_returner))
+@@ -350,10 +363,13 @@
+     port: u16,
+ ) -> Result<(TcpStream, SocketAddr), Error> {
+-    let connect_deadline: Option<Instant> =
+-        if let Some(timeout_connect) = unit.agent.config.timeout_connect {
+-            Instant::now().checked_add(timeout_connect)
+-        } else {
+-            unit.deadline
+-        };
++    let configured_deadline = unit
++        .agent
++        .config
++        .timeout_connect
++        .and_then(|timeout| Instant::now().checked_add(timeout));
++    let connect_deadline = match (configured_deadline, unit.deadline) {
++        (Some(configured), Some(request)) => Some(configured.min(request)),
++        (configured, request) => configured.or(request),
++    };
+     let proxy: Option<Proxy> = unit.agent.config.proxy.clone();
+     let netloc = match proxy {
+@@ -393,5 +409,5 @@
+         };
+
+-        debug!("connecting to {} at {}", netloc, &sock_addr);
++        debug!("connecting to resolved endpoint");
+
+         // connect with a configured timeout.
+@@ -431,15 +447,5 @@
+     stream.set_nodelay(unit.agent.config.no_delay)?;
+
+-    if let Some(deadline) = unit.deadline {
+-        stream.set_read_timeout(Some(time_until_deadline(deadline)?))?;
+-    } else {
+-        stream.set_read_timeout(unit.agent.config.timeout_read)?;
+-    }
+-
+-    if let Some(deadline) = unit.deadline {
+-        stream.set_write_timeout(Some(time_until_deadline(deadline)?))?;
+-    } else {
+-        stream.set_write_timeout(unit.agent.config.timeout_write)?;
+-    }
++    configure_socket(&stream, unit)?;
+
+     if proto == Some(Proto::HTTP) && unit.url.scheme() == "https" {
+@@ -449,12 +455,11 @@
+                 "{}",
+                 proxy.connect(hostname, port, &unit.agent.config.user_agent)
+-            )
+-            .unwrap();
++            )?;
+             stream.flush()?;
+
+             let s = stream.try_clone()?;
+-            let pool_key = PoolKey::from_parts(unit.url.scheme(), hostname, port);
+-            let pool_returner = PoolReturner::new(&unit.agent, pool_key);
+-            let s = Stream::new(s, remote_addr, pool_returner);
++            // CONNECT admission is not an origin HTTP response. Its cloned
++            // pre-TLS socket must never enter the HTTPS connection pool.
++            let s = Stream::new(s, remote_addr, PoolReturner::none());
+             let response = Response::do_from_stream(s, unit.clone())?;
+             Proxy::verify_response(&response)?;
+--- a/src/unit.rs
++++ b/src/unit.rs
+@@ -128,26 +128,4 @@
+         header::get_all_headers(&self.headers, name)
+     }
+-
+-    // Returns true if this request, with the provided body, is retryable.
+-    pub(crate) fn is_retryable(&self, body: &SizedReader) -> bool {
+-        // Per https://tools.ietf.org/html/rfc7231#section-8.1.3
+-        // these methods are idempotent.
+-        let idempotent = match self.method.as_str() {
+-            "DELETE" | "GET" | "HEAD" | "OPTIONS" | "PUT" | "TRACE" => true,
+-            _ => false,
+-        };
+-        // Unsized bodies aren't retryable because we can't rewind the reader.
+-        // Sized bodies are retryable only if they are zero-length because of
+-        // coincidences of the current implementation - the function responsible
+-        // for retries doesn't have a way to replay a Payload.
+-        let retryable_body = match body.size {
+-            BodySize::Unknown => false,
+-            BodySize::Known(0) => true,
+-            BodySize::Known(_) => false,
+-            BodySize::Empty => true,
+-        };
+-
+-        idempotent && retryable_body
+-    }
+ }
+
+@@ -160,5 +138,5 @@
+     let mut history = vec![];
+     let mut resp = loop {
+-        let resp = connect_inner(&unit, use_pooled, body, &history)?;
++        let resp = connect_inner(&unit, use_pooled, body)?;
+
+         // handle redirects
+@@ -210,5 +188,5 @@
+         );
+
+-        debug!("redirect {} {} -> {}", resp.status(), url, new_url);
++        debug!("redirect response status={}", resp.status());
+         history.push(unit.url);
+         body = Payload::Empty.into_read();
+@@ -240,10 +218,5 @@
+
+ /// Perform a connection. Does not follow redirects.
+-fn connect_inner(
+-    unit: &Unit,
+-    use_pooled: bool,
+-    body: SizedReader,
+-    history: &[Url],
+-) -> Result<Response, Error> {
++fn connect_inner(unit: &Unit, use_pooled: bool, body: SizedReader) -> Result<Response, Error> {
+     let host = unit
+         .url
+@@ -251,60 +224,22 @@
+         // This unwrap is ok because Request::parse_url() ensure there is always a host present.
+         .unwrap();
+-    let url = &unit.url;
+-    let method = &unit.method;
+     // open socket
+     let (mut stream, is_recycled) = connect_socket(unit, host, use_pooled)?;
+
+     if is_recycled {
+-        debug!("sending request (reused connection) {} {}", method, url);
++        debug!("sending request on reused connection");
+     } else {
+-        debug!("sending request {} {}", method, url);
+-    }
+-
+-    let send_result = send_prelude(unit, &mut stream);
+-
+-    if let Err(err) = send_result {
+-        if is_recycled {
+-            debug!("retrying request early {} {}: {}", method, url, err);
+-            // we try open a new connection, this time there will be
+-            // no connection in the pool. don't use it.
+-            // NOTE: this recurses at most once because `use_pooled` is `false`.
+-            return connect_inner(unit, false, body, history);
+-        } else {
+-            // not a pooled connection, propagate the error.
+-            return Err(err.into());
+-        }
+-    }
+-    let retryable = unit.is_retryable(&body);
+-
+-    // send the body (which can be empty now depending on redirects)
++        debug!("sending request on fresh connection");
++    }
++
++    if header::connection_close(&unit.headers)? {
++        stream.set_unpoolable();
++    }
++    // Once transmission begins, all failures belong to this attempt. A stale
++    // idle candidate may be discarded at checkout, never replayed after writes.
++    send_prelude(unit, &mut stream)?;
+     body::send_body(body, unit.is_chunked, &mut stream)?;
+-
+-    // start reading the response to process cookies and redirects.
+-    // TODO: this unit.clone() bothers me. At this stage, we're not
+-    // going to use the unit (much) anymore, and it should be possible
+-    // to have ownership of it and pass it into the Response.
+-    let result = Response::do_from_stream(stream, unit.clone());
+-
+-    // https://tools.ietf.org/html/rfc7230#section-6.3.1
+-    // When an inbound connection is closed prematurely, a client MAY
+-    // open a new connection and automatically retransmit an aborted
+-    // sequence of requests if all of those requests have idempotent
+-    // methods.
+-    //
+-    // We choose to retry only requests that used a recycled connection
+-    // from the ConnectionPool, since those are most likely to have
+-    // reached a server-side timeout. Note that this means we may do
+-    // up to N+1 total tries, where N is max_idle_connections_per_host.
+-    let resp = match result {
+-        Err(err) if err.connection_closed() && retryable && is_recycled => {
+-            debug!("retrying request {} {}: {}", method, url, err);
+-            let empty = Payload::Empty.into_read();
+-            // NOTE: this recurses at most once because `use_pooled` is `false`.
+-            return connect_inner(unit, false, empty, history);
+-        }
+-        Err(e) => return Err(e),
+-        Ok(resp) => resp,
+-    };
++    stream.flush()?;
++    let resp = Response::do_from_stream(stream, unit.clone())?;
+
+     // squirrel away cookies
+@@ -312,5 +247,5 @@
+     save_cookies(unit, &resp);
+
+-    debug!("response {} to {} {}", resp.status(), method, url);
++    debug!("response status={}", resp.status());
+
+     // release the response
+@@ -330,5 +265,5 @@
+             let is_ok = is_cookie_rfc_compliant(c);
+             if !is_ok {
+-                debug!("do not send non compliant cookie: {:?}", c);
++                debug!("outgoing cookie rejected");
+             }
+             is_ok
+@@ -359,10 +294,11 @@
+         // due to idle timeout while it was sitting in the pool.
+         // Loop until we find one that is still good or run out of connections.
+-        while let Some(stream) = pool.try_get_connection(&unit.url, proxy.clone()) {
+-            let server_closed = stream.server_closed()?;
+-            if !server_closed {
++        while let Some(mut stream) = pool.try_get_connection(&unit.url, proxy.clone()) {
++            if matches!(stream.is_idle_for_reuse(), Ok(true))
++                && stream.prepare_for_request(unit).is_ok()
++            {
+                 return Ok((stream, true));
+             }
+-            debug!("dropping stream from pool; closed by server: {:?}", stream);
++            debug!("discarding ineligible idle connection: {:?}", stream);
+         }
+     }
+@@ -373,5 +309,9 @@
+         scheme => Err(ErrorKind::UnknownScheme.msg(format!("unknown scheme {}", scheme))),
+     };
+-    Ok((stream?, false))
++    let stream = stream?;
++    // TLS/proxy establishment may have consumed part of a request deadline.
++    // Both fresh and recycled sockets enter request I/O in the same mode.
++    stream.prepare_for_request(unit)?;
++    Ok((stream, false))
+ }
+
+@@ -478,5 +418,5 @@
+     prelude.finish()?;
+
+-    debug!("writing prelude: {}", prelude);
++    debug!("writing HTTP request head");
+     // write all to the wire
+     stream.write_all(prelude.as_slice())?;
+@@ -567,8 +507,5 @@
+     }
+     let cookies = headers.into_iter().flat_map(|header_value| {
+-        debug!(
+-            "received 'set-cookie: {}' from {} {}",
+-            header_value, unit.method, unit.url
+-        );
++        debug!("received cookie field");
+         match Cookie::parse(header_value.to_string()) {
+             Err(_) => None,
+@@ -578,5 +515,5 @@
+                     Some(c)
+                 } else {
+-                    debug!("ignore incoming non compliant cookie: {:?}", c);
++                    debug!("incoming cookie rejected");
+                     None
+                 }
+@@ -635,5 +572,5 @@
+
+     if !valid_name {
+-        log::trace!("cookie name is not valid: {:?}", cookie.name());
++        log::trace!("cookie name is not valid");
+         return false;
+     }
+@@ -644,5 +581,5 @@
+
+     if !valid_value {
+-        log::trace!("cookie value is not valid: {:?}", cookie.value());
++        log::trace!("cookie value is not valid");
+         return false;
+     }

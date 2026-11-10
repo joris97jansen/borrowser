@@ -130,7 +130,7 @@ impl ConnectionPool {
         debug!("adding stream to pool: {:?} -> {:?}", key, stream);
 
         let mut inner = self.inner.lock().unwrap();
-        match inner.recycle.entry(key.clone()) {
+        let per_host_evicted = match inner.recycle.entry(key.clone()) {
             Entry::Occupied(mut occupied_entry) => {
                 let streams = occupied_entry.get_mut();
                 streams.push_back(stream);
@@ -145,24 +145,36 @@ impl ConnectionPool {
                     );
                     remove_first_match(&mut inner.lru, key)
                         .expect("invariant failed: key in recycle but not in lru");
+                    Some(stream)
+                } else {
+                    None
                 }
             }
             Entry::Vacant(vacant_entry) => {
                 vacant_entry.insert(vec![stream].into());
+                None
             }
-        }
+        };
         inner.lru.push_back(key.clone());
-        if inner.lru.len() > self.max_idle_connections {
-            drop(inner);
-            self.remove_oldest()
-        }
+        // The capacity decision and both indexes' eviction share this guard.
+        // Checkout cannot invalidate the decision between checking and removal.
+        let global_evicted = if inner.lru.len() > self.max_idle_connections {
+            Some(Self::remove_oldest(&mut inner))
+        } else {
+            None
+        };
+        drop(inner);
+        // Transport destruction is optional maintenance too. Neither eviction
+        // path runs a transport destructor while holding the pool mutex.
+        drop(per_host_evicted);
+        drop(global_evicted);
     }
 
     /// Find the oldest stream in the pool. Remove its representation from lru,
-    /// and the stream itself from `recycle`. Drops the stream, which closes it.
-    fn remove_oldest(&self) {
-        assert!(!self.noop(), "remove_oldest called on Pool with max of 0");
-        let mut inner = self.inner.lock().unwrap();
+    /// and the stream itself from `recycle`. The caller holds the pool mutex
+    /// from its capacity check through this removal, and drops the returned
+    /// stream after releasing that guard.
+    fn remove_oldest(inner: &mut Inner) -> Stream {
         let key = inner.lru.pop_front();
         let key = key.expect("tried to remove oldest but no entries found!");
         match inner.recycle.entry(key) {
@@ -175,6 +187,7 @@ impl ConnectionPool {
                 if streams.is_empty() {
                     occupied_entry.remove();
                 }
+                stream
             }
             Entry::Vacant(_) => panic!("invariant failed: key existed in lru but not in recycle"),
         }
@@ -198,17 +211,15 @@ use std::fmt;
 
 impl fmt::Debug for PoolKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!(
-            "{}|{}|{}",
-            self.scheme,
-            self.hostname,
-            self.port.unwrap_or(0)
-        ))
+        f.debug_struct("PoolKey")
+            .field("tls", &(self.scheme == "https"))
+            .field("proxy", &self.proxy.is_some())
+            .finish_non_exhaustive()
     }
 }
 
 impl PoolKey {
-    fn new(url: &Url, proxy: Option<Proxy>) -> Self {
+    pub(crate) fn new(url: &Url, proxy: Option<Proxy>) -> Self {
         let port = url.port_or_known_default();
         PoolKey {
             scheme: url.scheme().to_string(),
@@ -218,6 +229,7 @@ impl PoolKey {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn from_parts(scheme: &str, hostname: &str, port: u16) -> Self {
         PoolKey {
             scheme: scheme.to_string(),
@@ -237,6 +249,9 @@ pub(crate) struct PoolReturner {
 }
 
 impl PoolReturner {
+    pub(crate) fn is_enabled(&self) -> bool {
+        self.inner.is_some()
+    }
     /// A PoolReturner that returns to the given Agent's Pool.
     pub(crate) fn new(agent: &Agent, pool_key: PoolKey) -> Self {
         Self {
@@ -266,24 +281,24 @@ pub(crate) struct PoolReturnRead<R: Read + Sized + Into<Stream>> {
     // wrapped reader around the same stream. It's an Option because we `take()` it
     // upon returning the stream to the Agent.
     reader: Option<R>,
+    failed: bool,
 }
 
 impl<R: Read + Sized + Into<Stream>> PoolReturnRead<R> {
     pub fn new(reader: R) -> Self {
         PoolReturnRead {
             reader: Some(reader),
+            failed: false,
         }
     }
 
-    fn return_connection(&mut self) -> io::Result<()> {
+    fn return_connection(&mut self) {
         // guard we only do this once.
         if let Some(reader) = self.reader.take() {
             // bring back stream here to either go into pool or dealloc
             let stream: Stream = reader.into();
-            stream.return_to_pool()?;
+            stream.return_to_pool();
         }
-
-        Ok(())
     }
 
     fn do_read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
@@ -296,11 +311,29 @@ impl<R: Read + Sized + Into<Stream>> PoolReturnRead<R> {
 
 impl<R: Read + Sized + Into<Stream>> Read for PoolReturnRead<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let amount = self.do_read(buf)?;
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        if self.failed {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "response body previously failed",
+            ));
+        }
+        let amount = match self.do_read(buf) {
+            Ok(amount) => amount,
+            Err(error) => {
+                if error.kind() != io::ErrorKind::Interrupted {
+                    self.failed = true;
+                    self.reader.take();
+                }
+                return Err(error);
+            }
+        };
         // only if the underlying reader is exhausted can we send a new
         // request to the same socket. hence, we only return it now.
         if amount == 0 {
-            self.return_connection()?;
+            self.return_connection();
         }
         Ok(amount)
     }
@@ -316,17 +349,21 @@ mod tests {
     use super::*;
 
     #[derive(Debug)]
-    struct NoopStream;
+    struct NoopStream(io::Cursor<Vec<u8>>);
 
     impl NoopStream {
         fn stream(pool_returner: PoolReturner) -> Stream {
-            Stream::new(NoopStream, remote_addr_for_test(), pool_returner)
+            Stream::new(
+                NoopStream(io::Cursor::new(vec![0; 500])),
+                remote_addr_for_test(),
+                pool_returner,
+            )
         }
     }
 
     impl Read for NoopStream {
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-            Ok(buf.len())
+            self.0.read(buf)
         }
     }
 
@@ -343,6 +380,203 @@ mod tests {
     impl ReadWrite for NoopStream {
         fn socket(&self) -> Option<&std::net::TcpStream> {
             None
+        }
+
+        fn is_idle_for_reuse(&mut self) -> io::Result<bool> {
+            Ok(self.0.position() == self.0.get_ref().len() as u64)
+        }
+    }
+
+    impl ConnectionPool {
+        // Inspect both indexes together, without exposing pool internals to
+        // production callers or relying on a separately maintained test model.
+        fn assert_invariants(&self) {
+            let inner = self.inner.lock().unwrap();
+            assert_eq!(
+                inner.lru.len(),
+                inner.recycle.values().map(VecDeque::len).sum::<usize>()
+            );
+            assert!(inner.lru.len() <= self.max_idle_connections);
+            if self.noop() {
+                assert!(inner.recycle.is_empty());
+            }
+            for (key, streams) in &inner.recycle {
+                assert!(!streams.is_empty());
+                assert!(streams.len() <= self.max_idle_connections_per_host);
+                assert_eq!(
+                    inner.lru.iter().filter(|entry| *entry == key).count(),
+                    streams.len()
+                );
+            }
+            assert!(inner.lru.iter().all(|key| inner.recycle.contains_key(key)));
+        }
+    }
+
+    fn key(host: &str) -> PoolKey {
+        PoolKey::from_parts("http", host, 80)
+    }
+
+    fn tagged(tag: u8) -> Stream {
+        Stream::new(
+            NoopStream(io::Cursor::new(vec![tag])),
+            remote_addr_for_test(),
+            PoolReturner::none(),
+        )
+    }
+
+    fn read_tag(mut stream: Stream) -> u8 {
+        let mut byte = [0];
+        stream.read_exact(&mut byte).unwrap();
+        assert_eq!(stream.read(&mut [0]).unwrap(), 0);
+        byte[0]
+    }
+
+    #[test]
+    fn global_eviction_and_checkout_preserve_both_indexes_and_order() {
+        let pool = ConnectionPool::new_with_limits(3, 3);
+        let (a, b, c, d) = (key("a"), key("b"), key("c"), key("d"));
+        for (key, tag) in [(&a, 1), (&b, 2), (&a, 3)] {
+            pool.add(key, tagged(tag));
+            pool.assert_invariants();
+        }
+        assert_eq!(read_tag(pool.remove(&a).unwrap()), 3); // newest A
+        pool.assert_invariants();
+        pool.add(&c, tagged(4));
+        pool.assert_invariants();
+        pool.add(&d, tagged(5)); // oldest is A1, not B2
+        pool.assert_invariants();
+        assert!(pool.remove(&a).is_none());
+        for (key, tag) in [(&b, 2), (&c, 4), (&d, 5)] {
+            assert_eq!(read_tag(pool.remove(key).unwrap()), tag);
+            assert!(pool.remove(key).is_none());
+            pool.assert_invariants();
+        }
+        assert_eq!(pool.len(), 0);
+    }
+
+    #[test]
+    fn per_host_eviction_preserves_the_oldest_surviving_entries() {
+        let pool = ConnectionPool::new_with_limits(4, 2);
+        let (a, b) = (key("a"), key("b"));
+        for (key, tag) in [(&a, 1), (&a, 2), (&b, 3), (&a, 4)] {
+            pool.add(key, tagged(tag));
+            pool.assert_invariants();
+        }
+        for (key, tag) in [(&a, 4), (&a, 2), (&b, 3)] {
+            assert_eq!(read_tag(pool.remove(key).unwrap()), tag);
+            pool.assert_invariants();
+        }
+        assert!(pool.remove(&a).is_none());
+        assert!(pool.remove(&b).is_none());
+    }
+
+    #[test]
+    fn zero_capacity_never_leaves_stale_index_entries() {
+        for (global, per_host) in [(0, 2), (2, 0), (0, 0)] {
+            let pool = ConnectionPool::new_with_limits(global, per_host);
+            let key = key("zero");
+            for tag in 0..4 {
+                pool.add(&key, tagged(tag));
+                pool.assert_invariants();
+                assert!(pool.remove(&key).is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn concurrent_add_and_checkout_preserve_pool_invariants() {
+        use std::sync::{Arc, Barrier};
+        let pool = Arc::new(ConnectionPool::new_with_limits(2, 2));
+        let start = Arc::new(Barrier::new(4));
+        std::thread::scope(|scope| {
+            for worker in 0..4u8 {
+                let (pool, start) = (pool.clone(), start.clone());
+                scope.spawn(move || {
+                    start.wait();
+                    for round in 0..128 {
+                        let key = key(&format!("host{}", (usize::from(worker) + round) % 4));
+                        pool.add(&key, tagged(worker));
+                        pool.assert_invariants();
+                        if let Some(stream) = pool.try_get_connection(
+                            &Url::parse(&format!(
+                                "http://host{}/",
+                                (usize::from(worker) + round + 1) % 4
+                            ))
+                            .unwrap(),
+                            None,
+                        ) {
+                            assert!(read_tag(stream) < 4);
+                        }
+                        pool.assert_invariants();
+                    }
+                });
+            }
+        });
+        pool.assert_invariants();
+        for host in 0..4 {
+            let key = key(&format!("host{host}"));
+            while let Some(stream) = pool.remove(&key) {
+                assert!(read_tag(stream) < 4);
+                pool.assert_invariants();
+            }
+        }
+        assert_eq!(pool.len(), 0);
+    }
+
+    #[derive(Debug)]
+    struct DropProbe {
+        pool: std::sync::Weak<ConnectionPool>,
+        observed: std::sync::mpsc::Sender<bool>,
+    }
+    impl Read for DropProbe {
+        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+            Ok(0)
+        }
+    }
+    impl io::Write for DropProbe {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    impl ReadWrite for DropProbe {
+        fn socket(&self) -> Option<&std::net::TcpStream> {
+            None
+        }
+    }
+    impl Drop for DropProbe {
+        fn drop(&mut self) {
+            let unlocked = self
+                .pool
+                .upgrade()
+                .is_some_and(|pool| pool.inner.try_lock().is_ok());
+            // A prior assertion failure can already have closed the receiver.
+            // Avoid a second fixture panic during unwinding.
+            let _ = self.observed.send(unlocked);
+        }
+    }
+
+    #[test]
+    fn evicted_transport_destruction_happens_outside_the_pool_lock() {
+        use std::sync::{mpsc, Arc};
+        for per_host in [false, true] {
+            let pool = Arc::new(ConnectionPool::new_with_limits(1, 1));
+            let (tx, rx) = mpsc::channel();
+            let a = key("a");
+            let victim = Stream::new(
+                DropProbe {
+                    pool: Arc::downgrade(&pool),
+                    observed: tx,
+                },
+                remote_addr_for_test(),
+                PoolReturner::none(),
+            );
+            pool.add(&a, victim);
+            pool.add(&if per_host { a } else { key("b") }, tagged(1));
+            assert!(rx.try_recv().unwrap());
+            pool.assert_invariants();
         }
     }
 
@@ -440,7 +674,7 @@ mod tests {
         let agent = Agent::new();
         let pool_key = PoolKey::new(&url, None);
         let stream = NoopStream::stream(PoolReturner::new(&agent, pool_key));
-        let mut limited_read = LimitedRead::new(stream, std::num::NonZeroUsize::new(500).unwrap());
+        let mut limited_read = LimitedRead::new(stream, std::num::NonZeroU64::new(500).unwrap());
 
         limited_read.read_exact(&mut out_buf).unwrap();
 
@@ -474,7 +708,7 @@ mod tests {
         let agent = Agent::new();
         assert_eq!(agent.state.pool.len(), 0);
 
-        let ro = crate::test::TestStream::new(Cursor::new(gz_body), std::io::sink());
+        let ro = NoopStream(Cursor::new(gz_body));
         let stream = Stream::new(
             ro,
             "1.1.1.1:4343".parse().unwrap(),
