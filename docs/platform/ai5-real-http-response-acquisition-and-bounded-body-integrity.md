@@ -1,5 +1,7 @@
 # AI5: Real HTTP Response Acquisition And Bounded Body Integrity
 
+Current source management: [the AI subtree maintenance contract](ai-dependency-subtree-maintenance.md) governs Borrowser-owned ureq development, current qualification and upstream history. The dated AI3/AI5 package and patch records below remain historical evidence; HTTP behavior is unchanged.
+
 Issue: [#1125](https://github.com/joris97jansen/borrowser/issues/1125).
 Milestone AI — Fetch, HTTP Networking, Redirects, and Response Handling.
 Implementation baseline: master `6c2789f3b90041fcc5dec2c53d5d2b1ee1c55194`.

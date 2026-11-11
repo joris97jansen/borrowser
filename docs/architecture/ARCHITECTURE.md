@@ -78,7 +78,7 @@ AH1 deferred physical placement. AH2 selects the dedicated `addressing` crate
 below its consumers; it owns immutable `BrowserUrl` values, absolute parsing,
 explicit-base resolution, typed diagnostics, normalized serialization, complete
 URL equality, and content-redacted debug output. AH3 subsequently adopted the
-revision-pinned maintained `url` fork selected by Cargo.lock. The existing `platform` crate owns window/runtime
+qualified maintained `url` implementation. Its source and ureq are now Borrowser-owned non-squashed Git subtrees; [the dependency maintenance contract](../platform/ai-dependency-subtree-maintenance.md) defines source qualification, upstream integration and owner-controlled adoption. The existing `platform` crate owns window/runtime
 integration and depends on addressing consumers, so it cannot serve this role
 without reversing dependency direction. The
 [AH2 contract](../platform/ah2-typed-url-parsing-and-diagnostics.md)

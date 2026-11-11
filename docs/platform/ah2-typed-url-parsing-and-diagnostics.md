@@ -1,5 +1,7 @@
 # AH2: Typed URL Parsing, Resolution, And Diagnostics
 
+Current dependency ownership: [the AI subtree maintenance contract](ai-dependency-subtree-maintenance.md) supersedes historical Git-dependency routing below. Approved parser behavior, source revision and qualification findings are preserved.
+
 Current resource-address integration: [AH6](ah6-resource-addresses-and-identity-keys.md)
 adds typed complete references, fragmentless retrieval keys and operation capabilities.
 Browser's stylesheet handoff now retains references separately from issued request

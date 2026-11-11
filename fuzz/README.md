@@ -696,3 +696,13 @@ cargo run -p css --features css-fuzzing --bin css_fuzz_regression_summary -- \
 The promoted CSS regression fixtures are intentionally version-controlled and
 checked in normal test runs so fuzz-discovered failures remain reproducible even
 without libFuzzer.
+
+## Qualified URL subtree
+
+This workspace patches `url` to `../vendor/rust-url/url`; sibling manifests select
+the qualified local IDNA, form and percent-encoding crates. Its separate lockfile
+and default/all-features graphs remain mandatory. Prepare dependencies with
+`cargo fetch --manifest-path fuzz/Cargo.toml --locked`, then run the root
+`make check-url-dependencies` gate in a complete committed checkout. See the
+[dependency maintenance contract](../docs/platform/ai-dependency-subtree-maintenance.md)
+for source modes, history verification and deliberate requalification.
