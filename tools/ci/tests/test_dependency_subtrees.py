@@ -55,6 +55,23 @@ class DependencySubtrees(unittest.TestCase):
             raise AssertionError((args, result.returncode, result.stdout[-1000:], result.stderr[-2000:]))
         return result
 
+    @classmethod
+    def split_subtree(cls, root, prefix, *revisions):
+        # git-subtree recursively visits uncached parents. Ubuntu's /bin/sh
+        # (dash) reaches its function limit on the real imported histories.
+        # Run the installed, unmodified script with Bash; keep the same inputs
+        # and verify split identities/trees/ancestry in the calling tests.
+        exec_path = cls.run_git(root, "--exec-path").stdout.strip()
+        environment = dict(cls.environment, GIT_EXEC_PATH=exec_path,
+                           PATH=exec_path + os.pathsep + cls.environment["PATH"])
+        command = ["bash", str(Path(exec_path) / "git-subtree"), "split",
+                   "--prefix=" + prefix, *revisions]
+        result = subprocess.run(command, cwd=root, capture_output=True, text=True,
+                                env=environment, timeout=120)
+        if result.returncode:
+            raise AssertionError((command, result.returncode, result.stdout[-1000:], result.stderr[-2000:]))
+        return result.stdout.strip()
+
     def setUp(self):
         self.case = Path(tempfile.mkdtemp(dir=self.directory))
         self.repo = self.case / "host"
@@ -601,7 +618,7 @@ class DependencySubtrees(unittest.TestCase):
 
     def test_actual_ureq_bridge_primary_history_and_split_are_distinct(self):
         bridge = self.policy["history"]["C4"]
-        split = self.run_git(self.repo, "subtree", "split", "--prefix=vendor/ureq", bridge).stdout.strip()
+        split = self.split_subtree(self.repo, "vendor/ureq", bridge)
         self.assertEqual(split, check.UREQ_RELEASE)
         self.assertTrue(check.ancestor(self.repo, check.UREQ_MAINT_RELEASE, bridge))
         self.assertFalse(check.ancestor(self.repo, check.UREQ_MAINT_RELEASE, split))
@@ -632,7 +649,7 @@ class DependencySubtrees(unittest.TestCase):
         advanced["dependencies"][name].update(
             upstream_revision=first, upstream_merge=self.run_git(host, "rev-parse", "HEAD").stdout.strip())
         check.check_history(host, advanced)
-        split = self.run_git(host, "subtree", "split", "--prefix=vendor/" + name).stdout.strip()
+        split = self.split_subtree(host, "vendor/" + name)
         # Split reconstructs the originally imported release history. The ureq
         # maintenance bridge belongs to primary history, not necessarily split.
         split_base = check.URL_SOURCE if name == "rust-url" else check.UREQ_RELEASE

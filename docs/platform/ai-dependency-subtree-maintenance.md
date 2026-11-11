@@ -272,6 +272,23 @@ content-neutral bridge returned the original published release while omitting
 the divergent maintenance-release ancestry. Later upstream merges can retain
 correct split contents without retaining their upstream tip in the split graph.
 
+Run splits with Bash explicitly. The installed `git-subtree` shell script
+recursively visits uncached parents in these real imported histories; Ubuntu's
+`/bin/sh` (dash) can stop with `Maximum function recursion depth (1000) reached`.
+The history tests use the same installed, unmodified script under Bash, without
+changing revisions, excluding history or relaxing split assertions. From the
+repository root, for example:
+
+```sh
+subtree_exec="$(git --exec-path)"
+GIT_EXEC_PATH="$subtree_exec" PATH="$subtree_exec:$PATH" \
+  bash "$subtree_exec/git-subtree" split --prefix=vendor/ureq
+```
+
+Use `--prefix=vendor/rust-url` for rust-url. Bash is required for this split
+qualification profile on Linux/macOS; native Windows execution remains
+unqualified. This does not change the non-squashed import or merge procedure.
+
 A successful split is not automatically suitable for pushing to an official
 branch. Inspect its tree against the source prefix, ancestry against the exact
 upstream target, complete commit range and full diff. Never directly push to the
