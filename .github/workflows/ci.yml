@@ -463,7 +463,7 @@ jobs:
     if: ${{ !startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-') }}
     name: Rust (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     env:
       RUST_BACKTRACE: 1
@@ -486,6 +486,15 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify checkout and committed subtree history
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -I -B tools/ci/check_dependency_subtrees.py
 
       - name: Install Linux system dependencies
         if: matrix.full_deps
@@ -512,16 +521,19 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Verify qualified URL dependency sources and graphs
+      - name: Prepare locked main and fuzz dependency caches
         run: |
-          # Prepare every workspace feature/target edge before the offline
-          # networking verifier tests run in the existing CI-tool discovery.
-          cargo metadata --all-features --locked --format-version 1 > /dev/null
-          make check-url-dependencies
+          cargo fetch --locked
+          cargo fetch --manifest-path fuzz/Cargo.toml --locked
 
-      # The URL check resolves both workspaces online with --locked first.
-      # Keep this after it so offline metadata also works on cache misses.
-      - name: Verify pinned network dependency source and locked selection
+      - name: Verify qualified local URL sources and dependency graphs
+        env:
+          CARGO_NET_OFFLINE: 'true'
+        run: make check-url-dependencies
+
+      - name: Verify qualified ureq source, history and dependency selection
+        env:
+          CARGO_NET_OFFLINE: 'true'
         run: make check-network-dependencies
 
       - name: Rustfmt (check)

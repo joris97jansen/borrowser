@@ -1,11 +1,27 @@
 #!/usr/bin/env python3
-"""Enforce the AH8-qualified URL source and frozen graph in both Cargo workspaces."""
+"""Verify qualified rust-url subtree source and both offline Cargo graphs."""
 
+import sys
+
+if __name__ == "__main__" and (not sys.flags.isolated or not sys.dont_write_bytecode):
+    sys.exit("Run this qualification entry point with python3 -I -B (isolated imports, no cache writes).")
+
+import argparse
+import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
-import sys
 import tomllib
+
+if __name__ == "__main__":
+    # Execute the checker source, not an import that may select cached bytecode.
+    if subprocess.run([sys.executable, "-I", "-B", str(Path(__file__).with_name(
+            "check_dependency_subtrees.py")), "--python-preflight"]).returncode:
+        sys.exit(2)
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import check_dependency_subtrees as subtrees
 
 # Reviewed CI policy, independent of the manifests/locks being checked.
 # Qualification graph lock SHA-256:
@@ -18,6 +34,9 @@ APPROVED_REVISION = "92f7fb395f9ffb2f706e7c664283781fd3b294a2"
 APPROVED_REPOSITORY = "https://github.com/joris97jansen/rust-url.git"
 APPROVED_SOURCE = f"git+{APPROVED_REPOSITORY}?rev={APPROVED_REVISION}#{APPROVED_REVISION}"
 REGISTRY_SOURCE = "registry+https://github.com/rust-lang/crates.io-index"
+# Cargo 1.92 RegistrySource::short_name for the official sparse and Git indexes.
+# Cache layout changes require explicit qualification, not a permissive fallback.
+REGISTRY_CACHE_NAMES = {"index.crates.io-1949cf8c6b5b557f", "github.com-25cdd57fae9f0462"}
 FORK_VERSIONS = {
     "url": "2.5.8",
     "idna": "1.1.0",
@@ -59,90 +78,229 @@ REGISTRY_PACKAGES = {
 }
 
 
-def load_resolution(manifest):
-    """Ask Cargo for the actual selection; never infer Git identity from the lock."""
+# Current qualification is independent of historical snapshot reconstruction.
+
+UPSTREAM_REVISION = subtrees.SERVO_BASE
+LOCAL_CRATES = {"url": "url", "idna": "idna", "form_urlencoded": "form_urlencoded",
+                "percent-encoding": "percent_encoding"}
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def canonical(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+
+
+def read_json(data):
+    return json.loads(data, object_pairs_hook=subtrees.unique_object)
+
+
+def require_directory(path):
+    subtrees.real_directory(path)
+
+
+def require_file(root, relative):
+    return subtrees.real_file(root, relative)
+
+
+def check_sources(root):
+    return subtrees.verify_source(root, "rust-url")
+
+
+def load_resolution(manifest, arguments=()):
+    """Inspect actual locked selection offline; never repair a manifest or lock."""
     lock_path = manifest.with_name("Cargo.lock")
     before = lock_path.read_bytes()
-    result = subprocess.run(
-        ["cargo", "metadata", "--locked", "--format-version", "1",
-         "--manifest-path", str(manifest)],
-        check=True, capture_output=True, text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["cargo", "metadata", "--offline", "--locked", "--format-version", "1",
+             "--manifest-path", str(manifest), *arguments],
+            check=True, capture_output=True, text=True,
+        )
+    finally:
+        if lock_path.read_bytes() != before:
+            raise ValueError(f"{manifest}: locked metadata changed Cargo.lock")
     if result.stderr:
         print(result.stderr, end="", file=sys.stderr)
-    after = lock_path.read_bytes()
-    if after != before:
-        raise ValueError(f"{manifest}: locked metadata changed Cargo.lock")
-    return json.loads(result.stdout), tomllib.loads(after.decode())
+    return read_json(result.stdout), tomllib.loads(before.decode())
 
 
-def verify_resolution(metadata, lock, label):
+def check_workspace_records(root, label):
+    """Static configuration shared with the observational monitor, without Cargo."""
+    if label not in ("main", "fuzz"):
+        raise ValueError("unsupported rust-url consumer workspace")
+    directory = root if label == "main" else root / "fuzz"
+    relative = "" if label == "main" else "fuzz/"
+    manifest = tomllib.loads(require_file(root, relative + "Cargo.toml").read_text())
+    lock = tomllib.loads(require_file(root, relative + "Cargo.lock").read_text())
+    expected = {"url": {"path": "vendor/rust-url/url"},
+                "percent-encoding": {"path": "vendor/rust-url/percent_encoding"}} if label == "main" else {
+                    "url": {"path": "../vendor/rust-url/url"}}
+    patches = manifest.get("patch", {}).get("crates-io", {})
+    if {name: declaration for name, declaration in patches.items() if name in FORK_VERSIONS} != expected:
+        raise ValueError(f"{label}: unsupported rust-url path patch configuration")
+    if label == "main" and "vendor/rust-url" not in manifest["workspace"].get("exclude", []):
+        raise ValueError("main: nested rust-url workspace must be excluded")
+    for dependencies in (manifest.get("dependencies", {}),
+                         manifest.get("workspace", {}).get("dependencies", {})):
+        for name in FORK_VERSIONS:
+            declaration = dependencies.get(name)
+            if declaration is not None and not isinstance(declaration, (str, dict)):
+                raise ValueError(f"{label}: unsupported {name} declaration")
+            if isinstance(declaration, dict) and ({"path", "git", "rev", "branch", "tag", "registry"} & declaration.keys()
+                                                  or declaration.get("package", name) != name):
+                raise ValueError(f"{label}: source override outside approved patches")
+    for name, version in FORK_VERSIONS.items():
+        selected = [p for p in lock["package"] if p["name"] == name]
+        if len(selected) != 1 or selected[0]["version"] != version or {"source", "checksum"} & selected[0].keys():
+            raise ValueError(f"{label}: locked {name} must select the approved local version")
+        require_file(root, "vendor/rust-url/" + LOCAL_CRATES[name] + "/Cargo.toml")
+    if any("github.com/joris97jansen/rust-url" in p.get("source", "") for p in lock["package"]):
+        raise ValueError(f"{label}: unexpected residual Git source")
+    return directory / "Cargo.toml", lock
+
+
+def load_graph_policy(root):
+    return subtrees.load_qualification(root)["url_cargo"]
+
+
+def verify_registry_origin(package, label):
+    """Approve the effective location, not just Cargo's replacement-preserved ID.
+
+    Cargo 1.92 keeps registry source IDs for DirectorySource replacements. Its
+    editable .cargo-checksum.json is mandatory even inside a registry cache;
+    it is not independent authorization. This checks location/entry types,
+    not the cryptographic integrity of every extracted registry source file.
+    """
+    name = package["name"]
+    try:
+        if package["source"] != REGISTRY_SOURCE:
+            raise ValueError("unexpected registry identity")
+        # Match home::cargo_home_with_cwd: empty/unset uses HOME/.cargo;
+        # relative CARGO_HOME is relative to the Cargo invocation's cwd.
+        home = Path(os.path.abspath(os.environ.get("CARGO_HOME") or Path.home() / ".cargo"))
+        real_home = home.resolve(strict=True)
+        require_directory(real_home)
+        manifest = Path(package["manifest_path"])
+        # Resolve the explicitly configured home boundary only. Do not resolve
+        # away symlinks in the cache or package path before admitting entries.
+        boundary = home if manifest.is_relative_to(home) else real_home
+        relative = manifest.relative_to(boundary)
+        parts = relative.parts
+        if (len(parts) != 5 or parts[:2] != ("registry", "src")
+                or parts[2] not in REGISTRY_CACHE_NAMES
+                or parts[3:] != (f"{name}-{package['version']}", "Cargo.toml")):
+            raise ValueError("outside approved crates.io extraction layout")
+        require_file(boundary, relative)
+        if os.path.lexists(manifest.with_name(".cargo-checksum.json")):
+            raise ValueError("directory-source checksum record is not approved")
+    except (OSError, ValueError, TypeError, RuntimeError) as error:
+        raise ValueError(f"{label}: unapproved registry origin for {name}: {error}") from error
+
+
+def verify_resolution(metadata, lock, label, root=ROOT, expected_graph=None):
+    if metadata.get("version") != 1 or not isinstance(metadata.get("resolve"), dict):
+        raise ValueError(f"{label}: unsupported Cargo metadata")
     packages = {p["id"]: p for p in metadata["packages"]}
+    nodes = {n["id"]: n for n in metadata["resolve"]["nodes"]}
+    if len(packages) != len(metadata["packages"]) or len(nodes) != len(metadata["resolve"]["nodes"]):
+        raise ValueError(f"{label}: duplicate Cargo identity")
+    if set(nodes) != set(packages):
+        raise ValueError(f"{label}: incomplete Cargo resolution")
+    if any(Path(packages[member]["manifest_path"]).is_relative_to(root / "vendor/rust-url")
+           for member in metadata["workspace_members"]):
+        raise ValueError(f"{label}: vendored crate joined consumer workspace")
     for name, version in FORK_VERSIONS.items():
         selected = [p for p in packages.values() if p["name"] == name]
         if len(selected) != 1:
             raise ValueError(f"{label}: expected one {name} instance, found {len(selected)}")
         package = selected[0]
-        if package["source"] != APPROVED_SOURCE:
-            raise ValueError(f"{label}: {name} must resolve from the approved fork at {APPROVED_REVISION}")
+        expected_path = require_file(root, "vendor/rust-url/" + LOCAL_CRATES[name] + "/Cargo.toml")
+        if package["source"] is not None or Path(package["manifest_path"]) != expected_path:
+            raise ValueError(f"{label}: {name} must resolve from the approved local manifest")
         if package["version"] != version:
             raise ValueError(f"{label}: unexpected {name} version {package['version']}")
-
-    nodes = {node["id"]: node for node in metadata["resolve"]["nodes"]}
+    if any("github.com/joris97jansen/rust-url" in (p.get("source") or "") for p in packages.values()):
+        raise ValueError(f"{label}: unexpected Git fallback")
     pending = [p["id"] for p in packages.values() if p["name"] == "url"]
     closure = set()
-    while pending:
-        package_id = pending.pop()
-        if package_id in closure:
-            continue
-        closure.add(package_id)
-        pending.extend(
-            dep["pkg"] for dep in nodes[package_id]["deps"]
-            if any(kind["kind"] != "dev" for kind in dep["dep_kinds"])
-        )
-
-    actual = {(packages[p]["name"], packages[p]["version"]) for p in closure}
-    expected = set(FORK_VERSIONS.items()) | {
-        (name, version) for name, (version, _) in REGISTRY_PACKAGES.items()
-    }
+    try:
+        while pending:
+            package_id = pending.pop()
+            if package_id in closure:
+                continue
+            closure.add(package_id)
+            pending.extend(d["pkg"] for d in nodes[package_id]["deps"]
+                           if any(kind["kind"] != "dev" for kind in d["dep_kinds"]))
+        actual = {(packages[p]["name"], packages[p]["version"]) for p in closure}
+    except KeyError as error:
+        raise ValueError(f"{label}: incomplete Cargo dependency edge") from error
+    expected = set(FORK_VERSIONS.items()) | {(n, v) for n, (v, _) in REGISTRY_PACKAGES.items()}
     if actual != expected or len(closure) != len(expected):
-        raise ValueError(
-            f"{label}: qualified URL closure changed; "
-            f"missing={sorted(expected - actual)}, unexpected={sorted(actual - expected)}"
-        )
-
-    # Metadata supplies the resolved identity; the lock supplies its registry
-    # checksum, which must match the separately frozen qualification policy.
+        raise ValueError(f"{label}: qualified URL closure changed")
     locked = {(p["name"], p["version"], p.get("source")): p for p in lock["package"]}
-    for package_id in sorted(closure):
+    if len(locked) != len(lock["package"]):
+        raise ValueError(f"{label}: duplicate locked package identity")
+    projection = []
+    for package_id in closure:
         package = packages[package_id]
         name = package["name"]
+        recorded = locked.get((name, package["version"], package["source"]))
+        if recorded is None:
+            raise ValueError(f"{label}: selected package missing from lock: {name}")
         if name in FORK_VERSIONS:
-            continue
-        if package["source"] != REGISTRY_SOURCE:
-            raise ValueError(f"{label}: unexpected registry source for {name}")
-        coordinate = (name, package["version"], package["source"])
-        recorded = locked.get(coordinate)
-        if recorded is None or recorded.get("checksum") != REGISTRY_PACKAGES[name][1]:
-            raise ValueError(f"{label}: qualified checksum mismatch for {name}")
+            if "source" in recorded or "checksum" in recorded:
+                raise ValueError(f"{label}: nonlocal locked source: {name}")
+        else:
+            if package["source"] != REGISTRY_SOURCE or recorded.get("checksum") != REGISTRY_PACKAGES[name][1]:
+                raise ValueError(f"{label}: qualified checksum mismatch for {name}")
+            verify_registry_origin(package, label)
+        node = nodes[package_id]
+        edges = []
+        for dep in node["deps"]:
+            kinds = [kind for kind in dep["dep_kinds"] if kind["kind"] != "dev"]
+            if kinds:
+                edges.append({"name": dep["name"], "package": packages[dep["pkg"]]["name"],
+                              "kinds": sorted(kinds, key=canonical)})
+        projection.append({"package": name, "features": sorted(node["features"]),
+                           "edges": sorted(edges, key=canonical)})
+    if expected_graph is None:
+        expected_graph = load_graph_policy(root)["graphs"][label]
+    if sorted(projection, key=lambda n: n["package"]) != expected_graph:
+        raise ValueError(f"{label}: qualified dependency edges or features changed")
 
 
-def check_workspace(manifest, label):
-    metadata, lock = load_resolution(manifest)
-    verify_resolution(metadata, lock, label)
-    print(f"{label}: approved URL revision and 35-package dependency closure verified")
+def check_workspace(manifest, label, arguments=(), expected_graph=None):
+    root = manifest.parent if label == "main" else manifest.parent.parent
+    metadata, lock = load_resolution(manifest, arguments)
+    verify_resolution(metadata, lock, label, root, expected_graph)
+    print(f"{label} {list(arguments)}: exact local source, registry origins, 35-package graph, edges and features verified")
 
 
 def check_repo(root):
-    check_workspace(root / "Cargo.toml", "main")
-    check_workspace(root / "fuzz/Cargo.toml", "fuzz")
+    check_sources(root)
+    policy = load_graph_policy(root)
+    manifests = {label: check_workspace_records(root, label)[0] for label in ("main", "fuzz")}
+    for name, configuration in sorted(policy["configurations"].items(), key=lambda p: (p[1]["workspace"] != "main", p[0])):
+        label = configuration["workspace"]
+        check_workspace(manifests[label], label, configuration["arguments"], policy["graphs"][label])
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source-only", action="store_true")
+    arguments = parser.parse_args()
     try:
-        check_repo(Path(__file__).resolve().parents[2])
+        if arguments.source_only:
+            check_sources(ROOT)
+            print("rust-url: qualified source bytes, modes and original license links verified")
+        else:
+            check_repo(ROOT)
     except subprocess.CalledProcessError as error:
         print(error.stderr, file=sys.stderr)
         sys.exit(error.returncode)
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         sys.exit(str(error))

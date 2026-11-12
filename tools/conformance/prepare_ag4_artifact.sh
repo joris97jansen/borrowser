@@ -2,7 +2,7 @@
 # Standard Git temporary-index snapshot, then two builds from that exact tree.
 set -eu
 exec python3 - "$0" "$@" <<'PY'
-import argparse, hashlib, json, os, pathlib, shutil, ssl, stat, sys, tempfile
+import argparse, hashlib, json, os, pathlib, shutil, ssl, stat, sys, tarfile, tempfile
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(pathlib.Path(sys.argv.pop(1)).resolve().parent))
 from prepare_ag4_process import Preparation
@@ -36,8 +36,6 @@ run = preparation.run
 def git(*args, env=None, data=None):
     return run(["git", "-c", "core.autocrlf=false", *args], env=env, data=data)
 
-tracked = set(git("ls-files", "--cached", "-z").decode().split("\0")) - {""}
-untracked = set(git("ls-files", "--others", "--exclude-standard", "-z").decode().split("\0")) - {""}
 private_parts = {".git", ".aws", ".ssh", ".agents", ".codex", ".venv", "__pycache__", "node_modules", "target", "cdk.out", "artifacts", "operations"}
 private_names = {"AGENTS.md", "WORKFLOW.md", "operator.json", "operation.json", "artifact.json", "capture.json", "known_hosts", "id_ed25519", "id_rsa", "credentials", "credentials.toml", "config.local.json"}
 source_suffixes = {".rs", ".toml", ".lock", ".md", ".html", ".css", ".sh", ".py", ".yml", ".yaml", ".txt", ".snap", ".bin", ".selector", ".dat", ".cases", ".in", ".Dockerfile"}
@@ -49,17 +47,96 @@ def excluded(name):
     return (any(part in private_parts or part.startswith(".env") for part in path.parts)
         or path.name in private_names or (path.suffix in {".pem", ".key", ".p12", ".pfx"} and name not in public_pem))
 
-files = []
-for name in sorted(tracked | untracked):
-    if excluded(name): continue
-    path = source / name
-    if not path.exists(): continue  # Working-tree deletions are part of this tree.
-    if path.is_symlink() or not path.is_file(): raise RuntimeError("unsupported source entry: " + name)
-    if name in untracked:
-        fixture_json = name.startswith("crates/conformance/fixtures/") and name.endswith((".fixture.json", ".expected.json"))
-        if pathlib.PurePosixPath(name).suffix not in source_suffixes and name not in new_json and not fixture_json:
-            raise RuntimeError("unreviewed new source input: " + name)
-    files.append(name)
+def read_entry(root, name):
+    # Never traverse a source-directory link or open a file through a link.
+    # lstat/readlink also keep dangling links visible instead of treating them
+    # as working-tree deletions. Git stores the target bytes, not target data.
+    parts = pathlib.PurePosixPath(name).parts
+    if not parts or parts[0] == "/" or ".." in parts:
+        raise RuntimeError("unsafe source path: " + name)
+    directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        try:
+            for part in parts[:-1]:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+                os.close(directory); directory = child
+            before = os.stat(parts[-1], dir_fd=directory, follow_symlinks=False)
+        except FileNotFoundError:
+            return None  # An absent entry/parent is an intentional deletion.
+        if stat.S_ISLNK(before.st_mode):
+            contents = os.readlink(os.fsencode(parts[-1]), dir_fd=directory)
+            mode = "120000"
+        elif stat.S_ISREG(before.st_mode):
+            fd = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+            with os.fdopen(fd, "rb") as file:
+                opened = os.fstat(file.fileno())
+                if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+                    raise RuntimeError("source changed during snapshot: " + name)
+                contents = file.read()
+            mode = "100755" if before.st_mode & stat.S_IXUSR else "100644"
+        else:
+            raise RuntimeError("unsupported source entry: " + name)
+        after = os.stat(parts[-1], dir_fd=directory, follow_symlinks=False)
+        if (before.st_dev, before.st_ino, before.st_mode, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
+                after.st_dev, after.st_ino, after.st_mode, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+            raise RuntimeError("source changed during snapshot: " + name)
+        return mode, contents
+    finally:
+        os.close(directory)
+
+
+def validate_links(entries):
+    directories = {str(parent) for name in entries for parent in pathlib.PurePosixPath(name).parents}
+    for name, (mode, _contents) in entries.items():
+        if mode != "120000": continue
+        current, visited = name, set()
+        while entries[current][0] == "120000":
+            if current in visited:
+                raise RuntimeError("cyclic source symlink: " + name)
+            visited.add(current)
+            target = os.fsdecode(entries[current][1])
+            if not target or target.startswith("/"):
+                raise RuntimeError("absolute or empty source symlink: " + name)
+            parts = list(pathlib.PurePosixPath(current).parent.parts)
+            for part in target.split("/"):
+                # Every intermediate component must be an included directory;
+                # do not normalize away a private path or traverse a file link.
+                if "/".join(parts) in entries:
+                    raise RuntimeError("source symlink traverses a file: " + name)
+                if part == "..":
+                    if not parts: raise RuntimeError("escaping source symlink: " + name)
+                    parts.pop()
+                elif part not in {"", "."}:
+                    parts.append(part)
+                candidate = "/".join(parts)
+                if excluded(candidate):
+                    raise RuntimeError("source symlink targets excluded input: " + name)
+                if candidate not in entries and (candidate or ".") not in directories:
+                    raise RuntimeError("dangling source symlink: " + name)
+            current = "/".join(parts)
+            if current not in entries:
+                raise RuntimeError("source symlink must target an included file: " + name)
+
+
+def source_entries():
+    tracked = set(git("ls-files", "--cached", "-z").decode().split("\0")) - {""}
+    untracked = set(git("ls-files", "--others", "--exclude-standard", "-z").decode().split("\0")) - {""}
+    entries = {}
+    for name in sorted(tracked | untracked):
+        if excluded(name): continue
+        entry = read_entry(source, name)
+        if entry is None: continue
+        if name in untracked:
+            if entry[0] == "120000": raise RuntimeError("untracked source symlink: " + name)
+            fixture_json = name.startswith("crates/conformance/fixtures/") and name.endswith((".fixture.json", ".expected.json"))
+            if pathlib.PurePosixPath(name).suffix not in source_suffixes and name not in new_json and not fixture_json:
+                raise RuntimeError("unreviewed new source input: " + name)
+        entries[name] = entry
+    validate_links(entries)
+    return entries
+
+
+entries = source_entries()
 
 snapshot = out / "source"
 snapshot.mkdir()
@@ -71,42 +148,55 @@ with tempfile.TemporaryDirectory(prefix="ag4-git-") as temporary:
     env = dict(os.environ, GIT_INDEX_FILE=str(temporary / "index"), GIT_OBJECT_DIRECTORY=str(objects),
                GIT_ALTERNATE_OBJECT_DIRECTORIES=str(original_objects.resolve()))
     git("read-tree", "--empty", env=env)
-    recorded = {}
     index_entries = []
-    for name in files:
-        path = source / name
-        contents = path.read_bytes()
-        mode = "100755" if path.stat().st_mode & stat.S_IXUSR else "100644"
+    for name, (mode, contents) in entries.items():
         oid = git("hash-object", "-w", "--stdin", "--no-filters", env=env, data=contents).decode().strip()
         index_entries.append((mode + " " + oid + "\t" + name + "\0").encode())
-        recorded[name] = (mode, hashlib.sha256(contents).digest())
     git("update-index", "-z", "--index-info", env=env, data=b"".join(index_entries))
     tree = git("write-tree", env=env).decode().strip()
     archive = temporary / "source.tar"
     git("archive", "--format=tar", "--output=" + str(archive), tree, env=env)
+    # Check the actual archive before extraction, including Git attributes and
+    # link records. No archive link may introduce a different target/type.
+    directories = {str(parent) for name in entries for parent in pathlib.PurePosixPath(name).parents} - {"."}
+    with tarfile.open(archive) as bundle:
+        seen, exported = set(), set()
+        for member in bundle:
+            name = member.name.rstrip("/") if member.isdir() else member.name
+            if name in seen: raise RuntimeError("duplicate archive entry: " + name)
+            seen.add(name)
+            if member.isdir() and name in directories: continue
+            if name not in entries: raise RuntimeError("unexpected archive entry: " + name)
+            if member.issym():
+                entry = "120000", os.fsencode(member.linkname)
+            elif member.isfile():
+                entry = ("100755" if member.mode & stat.S_IXUSR else "100644"), bundle.extractfile(member).read()
+            else:
+                raise RuntimeError("unsupported archive entry: " + name)
+            if entry != entries[name]: raise RuntimeError("archive changed source entry: " + name)
+            exported.add(name)
+        if exported != set(entries): raise RuntimeError("Git attributes changed the exported source set")
     run(["tar", "-xf", str(archive), "-C", str(snapshot)])
-    exported = {str(path.relative_to(snapshot)) for path in snapshot.rglob("*") if path.is_file() or path.is_symlink()}
-    if exported != set(recorded): raise RuntimeError("Git attributes changed the exported source set")
-    for name, (mode, digest) in recorded.items():
-        path = snapshot / name
-        if path.is_symlink() or hashlib.sha256(path.read_bytes()).digest() != digest:
-            raise RuntimeError("export changed source bytes: " + name)
-        if ("100755" if path.stat().st_mode & stat.S_IXUSR else "100644") != mode:
-            raise RuntimeError("export changed source mode: " + name)
-        current = source / name
-        if not current.is_file() or hashlib.sha256(current.read_bytes()).digest() != digest:
-            raise RuntimeError("source changed during snapshot: " + name)
-    current_names = set(git("ls-files", "--cached", "--others", "--exclude-standard", "-z").decode().split("\0")) - {""}
-    current_names = {name for name in current_names if not excluded(name) and (source / name).exists()}
-    if current_names != set(recorded): raise RuntimeError("source file set changed during snapshot")
+    exported = set()
+    for directory, subdirs, names in os.walk(snapshot, followlinks=False):
+        for name in subdirs + names:
+            path = pathlib.Path(directory) / name
+            if not stat.S_ISDIR(path.lstat().st_mode): exported.add(str(path.relative_to(snapshot)))
+    if exported != set(entries): raise RuntimeError("export changed source file set")
+    for name, entry in entries.items():
+        if read_entry(snapshot, name) != entry:
+            raise RuntimeError("export changed source entry: " + name)
     # Retain the exact tree as a standard Git bundle-independent archive.
     shutil.copyfile(archive, out / "source.tar")
+for name, (mode, _contents) in entries.items():
+    if mode != "120000":
+        os.chmod(snapshot / name, 0o555 if mode == "100755" else 0o444, follow_symlinks=False)
+for name in sorted(directories, key=lambda name: len(pathlib.PurePosixPath(name).parts), reverse=True):
+    os.chmod(snapshot / name, 0o555, follow_symlinks=False)
+os.chmod(snapshot, 0o555, follow_symlinks=False)
+if source_entries() != entries:
+    raise RuntimeError("source changed during snapshot")
 (out / "source-tree.txt").write_text(tree + "\n")
-for path in snapshot.rglob("*"):
-    if path.is_file(): path.chmod(0o555 if path.stat().st_mode & stat.S_IXUSR else 0o444)
-for path in sorted(snapshot.rglob("*"), reverse=True):
-    if path.is_dir(): path.chmod(0o555)
-snapshot.chmod(0o555)
 if a.snapshot_only:
     preparation.check_cancelled()
     print(tree)

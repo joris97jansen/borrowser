@@ -8,10 +8,12 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import sys
 import unittest
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / "tools/ci"))
 SPEC = importlib.util.spec_from_file_location("check_ureq_patch", ROOT / "tools/ci/check_ureq_patch.py")
 CHECK = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CHECK)
@@ -23,6 +25,10 @@ class UreqPatchIntegrity(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
         shutil.copytree(ROOT / "vendor/ureq", self.root / "vendor/ureq")
+        policy = self.root / CHECK.subtrees.POLICY_PATH
+        policy.parent.mkdir(parents=True)
+        shutil.copyfile(ROOT / CHECK.subtrees.POLICY_PATH, policy)
+        self.policy = CHECK.subtrees.load_qualification(self.root)
 
     def test_reviewed_sources_pass(self):
         CHECK.check_sources(self.root)
@@ -31,6 +37,7 @@ class UreqPatchIntegrity(unittest.TestCase):
         # These are tripwires, not replacements for admission logic: call the
         # real checker and fail immediately if it reaches any content/process I/O.
         with (
+            mock.patch.object(CHECK.subtrees, "load_qualification", return_value=self.policy),
             mock.patch.object(Path, "open", side_effect=AssertionError("content opened")) as opened,
             mock.patch.object(Path, "read_bytes", side_effect=AssertionError("content read")) as read,
             mock.patch.object(CHECK.subprocess, "run", side_effect=AssertionError("process started")) as process,
@@ -79,21 +86,21 @@ class UreqPatchIntegrity(unittest.TestCase):
     def test_unexpected_file_is_rejected_before_any_content_or_process_io(self):
         unexpected = self.root / "vendor/ureq/UNEXPECTED"
         unexpected.write_bytes(b"must never be opened by the verifier")
-        self.assert_inventory_rejected_without_reads("file inventory changed")
+        self.assert_inventory_rejected_without_reads("unexpected source file|source inventory")
 
     def test_duplicate_inventory_entry_is_rejected_before_reads(self):
         source = self.root / "vendor/ureq/src/header.rs"
         # A real directory cannot hold duplicate names. Inject a duplicate
         # discovery result, retaining actual filesystem types and real checking.
-        with mock.patch.object(Path, "rglob", return_value=iter([source, source])):
-            self.assert_inventory_rejected_without_reads("duplicate entry")
+        with mock.patch.object(Path, "iterdir", return_value=iter([source, source])):
+            self.assert_inventory_rejected_without_reads("duplicate source inventory entry")
 
     @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO qualification requires POSIX")
     def test_nonregular_provenance_record_is_rejected_without_opening(self):
         source = self.root / "vendor/ureq/UPSTREAM.json"
         source.unlink()
         os.mkfifo(source)
-        self.assert_inventory_rejected_without_reads("unsupported entry")
+        self.assert_inventory_rejected_without_reads("mode/type")
 
     def test_unpatched_source_change_is_rejected(self):
         source = self.root / "vendor/ureq/src/middleware.rs"
@@ -109,7 +116,7 @@ class UreqPatchIntegrity(unittest.TestCase):
 
     def test_unreviewed_file_is_rejected(self):
         (self.root / "vendor/ureq/src/extra.rs").write_text("// unreviewed file\n")
-        with self.assertRaisesRegex(ValueError, "file inventory changed"):
+        with self.assertRaisesRegex(ValueError, "unexpected source file|source inventory"):
             CHECK.check_sources(self.root)
 
     def test_rewriting_the_patch_record_cannot_admit_unreviewed_source(self):
@@ -119,7 +126,7 @@ class UreqPatchIntegrity(unittest.TestCase):
         record = json.loads(path.read_text())
         record["patched_files"]["src/header.rs"] = hashlib.sha256(source.read_bytes()).hexdigest()
         path.write_text(json.dumps(record))
-        with self.assertRaisesRegex(ValueError, "reviewed patch record changed"):
+        with self.assertRaisesRegex(ValueError, "source hash mismatch"):
             CHECK.check_sources(self.root)
 
     def change_record(self, change):
@@ -136,67 +143,75 @@ class UreqPatchIntegrity(unittest.TestCase):
 
     def test_missing_source_is_rejected(self):
         (self.root / "vendor/ureq/src/unit.rs").unlink()
-        with self.assertRaisesRegex(ValueError, "file inventory changed"):
+        with self.assertRaisesRegex(ValueError, "unexpected source file|source inventory"):
             CHECK.check_sources(self.root)
 
-    def test_omitted_upstream_file_cannot_be_reintroduced(self):
+    def test_restored_upstream_lock_bytes_are_frozen(self):
         (self.root / "vendor/ureq/Cargo.lock").write_text("# unexpected lockfile")
-        with self.assertRaisesRegex(ValueError, "file inventory changed"):
+        with self.assertRaisesRegex(ValueError, "source hash mismatch"):
             CHECK.check_sources(self.root)
 
     def test_archive_identity_is_frozen(self):
         self.change_record(lambda r: r.update(archive_sha256="0" * 64))
-        with self.assertRaisesRegex(ValueError, "source/patch identity"):
+        with self.assertRaisesRegex(ValueError, "source hash mismatch"):
             CHECK.check_sources(self.root)
 
     def test_published_vcs_identity_is_frozen(self):
         self.change_record(lambda r: r.update(upstream_git="0" * 40))
-        with self.assertRaisesRegex(ValueError, "source/patch identity"):
+        with self.assertRaisesRegex(ValueError, "source hash mismatch"):
             CHECK.check_sources(self.root)
 
     def test_published_manifest_cannot_lose_an_entry(self):
         self.change_record(lambda r: r["upstream_files"].pop("LICENSE-MIT"))
-        with self.assertRaisesRegex(ValueError, "published file manifest changed"):
+        with self.assertRaisesRegex(ValueError, "source hash mismatch"):
             CHECK.check_sources(self.root)
 
     def test_patch_inventory_cannot_gain_an_entry(self):
         self.change_record(lambda r: r["patched_files"].update({"src/extra.rs": "0" * 64}))
-        with self.assertRaisesRegex(ValueError, "source/patch identity"):
+        with self.assertRaisesRegex(ValueError, "source hash mismatch"):
             CHECK.check_sources(self.root)
 
     def test_patch_inventory_cannot_lose_an_entry(self):
         self.change_record(lambda r: r["patched_files"].pop("Cargo.toml.orig"))
-        with self.assertRaisesRegex(ValueError, "source/patch identity"):
+        with self.assertRaisesRegex(ValueError, "source hash mismatch"):
             CHECK.check_sources(self.root)
 
     def test_omission_inventory_is_frozen(self):
         self.change_record(lambda r: r["omitted_files"].remove("Cargo.lock"))
-        with self.assertRaisesRegex(ValueError, "published file manifest changed"):
+        with self.assertRaisesRegex(ValueError, "source hash mismatch"):
             CHECK.check_sources(self.root)
 
     def test_cumulative_patch_bytes_are_pinned(self):
         path = self.root / "vendor/ureq" / CHECK.PATCH_FILE
         path.write_bytes(path.read_bytes() + b"\n")
-        with self.assertRaisesRegex(ValueError, "reviewed patch record changed"):
+        with self.assertRaisesRegex(ValueError, "source hash mismatch"):
             CHECK.check_sources(self.root)
 
     def test_historical_patch_bytes_are_pinned(self):
         path = self.root / "vendor/ureq/response-header.patch"
         path.write_bytes(path.read_bytes() + b"\n")
-        with self.assertRaisesRegex(ValueError, "reviewed patch record changed"):
+        with self.assertRaisesRegex(ValueError, "source hash mismatch"):
             CHECK.check_sources(self.root)
 
     def test_patch_reconstruction_checks_upstream_not_only_patch_digest(self):
-        path = self.root / "vendor/ureq" / CHECK.PATCH_FILE
+        # Historical replay uses its original 54-file snapshot, independently
+        # of the evolving current 65-file subtree inventory.
+        historical = self.root / "historical"
+        vendor = historical / "vendor/ureq"
+        shutil.copytree(self.root / "vendor/ureq", vendor)
+        for path in sorted(vendor.rglob("*"), reverse=True):
+            if path.is_file() and path.relative_to(vendor).as_posix() not in CHECK.RETAINED_FILES | CHECK.RECORD_FILES:
+                path.unlink()
+            elif path.is_dir() and not any(path.iterdir()):
+                path.rmdir()
+        path = vendor / CHECK.PATCH_FILE
         original = path.read_text()
         changed = original.replace('-    "logging",', '-    "not-the-upstream-flag",', 1)
         self.assertNotEqual(changed, original)
         path.write_text(changed)
-        # Even a separately reviewed new patch digest cannot attest an invented
-        # upstream baseline. The independently frozen upstream hashes still win.
         with mock.patch.object(CHECK, "PATCH_SHA256", hashlib.sha256(path.read_bytes()).hexdigest()):
             with self.assertRaisesRegex(ValueError, "does not reconstruct upstream"):
-                CHECK.check_sources(self.root)
+                CHECK.check_historical_sources(historical)
 
     def test_symlink_source_is_rejected(self):
         path = self.root / "vendor/ureq/src/header.rs"
@@ -261,6 +276,18 @@ class UreqResolutionIntegrity(unittest.TestCase):
         path.write_text(path.read_text().replace('path = "vendor/ureq"', 'path = "other/ureq"'))
         with self.assertRaisesRegex(ValueError, "exact local"):
             self.check()
+
+    def test_declared_source_overrides_fail_static_monitoring_without_cargo(self):
+        path = self.root / "Cargo.toml"
+        original = path.read_text()
+        for field in ('path = "other/ureq"', 'git = "https://example.invalid/ureq"',
+                      'registry = "alternate"', 'package = "other-ureq"'):
+            with self.subTest(field=field):
+                path.write_text(original.replace('version = "=2.12.1"',
+                                                 'version = "=2.12.1", ' + field))
+                with mock.patch.object(CHECK.subprocess, "run", side_effect=AssertionError("Cargo started")):
+                    with self.assertRaisesRegex(ValueError, "source overrides"):
+                        CHECK.check_workspace_records(self.root)
 
     def test_wrong_lock_version_is_rejected(self):
         path = self.root / "Cargo.lock"

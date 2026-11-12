@@ -1,17 +1,30 @@
 #!/usr/bin/env python3
 """Verify Borrowser's exact cumulative ureq 2.12.1 fork and selected features."""
 
+import sys
+
+if __name__ == "__main__" and (not sys.flags.isolated or not sys.dont_write_bytecode):
+    sys.exit("Run this qualification entry point with python3 -I -B (isolated imports, no cache writes).")
+
 import argparse
 import hashlib
+import io
 import json
 from pathlib import Path
 import shutil
 import stat
 import subprocess
-import sys
 import tarfile
 import tempfile
 import tomllib
+
+if __name__ == "__main__":
+    if subprocess.run([sys.executable, "-I", "-B", str(Path(__file__).with_name(
+            "check_dependency_subtrees.py")), "--python-preflight"]).returncode:
+        sys.exit(2)
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import check_dependency_subtrees as subtrees
 
 ARCHIVE_SHA256 = "02d1a66277ed75f640d608235660df48c8e3c19f3b4edb6a263315626cc3c01d"
 UPSTREAM_GIT = "ba4555d54fd72e16fc737f7e8fcc812efb131260"
@@ -103,7 +116,7 @@ def apply_patch(directory, patch, reverse=False):
                    capture_output=True, text=True)
 
 
-def check_sources(root):
+def check_historical_sources(root):
     require_real_directory(root / "vendor")
     vendor = root / "vendor/ureq"
     files = checked_files(vendor, RETAINED_FILES | RECORD_FILES)
@@ -150,6 +163,46 @@ def check_sources(root):
     return record
 
 
+def check_sources(root):
+    subtrees.verify_source(root, "ureq")
+    return json.loads((root / "vendor/ureq/UPSTREAM.json").read_bytes())
+
+
+def check_historical_snapshot(root):
+    """Reconstruct historical AI3/AI5 evidence, never the evolving current tree."""
+    policy = subtrees.load_qualification(root)
+    archive = subtrees.git(root, "archive", policy["baseline"], "vendor/ureq").stdout
+    with tempfile.TemporaryDirectory(prefix="ureq-historical-") as temporary:
+        historical = Path(temporary)
+        with tarfile.open(fileobj=io.BytesIO(archive)) as package:
+            for member in package.getmembers():
+                path = Path(member.name)
+                if path.is_absolute() or ".." in path.parts:
+                    raise ValueError("invalid historical archive path")
+                if member.isdir():
+                    continue
+                if not member.isfile():
+                    raise ValueError("unsupported historical source entry")
+                target = historical / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(package.extractfile(member).read())
+        record = check_historical_sources(historical)
+    git_files = subtrees.git_entries(root, UPSTREAM_GIT, "")
+    published = record["upstream_files"]
+    git_only = {"cargo_deny.sh", "deny.toml", "test.sh", "examples/mbedtls/Cargo.toml",
+                "examples/mbedtls/README.md", "examples/mbedtls/src/main.rs",
+                "examples/mbedtls/src/mbedtls_connector.rs"}
+    if set(git_files) - set(published) != git_only or set(published) - set(git_files) != {
+            "Cargo.toml.orig", ".cargo_vcs_info.json"}:
+        raise ValueError("ureq Git/published inventory mapping changed")
+    for name in set(git_files) & set(published) - {"Cargo.toml"}:
+        if git_files[name]["sha256"] != published[name]:
+            raise ValueError("ureq shared Git/published bytes differ")
+    if git_files["Cargo.toml"]["sha256"] != published["Cargo.toml.orig"]:
+        raise ValueError("ureq original package manifest differs from Git")
+    return record
+
+
 def check_archive(archive, record):
     """Optional independent proof against the published crate; no network I/O."""
     if digest(archive.read_bytes()) != ARCHIVE_SHA256:
@@ -170,7 +223,7 @@ def check_archive(archive, record):
         raise ValueError("ureq archive differs from published file manifest")
 
 
-def check_resolution(root):
+def check_workspace_records(root):
     manifest = tomllib.loads((root / "Cargo.toml").read_text())
     dependencies = manifest["workspace"]["dependencies"]
     if dependencies["ureq"]["version"] != "=2.12.1" \
@@ -184,6 +237,17 @@ def check_resolution(root):
     if len(selected) != 1 or selected[0]["version"] != "2.12.1" \
             or "source" in selected[0] or "checksum" in selected[0]:
         raise ValueError("locked ureq bypasses the local patch")
+    declaration = dependencies["ureq"]
+    if set(declaration) != {"version", "default-features", "features"}:
+        raise ValueError("ureq source overrides must use only the qualified local patch")
+    if declaration.get("default-features") is not False or set(declaration.get("features", [])) != {
+            "tls", "json", "charset", "native-certs"}:
+        raise ValueError("unapproved declared ureq features")
+    return manifest, lock
+
+
+def check_resolution(root):
+    check_workspace_records(root)
     result = subprocess.run(
         # No platform filter: inspect all target edges, workspace features and
         # development dependencies, not just the host/default build lane.
@@ -222,10 +286,11 @@ if __name__ == "__main__":
     arguments = parser.parse_args()
     try:
         repository = Path(__file__).resolve().parents[2]
-        provenance = check_sources(repository)
+        check_sources(repository)
+        provenance = check_historical_snapshot(repository)
         if arguments.archive:
             check_archive(arguments.archive, provenance)
         check_resolution(repository)
-        print("ureq 2.12.1: ten-file cumulative patch, upstream reconstruction, locked selection and features verified")
+        print("ureq 2.12.1: current source, historical reconstruction, Git mapping, local selection and features verified")
     except (OSError, KeyError, ValueError, StopIteration, tarfile.TarError, subprocess.CalledProcessError) as error:
         sys.exit(str(error))

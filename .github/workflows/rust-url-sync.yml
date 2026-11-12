@@ -1,4 +1,4 @@
-name: rust-url synchronization
+name: rust-url and ureq synchronization
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   monitor:
-    name: Check rust-url synchronization
+    name: Check rust-url and ureq synchronization
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
@@ -31,6 +31,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Python
@@ -40,4 +41,4 @@ jobs:
           architecture: 'x64'
 
       - name: Check synchronization and write summary
-        run: python tools/ci/check_rust_url_sync.py
+        run: python -I -B tools/ci/check_rust_url_ureq_sync.py

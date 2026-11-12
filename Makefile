@@ -399,15 +399,20 @@ build-release:
 build-release-html5:
 	cargo build --workspace --release --features html5 --locked
 
-# Enforce the independently frozen AH3 URL source and graph in both workspaces.
+# Verify committed subtree history before source and Cargo qualification.
+.PHONY: check-dependency-subtrees
+check-dependency-subtrees:
+	python3 -I -B tools/ci/check_dependency_subtrees.py
+
+# Verify current qualified URL source and both locked offline Cargo graphs.
 .PHONY: check-url-dependencies
-check-url-dependencies:
-	python3 tools/ci/check_url_dependencies.py
-	python3 -m unittest discover -s tools/ci/tests -v
+check-url-dependencies: check-dependency-subtrees
+	python3 -I -B tools/ci/check_url_dependencies.py
+	python3 -I -B tools/ci/check_dependency_subtrees.py --tests
 
 .PHONY: check-network-dependencies
-check-network-dependencies:
-	python3 tools/ci/check_ureq_patch.py
+check-network-dependencies: check-dependency-subtrees
+	python3 -I -B tools/ci/check_ureq_patch.py
 
 .PHONY: qualify-network-release
 qualify-network-release:
