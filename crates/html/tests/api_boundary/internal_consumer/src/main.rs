@@ -20,6 +20,8 @@ fn main() {
     assert!(host.children().is_empty());
     let contents = internal::template_contents(&template).expect("typed contents association");
     assert_eq!(internal::fragment_id(contents), Id(2));
+    // Without test-harness, the fragment kind must remain canonical.
+    let ParserCreatedFragmentKind::TemplateContents = internal::fragment_kind(contents);
     assert_eq!(
         internal::fragment_kind(contents),
         ParserCreatedFragmentKind::TemplateContents
