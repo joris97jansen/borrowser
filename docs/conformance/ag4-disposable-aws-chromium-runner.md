@@ -663,8 +663,22 @@ an alternate AWS resource lifecycle.
 The script creates a temporary Git index and object store. It snapshots current
 working-tree bytes, including staged/unstaged changes, new source, and deleted
 files, without changing the real index or working tree or exporting old HEAD.
-It rejects symlinks and unreviewed new input types, excludes operator secrets
-and generated runtime artifacts, and verifies the exported file set and bytes.
+Tracked relative file symlinks, including rust-url's eight original license
+links, retain Git mode `120000` and their exact link-target bytes. Preparation
+does not read through a link to construct its blob. Each link chain must end at
+an included regular file; absolute, escaping, dangling, cyclic, directory,
+private/excluded-target and untracked links are rejected. Source-directory
+components are opened without following symlinks, so a directory link cannot
+redirect a tracked path outside the source tree. Missing tracked links are
+deletions; dangling tracked links remain entries and fail validation.
+Unreviewed new input types, operator secrets and generated runtime artifacts
+remain excluded or rejected under the existing source-selection rules.
+The actual Git archive's inventory, entry types, modes, link targets and bytes
+are checked before extraction, then checked against the extracted export.
+Read-only permissions are applied without following or chmodding file links.
+Current source membership, bytes, Git modes and link targets are checked again
+before publishing the tree stamp. Native macOS/Linux symlink semantics are
+required; flattened symlink copies and Windows preparation are not qualified.
 The checked-in localhost TLS test fixtures remain ordinary public test inputs.
 Do not edit source during snapshot creation; detected changes abort preparation.
 Both builds consume the same read-only export and explicit Git tree stamp.
