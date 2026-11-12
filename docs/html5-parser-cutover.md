@@ -175,6 +175,15 @@ Current `html` crate flags:
 - `html5-entities`
   reserved entity-related support flag used by HTML5 internals/tooling
 
+`test-harness` and `internal-api` are independent opt-ins; neither enables the
+other. `ParserCreatedFragmentKind::TestOnlyUnsupported` is available when the
+`html` crate itself is compiled with `cfg(test)`, or when both features are
+enabled for downstream engine tests. A caller's `cfg(test)` does not propagate
+into its `html` library dependency. Normal library builds with neither feature
+or either feature alone omit that variant. This test-only discriminator does
+not expose arbitrary fragment construction or mutation through
+`html::internal`; production fragment constructors remain canonical.
+
 Operational guidance:
 
 - normal consumers should use the default feature set

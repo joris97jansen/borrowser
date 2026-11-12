@@ -32,7 +32,7 @@ impl DomInvariantNodeKind {
             Self::DocumentFragment(ParserCreatedFragmentKind::TemplateContents) => {
                 "template-contents-fragment"
             }
-            #[cfg(any(test, feature = "test-harness"))]
+            #[cfg(any(test, all(feature = "test-harness", feature = "internal-api")))]
             Self::DocumentFragment(ParserCreatedFragmentKind::TestOnlyUnsupported) => {
                 "unsupported-parser-created-fragment"
             }

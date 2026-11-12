@@ -64,6 +64,25 @@ fn ordinary_consumer_without_internal_api_compiles() {
 }
 
 #[test]
+fn ordinary_consumer_with_test_harness_without_internal_api_compiles() {
+    let output = check_fixture(
+        "ordinary_consumer",
+        "test-harness-only",
+        &[
+            "--bin",
+            "html-ordinary-consumer-probe",
+            "--features",
+            "html/test-harness",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "ordinary test-harness consumer must compile without internal-api:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn conformance_execution_is_unavailable_without_parser_conformance() {
     let output = check_bin(
         "ordinary_consumer",
