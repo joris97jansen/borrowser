@@ -464,43 +464,29 @@ jobs:
           retention-days: 14
           path: ${{ runner.temp }}/ag2-upload/
 
-  rust:
+  source_provenance:
+    name: Source and provenance
     if: ${{ !startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-') }}
-    name: Rust (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
     env:
       RUST_BACKTRACE: 1
-
     outputs:
-      integration_sha: ${{ steps.source_identity.outputs.integration_sha }}
-      head_sha: ${{ steps.pr_head_guard.outputs.head_sha }}
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            full_deps: true
-            run_lints: true
-          # Future expansion:
-          # - os: windows-latest
-          #   full_deps: false
-          #   run_lints: false
-          # - os: macos-latest
-          #   full_deps: false
-          #   run_lints: false
-
+      qualified_sha: ${{ steps.qualification_source.outputs.qualified_sha }}
+      qualified_tree: ${{ steps.qualification_source.outputs.qualified_tree }}
+      pr_head_tree: ${{ steps.qualification_source.outputs.pr_head_tree }}
     steps:
-      - name: Checkout repository
+      - &integration_checkout
+        name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-
-      - name: Verify integration source identity
+      - &integration_identity
+        name: Verify integration source identity
         id: source_identity
         env:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -515,14 +501,73 @@ jobs:
           fi
           git show -s --format='integration_commit=%H integration_tree=%T parents=%P' HEAD
           echo "integration_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-
-      - name: Verify checkout and committed subtree history
+      - &committed_preflight
+        name: Verify checkout and committed subtree history
         run: |
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           python3 -I -B tools/ci/check_dependency_subtrees.py
+      - &pinned_toolchain
+        name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # @stable otherwise updates an unused compiler and changes the Cargo cache key.
+          toolchain: '1.92.0'
+          components: rustfmt, clippy
+      - name: Cache cargo (provenance-registry)
+        id: cargo_cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-ci-1458
+          key: provenance-registry
+          cache-targets: 'false'
+          cache-workspace-crates: 'false'
+          cache-bin: 'false'
+          cache-on-failure: 'false'
+      - name: Prepare locked main and fuzz dependency caches
+        run: |
+          cargo fetch --locked
+          cargo fetch --manifest-path fuzz/Cargo.toml --locked
+      - name: Verify qualified local URL sources and dependency graphs
+        env:
+          CARGO_NET_OFFLINE: 'true'
+        run: make check-url-dependencies
+      - name: Verify qualified ureq source, history and dependency selection
+        env:
+          CARGO_NET_OFFLINE: 'true'
+        run: make check-network-dependencies
+      - &source_complete
+        name: Verify completed source qualification
+        id: qualification_source
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          echo "qualified_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "qualified_tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+          if test "$GITHUB_EVENT_NAME" = pull_request; then
+            echo "pr_head_tree=$(git rev-parse "$PR_HEAD_SHA^{tree}")" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Install Linux system dependencies
-        if: matrix.full_deps
+  rust_correctness:
+    name: Rust correctness and parser regressions
+    if: ${{ !startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      RUST_BACKTRACE: 1
+    outputs:
+      qualified_sha: ${{ steps.qualification_source.outputs.qualified_sha }}
+      qualified_tree: ${{ steps.qualification_source.outputs.qualified_tree }}
+    steps:
+      - *integration_checkout
+      - *integration_identity
+      - *committed_preflight
+      - &rust_dependencies
+        name: Install Linux system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -537,65 +582,197 @@ jobs:
             libwayland-dev \
             libxkbcommon-dev
 
-      # Uses rust-toolchain.toml automatically
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - name: Cache cargo
+      # The shared installer explicitly matches rust-toolchain.toml.
+      - *pinned_toolchain
+      - name: Cache cargo (workspace-debug)
+        id: cargo_cache
         uses: Swatinem/rust-cache@v2
-
-      - name: Prepare locked main and fuzz dependency caches
-        run: |
-          cargo fetch --locked
-          cargo fetch --manifest-path fuzz/Cargo.toml --locked
-
-      - name: Verify qualified local URL sources and dependency graphs
-        env:
-          CARGO_NET_OFFLINE: 'true'
-        run: make check-url-dependencies
-
-      - name: Verify qualified ureq source, history and dependency selection
-        env:
-          CARGO_NET_OFFLINE: 'true'
-        run: make check-network-dependencies
-
+        with:
+          prefix-key: v1-ci-1458
+          key: workspace-debug
+          cache-targets: 'true'
+          cache-workspace-crates: 'false'
+          cache-bin: 'false'
+          cache-on-failure: 'false'
       - name: Rustfmt (check)
-        if: matrix.run_lints
         run: cargo fmt --all -- --check
-
       - name: Clippy (deny warnings)
-        if: matrix.run_lints
         run: |
           cargo clippy --workspace --all-targets --locked -- -D warnings
           cargo clippy -p browser --all-targets --features conformance-observation --locked -- -D warnings
-
       - name: Clippy (deny warnings, html5)
-        if: matrix.run_lints
         run: cargo clippy --workspace --all-targets --features html5 --locked -- -D warnings
-
       - name: Clippy (deny warnings, html5 hardening/fuzz)
-        if: matrix.run_lints
         run: cargo clippy --workspace --all-targets --features "html5 html5-fuzzing parser-conformance parser_invariants parser-failure-injection" --locked -- -D warnings
-
       - name: Build (debug, all targets)
-        run: cargo build --workspace --all-targets --locked
+        run: cargo build --workspace --all-targets --locked --timings
 
+      - name: Run tests (default HTML5 build)
+        # AG4.1's red native qualification runs in the required AG2 native step.
+        # Filter only its duplicate wrappers here; keep all other tests enabled.
+        run: cargo test --workspace --lib --bins --tests --examples --locked -- --skip aws::command::tests::native_procfs_
+      - name: Run tests (explicit html5 feature lane)
+        run: cargo test --workspace --lib --bins --tests --examples --features html5 --locked -- --skip aws::command::tests::native_procfs_
+      - name: Run canonical HTML parser conformance observations
+        run: cargo test -p html --test html5_parser_conformance --features parser-conformance --locked
+      - name: Run pinned external HTML parser subset
+        run: make test-html5-external-fixtures
+      - name: Run typed HTML parser fatal-failure lane
+        run: make test-html5-parser-fatal-failures
+      - name: Run HTML5 semantic DOM golden fixtures
+        run: cargo test -p html --test html5_golden_tree_builder --features "html5 dom-snapshot parser-conformance" --locked
+      - name: Run HTML5 patch-log golden fixtures
+        run: cargo test -p html --test html5_golden_tree_builder_patches --features html5 --locked
+      - name: Run HTML5 smoke corpus
+        run: cargo test -p html --test html5_smoke_real_pages --features "html5 dom-snapshot" --locked
+      - name: Run promoted rawtext/script regressions
+        run: cargo test -p html --test html5_rawtext_script_regressions --features "html5 dom-snapshot parser_invariants" --locked
+      - name: Run HTML5 pipeline regression snapshots
+        run: cargo test -p html --test html5_pipeline_regressions --features "html5 html5-fuzzing dom-snapshot parser_invariants" --locked
+      - name: Run WPT tree-builder slice
+        run: cargo test -p html --test wpt_html5_tree_builder --features "html5 dom-snapshot" --locked
+      - name: Build (debug, all targets, html5)
+        run: cargo build --workspace --all-targets --features html5 --locked --timings
+      - name: Check generated HTML entities
+        run: make html-entities-check
+      - *source_complete
+      - name: Retain Cargo compilation timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-1458-build-${{ github.job }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: target/cargo-timings/
+          if-no-files-found: error
+          retention-days: 14
+
+  rust_release:
+    name: Release, networking abort and benches
+    if: ${{ !startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      RUST_BACKTRACE: 1
+    outputs:
+      qualified_sha: ${{ steps.qualification_source.outputs.qualified_sha }}
+      qualified_tree: ${{ steps.qualification_source.outputs.qualified_tree }}
+    steps:
+      - *integration_checkout
+      - *integration_identity
+      - *committed_preflight
+      - *rust_dependencies
+      - *pinned_toolchain
+      - name: Cache cargo (release-abort-benches)
+        id: cargo_cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-ci-1458
+          key: release-abort-benches
+          cache-targets: 'true'
+          cache-workspace-crates: 'false'
+          cache-bin: 'false'
+          cache-on-failure: 'false'
+      - name: Build (release)
+        run: cargo build --workspace --release --locked --timings
+      - name: Build (release, html5)
+        run: cargo build --workspace --release --features html5 --locked --timings
+      - name: AI5 bounded HTTP/HTTPS release-abort qualification
+        timeout-minutes: 6
+        # Builds the feature-qualified example once, reusing release dependency
+        # artifacts; executes the real panic=abort binary and its supervisor.
+        run: make qualify-network-release
+      - name: Compile HTML5 Criterion benches
+        run: cargo bench -p html --bench html_bench --features html5 --no-run --locked
+      - name: Compile CSS Criterion benches
+        run: make compile-css-benches
+      - *source_complete
+      - name: Retain Cargo compilation timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-1458-build-${{ github.job }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: target/cargo-timings/
+          if-no-files-found: error
+          retention-days: 14
+
+  rust_conformance:
+    name: Conformance execution
+    if: ${{ !startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      RUST_BACKTRACE: 1
+    outputs:
+      qualified_sha: ${{ steps.qualification_source.outputs.qualified_sha }}
+      qualified_tree: ${{ steps.qualification_source.outputs.qualified_tree }}
+    steps:
+      - *integration_checkout
+      - *integration_identity
+      - *committed_preflight
+      - *rust_dependencies
+      - *pinned_toolchain
+      - name: Cache cargo (conformance-package)
+        id: cargo_cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-ci-1458
+          key: conformance-package
+          cache-targets: 'true'
+          cache-workspace-crates: 'false'
+          cache-bin: 'false'
+          cache-on-failure: 'false'
       # Prepare the package-only dependency/feature configuration outside the
       # two-minute execution budget; the workspace --all-targets build may use
       # a different unified feature configuration.
       - name: Build conformance execution binary
-        run: cargo build -p borrowser-conformance --locked
-
+        run: cargo build -p borrowser-conformance --locked --timings
       - name: AH9 bounded offline addressing suite
         timeout-minutes: 2
         run: make conformance-addressing
-
       - name: AG8 bounded Borrowser-only suite
         timeout-minutes: 2
         run: make conformance-ci
+      - *source_complete
+      - name: Retain Cargo compilation timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-1458-build-${{ github.job }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: target/cargo-timings/
+          if-no-files-found: error
+          retention-days: 14
 
+  streaming_integration:
+    name: Streaming guard (integration)
+    if: ${{ !startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      RUST_BACKTRACE: 1
+    outputs:
+      qualified_sha: ${{ steps.qualification_source.outputs.qualified_sha }}
+      qualified_tree: ${{ steps.qualification_source.outputs.qualified_tree }}
+    steps:
+      - *integration_checkout
+      - *integration_identity
+      - *committed_preflight
+      - *rust_dependencies
+      - *pinned_toolchain
+      - name: Cache cargo (streaming-integration-debug)
+        id: cargo_cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-ci-1458
+          key: streaming-integration-debug
+          cache-targets: 'true'
+          cache-workspace-crates: 'false'
+          cache-bin: 'false'
+          cache-on-failure: 'false'
       - name: Record native streaming guard lane equivalence
         timeout-minutes: 10
         run: |
@@ -605,23 +782,34 @@ jobs:
           import os
           from pathlib import Path
           import subprocess
+          import tomllib
 
           evidence = Path(os.environ["RUNNER_TEMP"]) / "ci-1458-evidence"
           evidence.mkdir(exist_ok=True)
+          manifest = tomllib.loads(Path("crates/runtime_parse/Cargo.toml").read_text())
+          if manifest["package"]["name"] != "runtime_parse":
+              raise SystemExit("streaming guard package identity mismatch")
+          if any(t.get("name") == "perf_regression" and t.get("harness", True) is not True for t in manifest.get("test", [])):
+              raise SystemExit("streaming guard requires the standard libtest harness")
           records = []
-          for lane, features in (("default", []), ("html5", ["--features", "html5"])):
-              command = ["cargo", "test", "--workspace", "--lib", "--bins", "--tests",
-                         "--examples", "--locked", "--no-run", "--message-format=json", *features]
+          configurations = {}
+          for lane, features in (("default", []), ("html5", ["--features", "html5"]), ("narrow", [])):
+              targets = ["--test", "perf_regression"] if lane == "narrow" else ["--lib", "--bins", "--tests", "--examples"]
+              command = ["cargo", "test", "--workspace", *targets, "--locked", "--no-run", "--message-format=json", "--timings", *features]
               with (evidence / (lane + ".jsonl")).open("w") as output:
                   subprocess.run(command, stdout=output, check=True)
               artifacts = [json.loads(line) for line in (evidence / (lane + ".jsonl")).read_text().splitlines()]
               guards = [a for a in artifacts if a.get("reason") == "compiler-artifact"
                         and a["target"]["name"] == "perf_regression"
                         and Path(a["manifest_path"]).resolve() == Path("crates/runtime_parse/Cargo.toml").resolve()
+                        and a["target"]["kind"] == ["test"]
+                        and Path(a["target"]["src_path"]).resolve() == Path("crates/runtime_parse/tests/perf_regression.rs").resolve()
                         and a["profile"]["test"] and a.get("executable")]
               if len(guards) != 1:
                   raise SystemExit(f"{lane}: expected exactly one streaming guard artifact")
               guard = guards[0]
+              configurations[lane] = {json.dumps({key: a[key] for key in ("package_id", "target", "profile", "features")}, sort_keys=True)
+                                      for a in artifacts if a.get("reason") == "compiler-artifact"}
               records.append({"lane": lane, "command": command, "artifact": guard,
                               "sha256": hashlib.sha256(Path(guard["executable"]).read_bytes()).hexdigest()})
           report = {"executed_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
@@ -631,71 +819,149 @@ jobs:
                     "compiler_environment": {name: os.environ.get(name) for name in
                         ("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_INCREMENTAL", "CARGO_BUILD_TARGET")},
                     "lanes": records,
-                    "same_guard_bytes": records[0]["sha256"] == records[1]["sha256"]}
+                    "same_guard_bytes": records[0]["sha256"] == records[1]["sha256"],
+                    "configuration_counts": {lane: len(values) for lane, values in configurations.items()},
+                    "same_workspace_configurations": configurations["default"] == configurations["html5"],
+                    "narrow_configuration_subset": configurations["narrow"] <= configurations["default"],
+                    "narrow_guard_bytes_equal": records[0]["sha256"] == records[2]["sha256"]}
           (evidence / "lane-equivalence.json").write_text(json.dumps(report, indent=2) + "\n")
           print(json.dumps(report, indent=2))
           # An unequal result is evidence against deduplication, not permission to skip a lane.
           PY
+      - name: Audit streaming guard replacement inventories
+        timeout-minutes: 3
+        run: |
+          python3 -I -B - <<'PYTHON'
+          from collections import Counter
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
 
-      - name: Run tests (default HTML5 build)
-        # AG4.1's red native qualification runs in the required AG2 native step.
-        # Filter only its duplicate wrappers here; keep all other tests enabled.
-        run: cargo test --workspace --lib --bins --tests --examples --locked -- --skip aws::command::tests::native_procfs_
+          evidence = Path(os.environ["RUNNER_TEMP"]) / "ci-1458-evidence"
+          expected = "runtime_parse_linear_streaming_guard: test"
+          records = []
+          for lane, features in (("default", []), ("html5", ["--features", "html5"])):
+              command = ["cargo", "test", "--workspace", "--lib", "--bins", "--tests", "--examples", "--locked", *features,
+                         "--", "--skip", "aws::command::tests::native_procfs_", "--list", "--format", "terse"]
+              before = subprocess.check_output(command, text=True)
+              after = subprocess.check_output(command + ["--skip", "runtime_parse_linear_streaming_guard"], text=True)
+              original = Counter(before.splitlines())
+              replacement = Counter(after.splitlines())
+              if original[expected] != 1 or replacement[expected] != 0 or replacement - original or original - replacement != Counter({expected: 1}):
+                  raise SystemExit(f"{lane}: replacement must remove exactly the qualified guard and no other test")
+              (evidence / (lane + "-inventory.txt")).write_text(before)
+              (evidence / (lane + "-replacement-inventory.txt")).write_text(after)
+              records.append({"lane": lane, "command": command, "before_records": sum(original.values()),
+                              "after_records": sum(replacement.values()), "removed": [expected]})
+          (evidence / "replacement-inventory.json").write_text(json.dumps(records, indent=2) + "\n")
+          # This is a proof-only listing. Both original workspace execution commands remain intact.
+          PYTHON
+      - name: Qualify streaming guard on integration source
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          root=$PWD
+          evidence="$RUNNER_TEMP/ci-1458-evidence"
+          # Listing may invoke Cargo; bind and hash the artifact after it completes.
+          cargo test --workspace --lib --bins --tests --examples --locked \
+            runtime_parse_linear_streaming_guard -- --exact --list --format terse > "$evidence/integration-workspace-selection.txt"
+          test "$(cat "$evidence/integration-workspace-selection.txt")" = 'runtime_parse_linear_streaming_guard: test'
+          python3 -I -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import tomllib
 
-      - name: Run tests (explicit html5 feature lane)
-        run: cargo test --workspace --lib --bins --tests --examples --features html5 --locked -- --skip aws::command::tests::native_procfs_
+          root = Path.cwd().resolve()
+          evidence = Path(os.environ["RUNNER_TEMP"]) / "ci-1458-evidence"
+          manifest = root / "crates/runtime_parse/Cargo.toml"
+          manifest_data = tomllib.loads(manifest.read_text())
+          if manifest_data["package"]["name"] != "runtime_parse":
+              raise SystemExit("streaming guard package identity mismatch")
+          # Cargo's profile.test can also be true for a harness=false executable.
+          if any(target.get("name") == "perf_regression" and target.get("harness", True) is not True
+                 for target in manifest_data.get("test", [])):
+              raise SystemExit("streaming guard requires the standard libtest harness")
+          artifacts = [json.loads(line) for line in (evidence / "default.jsonl").read_text().splitlines()]
+          guards = [a for a in artifacts if a.get("reason") == "compiler-artifact"
+                    and Path(a["manifest_path"]).resolve() == manifest
+                    and a["target"]["name"] == "perf_regression"
+                    and a["target"]["kind"] == ["test"]
+                    and Path(a["target"]["src_path"]).resolve() == root / "crates/runtime_parse/tests/perf_regression.rs"
+                    and a["profile"]["test"] and a.get("executable")]
+          if len(guards) != 1:
+              raise SystemExit("expected one runtime_parse/perf_regression integration-test artifact")
+          executable = Path(guards[0]["executable"]).resolve()
+          if not executable.is_file() or not executable.is_relative_to((root / "target").resolve()):
+              raise SystemExit("streaming guard executable is outside the job target directory")
+          (evidence / "integration-guard-executable.txt").write_text(str(executable) + "\n")
+          (evidence / "integration-guard-artifact.json").write_text(json.dumps(
+              {"artifact": guards[0], "sha256": hashlib.sha256(executable.read_bytes()).hexdigest()}, indent=2) + "\n")
+          # Reject an overwritten artifact after the narrower-recipe probe.
+          report = json.loads((evidence / "lane-equivalence.json").read_text())
+          tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
+          if report["executed_sha"] != os.environ["GITHUB_SHA"] or report["executed_tree"] != tree:
+              raise SystemExit("streaming evidence source identity changed")
+          if hashlib.sha256(executable.read_bytes()).hexdigest() != report["lanes"][0]["sha256"]:
+              raise SystemExit("qualified full-workspace guard artifact changed")
+          PY
+          guard=$(cat "$evidence/integration-guard-executable.txt")
+          cd crates/runtime_parse
+          "$guard" runtime_parse_linear_streaming_guard --exact --list --format terse > "$evidence/integration-target-selection.txt"
+          test "$(cat "$evidence/integration-target-selection.txt")" = 'runtime_parse_linear_streaming_guard: test'
+          "$guard" runtime_parse_linear_streaming_guard --exact --nocapture --format pretty --color never \
+            2>&1 | tee "$evidence/integration-guard.log"
+          grep -Fx 'test runtime_parse_linear_streaming_guard ... ok' "$evidence/integration-guard.log"
+          test "$(grep -Ec '^test result: ok\. 1 passed; 0 failed; 0 ignored; 0 measured; [0-9]+ filtered out; finished in [0-9.]+s$' "$evidence/integration-guard.log")" = 1
+          cd "$root"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+      - *source_complete
+      - name: Retain streaming qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-1458-integration-${{ github.sha }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/ci-1458-evidence/
+            target/cargo-timings/
+            ${{ runner.temp }}/ci-1458-pr-head-target/cargo-timings/
+          retention-days: 14
 
-      - name: Run canonical HTML parser conformance observations
-        run: cargo test -p html --test html5_parser_conformance --features parser-conformance --locked
-
-      - name: Run pinned external HTML parser subset
-        run: make test-html5-external-fixtures
-
-      - name: Run typed HTML parser fatal-failure lane
-        run: make test-html5-parser-fatal-failures
-
-      - name: Run HTML5 semantic DOM golden fixtures
-        run: cargo test -p html --test html5_golden_tree_builder --features "html5 dom-snapshot parser-conformance" --locked
-
-      - name: Run HTML5 patch-log golden fixtures
-        run: cargo test -p html --test html5_golden_tree_builder_patches --features html5 --locked
-
-      - name: Run HTML5 smoke corpus
-        run: cargo test -p html --test html5_smoke_real_pages --features "html5 dom-snapshot" --locked
-
-      - name: Run promoted rawtext/script regressions
-        run: cargo test -p html --test html5_rawtext_script_regressions --features "html5 dom-snapshot parser_invariants" --locked
-
-      - name: Run HTML5 pipeline regression snapshots
-        run: cargo test -p html --test html5_pipeline_regressions --features "html5 html5-fuzzing dom-snapshot parser_invariants" --locked
-
-      - name: Run WPT tree-builder slice
-        run: cargo test -p html --test wpt_html5_tree_builder --features "html5 dom-snapshot" --locked
-
-      - name: Build (debug, all targets, html5)
-        run: cargo build --workspace --all-targets --features html5 --locked
-
-      - name: Build (release)
-        run: cargo build --workspace --release --locked
-
-      - name: Build (release, html5)
-        run: cargo build --workspace --release --features html5 --locked
-
-      - name: AI5 bounded HTTP/HTTPS release-abort qualification
-        timeout-minutes: 6
-        # Builds the feature-qualified example once, reusing release dependency
-        # artifacts; executes the real panic=abort binary and its supervisor.
-        run: make qualify-network-release
-
-      - name: Compile HTML5 Criterion benches
-        run: cargo bench -p html --bench html_bench --features html5 --no-run --locked
-
-      - name: Compile CSS Criterion benches
-        run: make compile-css-benches
-
-      - name: Check generated HTML entities
-        run: make html-entities-check
-
+  streaming_head:
+    name: Streaming guard (exact PR head)
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      RUST_BACKTRACE: 1
+    outputs:
+      qualified_sha: ${{ steps.pr_head_guard.outputs.head_sha }}
+      qualified_tree: ${{ steps.qualification_source.outputs.pr_head_tree }}
+    steps:
+      - *integration_checkout
+      - *integration_identity
+      - *committed_preflight
+      - *rust_dependencies
+      - *pinned_toolchain
+      - name: Cache cargo (head-registry)
+        id: cargo_cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-ci-1458
+          key: head-registry
+          cache-targets: 'false'
+          cache-workspace-crates: 'false'
+          cache-bin: 'false'
+          cache-on-failure: 'false'
       - name: Qualify streaming guard on exact PR head
         id: pr_head_guard
         if: github.event_name == 'pull_request'
@@ -723,7 +989,7 @@ jobs:
           # Keep workspace feature unification. Do not substitute an unqualified -p build.
           phase_started=$SECONDS
           cargo test --workspace --lib --bins --tests --examples --locked \
-            --no-run --message-format=json > "$evidence/pr-head-artifacts.jsonl"
+            --no-run --message-format=json --timings > "$evidence/pr-head-artifacts.jsonl"
           echo "compilation_seconds=$((SECONDS - phase_started))" >> "$evidence/pr-head-timings.txt"
           phase_started=$SECONDS
           cargo test --workspace --lib --bins --tests --examples --locked \
@@ -793,18 +1059,17 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test -z "$(git status --porcelain --untracked-files=all)"
           echo "head_sha=$PR_HEAD_SHA" >> "$GITHUB_OUTPUT"
-
-      - name: Verify integration source remained unchanged
-        run: |
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test -z "$(git status --porcelain --untracked-files=all)"
-
+      - *source_complete
       - name: Retain streaming qualification evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ci-1458-${{ github.sha }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/ci-1458-evidence/
+          name: ci-1458-head-${{ github.sha }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/ci-1458-evidence/
+            target/cargo-timings/
+            ${{ runner.temp }}/ci-1458-pr-head-target/cargo-timings/
           retention-days: 14
 
   html5_tokenizer_fuzz_smoke:
@@ -1284,7 +1549,12 @@ jobs:
     timeout-minutes: 2
     permissions: {}
     needs:
-      - rust
+      - source_provenance
+      - rust_correctness
+      - rust_release
+      - rust_conformance
+      - streaming_integration
+      - streaming_head
       - ag2_linux_chromium
       - ag4_nonbillable
       - html5_tokenizer_fuzz_smoke
@@ -1306,33 +1576,78 @@ jobs:
           python3 -I -B - <<'PY'
           import json
           import os
+          import re
           import sys
 
           expected = {
-              "rust", "ag2_linux_chromium", "ag4_nonbillable",
-              "html5_tokenizer_fuzz_smoke", "html5_tokenizer_script_data_fuzz_smoke",
-              "html5_tokenizer_rawtext_fuzz_smoke", "html5_tokenizer_rcdata_fuzz_smoke",
-              "html5_tree_builder_token_fuzz_smoke", "html5_pipeline_fuzz_smoke",
-              "css_fuzz_regressions", "css_syntax_fuzz_smoke", "css_pipeline_fuzz_smoke",
+              'source_provenance',
+              'rust_correctness',
+              'rust_release',
+              'rust_conformance',
+              'streaming_integration',
+              'streaming_head',
+              'ag2_linux_chromium',
+              'ag4_nonbillable',
+              'html5_tokenizer_fuzz_smoke',
+              'html5_tokenizer_script_data_fuzz_smoke',
+              'html5_tokenizer_rawtext_fuzz_smoke',
+              'html5_tokenizer_rcdata_fuzz_smoke',
+              'html5_tree_builder_token_fuzz_smoke',
+              'html5_pipeline_fuzz_smoke',
+              'css_fuzz_regressions',
+              'css_syntax_fuzz_smoke',
+              'css_pipeline_fuzz_smoke',
           }
+          source_jobs = {"source_provenance", "rust_correctness", "rust_release", "rust_conformance", "streaming_integration"}
           try:
               results = json.loads(os.environ["QUALIFICATION_RESULTS"])
               if not isinstance(results, dict) or set(results) != expected:
                   raise ValueError("missing or unexpected qualification prerequisites")
-              unsuccessful = [name for name in sorted(expected)
-                              if not isinstance(results[name], dict)
-                              or results[name].get("result") != "success"]
-              if unsuccessful:
-                  raise ValueError("qualification did not succeed: " + ", ".join(unsuccessful))
-              outputs = results["rust"].get("outputs", {})
+              event = os.environ["GITHUB_EVENT_NAME"]
+              if event not in ("pull_request", "push"):
+                  raise ValueError("unsupported qualification event")
+              pull_request = event == "pull_request"
+              for name in sorted(expected):
+                  wanted = "skipped" if name == "streaming_head" and not pull_request else "success"
+                  if not isinstance(results[name], dict) or results[name].get("result") != wanted:
+                      raise ValueError("qualification did not succeed: " + name)
               integration = os.environ["INTEGRATION_SHA"]
-              if not integration or outputs.get("integration_sha") != integration:
-                  raise ValueError("integration source qualification is missing or mismatched")
-              if os.environ["GITHUB_EVENT_NAME"] == "pull_request":
-                  head = os.environ["PR_HEAD_SHA"]
-                  if not head or outputs.get("head_sha") != head:
+              provenance = results["source_provenance"]["outputs"]
+              tree = provenance["qualified_tree"]
+              if not re.fullmatch(r"[0-9a-f]{40}", integration) or not re.fullmatch(r"[0-9a-f]{40}", tree):
+                  raise ValueError("missing integration source identity")
+              for name in sorted(source_jobs):
+                  outputs = results[name]["outputs"]
+                  if outputs.get("qualified_sha") != integration or outputs.get("qualified_tree") != tree:
+                      raise ValueError("integration source qualification is missing or mismatched: " + name)
+              head = results["streaming_head"].get("outputs", {})
+              if pull_request:
+                  sha = os.environ["PR_HEAD_SHA"]
+                  head_tree = provenance["pr_head_tree"]
+                  if not re.fullmatch(r"[0-9a-f]{40}", sha) or not re.fullmatch(r"[0-9a-f]{40}", head_tree):
+                      raise ValueError("missing PR head source identity")
+                  if head.get("qualified_sha") != sha or head.get("qualified_tree") != head_tree:
                       raise ValueError("exact PR head guard qualification is missing or mismatched")
+              elif head:
+                  raise ValueError("master push must not fabricate PR-head qualification")
           except (KeyError, ValueError, TypeError, AttributeError) as error:
               sys.exit(str(error))
-          print("Every required qualification succeeded for the expected source identities.")
+          print("Every qualification succeeded for its required source context.")
           PY
+
+  rust:
+    # Keep the already-required context as the final fail-closed migration barrier.
+    name: Rust (ubuntu-latest)
+    if: ${{ always() && (github.event_name == 'pull_request' || github.ref == 'refs/heads/master') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    needs:
+      - ci_qualification
+    steps:
+      - name: Preserve required Rust status
+        env:
+          QUALIFICATION_RESULT: ${{ needs.ci_qualification.result }}
+        run: |
+          set -euo pipefail
+          test "$QUALIFICATION_RESULT" = success

@@ -318,9 +318,11 @@ When triaging a parser bug:
 with fixed workloads and counter-based assertions. Its qualification boundaries,
 unchanged-guard profile and pending native CI measurements are recorded in
 [#1458's CI performance evidence](ci/1458-critical-path-performance.md).
-The local candidate retains both workspace executions and adds exact PR-head
-execution; no duplicate is removed without native equivalence and mandatory
-replacement qualification. These counters do not establish elapsed-time linearity.
+The parallel CI candidate retains both workspace executions and adds independent
+integration and exact PR-head jobs. Its existing required Rust context waits for
+all qualifications through the final gate. No duplicate is removed without native
+equivalence, unchanged per-lane inventories and verified mandatory replacement
+qualification. These counters do not establish elapsed-time linearity.
 
 Useful commands:
 

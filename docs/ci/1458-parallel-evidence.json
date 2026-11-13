@@ -1,0 +1,571 @@
+{
+  "schema": 1,
+  "candidate_status": "Uncommitted parallel redesign; no hosted results for this workflow candidate.",
+  "reviewed_on": "2026-11-13",
+  "branch": "chore/1458-optimize-ci-critical-path",
+  "published_head": "ea843be2299cc8d3d5ea15c7aab66b7abd0028ec",
+  "remote_master": "144ef3bc887ac5688ac7f6b123a6e98f1e1485f2",
+  "published_integration": "c5d88fd2e3188a8b97036372f8a504b5f26615da",
+  "observed_run": {
+    "id": 43376243486,
+    "url": "https://github.com/joris97jansen/borrowser/actions/runs/43376243486",
+    "result": "cancelled",
+    "rust_seconds": 2717,
+    "workflow_elapsed_seconds": 2725,
+    "sum_non_skipped_job_seconds": 3672,
+    "integration_qualification_before_head_seconds": 2216,
+    "head_remaining_job_seconds": 484,
+    "head_compilation_seconds": 462,
+    "head_qualified": false,
+    "guard_seconds": {
+      "default": 220.95,
+      "html5": 221.66
+    },
+    "completed_rust_steps_seconds": {
+      "Set up job": 2,
+      "Checkout repository": 2,
+      "Verify integration source identity": 0,
+      "Verify checkout and committed subtree history": 1,
+      "Install Linux system dependencies": 12,
+      "Install Rust toolchain": 10,
+      "Cache cargo": 10,
+      "Prepare locked main and fuzz dependency caches": 4,
+      "Verify qualified local URL sources and dependency graphs": 255,
+      "Verify qualified ureq source, history and dependency selection": 1,
+      "Rustfmt (check)": 3,
+      "Clippy (deny warnings)": 99,
+      "Clippy (deny warnings, html5)": 1,
+      "Clippy (deny warnings, html5 hardening/fuzz)": 25,
+      "Build (debug, all targets)": 449,
+      "Build conformance execution binary": 158,
+      "AH9 bounded offline addressing suite": 1,
+      "AG8 bounded Borrowser-only suite": 0,
+      "Record native streaming guard lane equivalence": 1,
+      "Run tests (default HTML5 build)": 295,
+      "Run tests (explicit html5 feature lane)": 294,
+      "Run canonical HTML parser conformance observations": 35,
+      "Run pinned external HTML parser subset": 23,
+      "Run typed HTML parser fatal-failure lane": 75,
+      "Run HTML5 semantic DOM golden fixtures": 2,
+      "Run HTML5 patch-log golden fixtures": 1,
+      "Run HTML5 smoke corpus": 1,
+      "Run promoted rawtext/script regressions": 20,
+      "Run HTML5 pipeline regression snapshots": 20,
+      "Run WPT tree-builder slice": 1,
+      "Build (debug, all targets, html5)": 0,
+      "Build (release)": 206,
+      "Build (release, html5)": 2,
+      "AI5 bounded HTTP/HTTPS release-abort qualification": 105,
+      "Compile HTML5 Criterion benches": 61,
+      "Compile CSS Criterion benches": 41,
+      "Check generated HTML entities": 0,
+      "Retain streaming qualification evidence": 1,
+      "Post Checkout repository": 0,
+      "Complete job": 1
+    },
+    "rust_annotations": [
+      {
+        "path": ".github",
+        "blob_href": "https://github.com/joris97jansen/borrowser/blob/ea843be2299cc8d3d5ea15c7aab66b7abd0028ec/.github",
+        "start_line": 1,
+        "start_column": null,
+        "end_line": 1,
+        "end_column": null,
+        "annotation_level": "failure",
+        "title": "",
+        "message": "The job has exceeded the maximum execution time of 45m0s",
+        "raw_details": ""
+      },
+      {
+        "path": ".github",
+        "blob_href": "https://github.com/joris97jansen/borrowser/blob/ea843be2299cc8d3d5ea15c7aab66b7abd0028ec/.github",
+        "start_line": 8,
+        "start_column": null,
+        "end_line": 8,
+        "end_column": null,
+        "annotation_level": "warning",
+        "title": "",
+        "message": "Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/",
+        "raw_details": ""
+      },
+      {
+        "path": ".github",
+        "blob_href": "https://github.com/joris97jansen/borrowser/blob/ea843be2299cc8d3d5ea15c7aab66b7abd0028ec/.github",
+        "start_line": 476,
+        "start_column": null,
+        "end_line": 476,
+        "end_column": null,
+        "annotation_level": "failure",
+        "title": "",
+        "message": "The operation was canceled.",
+        "raw_details": ""
+      },
+      {
+        "path": ".github",
+        "blob_href": "https://github.com/joris97jansen/borrowser/blob/ea843be2299cc8d3d5ea15c7aab66b7abd0028ec/.github",
+        "start_line": 1,
+        "start_column": null,
+        "end_line": 1,
+        "end_column": null,
+        "annotation_level": "notice",
+        "title": "",
+        "message": "\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748\"",
+        "raw_details": ""
+      }
+    ],
+    "cache": {
+      "rust": "miss",
+      "rust_action_seconds": 10,
+      "rust_key": "v0-rust-rust-Linux-x64-71ae6766-b3b62931",
+      "post_save": "skipped on job cancellation",
+      "workspace_crates_cached": false,
+      "unnecessary_stable_update": {
+        "from": "1.99.1",
+        "to": "1.100.0",
+        "actual_main_guard_compiler": "1.92.0"
+      },
+      "ag2": "exact hit",
+      "ag2_bytes": 510652035,
+      "ag2_action_seconds": 13,
+      "all_installed_compilers_contribute_to_key": true
+    },
+    "ci_artifact": {
+      "id": 14017105505,
+      "sha256": "0a56ae12d0b5c64714ae72392456a1b5065afc296e899e5a7e20ea361fb9c350"
+    },
+    "native_equivalence": {
+      "native_source": "c5d88fd2e3188a8b97036372f8a504b5f26615da",
+      "native_tree": "375de3c1a65ee3b0a197aec22500cd2ea7c5fe51",
+      "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)\nbinary: rustc\ncommit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234\ncommit-date: 2025-12-08\nhost: x86_64-unknown-linux-gnu\nrelease: 1.92.0\nLLVM version: 21.1.3\n",
+      "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)\nrelease: 1.92.0\ncommit-hash: 344c4567c634a25837e3c3476aac08af84cf9203\ncommit-date: 2025-10-21\nhost: x86_64-unknown-linux-gnu\nlibgit2: 1.9.1 (sys:0.20.2 vendored)\nlibcurl: 8.15.0-DEV (sys:0.4.83+curl-8.15.0 vendored ssl:OpenSSL/3.5.4)\nssl: OpenSSL 3.5.4 30 Sep 2025\nos: Ubuntu 24.4.0 (noble) [64-bit]\n",
+      "compiler_environment": {
+        "RUSTFLAGS": null,
+        "CARGO_ENCODED_RUSTFLAGS": null,
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_BUILD_TARGET": null
+      },
+      "native_guard_hashes": {
+        "default": "ab03f23b53a2be100647c775ec69621effe576cebb84590081105434a095768c",
+        "html5": "ab03f23b53a2be100647c775ec69621effe576cebb84590081105434a095768c"
+      },
+      "native_profile": {
+        "opt_level": "1",
+        "debuginfo": 2,
+        "debug_assertions": true,
+        "overflow_checks": true,
+        "test": true
+      },
+      "native_configurations": {
+        "default": 410,
+        "html5": 410
+      },
+      "equal_native_configurations": true
+    }
+  },
+  "implemented_boundaries": {
+    "source_provenance": {
+      "deadline_minutes": 10,
+      "ownership": "Full committed-source, dependency graph and admitted provenance tests"
+    },
+    "rust_correctness": {
+      "deadline_minutes": 30,
+      "ownership": "Lint, debug builds, complete workspace lanes and parser regressions"
+    },
+    "rust_release": {
+      "deadline_minutes": 20,
+      "ownership": "Release builds, networking abort and benchmark compilation"
+    },
+    "rust_conformance": {
+      "deadline_minutes": 10,
+      "ownership": "Package-qualified conformance executable and AH9/AG8 suites"
+    },
+    "streaming_integration": {
+      "deadline_minutes": 25,
+      "ownership": "Full integration guard, feature/artifact and replacement-inventory probes"
+    },
+    "streaming_head": {
+      "deadline_minutes": 25,
+      "ownership": "Exact PR-head full-workspace compiled guard; PR only"
+    },
+    "ci_qualification": {
+      "deadline_minutes": 2,
+      "ownership": "Strict prerequisite/source validation"
+    },
+    "rust": {
+      "deadline_minutes": 2,
+      "ownership": "Retained required Rust (ubuntu-latest) compatibility barrier"
+    }
+  },
+  "heavy_jobs_have_no_dependencies": true,
+  "workspace_guard_removal_activated": false,
+  "narrow_recipe_used_for_execution": false,
+  "new_graph_hosted_enforcement_verified": false,
+  "native_narrow_recipe_and_inventory_proof_pending": true,
+  "local_recipe_probe": {
+    "platform": "macOS arm64",
+    "source_sha": "ea843be2299cc8d3d5ea15c7aab66b7abd0028ec",
+    "workflow_uncommitted": true,
+    "wrapper_exit": 0,
+    "source_scope": "Rust/Cargo inputs unchanged from HEAD; working-tree recipe mechanics, not committed or hosted qualification.",
+    "measurements": [
+      {
+        "program": "LANES",
+        "exit": 0,
+        "wall_seconds": 2.581495250109583
+      },
+      {
+        "program": "INVENTORIES",
+        "exit": 0,
+        "wall_seconds": 6.420170875033364
+      }
+    ],
+    "lanes": {
+      "executed_sha": "ea843be2299cc8d3d5ea15c7aab66b7abd0028ec",
+      "executed_tree": "375de3c1a65ee3b0a197aec22500cd2ea7c5fe51",
+      "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08) (Homebrew)\nbinary: rustc\ncommit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234\ncommit-date: 2025-12-08\nhost: aarch64-apple-darwin\nrelease: 1.92.0\nLLVM version: 21.1.7\n",
+      "cargo": "cargo 1.92.0 (Homebrew)\nrelease: 1.92.0\nhost: aarch64-apple-darwin\nlibgit2: 1.9.2 (sys:0.20.2 system)\nlibcurl: 8.7.1 (sys:0.4.83+curl-8.15.0 system ssl:(SecureTransport) LibreSSL/3.3.6)\nos: Mac OS 27.0.1 [64-bit]\n",
+      "compiler_environment": {
+        "RUSTFLAGS": null,
+        "CARGO_ENCODED_RUSTFLAGS": null,
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_BUILD_TARGET": null
+      },
+      "lanes": [
+        {
+          "lane": "default",
+          "command": [
+            "cargo",
+            "test",
+            "--workspace",
+            "--lib",
+            "--bins",
+            "--tests",
+            "--examples",
+            "--locked",
+            "--no-run",
+            "--message-format=json",
+            "--timings"
+          ],
+          "artifact": {
+            "reason": "compiler-artifact",
+            "package_id": "path+file:///Users/jorisjansen/personal/code/borrowser/crates/runtime_parse#0.1.0",
+            "manifest_path": "/Users/jorisjansen/personal/code/borrowser/crates/runtime_parse/Cargo.toml",
+            "target": {
+              "kind": [
+                "test"
+              ],
+              "crate_types": [
+                "bin"
+              ],
+              "name": "perf_regression",
+              "src_path": "/Users/jorisjansen/personal/code/borrowser/crates/runtime_parse/tests/perf_regression.rs",
+              "edition": "2024",
+              "doc": false,
+              "doctest": false,
+              "test": true
+            },
+            "profile": {
+              "opt_level": "1",
+              "debuginfo": 2,
+              "debug_assertions": true,
+              "overflow_checks": true,
+              "test": true
+            },
+            "features": [],
+            "filenames": [
+              "/Users/jorisjansen/personal/code/borrowser/target/debug/deps/perf_regression-1d2e7ac6de0321d2"
+            ],
+            "executable": "/Users/jorisjansen/personal/code/borrowser/target/debug/deps/perf_regression-1d2e7ac6de0321d2",
+            "fresh": true
+          },
+          "sha256": "eb942f8885bf88a6d805088c48b0a535cc8c5b08505dc95bf2a347297438edfa"
+        },
+        {
+          "lane": "html5",
+          "command": [
+            "cargo",
+            "test",
+            "--workspace",
+            "--lib",
+            "--bins",
+            "--tests",
+            "--examples",
+            "--locked",
+            "--no-run",
+            "--message-format=json",
+            "--timings",
+            "--features",
+            "html5"
+          ],
+          "artifact": {
+            "reason": "compiler-artifact",
+            "package_id": "path+file:///Users/jorisjansen/personal/code/borrowser/crates/runtime_parse#0.1.0",
+            "manifest_path": "/Users/jorisjansen/personal/code/borrowser/crates/runtime_parse/Cargo.toml",
+            "target": {
+              "kind": [
+                "test"
+              ],
+              "crate_types": [
+                "bin"
+              ],
+              "name": "perf_regression",
+              "src_path": "/Users/jorisjansen/personal/code/borrowser/crates/runtime_parse/tests/perf_regression.rs",
+              "edition": "2024",
+              "doc": false,
+              "doctest": false,
+              "test": true
+            },
+            "profile": {
+              "opt_level": "1",
+              "debuginfo": 2,
+              "debug_assertions": true,
+              "overflow_checks": true,
+              "test": true
+            },
+            "features": [],
+            "filenames": [
+              "/Users/jorisjansen/personal/code/borrowser/target/debug/deps/perf_regression-1d2e7ac6de0321d2"
+            ],
+            "executable": "/Users/jorisjansen/personal/code/borrowser/target/debug/deps/perf_regression-1d2e7ac6de0321d2",
+            "fresh": true
+          },
+          "sha256": "eb942f8885bf88a6d805088c48b0a535cc8c5b08505dc95bf2a347297438edfa"
+        },
+        {
+          "lane": "narrow",
+          "command": [
+            "cargo",
+            "test",
+            "--workspace",
+            "--test",
+            "perf_regression",
+            "--locked",
+            "--no-run",
+            "--message-format=json",
+            "--timings"
+          ],
+          "artifact": {
+            "reason": "compiler-artifact",
+            "package_id": "path+file:///Users/jorisjansen/personal/code/borrowser/crates/runtime_parse#0.1.0",
+            "manifest_path": "/Users/jorisjansen/personal/code/borrowser/crates/runtime_parse/Cargo.toml",
+            "target": {
+              "kind": [
+                "test"
+              ],
+              "crate_types": [
+                "bin"
+              ],
+              "name": "perf_regression",
+              "src_path": "/Users/jorisjansen/personal/code/borrowser/crates/runtime_parse/tests/perf_regression.rs",
+              "edition": "2024",
+              "doc": false,
+              "doctest": false,
+              "test": true
+            },
+            "profile": {
+              "opt_level": "1",
+              "debuginfo": 2,
+              "debug_assertions": true,
+              "overflow_checks": true,
+              "test": true
+            },
+            "features": [],
+            "filenames": [
+              "/Users/jorisjansen/personal/code/borrowser/target/debug/deps/perf_regression-1d2e7ac6de0321d2"
+            ],
+            "executable": "/Users/jorisjansen/personal/code/borrowser/target/debug/deps/perf_regression-1d2e7ac6de0321d2",
+            "fresh": true
+          },
+          "sha256": "eb942f8885bf88a6d805088c48b0a535cc8c5b08505dc95bf2a347297438edfa"
+        }
+      ],
+      "same_guard_bytes": true,
+      "configuration_counts": {
+        "default": 392,
+        "html5": 392,
+        "narrow": 92
+      },
+      "same_workspace_configurations": true,
+      "narrow_configuration_subset": true,
+      "narrow_guard_bytes_equal": true
+    },
+    "inventories": [
+      {
+        "lane": "default",
+        "command": [
+          "cargo",
+          "test",
+          "--workspace",
+          "--lib",
+          "--bins",
+          "--tests",
+          "--examples",
+          "--locked",
+          "--",
+          "--skip",
+          "aws::command::tests::native_procfs_",
+          "--list",
+          "--format",
+          "terse"
+        ],
+        "before_records": 2957,
+        "after_records": 2956,
+        "removed": [
+          "runtime_parse_linear_streaming_guard: test"
+        ]
+      },
+      {
+        "lane": "html5",
+        "command": [
+          "cargo",
+          "test",
+          "--workspace",
+          "--lib",
+          "--bins",
+          "--tests",
+          "--examples",
+          "--locked",
+          "--features",
+          "html5",
+          "--",
+          "--skip",
+          "aws::command::tests::native_procfs_",
+          "--list",
+          "--format",
+          "terse"
+        ],
+        "before_records": 2957,
+        "after_records": 2956,
+        "removed": [
+          "runtime_parse_linear_streaming_guard: test"
+        ]
+      }
+    ]
+  },
+  "measurement_limitations": [
+    "Historical native full/alias equality is demonstrated; new narrower-recipe evidence is local macOS arm64 only.",
+    "Local recipe invocation used existing caches and an uncommitted workflow; it is not cold or hosted qualification.",
+    "A first diagnostic wrapper failed after successful children; the clean repeated probe is recorded here. The failed attempt is retained under /private/tmp/borrowser-1458-redesign/failed-wrapper-attempt.json.",
+    "No new graph duration, cache save size or cold capacity is measured on GitHub.",
+    "The cancelled serial control is not a successful equal-coverage performance baseline.",
+    "The former temporary Cargo fixtures had no toolchain pin and could inherit stable 1.100.0; the prior native streaming artifact itself explicitly identifies 1.92.0."
+  ],
+  "performance_policy": {
+    "warm_critical_path_target_minutes": 15,
+    "target_is_not_a_guarantee": true,
+    "projection_only_queue_free_transition_minutes": [
+      23,
+      25
+    ],
+    "former_runner_cost_guardrail_percent": 10,
+    "runner_cost_tradeoff": "Prioritize latency and report costs beyond the former guardrail; no new acceptable cost percentage is silently chosen.",
+    "parallel_architecture_selected": true,
+    "optimized_recipe_and_guard_removal_pending": true,
+    "minimum_samples": {
+      "exact_cache": 3,
+      "cold": 2,
+      "fallback": "separate classification"
+    }
+  },
+  "local_validation": {
+    "qualification_regressions": [
+      {
+        "environment": "macOS arm64",
+        "rust_cargo": "1.92.0",
+        "cargo_term_color": "always",
+        "command": "CARGO_TERM_COLOR=always python3 -I -B tools/ci/tests/test_ci_qualification.py",
+        "tests_passed": 58,
+        "seconds": 50.172,
+        "exit_code": 0,
+        "raw_log": "/private/tmp/borrowser-1458-redesign/review-mac-always.log"
+      },
+      {
+        "environment": "macOS arm64",
+        "rust_cargo": "1.92.0",
+        "cargo_term_color": "never",
+        "command": "CARGO_TERM_COLOR=never python3 -I -B tools/ci/tests/test_ci_qualification.py",
+        "tests_passed": 58,
+        "seconds": 50.2,
+        "exit_code": 0,
+        "raw_log": "/private/tmp/borrowser-1458-redesign/review-mac-never.log"
+      },
+      {
+        "environment": "offline Linux arm64 container",
+        "rust_cargo": "1.92.0",
+        "cargo_term_color": "always",
+        "command": "CARGO_TERM_COLOR=always python3 -I -B tools/ci/tests/test_ci_qualification.py",
+        "tests_passed": 58,
+        "seconds": 12.345,
+        "exit_code": 0,
+        "raw_log": "/private/tmp/borrowser-1458-redesign/review-linux-always.log"
+      },
+      {
+        "environment": "offline Linux arm64 container",
+        "rust_cargo": "1.92.0",
+        "cargo_term_color": "never",
+        "command": "CARGO_TERM_COLOR=never python3 -I -B tools/ci/tests/test_ci_qualification.py",
+        "tests_passed": 58,
+        "seconds": 12.644,
+        "exit_code": 0,
+        "raw_log": "/private/tmp/borrowser-1458-redesign/review-linux-never.log"
+      }
+    ],
+    "original_regression_names_preserved": 36,
+    "docker_invocation": "docker run --rm --network none --mount type=bind,src=/Users/jorisjansen/personal/code/borrowser,dst=/src,readonly --tmpfs /tmp:rw,exec,size=512m --workdir /src -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/src -e CARGO_TERM_COLOR=always|never b0d1b014465f python3 -I -B tools/ci/tests/test_ci_qualification.py",
+    "format": {
+      "command": "make fmt-check",
+      "exit_code": 0
+    },
+    "actions": {
+      "command": "/private/tmp/borrowser-1458-evidence/actionlint -color -shellcheck= .github/workflows/ci.yml",
+      "version": "1.7.12",
+      "exit_code": 0,
+      "shellcheck_executed": false
+    },
+    "yaml": {
+      "parser": "Ruby Psych.safe_load(File.read(path), aliases: true)",
+      "result": "pass; all step aliases expanded"
+    },
+    "bash": {
+      "command": "bash -n for every expanded run block",
+      "blocks": 96,
+      "exit_code": 0
+    },
+    "coverage_conservation": {
+      "original_qualification_commands": "retained; reporting-only --timings additions allowed",
+      "non_rust_job_definitions_unchanged": 12,
+      "production_rust_cargo_profiles_toolchain_unchanged": true
+    },
+    "diff": {
+      "command": "git diff HEAD --check",
+      "exit_code": 0
+    },
+    "committed_provenance": {
+      "commands": [
+        "make check-url-dependencies",
+        "make ci"
+      ],
+      "exit_codes": [
+        2,
+        2
+      ],
+      "result": "expected preflight rejection: uncommitted qualification test: test_ci_qualification.py",
+      "qualification_bypassed": false
+    },
+    "runtime_smoke": "not run: tooling-only changes; original native AG2 and release-abort qualification commands retained",
+    "native_linux_x86_64_new_graph": "not run",
+    "hosted_new_graph": "not run",
+    "validation_driver_note": "An initial final YAML wrapper used Psych.safe_load_file, unavailable in the system Ruby; corrected to Psych.safe_load and all expanded blocks then validated successfully."
+  },
+  "source_verification": {
+    "working_tree_clean_before_edits": true,
+    "local_and_live_head": "ea843be2299cc8d3d5ea15c7aab66b7abd0028ec",
+    "local_master_origin_master_live_master": "144ef3bc887ac5688ac7f6b123a6e98f1e1485f2",
+    "live_pr_head": "ea843be2299cc8d3d5ea15c7aab66b7abd0028ec",
+    "live_pr_merge": "c5d88fd2e3188a8b97036372f8a504b5f26615da",
+    "final_read_only_command": "git ls-remote origin refs/heads/master refs/heads/chore/1458-optimize-ci-critical-path refs/pull/1463/head refs/pull/1463/merge",
+    "published_history_rewritten": false,
+    "index_changed": false,
+    "candidate_committed_or_pushed": false
+  }
+}

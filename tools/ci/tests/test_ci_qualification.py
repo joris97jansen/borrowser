@@ -6,6 +6,7 @@ No production qualification helper or alternative Rust test runner is involved.
 """
 
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,7 @@ import re
 import subprocess
 import tempfile
 import textwrap
+import tomllib
 import unittest
 
 
@@ -20,11 +22,18 @@ ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = (ROOT / ".github/workflows/ci.yml").read_text()
 INTEGRATION = "a" * 40
 HEAD = "b" * 40
+INTEGRATION_TREE = "c" * 40
+HEAD_TREE = "d" * 40
+SOURCE_JOBS = {"source_provenance", "rust_correctness", "rust_release", "rust_conformance", "streaming_integration"}
 
 
 def workflow_program(name):
     """Read one literal run block; do not reimplement its qualification logic."""
-    step = WORKFLOW.split(f"      - name: {name}\n", 1)[1]
+    # A shared step may be declared as a YAML mapping anchor; read its literal body.
+    match = re.search(r"^      - name: " + re.escape(name) + r"\n|^        name: " + re.escape(name) + r"\n", WORKFLOW, re.MULTILINE)
+    if match is None:
+        raise ValueError("workflow program missing: " + name)
+    step = WORKFLOW[match.end():]
     lines = step.split("        run: |\n", 1)[1].splitlines()
     body = []
     for line in lines:
@@ -39,7 +48,18 @@ HEAD_GUARD = workflow_program("Qualify streaming guard on exact PR head")
 LANES = workflow_program("Record native streaming guard lane equivalence")
 SOURCE = workflow_program("Verify qualification source")
 INTEGRATION_PROGRAM = workflow_program("Verify integration source identity")
-gate_job = WORKFLOW.split("\n  ci_qualification:\n", 1)[1]
+INVENTORIES = workflow_program("Audit streaming guard replacement inventories")
+INTEGRATION_GUARD = workflow_program("Qualify streaming guard on integration source")
+COMPLETE = workflow_program("Verify completed source qualification")
+LEGACY = workflow_program("Preserve required Rust status")
+
+
+def job_block(name):
+    block = WORKFLOW.split("\n  " + name + ":\n", 1)[1]
+    return re.split(r"\n  [a-z0-9_]+:\n", block, maxsplit=1)[0]
+
+
+gate_job = job_block("ci_qualification")
 PREREQUISITES = re.findall(r"^      - ([a-z0-9_]+)$", gate_job, re.MULTILINE)
 
 
@@ -52,7 +72,10 @@ def bash(program, environment, cwd=None):
 class QualificationGate(unittest.TestCase):
     def successful_results(self):
         results = {name: {"result": "success", "outputs": {}} for name in PREREQUISITES}
-        results["rust"]["outputs"] = {"integration_sha": INTEGRATION, "head_sha": HEAD}
+        for name in SOURCE_JOBS:
+            results[name]["outputs"] = {"qualified_sha": INTEGRATION, "qualified_tree": INTEGRATION_TREE}
+        results["source_provenance"]["outputs"]["pr_head_tree"] = HEAD_TREE
+        results["streaming_head"]["outputs"] = {"qualified_sha": HEAD, "qualified_tree": HEAD_TREE}
         return results
 
     def gate(self, results, event="pull_request"):
@@ -62,7 +85,7 @@ class QualificationGate(unittest.TestCase):
 
     def test_gate_covers_every_normal_job(self):
         jobs = set(re.findall(r"^  ([a-z0-9_]+):$", WORKFLOW.split("\njobs:\n", 1)[1], re.MULTILINE))
-        self.assertEqual(set(PREREQUISITES), jobs - {"ci_qualification", "ag4_proxy_timing"})
+        self.assertEqual(set(PREREQUISITES), jobs - {"ci_qualification", "rust", "ag4_proxy_timing"})
         self.assertEqual(len(PREREQUISITES), len(set(PREREQUISITES)))
         self.assertIn("always()", gate_job.split("    steps:", 1)[0])
 
@@ -71,7 +94,7 @@ class QualificationGate(unittest.TestCase):
 
     def test_push_requires_integration_without_fabricating_head_execution(self):
         results = self.successful_results()
-        results["rust"]["outputs"].pop("head_sha")
+        results["streaming_head"] = {"result": "skipped", "outputs": {}}
         self.assertEqual(self.gate(results, "push").returncode, 0)
 
     def test_every_non_successful_prerequisite_blocks_qualification(self):
@@ -101,12 +124,129 @@ class QualificationGate(unittest.TestCase):
         self.assertNotEqual(bash(GATE, {"QUALIFICATION_RESULTS": "{"}).returncode, 0)
 
     def test_missing_or_mismatched_source_outputs_are_rejected(self):
-        for key in ("integration_sha", "head_sha"):
-            for value in (None, "c" * 40, ""):
-                with self.subTest(key=key, value=value):
-                    results = copy.deepcopy(self.successful_results())
-                    results["rust"]["outputs"][key] = value
-                    self.assertNotEqual(self.gate(results).returncode, 0)
+        for name in SOURCE_JOBS | {"streaming_head"}:
+            for key in ("qualified_sha", "qualified_tree"):
+                for value in (None, "e" * 40, ""):
+                    with self.subTest(job=name, key=key, value=value):
+                        results = copy.deepcopy(self.successful_results())
+                        results[name]["outputs"][key] = value
+                        self.assertNotEqual(self.gate(results).returncode, 0)
+
+    def test_master_push_only_allows_the_explicit_head_job_skip(self):
+        results = self.successful_results()
+        self.assertNotEqual(self.gate(results, "push").returncode, 0)
+        results["streaming_head"] = {"result": "skipped", "outputs": {"qualified_sha": HEAD}}
+        self.assertNotEqual(self.gate(results, "push").returncode, 0)
+        results["streaming_head"]["outputs"] = {}
+        self.assertEqual(self.gate(results, "push").returncode, 0)
+        results["rust_release"]["result"] = "skipped"
+        self.assertNotEqual(self.gate(results, "push").returncode, 0)
+
+    def test_head_tree_is_independent_of_integration_tree_but_must_match_head_object(self):
+        results = self.successful_results()
+        self.assertNotEqual(INTEGRATION_TREE, HEAD_TREE)
+        self.assertEqual(self.gate(results).returncode, 0)
+        results["streaming_head"]["outputs"]["qualified_tree"] = INTEGRATION_TREE
+        self.assertNotEqual(self.gate(results).returncode, 0)
+
+    def test_missing_or_malformed_head_tree_and_unknown_events_fail(self):
+        for value in (None, "", "not-a-tree"):
+            results = self.successful_results()
+            results["source_provenance"]["outputs"]["pr_head_tree"] = value
+            self.assertNotEqual(self.gate(results).returncode, 0)
+        self.assertNotEqual(self.gate(self.successful_results(), "workflow_dispatch").returncode, 0)
+
+    def test_legacy_required_rust_context_cannot_bypass_the_final_gate(self):
+        block = job_block("rust")
+        self.assertIn("    name: Rust (ubuntu-latest)\n", block)
+        self.assertIn("always()", block)
+        self.assertEqual(re.findall(r"^      - ([a-z0-9_]+)$", block, re.MULTILINE), ["ci_qualification"])
+        self.assertEqual(bash(LEGACY, {"QUALIFICATION_RESULT": "success"}).returncode, 0)
+        for value in ("failure", "skipped", "cancelled", "timed_out", "neutral", ""):
+            self.assertNotEqual(bash(LEGACY, {"QUALIFICATION_RESULT": value}).returncode, 0)
+        self.assertNotEqual(bash(LEGACY, {}).returncode, 0)
+
+    def test_parallel_work_jobs_do_not_recreate_the_serial_chain(self):
+        for name in SOURCE_JOBS | {"streaming_head"}:
+            block = job_block(name)
+            self.assertNotIn("    needs:", block)
+            if name != "source_provenance":
+                self.assertIn("      - *source_complete", block)
+                self.assertIn("      - *integration_checkout\n      - *integration_identity\n      - *committed_preflight\n", block)
+        self.assertIn("if: ${{ github.event_name == 'pull_request' }}", job_block("streaming_head"))
+        self.assertIn("fetch-depth: 0", job_block("source_provenance"))
+
+    def test_cache_namespaces_and_mutable_outputs_are_isolated(self):
+        keys = []
+        for name in SOURCE_JOBS | {"streaming_head"}:
+            block = job_block(name)
+            keys.append(re.search(r"^          key: (.+)$", block, re.MULTILINE)[1])
+            self.assertIn("prefix-key: v1-ci-1458", block)
+            self.assertNotIn("shared-key:", block)
+            self.assertIn("cache-workspace-crates: 'false'", block)
+            self.assertIn("cache-on-failure: 'false'", block)
+            self.assertIn("cache-bin: 'false'", block)
+        self.assertEqual(len(keys), len(set(keys)))
+        self.assertIn("cache-targets: 'false'", job_block("streaming_head"))
+        self.assertIn("cache-targets: 'false'", job_block("source_provenance"))
+        self.assertIn('export CARGO_TARGET_DIR="$RUNNER_TEMP/ci-1458-pr-head-target"', HEAD_GUARD)
+        self.assertNotIn("download-artifact", WORKFLOW)
+
+    def test_installed_compiler_matches_the_repository_pin(self):
+        pinned = tomllib.loads((ROOT / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
+        self.assertIn("toolchain: '" + pinned + "'", job_block("source_provenance"))
+        for name in SOURCE_JOBS | {"streaming_head"}:
+            if name != "source_provenance":
+                self.assertIn("      - *pinned_toolchain", job_block(name))
+
+    def test_original_execution_coverage_is_retained_until_hosted_activation(self):
+        correctness = job_block("rust_correctness")
+        original = 'cargo test --workspace --lib --bins --tests --examples'
+        self.assertIn(original + ' --locked -- --skip aws::command::tests::native_procfs_\n', correctness)
+        self.assertIn(original + ' --features html5 --locked -- --skip aws::command::tests::native_procfs_\n', correctness)
+        self.assertNotIn("--skip runtime_parse_linear_streaming_guard", correctness)
+        self.assertIn('"--skip", "runtime_parse_linear_streaming_guard"', INVENTORIES)
+        self.assertIn("--test\", \"perf_regression", LANES)
+        self.assertNotIn('"-p", "runtime_parse"', LANES)
+
+    def test_all_original_qualification_commands_survive_the_job_split(self):
+        # Immutable pre-1458 baseline; available under the existing full-history contract.
+        original = subprocess.run(
+            ["git", "show", "144ef3bc887ac5688ac7f6b123a6e98f1e1485f2:.github/workflows/ci.yml"],
+            cwd=ROOT, check=True, capture_output=True, text=True, timeout=30).stdout
+
+        def commands(workflow):
+            result = []
+            lines = workflow.splitlines()
+            for index, line in enumerate(lines):
+                match = re.fullmatch(r"(?:      -|       ) run: (.+)", line)
+                if not match:
+                    continue
+                command = match[1]
+                if command == "|":
+                    body = []
+                    for row in lines[index + 1:]:
+                        if row.strip() and not row.startswith("          "):
+                            break
+                        body.append(row)
+                    command = textwrap.dedent("\n".join(body)).strip()
+                # Reporting-only Cargo flags do not change qualification behavior.
+                result.append(re.sub(r" --timings(?=\s|$)", "", command))
+            return result
+
+        from collections import Counter
+        missing = Counter(commands(original)) - Counter(commands(WORKFLOW))
+        self.assertFalse(missing, "original qualification commands removed: " + repr(missing))
+
+    def test_each_build_job_retains_its_own_timing_reports(self):
+        for name in ("rust_correctness", "rust_release", "rust_conformance"):
+            block = job_block(name)
+            self.assertIn(" --timings", block)
+            self.assertIn("path: target/cargo-timings/", block)
+            self.assertIn("if-no-files-found: error", block)
+        self.assertIn("--message-format=json --timings", HEAD_GUARD)
+        for name in ("streaming_integration", "streaming_head"):
+            self.assertIn("if-no-files-found: error", job_block(name))
 
 
 class ExactHeadGuard(unittest.TestCase):
@@ -130,6 +270,8 @@ class ExactHeadGuard(unittest.TestCase):
         self.git("config", "commit.gpgsign", "false")
         (self.repo / "Cargo.toml").write_text(
             '[workspace]\nmembers=["crates/runtime_parse", "crates/unrelated"]\nresolver="2"\n')
+        pinned = tomllib.loads((ROOT / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
+        (self.repo / "rust-toolchain.toml").write_text('[toolchain]\nchannel="' + pinned + '"\nprofile="minimal"\n')
         self.crate = self.repo / "crates/runtime_parse"
         (self.crate / "src").mkdir(parents=True)
         (self.crate / "tests").mkdir()
@@ -214,6 +356,13 @@ class ExactHeadGuard(unittest.TestCase):
         artifact = json.loads((self.runtime / "ci-1458-evidence/pr-head-guard-artifact.json").read_text())["artifact"]
         self.assertEqual(artifact["target"]["name"], "perf_regression")
         self.assertEqual(artifact["target"]["kind"], ["test"])
+
+    def test_disposable_cargo_workspace_uses_the_repository_compiler(self):
+        pinned = tomllib.loads((ROOT / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
+        for command in (["rustc", "-vV"], ["cargo", "-vV"]):
+            version = subprocess.run(command, cwd=self.repo, env=dict(os.environ, **self.environment),
+                                     check=True, capture_output=True, text=True, timeout=30).stdout
+            self.assertIn("release: " + pinned + "\n", version)
 
     def test_actual_cargo_listing_with_multiple_targets_and_execution_summaries(self):
         (self.crate / "tests/perf_regression.rs").write_text('#[test]\nfn runtime_parse_linear_streaming_guard() {}\n')
@@ -471,7 +620,10 @@ class ExactHeadGuard(unittest.TestCase):
         report = json.loads((self.runtime / "ci-1458-evidence/lane-equivalence.json").read_text())
         self.assertTrue(report["same_guard_bytes"])
         self.assertEqual(report["executed_sha"], self.git("rev-parse", "HEAD"))
-        self.assertEqual([lane["lane"] for lane in report["lanes"]], ["default", "html5"])
+        self.assertEqual([lane["lane"] for lane in report["lanes"]], ["default", "html5", "narrow"])
+        self.assertTrue(report["same_workspace_configurations"])
+        self.assertTrue(report["narrow_configuration_subset"])
+        self.assertTrue(report["narrow_guard_bytes_equal"])
 
     def test_unequal_lane_evidence_does_not_authorize_dropping_execution(self):
         manifest = self.crate / "Cargo.toml"
@@ -483,6 +635,157 @@ class ExactHeadGuard(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         report = json.loads((self.runtime / "ci-1458-evidence/lane-equivalence.json").read_text())
         self.assertFalse(report["same_guard_bytes"])
+        self.assertFalse(report["same_workspace_configurations"])
+
+    def test_narrow_workspace_recipe_keeps_features_that_package_scoping_loses(self):
+        manifest = self.crate / "Cargo.toml"
+        manifest.write_text(manifest.read_text() + 'instrumented=[]\n')
+        manifest = self.other / "Cargo.toml"
+        manifest.write_text(manifest.read_text() + '[dev-dependencies]\n'
+                            'runtime_parse={path="../runtime_parse",features=["instrumented"]}\n')
+        subprocess.run(["cargo", "generate-lockfile", "--offline"], cwd=self.repo,
+                       env=dict(os.environ, **self.environment), check=True, capture_output=True, timeout=30)
+        environment = self.integration_fixture(
+            '#[test]\nfn runtime_parse_linear_streaming_guard() { assert!(cfg!(feature="instrumented")); }\n')
+        result = bash(LANES, environment, self.repo)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads((self.runtime / "ci-1458-evidence/lane-equivalence.json").read_text())
+        self.assertTrue(report["narrow_configuration_subset"])
+        self.assertTrue(report["narrow_guard_bytes_equal"])
+        for lane in report["lanes"]:
+            self.assertIn("instrumented", lane["artifact"]["features"])
+        package_only = subprocess.run(
+            ["cargo", "test", "-p", "runtime_parse", "--test", "perf_regression", "--locked", "--no-run", "--message-format=json"],
+            cwd=self.repo, env=dict(os.environ, **environment), check=True, capture_output=True, text=True, timeout=120)
+        artifacts = [json.loads(line) for line in package_only.stdout.splitlines()]
+        guard = next(a for a in artifacts if a.get("reason") == "compiler-artifact" and a["target"]["name"] == "perf_regression")
+        self.assertNotIn("instrumented", guard["features"])
+        self.assertNotEqual(hashlib.sha256(Path(guard["executable"]).read_bytes()).hexdigest(), report["lanes"][0]["sha256"])
+
+    def integration_fixture(self, source):
+        (self.crate / "tests/perf_regression.rs").write_text(source)
+        (self.repo / ".gitignore").write_text("/target/\n")
+        revision = self.commit_fixture()
+        return dict(self.environment, GITHUB_SHA=revision, GITHUB_EVENT_NAME="push",
+                    CARGO_TARGET_DIR=str(self.repo / "target"))
+
+    def test_integration_guard_executes_only_the_bound_standard_test_and_completes_source(self):
+        environment = self.integration_fixture(
+            '#[test]\nfn runtime_parse_linear_streaming_guard() {}\n#[test]\nfn unrelated() {}\n')
+        for program in (LANES, INVENTORIES, INTEGRATION_GUARD, COMPLETE):
+            result = bash(program, environment, self.repo)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        output = Path(environment["GITHUB_OUTPUT"]).read_text()
+        self.assertIn("qualified_sha=" + environment["GITHUB_SHA"], output)
+        self.assertIn("qualified_tree=" + self.git("rev-parse", "HEAD^{tree}"), output)
+        inventory = json.loads((self.runtime / "ci-1458-evidence/replacement-inventory.json").read_text())
+        self.assertEqual([x["lane"] for x in inventory], ["default", "html5"])
+        self.assertTrue(all(x["before_records"] - x["after_records"] == 1 for x in inventory))
+        guard_log = (self.runtime / "ci-1458-evidence/integration-guard.log").read_text()
+        self.assertIn("1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out;", guard_log)
+
+    def test_inventory_rejects_substring_filter_that_removes_another_test(self):
+        environment = self.integration_fixture(
+            '#[test]\nfn runtime_parse_linear_streaming_guard() {}\n'
+            '#[test]\nfn runtime_parse_linear_streaming_guard_suffix() {}\n')
+        result = bash(LANES, environment, self.repo)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result = bash(INVENTORIES, environment, self.repo)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("remove exactly", result.stderr)
+
+    def test_inventory_is_listing_only_and_does_not_execute_any_workload(self):
+        environment = self.integration_fixture(
+            '#[test]\nfn runtime_parse_linear_streaming_guard() { panic!("listing executed guard"); }\n'
+            '#[test]\nfn ordinary() { panic!("listing executed ordinary test"); }\n')
+        self.assertEqual(bash(LANES, environment, self.repo).returncode, 0)
+        result = bash(INVENTORIES, environment, self.repo)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_inventory_rejects_zero_and_duplicate_guard_names(self):
+        for source in ('#[test]\nfn another() {}\n',
+                       '#[test]\nfn runtime_parse_linear_streaming_guard() {}\n'):
+            (self.crate / "tests/perf_regression.rs").write_text(source)
+            (self.other / "tests/unrelated.rs").write_text(source)
+            self.commit_fixture()
+            environment = dict(self.environment, CARGO_TARGET_DIR=str(self.runtime / "inventory-target"))
+            result = bash(INVENTORIES, environment, self.repo)
+            self.assertNotEqual(result.returncode, 0)
+
+    def test_integration_guard_rejects_ignored_and_failing_execution(self):
+        for source in ('#[test]\n#[ignore]\nfn runtime_parse_linear_streaming_guard() {}\n',
+                       '#[test]\nfn runtime_parse_linear_streaming_guard() { panic!("failure"); }\n'):
+            environment = self.integration_fixture(source)
+            self.assertEqual(bash(LANES, environment, self.repo).returncode, 0)
+            result = bash(INTEGRATION_GUARD, environment, self.repo)
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertFalse(Path(environment["GITHUB_OUTPUT"]).exists())
+
+    def test_integration_binding_rejects_changed_artifact_receipt(self):
+        environment = self.integration_fixture('#[test]\nfn runtime_parse_linear_streaming_guard() {}\n')
+        self.assertEqual(bash(LANES, environment, self.repo).returncode, 0)
+        path = self.runtime / "ci-1458-evidence/lane-equivalence.json"
+        report = json.loads(path.read_text())
+        report["lanes"][0]["sha256"] = "0" * 64
+        path.write_text(json.dumps(report))
+        result = bash(INTEGRATION_GUARD, environment, self.repo)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("artifact changed", result.stderr)
+
+    def test_integration_binding_rejects_stale_source_evidence(self):
+        environment = self.integration_fixture('#[test]\nfn runtime_parse_linear_streaming_guard() {}\n')
+        self.assertEqual(bash(LANES, environment, self.repo).returncode, 0)
+        path = self.runtime / "ci-1458-evidence/lane-equivalence.json"
+        original = json.loads(path.read_text())
+        for field in ("executed_sha", "executed_tree"):
+            report = copy.deepcopy(original)
+            report[field] = "e" * 40
+            path.write_text(json.dumps(report))
+            result = bash(INTEGRATION_GUARD, environment, self.repo)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("source identity changed", result.stderr)
+
+    def test_integration_binding_rejects_substituted_package_target_source_and_executable(self):
+        environment = self.integration_fixture('#[test]\nfn runtime_parse_linear_streaming_guard() {}\n')
+        self.assertEqual(bash(LANES, environment, self.repo).returncode, 0)
+        path = self.runtime / "ci-1458-evidence/default.jsonl"
+        original = [json.loads(line) for line in path.read_text().splitlines()]
+        for substitution in ("package", "target", "source", "executable"):
+            with self.subTest(substitution=substitution):
+                artifacts = copy.deepcopy(original)
+                guard = next(a for a in artifacts if a.get("reason") == "compiler-artifact"
+                             and a["target"]["name"] == "perf_regression")
+                if substitution == "package":
+                    guard["manifest_path"] = str(self.other / "Cargo.toml")
+                elif substitution == "target":
+                    guard["target"]["kind"] = ["lib"]
+                elif substitution == "source":
+                    guard["target"]["src_path"] = str(self.crate / "tests/unrelated.rs")
+                else:
+                    guard["executable"] = str(self.repo / "Cargo.lock")
+                path.write_text("\n".join(json.dumps(a) for a in artifacts) + "\n")
+                result = bash(INTEGRATION_GUARD, environment, self.repo)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(Path(environment["GITHUB_OUTPUT"]).exists())
+
+    def test_integration_collector_rejects_custom_harness(self):
+        manifest = self.crate / "Cargo.toml"
+        manifest.write_text(manifest.read_text() + '\n[[test]]\nname="perf_regression"\n'
+                            'path="tests/perf_regression.rs"\nharness=false\n')
+        environment = self.integration_fixture('fn main() {}\n')
+        result = bash(LANES, environment, self.repo)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("standard libtest harness", result.stderr)
+
+    def test_completed_source_receipt_rejects_mutation_and_wrong_commit(self):
+        environment = self.integration_fixture('#[test]\nfn runtime_parse_linear_streaming_guard() {}\n')
+        (self.crate / "src/lib.rs").write_text("modified source\n")
+        self.assertNotEqual(bash(COMPLETE, environment, self.repo).returncode, 0)
+        self.assertFalse(Path(environment["GITHUB_OUTPUT"]).exists())
+        self.git("restore", "--", "crates/runtime_parse/src/lib.rs")
+        environment["GITHUB_SHA"] = self.base
+        self.assertNotEqual(bash(COMPLETE, environment, self.repo).returncode, 0)
+        self.assertFalse(Path(environment["GITHUB_OUTPUT"]).exists())
 
     def test_source_check_requires_the_actual_executed_commit(self):
         actual = self.base
