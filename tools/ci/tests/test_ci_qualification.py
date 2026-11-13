@@ -220,15 +220,24 @@ class ExactHeadGuard(unittest.TestCase):
         self.commit_fixture()
         command = ["cargo", "test", "--workspace", "--lib", "--bins", "--tests", "--examples", "--locked",
                    "runtime_parse_linear_streaming_guard", "--", "--exact"]
-        environment = dict(os.environ, **self.environment, CARGO_TARGET_DIR=str(self.runtime / "multi-target"))
-        listing = subprocess.run(command + ["--list", "--format", "terse"], cwd=self.repo,
-                                 env=environment, capture_output=True, text=True, timeout=120, check=True)
-        self.assertGreaterEqual(listing.stderr.count("Running "), 6)
-        self.assertEqual(listing.stdout, "runtime_parse_linear_streaming_guard: test\n")
-        execution = subprocess.run(command, cwd=self.repo, env=environment,
-                                   capture_output=True, text=True, timeout=120, check=True)
-        self.assertGreaterEqual(execution.stdout.count("test result: ok. 0 passed;"), 5)
-        self.assertEqual(execution.stdout.count("test runtime_parse_linear_streaming_guard ... ok"), 1)
+        for color in ("always", "never"):
+            with self.subTest(cargo_term_color=color):
+                environment = dict(os.environ, **self.environment,
+                                   CARGO_TARGET_DIR=str(self.runtime / "multi-target"), CARGO_TERM_COLOR=color)
+                listing = subprocess.run(command + ["--list", "--format", "terse"], cwd=self.repo,
+                                         env=environment, capture_output=True, text=True, timeout=120, check=True)
+                # Cargo colors diagnostics even when captured; remove only SGR styling.
+                diagnostics = re.sub(r"\x1b\[[0-9;]*m", "", listing.stderr)
+                if color == "always":
+                    self.assertNotEqual(diagnostics, listing.stderr)
+                else:
+                    self.assertEqual(diagnostics, listing.stderr)
+                self.assertGreaterEqual(diagnostics.count("Running "), 6)
+                self.assertEqual(listing.stdout, "runtime_parse_linear_streaming_guard: test\n")
+                execution = subprocess.run(command, cwd=self.repo, env=environment,
+                                           capture_output=True, text=True, timeout=120, check=True)
+                self.assertGreaterEqual(execution.stdout.count("test result: ok. 0 passed;"), 5)
+                self.assertEqual(execution.stdout.count("test runtime_parse_linear_streaming_guard ... ok"), 1)
 
     def test_unrelated_tests_in_bound_target_may_be_filtered_without_losing_guard(self):
         result, output, head = self.run_head(
