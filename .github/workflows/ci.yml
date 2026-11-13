@@ -761,6 +761,13 @@ jobs:
       - *integration_checkout
       - *integration_identity
       - *committed_preflight
+      - name: Deliberate streaming integration failure (issue 1458 experiment)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ci-1458-evidence"
+          printf 'experiment=1458-negative-streaming-integration\nintegration_sha=%s\nexpected_exit=1\n' \
+            "$GITHUB_SHA" > "$RUNNER_TEMP/ci-1458-evidence/negative-experiment.txt"
+          exit 1
       - *rust_dependencies
       - *pinned_toolchain
       - name: Cache cargo (streaming-integration-debug)
