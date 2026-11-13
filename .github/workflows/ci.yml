@@ -157,6 +157,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Verify qualification source
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git show -s --format='qualified_commit=%H qualified_tree=%T' HEAD
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12.15'
@@ -468,6 +473,10 @@ jobs:
     env:
       RUST_BACKTRACE: 1
 
+    outputs:
+      integration_sha: ${{ steps.source_identity.outputs.integration_sha }}
+      head_sha: ${{ steps.pr_head_guard.outputs.head_sha }}
+
     strategy:
       fail-fast: false
       matrix:
@@ -490,6 +499,22 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify integration source identity
+        id: source_identity
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          if test "$GITHUB_EVENT_NAME" = pull_request; then
+            test "$(git show -s --format=%P HEAD)" = "$PR_BASE_SHA $PR_HEAD_SHA"
+            git cat-file -e "$PR_HEAD_SHA^{commit}"
+          fi
+          git show -s --format='integration_commit=%H integration_tree=%T parents=%P' HEAD
+          echo "integration_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Verify checkout and committed subtree history
         run: |
@@ -571,6 +596,47 @@ jobs:
         timeout-minutes: 2
         run: make conformance-ci
 
+      - name: Record native streaming guard lane equivalence
+        timeout-minutes: 10
+        run: |
+          python3 -I -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          evidence = Path(os.environ["RUNNER_TEMP"]) / "ci-1458-evidence"
+          evidence.mkdir(exist_ok=True)
+          records = []
+          for lane, features in (("default", []), ("html5", ["--features", "html5"])):
+              command = ["cargo", "test", "--workspace", "--lib", "--bins", "--tests",
+                         "--examples", "--locked", "--no-run", "--message-format=json", *features]
+              with (evidence / (lane + ".jsonl")).open("w") as output:
+                  subprocess.run(command, stdout=output, check=True)
+              artifacts = [json.loads(line) for line in (evidence / (lane + ".jsonl")).read_text().splitlines()]
+              guards = [a for a in artifacts if a.get("reason") == "compiler-artifact"
+                        and a["target"]["name"] == "perf_regression"
+                        and Path(a["manifest_path"]).resolve() == Path("crates/runtime_parse/Cargo.toml").resolve()
+                        and a["profile"]["test"] and a.get("executable")]
+              if len(guards) != 1:
+                  raise SystemExit(f"{lane}: expected exactly one streaming guard artifact")
+              guard = guards[0]
+              records.append({"lane": lane, "command": command, "artifact": guard,
+                              "sha256": hashlib.sha256(Path(guard["executable"]).read_bytes()).hexdigest()})
+          report = {"executed_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+                    "executed_tree": subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip(),
+                    "rustc": subprocess.check_output(["rustc", "-vV"], text=True),
+                    "cargo": subprocess.check_output(["cargo", "-vV"], text=True),
+                    "compiler_environment": {name: os.environ.get(name) for name in
+                        ("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_INCREMENTAL", "CARGO_BUILD_TARGET")},
+                    "lanes": records,
+                    "same_guard_bytes": records[0]["sha256"] == records[1]["sha256"]}
+          (evidence / "lane-equivalence.json").write_text(json.dumps(report, indent=2) + "\n")
+          print(json.dumps(report, indent=2))
+          # An unequal result is evidence against deduplication, not permission to skip a lane.
+          PY
+
       - name: Run tests (default HTML5 build)
         # AG4.1's red native qualification runs in the required AG2 native step.
         # Filter only its duplicate wrappers here; keep all other tests enabled.
@@ -630,6 +696,117 @@ jobs:
       - name: Check generated HTML entities
         run: make html-entities-check
 
+      - name: Qualify streaming guard on exact PR head
+        id: pr_head_guard
+        if: github.event_name == 'pull_request'
+        timeout-minutes: 20
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          export evidence="$RUNNER_TEMP/ci-1458-evidence"
+          export head_dir="$RUNNER_TEMP/ci-1458-pr-head"
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/ci-1458-pr-head-target"
+          mkdir -p "$evidence"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          # Preparation includes checkout, compilation, workspace selection and artifact binding.
+          timeout --kill-after=10s 10m bash -euo pipefail <<'PREPARE'
+          phase_started=$SECONDS
+          git cat-file -e "$PR_HEAD_SHA^{commit}"
+          git worktree add --detach "$head_dir" "$PR_HEAD_SHA"
+          cd "$head_dir"
+          test "$(git rev-parse HEAD)" = "$PR_HEAD_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          git show -s --format='head_commit=%H head_tree=%T parents=%P' HEAD | tee "$evidence/pr-head-source.txt"
+          echo "worktree_and_identity_seconds=$((SECONDS - phase_started))" >> "$evidence/pr-head-timings.txt"
+          # Keep workspace feature unification. Do not substitute an unqualified -p build.
+          phase_started=$SECONDS
+          cargo test --workspace --lib --bins --tests --examples --locked \
+            --no-run --message-format=json > "$evidence/pr-head-artifacts.jsonl"
+          echo "compilation_seconds=$((SECONDS - phase_started))" >> "$evidence/pr-head-timings.txt"
+          phase_started=$SECONDS
+          cargo test --workspace --lib --bins --tests --examples --locked \
+            runtime_parse_linear_streaming_guard -- --exact --list --format terse \
+            > "$evidence/pr-head-selection.txt"
+          test "$(cat "$evidence/pr-head-selection.txt")" = 'runtime_parse_linear_streaming_guard: test'
+          echo "workspace_selection_seconds=$((SECONDS - phase_started))" >> "$evidence/pr-head-timings.txt"
+          phase_started=$SECONDS
+          python3 -I -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import tomllib
+
+          root = Path(os.environ["head_dir"]).resolve()
+          evidence = Path(os.environ["evidence"])
+          manifest = root / "crates/runtime_parse/Cargo.toml"
+          manifest_data = tomllib.loads(manifest.read_text())
+          if manifest_data["package"]["name"] != "runtime_parse":
+              raise SystemExit("streaming guard package identity mismatch")
+          # Cargo's profile.test can also be true for a harness=false executable.
+          if any(target.get("name") == "perf_regression" and target.get("harness", True) is not True
+                 for target in manifest_data.get("test", [])):
+              raise SystemExit("streaming guard requires the standard libtest harness")
+          artifacts = [json.loads(line) for line in (evidence / "pr-head-artifacts.jsonl").read_text().splitlines()]
+          guards = [a for a in artifacts if a.get("reason") == "compiler-artifact"
+                    and Path(a["manifest_path"]).resolve() == manifest
+                    and a["target"]["name"] == "perf_regression"
+                    and a["target"]["kind"] == ["test"]
+                    and Path(a["target"]["src_path"]).resolve() == root / "crates/runtime_parse/tests/perf_regression.rs"
+                    and a["profile"]["test"] and a.get("executable")]
+          if len(guards) != 1:
+              raise SystemExit("expected one runtime_parse/perf_regression integration-test artifact")
+          executable = Path(guards[0]["executable"]).resolve()
+          if not executable.is_file() or not executable.is_relative_to(Path(os.environ["CARGO_TARGET_DIR"]).resolve()):
+              raise SystemExit("streaming guard executable is outside the isolated head target directory")
+          (evidence / "pr-head-guard-executable.txt").write_text(str(executable) + "\n")
+          (evidence / "pr-head-guard-artifact.json").write_text(json.dumps(
+              {"artifact": guards[0], "sha256": hashlib.sha256(executable.read_bytes()).hexdigest()}, indent=2) + "\n")
+          PY
+          echo "artifact_binding_seconds=$((SECONDS - phase_started))" >> "$evidence/pr-head-timings.txt"
+          PREPARE
+          # Execute only the identified artifact, from Cargo's integration-test working directory.
+          timeout --kill-after=10s 8m bash -euo pipefail <<'EXECUTE'
+          cd "$head_dir/crates/runtime_parse"
+          guard=$(cat "$evidence/pr-head-guard-executable.txt")
+          phase_started=$SECONDS
+          "$guard" runtime_parse_linear_streaming_guard --exact --list --format terse \
+            > "$evidence/pr-head-target-selection.txt"
+          test "$(cat "$evidence/pr-head-target-selection.txt")" = 'runtime_parse_linear_streaming_guard: test'
+          echo "target_selection_seconds=$((SECONDS - phase_started))" >> "$evidence/pr-head-timings.txt"
+          phase_started=$SECONDS
+          "$guard" runtime_parse_linear_streaming_guard --exact --nocapture --format pretty --color never \
+            2>&1 | tee "$evidence/pr-head-guard.log"
+          echo "execution_seconds=$((SECONDS - phase_started))" >> "$evidence/pr-head-timings.txt"
+          grep -Fx 'test runtime_parse_linear_streaming_guard ... ok' "$evidence/pr-head-guard.log"
+          # Other tests in this target may be filtered; exactly one bound test must pass.
+          test "$(grep -Ec '^test result: ok\. 1 passed; 0 failed; 0 ignored; 0 measured; [0-9]+ filtered out; finished in [0-9.]+s$' "$evidence/pr-head-guard.log")" = 1
+          test "$(git rev-parse HEAD)" = "$PR_HEAD_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          EXECUTE
+          # Failed preparation/execution retains the worktree and logs for diagnostics.
+          phase_started=$SECONDS
+          timeout --kill-after=10s 30s git worktree remove "$head_dir"
+          echo "worktree_cleanup_seconds=$((SECONDS - phase_started))" >> "$evidence/pr-head-timings.txt"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          echo "head_sha=$PR_HEAD_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Verify integration source remained unchanged
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+      - name: Retain streaming qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-1458-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-1458-evidence/
+          retention-days: 14
+
   html5_tokenizer_fuzz_smoke:
     if: ${{ !startsWith(github.ref, 'refs/heads/qualification/ag4-native-proxy-timing-') }}
     name: HTML5 tokenizer fuzz smoke
@@ -646,6 +823,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify qualification source
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git show -s --format='qualified_commit=%H qualified_tree=%T' HEAD
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -685,6 +870,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify qualification source
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git show -s --format='qualified_commit=%H qualified_tree=%T' HEAD
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -724,6 +917,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify qualification source
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git show -s --format='qualified_commit=%H qualified_tree=%T' HEAD
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -763,6 +964,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify qualification source
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git show -s --format='qualified_commit=%H qualified_tree=%T' HEAD
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -802,6 +1011,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify qualification source
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git show -s --format='qualified_commit=%H qualified_tree=%T' HEAD
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -841,6 +1058,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify qualification source
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git show -s --format='qualified_commit=%H qualified_tree=%T' HEAD
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -876,6 +1101,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify qualification source
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git show -s --format='qualified_commit=%H qualified_tree=%T' HEAD
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -918,6 +1151,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify qualification source
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git show -s --format='qualified_commit=%H qualified_tree=%T' HEAD
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -978,6 +1219,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify qualification source
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git show -s --format='qualified_commit=%H qualified_tree=%T' HEAD
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -1027,3 +1276,63 @@ jobs:
             ci_artifacts/css_selector_matching_fuzz_failure
             ci_artifacts/css_cascade_fuzz_failure
             ci_artifacts/css_values_fuzz_failure
+
+  ci_qualification:
+    name: CI qualification
+    if: ${{ always() && (github.event_name == 'pull_request' || github.ref == 'refs/heads/master') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    needs:
+      - rust
+      - ag2_linux_chromium
+      - ag4_nonbillable
+      - html5_tokenizer_fuzz_smoke
+      - html5_tokenizer_script_data_fuzz_smoke
+      - html5_tokenizer_rawtext_fuzz_smoke
+      - html5_tokenizer_rcdata_fuzz_smoke
+      - html5_tree_builder_token_fuzz_smoke
+      - html5_pipeline_fuzz_smoke
+      - css_fuzz_regressions
+      - css_syntax_fuzz_smoke
+      - css_pipeline_fuzz_smoke
+    steps:
+      - name: Require every qualification job to succeed
+        env:
+          QUALIFICATION_RESULTS: ${{ toJSON(needs) }}
+          INTEGRATION_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 -I -B - <<'PY'
+          import json
+          import os
+          import sys
+
+          expected = {
+              "rust", "ag2_linux_chromium", "ag4_nonbillable",
+              "html5_tokenizer_fuzz_smoke", "html5_tokenizer_script_data_fuzz_smoke",
+              "html5_tokenizer_rawtext_fuzz_smoke", "html5_tokenizer_rcdata_fuzz_smoke",
+              "html5_tree_builder_token_fuzz_smoke", "html5_pipeline_fuzz_smoke",
+              "css_fuzz_regressions", "css_syntax_fuzz_smoke", "css_pipeline_fuzz_smoke",
+          }
+          try:
+              results = json.loads(os.environ["QUALIFICATION_RESULTS"])
+              if not isinstance(results, dict) or set(results) != expected:
+                  raise ValueError("missing or unexpected qualification prerequisites")
+              unsuccessful = [name for name in sorted(expected)
+                              if not isinstance(results[name], dict)
+                              or results[name].get("result") != "success"]
+              if unsuccessful:
+                  raise ValueError("qualification did not succeed: " + ", ".join(unsuccessful))
+              outputs = results["rust"].get("outputs", {})
+              integration = os.environ["INTEGRATION_SHA"]
+              if not integration or outputs.get("integration_sha") != integration:
+                  raise ValueError("integration source qualification is missing or mismatched")
+              if os.environ["GITHUB_EVENT_NAME"] == "pull_request":
+                  head = os.environ["PR_HEAD_SHA"]
+                  if not head or outputs.get("head_sha") != head:
+                      raise ValueError("exact PR head guard qualification is missing or mismatched")
+          except (KeyError, ValueError, TypeError, AttributeError) as error:
+              sys.exit(str(error))
+          print("Every required qualification succeeded for the expected source identities.")
+          PY

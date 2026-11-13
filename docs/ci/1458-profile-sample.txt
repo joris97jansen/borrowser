@@ -1,0 +1,23 @@
+Excerpt of the unchanged guard sample (not the full profile).
+Source: 144ef3bc887ac5688ac7f6b123a6e98f1e1485f2; macOS arm64, Rust 1.92.0.
+Command: sample 81518 10 1 -mayDie -file guard-sample.txt
+Full original profile SHA-256: dabc14bfe89f0b1e3bccb69b451ecbf4b62e54c8c61ec17094e69a050216d91d
+See 1458-local-evidence.json for binary identity.
+
+    8463 Thread_64496795
+      8463 thread_start  (in libsystem_pthread.dylib) + 8  [0x19a130cec]
+        8463 _pthread_start  (in libsystem_pthread.dylib) + 136  [0x19a135d00]
+          8463 std::sys::thread::unix::Thread::new::thread_start::h0a9b082195325659  (in perf_regression-1d2e7ac6de0321d2) + 60  [0x100251adc]
+            8463 core::ops::function::FnOnce::call_once$u7b$$u7b$vtable.shim$u7d$$u7d$::h30db957833ffbade  (in perf_regression-1d2e7ac6de0321d2) + 224  [0x1001d3398]
+              8463 std::sys::backtrace::__rust_begin_short_backtrace::h8740d58887b0c005  (in perf_regression-1d2e7ac6de0321d2) + 2036  [0x1001cedf4]
+                8453 runtime_parse::driver::handle_runtime_chunk::h3fac0b107d9d9a27  (in perf_regression-1d2e7ac6de0321d2) + 184  [0x1001c9cb8]
+                ! 8453 runtime_parse::driver::_$LT$impl$u20$runtime_parse..state..RuntimeState$GT$::drain_patches::hfaf8dee0db520767  (in perf_regression-1d2e7ac6de0321d2) + 48  [0x1001d0d08]
+                !   8453 html::parser::session::HtmlParser::take_patches::hcb9d4f08d6de69da  (in perf_regression-1d2e7ac6de0321d2) + 392  [0x1002317b4]
+                !     8451 html::parser::session::HtmlParser::apply_patches::h352504b4c710a4ac  (in perf_regression-1d2e7ac6de0321d2) + 96  [0x100231948]
+                !     : 7623 html::patch_validation::validate::_$LT$impl$u20$html..patch_validation..model..PatchValidationArena$GT$::assert_invariants::h64a05c8998de437d  (in perf_regression-1d2e7ac6de0321d2) + 1624  [0x100225038]
+                !     : | 7623 _$LT$core..iter..adapters..filter..Filter$LT$I$C$P$GT$$u20$as$u20$core..iter..traits..iterator..Iterator$GT$::count::h257c3d713880282c  (in perf_regression-1d2e7ac6de0321d2) + 76,84,...  [0x100220e68,0x100220e70,...]
+                !     : 391 html::patch_validation::validate::_$LT$impl$u20$html..patch_validation..model..PatchValidationArena$GT$::assert_invariants::h64a05c8998de437d  (in perf_regression-1d2e7ac6de0321d2) + 2436  [0x100225364]
+                !     : | 391 html::patch_validation::validate::_$LT$impl$u20$html..patch_validation..model..PatchValidationArena$GT$::assert_acyclic_from::h8d8eade12d2ab571  (in perf_regression-1d2e7ac6de0321d2) + 344  [0x1002259cc]
+                !     : |   391 html::patch_validation::validate::_$LT$impl$u20$html..patch_validation..model..PatchValidationArena$GT$::assert_acyclic_from::h8d8eade12d2ab571  (in perf_regression-1d2e7ac6de0321d2) + 344  [0x1002259cc]
+                !     : |     389 html::patch_validation::validate::_$LT$impl$u20$html..patch_validation..model..PatchValidationArena$GT$::assert_acyclic_from::h8d8eade12d2ab571  (in perf_regression-1d2e7ac6de0321d2) + 344  [0x1002259cc]
+                !     : |     + 172 html::patch_validation::validate::_$LT$impl$u20$html..patch_validation..model..PatchValidationArena$GT$::assert_acyclic_from::h8d8eade12d2ab571  (in perf_regression-1d2e7ac6de0321d2) + 344  [0x1002259cc]
