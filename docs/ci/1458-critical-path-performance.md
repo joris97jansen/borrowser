@@ -1,374 +1,333 @@
-# CI critical path, parallel qualification and evidence — #1458
+# CI critical path and streaming-guard replacement — #1458
 
-Status: **uncommitted parallel redesign** based on published head
-`ea843be2299cc8d3d5ea15c7aab66b7abd0028ec` on
-`chore/1458-optimize-ci-critical-path`. [PR #1463](https://github.com/joris97jansen/borrowser/pull/1463)
-remains draft. No redesign commit, push, hosted experiment, ruleset change or
-issue closure is authorized by this working-tree implementation.
+Status: **local replacement candidate, not published or qualified on GitHub**,
+based on published parallel head `bf8572c5fb0169c6106e482cce439da0d62bb577`.
+[PR #1463](https://github.com/joris97jansen/borrowser/pull/1463) remains draft.
+The replacement remains uncommitted and unpublished. Hosted integration-job
+failure propagation is verified below; a positive replacement run, controlled
+performance measurements and runner-cost acceptance remain pending. The published
+control retains both workspace guards. Publication requires separate authorization.
 
-This replaces the serial Rust architecture. It does not claim a measured CI
-speedup: the new graph has not run on GitHub. The original two integration-tree
-workspace guard executions remain enabled during replacement qualification.
-The native narrower-recipe and enforcement proofs needed for removal are still
-pending. No production Rust source, guard workload, assertion, instrumentation,
-Cargo dependency or compiler profile changes are included.
+## Verified successful parallel control
 
-## Observed failure and critical path
+[Run 43402060645, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/43402060645)
+qualified exact head `bf8572c5fb0169c6106e482cce439da0d62bb577` and synthetic
+integration `2598e93245977f25b1cc9e93d11aa97071f88e5e`.
+Its ordered parents were master `144ef3bc887ac5688ac7f6b123a6e98f1e1485f2`
+and that head. Both source trees were `7e385d78b60b79eaba51c5ab38a5b55a6f694c06`;
+they nevertheless received independent execution.
 
-[Run 43376243486](https://github.com/joris97jansen/borrowser/actions/runs/43376243486)
-executed synthetic integration commit
-`c5d88fd2e3188a8b97036372f8a504b5f26615da`, whose parents were master
-`144ef3bc887ac5688ac7f6b123a6e98f1e1485f2` and the published head above.
-Its tree was `375de3c1a65ee3b0a197aec22500cd2ea7c5fe51`.
-All original integration qualifications passed. Rust was cancelled after 45m17s;
-the annotation explicitly says it exceeded 45m0s. Total workflow elapsed was
-45m25s, and summed non-skipped job execution was 61m12s. Cancellation/cleanup
-explains the excess over the configured deadline; it is not extra qualified time.
-This failed run is not a successful performance comparison.
+All seventeen ordinary jobs and both final gates succeeded. The push-only AG4
+proxy-timing experiment was correctly skipped. All six work jobs began between
+09:31:46 and 09:31:48 UTC; queues were 2–4 seconds.
 
-| Serial Rust step | Observed elapsed |
-| --- | ---: |
-| Full source/provenance and dependency-graph qualification | 255s (175 tests: 251.838s) |
-| Clippy: ordinary / HTML5 alias / hardening | 99s / 1s / 25s |
-| Debug all-target build | 449s |
-| Separate package-qualified conformance binary | 158s |
-| Default workspace tests | 295s, guard 220.95s |
-| Explicit HTML5 workspace tests | 294s, guard 221.66s |
-| Other parser conformance/golden/fatal/fuzz-regression/WPT tests | 178s |
-| Release / HTML5 release builds | 206s / 2s |
-| Networking release-abort qualification | 105s |
-| HTML / CSS benchmark compilation | 61s / 41s |
-| Exact-head isolated compilation | 462s |
+| Job | Actual execution | Existing deadline |
+| --- | ---: | ---: |
+| Source and provenance | 4m29s; 197 tests passed in 236.914s | 10m |
+| Rust correctness and parser regressions | 18m40s | 30m |
+| Release, networking abort and benches | 5m17s | 20m |
+| Conformance execution | 4m56s | 10m |
+| Streaming integration | 11m59s | 25m |
+| Streaming exact head | 10m29s | 25m |
+| AG2 native Chromium | 7m39s | 30m |
+| AG4 synthesis/snapshots | 2m21s | 10m |
 
-The head step began at 06:42:12 UTC, 36m56s after the Rust job started, leaving
-8m04s of job time. Preparation consumed about 7m43s. The correctly bound head
-guard then started, but cancellation interrupted it after roughly 33 seconds.
-No successful head result, post-execution source checks or cleanup completion
-was emitted. The gate correctly rejected `rust: cancelled`.
+The remaining nine fuzz jobs all passed in 36–51 seconds. The last ordinary job
+ended at 09:50:27; `CI qualification` ran at 09:50:29–31 and the existing required
+`Rust (ubuntu-latest)` context at 09:50:33–36. Both checks reported success for
+the exact PR head under GitHub Actions app 15368, matching the live master ruleset.
+The gate's seventeen actual result records and all six Rust source receipts were
+checked. This run proves the hosted success path; the separate negative-enforcement
+experiment below verifies integration-job failure propagation.
 
-AG2 passed in 397s: build/lint 58s, native ownership 66s, complete real-browser
-conformance 233s. Its exact 487-MiB cache hit restored in 13s. AG4 and all nine
-fuzz jobs passed. AG2 is not the observed critical-path owner and is unchanged.
+Run creation to final required check was **18m53s**; API finalization made workflow
+elapsed **18m54s**. The execution-only critical path was **18m45s** (longest work
+job plus both gates, excluding queue/dispatch/finalization). Total runner execution
+was **72m26s**, excluding queue and billing rounding. Rust correctness owned the
+critical path. The earlier serial control was cancelled after 45m17s with head
+execution incomplete; it remains evidence of the serial architecture's failure,
+not a successful equal-coverage baseline.
 
-[1458-parallel-evidence.json](1458-parallel-evidence.json) records immutable run
-and artifact identities, job/step costs, native configurations and local probes.
-The older observational baseline and unchanged-guard profile are retained below.
+[1458-parallel-evidence.json](1458-parallel-evidence.json) records the successful
+run's source identities, job/cache observations, artifact digests and native proof.
+Earlier design/profiling observations remain explicitly historical.
 
-## Implemented job graph and ownership
+## Native coverage and compiler equivalence
 
-All six Rust work jobs start independently. None waits for the full provenance
-regression suite or another heavy build. Each first verifies the integration
-commit/parents and performs the existing fast committed-input/subtree preflight.
-The full provenance suite is mandatory in its own concurrent job. This preserves
-preflight-before-Cargo semantics without adding a four-minute serial dependency.
+The guard used Rust/Cargo 1.92.0 natively on Linux x86-64 with opt-level 1, debuginfo 2,
+debug assertions and overflow checks enabled. `CARGO_INCREMENTAL=0`;
+`RUSTFLAGS`, encoded Rust flags and build-target overrides were absent.
 
-```mermaid
-flowchart LR
-  P[Source and provenance] --> G[CI qualification]
-  C[Rust correctness and parser regressions] --> G
-  R[Release, networking abort and benches] --> G
-  B[Conformance execution] --> G
-  I[Streaming guard: integration] --> G
-  H[Streaming guard: exact PR head] --> G
-  A[Existing AG2, AG4 and nine fuzz jobs] --> G
-  G --> L[Required Rust ubuntu-latest context]
-```
-
-| Job | Qualification owned | Deadline |
+| Guard execution | Result | Actual guard time |
 | --- | --- | ---: |
-| `source_provenance` | `make check-url-dependencies`, all admitted provenance/CI tests, `make check-network-dependencies`; main and fuzz locked graphs | 10m |
-| `rust_correctness` | Formatting, all three lint lanes, both debug all-target builds, both unchanged full workspace test lanes, parser conformance/external/fatal/golden/smoke/rawtext/pipeline/WPT qualifications, generated entities | 30m |
-| `rust_release` | Both release workspace builds, unchanged release-abort command and its 6m bound, both benchmark-compilation commands | 20m |
-| `rust_conformance` | Package-only conformance binary followed by bounded AH9/AG8 execution | 10m |
-| `streaming_integration` | Full/alias/narrow artifact evidence, replacement-inventory audit, strict full-workspace guard execution on integration/push commit | 25m |
-| `streaming_head` | Existing detached exact-head worktree qualification, full workspace feature unification, isolated target, source verification and cleanup; PRs only | 25m |
-| `ci_qualification` | Exact prerequisite-set, result and source-receipt validation | 2m |
-| `rust` | Existing required status identity, accepting only successful `ci_qualification` | 2m |
+| Original default workspace lane | Passed | 188.24s |
+| Original explicit HTML5 workspace lane | Passed | 187.07s |
+| Independent integration artifact | Exactly one passed; no failures/ignored tests | 219.41s |
+| Independent exact-head artifact | Exactly one passed; no failures/ignored tests | 192.77s |
 
-The 158-second conformance binary already has a distinct package-only feature
-configuration. Moving it and its short bounded executions separates genuine
-qualification ownership without changing that graph. Parser feature lanes stay
-with correctness to retain their existing workspace compilation reuse. Benches
-stay with release to retain eligible release dependencies. Splitting every lint,
-feature lane or parser target would multiply builds without supporting evidence.
+Head compilation took 352s; source verification, selection and bounded cleanup
+completed before success. The head executable lived in its separate temporary
+target directory. The strict binding verified package `runtime_parse`, target
+`perf_regression`, expected source path, standard libtest manifest properties
+and successful non-ignored execution. Integration used its own full-workspace
+artifact. Recording the head object alone was not treated as head qualification.
 
-The shared checkout, source preflight, toolchain, dependencies and completion
-steps use small YAML anchors in the same committed workflow. No reusable workflow,
-Python production helper, local action, orchestration framework or new Makefile
-target is introduced. GitHub supports these [anchors and aliases](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#yaml-anchors-and-aliases).
-The existing provenance contract already binds the complete workflow and all
-committed qualification tests; no provenance exception is added.
-
-## Source and mandatory-gate contract
-
-PR integration jobs check out `github.sha` with complete history, verify its
-ordered parents against the event base/head, and verify the exact head object
-exists. Master pushes qualify the actual pushed SHA without requiring merge
-parents. Successful completion rechecks HEAD and a clean source checkout before
-emitting `qualified_sha` and `qualified_tree`.
-
-The head job retains the reviewed detached-worktree program. Its SHA receipt is
-emitted only after guard success, head source rechecks, bounded worktree cleanup
-and integration-checkout verification. The job's tree receipt comes from the
-verified head object after that success. The provenance job records the expected
-head tree for comparison; recording this object is not head qualification.
-Forks use the base repository's synthetic merge ancestry, without fork write
-credentials. Missing objects, wrong parents and dirty/mismatched sources fail.
-
-`CI qualification` expects exactly seventeen ordinary prerequisites. It requires
-success from every one on PRs. Only `streaming_head` may be skipped on master
-pushes, and it must have no qualification outputs. Failed, cancelled, timed-out,
-neutral, skipped, missing, unexpected and malformed results otherwise fail.
-All five integration Rust source receipts must match the event integration SHA
-and the provenance tree. PR head receipts must match the independently executed
-head SHA and its expected tree; a head tree may legitimately differ from merge.
-Unknown event types fail. Evidence is not substituted for successful execution.
-
-The live ruleset still requires only **Rust (ubuntu-latest)**, GitHub Actions
-integration 15368. The new `rust` job preserves that exact context as a final
-barrier depending on `ci_qualification`, with `always()` and strict result checking.
-Consequently a failed/skipped/cancelled gate cannot leave a green legacy context.
-Heavy jobs have no dependency on this barrier, so there is no cycle or recreated
-serial critical path. A missing workflow/check cannot satisfy the existing
-required context.
-
-This describes the local design, not already-verified hosted enforcement. After
-separate publication authorization, verify the actual context identity and
-failure/cancellation/skipping/missing-check paths under the real ruleset. Keep
-Rust required throughout. Requiring **CI qualification** directly is an optional
-subsequent administration change requiring separate authorization and enforcement
-readback. No settings changes are made here, and no new job is claimed already
-independently required by the live ruleset.
-
-## Streaming equivalence and controlled replacement
-
-The prior native Linux x86-64 run used Rust/Cargo 1.92.0, opt-level 1 with debug
-assertions and overflow checks. Both full workspace lanes recorded 410 matching
-compiler-artifact configurations and identical guard bytes:
+The default and HTML5 recipes emitted **410 identical package/target/profile/
+feature configurations** and identical guard bytes:
 `ab03f23b53a2be100647c775ec69621effe576cebb84590081105434a095768c`.
-Both original guards actually passed. This is demonstrated native evidence for
-those two lanes at that source, not proof of a new target recipe on future sources.
+All 410 default artifacts were rebuilt; the HTML5 lane reused all 410. The
+narrower workspace probe emitted an 86-configuration subset and reused the same
+guard bytes. It remains diagnostic: neither guard execution recipe is narrowed,
+and package-scoped `-p runtime_parse` compilation is not substituted.
 
-The unchanged test builds 5,000- and 20,000-fragment strings in memory, feeds
-64-byte chunks through the runtime, and checks counter deltas, patch/token scaling,
-batch bounds and successful terminal completion. It retains its 30-second event
-timeout and has no external fixture-file or Cargo-environment lookup. Direct
-execution preserves Cargo's crate working directory. `runtime_parse` explicitly
-enables HTML5 and its dev dependency enables parse guards, test harness and DOM
-snapshots; whole-workspace feature unification remains material to qualification.
+Each native lane's baseline listing contained **2,964 records**. Adding the
+proposed guard exclusion yielded **2,963**; multiset comparison removed exactly
+`runtime_parse_linear_streaming_guard: test` and changed nothing else. Existing
+ignored inventory records and native-wrapper exclusions were preserved.
 
-The integration job now also compiles the exact narrower candidate:
+Integration archive 14026292028 (18 files), SHA-256
+`6fe1f3421c7b892551f6eb1321d043ada87e261bc89ea039a4713bcc42a5b5e6`,
+contains all three compiler JSON streams, inventory pairs and guard evidence.
+Head archive 14025469348 (10 files), SHA-256
+`0f1b78a0101c410201fb6340631b77db15c9d9f4fff6d373d383f03d370eb0d0`,
+contains source, selection, binding, execution and phase timings. All six run
+archives passed digest and ZIP-integrity verification, including nine compilation
+timing reports and AG2 native/browser/cleanup evidence.
 
-```sh
-cargo test --workspace --test perf_regression --locked --no-run   --message-format=json --timings
-```
+The unchanged guard constructs 5,000/20,000-fragment in-memory strings and feeds
+64-byte chunks through the runtime. Workloads, counter/patch/token/batch assertions,
+instrumentation and the 30-second inter-event timeout remain unchanged. Its source
+SHA-256 remains `d94155270a625f8441fc4500b534825b8648f979389eb4c20b49e626c669487a`.
 
-It records its package/target/profile/features configurations, tests whether they
-are a subset of the qualified full graph, and compares guard bytes. A real Cargo
-regression fixture demonstrates why `--workspace` matters: an unrelated member's
-dev-dependency enables a guard feature in full and narrowed workspace builds,
-while `-p runtime_parse` loses it and produces a different executable.
-Package-scoped compilation is not used for production guard qualification.
+## Local replacement contract
 
-Local macOS arm64 measurements found 392 matching full/alias configurations,
-a 92-configuration narrower subset and identical guard hashes. This was an
-existing-cache probe, not a cold run or native x86-64 proof. Each lane's actual
-listing contained 2,957 records; adding the candidate skip removed exactly one,
-leaving 2,956. Native narrower-recipe and full per-lane inventory evidence must
-still be obtained from the published graph. The diagnostic wrapper's initial
-post-processing typo is recorded separately; the clean repeated probe completed
-both programs successfully. Neither attempt is claimed hosted qualification.
-
-The audit runs each original lane's listing with its existing native-wrapper
-exclusion, then lists with the proposed guard exclusion. Counter comparison
-requires exactly the expected guard record to disappear and no other record to
-change. This catches substring collisions and preserves unrelated and ignored
-inventory records. The audit lists tests only; it does not execute workloads.
-
-The additional integration execution still binds to the qualified **full**
-workspace artifact, validates package `runtime_parse`, integration target
-`perf_regression`, exact source path, standard libtest manifest property and
-isolated job target path, and checks its hash after Cargo's workspace listing.
-It also rejects stale source receipts. Target listing and execution must select
-exactly one successful, non-ignored guard. Failures, zero/duplicate selection,
-custom guard harnesses, ignored tests, changed artifacts and source mutations
-remain fatal. The head program retains the same source/artifact/harness rules.
-
-**No duplicate is removed in this uncommitted transition.** Both original
-workspace commands remain unchanged, including both original guard executions.
-The separate integration guard is temporarily additive. The narrower build is
-a probe, not an unproven replacement. Unequal evidence cannot authorize skipping.
-Activation remains a small reviewable implementation change within #1458:
-
-1. Publish the reviewed parallel candidate with existing coverage intact, under
-   separate commit/push authorization. Obtain complete native successful head and
-   integration qualification plus the new artifact and inventory reports.
-2. Verify feature/profile/instrumentation equivalence, standard-harness identity
-   and unchanged assertions for each source context where a narrower recipe is
-   proposed. Retain full compilation wherever equivalence is unproven.
-3. Verify new-job failure, cancellation, skipped and missing conditions prevent a
-   successful legacy required Rust check under actual GitHub enforcement.
-4. Only then add the explicit guard skip to the two workspace execution commands,
-   retain their complete other inventories, and require independent integration
-   and exact-head success through both gates. Make full/alias configuration and
-   guard-byte equivalence a fail-closed prerequisite on every run before activating
-   the skips. If narrowing is activated, require its source-context feature/profile
-   and artifact proof as well. A prior run's equality cannot exempt changed inputs.
-   Re-run native inventory comparisons.
-5. Re-measure the fully qualified graph. Do not call a failed run successful or
-   close the issue merely because the graph is now parallel.
-
-No rollout variable, dormant bypass, ignored test, permissive fallback or
-nightly-only demotion is introduced. The independent parser scalability finding
-below remains separate and is not concealed by these job boundaries.
-
-## Cargo caching, compilation and timeout bounds
-
-The failed Rust run restored no cache; the action step took 10s and post-save
-was skipped on cancellation. Its key was
-`v0-rust-rust-Linux-x64-71ae6766-b3b62931`. The toolchain action explicitly updated
-unused stable 1.99.1 to 1.100.0. The cache action hashes all installed compilers,
-so both 1.100.0 and the actually used 1.92.0 appeared in its environment hash.
-This explains a concrete invalidation source; it does not prove all misses have
-that cause. AG2's exact cache hit used `cba24ba9-b3b62931` instead.
-
-The shared installer now explicitly requests the repository's 1.92.0. A regression
-checks that the input matches `rust-toolchain.toml`. Disposable Cargo test
-workspaces now carry the same pin and test their actual compiler version;
-previous fixtures could inherit the action's unpinned stable default. Production
-main/guard compilation was already pinned to 1.92.0; no version upgrade occurs.
-Other preinstalled toolchains still contribute to the cache action's hash, so
-runner-image changes can still invalidate caches. No broad toolchain deletion or
-cache-key safety check is introduced or disabled.
-
-Each work job uses `v1-ci-1458` plus the action's job ID, compiler/environment and
-locked manifest hashes, and a distinct key: `provenance-registry`,
-`workspace-debug`, `release-abort-benches`, `conformance-package`,
-`streaming-integration-debug`, or `head-registry`. The provenance and head caches
-are registry-only. The head build remains in its own runner-temporary target
-and does not restore integration binaries. All other targets belong to separate
-runner checkouts. There is no shared mutable directory, shared-key target cache,
-cross-job binary artifact transfer or unverified binary reuse.
-
-Workspace crates remain excluded; changing that policy needs measured size,
-restore/save and invalidation results. Cache-on-failure remains false. Successful
-parallel jobs may now save their own caches even if another job fails, unlike the
-cancelled monolith. PR caches stay scoped to the PR merge ref and cannot be
-promoted to master or sibling PRs under GitHub's [cache access restrictions](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache).
-No `pull_request_target`, privileged cache promotion or sccache is introduced.
-Ordinary Cargo caching has a concrete diagnosed issue and no repeated evidence
-justifying additional infrastructure.
-
-Direct builds and guard compilation now emit Cargo HTML timing reports using
-`--timings`. Compiler profiles, feature selection, locking and test arguments are
-unchanged. Timing reports are uploaded per job together with streaming evidence.
-They allow dependency/workspace compile costs and debug/release reuse to be
-inspected separately. Cache logs retain exact/fallback/miss and restore/save
-classification. New namespaces, saved sizes and new cold costs are not yet measured
-on GitHub; they must not be invented from local timings.
-
-The head step retains its existing 20m outer limit and 10m preparation, 8m
-execution and 30s cleanup limits, each with 10s kill grace. Its new independent
-25m job funds setup and post-steps without consuming an already-spent 45m job.
-Integration collection has 10m, inventory audit 3m and guard execution 8m within
-its independent 25m job. Correctness's 30m bound is based on about 22m24s of
-observed command costs plus setup and variability. Release's observed commands
-sum to 6m55s; its 20m ceiling allows independent cold compilation and preserves
-the existing abort bound. Conformance's package build and executions total about
-2m40s under a 10m job; provenance's observed 4m15s suite has a 10m job. These are
-provisional job-specific limits pending native cold validation, not qualified
-worst-case capacity estimates. No existing failure handling or test inter-event
-timeout is weakened.
-
-## Performance objectives and cost decision
-
-Parallel scheduling is selected because the approved direction requires it and
-the serial source-qualified control exceeded its deadline. This is no longer a
-proposal to preserve the monolith while considering theoretical alternatives.
-The fully qualified graph still needs measured optimization acceptance.
-
-Summing already observed command times by the new owners puts correctness at
-about 22m24s before its new setup/cache costs; source provenance is about 4m16s,
-release/benches 6m55s and package conformance 2m40s. A scheduling-only projection
-is roughly 23–25m queue-free while original guards remain, with substantial
-uncertainty from independent cold compilation and runner variability. It is not
-a measured PR speedup. The additive integration job contributes another full
-workspace compile and guard, so transition runner consumption can exceed the old
-10% guardrail. The cancelled 61m12s run is not an equal-coverage successful cost
-baseline: its head guard did not finish.
-
-Once verified replacement is activated, removing the two workspace executions
-would subtract about 7m23s from correctness at this run's guard speed. That puts
-its observed command sum around 15m before setup, with warm compiler reuse still
-to measure. The 15-minute warm critical-path objective is ambitious, not an
-acceptance excuse or guaranteed result. Narrower compilation may reduce guard-job
-cost only after its feature/artifact proof is qualified.
-
-Latency is now the explicit priority over an automatic 10% runner-cost veto, but
-no new acceptable cost percentage is silently chosen. Report the old guardrail,
-actual extra runner time and the latency benefit for review before accepting the
-final tradeoff. All restructuring, measurement, cache and gate work remains in
-#1458; no implementation-phase issues are proposed.
-
-For each viable parallel recipe, retain at least three exact-cache and two cold
-samples, with fallback samples separately labelled. Use identical engine/test
-sources, pins, profiles, workloads and head/integration coverage. Cold means fresh
-job-local Cargo and target directories without restore; an incidental cache miss
-is not automatically a controlled cold run. Interleave samples and record runner
-image/CPU, action revisions, locks, artifact identities and cache sizes. Report
-individual observations, median and range. Measure event-to-final-required-check
-wall time, queue-free completion, longest work job and summed runner execution
-separately, including setup, post-steps, cache operations and both gates. Cancelled
-or early-failing attempts remain recorded and cannot establish an improvement.
-
-## Four-level validation and closeability
-
-1. **Targeted:** execute the actual workflow programs through the existing real
-   Git/Cargo/libtest fixtures. Cover both color modes, the job graph and legacy
-   barrier, push/PR source receipts, fork objects, exact selection, harness/target
-   substitution, errors, cancellation/deadlines, inventory collisions, and Cargo
-   feature unification. No new test runner or generalized framework is added.
-2. **Subsystem:** run the complete qualification test module on macOS and offline
-   Linux arm64, both color modes; parse expanded YAML, lint Actions expressions,
-   check Bash syntax, Rust formatting, source/command conservation and diffs.
-   Native x86-64 graph/cold/performance validation remains hosted work.
-3. **Runtime smoke:** unnecessary for tooling-only edits. Preserve existing AG2
-   and release-abort runtime qualifications on supported native runners.
-4. **Full CI:** `make check-url-dependencies` and `make ci` must retain their
-   committed-input preflight. The uncommitted workflow/test candidate cannot pass
-   that preflight, and no bypass is permitted. After authorized publication,
-   require successful native full CI, source qualification and failure-path
-   enforcement before activation or closure.
-
-Commands for the local test matrix:
+Only the two correctness invocations gain a guard exclusion:
 
 ```sh
-CARGO_TERM_COLOR=always python3 -I -B tools/ci/tests/test_ci_qualification.py
-CARGO_TERM_COLOR=never python3 -I -B tools/ci/tests/test_ci_qualification.py
-make fmt-check
-make check-url-dependencies
-make ci
-git diff HEAD --check
+cargo test --workspace --lib --bins --tests --examples --locked -- --skip aws::command::tests::native_procfs_ --skip runtime_parse_linear_streaming_guard
+cargo test --workspace --lib --bins --tests --examples --features html5 --locked -- --skip aws::command::tests::native_procfs_ --skip runtime_parse_linear_streaming_guard
 ```
 
-The earlier 36 regressions are retained and extended for the new ownership and
-source graph. All 58 tests passed with `CARGO_TERM_COLOR=always` and `never` on
-macOS arm64 (50.172s / 50.200s) and offline Linux arm64 (12.345s / 12.644s), using
-Rust/Cargo 1.92.0. Rust formatting, Actionlint 1.7.12, expanded YAML, all 96 Bash
-run blocks and diff checks passed; ShellCheck was not run. Both provenance
-commands exited 2 at the expected uncommitted-test preflight, before full CI.
-Exact commands, logs and remaining native limits are recorded in the structured
-parallel evidence. Existing original qualification commands are
-checked against immutable master `144ef3bc`, allowing only reporting-only
-`--timings` additions. AG2, AG4 and fuzz job bodies remain unchanged.
+Every other argument and qualification command stays intact. Cargo still compiles
+the full workspace guard; this removes duplicate execution, not compilation.
 
-**Verdict: Not closeable yet.** The parallel candidate is reviewable locally,
-but successful native head execution, hosted gate enforcement, qualified guard
-replacement, repeated cold/warm timings and an accepted latency/runner-cost
-tradeoff are outstanding. There are no browser-engine ownership changes or
-feature-gap status changes. `docs/engine-feature-gap-tracker.md` remains unchanged.
-No shortcut, production parser fix, weakened assertion or coverage removal is
-used to claim success.
+The two literal commands have YAML scalar anchors, passed as the integration
+audit's environment values. The audit parses those exact commands with `shlex`,
+requires the explicit terminal guard exclusion and removes only that pair to
+construct each baseline listing. The candidate and baseline listings must differ
+by exactly one expected guard record. This prevents the audit and executed
+recipes from silently drifting apart. Substring collisions, duplicate/absent
+guards and missing command inputs fail closed.
+
+The full default/HTML5 compiler-configuration and guard-byte comparison is now
+fatal on every run. The collector first retains diagnostics, then fails on either
+mismatch. Narrow-recipe comparisons remain informational because no narrowing is
+activated. Equivalence and inventory validation run before integration guard
+execution and successful source receipts. Their failure makes the integration
+job fail; the existing final gate rejects it, and the required Rust barrier
+rejects the gate. No permissive fallback or rollout switch is introduced.
+
+The current qualification-command ownership regression replaces the historical
+`git show 144ef3bc` command-freezing test. Its explicit current contracts cover
+Rust/provenance/release/conformance commands, AG2's native and standalone ignored
+qualifications, AG4 and every fuzz command. Real Cargo fixtures validate actual
+production workspace recipes, complete inventory differences and continued
+failure of unrelated tests. The successful published control's original-command
+conservation audit is retained as immutable migration evidence, not a permanent
+requirement to execute obsolete commands.
+
+## Mandatory graph and source boundaries
+
+The successful graph is unchanged: six independent Rust work jobs, existing AG2,
+AG4 and nine fuzz jobs feed `CI qualification`, then the required
+`Rust (ubuntu-latest)` compatibility barrier. There are no new heavy dependencies,
+job identities, cache namespaces, permissions or deadlines.
+
+Each Rust work job verifies the integration SHA, ordered PR parents, exact head
+object and fast committed-input preflight before Cargo work. Full provenance runs
+in its independent mandatory job. Completion rechecks source identity/cleanliness.
+Fork heads come through the synthetic merge ancestry without fork write access.
+
+On PRs every ordinary job must succeed. Only the head job may be skipped on master
+pushes, without head outputs; the actual pushed SHA is qualified there. Missing,
+unexpected, failed, cancelled, timed-out or incorrectly skipped results and
+missing/mismatched source receipts are rejected. Local fixtures exercise the
+actual gate and compatibility programs, including both guard jobs independently.
+
+### Completed hosted negative-enforcement experiment
+
+[Experimental draft PR #1464](https://github.com/joris97jansen/borrowser/pull/1464)
+was published separately from #1463, then closed **without merging** at
+2026-11-13 13:47:21 UTC after preserving the evidence. Its sole experimental commit
+`6141fe4f6cd45b50b3e1499d90d85452576fb822` has successful control `bf8572c5` as
+its parent. The seven-line workflow addition wrote a diagnostic marker and exited
+1 in `streaming_integration` after source/preflight verification and before
+compilation. Both original workspace guards and all gates remained unchanged.
+The binary/full-index diff against the control has SHA-256
+`1c80460d032127bd49868fc3ef26126331c04e743ea27bde82b88fa0d6e0780f`.
+No experimental failure step is present in the replacement candidate.
+
+[Run 43433009156, attempt 1](https://github.com/joris97jansen/borrowser/actions/runs/43433009156)
+executed exact head `6141fe4f6cd45b50b3e1499d90d85452576fb822` and synthetic
+integration `bb290833509066ca43d3d14bb3fbbd814b9ef3a0`. The integration parents,
+in order, were master `144ef3bc887ac5688ac7f6b123a6e98f1e1485f2` and that head.
+Both trees were `07072facc675638f7a5606a166021bee85d07a7b`; their separate SHAs
+were verified during execution and in the source receipts.
+
+| Check | Actual result | Hosted evidence |
+| --- | --- | --- |
+| Streaming guard (integration) | Failure; deliberate exit 1, no successful source receipt | [Job 131910976120](https://github.com/joris97jansen/borrowser/actions/runs/43433009156/job/131910976120) |
+| CI qualification | Failure; `qualification did not succeed: streaming_integration` | [Job 131922428041](https://github.com/joris97jansen/borrowser/actions/runs/43433009156/job/131922428041) |
+| Rust (ubuntu-latest) | Failure; received `QUALIFICATION_RESULT: failure`, exited 1 | [Job 131922486390](https://github.com/joris97jansen/borrowser/actions/runs/43433009156/job/131922486390) |
+
+All **sixteen other ordinary jobs succeeded**. The actual final-gate input held
+exactly seventeen prerequisite results, with only `streaming_integration` failed
+and its outputs empty. Both original workspace guards passed; the independent
+exact-head guard passed exactly one test with zero failures or ignored tests
+(126.08s). Source/provenance passed all 197 tests. Only the unrelated push-only
+AG4 proxy-timing job was intentionally skipped; no ordinary job was cancelled.
+
+Read-only `gh pr checks 1464 --repo joris97jansen/borrowser --required --json
+name,state,link,bucket` selected exactly `Rust (ubuntu-latest)`, with state
+`FAILURE` and bucket `fail`. Active master ruleset **11427025** required that
+exact context from GitHub Actions app **15368**, with no bypass actors. All three
+failed checks identify the experimental head and app 15368. The ruleset was not
+changed and no merge was attempted. Draft status alone was not used as proof.
+
+The failing integration job's marker artifact **14041945334** uploaded successfully:
+305-byte ZIP, SHA-256
+`e9ca6b8d19813c3dcc10738b8849d0f7aba82c317c4f3b35bc8cf482c2265a3a`.
+Its contents record experiment `1458-negative-streaming-integration`, the exact
+integration SHA and expected exit 1. The PR records the conclusions and source
+identities; structured evidence records receipts, check identities and artifact
+checksums. The local logs/API snapshots and verified archive are retained under
+`/private/tmp/borrowser-1458-negative-enforcement`.
+
+This demonstrates hosted **integration-job failure propagation** through both
+gates into the existing required check. Head-job failure, cancellation, timeout,
+unexpected skips and missing/mismatched outputs were tested locally, not
+individually reproduced hosted. Whole-workflow cancellation was not exercised.
+The deliberately early-failing run took 23m14s elapsed and 64m24s of summed job
+execution; it is not a successful performance baseline or replacement qualification.
+GitHub treats skipped jobs as successful required checks, making both `always()`
+barriers and explicit result validation material; see
+[GitHub's job-condition documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions).
+
+## Caching, duplication and runner cost
+
+The cache architecture is unchanged. All six new namespaces missed in the
+successful parallel control; AG2 and all nine fuzz jobs had exact hits. There
+were no fallback hits in that run.
+
+| New namespace/job | Miss lookup | Post-cache step | Compressed upload bytes |
+| --- | ---: | ---: | ---: |
+| provenance registry | 2s | 5s | 91,491,557 |
+| workspace correctness | 1s | 11s | 615,973,341 |
+| release/abort/benches | 2s | 7s | 451,493,982 |
+| package conformance | 2s | 10s | 428,418,316 |
+| integration streaming | 3s | 11s | 473,111,029 |
+| head registry | 2s | 46s | 91,492,219 |
+
+Uploads totalled 2,151,980,444 bytes, approximately 2.00 GiB; retained storage after
+eviction was not measured. AG2 restored 510,652,035 bytes in an 8s cache step.
+Fuzz restore sizes were approximately 87 MiB, or 157 MiB for CSS regressions.
+
+The source/head caches remain registry-only. Other jobs own separate targets;
+workspace-crate caching, Cargo-home `cache-bin` and cache-on-failure remain disabled. There
+is no shared mutable target, cross-job binary transfer, sccache or privileged
+cross-PR cache promotion. The installer explicitly requests the pinned 1.92.0;
+unused stable was not upgraded in these six jobs. Other installed compilers and
+runner-image changes can still invalidate keys.
+
+The first integration and head compilations each compiled 453 timing units,
+including 346 dependency units; conformance compiled 317 units, including 298
+dependency units. Release's initial build compiled 334 units, including 309
+dependency units. This demonstrates substantial repeated dependency compilation.
+Unit elapsed durations overlap; they are not CPU seconds or runner consumption.
+Narrowing's independent cold cost and cache-policy improvements remain unmeasured.
+
+## Measured costs and replacement projection
+
+The latest successful master baseline had 26m53s workflow elapsed and 42m03s
+runner execution. The parallel control achieved 18m54s and 72m26s: observed
+latency fell 29.7%, while runner execution increased 72.3%. These differ in source
+qualification, temporary extra guard execution, caches and runner variability;
+they are not a controlled equal-coverage A/B comparison.
+
+Removing the two measured workspace executions subtracts 375.31s from correctness.
+Holding all other costs constant gives a **counterfactual** correctness duration
+of about 12m25s, final workflow duration about 12m34s and runner execution about
+66m11s (8.6% below the parallel control). Integration's observed 11m59s would be
+close to the projected critical path. These are arithmetic estimates, not measured
+replacement results, warm-cache evidence or a guarantee of the 15-minute target.
+
+Even this estimate remains about 57% above the old master runner total. The
+original 10% cost criterion has not been relaxed or satisfied. Equal-coverage
+serial/reference accounting, repeated measurements and an explicit cost decision
+remain necessary. Preserve at least three exact-cache and two controlled cold
+samples, classify fallback separately, and report medians/ranges plus queue,
+setup, post-cache and artifact costs. An incidental cache miss is not a controlled
+fresh-Cargo-home experiment. No failed/cancelled run can establish an improvement.
+
+## Four-level validation and readiness
+
+1. **Targeted:** actual Cargo/Git fixtures exercise same-run equivalence failures,
+   binary-only/configuration-only mismatch, inventory collisions, replacement
+   execution of other targets and both gates' guard failure/source-result matrix.
+2. **Subsystem:** run all qualification regressions in both color modes on macOS
+   and offline Linux arm64; run the actual workspace recipes, feature/inventory
+   programs, Actionlint with ShellCheck, YAML/Bash, formatting and diff checks.
+   Developer runs of an uncommitted candidate are not committed CI qualification.
+3. **Runtime smoke:** no new visible/runtime behavior changes. Existing native AG2
+   and networking release-abort qualification passed in the published control.
+4. **Full CI:** retain `make check-url-dependencies` and `make ci` committed-input
+   preflight. The local candidate cannot pass it while qualification inputs are
+   uncommitted; do not bypass it. Require committed provenance and a new successful
+   hosted replacement run; the separate hosted integration-failure experiment is
+   complete and does not qualify this unpublished replacement.
+
+Earlier local replacement validation results are recorded in the structured
+evidence.
+All 63 qualification regressions passed in both color modes on macOS arm64
+(55.700s each) and offline Linux arm64 (14.795s / 14.027s). The eight focused
+replacement cases passed first. The actual local compiler/inventory programs
+passed: 392 matching full/HTML5 configurations, a 92-configuration narrower subset,
+identical guard bytes and 2,957 → 2,956 inventory records in each lane. These
+existing-cache developer probes are not native hosted replacement qualification.
+
+An additional full default workspace execution exited 101 at the existing
+conformance native process-ownership tests: 186 passed, nine failed, 13 ignored.
+The failures report macOS Mach inspection errors; the guard target was not reached.
+An outside-sandbox ownership probe also exited 101, reporting unavailable live
+process-executable inspection and unsupported native sandbox-denial reproduction.
+The full HTML5 execution was not attempted after that failure. No test was skipped
+to turn this into a passing result; the exact replacement recipes also ran in
+the disposable real-Cargo fixtures, and both full inventory/feature probes passed.
+
+Evidence-synchronization revalidation used macOS arm64 with Rust/Cargo 1.92.0.
+The two focused replacement/gate regressions passed first (0.565s); all 63
+qualification regressions then passed with `CARGO_TERM_COLOR=always` (44.631s)
+and `never` (47.843s). Actionlint 1.7.12 with ShellCheck 0.11.0, expanded YAML,
+all 96 Bash run blocks, Rust formatting, JSON and combined-diff checks passed.
+The actual workspace commands differ from the published control only by the
+terminal guard exclusion. Their shared audit values, mandatory equivalence and
+inventory steps, independent guard execution and both final gates were verified.
+No executable CI logic or test content changed during this evidence update.
+
+`make check-url-dependencies`, `make check-network-dependencies` and `make ci`
+each exited 2 at `staged qualification tests differ from committed candidate`.
+This expected preflight rejection is not full committed qualification; no
+workaround was used. A separately authorized commit must pass that qualification
+before publication.
+
+**Verdict: Not closeable yet.** Hosted integration-failure enforcement is verified.
+The candidate may proceed to separately authorized controlled publication after
+local review and validation; it is not completed replacement qualification.
+A positive hosted replacement run, controlled timings and runner-cost acceptance
+remain outstanding.
+
+No browser-engine behavior or feature-gap status changes; the feature-gap tracker
+is unchanged. The independent parser scalability finding below remains separate.
 
 ## Retained historical measurements and independent engine finding
 

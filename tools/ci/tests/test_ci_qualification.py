@@ -11,6 +11,8 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -20,6 +22,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = (ROOT / ".github/workflows/ci.yml").read_text()
+WORKSPACE_COMMANDS = dict(re.findall(r"^        run: &(default_workspace_tests|html5_workspace_tests) (.+)$", WORKFLOW, re.MULTILINE))
 INTEGRATION = "a" * 40
 HEAD = "b" * 40
 INTEGRATION_TREE = "c" * 40
@@ -166,6 +169,27 @@ class QualificationGate(unittest.TestCase):
             self.assertNotEqual(bash(LEGACY, {"QUALIFICATION_RESULT": value}).returncode, 0)
         self.assertNotEqual(bash(LEGACY, {}).returncode, 0)
 
+    def test_guard_faults_propagate_through_both_gates(self):
+        for name in ("streaming_integration", "streaming_head"):
+            for fault in ("failure", "cancelled", "skipped", "timed_out", "missing", "no_result", "no_outputs", "wrong_sha", "wrong_tree"):
+                with self.subTest(job=name, fault=fault):
+                    results = self.successful_results()
+                    if fault == "missing":
+                        del results[name]
+                    elif fault == "no_result":
+                        del results[name]["result"]
+                    elif fault == "no_outputs":
+                        results[name]["outputs"] = {}
+                    elif fault.startswith("wrong_"):
+                        results[name]["outputs"]["qualified_" + fault[6:]] = "e" * 40
+                    else:
+                        results[name]["result"] = fault
+                    rejected = self.gate(results)
+                    self.assertNotEqual(rejected.returncode, 0)
+                    self.assertNotIn("Every qualification succeeded", rejected.stdout)
+                    status = "failure" if rejected.returncode else "success"
+                    self.assertNotEqual(bash(LEGACY, {"QUALIFICATION_RESULT": status}).returncode, 0)
+
     def test_parallel_work_jobs_do_not_recreate_the_serial_chain(self):
         for name in SOURCE_JOBS | {"streaming_head"}:
             block = job_block(name)
@@ -199,25 +223,30 @@ class QualificationGate(unittest.TestCase):
             if name != "source_provenance":
                 self.assertIn("      - *pinned_toolchain", job_block(name))
 
-    def test_original_execution_coverage_is_retained_until_hosted_activation(self):
-        correctness = job_block("rust_correctness")
+    def test_workspace_lanes_replace_only_the_independently_required_guard(self):
         original = 'cargo test --workspace --lib --bins --tests --examples'
-        self.assertIn(original + ' --locked -- --skip aws::command::tests::native_procfs_\n', correctness)
-        self.assertIn(original + ' --features html5 --locked -- --skip aws::command::tests::native_procfs_\n', correctness)
-        self.assertNotIn("--skip runtime_parse_linear_streaming_guard", correctness)
-        self.assertIn('"--skip", "runtime_parse_linear_streaming_guard"', INVENTORIES)
+        suffix = ' --locked -- --skip aws::command::tests::native_procfs_ --skip runtime_parse_linear_streaming_guard'
+        self.assertEqual(WORKSPACE_COMMANDS, {"default_workspace_tests": original + suffix,
+                                             "html5_workspace_tests": original + ' --features html5' + suffix})
+        block = job_block("streaming_integration")
+        self.assertIn('DEFAULT_WORKSPACE_TEST_COMMAND: *default_workspace_tests', block)
+        self.assertIn('HTML5_WORKSPACE_TEST_COMMAND: *html5_workspace_tests', block)
+        for name in ("Record native streaming guard lane equivalence", "Audit streaming guard replacement inventories",
+                     "Qualify streaming guard on integration source"):
+            step = block.split('      - name: ' + name + '\n', 1)[1].split('      - ', 1)[0]
+            self.assertNotRegex(step, r"(?m)^        (?:if|continue-on-error):")
+        self.assertLess(block.index('Record native streaming guard lane equivalence'), block.index('Audit streaming guard replacement inventories'))
+        self.assertLess(block.index('Audit streaming guard replacement inventories'), block.index('Qualify streaming guard on integration source'))
+        self.assertLess(block.index('Qualify streaming guard on integration source'), block.index('      - *source_complete'))
         self.assertIn("--test\", \"perf_regression", LANES)
         self.assertNotIn('"-p", "runtime_parse"', LANES)
 
-    def test_all_original_qualification_commands_survive_the_job_split(self):
-        # Immutable pre-1458 baseline; available under the existing full-history contract.
-        original = subprocess.run(
-            ["git", "show", "144ef3bc887ac5688ac7f6b123a6e98f1e1485f2:.github/workflows/ci.yml"],
-            cwd=ROOT, check=True, capture_output=True, text=True, timeout=30).stdout
-
-        def commands(workflow):
+    def test_current_qualification_commands_have_explicit_owners(self):
+        # Current qualification contract, independent of historical Git objects.
+        # The successful original-command migration audit is retained as evidence.
+        def commands(block):
             result = []
-            lines = workflow.splitlines()
+            lines = block.splitlines()
             for index, line in enumerate(lines):
                 match = re.fullmatch(r"(?:      -|       ) run: (.+)", line)
                 if not match:
@@ -230,13 +259,85 @@ class QualificationGate(unittest.TestCase):
                             break
                         body.append(row)
                     command = textwrap.dedent("\n".join(body)).strip()
-                # Reporting-only Cargo flags do not change qualification behavior.
-                result.append(re.sub(r" --timings(?=\s|$)", "", command))
-            return result
+                command = re.sub(r"^&\w+ ", "", command)
+                command = re.sub(r"\\\n\s*", " ", command)
+                result.extend(line.strip() for line in command.splitlines()
+                              if re.match(r"\s*(?:cargo|make|bash|python3?|env) ", line))
+            return {tuple(shlex.split(re.sub(r" --timings(?=\s|$)", "", c))) for c in result}
 
-        from collections import Counter
-        missing = Counter(commands(original)) - Counter(commands(WORKFLOW))
-        self.assertFalse(missing, "original qualification commands removed: " + repr(missing))
+        owned = {
+            "source_provenance": ['cargo fetch --locked', 'cargo fetch --manifest-path fuzz/Cargo.toml --locked',
+                                  'make check-url-dependencies', 'make check-network-dependencies'],
+            "rust_correctness": [
+                'cargo fmt --all -- --check',
+                'cargo clippy --workspace --all-targets --locked -- -D warnings',
+                'cargo clippy -p browser --all-targets --features conformance-observation --locked -- -D warnings',
+                'cargo clippy --workspace --all-targets --features html5 --locked -- -D warnings',
+                'cargo clippy --workspace --all-targets --features "html5 html5-fuzzing parser-conformance parser_invariants parser-failure-injection" --locked -- -D warnings',
+                'cargo build --workspace --all-targets --locked',
+                *WORKSPACE_COMMANDS.values(),
+                'cargo test -p html --test html5_parser_conformance --features parser-conformance --locked',
+                'make test-html5-external-fixtures', 'make test-html5-parser-fatal-failures',
+                'cargo test -p html --test html5_golden_tree_builder --features "html5 dom-snapshot parser-conformance" --locked',
+                'cargo test -p html --test html5_golden_tree_builder_patches --features html5 --locked',
+                'cargo test -p html --test html5_smoke_real_pages --features "html5 dom-snapshot" --locked',
+                'cargo test -p html --test html5_rawtext_script_regressions --features "html5 dom-snapshot parser_invariants" --locked',
+                'cargo test -p html --test html5_pipeline_regressions --features "html5 html5-fuzzing dom-snapshot parser_invariants" --locked',
+                'cargo test -p html --test wpt_html5_tree_builder --features "html5 dom-snapshot" --locked',
+                'cargo build --workspace --all-targets --features html5 --locked', 'make html-entities-check'],
+            "rust_release": ['cargo build --workspace --release --locked', 'cargo build --workspace --release --features html5 --locked',
+                             'make qualify-network-release', 'cargo bench -p html --bench html_bench --features html5 --no-run --locked',
+                             'make compile-css-benches'],
+            "rust_conformance": ['cargo build -p borrowser-conformance --locked', 'make conformance-addressing', 'make conformance-ci'],
+            "ag4_nonbillable": ['python -m pip install --require-hashes -r crates/conformance/aws/requirements.lock',
+                                'python -m unittest discover -s crates/conformance/aws/tests -v',
+                                'python -m unittest discover -s tools/conformance/tests -v'],
+        }
+        for job, required in owned.items():
+            actual = commands(job_block(job))
+            for command in required:
+                self.assertIn(tuple(shlex.split(command)), actual, (job, command))
+
+        fuzz = {
+            'html5_tokenizer_fuzz_smoke': ['html5_tokenizer_fuzz_smoke'],
+            'html5_tokenizer_script_data_fuzz_smoke': ['html5_tokenizer_script_data_fuzz_smoke'],
+            'html5_tokenizer_rawtext_fuzz_smoke': ['html5_tokenizer_rawtext_fuzz_smoke'],
+            'html5_tokenizer_rcdata_fuzz_smoke': ['html5_tokenizer_rcdata_fuzz_smoke'],
+            'html5_tree_builder_token_fuzz_smoke': ['html5_tree_builder_tokens_fuzz_smoke'],
+            'html5_pipeline_fuzz_smoke': ['html5_pipeline_fuzz_smoke'],
+            'css_syntax_fuzz_smoke': ['css_tokenizer_fuzz_smoke', 'css_parser_fuzz_smoke'],
+            'css_pipeline_fuzz_smoke': ['css_selector_parser_fuzz_smoke', 'css_selector_matching_fuzz_smoke', 'css_cascade_fuzz_smoke', 'css_values_fuzz_smoke'],
+        }
+        for job, scripts in fuzz.items():
+            for script in scripts:
+                self.assertIn(tuple(shlex.split(f'bash ./tools/ci/{script}.sh 2>&1 | tee ci_artifacts/{script}.log')), commands(job_block(job)))
+        self.assertIn(tuple(shlex.split('cargo test -p css --features css-fuzzing --test css_fuzz_regressions --locked 2>&1 | tee ci_artifacts/css_fuzz_regressions.log')),
+                      commands(job_block('css_fuzz_regressions')))
+
+        native = commands(job_block('ag2_linux_chromium'))
+        for command in ('cargo build -p borrowser-conformance --locked 2>&1 | tee "$AG2_EVIDENCE/build.log"',
+                        'cargo clippy -p borrowser-conformance --all-targets --locked -- -D warnings 2>&1 | tee "$AG2_EVIDENCE/clippy.log"',
+                        'cargo test -p borrowser-conformance --locked native_ -- --nocapture 2>&1 | tee "$AG2_EVIDENCE/native.log"',
+                        'cargo test -p borrowser-conformance --locked -- --test-threads=1 --nocapture 2>&1 | tee "$AG2_EVIDENCE/conformance.log"',
+                        'cargo run -p borrowser-conformance --locked -- --chromium > "$AG2_EVIDENCE/captures.json" 2> "$AG2_EVIDENCE/capture.stderr"',
+                        'cargo run -p borrowser-conformance --locked -- --compare canvas/cascade > "$AG2_EVIDENCE/comparison.json" 2> "$AG2_EVIDENCE/comparison.stderr"'):
+            self.assertIn(tuple(shlex.split(command)), native)
+        for target, test, serial in (
+            ('--bin borrowser-conformance', 'chromium::tests::real_chromium_capture_and_scripts', True),
+            ('--bin borrowser-conformance', 'chromium::tests::real_chromium_lifecycle_and_topology', True),
+            ('--bin borrowser-conformance', 'comparison::tests::real_chromium_comparison_composition', True),
+            ('--bin borrowser-conformance', 'chromium::tests::real_chromium_ag5_read_only_inspection', True),
+            ('--bin borrowser-conformance', 'chromium::tests::real_chromium_ag5_profile', True),
+            ('--test chromium_cli', 'real_chromium_cli_has_stable_independent_observations', False),
+            ('--test comparison_cli', 'real_chromium_combined_cli_is_stable_and_selects_exactly', False),
+            ('--bin borrowser-conformance', 'chromium::tests::real_chromium_ag7_inert_links', True),
+            ('--test comparison_cli', 'real_chromium_ag7_scoped_relationships', False),
+        ):
+            arguments = '--exact --ignored ' + ('--test-threads=1 ' if serial else '') + '--nocapture'
+            command = f'cargo test -p borrowser-conformance --locked {target} {test} -- {arguments} 2>&1 | tee -a "$AG2_EVIDENCE/conformance.log"'
+            self.assertIn(tuple(shlex.split(command)), native)
+        self.assertIn(tuple(shlex.split('cargo test -p borrowser-conformance --locked --test comparison_cli ag8_real_chromium_suites_are_stable -- --exact --ignored --nocapture --test-threads=1 2>&1 | tee -a "$AG2_EVIDENCE/conformance.log"')), native)
+        self.assertIn(tuple(shlex.split('env TMPDIR="$RUNNER_TEMP/ag2-profiles" BORROWSER_AG4_GUEST_HARNESS="$PWD/target/debug/borrowser-conformance" python3 -m unittest discover -s crates/conformance/aws/tests -p test_guest_capture.py 2>&1 | tee -a "$AG2_EVIDENCE/conformance.log"')), native)
 
     def test_each_build_job_retains_its_own_timing_reports(self):
         for name in ("rust_correctness", "rust_release", "rust_conformance"):
@@ -264,6 +365,8 @@ class ExactHeadGuard(unittest.TestCase):
                                 GIT_AUTHOR_DATE="2001-01-01T00:00:00+0000",
                                 GIT_COMMITTER_DATE="2001-01-01T00:00:00+0000",
                                 CARGO_NET_OFFLINE="true", CARGO_INCREMENTAL="0",
+                                DEFAULT_WORKSPACE_TEST_COMMAND=WORKSPACE_COMMANDS["default_workspace_tests"],
+                                HTML5_WORKSPACE_TEST_COMMAND=WORKSPACE_COMMANDS["html5_workspace_tests"],
                                 RUNNER_TEMP=str(self.runtime), GITHUB_OUTPUT=str(self.runtime / "outputs"))
         self.git("init", "-q")
         self.git("config", "core.hooksPath", "/dev/null")
@@ -632,10 +735,55 @@ class ExactHeadGuard(unittest.TestCase):
         self.commit_fixture()
         environment = dict(self.environment, CARGO_TARGET_DIR=str(self.runtime / "lane-target"))
         result = bash(LANES, environment, self.repo)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotEqual(result.returncode, 0)
         report = json.loads((self.runtime / "ci-1458-evidence/lane-equivalence.json").read_text())
         self.assertFalse(report["same_guard_bytes"])
         self.assertFalse(report["same_workspace_configurations"])
+        self.assertIn("workspace lane equivalence failed", result.stderr)
+
+    def test_configuration_mismatch_is_fatal_even_when_guard_bytes_match(self):
+        manifest = self.other / "Cargo.toml"
+        manifest.write_text(manifest.read_text().replace('default=["html5"]', 'default=[]'))
+        environment = self.integration_fixture('#[test]\nfn runtime_parse_linear_streaming_guard() {}\n')
+        failed = bash(LANES, environment, self.repo)
+        self.assertNotEqual(failed.returncode, 0)
+        report = json.loads((self.runtime / "ci-1458-evidence/lane-equivalence.json").read_text())
+        self.assertTrue(report["same_guard_bytes"])
+        self.assertFalse(report["same_workspace_configurations"])
+        fixture = QualificationGate()
+        results = fixture.successful_results()
+        results["streaming_integration"] = {"result": "failure" if failed.returncode else "success", "outputs": {}}
+        rejected = fixture.gate(results)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertNotEqual(bash(LEGACY, {"QUALIFICATION_RESULT": "failure" if rejected.returncode else "success"}).returncode, 0)
+        self.assertFalse(Path(environment["GITHUB_OUTPUT"]).exists())
+
+    def test_guard_hash_mismatch_is_fatal_even_when_configurations_match(self):
+        environment = self.integration_fixture('#[test]\nfn runtime_parse_linear_streaming_guard() {}\n')
+        binaries = self.directory / "cargo-wrapper"
+        binaries.mkdir()
+        wrapper = binaries / "cargo"
+        wrapper.write_text('#!' + shutil.which("python3") + '\n'
+                           'import json, subprocess, sys\n'
+                           'from pathlib import Path\n'
+                           'result = subprocess.run([' + repr(shutil.which("cargo")) + ', *sys.argv[1:]], capture_output=True)\n'
+                           'if result.returncode == 0 and "--features" in sys.argv and "--no-run" in sys.argv:\n'
+                           '    for line in result.stdout.splitlines():\n'
+                           '        item = json.loads(line)\n'
+                           '        if item.get("reason") == "compiler-artifact" and item["target"]["name"] == "perf_regression":\n'
+                           '            with Path(item["executable"]).open("ab") as binary:\n'
+                           '                binary.write(b"changed after real Cargo compilation")\n'
+                           'sys.stdout.buffer.write(result.stdout)\n'
+                           'sys.stderr.buffer.write(result.stderr)\n'
+                           'sys.exit(result.returncode)\n')
+        wrapper.chmod(0o755)
+        environment["PATH"] = str(binaries) + os.pathsep + os.environ["PATH"]
+        result = bash(LANES, environment, self.repo)
+        self.assertNotEqual(result.returncode, 0)
+        report = json.loads((self.runtime / "ci-1458-evidence/lane-equivalence.json").read_text())
+        self.assertTrue(report["same_workspace_configurations"])
+        self.assertFalse(report["same_guard_bytes"])
+        self.assertIn("workspace lane equivalence failed", result.stderr)
 
     def test_narrow_workspace_recipe_keeps_features_that_package_scoping_loses(self):
         manifest = self.crate / "Cargo.toml"
@@ -693,6 +841,42 @@ class ExactHeadGuard(unittest.TestCase):
         result = bash(INVENTORIES, environment, self.repo)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("remove exactly", result.stderr)
+        fixture = QualificationGate()
+        results = fixture.successful_results()
+        results["streaming_integration"] = {"result": "failure" if result.returncode else "success", "outputs": {}}
+        rejected = fixture.gate(results)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertNotEqual(bash(LEGACY, {"QUALIFICATION_RESULT": "failure" if rejected.returncode else "success"}).returncode, 0)
+
+    def test_replacement_commands_execute_other_targets_and_exclude_only_the_guard(self):
+        environment = self.integration_fixture(
+            '#[test]\nfn runtime_parse_linear_streaming_guard() { panic!("guard must run independently"); }\n')
+        for command in WORKSPACE_COMMANDS.values():
+            result = subprocess.run(shlex.split(command), cwd=self.repo, env=dict(os.environ, **environment),
+                                    capture_output=True, text=True, timeout=120)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for name in ("ordinary_unit_test", "ordinary_binary_test", "ordinary_integration_test",
+                         "another_unit_test", "another_integration_test"):
+                self.assertIn("test " + name + " ... ok", result.stdout)
+            self.assertNotIn("test runtime_parse_linear_streaming_guard ...", result.stdout)
+        (self.other / "tests/unrelated.rs").write_text('#[test]\nfn another_integration_test() { panic!("remaining test failed"); }\n')
+        self.commit_fixture()
+        for command in WORKSPACE_COMMANDS.values():
+            result = subprocess.run(shlex.split(command), cwd=self.repo, env=dict(os.environ, **environment),
+                                    capture_output=True, text=True, timeout=120)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("another_integration_test ... FAILED", result.stdout)
+
+    def test_inventory_rejects_absent_commands_and_missing_guard_exclusion(self):
+        environment = self.integration_fixture('#[test]\nfn runtime_parse_linear_streaming_guard() {}\n')
+        for variable in ("DEFAULT_WORKSPACE_TEST_COMMAND", "HTML5_WORKSPACE_TEST_COMMAND"):
+            for missing in (True, False):
+                invalid = dict(environment)
+                if missing:
+                    del invalid[variable]
+                else:
+                    invalid[variable] = invalid[variable].rsplit(" --skip runtime_parse_linear_streaming_guard", 1)[0]
+                self.assertNotEqual(bash(INVENTORIES, invalid, self.repo).returncode, 0)
 
     def test_inventory_is_listing_only_and_does_not_execute_any_workload(self):
         environment = self.integration_fixture(

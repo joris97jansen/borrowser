@@ -609,10 +609,11 @@ jobs:
 
       - name: Run tests (default HTML5 build)
         # AG4.1's red native qualification runs in the required AG2 native step.
-        # Filter only its duplicate wrappers here; keep all other tests enabled.
-        run: cargo test --workspace --lib --bins --tests --examples --locked -- --skip aws::command::tests::native_procfs_
+        # The required integration job proves and executes the replaced guard.
+        # Share these exact commands with its same-run inventory audit.
+        run: &default_workspace_tests cargo test --workspace --lib --bins --tests --examples --locked -- --skip aws::command::tests::native_procfs_ --skip runtime_parse_linear_streaming_guard
       - name: Run tests (explicit html5 feature lane)
-        run: cargo test --workspace --lib --bins --tests --examples --features html5 --locked -- --skip aws::command::tests::native_procfs_
+        run: &html5_workspace_tests cargo test --workspace --lib --bins --tests --examples --features html5 --locked -- --skip aws::command::tests::native_procfs_ --skip runtime_parse_linear_streaming_guard
       - name: Run canonical HTML parser conformance observations
         run: cargo test -p html --test html5_parser_conformance --features parser-conformance --locked
       - name: Run pinned external HTML parser subset
@@ -826,26 +827,34 @@ jobs:
                     "narrow_guard_bytes_equal": records[0]["sha256"] == records[2]["sha256"]}
           (evidence / "lane-equivalence.json").write_text(json.dumps(report, indent=2) + "\n")
           print(json.dumps(report, indent=2))
-          # An unequal result is evidence against deduplication, not permission to skip a lane.
+          if not report["same_workspace_configurations"] or not report["same_guard_bytes"]:
+              raise SystemExit("streaming guard workspace lane equivalence failed")
+          # The narrower recipe remains diagnostic; execution uses the full artifact.
           PY
       - name: Audit streaming guard replacement inventories
         timeout-minutes: 3
+        env:
+          DEFAULT_WORKSPACE_TEST_COMMAND: *default_workspace_tests
+          HTML5_WORKSPACE_TEST_COMMAND: *html5_workspace_tests
         run: |
           python3 -I -B - <<'PYTHON'
           from collections import Counter
           import json
           import os
           from pathlib import Path
+          import shlex
           import subprocess
 
           evidence = Path(os.environ["RUNNER_TEMP"]) / "ci-1458-evidence"
           expected = "runtime_parse_linear_streaming_guard: test"
           records = []
-          for lane, features in (("default", []), ("html5", ["--features", "html5"])):
-              command = ["cargo", "test", "--workspace", "--lib", "--bins", "--tests", "--examples", "--locked", *features,
-                         "--", "--skip", "aws::command::tests::native_procfs_", "--list", "--format", "terse"]
-              before = subprocess.check_output(command, text=True)
-              after = subprocess.check_output(command + ["--skip", "runtime_parse_linear_streaming_guard"], text=True)
+          for lane, variable in (("default", "DEFAULT_WORKSPACE_TEST_COMMAND"), ("html5", "HTML5_WORKSPACE_TEST_COMMAND")):
+              command = shlex.split(os.environ[variable])
+              if "--" not in command or command[-2:] != ["--skip", "runtime_parse_linear_streaming_guard"]:
+                  raise SystemExit(f"{lane}: expected the explicit terminal guard exclusion")
+              listing = ["--list", "--format", "terse"]
+              before = subprocess.check_output(command[:-2] + listing, text=True)
+              after = subprocess.check_output(command + listing, text=True)
               original = Counter(before.splitlines())
               replacement = Counter(after.splitlines())
               if original[expected] != 1 or replacement[expected] != 0 or replacement - original or original - replacement != Counter({expected: 1}):
@@ -855,7 +864,7 @@ jobs:
               records.append({"lane": lane, "command": command, "before_records": sum(original.values()),
                               "after_records": sum(replacement.values()), "removed": [expected]})
           (evidence / "replacement-inventory.json").write_text(json.dumps(records, indent=2) + "\n")
-          # This is a proof-only listing. Both original workspace execution commands remain intact.
+          # Listing only: all remaining tests execute in the concurrent correctness job.
           PYTHON
       - name: Qualify streaming guard on integration source
         timeout-minutes: 8

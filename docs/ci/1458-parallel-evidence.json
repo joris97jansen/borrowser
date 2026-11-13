@@ -1,11 +1,9 @@
 {
   "schema": 1,
-  "candidate_status": "Uncommitted parallel redesign; no hosted results for this workflow candidate.",
+  "candidate_status": "Uncommitted guard replacement based on published parallel bf8572c5; hosted integration-job failure enforcement verified. Prepared for separately authorized controlled publication; positive hosted replacement qualification, controlled performance measurements and runner-cost acceptance remain pending.",
   "reviewed_on": "2026-11-13",
   "branch": "chore/1458-optimize-ci-critical-path",
-  "published_head": "ea843be2299cc8d3d5ea15c7aab66b7abd0028ec",
   "remote_master": "144ef3bc887ac5688ac7f6b123a6e98f1e1485f2",
-  "published_integration": "c5d88fd2e3188a8b97036372f8a504b5f26615da",
   "observed_run": {
     "id": 43376243486,
     "url": "https://github.com/joris97jansen/borrowser/actions/runs/43376243486",
@@ -197,11 +195,1493 @@
     }
   },
   "heavy_jobs_have_no_dependencies": true,
-  "workspace_guard_removal_activated": false,
   "narrow_recipe_used_for_execution": false,
-  "new_graph_hosted_enforcement_verified": false,
-  "native_narrow_recipe_and_inventory_proof_pending": true,
-  "local_recipe_probe": {
+  "new_graph_hosted_enforcement_verified": true,
+  "hosted_enforcement_scope": "Integration-job failure propagation only; see hosted_negative_enforcement for demonstrated and locally-only cases.",
+  "measurement_limitations": [
+    "Historical native full/alias equality is demonstrated; new narrower-recipe evidence is local macOS arm64 only.",
+    "Local recipe invocation used existing caches and an uncommitted workflow; it is not cold or hosted qualification.",
+    "A first diagnostic wrapper failed after successful children; the clean repeated probe is recorded here. The failed attempt is retained under /private/tmp/borrowser-1458-redesign/failed-wrapper-attempt.json.",
+    "The cancelled serial control is not a successful equal-coverage performance baseline.",
+    "The former temporary Cargo fixtures had no toolchain pin and could inherit stable 1.100.0; the prior native streaming artifact itself explicitly identifies 1.92.0.",
+    "Successful parallel-control first-run costs are now recorded; repeated controlled samples and cost acceptance remain open.",
+    "Local replacement lacks a positive hosted replacement run; integration-job failure propagation was demonstrated in a separate unchanged-control experiment.",
+    "Existing native macOS ownership tests cannot qualify on this host; no assertions or filters were weakened."
+  ],
+  "serial_control_head": "ea843be2299cc8d3d5ea15c7aab66b7abd0028ec",
+  "serial_control_integration": "c5d88fd2e3188a8b97036372f8a504b5f26615da",
+  "published_parallel_head": "bf8572c5fb0169c6106e482cce439da0d62bb577",
+  "published_parallel_integration": "2598e93245977f25b1cc9e93d11aa97071f88e5e",
+  "published_workspace_guard_removal_activated": false,
+  "native_integration_recipe_and_inventory_verified": true,
+  "hosted_success_path_verified": true,
+  "successful_parallel_control": {
+    "run_id": 43402060645,
+    "url": "https://github.com/joris97jansen/borrowser/actions/runs/43402060645",
+    "attempt": 1,
+    "conclusion": "success",
+    "run_created_at": "2026-11-13T09:31:43Z",
+    "run_updated_at": "2026-11-13T09:50:37Z",
+    "workflow_elapsed_seconds": 1134.0,
+    "final_required_check_elapsed_seconds": 1133.0,
+    "queue_free_execution_path_seconds": 1125.0,
+    "queue_free_definition": "Longest independent work-job execution plus gate and legacy execution; excludes queue/dispatch and finalization.",
+    "total_runner_seconds": 4346.0,
+    "critical_path_owner": "Rust correctness and parser regressions",
+    "critical_work_job_seconds": 1120.0,
+    "ordering_verified": true,
+    "checks": [
+      {
+        "name": "Rust (ubuntu-latest)",
+        "head_sha": "bf8572c5fb0169c6106e482cce439da0d62bb577",
+        "conclusion": "success",
+        "app_id": 15368
+      },
+      {
+        "name": "CI qualification",
+        "head_sha": "bf8572c5fb0169c6106e482cce439da0d62bb577",
+        "conclusion": "success",
+        "app_id": 15368
+      }
+    ],
+    "gate_source_receipts": {
+      "source_provenance": {
+        "result": "success",
+        "outputs": {
+          "pr_head_tree": "7e385d78b60b79eaba51c5ab38a5b55a6f694c06",
+          "qualified_sha": "2598e93245977f25b1cc9e93d11aa97071f88e5e",
+          "qualified_tree": "7e385d78b60b79eaba51c5ab38a5b55a6f694c06"
+        }
+      },
+      "rust_correctness": {
+        "result": "success",
+        "outputs": {
+          "qualified_sha": "2598e93245977f25b1cc9e93d11aa97071f88e5e",
+          "qualified_tree": "7e385d78b60b79eaba51c5ab38a5b55a6f694c06"
+        }
+      },
+      "rust_release": {
+        "result": "success",
+        "outputs": {
+          "qualified_tree": "7e385d78b60b79eaba51c5ab38a5b55a6f694c06",
+          "qualified_sha": "2598e93245977f25b1cc9e93d11aa97071f88e5e"
+        }
+      },
+      "rust_conformance": {
+        "result": "success",
+        "outputs": {
+          "qualified_sha": "2598e93245977f25b1cc9e93d11aa97071f88e5e",
+          "qualified_tree": "7e385d78b60b79eaba51c5ab38a5b55a6f694c06"
+        }
+      },
+      "streaming_integration": {
+        "result": "success",
+        "outputs": {
+          "qualified_sha": "2598e93245977f25b1cc9e93d11aa97071f88e5e",
+          "qualified_tree": "7e385d78b60b79eaba51c5ab38a5b55a6f694c06"
+        }
+      },
+      "streaming_head": {
+        "result": "success",
+        "outputs": {
+          "qualified_sha": "bf8572c5fb0169c6106e482cce439da0d62bb577",
+          "qualified_tree": "7e385d78b60b79eaba51c5ab38a5b55a6f694c06"
+        }
+      },
+      "ag2_linux_chromium": {
+        "result": "success",
+        "outputs": {}
+      },
+      "ag4_nonbillable": {
+        "result": "success",
+        "outputs": {}
+      },
+      "html5_tokenizer_fuzz_smoke": {
+        "result": "success",
+        "outputs": {}
+      },
+      "html5_tokenizer_script_data_fuzz_smoke": {
+        "result": "success",
+        "outputs": {}
+      },
+      "html5_tokenizer_rawtext_fuzz_smoke": {
+        "result": "success",
+        "outputs": {}
+      },
+      "html5_tokenizer_rcdata_fuzz_smoke": {
+        "result": "success",
+        "outputs": {}
+      },
+      "html5_tree_builder_token_fuzz_smoke": {
+        "result": "success",
+        "outputs": {}
+      },
+      "html5_pipeline_fuzz_smoke": {
+        "result": "success",
+        "outputs": {}
+      },
+      "css_fuzz_regressions": {
+        "result": "success",
+        "outputs": {}
+      },
+      "css_syntax_fuzz_smoke": {
+        "result": "success",
+        "outputs": {}
+      },
+      "css_pipeline_fuzz_smoke": {
+        "result": "success",
+        "outputs": {}
+      }
+    },
+    "workspace_guard_seconds": [
+      188.24,
+      187.07
+    ],
+    "native_equivalence": {
+      "executed_sha": "2598e93245977f25b1cc9e93d11aa97071f88e5e",
+      "executed_tree": "7e385d78b60b79eaba51c5ab38a5b55a6f694c06",
+      "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)\nbinary: rustc\ncommit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234\ncommit-date: 2025-12-08\nhost: x86_64-unknown-linux-gnu\nrelease: 1.92.0\nLLVM version: 21.1.3\n",
+      "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)\nrelease: 1.92.0\ncommit-hash: 344c4567c634a25837e3c3476aac08af84cf9203\ncommit-date: 2025-10-21\nhost: x86_64-unknown-linux-gnu\nlibgit2: 1.9.1 (sys:0.20.2 vendored)\nlibcurl: 8.15.0-DEV (sys:0.4.83+curl-8.15.0 vendored ssl:OpenSSL/3.5.4)\nssl: OpenSSL 3.5.4 30 Sep 2025\nos: Ubuntu 24.4.0 (noble) [64-bit]\n",
+      "compiler_environment": {
+        "RUSTFLAGS": null,
+        "CARGO_ENCODED_RUSTFLAGS": null,
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_BUILD_TARGET": null
+      },
+      "configuration_counts": {
+        "default": 410,
+        "html5": 410,
+        "narrow": 86
+      },
+      "verified_equal_configs": true,
+      "verified_narrow_subset": true,
+      "same_guard_bytes": true,
+      "narrow_guard_bytes_equal": true,
+      "lanes": [
+        {
+          "lane": "default",
+          "sha256": "ab03f23b53a2be100647c775ec69621effe576cebb84590081105434a095768c",
+          "profile": {
+            "opt_level": "1",
+            "debuginfo": 2,
+            "debug_assertions": true,
+            "overflow_checks": true,
+            "test": true
+          }
+        },
+        {
+          "lane": "html5",
+          "sha256": "ab03f23b53a2be100647c775ec69621effe576cebb84590081105434a095768c",
+          "profile": {
+            "opt_level": "1",
+            "debuginfo": 2,
+            "debug_assertions": true,
+            "overflow_checks": true,
+            "test": true
+          }
+        },
+        {
+          "lane": "narrow",
+          "sha256": "ab03f23b53a2be100647c775ec69621effe576cebb84590081105434a095768c",
+          "profile": {
+            "opt_level": "1",
+            "debuginfo": 2,
+            "debug_assertions": true,
+            "overflow_checks": true,
+            "test": true
+          }
+        }
+      ],
+      "compiler_artifact_freshness": {
+        "default": {
+          "compiler_artifacts": 410,
+          "fresh": 0,
+          "rebuilt": 410
+        },
+        "html5": {
+          "compiler_artifacts": 410,
+          "fresh": 410,
+          "rebuilt": 0
+        },
+        "narrow": {
+          "compiler_artifacts": 86,
+          "fresh": 86,
+          "rebuilt": 0
+        }
+      },
+      "inventories": [
+        {
+          "lane": "default",
+          "before": 2964,
+          "after": 2963,
+          "removed": {
+            "runtime_parse_linear_streaming_guard: test": 1
+          }
+        },
+        {
+          "lane": "html5",
+          "before": 2964,
+          "after": 2963,
+          "removed": {
+            "runtime_parse_linear_streaming_guard: test": 1
+          }
+        }
+      ],
+      "guard_log": "\nrunning 1 test\ntest runtime_parse_linear_streaming_guard has been running for over 60 seconds\ntest runtime_parse_linear_streaming_guard ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 219.41s\n\n",
+      "archive_files": [
+        "_temp/ci-1458-evidence/default-inventory.txt",
+        "_temp/ci-1458-evidence/default-replacement-inventory.txt",
+        "_temp/ci-1458-evidence/default.jsonl",
+        "_temp/ci-1458-evidence/html5-inventory.txt",
+        "_temp/ci-1458-evidence/html5-replacement-inventory.txt",
+        "_temp/ci-1458-evidence/html5.jsonl",
+        "_temp/ci-1458-evidence/integration-guard-artifact.json",
+        "_temp/ci-1458-evidence/integration-guard-executable.txt",
+        "_temp/ci-1458-evidence/integration-guard.log",
+        "_temp/ci-1458-evidence/integration-target-selection.txt",
+        "_temp/ci-1458-evidence/integration-workspace-selection.txt",
+        "_temp/ci-1458-evidence/lane-equivalence.json",
+        "_temp/ci-1458-evidence/narrow.jsonl",
+        "_temp/ci-1458-evidence/replacement-inventory.json",
+        "borrowser/borrowser/target/cargo-timings/cargo-timing-20261113T093224.565417352Z.html",
+        "borrowser/borrowser/target/cargo-timings/cargo-timing-20261113T093951.31757688Z.html",
+        "borrowser/borrowser/target/cargo-timings/cargo-timing-20261113T093951.692649317Z.html",
+        "borrowser/borrowser/target/cargo-timings/cargo-timing.html"
+      ]
+    },
+    "artifacts": [
+      {
+        "id": 14026696846,
+        "name": "ci-1458-build-rust_correctness-2598e93245977f25b1cc9e93d11aa97071f88e5e-1",
+        "bytes": 68126,
+        "sha256": "cbb96bc6a496371752c646b7688e343ef614b354404eb5a3261f9676d0dfff54",
+        "files": [
+          "cargo-timing-20261113T093350.216138147Z.html",
+          "cargo-timing-20261113T095013.159557794Z.html",
+          "cargo-timing.html"
+        ]
+      },
+      {
+        "id": 14026292028,
+        "name": "ci-1458-integration-2598e93245977f25b1cc9e93d11aa97071f88e5e-1",
+        "bytes": 368092,
+        "sha256": "6fe1f3421c7b892551f6eb1321d043ada87e261bc89ea039a4713bcc42a5b5e6",
+        "files": [
+          "_temp/ci-1458-evidence/default-inventory.txt",
+          "_temp/ci-1458-evidence/default-replacement-inventory.txt",
+          "_temp/ci-1458-evidence/default.jsonl",
+          "_temp/ci-1458-evidence/html5-inventory.txt",
+          "_temp/ci-1458-evidence/html5-replacement-inventory.txt",
+          "_temp/ci-1458-evidence/html5.jsonl",
+          "_temp/ci-1458-evidence/integration-guard-artifact.json",
+          "_temp/ci-1458-evidence/integration-guard-executable.txt",
+          "_temp/ci-1458-evidence/integration-guard.log",
+          "_temp/ci-1458-evidence/integration-target-selection.txt",
+          "_temp/ci-1458-evidence/integration-workspace-selection.txt",
+          "_temp/ci-1458-evidence/lane-equivalence.json",
+          "_temp/ci-1458-evidence/narrow.jsonl",
+          "_temp/ci-1458-evidence/replacement-inventory.json",
+          "borrowser/borrowser/target/cargo-timings/cargo-timing-20261113T093224.565417352Z.html",
+          "borrowser/borrowser/target/cargo-timings/cargo-timing-20261113T093951.31757688Z.html",
+          "borrowser/borrowser/target/cargo-timings/cargo-timing-20261113T093951.692649317Z.html",
+          "borrowser/borrowser/target/cargo-timings/cargo-timing.html"
+        ]
+      },
+      {
+        "id": 14025906594,
+        "name": "ci-1458-build-rust_conformance-2598e93245977f25b1cc9e93d11aa97071f88e5e-1",
+        "bytes": 88874,
+        "sha256": "eae54b23bb71cc1903a4824413885c24ecef644c5c8dcdb405d533bc2da078c5",
+        "files": [
+          "cargo-timing-20261113T093218.564005454Z.html",
+          "cargo-timing.html"
+        ]
+      },
+      {
+        "id": 14025693142,
+        "name": "ag2-linux-x86-64-2598e93245977f25b1cc9e93d11aa97071f88e5e-1",
+        "bytes": 52364,
+        "sha256": "ed9d04fc10d5fecd96d602302fe332f7f5895f817b6be775d10a0ccce6f8ae9f",
+        "files": [
+          "ag41-witness-status.json",
+          "ag41-witness.log",
+          "archive.sha256",
+          "browser-install.log",
+          "build.log",
+          "capture.stderr",
+          "captures.json",
+          "chromium-reference.json",
+          "clippy.log",
+          "comparison.json",
+          "comparison.stderr",
+          "conformance.log",
+          "diagnostics.log",
+          "environment.log",
+          "kernel.log",
+          "native-status.txt",
+          "native.log",
+          "processes.txt",
+          "profile-files.txt",
+          "remaining-artifacts.log",
+          "result.txt"
+        ]
+      },
+      {
+        "id": 14025469348,
+        "name": "ci-1458-head-2598e93245977f25b1cc9e93d11aa97071f88e5e-1",
+        "bytes": 149129,
+        "sha256": "0f1b78a0101c410201fb6340631b77db15c9d9f4fff6d373d383f03d370eb0d0",
+        "files": [
+          "_temp/ci-1458-evidence/pr-head-guard-artifact.json",
+          "_temp/ci-1458-evidence/pr-head-guard-executable.txt",
+          "_temp/ci-1458-evidence/pr-head-artifacts.jsonl",
+          "_temp/ci-1458-evidence/pr-head-guard.log",
+          "_temp/ci-1458-evidence/pr-head-selection.txt",
+          "_temp/ci-1458-evidence/pr-head-source.txt",
+          "_temp/ci-1458-evidence/pr-head-target-selection.txt",
+          "_temp/ci-1458-evidence/pr-head-timings.txt",
+          "_temp/ci-1458-pr-head-target/cargo-timings/cargo-timing-20261113T093222.427504663Z.html",
+          "_temp/ci-1458-pr-head-target/cargo-timings/cargo-timing.html"
+        ]
+      },
+      {
+        "id": 14025468453,
+        "name": "ci-1458-build-rust_release-2598e93245977f25b1cc9e93d11aa97071f88e5e-1",
+        "bytes": 59373,
+        "sha256": "993906657f6f60ae3f28822e596cc647c4cb73524deea5ce3df2193d3378ca2f",
+        "files": [
+          "cargo-timing-20261113T093216.585982635Z.html",
+          "cargo-timing-20261113T093437.438039886Z.html",
+          "cargo-timing.html"
+        ]
+      }
+    ],
+    "cargo_timing_reports": [
+      {
+        "artifact_id": 14026696846,
+        "report": "cargo-timing-20261113T093350.216138147Z.html",
+        "compiled_units": 336,
+        "workspace_units": 112,
+        "dependency_units": 224,
+        "workspace_elapsed_unit_sum": 687.65,
+        "dependency_elapsed_unit_sum": 683.47,
+        "last_unit_end_seconds": 344.11
+      },
+      {
+        "artifact_id": 14026696846,
+        "report": "cargo-timing-20261113T095013.159557794Z.html",
+        "compiled_units": 0,
+        "workspace_units": 0,
+        "dependency_units": 0,
+        "workspace_elapsed_unit_sum": 0,
+        "dependency_elapsed_unit_sum": 0,
+        "last_unit_end_seconds": 0
+      },
+      {
+        "artifact_id": 14026292028,
+        "report": "borrowser/borrowser/target/cargo-timings/cargo-timing-20261113T093224.565417352Z.html",
+        "compiled_units": 453,
+        "workspace_units": 107,
+        "dependency_units": 346,
+        "workspace_elapsed_unit_sum": 824.94,
+        "dependency_elapsed_unit_sum": 933.61,
+        "last_unit_end_seconds": 448.23
+      },
+      {
+        "artifact_id": 14026292028,
+        "report": "borrowser/borrowser/target/cargo-timings/cargo-timing-20261113T093951.31757688Z.html",
+        "compiled_units": 0,
+        "workspace_units": 0,
+        "dependency_units": 0,
+        "workspace_elapsed_unit_sum": 0,
+        "dependency_elapsed_unit_sum": 0,
+        "last_unit_end_seconds": 0
+      },
+      {
+        "artifact_id": 14026292028,
+        "report": "borrowser/borrowser/target/cargo-timings/cargo-timing-20261113T093951.692649317Z.html",
+        "compiled_units": 0,
+        "workspace_units": 0,
+        "dependency_units": 0,
+        "workspace_elapsed_unit_sum": 0,
+        "dependency_elapsed_unit_sum": 0,
+        "last_unit_end_seconds": 0
+      },
+      {
+        "artifact_id": 14025906594,
+        "report": "cargo-timing-20261113T093218.564005454Z.html",
+        "compiled_units": 317,
+        "workspace_units": 19,
+        "dependency_units": 298,
+        "workspace_elapsed_unit_sum": 104.01,
+        "dependency_elapsed_unit_sum": 801.74,
+        "last_unit_end_seconds": 249.28
+      },
+      {
+        "artifact_id": 14025469348,
+        "report": "_temp/ci-1458-pr-head-target/cargo-timings/cargo-timing-20261113T093222.427504663Z.html",
+        "compiled_units": 453,
+        "workspace_units": 107,
+        "dependency_units": 346,
+        "workspace_elapsed_unit_sum": 652.36,
+        "dependency_elapsed_unit_sum": 718.94,
+        "last_unit_end_seconds": 351.25
+      },
+      {
+        "artifact_id": 14025468453,
+        "report": "cargo-timing-20261113T093216.585982635Z.html",
+        "compiled_units": 334,
+        "workspace_units": 25,
+        "dependency_units": 309,
+        "workspace_elapsed_unit_sum": 153.28,
+        "dependency_elapsed_unit_sum": 282.94,
+        "last_unit_end_seconds": 142.2
+      },
+      {
+        "artifact_id": 14025468453,
+        "report": "cargo-timing-20261113T093437.438039886Z.html",
+        "compiled_units": 1,
+        "workspace_units": 1,
+        "dependency_units": 0,
+        "workspace_elapsed_unit_sum": 1.14,
+        "dependency_elapsed_unit_sum": 0,
+        "last_unit_end_seconds": 1.26
+      }
+    ],
+    "unit_elapsed_note": "Unit durations overlap across parallel compiler processes and are not CPU or runner seconds.",
+    "total_new_cache_upload_bytes": 2151980444,
+    "comparison": {
+      "latest_successful_master": {
+        "workflow_seconds": 1613,
+        "runner_seconds": 2523
+      },
+      "workflow_reduction_percent": 29.7,
+      "runner_increase_percent": 72.26,
+      "limitation": "Different head qualification, temporary extra integration execution, cache states and runner variability; not controlled equal-coverage A/B."
+    },
+    "jobs": [
+      {
+        "id": 131807067659,
+        "name": "Release, networking abort and benches",
+        "result": "success",
+        "created_at": "2026-11-13T09:31:44Z",
+        "started_at": "2026-11-13T09:31:48Z",
+        "completed_at": "2026-11-13T09:37:05Z",
+        "duration_seconds": 317.0,
+        "queue_seconds": 4.0,
+        "cache": "miss",
+        "cache_saved_bytes": 451493982,
+        "cache_restored_bytes": null
+      },
+      {
+        "id": 131807067995,
+        "name": "Source and provenance",
+        "result": "success",
+        "created_at": "2026-11-13T09:31:44Z",
+        "started_at": "2026-11-13T09:31:46Z",
+        "completed_at": "2026-11-13T09:36:15Z",
+        "duration_seconds": 269.0,
+        "queue_seconds": 2.0,
+        "cache": "miss",
+        "cache_saved_bytes": 91491557,
+        "cache_restored_bytes": null
+      },
+      {
+        "id": 131807068035,
+        "name": "Streaming guard (integration)",
+        "result": "success",
+        "created_at": "2026-11-13T09:31:44Z",
+        "started_at": "2026-11-13T09:31:47Z",
+        "completed_at": "2026-11-13T09:43:46Z",
+        "duration_seconds": 719.0,
+        "queue_seconds": 3.0,
+        "cache": "miss",
+        "cache_saved_bytes": 473111029,
+        "cache_restored_bytes": null
+      },
+      {
+        "id": 131807068049,
+        "name": "Rust correctness and parser regressions",
+        "result": "success",
+        "created_at": "2026-11-13T09:31:44Z",
+        "started_at": "2026-11-13T09:31:47Z",
+        "completed_at": "2026-11-13T09:50:27Z",
+        "duration_seconds": 1120.0,
+        "queue_seconds": 3.0,
+        "cache": "miss",
+        "cache_saved_bytes": 615973341,
+        "cache_restored_bytes": null
+      },
+      {
+        "id": 131807068163,
+        "name": "AG2 Chromium (Linux x86-64)",
+        "result": "success",
+        "created_at": "2026-11-13T09:31:44Z",
+        "started_at": "2026-11-13T09:31:46Z",
+        "completed_at": "2026-11-13T09:39:25Z",
+        "duration_seconds": 459.0,
+        "queue_seconds": 2.0,
+        "cache": "exact",
+        "cache_saved_bytes": null,
+        "cache_restored_bytes": 510652035
+      },
+      {
+        "id": 131807068178,
+        "name": "AG4 credential-free synthesis and snapshots",
+        "result": "success",
+        "created_at": "2026-11-13T09:31:44Z",
+        "started_at": "2026-11-13T09:31:47Z",
+        "completed_at": "2026-11-13T09:34:08Z",
+        "duration_seconds": 141.0,
+        "queue_seconds": 3.0,
+        "cache": "not configured",
+        "cache_saved_bytes": null,
+        "cache_restored_bytes": null
+      },
+      {
+        "id": 131807068248,
+        "name": "HTML5 pipeline fuzz smoke",
+        "result": "success",
+        "created_at": "2026-11-13T09:31:44Z",
+        "started_at": "2026-11-13T09:31:46Z",
+        "completed_at": "2026-11-13T09:32:27Z",
+        "duration_seconds": 41.0,
+        "queue_seconds": 2.0,
+        "cache": "exact",
+        "cache_saved_bytes": null,
+        "cache_restored_bytes": 91282867
+      },
+      {
+        "id": 131807068288,
+        "name": "CSS fuzz regressions",
+        "result": "success",
+        "created_at": "2026-11-13T09:31:44Z",
+        "started_at": "2026-11-13T09:31:47Z",
+        "completed_at": "2026-11-13T09:32:38Z",
+        "duration_seconds": 51.0,
+        "queue_seconds": 3.0,
+        "cache": "exact",
+        "cache_saved_bytes": null,
+        "cache_restored_bytes": 164344690
+      },
+      {
+        "id": 131807068296,
+        "name": "CSS syntax fuzz smoke",
+        "result": "success",
+        "created_at": "2026-11-13T09:31:44Z",
+        "started_at": "2026-11-13T09:31:46Z",
+        "completed_at": "2026-11-13T09:32:30Z",
+        "duration_seconds": 44.0,
+        "queue_seconds": 2.0,
+        "cache": "exact",
+        "cache_saved_bytes": null,
+        "cache_restored_bytes": 91450169
+      },
+      {
+        "id": 131807068339,
+        "name": "CSS pipeline fuzz smoke",
+        "result": "success",
+        "created_at": "2026-11-13T09:31:44Z",
+        "started_at": "2026-11-13T09:31:46Z",
+        "completed_at": "2026-11-13T09:32:32Z",
+        "duration_seconds": 46.0,
+        "queue_seconds": 2.0,
+        "cache": "exact",
+        "cache_saved_bytes": null,
+        "cache_restored_bytes": 91281386
+      },
+      {
+        "id": 131807068383,
+        "name": "HTML5 tokenizer rcdata fuzz smoke",
+        "result": "success",
+        "created_at": "2026-11-13T09:31:44Z",
+        "started_at": "2026-11-13T09:31:46Z",
+        "completed_at": "2026-11-13T09:32:22Z",
+        "duration_seconds": 36.0,
+        "queue_seconds": 2.0,
+        "cache": "exact",
+        "cache_saved_bytes": null,
+        "cache_restored_bytes": 91275766
+      },
+      {
+        "id": 131807068408,
+        "name": "HTML5 tokenizer rawtext fuzz smoke",
+        "result": "success",
+        "created_at": "2026-11-13T09:31:44Z",
+        "started_at": "2026-11-13T09:31:46Z",
+        "completed_at": "2026-11-13T09:32:22Z",
+        "duration_seconds": 36.0,
+        "queue_seconds": 2.0,
+        "cache": "exact",
+        "cache_saved_bytes": null,
+        "cache_restored_bytes": 91447222
+      },
+      {
+        "id": 131807068513,
+        "name": "Streaming guard (exact PR head)",
+        "result": "success",
+        "created_at": "2026-11-13T09:31:44Z",
+        "started_at": "2026-11-13T09:31:46Z",
+        "completed_at": "2026-11-13T09:42:15Z",
+        "duration_seconds": 629.0,
+        "queue_seconds": 2.0,
+        "cache": "miss",
+        "cache_saved_bytes": 91492219,
+        "cache_restored_bytes": null
+      },
+      {
+        "id": 131807068516,
+        "name": "Conformance execution",
+        "result": "success",
+        "created_at": "2026-11-13T09:31:44Z",
+        "started_at": "2026-11-13T09:31:48Z",
+        "completed_at": "2026-11-13T09:36:44Z",
+        "duration_seconds": 296.0,
+        "queue_seconds": 4.0,
+        "cache": "miss",
+        "cache_saved_bytes": 428418316,
+        "cache_restored_bytes": null
+      },
+      {
+        "id": 131807068571,
+        "name": "HTML5 tokenizer fuzz smoke",
+        "result": "success",
+        "created_at": "2026-11-13T09:31:44Z",
+        "started_at": "2026-11-13T09:31:46Z",
+        "completed_at": "2026-11-13T09:32:28Z",
+        "duration_seconds": 42.0,
+        "queue_seconds": 2.0,
+        "cache": "exact",
+        "cache_saved_bytes": null,
+        "cache_restored_bytes": 91276365
+      },
+      {
+        "id": 131807068611,
+        "name": "HTML5 tokenizer script-data fuzz smoke",
+        "result": "success",
+        "created_at": "2026-11-13T09:31:44Z",
+        "started_at": "2026-11-13T09:31:48Z",
+        "completed_at": "2026-11-13T09:32:35Z",
+        "duration_seconds": 47.0,
+        "queue_seconds": 4.0,
+        "cache": "exact",
+        "cache_saved_bytes": null,
+        "cache_restored_bytes": 91273258
+      },
+      {
+        "id": 131807068799,
+        "name": "HTML5 tree-builder token fuzz smoke",
+        "result": "success",
+        "created_at": "2026-11-13T09:31:44Z",
+        "started_at": "2026-11-13T09:31:46Z",
+        "completed_at": "2026-11-13T09:32:34Z",
+        "duration_seconds": 48.0,
+        "queue_seconds": 2.0,
+        "cache": "exact",
+        "cache_saved_bytes": null,
+        "cache_restored_bytes": 91439606
+      },
+      {
+        "id": 131807070028,
+        "name": "AG4 native Linux proxy cleanup timing",
+        "result": "skipped",
+        "created_at": "2026-11-13T09:31:44Z",
+        "started_at": "2026-11-13T09:31:44Z",
+        "completed_at": "2026-11-13T09:31:43Z",
+        "duration_seconds": 0,
+        "queue_seconds": null,
+        "cache": "not configured",
+        "cache_saved_bytes": null,
+        "cache_restored_bytes": null
+      },
+      {
+        "id": 131815641454,
+        "name": "CI qualification",
+        "result": "success",
+        "created_at": "2026-11-13T09:50:27Z",
+        "started_at": "2026-11-13T09:50:29Z",
+        "completed_at": "2026-11-13T09:50:31Z",
+        "duration_seconds": 2.0,
+        "queue_seconds": 2.0,
+        "cache": "not configured",
+        "cache_saved_bytes": null,
+        "cache_restored_bytes": null
+      },
+      {
+        "id": 131815667756,
+        "name": "Rust (ubuntu-latest)",
+        "result": "success",
+        "created_at": "2026-11-13T09:50:31Z",
+        "started_at": "2026-11-13T09:50:33Z",
+        "completed_at": "2026-11-13T09:50:36Z",
+        "duration_seconds": 3.0,
+        "queue_seconds": 2.0,
+        "cache": "not configured",
+        "cache_saved_bytes": null,
+        "cache_restored_bytes": null
+      }
+    ],
+    "key_step_seconds": {
+      "Release, networking abort and benches": [
+        {
+          "name": "Cache cargo (release-abort-benches)",
+          "conclusion": "success",
+          "seconds": 2.0
+        },
+        {
+          "name": "Build (release)",
+          "conclusion": "success",
+          "seconds": 142.0
+        },
+        {
+          "name": "Build (release, html5)",
+          "conclusion": "success",
+          "seconds": 1.0
+        },
+        {
+          "name": "Compile HTML5 Criterion benches",
+          "conclusion": "success",
+          "seconds": 39.0
+        },
+        {
+          "name": "Compile CSS Criterion benches",
+          "conclusion": "success",
+          "seconds": 27.0
+        },
+        {
+          "name": "Post Cache cargo (release-abort-benches)",
+          "conclusion": "success",
+          "seconds": 7.0
+        }
+      ],
+      "Source and provenance": [
+        {
+          "name": "Cache cargo (provenance-registry)",
+          "conclusion": "success",
+          "seconds": 2.0
+        },
+        {
+          "name": "Verify qualified local URL sources and dependency graphs",
+          "conclusion": "success",
+          "seconds": 240.0
+        },
+        {
+          "name": "Verify qualified ureq source, history and dependency selection",
+          "conclusion": "success",
+          "seconds": 1.0
+        },
+        {
+          "name": "Post Cache cargo (provenance-registry)",
+          "conclusion": "success",
+          "seconds": 5.0
+        }
+      ],
+      "Streaming guard (integration)": [
+        {
+          "name": "Cache cargo (streaming-integration-debug)",
+          "conclusion": "success",
+          "seconds": 3.0
+        },
+        {
+          "name": "Record native streaming guard lane equivalence",
+          "conclusion": "success",
+          "seconds": 449.0
+        },
+        {
+          "name": "Qualify streaming guard on integration source",
+          "conclusion": "success",
+          "seconds": 220.0
+        },
+        {
+          "name": "Post Cache cargo (streaming-integration-debug)",
+          "conclusion": "success",
+          "seconds": 11.0
+        }
+      ],
+      "Rust correctness and parser regressions": [
+        {
+          "name": "Cache cargo (workspace-debug)",
+          "conclusion": "success",
+          "seconds": 1.0
+        },
+        {
+          "name": "Build (debug, all targets)",
+          "conclusion": "success",
+          "seconds": 344.0
+        },
+        {
+          "name": "Run tests (default HTML5 build)",
+          "conclusion": "success",
+          "seconds": 254.0
+        },
+        {
+          "name": "Run tests (explicit html5 feature lane)",
+          "conclusion": "success",
+          "seconds": 251.0
+        },
+        {
+          "name": "Build (debug, all targets, html5)",
+          "conclusion": "success",
+          "seconds": 1.0
+        },
+        {
+          "name": "Post Cache cargo (workspace-debug)",
+          "conclusion": "success",
+          "seconds": 11.0
+        }
+      ],
+      "AG2 Chromium (Linux x86-64)": [
+        {
+          "name": "Cache cargo",
+          "conclusion": "success",
+          "seconds": 8.0
+        },
+        {
+          "name": "Build and lint conformance tooling",
+          "conclusion": "success",
+          "seconds": 83.0
+        },
+        {
+          "name": "Qualify native launcher and ownership",
+          "conclusion": "success",
+          "seconds": 78.0
+        },
+        {
+          "name": "Qualify real Chromium and complete conformance suite",
+          "conclusion": "success",
+          "seconds": 264.0
+        },
+        {
+          "name": "Post Cache cargo",
+          "conclusion": "success",
+          "seconds": 0.0
+        }
+      ],
+      "Streaming guard (exact PR head)": [
+        {
+          "name": "Cache cargo (head-registry)",
+          "conclusion": "success",
+          "seconds": 2.0
+        },
+        {
+          "name": "Qualify streaming guard on exact PR head",
+          "conclusion": "success",
+          "seconds": 546.0
+        },
+        {
+          "name": "Post Cache cargo (head-registry)",
+          "conclusion": "success",
+          "seconds": 46.0
+        }
+      ],
+      "Conformance execution": [
+        {
+          "name": "Cache cargo (conformance-package)",
+          "conclusion": "success",
+          "seconds": 2.0
+        },
+        {
+          "name": "Build conformance execution binary",
+          "conclusion": "success",
+          "seconds": 249.0
+        },
+        {
+          "name": "Post Cache cargo (conformance-package)",
+          "conclusion": "success",
+          "seconds": 10.0
+        }
+      ]
+    },
+    "head_phase_seconds": {
+      "compilation": 352,
+      "workspace_selection": 1,
+      "execution": 193,
+      "cleanup": 0
+    },
+    "head_guard_seconds": 192.77,
+    "integration_guard_seconds": 219.41,
+    "fallback_hits": 0,
+    "controlled_cold_or_repeated_warm_measurement": false,
+    "migration_audit": {
+      "baseline": "144ef3bc887ac5688ac7f6b123a6e98f1e1485f2",
+      "test": "test_all_original_qualification_commands_survive_the_job_split",
+      "result": "Passed in published control's 197-test provenance suite; retained as immutable migration evidence. Current ownership and actual-recipe inventory contracts replace the historical command freeze."
+    },
+    "head_guard_artifact": {
+      "artifact": {
+        "reason": "compiler-artifact",
+        "package_id": "path+file:///home/runner/work/_temp/ci-1458-pr-head/crates/runtime_parse#0.1.0",
+        "manifest_path": "/home/runner/work/_temp/ci-1458-pr-head/crates/runtime_parse/Cargo.toml",
+        "target": {
+          "kind": [
+            "test"
+          ],
+          "crate_types": [
+            "bin"
+          ],
+          "name": "perf_regression",
+          "src_path": "/home/runner/work/_temp/ci-1458-pr-head/crates/runtime_parse/tests/perf_regression.rs",
+          "edition": "2024",
+          "doc": false,
+          "doctest": false,
+          "test": true
+        },
+        "profile": {
+          "opt_level": "1",
+          "debuginfo": 2,
+          "debug_assertions": true,
+          "overflow_checks": true,
+          "test": true
+        },
+        "features": [],
+        "filenames": [
+          "/home/runner/work/_temp/ci-1458-pr-head-target/debug/deps/perf_regression-81fb2edf22ec6665"
+        ],
+        "executable": "/home/runner/work/_temp/ci-1458-pr-head-target/debug/deps/perf_regression-81fb2edf22ec6665",
+        "fresh": false
+      },
+      "sha256": "b4381e9de551cae50ea8eefacf0e7d6bb00f9cbb1c08742f32ee52808b989b1d"
+    },
+    "native_html_instrumentation": [
+      {
+        "package_id": "path+file:///home/runner/work/borrowser/borrowser/crates/html#0.1.0",
+        "features": [
+          "default",
+          "dom-snapshot",
+          "html5",
+          "internal-api",
+          "parse-guards",
+          "parser-conformance",
+          "test-harness"
+        ],
+        "profile": {
+          "opt_level": "1",
+          "debuginfo": 2,
+          "debug_assertions": true,
+          "overflow_checks": true,
+          "test": false
+        }
+      },
+      {
+        "package_id": "path+file:///home/runner/work/borrowser/borrowser/crates/html#0.1.0",
+        "features": [
+          "default",
+          "dom-snapshot",
+          "html5",
+          "internal-api",
+          "parser-conformance"
+        ],
+        "profile": {
+          "opt_level": "0",
+          "debuginfo": 0,
+          "debug_assertions": true,
+          "overflow_checks": true,
+          "test": false
+        }
+      },
+      {
+        "package_id": "path+file:///home/runner/work/borrowser/borrowser/crates/html#0.1.0",
+        "features": [
+          "default",
+          "dom-snapshot",
+          "html5",
+          "internal-api",
+          "parse-guards",
+          "parser-conformance",
+          "test-harness"
+        ],
+        "profile": {
+          "opt_level": "1",
+          "debuginfo": 2,
+          "debug_assertions": true,
+          "overflow_checks": true,
+          "test": true
+        }
+      }
+    ]
+  },
+  "hosted_negative_enforcement": {
+    "scope": "Hosted integration-job failure propagation through both unchanged gates into the live required Rust context; not individual hosted cancellation, timeout, skip, head-failure or missing-output qualification.",
+    "pr": {
+      "number": 1464,
+      "url": "https://github.com/joris97jansen/borrowser/pull/1464",
+      "state": "closed",
+      "merged": false,
+      "draft": true,
+      "closed_at": "2026-11-13T13:47:21Z"
+    },
+    "run": {
+      "id": 43433009156,
+      "url": "https://github.com/joris97jansen/borrowser/actions/runs/43433009156",
+      "attempt": 1,
+      "event": "pull_request",
+      "conclusion": "failure",
+      "workflow_elapsed_seconds": 1394,
+      "sum_non_skipped_job_seconds": 3864,
+      "performance_comparison_eligible": false
+    },
+    "source": {
+      "control_head": "bf8572c5fb0169c6106e482cce439da0d62bb577",
+      "experimental_head": "6141fe4f6cd45b50b3e1499d90d85452576fb822",
+      "experimental_head_parent": "bf8572c5fb0169c6106e482cce439da0d62bb577",
+      "integration_commit": "bb290833509066ca43d3d14bb3fbbd814b9ef3a0",
+      "integration_parents": [
+        "144ef3bc887ac5688ac7f6b123a6e98f1e1485f2",
+        "6141fe4f6cd45b50b3e1499d90d85452576fb822"
+      ],
+      "head_tree": "07072facc675638f7a5606a166021bee85d07a7b",
+      "integration_tree": "07072facc675638f7a5606a166021bee85d07a7b"
+    },
+    "experimental_diff": {
+      "files": [
+        ".github/workflows/ci.yml"
+      ],
+      "insertions": 7,
+      "sha256_binary_full_index_against_control": "1c80460d032127bd49868fc3ef26126331c04e743ea27bde82b88fa0d6e0780f",
+      "injection": "Diagnostic marker and exit 1 after integration source/preflight verification, before compilation.",
+      "gates_unchanged": true,
+      "both_original_workspace_guard_executions_retained": true
+    },
+    "failed_checks": [
+      {
+        "job": "streaming_integration",
+        "name": "Streaming guard (integration)",
+        "id": 131910976120,
+        "url": "https://github.com/joris97jansen/borrowser/actions/runs/43433009156/job/131910976120",
+        "conclusion": "failure",
+        "head_sha": "6141fe4f6cd45b50b3e1499d90d85452576fb822",
+        "app_id": 15368,
+        "started_at": "2026-11-13T13:22:03Z",
+        "completed_at": "2026-11-13T13:22:12Z"
+      },
+      {
+        "job": "ci_qualification",
+        "name": "CI qualification",
+        "id": 131922428041,
+        "url": "https://github.com/joris97jansen/borrowser/actions/runs/43433009156/job/131922428041",
+        "conclusion": "failure",
+        "head_sha": "6141fe4f6cd45b50b3e1499d90d85452576fb822",
+        "app_id": 15368,
+        "started_at": "2026-11-13T13:45:04Z",
+        "completed_at": "2026-11-13T13:45:08Z"
+      },
+      {
+        "job": "rust",
+        "name": "Rust (ubuntu-latest)",
+        "id": 131922486390,
+        "url": "https://github.com/joris97jansen/borrowser/actions/runs/43433009156/job/131922486390",
+        "conclusion": "failure",
+        "head_sha": "6141fe4f6cd45b50b3e1499d90d85452576fb822",
+        "app_id": 15368,
+        "started_at": "2026-11-13T13:45:10Z",
+        "completed_at": "2026-11-13T13:45:13Z"
+      }
+    ],
+    "gate_diagnostic": "qualification did not succeed: streaming_integration",
+    "compatibility_gate_input": {
+      "QUALIFICATION_RESULT": "failure"
+    },
+    "prerequisite_results": {
+      "source_provenance": {
+        "result": "success",
+        "outputs": {
+          "qualified_sha": "bb290833509066ca43d3d14bb3fbbd814b9ef3a0",
+          "qualified_tree": "07072facc675638f7a5606a166021bee85d07a7b",
+          "pr_head_tree": "07072facc675638f7a5606a166021bee85d07a7b"
+        }
+      },
+      "rust_correctness": {
+        "result": "success",
+        "outputs": {
+          "qualified_sha": "bb290833509066ca43d3d14bb3fbbd814b9ef3a0",
+          "qualified_tree": "07072facc675638f7a5606a166021bee85d07a7b"
+        }
+      },
+      "rust_release": {
+        "result": "success",
+        "outputs": {
+          "qualified_sha": "bb290833509066ca43d3d14bb3fbbd814b9ef3a0",
+          "qualified_tree": "07072facc675638f7a5606a166021bee85d07a7b"
+        }
+      },
+      "rust_conformance": {
+        "result": "success",
+        "outputs": {
+          "qualified_sha": "bb290833509066ca43d3d14bb3fbbd814b9ef3a0",
+          "qualified_tree": "07072facc675638f7a5606a166021bee85d07a7b"
+        }
+      },
+      "streaming_integration": {
+        "result": "failure",
+        "outputs": {}
+      },
+      "streaming_head": {
+        "result": "success",
+        "outputs": {
+          "qualified_sha": "6141fe4f6cd45b50b3e1499d90d85452576fb822",
+          "qualified_tree": "07072facc675638f7a5606a166021bee85d07a7b"
+        }
+      },
+      "ag2_linux_chromium": {
+        "result": "success",
+        "outputs": {}
+      },
+      "ag4_nonbillable": {
+        "result": "success",
+        "outputs": {}
+      },
+      "html5_tokenizer_fuzz_smoke": {
+        "result": "success",
+        "outputs": {}
+      },
+      "html5_tokenizer_script_data_fuzz_smoke": {
+        "result": "success",
+        "outputs": {}
+      },
+      "html5_tokenizer_rawtext_fuzz_smoke": {
+        "result": "success",
+        "outputs": {}
+      },
+      "html5_tokenizer_rcdata_fuzz_smoke": {
+        "result": "success",
+        "outputs": {}
+      },
+      "html5_tree_builder_token_fuzz_smoke": {
+        "result": "success",
+        "outputs": {}
+      },
+      "html5_pipeline_fuzz_smoke": {
+        "result": "success",
+        "outputs": {}
+      },
+      "css_fuzz_regressions": {
+        "result": "success",
+        "outputs": {}
+      },
+      "css_syntax_fuzz_smoke": {
+        "result": "success",
+        "outputs": {}
+      },
+      "css_pipeline_fuzz_smoke": {
+        "result": "success",
+        "outputs": {}
+      }
+    },
+    "other_ordinary_jobs_succeeded": 16,
+    "ordinary_job_cancellations": 0,
+    "only_skipped_job": "ag4_proxy_timing (push-only; not an ordinary PR prerequisite)",
+    "required_check_verification": {
+      "command": "gh pr checks 1464 --repo joris97jansen/borrowser --required --json name,state,link,bucket",
+      "exit_code": 0,
+      "checks": [
+        {
+          "bucket": "fail",
+          "link": "https://github.com/joris97jansen/borrowser/actions/runs/43433009156/job/131922486390",
+          "name": "Rust (ubuntu-latest)",
+          "state": "FAILURE"
+        }
+      ],
+      "ruleset_id": 11427025,
+      "enforcement": "active",
+      "required_context": "Rust (ubuntu-latest)",
+      "integration_id": 15368,
+      "bypass_actors": [],
+      "ruleset_changed": false,
+      "merge_attempted": false
+    },
+    "unchanged_qualification": {
+      "original_workspace_guard_passes_utc": [
+        "2026-11-13T13:36:58Z",
+        "2026-11-13T13:41:48Z"
+      ],
+      "exact_head_guard": {
+        "result": "success",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "guard_seconds": 126.08
+      },
+      "native_linux_x86_64_provenance_tests_passed": 197
+    },
+    "failure_artifact": {
+      "id": 14041945334,
+      "bytes": 305,
+      "sha256": "e9ca6b8d19813c3dcc10738b8849d0f7aba82c317c4f3b35bc8cf482c2265a3a",
+      "marker": "experiment=1458-negative-streaming-integration\nintegration_sha=bb290833509066ca43d3d14bb3fbbd814b9ef3a0\nexpected_exit=1\n",
+      "zip_integrity_verified": true
+    },
+    "evidence": {
+      "durable_summary": "https://github.com/joris97jansen/borrowser/pull/1464",
+      "local_logs_and_api_snapshots": "/private/tmp/borrowser-1458-negative-enforcement",
+      "local_archive": "/private/tmp/borrowser-1458-negative-enforcement-evidence.zip",
+      "local_archive_sha256": "a135d84d9e92428c04af30eb13877c3bac4cc0a5906957f5574a39fcec4d5a72"
+    },
+    "cleanup": {
+      "pr_closed_unmerged": true,
+      "temporary_worktree_removed": true,
+      "experimental_branch_retained_for_audit": true,
+      "main_pr_and_local_candidate_unchanged": true
+    },
+    "hosted_cases_not_individually_exercised": [
+      "exact-head job failure",
+      "cancellation",
+      "timeout",
+      "unexpected prerequisite skip",
+      "missing prerequisite/result",
+      "missing or mismatched source outputs",
+      "whole-workflow cancellation"
+    ]
+  },
+  "local_guard_replacement": {
+    "based_on": "bf8572c5fb0169c6106e482cce439da0d62bb577",
+    "published": false,
+    "workspace_exclusions_prepared": true,
+    "full_guard_builds_preserved": true,
+    "job_graph_cache_timeouts_unchanged": true,
+    "full_lane_equivalence_now_fatal": true,
+    "inventory_uses_executed_command_anchors": true,
+    "narrowing_activated": false,
+    "hosted_negative_experiment_executed": true,
+    "projection": {
+      "guard_execution_saved_seconds": 375.31,
+      "correctness_seconds": 744.69,
+      "workflow_seconds": 753.69,
+      "runner_seconds": 3970.69,
+      "measured": false,
+      "note": "Arithmetic holding other observed costs constant; ignores variability and additional regression overhead. Not warm-cache proof."
+    },
+    "original_runner_cost_guardrail_percent": 10,
+    "runner_cost_accepted": false,
+    "validation": {
+      "qualification_regressions": [
+        {
+          "environment": "macOS arm64",
+          "command": "CARGO_TERM_COLOR=always python3 -I -B tools/ci/tests/test_ci_qualification.py",
+          "tests": 63,
+          "seconds": 55.7,
+          "exit_code": 0
+        },
+        {
+          "environment": "macOS arm64",
+          "command": "CARGO_TERM_COLOR=never python3 -I -B tools/ci/tests/test_ci_qualification.py",
+          "tests": 63,
+          "seconds": 55.7,
+          "exit_code": 0
+        },
+        {
+          "environment": "offline Linux arm64",
+          "command": "CARGO_TERM_COLOR=always python3 -I -B tools/ci/tests/test_ci_qualification.py",
+          "tests": 63,
+          "seconds": 14.795,
+          "exit_code": 0
+        },
+        {
+          "environment": "offline Linux arm64",
+          "command": "CARGO_TERM_COLOR=never python3 -I -B tools/ci/tests/test_ci_qualification.py",
+          "tests": 63,
+          "seconds": 14.027,
+          "exit_code": 0
+        }
+      ],
+      "targeted_new_cases": {
+        "tests": 8,
+        "seconds": 8.233,
+        "exit_code": 0
+      },
+      "local_proof_programs": [
+        {
+          "program": "LANES",
+          "exit_code": 0,
+          "seconds": 9.71419662493281
+        },
+        {
+          "program": "INVENTORIES",
+          "exit_code": 0,
+          "seconds": 8.003532791975886
+        }
+      ],
+      "local_configuration_counts": {
+        "default": 392,
+        "html5": 392,
+        "narrow": 92
+      },
+      "local_guard_bytes_equal": true,
+      "local_inventories": [
+        {
+          "lane": "default",
+          "command": [
+            "cargo",
+            "test",
+            "--workspace",
+            "--lib",
+            "--bins",
+            "--tests",
+            "--examples",
+            "--locked",
+            "--",
+            "--skip",
+            "aws::command::tests::native_procfs_",
+            "--skip",
+            "runtime_parse_linear_streaming_guard"
+          ],
+          "before_records": 2957,
+          "after_records": 2956,
+          "removed": [
+            "runtime_parse_linear_streaming_guard: test"
+          ]
+        },
+        {
+          "lane": "html5",
+          "command": [
+            "cargo",
+            "test",
+            "--workspace",
+            "--lib",
+            "--bins",
+            "--tests",
+            "--examples",
+            "--features",
+            "html5",
+            "--locked",
+            "--",
+            "--skip",
+            "aws::command::tests::native_procfs_",
+            "--skip",
+            "runtime_parse_linear_streaming_guard"
+          ],
+          "before_records": 2957,
+          "after_records": 2956,
+          "removed": [
+            "runtime_parse_linear_streaming_guard: test"
+          ]
+        }
+      ],
+      "proof_limit": "Existing-cache developer verification of uncommitted workflow. Normal local Cargo target locking may affect elapsed time; not native hosted qualification.",
+      "workspace_attempts": [
+        {
+          "lane": "default_workspace_tests",
+          "command": "cargo test --workspace --lib --bins --tests --examples --locked -- --skip aws::command::tests::native_procfs_ --skip runtime_parse_linear_streaming_guard",
+          "exit_code": 101,
+          "seconds": 31.06154783302918
+        }
+      ],
+      "workspace_limit": "Default macOS conformance target: 186 passed, nine native ownership failures, 13 ignored; Mach 5 inspection errors. Guard target not reached; full HTML5 execution not attempted.",
+      "outside_sandbox_native_probe": {
+        "command": "cargo test -p borrowser-conformance --locked --bin borrowser-conformance chromium::tests::native_macos_bsd_ownership_states -- --exact --nocapture",
+        "exit_code": 101,
+        "reason": "UnsupportedPlatform: live process executable unavailable during ownership scan; native sandbox denial reproduction unavailable."
+      },
+      "provenance": {
+        "commands": [
+          "make check-url-dependencies",
+          "make ci"
+        ],
+        "exit_codes": [
+          2,
+          2
+        ],
+        "reason": "uncommitted qualification test: test_ci_qualification.py",
+        "bypassed": false
+      },
+      "format": {
+        "command": "make fmt-check",
+        "exit_code": 0
+      },
+      "actionlint_shellcheck": {
+        "versions": [
+          "1.7.12",
+          "0.11.0"
+        ],
+        "exit_code": 0
+      },
+      "final_yaml_bash_diff": {
+        "yaml": "Ruby Psych aliases expanded; production/audit command scalars equal",
+        "bash_blocks_passed": 96,
+        "job_graph_other_jobs_cache_timeouts_gates_unchanged": true,
+        "diff_check": "git diff HEAD --check passed"
+      }
+    },
+    "hosted_enforcement_evidence": "hosted_negative_enforcement",
+    "positive_hosted_replacement_run_verified": false,
+    "publication_requires_separate_authorization": true,
+    "evidence_synchronization_validation": {
+      "scope": "Evidence/documentation synchronization only; executable workflow and regression-test bytes match the reviewed starting candidate.",
+      "environment": "macOS arm64",
+      "rust_cargo": "1.92.0",
+      "targeted": {
+        "command": "CARGO_TERM_COLOR=always python3 -I -B tools/ci/tests/test_ci_qualification.py QualificationGate.test_guard_faults_propagate_through_both_gates QualificationGate.test_workspace_lanes_replace_only_the_independently_required_guard",
+        "tests": 2,
+        "seconds": 0.565,
+        "exit_code": 0
+      },
+      "qualification_regressions": [
+        {
+          "command": "CARGO_TERM_COLOR=always python3 -I -B tools/ci/tests/test_ci_qualification.py",
+          "tests": 63,
+          "seconds": 44.631,
+          "exit_code": 0
+        },
+        {
+          "command": "CARGO_TERM_COLOR=never python3 -I -B tools/ci/tests/test_ci_qualification.py",
+          "tests": 63,
+          "seconds": 47.843,
+          "exit_code": 0
+        }
+      ],
+      "actionlint_shellcheck": {
+        "command": "/private/tmp/borrowser-1458-evidence/actionlint -shellcheck=/private/tmp/borrowser-1458-shellcheck .github/workflows/ci.yml",
+        "versions": [
+          "1.7.12",
+          "0.11.0"
+        ],
+        "exit_code": 0
+      },
+      "format": {
+        "command": "make fmt-check",
+        "exit_code": 0
+      },
+      "workflow_validation": {
+        "expanded_yaml_valid": true,
+        "bash_blocks_passed": 96,
+        "workspace_recipe_delta": "terminal guard exclusion only in both lanes",
+        "same_run_audit_uses_actual_commands": true,
+        "equivalence_inventory_and_guard_mandatory_before_source_receipt": true,
+        "ordinary_prerequisites": 17,
+        "all_job_dependencies_caches_deadlines_permissions_and_gates_unchanged": true,
+        "only_jobs_changed_against_published_head": [
+          "rust_correctness",
+          "streaming_integration"
+        ],
+        "executable_files_unchanged_since_review": true,
+        "index_entries_unchanged": true
+      },
+      "json": "parsed with duplicate-key rejection and evidence/source assertions",
+      "combined_diff": {
+        "command": "git diff HEAD --check",
+        "exit_code": 0
+      },
+      "committed_provenance": {
+        "commands": [
+          "make check-url-dependencies",
+          "make check-network-dependencies",
+          "make ci"
+        ],
+        "exit_codes": [
+          2,
+          2,
+          2
+        ],
+        "reason": "staged qualification tests differ from committed candidate",
+        "bypassed": false
+      },
+      "full_runtime_or_engine_tests_repeated": false,
+      "native_linux_x86_64_positive_replacement_run": "pending",
+      "controlled_cold_warm_measurements": "pending",
+      "runner_cost_accepted": false,
+      "index_modified": false
+    }
+  },
+  "historical_parallel_design_local_recipe_probe": {
     "platform": "macOS arm64",
     "source_sha": "ea843be2299cc8d3d5ea15c7aab66b7abd0028ec",
     "workflow_uncommitted": true,
@@ -442,32 +1922,7 @@
       }
     ]
   },
-  "measurement_limitations": [
-    "Historical native full/alias equality is demonstrated; new narrower-recipe evidence is local macOS arm64 only.",
-    "Local recipe invocation used existing caches and an uncommitted workflow; it is not cold or hosted qualification.",
-    "A first diagnostic wrapper failed after successful children; the clean repeated probe is recorded here. The failed attempt is retained under /private/tmp/borrowser-1458-redesign/failed-wrapper-attempt.json.",
-    "No new graph duration, cache save size or cold capacity is measured on GitHub.",
-    "The cancelled serial control is not a successful equal-coverage performance baseline.",
-    "The former temporary Cargo fixtures had no toolchain pin and could inherit stable 1.100.0; the prior native streaming artifact itself explicitly identifies 1.92.0."
-  ],
-  "performance_policy": {
-    "warm_critical_path_target_minutes": 15,
-    "target_is_not_a_guarantee": true,
-    "projection_only_queue_free_transition_minutes": [
-      23,
-      25
-    ],
-    "former_runner_cost_guardrail_percent": 10,
-    "runner_cost_tradeoff": "Prioritize latency and report costs beyond the former guardrail; no new acceptable cost percentage is silently chosen.",
-    "parallel_architecture_selected": true,
-    "optimized_recipe_and_guard_removal_pending": true,
-    "minimum_samples": {
-      "exact_cache": 3,
-      "cold": 2,
-      "fallback": "separate classification"
-    }
-  },
-  "local_validation": {
+  "historical_parallel_design_local_validation": {
     "qualification_regressions": [
       {
         "environment": "macOS arm64",
@@ -557,7 +2012,7 @@
     "hosted_new_graph": "not run",
     "validation_driver_note": "An initial final YAML wrapper used Psych.safe_load_file, unavailable in the system Ruby; corrected to Psych.safe_load and all expanded blocks then validated successfully."
   },
-  "source_verification": {
+  "historical_parallel_design_source_verification": {
     "working_tree_clean_before_edits": true,
     "local_and_live_head": "ea843be2299cc8d3d5ea15c7aab66b7abd0028ec",
     "local_master_origin_master_live_master": "144ef3bc887ac5688ac7f6b123a6e98f1e1485f2",
@@ -567,5 +2022,22 @@
     "published_history_rewritten": false,
     "index_changed": false,
     "candidate_committed_or_pushed": false
+  },
+  "historical_parallel_design_performance_policy": {
+    "warm_critical_path_target_minutes": 15,
+    "target_is_not_a_guarantee": true,
+    "projection_only_queue_free_transition_minutes": [
+      23,
+      25
+    ],
+    "former_runner_cost_guardrail_percent": 10,
+    "runner_cost_tradeoff": "Prioritize latency and report costs beyond the former guardrail; no new acceptable cost percentage is silently chosen.",
+    "parallel_architecture_selected": true,
+    "optimized_recipe_and_guard_removal_pending": true,
+    "minimum_samples": {
+      "exact_cache": 3,
+      "cold": 2,
+      "fallback": "separate classification"
+    }
   }
 }
