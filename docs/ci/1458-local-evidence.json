@@ -1,0 +1,394 @@
+{
+  "schema": 1,
+  "source_sha": "144ef3bc887ac5688ac7f6b123a6e98f1e1485f2",
+  "platform": "macOS arm64",
+  "toolchain": "Rust/Cargo 1.92.0 Homebrew",
+  "native_linux_x86_64_evidence": false,
+  "cold_cache_measurement": false,
+  "default_build": {
+    "command": [
+      "cargo",
+      "test",
+      "--workspace",
+      "--lib",
+      "--bins",
+      "--tests",
+      "--examples",
+      "--locked",
+      "--offline",
+      "--no-run",
+      "--message-format=json",
+      "--timings",
+      "-vv"
+    ],
+    "platform": "Darwin arm64",
+    "seconds": 65.22243905067444,
+    "exit": 0,
+    "guard_artifact": {
+      "reason": "compiler-artifact",
+      "package_id": "path+file://$REPOSITORY/crates/runtime_parse#0.1.0",
+      "manifest_path": "$REPOSITORY/crates/runtime_parse/Cargo.toml",
+      "target": {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "perf_regression",
+        "src_path": "$REPOSITORY/crates/runtime_parse/tests/perf_regression.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      "profile": {
+        "opt_level": "1",
+        "debuginfo": 2,
+        "debug_assertions": true,
+        "overflow_checks": true,
+        "test": true
+      },
+      "features": [],
+      "filenames": [
+        "$REPOSITORY/target/debug/deps/perf_regression-1d2e7ac6de0321d2"
+      ],
+      "executable": "$REPOSITORY/target/debug/deps/perf_regression-1d2e7ac6de0321d2",
+      "fresh": false
+    },
+    "guard_sha256": "eb942f8885bf88a6d805088c48b0a535cc8c5b08505dc95bf2a347297438edfa"
+  },
+  "html5_build": {
+    "command": [
+      "cargo",
+      "test",
+      "--workspace",
+      "--lib",
+      "--bins",
+      "--tests",
+      "--examples",
+      "--features",
+      "html5",
+      "--locked",
+      "--offline",
+      "--no-run",
+      "--message-format=json",
+      "--timings",
+      "-vv"
+    ],
+    "seconds": 1.353425957961008,
+    "exit": 0,
+    "guard_artifact": {
+      "reason": "compiler-artifact",
+      "package_id": "path+file://$REPOSITORY/crates/runtime_parse#0.1.0",
+      "manifest_path": "$REPOSITORY/crates/runtime_parse/Cargo.toml",
+      "target": {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "perf_regression",
+        "src_path": "$REPOSITORY/crates/runtime_parse/tests/perf_regression.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      "profile": {
+        "opt_level": "1",
+        "debuginfo": 2,
+        "debug_assertions": true,
+        "overflow_checks": true,
+        "test": true
+      },
+      "features": [],
+      "filenames": [
+        "$REPOSITORY/target/debug/deps/perf_regression-1d2e7ac6de0321d2"
+      ],
+      "executable": "$REPOSITORY/target/debug/deps/perf_regression-1d2e7ac6de0321d2",
+      "fresh": true
+    },
+    "guard_sha256": "eb942f8885bf88a6d805088c48b0a535cc8c5b08505dc95bf2a347297438edfa"
+  },
+  "narrow_build": {
+    "command": [
+      "cargo",
+      "test",
+      "--workspace",
+      "--test",
+      "perf_regression",
+      "--locked",
+      "--offline",
+      "--no-run",
+      "--message-format=json"
+    ],
+    "seconds": 3.7078482918441296,
+    "exit": 0,
+    "guard_artifact": {
+      "reason": "compiler-artifact",
+      "package_id": "path+file://$REPOSITORY/crates/runtime_parse#0.1.0",
+      "manifest_path": "$REPOSITORY/crates/runtime_parse/Cargo.toml",
+      "target": {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "perf_regression",
+        "src_path": "$REPOSITORY/crates/runtime_parse/tests/perf_regression.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      "profile": {
+        "opt_level": "1",
+        "debuginfo": 2,
+        "debug_assertions": true,
+        "overflow_checks": true,
+        "test": true
+      },
+      "features": [],
+      "filenames": [
+        "$REPOSITORY/target/debug/deps/perf_regression-1d2e7ac6de0321d2"
+      ],
+      "executable": "$REPOSITORY/target/debug/deps/perf_regression-1d2e7ac6de0321d2",
+      "fresh": true
+    },
+    "guard_sha256": "eb942f8885bf88a6d805088c48b0a535cc8c5b08505dc95bf2a347297438edfa"
+  },
+  "sampled_guard": {
+    "command": [
+      "$REPOSITORY/target/debug/deps/perf_regression-1d2e7ac6de0321d2",
+      "runtime_parse_linear_streaming_guard",
+      "--exact",
+      "--nocapture"
+    ],
+    "platform": "macOS arm64",
+    "wall_seconds": 133.75120262498967,
+    "exit": 0,
+    "profiled": true
+  },
+  "unprofiled_wrapper_failure": {
+    "command": [
+      "/usr/bin/time",
+      "-l",
+      "$REPOSITORY/target/debug/deps/perf_regression-1d2e7ac6de0321d2",
+      "runtime_parse_linear_streaming_guard",
+      "--exact",
+      "--nocapture"
+    ],
+    "wall_seconds": 134.8814704171382,
+    "exit": 1,
+    "profiled": false,
+    "platform": "macOS arm64"
+  },
+  "sample_window": {
+    "duration_seconds": 10,
+    "interval_milliseconds": 1,
+    "worker_observations": 8463,
+    "sibling_reference_count_observations": 7623,
+    "full_sample_sha256": "dabc14bfe89f0b1e3bccb69b451ecbf4b62e54c8c61ec17094e69a050216d91d"
+  },
+  "guard_source_sha256": "d94155270a625f8441fc4500b534825b8648f979389eb4c20b49e626c669487a",
+  "compiler_artifact_comparison": {
+    "default_configurations": 392,
+    "html5_configurations": 392,
+    "equal_configurations": true,
+    "equal_guard_sha256": true
+  },
+  "unprofiled_guard": {
+    "command": [
+      "$REPOSITORY/target/debug/deps/perf_regression-1d2e7ac6de0321d2",
+      "runtime_parse_linear_streaming_guard",
+      "--exact",
+      "--nocapture"
+    ],
+    "wall_seconds": 131.86001454200596,
+    "user_seconds": 131.42414,
+    "system_seconds": 0.196186,
+    "exit": 0,
+    "profiled": false,
+    "platform": "macOS arm64"
+  },
+  "actual_workflow_lane_program": {
+    "exit": 0,
+    "same_guard_bytes": true,
+    "executed_sha": "144ef3bc887ac5688ac7f6b123a6e98f1e1485f2",
+    "native_linux_x86_64": false,
+    "reported_committed_tree": "40d91bfaedcbd70884bb15e9e5a8feeb92ee0f7d",
+    "candidate_committed": false
+  },
+  "source_scope": "Engine/Cargo/guard source matches the recorded baseline; workflow and documentation changes are uncommitted. Local workflow-program execution tests mechanics only.",
+  "review_reproduction": {
+    "selection": {
+      "command": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--lib",
+        "--bins",
+        "--tests",
+        "--examples",
+        "--locked",
+        "runtime_parse_linear_streaming_guard",
+        "--",
+        "--exact",
+        "--list",
+        "--format",
+        "terse"
+      ],
+      "exit": 0,
+      "wall_seconds": 3.334765790961683,
+      "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08) (Homebrew)\nbinary: rustc\ncommit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234\ncommit-date: 2025-12-08\nhost: aarch64-apple-darwin\nrelease: 1.92.0\nLLVM version: 21.1.7\n",
+      "stdout": "runtime_parse_linear_streaming_guard: test\n",
+      "nonempty_lines": 1,
+      "cargo_target_invocations": 84
+    },
+    "previous_wrong_target_false_positive": {
+      "scenario": "guard name exists only in package unit-test target, not perf_regression integration target",
+      "exit": 0,
+      "qualification_output": "head_sha=20f1cae43a5c610a684d266fedf264c4c1b63fb1\n",
+      "test_result_lines": [
+        "test runtime_parse_linear_streaming_guard ... ok",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test runtime_parse_linear_streaming_guard ... ok"
+      ]
+    },
+    "reviewed_candidate_index_blob": "33ec3d2bbe220268ad43cabec75c64660018b7bd",
+    "timeout_budget": {
+      "outer_head_seconds": 1200,
+      "phases": [
+        {
+          "ceiling_seconds": 600,
+          "kill_grace_seconds": 10
+        },
+        {
+          "ceiling_seconds": 480,
+          "kill_grace_seconds": 10
+        },
+        {
+          "ceiling_seconds": 30,
+          "kill_grace_seconds": 10
+        }
+      ],
+      "remaining_margin_seconds": 60,
+      "rust_job_seconds": 2700,
+      "native_cold_cache_qualified": false
+    },
+    "hosted_candidate_executed": false,
+    "gate_currently_required_by_ruleset": false,
+    "previous_filtered_target_false_rejection": {
+      "scenario": "correct integration target has the guard and an unrelated filtered test",
+      "exit": 1,
+      "qualification_output": "",
+      "test_result_lines": [
+        "test runtime_parse_linear_streaming_guard ... ok",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s",
+        "test runtime_parse_linear_streaming_guard ... ok"
+      ]
+    },
+    "validation": {
+      "regression_command": [
+        "python3",
+        "-I",
+        "-B",
+        "tools/ci/tests/test_ci_qualification.py"
+      ],
+      "macOS_arm64": {
+        "tests": 33,
+        "exit": 0
+      },
+      "Linux_arm64_container": {
+        "tests": 33,
+        "exit": 0,
+        "network": "none",
+        "repository_mount": "read-only"
+      },
+      "GNU_timeout_fixture": {
+        "version": "9.4",
+        "execution_ceiling_seconds": 1,
+        "exit": 124,
+        "head_output_published": false,
+        "integration_checkout_unchanged": true
+      },
+      "make_ci": {
+        "exit": 2,
+        "reason": "staged qualification tests differ from committed candidate"
+      },
+      "hosted_candidate_executed": false,
+      "native_linux_x86_64_verified": false
+    }
+  },
+  "custom_harness_review": {
+    "scenario": "harness=false custom executable, no guard #[test], fabricated listing and success output",
+    "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08) (Homebrew)\nbinary: rustc\ncommit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234\ncommit-date: 2025-12-08\nhost: aarch64-apple-darwin\nrelease: 1.92.0\nLLVM version: 21.1.7\n",
+    "cargo": "cargo 1.92.0 (Homebrew)\nrelease: 1.92.0\nhost: aarch64-apple-darwin\nlibgit2: 1.9.2 (sys:0.20.2 system)\nlibcurl: 8.7.1 (sys:0.4.83+curl-8.15.0 system ssl:(SecureTransport) LibreSSL/3.3.6)\nos: Mac OS 27.0.1 [64-bit]\n",
+    "reviewed_candidate_index_blob": "083dc678f19297faefebc8386092031e91ce8598",
+    "before_correction": {
+      "exit": 0,
+      "qualification_output": "head_sha=894720b1ebb2e9a0d6cff42db8bd375fda4cf2e5\n",
+      "workspace_selection": "runtime_parse_linear_streaming_guard: test\n",
+      "artifact_target": {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "perf_regression",
+        "src_path": "/private/var/folders/qg/26pd3bc97m1f5mcx5p9gf0km0000gn/T/ci-1458-fixture-uazkmmdb/runner/ci-1458-pr-head/crates/runtime_parse/tests/perf_regression.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      "artifact_profile": {
+        "opt_level": "0",
+        "debuginfo": 2,
+        "debug_assertions": true,
+        "overflow_checks": true,
+        "test": true
+      },
+      "fabricated_execution_stdout": "HEAD is now at 894720b Disposable qualification fixture\nhead_commit=894720b1ebb2e9a0d6cff42db8bd375fda4cf2e5 head_tree=d8d0c5540a7a149ff08c66190949f8adca5cf157 parents=0bf36cd45ee84446f42b3550939ab62e64482947\ntest runtime_parse_linear_streaming_guard ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\ntest runtime_parse_linear_streaming_guard ... ok\n"
+    },
+    "after_correction": {
+      "exit": 1,
+      "qualification_output": "",
+      "stderr": "Preparing worktree (detached HEAD 894720b)\n   Compiling runtime_parse v0.0.0 (/private/var/folders/qg/26pd3bc97m1f5mcx5p9gf0km0000gn/T/ci-1458-fixture-ne_tdjh5/runner/ci-1458-pr-head/crates/runtime_parse)\n   Compiling unrelated v0.0.0 (/private/var/folders/qg/26pd3bc97m1f5mcx5p9gf0km0000gn/T/ci-1458-fixture-ne_tdjh5/runner/ci-1458-pr-head/crates/unrelated)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.35s\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.01s\n     Running unittests src/lib.rs (/var/folders/qg/26pd3bc97m1f5mcx5p9gf0km0000gn/T/ci-1458-fixture-ne_tdjh5/runner/ci-1458-pr-head-target/debug/deps/runtime_parse-210b7e78e1eb068c)\n     Running unittests src/main.rs (/var/folders/qg/26pd3bc97m1f5mcx5p9gf0km0000gn/T/ci-1458-fixture-ne_tdjh5/runner/ci-1458-pr-head-target/debug/deps/runtime_parse-3b07a4ad141ffd7a)\n     Running tests/perf_regression.rs (/var/folders/qg/26pd3bc97m1f5mcx5p9gf0km0000gn/T/ci-1458-fixture-ne_tdjh5/runner/ci-1458-pr-head-target/debug/deps/perf_regression-d7cb1b0511151e6c)\n     Running tests/unrelated.rs (/var/folders/qg/26pd3bc97m1f5mcx5p9gf0km0000gn/T/ci-1458-fixture-ne_tdjh5/runner/ci-1458-pr-head-target/debug/deps/unrelated-2a4f23254f1e6915)\n     Running unittests src/lib.rs (/var/folders/qg/26pd3bc97m1f5mcx5p9gf0km0000gn/T/ci-1458-fixture-ne_tdjh5/runner/ci-1458-pr-head-target/debug/deps/unrelated-1149ad78e41d2d74)\n     Running tests/unrelated.rs (/var/folders/qg/26pd3bc97m1f5mcx5p9gf0km0000gn/T/ci-1458-fixture-ne_tdjh5/runner/ci-1458-pr-head-target/debug/deps/unrelated-f8a10040897ac540)\nstreaming guard requires the standard libtest harness\n",
+      "guard_execution_log_exists": false
+    },
+    "omitted_target_name_probe": {
+      "scenario": "explicit test table with omitted name",
+      "exit": 101,
+      "qualification_output": "",
+      "stderr": "Preparing worktree (detached HEAD 25dfb9b)\nerror: failed to load manifest for workspace member `/private/var/folders/qg/26pd3bc97m1f5mcx5p9gf0km0000gn/T/ci-1458-fixture-lfrn7tk5/runner/ci-1458-pr-head/crates/runtime_parse`\nreferenced by workspace at `/private/var/folders/qg/26pd3bc97m1f5mcx5p9gf0km0000gn/T/ci-1458-fixture-lfrn7tk5/runner/ci-1458-pr-head/Cargo.toml`\n\nCaused by:\n  failed to parse manifest at `/private/var/folders/qg/26pd3bc97m1f5mcx5p9gf0km0000gn/T/ci-1458-fixture-lfrn7tk5/runner/ci-1458-pr-head/crates/runtime_parse/Cargo.toml`\n\nCaused by:\n  test target test.name is required\n"
+    },
+    "correction": "Reject harness=false on the matching perf_regression manifest test target; permit the implicit libtest default and explicit true, leaving unrelated targets unchanged.",
+    "regression_red_before_correction": true,
+    "validation": {
+      "command": [
+        "python3",
+        "-I",
+        "-B",
+        "tools/ci/tests/test_ci_qualification.py"
+      ],
+      "macOS_arm64": {
+        "tests": 36,
+        "exit": 0
+      },
+      "Linux_arm64_container": {
+        "tests": 36,
+        "exit": 0,
+        "network": "none",
+        "repository_mount": "read-only"
+      },
+      "existing_tests_retained": 33,
+      "native_linux_x86_64_verified": false,
+      "hosted_candidate_executed": false
+    }
+  }
+}
