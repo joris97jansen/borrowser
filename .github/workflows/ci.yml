@@ -277,11 +277,56 @@ jobs:
       - name: Install repository-pinned Rust toolchain
         run: rustup show active-toolchain
 
+      - &ci1458_prepare_cache_state
+        name: Establish measured Cargo cache state
+        shell: bash
+        env:
+          CI1458_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          test "$CI1458_RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS/$RUNNER_ARCH" = Linux/X64
+          test "$(id -u)" -ne 0
+          test -z "${CARGO_CI_1458_MEASUREMENT_NAMESPACE+x}"
+          test -z "${CARGO_TARGET_DIR:-}"
+          test ! -L "$HOME/.cargo"
+          ci1458_cargo_home="$(realpath -m -- "${CARGO_HOME:-$HOME/.cargo}")"
+          test "$ci1458_cargo_home" = "$(realpath -m -- "$HOME/.cargo")"
+          test "$(pwd -P)" = "$(realpath -- "$GITHUB_WORKSPACE")"
+          for ci1458_target in target fuzz/target "$RUNNER_TEMP/ci-1458-pr-head-target"; do
+            test ! -e "$ci1458_target"
+            test ! -L "$ci1458_target"
+          done
+          ci1458_image_cache="$(mktemp -d "$RUNNER_TEMP/ci1458-image-cache.XXXXXX")"
+          for ci1458_part in registry git; do
+            ci1458_source="$ci1458_cargo_home/$ci1458_part"
+            test ! -L "$ci1458_source"
+            if test -e "$ci1458_source"; then
+              test -d "$ci1458_source"
+              mv -- "$ci1458_source" "$ci1458_image_cache/$ci1458_part"
+            fi
+            test ! -e "$ci1458_source"
+          done
+          test -n "${ImageOS:-}"
+          test -n "${ImageVersion:-}"
+          printf 'cache-baseline=empty image=%s version=%s\n' "$ImageOS" "$ImageVersion"
+          uname -a
+          lscpu
+          rustc -vV
+          cargo -vV
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env: &ci1458_cache_namespace
+          CARGO_CI_1458_MEASUREMENT_NAMESPACE: 1458-measure-R1-20261113-v1
         with:
           key: ag2-linux-chromium
 
+      - &ci1458_assert_cache_scope
+        name: Verify measurement marker scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${CARGO_CI_1458_MEASUREMENT_NAMESPACE+x}"
       - name: Build and lint conformance tooling
         run: |
           set -euo pipefail
@@ -513,9 +558,11 @@ jobs:
           # @stable otherwise updates an unused compiler and changes the Cargo cache key.
           toolchain: '1.92.0'
           components: rustfmt, clippy
+      - *ci1458_prepare_cache_state
       - name: Cache cargo (provenance-registry)
         id: cargo_cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env: *ci1458_cache_namespace
         with:
           prefix-key: v1-ci-1458
           key: provenance-registry
@@ -523,6 +570,7 @@ jobs:
           cache-workspace-crates: 'false'
           cache-bin: 'false'
           cache-on-failure: 'false'
+      - *ci1458_assert_cache_scope
       - name: Prepare locked main and fuzz dependency caches
         run: |
           cargo fetch --locked
@@ -584,9 +632,11 @@ jobs:
 
       # The shared installer explicitly matches rust-toolchain.toml.
       - *pinned_toolchain
+      - *ci1458_prepare_cache_state
       - name: Cache cargo (workspace-debug)
         id: cargo_cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env: *ci1458_cache_namespace
         with:
           prefix-key: v1-ci-1458
           key: workspace-debug
@@ -594,6 +644,7 @@ jobs:
           cache-workspace-crates: 'false'
           cache-bin: 'false'
           cache-on-failure: 'false'
+      - *ci1458_assert_cache_scope
       - name: Rustfmt (check)
         run: cargo fmt --all -- --check
       - name: Clippy (deny warnings)
@@ -664,9 +715,11 @@ jobs:
       - *committed_preflight
       - *rust_dependencies
       - *pinned_toolchain
+      - *ci1458_prepare_cache_state
       - name: Cache cargo (release-abort-benches)
         id: cargo_cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env: *ci1458_cache_namespace
         with:
           prefix-key: v1-ci-1458
           key: release-abort-benches
@@ -674,6 +727,7 @@ jobs:
           cache-workspace-crates: 'false'
           cache-bin: 'false'
           cache-on-failure: 'false'
+      - *ci1458_assert_cache_scope
       - name: Build (release)
         run: cargo build --workspace --release --locked --timings
       - name: Build (release, html5)
@@ -715,9 +769,11 @@ jobs:
       - *committed_preflight
       - *rust_dependencies
       - *pinned_toolchain
+      - *ci1458_prepare_cache_state
       - name: Cache cargo (conformance-package)
         id: cargo_cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env: *ci1458_cache_namespace
         with:
           prefix-key: v1-ci-1458
           key: conformance-package
@@ -728,6 +784,7 @@ jobs:
       # Prepare the package-only dependency/feature configuration outside the
       # two-minute execution budget; the workspace --all-targets build may use
       # a different unified feature configuration.
+      - *ci1458_assert_cache_scope
       - name: Build conformance execution binary
         run: cargo build -p borrowser-conformance --locked --timings
       - name: AH9 bounded offline addressing suite
@@ -764,9 +821,11 @@ jobs:
       - *committed_preflight
       - *rust_dependencies
       - *pinned_toolchain
+      - *ci1458_prepare_cache_state
       - name: Cache cargo (streaming-integration-debug)
         id: cargo_cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env: *ci1458_cache_namespace
         with:
           prefix-key: v1-ci-1458
           key: streaming-integration-debug
@@ -774,6 +833,7 @@ jobs:
           cache-workspace-crates: 'false'
           cache-bin: 'false'
           cache-on-failure: 'false'
+      - *ci1458_assert_cache_scope
       - name: Record native streaming guard lane equivalence
         timeout-minutes: 10
         run: |
@@ -961,9 +1021,11 @@ jobs:
       - *committed_preflight
       - *rust_dependencies
       - *pinned_toolchain
+      - *ci1458_prepare_cache_state
       - name: Cache cargo (head-registry)
         id: cargo_cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env: *ci1458_cache_namespace
         with:
           prefix-key: v1-ci-1458
           key: head-registry
@@ -971,6 +1033,7 @@ jobs:
           cache-workspace-crates: 'false'
           cache-bin: 'false'
           cache-on-failure: 'false'
+      - *ci1458_assert_cache_scope
       - name: Qualify streaming guard on exact PR head
         id: pr_head_guard
         if: github.event_name == 'pull_request'
@@ -1109,9 +1172,12 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - *ci1458_prepare_cache_state
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env: *ci1458_cache_namespace
 
+      - *ci1458_assert_cache_scope
       - name: Run deterministic tokenizer fuzz smoke
         shell: bash
         run: |
@@ -1156,9 +1222,12 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - *ci1458_prepare_cache_state
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env: *ci1458_cache_namespace
 
+      - *ci1458_assert_cache_scope
       - name: Run deterministic script-data fuzz smoke
         shell: bash
         run: |
@@ -1203,9 +1272,12 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - *ci1458_prepare_cache_state
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env: *ci1458_cache_namespace
 
+      - *ci1458_assert_cache_scope
       - name: Run deterministic rawtext fuzz smoke
         shell: bash
         run: |
@@ -1250,9 +1322,12 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - *ci1458_prepare_cache_state
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env: *ci1458_cache_namespace
 
+      - *ci1458_assert_cache_scope
       - name: Run deterministic rcdata fuzz smoke
         shell: bash
         run: |
@@ -1297,9 +1372,12 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - *ci1458_prepare_cache_state
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env: *ci1458_cache_namespace
 
+      - *ci1458_assert_cache_scope
       - name: Run deterministic tree-builder fuzz smoke
         shell: bash
         run: |
@@ -1344,9 +1422,12 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - *ci1458_prepare_cache_state
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env: *ci1458_cache_namespace
 
+      - *ci1458_assert_cache_scope
       - name: Run deterministic pipeline fuzz smoke
         shell: bash
         run: |
@@ -1387,9 +1468,12 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - *ci1458_prepare_cache_state
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env: *ci1458_cache_namespace
 
+      - *ci1458_assert_cache_scope
       - name: Replay promoted CSS fuzz regressions
         shell: bash
         run: |
@@ -1437,9 +1521,12 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - *ci1458_prepare_cache_state
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env: *ci1458_cache_namespace
 
+      - *ci1458_assert_cache_scope
       - name: Run deterministic CSS tokenizer fuzz smoke
         shell: bash
         run: |
@@ -1505,9 +1592,12 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - *ci1458_prepare_cache_state
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        env: *ci1458_cache_namespace
 
+      - *ci1458_assert_cache_scope
       - name: Run deterministic CSS selector parser fuzz smoke
         shell: bash
         run: |
