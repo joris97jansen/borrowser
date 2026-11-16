@@ -3,6 +3,7 @@
 use html::{AtomTable, HtmlParseOptions, HtmlParser, Node, parse_document};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::time::Instant;
 
 // Counters are intentionally lightweight: they measure allocation/realloc events and growth
 // bytes while enabled, not current live heap usage.
@@ -75,6 +76,16 @@ fn alloc_counts() -> (usize, usize, usize) {
     )
 }
 
+// Snapshots and accumulation stay on the stack; formatting happens only after
+// the original end-to-end measurement has completed and counting is disabled.
+fn record_alloc_delta(phase: &mut (usize, usize, usize), checkpoint: &mut (usize, usize, usize)) {
+    let current = alloc_counts();
+    phase.0 += current.0 - checkpoint.0;
+    phase.1 += current.1 - checkpoint.1;
+    phase.2 += current.2 - checkpoint.2;
+    *checkpoint = current;
+}
+
 struct AllocGuard;
 
 impl AllocGuard {
@@ -142,40 +153,79 @@ fn measure_streaming_parse(
         .into_output()
         .expect("warm parse output should materialize");
 
-    let _guard = AllocGuard::new();
+    let mut phases = [
+        ("construction", (0usize, 0usize, 0usize)),
+        ("push_bytes", (0, 0, 0)),
+        ("pump", (0, 0, 0)),
+        ("patch_drain", (0, 0, 0)),
+        ("finish_and_final_drain", (0, 0, 0)),
+        ("materialization", (0, 0, 0)),
+    ];
+    let started = Instant::now();
+    let guard = AllocGuard::new();
+    let mut checkpoint = alloc_counts();
     let mut parser = HtmlParser::new(HtmlParseOptions::default())
         .expect("streaming html5 parser should initialize");
+    record_alloc_delta(&mut phases[0].1, &mut checkpoint);
     let bytes = input.as_bytes();
     let mut offset = 0usize;
     let mut size_index = 0usize;
     let mut drained_patches = 0usize;
+    let mut nonempty_drains = 0usize;
     while offset < bytes.len() {
         let size = chunk_sizes[size_index % chunk_sizes.len()];
         let end = (offset + size).min(bytes.len());
         parser
             .push_bytes(&bytes[offset..end])
             .expect("streaming chunk push should succeed");
+        record_alloc_delta(&mut phases[1].1, &mut checkpoint);
         parser.pump().expect("streaming pump should succeed");
-        drained_patches = drained_patches.saturating_add(
-            parser
-                .take_patches()
-                .expect("streaming patch drain should succeed")
-                .len(),
-        );
+        record_alloc_delta(&mut phases[2].1, &mut checkpoint);
+        let drained = parser
+            .take_patches()
+            .expect("streaming patch drain should succeed")
+            .len();
+        drained_patches = drained_patches.saturating_add(drained);
+        nonempty_drains += usize::from(drained != 0);
+        record_alloc_delta(&mut phases[3].1, &mut checkpoint);
         offset = end;
         size_index += 1;
     }
     parser.finish().expect("streaming finish should succeed");
-    drained_patches = drained_patches.saturating_add(
-        parser
-            .take_patches()
-            .expect("streaming final patch drain should succeed")
-            .len(),
-    );
+    let drained = parser
+        .take_patches()
+        .expect("streaming final patch drain should succeed")
+        .len();
+    drained_patches = drained_patches.saturating_add(drained);
+    nonempty_drains += usize::from(drained != 0);
+    record_alloc_delta(&mut phases[4].1, &mut checkpoint);
     let output = parser
         .into_output()
         .expect("streaming output should materialize");
+    record_alloc_delta(&mut phases[5].1, &mut checkpoint);
     let (allocs, bytes, reallocs) = alloc_counts();
+    drop(guard);
+    let elapsed = started.elapsed();
+
+    eprintln!(
+        "streaming allocations chunks={chunk_sizes:?} pushes={size_index} nonempty_drains={nonempty_drains} patches={drained_patches}: allocs={allocs} bytes={bytes} reallocs={reallocs} elapsed_ns={}",
+        elapsed.as_nanos()
+    );
+    let mut attributed = (0, 0, 0);
+    for (name, counts) in phases {
+        attributed.0 += counts.0;
+        attributed.1 += counts.1;
+        attributed.2 += counts.2;
+        eprintln!(
+            "  {name}: allocs={} bytes={} reallocs={}",
+            counts.0, counts.1, counts.2
+        );
+    }
+    assert_eq!(
+        attributed,
+        (allocs, bytes, reallocs),
+        "streaming allocation phases must reconcile with the original total"
+    );
     (output, drained_patches, allocs, bytes, reallocs)
 }
 

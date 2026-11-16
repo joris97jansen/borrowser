@@ -94,6 +94,37 @@ Recommended usage:
 This keeps the emitted patch stream and the builder's internal live tree under
 the same structural contract.
 
+## Parser-Side Patch-Mirror Audit Storage
+
+`PatchValidationArena` continues to run its complete post-batch structural audit
+after every successful non-empty parser drain. Public `apply_batch` stages and
+audits a clone before committing it. The internal trusted path applies and audits
+in place; any failure remains terminal for the owning parser. See the
+[DomPatch atomic-batch contract](dompatch-contract.md#atomic-batch-rules).
+
+`HtmlParser` owns one private `PatchValidationScratch` outside transactional DOM
+state. It retains collection capacity, never validation conclusions. Temporary
+keys are cleared before and after every audit, including error returns through
+`?`. Both ordinary draining and conformance finalization use this workspace.
+A leading `Clear` releases its capacity; parser destruction releases it as well.
+Within a baseline, retained storage follows the high-water node count, maximum
+sibling count, and traversal depth, including after subtree removal. Historical
+patch-key retention in the arena is unchanged.
+
+Duplicate-child checks sort a scratch copy of `(PatchKey, original index)` pairs.
+The minimum duplicate occurrence index preserves the original child-order error
+precedence; authoritative children and patch order are never sorted. Reusing a
+vector avoids clearing a wide child hash table for every narrow sibling list.
+The traversal sets are cleared at audit boundaries, not per node;
+`HashSet::clear` retains capacity and costs time proportional to that capacity.
+
+This changes allocation behavior, not audit timing or the full-tree algorithm.
+Each audit still scans the retained structure. Parent/back-reference validation
+still scans each child's parent's sibling list, with total work proportional to
+the sum of squared sibling counts in the worst case. Sorting adds work bounded
+by the sibling lists' lengths and is measured alongside parsing time; this
+contract does not claim linear whole-session CPU cost under frequent drains.
+
 ## Internal Live-Tree Boundary
 
 `LiveTree` inside the HTML5 tree builder is an internal structural mirror, not a
