@@ -314,6 +314,23 @@ When triaging a parser bug:
 
 ### Perf and allocation guards
 
+`runtime_parse_linear_streaming_guard` also protects the runtime streaming path
+with fixed workloads and counter-based assertions. Its qualification boundaries,
+unchanged-guard profile and completed native controlled CI measurements are
+recorded in
+[#1458's CI performance evidence](ci/1458-critical-path-performance.md).
+The published parallel control passed both workspace executions and independent
+integration/exact-head jobs. The published replacement excludes only the workspace
+guard and requires same-run compiler/feature and complete-inventory proofs through
+the existing final gate and required Rust context. Its independent guard jobs
+execute against the verified synthetic integration commit and exact PR head;
+master pushes qualify the actual pushed commit without fabricating head execution.
+The separate hosted negative experiment verified integration-job failure
+propagation through both gates into the required check. All sixteen controlled
+observations passed full hosted qualification. The workload and assertions are
+unchanged; these counters do not establish elapsed-time linearity, and measured
+CI latency does not resolve the separately documented patch-validation finding.
+
 Useful commands:
 
 ```sh
