@@ -2,6 +2,12 @@ name: Perf
 
 on:
   workflow_dispatch:
+    inputs:
+      allocation_source_sha:
+        description: "Reviewed allocation source commit; empty uses the event revision"
+        required: false
+        default: ""
+        type: string
   schedule:
     - cron: "0 3 * * *" # nightly at 03:00 UTC
 
@@ -34,11 +40,6 @@ jobs:
           RUST_TEST_THREADS: 1
         run: cargo test -p html --all-targets --locked --features perf-tests,test-harness
 
-      - name: Run allocation guards
-        env:
-          RUST_TEST_THREADS: 1
-        run: cargo test -p html --test alloc_guards --locked --features count-alloc
-
       - name: Run html benches
         run: |
           mkdir -p ci_artifacts
@@ -51,6 +52,171 @@ jobs:
           path: |
             ci_artifacts/html_bench.txt
             target/criterion/**
+
+  html_alloc_guards:
+    name: HTML allocation guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    env:
+      RUST_BACKTRACE: 1
+      RUST_TEST_THREADS: 1
+
+    steps:
+      - name: Initialize allocation temporary paths
+        id: paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_dir=$(mktemp -d "$RUNNER_TEMP/html-allocation-target.XXXXXX")
+          evidence_dir=$(mktemp -d "$RUNNER_TEMP/html-allocation-evidence.XXXXXX")
+          printf 'CARGO_TARGET_DIR=%s\nALLOCATION_EVIDENCE_DIR=%s\n' "$target_dir" "$evidence_dir" >> "$GITHUB_ENV"
+          printf 'evidence_dir=%s\n' "$evidence_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Select allocation source
+        id: source
+        shell: bash
+        env:
+          REQUESTED_SOURCE_SHA: ${{ inputs.allocation_source_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_EVENT_NAME" in
+            schedule) test -z "$REQUESTED_SOURCE_SHA" ;;
+            workflow_dispatch) ;;
+            *) echo "Unsupported allocation qualification event" >&2; exit 1 ;;
+          esac
+          source_sha=${REQUESTED_SOURCE_SHA:-$GITHUB_SHA}
+          if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Allocation source must be a full lowercase commit SHA" >&2
+            exit 1
+          fi
+          printf 'sha=%s\n' "$source_sha" >> "$GITHUB_OUTPUT"
+          {
+            printf 'workflow_ref=%s\nworkflow_sha=%s\n' "$WORKFLOW_REF" "$WORKFLOW_SHA"
+            printf 'event=%s\nevent_ref=%s\nevent_sha=%s\n' "$GITHUB_EVENT_NAME" "$GITHUB_REF" "$GITHUB_SHA"
+            printf 'requested_source_sha=%s\nselected_source_sha=%s\n' "$REQUESTED_SOURCE_SHA" "$source_sha"
+          } | tee "$ALLOCATION_EVIDENCE_DIR/source-selection.txt"
+
+      - name: Checkout allocation source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ steps.source.outputs.sha }}
+          persist-credentials: false
+
+      - name: Verify allocation source before qualification
+        id: source_before
+        shell: bash
+        env:
+          SELECTED_SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --show-toplevel)" = "$GITHUB_WORKSPACE"
+          git cat-file -e "${SELECTED_SOURCE_SHA}^{commit}"
+          test "$(git rev-parse HEAD)" = "$SELECTED_SOURCE_SHA"
+          source_tree=$(git rev-parse "${SELECTED_SOURCE_SHA}^{tree}")
+          test "$(git rev-parse 'HEAD^{tree}')" = "$source_tree"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          {
+            printf 'source_sha=%s\nsource_tree=%s\nsource_clean=true\n' "$SELECTED_SOURCE_SHA" "$source_tree"
+            printf 'cargo_target_dir=%s\nevidence_dir=%s\n' "$CARGO_TARGET_DIR" "$ALLOCATION_EVIDENCE_DIR"
+          } | tee "$ALLOCATION_EVIDENCE_DIR/source-before.txt"
+          printf 'tree=%s\n' "$source_tree" >> "$GITHUB_OUTPUT"
+
+      - name: Install allocation Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.92.0'
+          components: rustfmt, clippy, rust-analyzer
+
+      - name: Record active allocation toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            rustup show active-toolchain
+            rustc -vV
+            cargo -vV
+            python3 -I -B -c 'import tomllib; from pathlib import Path; assert tomllib.loads(Path("rust-toolchain.toml").read_text())["toolchain"]["channel"] == "1.92.0"'
+            test "$(rustc --version | cut -d ' ' -f 2)" = 1.92.0
+            test "$(cargo --version | cut -d ' ' -f 2)" = 1.92.0
+          } 2>&1 | tee "$ALLOCATION_EVIDENCE_DIR/toolchain.txt"
+
+      # Exact-source overrides use neither restored nor saved Cargo caches.
+      - name: Cache allocation Cargo registry
+        if: inputs.allocation_source_sha == ''
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-targets: 'false'
+          cache-workspace-crates: 'false'
+          cache-bin: 'false'
+
+      - name: Run allocation guards
+        id: alloc_tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Listing compiles the same target without executing its tests.
+          cargo test -p html --test alloc_guards --locked --features html5,count-alloc -- --list --format terse --color never \
+            2>&1 | tee "$ALLOCATION_EVIDENCE_DIR/alloc_guards-list.log"
+          sed -n 's/: test$//p' "$ALLOCATION_EVIDENCE_DIR/alloc_guards-list.log" \
+            | LC_ALL=C sort > "$ALLOCATION_EVIDENCE_DIR/alloc_guards-listed.txt"
+          # Keep the existing guards mandatory; additions are qualified too.
+          while IFS= read -r required_guard; do
+            grep -Fx -- "$required_guard" "$ALLOCATION_EVIDENCE_DIR/alloc_guards-listed.txt"
+          done <<'REQUIRED_GUARDS'
+          atom_intern_reuse_does_not_allocate
+          atom_lookup_path_does_not_allocate
+          parse_document_attribute_values_avoid_unnecessary_allocs
+          parse_document_plain_text_allocation_is_bounded
+          parse_document_rawtext_allocation_is_bounded
+          streaming_parser_chunk_sizes_do_not_cause_pathological_alloc_growth
+          REQUIRED_GUARDS
+          test_count=$(wc -l < "$ALLOCATION_EVIDENCE_DIR/alloc_guards-listed.txt")
+          test_count=$((test_count))
+          cargo test -p html --test alloc_guards --locked --features html5,count-alloc -- --test-threads=1 --nocapture --format pretty --color never \
+            2>&1 | tee "$ALLOCATION_EVIDENCE_DIR/alloc_guards.log"
+          # --nocapture may put measurements between a test's prefix and its ok.
+          # Rust 1.92 integration tests annotate expected panics before the dots.
+          sed -nE 's/^test ([^ ]+)( - should panic)? \.\.\. .*/\1/p' "$ALLOCATION_EVIDENCE_DIR/alloc_guards.log" \
+            | LC_ALL=C sort > "$ALLOCATION_EVIDENCE_DIR/alloc_guards-executed.txt"
+          cmp "$ALLOCATION_EVIDENCE_DIR/alloc_guards-listed.txt" "$ALLOCATION_EVIDENCE_DIR/alloc_guards-executed.txt"
+          test "$(grep -Ec "^test result: ok\\. $test_count passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in [0-9.]+s$" "$ALLOCATION_EVIDENCE_DIR/alloc_guards.log")" = 1
+
+      - name: Verify allocation source after qualification
+        id: source_after
+        if: ${{ !cancelled() && steps.source_before.outcome == 'success' }}
+        shell: bash
+        env:
+          SELECTED_SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          EXPECTED_SOURCE_TREE: ${{ steps.source_before.outputs.tree }}
+          ALLOCATION_OUTCOME: ${{ steps.alloc_tests.outcome }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --show-toplevel)" = "$GITHUB_WORKSPACE"
+          test "$(git rev-parse HEAD)" = "$SELECTED_SOURCE_SHA"
+          test "$(git rev-parse 'HEAD^{tree}')" = "$EXPECTED_SOURCE_TREE"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          {
+            printf 'source_sha=%s\nsource_tree=%s\nsource_clean=true\n' "$SELECTED_SOURCE_SHA" "$EXPECTED_SOURCE_TREE"
+            printf 'allocation_outcome=%s\n' "$ALLOCATION_OUTCOME"
+          } | tee "$ALLOCATION_EVIDENCE_DIR/source-after.txt"
+          if test "$ALLOCATION_OUTCOME" = success; then
+            printf 'qualified_source_sha=%s\nqualified_source_tree=%s\n' "$SELECTED_SOURCE_SHA" "$EXPECTED_SOURCE_TREE" \
+              | tee "$ALLOCATION_EVIDENCE_DIR/qualification-success.txt"
+          fi
+
+      - name: Upload allocation evidence
+        if: ${{ always() && steps.paths.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-allocation-${{ steps.source.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.paths.outputs.evidence_dir }}
+          if-no-files-found: error
 
   html5_tokenizer_fuzz_long:
     name: html5 tokenizer fuzz nightly
