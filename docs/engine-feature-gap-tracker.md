@@ -1734,6 +1734,12 @@ implementation, not to a newly successful macOS CI run.
   preserves the affected contracts without reopening cloud qualification or
   deploying AWS resources. AG remains at nine issues. See the
   [AG4 contract](conformance/ag4-disposable-aws-chromium-runner.md).
+  The [#1473 fixture correction](conformance/ag4-disposable-aws-chromium-runner.md#executable-binding-fixture-portability-correction-1473-2026-11-17)
+  replaces renamed host echo with a private executable argument recorder while
+  preserving production executable binding. Native macOS and both Ubuntu ARM64
+  container checks passed; native Ubuntu x86-64 and committed-source/hosted
+  qualification remain outstanding. This is tooling qualification history,
+  not a new engine capability or a change to historical AG4 completion.
 
 - AG4.1 (#1446) is an implemented, natively qualified Linux command-owner
   correctness correction. For raw `ENOENT`/`ESRCH` at individual proc-stat open/read

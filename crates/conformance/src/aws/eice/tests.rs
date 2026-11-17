@@ -6,6 +6,27 @@ use crate::aws::{
 };
 use std::os::unix::fs::{PermissionsExt, symlink};
 
+// Independent oracle for the fixed 20-second descriptor used by these tests.
+const EXPECTED_TUNNEL_ARGV: [&str; 16] = [
+    "--region",
+    "eu-west-1",
+    "--no-cli-pager",
+    "--no-cli-auto-prompt",
+    "ec2-instance-connect",
+    "open-tunnel",
+    "--instance-connect-endpoint-id",
+    "eice-0123456789abcdef0",
+    "--instance-connect-endpoint-dns-name",
+    "eice-0123456789abcdef0.b67b86ba.ec2-instance-connect-endpoint.eu-west-1.amazonaws.com",
+    "--private-ip-address",
+    "10.77.0.10",
+    "--remote-port",
+    "22",
+    "--max-tunnel-duration",
+    "20",
+];
+const HELPER_RECORDER_MARKER: &[u8] = b"\0AG4_TRUSTED_EXECUTABLE\0";
+
 pub(in crate::aws) fn config() -> Config {
     let mut c: Config =
         serde_json::from_slice(include_bytes!("../../../aws/operator.example.json")).unwrap();
@@ -118,27 +139,7 @@ fn descriptor_fixed_argv_and_private_lifecycle() {
     .unwrap();
     assert_eq!(fs::metadata(&path).unwrap().mode() & 0o777, 0o600);
     let d = TunnelDescriptor::load(&path).unwrap();
-    assert_eq!(
-        d.argv(),
-        vec![
-            "--region",
-            "eu-west-1",
-            "--no-cli-pager",
-            "--no-cli-auto-prompt",
-            "ec2-instance-connect",
-            "open-tunnel",
-            "--instance-connect-endpoint-id",
-            "eice-0123456789abcdef0",
-            "--instance-connect-endpoint-dns-name",
-            "eice-0123456789abcdef0.b67b86ba.ec2-instance-connect-endpoint.eu-west-1.amazonaws.com",
-            "--private-ip-address",
-            "10.77.0.10",
-            "--remote-port",
-            "22",
-            "--max-tunnel-duration",
-            "20"
-        ]
-    );
+    assert_eq!(d.argv(), EXPECTED_TUNNEL_ARGV);
     assert_eq!(d.aws_cli_path, config().aws_cli);
     drop(work);
     assert!(!path.exists());
@@ -808,21 +809,28 @@ fn authentication_sanitization_precedes_every_excerpt_and_summary() {
 
 #[test]
 fn helper_uses_only_the_parent_bound_executable_and_never_reloads_config() {
-    use std::process::{Command, Stdio};
     let work = tempfile::tempdir().unwrap();
     let _ = host(&work);
     let root = work.path().canonicalize().unwrap();
-    // A regular local argv recorder exercises the exec boundary, not AWS CLI
-    // version/network qualification. The separate native test uses the real pin.
+    // The kernel executes this private script's absolute shebang. Only shell
+    // builtins run, even with hostile PATH. This covers the bound file/argv exec
+    // boundary, not the native AWS CLI loader, version or network qualification.
     let program = root.join("qualified-aws");
-    fs::copy("/bin/echo", &program).unwrap();
+    fs::write(
+        &program,
+        "#!/bin/sh\nprintf '\\000AG4_TRUSTED_EXECUTABLE\\000%s\\000' \"$#\"\nprintf '%s\\000' \"$@\"\n",
+    )
+    .unwrap();
     fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
     let mut c = config();
     c.aws_cli = program.clone();
     c.aws_cli_identity = Some(cli_identity(&program).unwrap());
     let path = TunnelDescriptor::create(&c, &endpoint(), &target(), &root, Duration::from_secs(20))
         .unwrap();
-    let expected = TunnelDescriptor::load(&path).unwrap().argv().join(" ");
+    assert_eq!(
+        TunnelDescriptor::load(&path).unwrap().argv(),
+        EXPECTED_TUNNEL_ARGV
+    );
     let hostile = root.join("aws");
     fs::write(&hostile, "#!/bin/sh\nprintf HOSTILE_EXECUTABLE\n").unwrap();
     fs::set_permissions(&hostile, fs::Permissions::from_mode(0o700)).unwrap();
@@ -833,38 +841,209 @@ fn helper_uses_only_the_parent_bound_executable_and_never_reloads_config() {
     )
     .unwrap();
     for prompt in ["on", "on-partial"] {
-        let mut child = Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "aws::eice::tests::isolated_helper_exec",
-                "--ignored",
-                "--nocapture",
-                "--test-threads=1",
-            ])
-            .env_clear()
-            .env("PATH", &root)
-            .env("AWS_CLI_AUTO_PROMPT", prompt)
-            .env("AG4_TEST_DESCRIPTOR", &path)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while child.try_wait().unwrap().is_none() {
-            if std::time::Instant::now() >= deadline {
-                child.kill().unwrap();
-                child.wait().unwrap();
-                panic!("bounded helper exec timed out");
-            }
-            std::thread::sleep(Duration::from_millis(10));
+        let (out, timed_out) = run_isolated_helper(&path, prompt);
+        let diagnostic = || helper_exec_diagnostic(prompt, &out, timed_out);
+        assert!(!timed_out, "{}", diagnostic());
+        assert!(out.status.success(), "{}", diagnostic());
+        assert!(
+            helper_record_error(&out.stdout).is_none(),
+            "{}",
+            diagnostic()
+        );
+        assert!(
+            !out.stdout
+                .windows(b"HOSTILE_EXECUTABLE".len())
+                .any(|w| w == b"HOSTILE_EXECUTABLE"),
+            "{}",
+            diagnostic()
+        );
+        assert!(out.stderr.is_empty(), "{}", diagnostic());
+    }
+}
+
+// Shared only by the binding regression and its real-exec failure controls.
+// Keep the original direct-child ownership, five-second bound and poll cadence.
+fn run_isolated_helper(path: &Path, prompt: &str) -> (std::process::Output, bool) {
+    use std::process::{Command, Stdio};
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "aws::eice::tests::isolated_helper_exec",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env_clear()
+        .env("PATH", path.parent().unwrap())
+        .env("AWS_CLI_AUTO_PROMPT", prompt)
+        .env("AG4_TEST_DESCRIPTOR", path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let mut timed_out = false;
+    while child.try_wait().unwrap().is_none() {
+        if std::time::Instant::now() >= deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            timed_out = true;
+            break;
         }
-        let out = child.wait_with_output().unwrap();
-        assert!(out.status.success());
-        let text = String::from_utf8(out.stdout).unwrap();
-        assert!(text.contains(&expected));
-        assert!(!text.contains("HOSTILE_EXECUTABLE"));
-        assert!(out.stderr.is_empty());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // Both fixtures are builtin-only and fork no descendants; after root reap
+    // their pipes have no writers. Retain available evidence after timeout too.
+    (child.wait_with_output().unwrap(), timed_out)
+}
+
+fn helper_record_error(stdout: &[u8]) -> Option<String> {
+    let mut markers = stdout
+        .windows(HELPER_RECORDER_MARKER.len())
+        .enumerate()
+        .filter_map(|(i, w)| (w == HELPER_RECORDER_MARKER).then_some(i));
+    let first = markers.next();
+    let count = usize::from(first.is_some()) + markers.count();
+    if count != 1 {
+        return Some(format!("trusted_recorder_count={count}, expected 1"));
+    }
+    // Libtest writes a preamble before the exec-only test replaces the runner.
+    // Everything after our marker must be exactly one complete argument record.
+    let mut fields = stdout[first.unwrap() + HELPER_RECORDER_MARKER.len()..].split(|b| *b == 0);
+    if fields.next() != Some(b"16".as_slice()) {
+        return Some("trusted_recorder_count=1 argument_count_mismatch, expected 16".into());
+    }
+    for (index, expected) in EXPECTED_TUNNEL_ARGV.iter().enumerate() {
+        if fields.next() != Some(expected.as_bytes()) {
+            return Some(format!(
+                "trusted_recorder_count=1 argument_mismatch_index={index}"
+            ));
+        }
+    }
+    if fields.next() != Some(b"".as_slice()) || fields.next().is_some() {
+        return Some("trusted_recorder_count=1 missing_terminator_or_trailing_output".into());
+    }
+    None
+}
+
+fn helper_exec_diagnostic(prompt: &str, out: &std::process::Output, timed_out: bool) -> String {
+    use std::os::unix::process::ExitStatusExt;
+    // The isolated child receives no credentials. Still sanitize authentication
+    // context before excerpting; never dump stdout or the private descriptor.
+    let safe = aws::config::sanitize(&[], &out.stderr, false);
+    let mut escaped = safe.chars().flat_map(char::escape_default);
+    let mut excerpt: String = escaped.by_ref().take(1000).collect();
+    if escaped.next().is_some() {
+        excerpt.push_str("...[truncated]");
+    }
+    format!(
+        "prompt={prompt} timed_out={timed_out} exit_code={:?} signal={:?} stdout_bytes={} stderr_bytes={} hostile_executable={} recorder={} stderr=\"{excerpt}\"",
+        out.status.code(),
+        out.status.signal(),
+        out.stdout.len(),
+        out.stderr.len(),
+        out.stdout
+            .windows(b"HOSTILE_EXECUTABLE".len())
+            .any(|w| w == b"HOSTILE_EXECUTABLE"),
+        helper_record_error(&out.stdout)
+            .unwrap_or_else(|| "trusted_recorder_count=1 exact_arguments=16".into())
+    )
+}
+
+#[test]
+fn helper_record_rejects_ambiguous_boundaries_and_incomplete_output() {
+    let mut record = HELPER_RECORDER_MARKER.to_vec();
+    record.extend_from_slice(b"16\0");
+    for arg in EXPECTED_TUNNEL_ARGV {
+        record.extend_from_slice(arg.as_bytes());
+        record.push(0);
+    }
+    assert!(helper_record_error(&record).is_none());
+    let mut preamble =
+        b"\nrunning 1 test\ntest aws::eice::tests::isolated_helper_exec ... ".to_vec();
+    preamble.extend_from_slice(&record);
+    assert!(helper_record_error(&preamble).is_none());
+    let mut merged = record.clone();
+    // The old space-joined assertion could not distinguish these boundaries.
+    let region_end = HELPER_RECORDER_MARKER.len() + b"16\0--region".len();
+    merged[region_end] = b' ';
+    let mut reordered = record.clone();
+    let at = HELPER_RECORDER_MARKER.len() + b"16\0".len();
+    reordered[at..at + b"--region\0eu-west-1\0".len()].copy_from_slice(b"eu-west-1\0--region\0");
+    let mut wrong_count = record.clone();
+    wrong_count[HELPER_RECORDER_MARKER.len()..][..2].copy_from_slice(b"15");
+    for bad in [
+        Vec::new(),
+        merged,
+        reordered,
+        wrong_count,
+        record[..record.len() - b"20\0".len()].to_vec(),
+        record[..record.len() - 1].to_vec(),
+        [record.as_slice(), b"extra\0"].concat(),
+        [record.as_slice(), record.as_slice()].concat(),
+    ] {
+        assert!(helper_record_error(&bad).is_some());
+    }
+}
+
+#[test]
+fn helper_exec_diagnostics_bound_stderr_and_withhold_unknown_stdout() {
+    use std::os::unix::process::ExitStatusExt;
+    for stderr in [vec![b'x'; 4096], vec![b'x'; 256 * 1024 + 1]] {
+        let out = std::process::Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: b"UNKNOWN_STDOUT_SENTINEL HOSTILE_EXECUTABLE".to_vec(),
+            stderr,
+        };
+        let diagnostic = helper_exec_diagnostic("on-partial", &out, false);
+        assert!(!diagnostic.contains("UNKNOWN_STDOUT_SENTINEL"));
+        assert!(diagnostic.contains("hostile_executable=true"));
+        assert!(diagnostic.len() < 1400);
+        if out.stderr.len() == 4096 {
+            assert!(diagnostic.ends_with("...[truncated]\""));
+        } else {
+            assert!(diagnostic.contains("retention limit exceeded"));
+        }
+    }
+}
+
+#[test]
+fn helper_exec_failure_diagnostics_distinguish_exit_signal_and_timeout() {
+    use std::os::unix::process::ExitStatusExt;
+    for (body, code, signal, timeout) in [
+        (
+            "printf 'bounded failure\\nX-Amz-Signature=SIG_SENTINEL\\nAUTH_SENTINEL\\n' >&2; exit 23",
+            Some(23),
+            None,
+            false,
+        ),
+        ("kill -TERM $$", None, Some(libc::SIGTERM), false),
+        ("while :; do :; done", None, Some(libc::SIGKILL), true),
+    ] {
+        let work = tempfile::tempdir().unwrap();
+        let _ = host(&work);
+        let root = work.path().canonicalize().unwrap();
+        let program = root.join("qualified-aws");
+        fs::write(&program, format!("#!/bin/sh\n{body}\n")).unwrap();
+        fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
+        let mut c = config();
+        c.aws_cli = program.clone();
+        c.aws_cli_identity = Some(cli_identity(&program).unwrap());
+        let path =
+            TunnelDescriptor::create(&c, &endpoint(), &target(), &root, Duration::from_secs(20))
+                .unwrap();
+        let (out, timed_out) = run_isolated_helper(&path, "on");
+        let diagnostic = helper_exec_diagnostic("on", &out, timed_out);
+        assert_eq!(out.status.code(), code, "{diagnostic}");
+        assert_eq!(out.status.signal(), signal, "{diagnostic}");
+        assert_eq!(timed_out, timeout, "{diagnostic}");
+        assert!(diagnostic.contains("trusted_recorder_count=0"));
+        assert!(!diagnostic.contains("SIG_SENTINEL"));
+        assert!(!diagnostic.contains("AUTH_SENTINEL"));
+        if code == Some(23) {
+            assert!(diagnostic.contains("bounded failure"));
+        }
     }
 }
 
