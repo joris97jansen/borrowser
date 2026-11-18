@@ -5,8 +5,58 @@ use crate::dom_patch::PatchKey;
 use super::error::{ArenaResult, PatchValidationError};
 use super::model::{PatchKind, PatchValidationArena};
 
+#[cfg(test)]
+mod tests;
+
+/// Temporary audit data owned by a parser, outside transactional DOM state.
+/// Contents are empty between audits; capacity follows the current baseline's
+/// high-water mark and is released by a leading `Clear` or parser destruction.
+#[derive(Default)]
+pub(crate) struct PatchValidationScratch {
+    child_keys: Vec<(PatchKey, usize)>,
+    visited: HashSet<PatchKey>,
+    visiting: HashSet<PatchKey>,
+}
+
+impl PatchValidationScratch {
+    fn clear(&mut self) {
+        self.child_keys.clear();
+        self.visited.clear();
+        self.visiting.clear();
+    }
+
+    fn first_duplicate_child(&mut self, children: &[PatchKey]) -> Option<usize> {
+        self.child_keys.clear();
+        if children.len() < 2 {
+            return None;
+        }
+        self.child_keys.extend(children.iter().copied().zip(0..));
+        self.child_keys.sort_unstable();
+        // Keep the original first-error position even when several keys repeat.
+        self.child_keys
+            .windows(2)
+            .filter(|pair| pair[0].0 == pair[1].0)
+            .map(|pair| pair[1].1)
+            .min()
+    }
+}
+
 impl PatchValidationArena {
-    pub(crate) fn assert_invariants(&self) -> ArenaResult<()> {
+    pub(crate) fn assert_invariants(
+        &self,
+        scratch: &mut PatchValidationScratch,
+    ) -> ArenaResult<()> {
+        scratch.clear();
+        let result = self.assert_invariants_with_scratch(scratch);
+        // The inner audit may return early through `?`; never retain its keys.
+        scratch.clear();
+        result
+    }
+
+    fn assert_invariants_with_scratch(
+        &self,
+        scratch: &mut PatchValidationScratch,
+    ) -> ArenaResult<()> {
         if self.nodes.is_empty() {
             if self.root.is_some() {
                 return Err(PatchValidationError::new(
@@ -159,8 +209,8 @@ impl PatchValidationArena {
                 ));
             }
 
-            let mut unique_children = HashSet::new();
-            for child in &node.children {
+            let first_duplicate = scratch.first_duplicate_child(&node.children);
+            for (index, child) in node.children.iter().enumerate() {
                 if !self.nodes.contains_key(child) {
                     return Err(PatchValidationError::new(
                         "post-apply invariants",
@@ -168,7 +218,7 @@ impl PatchValidationArena {
                     ));
                 }
 
-                if !unique_children.insert(*child) {
+                if first_duplicate == Some(index) {
                     return Err(PatchValidationError::new(
                         "post-apply invariants",
                         format!("duplicate child reference {child:?} under {key:?}"),
@@ -197,14 +247,12 @@ impl PatchValidationArena {
             }
         }
 
-        let mut visited = HashSet::new();
-        let mut visiting = HashSet::new();
-        self.assert_acyclic_from(root, &mut visited, &mut visiting)?;
-        if visited.len() != self.nodes.len() {
+        self.assert_acyclic_from(root, &mut scratch.visited, &mut scratch.visiting)?;
+        if scratch.visited.len() != self.nodes.len() {
             let mut unreachable = self
                 .nodes
                 .keys()
-                .filter(|key| !visited.contains(key))
+                .filter(|key| !scratch.visited.contains(key))
                 .copied()
                 .collect::<Vec<_>>();
             unreachable.sort_unstable();

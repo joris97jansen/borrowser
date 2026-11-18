@@ -439,6 +439,52 @@ fn patch_validation_failure_poisons_parser_for_future_mutation_and_drains() {
 }
 
 #[test]
+fn full_audit_failure_after_successful_drains_poison_parser_output() {
+    let mut parser = HtmlParser::new(HtmlParseOptions::default()).unwrap();
+    for chunk in [b"<!doctype html><div>".as_slice(), b"ok</div>"] {
+        parser.push_bytes(chunk).unwrap();
+        parser.pump().unwrap();
+        assert!(!parser.take_patches().unwrap().is_empty());
+    }
+    let error = parser
+        .apply_patches(&[DomPatch::CreateText {
+            key: PatchKey(u32::MAX),
+            text: "detached".to_owned(),
+        }])
+        .expect_err("a previously successful audit cannot validate new corruption");
+    assert!(matches!(error, crate::HtmlParseError::PatchValidation(_)));
+    let fatal = crate::HtmlParseError::Fatal(crate::ParserFatalError::EngineInvariant);
+    assert_eq!(parser.push_bytes(b"more").unwrap_err(), fatal);
+    assert_eq!(parser.pump().unwrap_err(), fatal);
+    assert_eq!(parser.finish().unwrap_err(), fatal);
+    assert_eq!(parser.take_patches().unwrap_err(), fatal);
+    assert_eq!(parser.into_output().unwrap_err(), fatal);
+}
+
+#[test]
+fn reused_validation_workspace_preserves_complete_streaming_output() {
+    let source = "<!doctype html><div title='x&amp;y'>a\r\n€<span>z</span></div><template><b>inside</b></template><?target data?>";
+    let whole = parse_document(source, HtmlParseOptions::default()).unwrap();
+    for size in [1, 2, 7, 1024] {
+        let mut parser = HtmlParser::new(HtmlParseOptions::default()).unwrap();
+        let mut patches = Vec::new();
+        for chunk in source.as_bytes().chunks(size) {
+            parser.push_bytes(chunk).unwrap();
+            parser.pump().unwrap();
+            patches.extend(parser.take_patches().unwrap());
+        }
+        parser.finish().unwrap();
+        patches.extend(parser.take_patches().unwrap());
+        let output = parser.into_output().unwrap();
+        crate::dom_snapshot::assert_dom_eq(&whole.document, &output.document, Default::default());
+        assert_eq!(whole.document_mode, output.document_mode);
+        assert_eq!(whole.counters, output.counters);
+        assert_eq!(whole.parse_errors, output.parse_errors);
+        assert_eq!(whole.patches, patches);
+    }
+}
+
+#[test]
 fn ae13b1_tokenizer_corruption_remains_generic_on_the_stable_facade() {
     let mut cdata = HtmlParser::new(HtmlParseOptions::default()).expect("session init");
     cdata.push_str("]]>").expect("CDATA bytes");

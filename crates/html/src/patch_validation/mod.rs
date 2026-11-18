@@ -8,6 +8,7 @@ mod validate;
 
 pub use error::PatchValidationError;
 pub use model::PatchValidationArena;
+pub(crate) use validate::PatchValidationScratch;
 
 #[cfg(test)]
 mod tests;

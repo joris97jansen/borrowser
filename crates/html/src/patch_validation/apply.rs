@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use crate::dom_patch::{DomPatch, PatchKey};
 
+use super::PatchValidationScratch;
 use super::error::{ArenaResult, PatchValidationError};
 use super::model::{PatchKind, PatchNode, PatchValidationArena};
 use crate::types::ParserCreatedFragmentKind;
@@ -10,7 +11,7 @@ impl PatchValidationArena {
     pub fn apply_batch(&mut self, patches: &[DomPatch]) -> Result<(), PatchValidationError> {
         let mut staged = self.clone();
         staged.apply_batch_in_place(patches)?;
-        staged.assert_invariants()?;
+        staged.assert_invariants(&mut PatchValidationScratch::default())?;
         *self = staged;
         Ok(())
     }
@@ -23,9 +24,13 @@ impl PatchValidationArena {
     pub(crate) fn apply_batch_trusted(
         &mut self,
         patches: &[DomPatch],
+        scratch: &mut PatchValidationScratch,
     ) -> Result<(), PatchValidationError> {
+        if matches!(patches.first(), Some(DomPatch::Clear)) {
+            *scratch = PatchValidationScratch::default();
+        }
         self.apply_batch_in_place(patches)?;
-        self.assert_invariants()
+        self.assert_invariants(scratch)
     }
 
     fn clear(&mut self) {

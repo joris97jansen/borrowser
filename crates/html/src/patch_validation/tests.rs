@@ -444,7 +444,7 @@ fn patch_validation_arena_preserves_key_freshness_across_clear() {
     );
 }
 
-fn template_seed_batch() -> Vec<DomPatch> {
+pub(super) fn template_seed_batch() -> Vec<DomPatch> {
     vec![
         DomPatch::CreateDocument {
             key: PatchKey(1),
