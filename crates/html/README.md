@@ -79,8 +79,42 @@ rather than on every PR.
 ## Allocation guards (opt-in)
 
 Allocation-count tests live in a dedicated integration test binary to keep
-allocator overrides scoped. Enable explicitly:
+allocator overrides scoped. Its counters are process-global, so run the complete
+target serially with locked dependencies and both required features:
 
 ```sh
-cargo test -p html --test alloc_guards --features "html5 count-alloc"
+RUST_TEST_THREADS=1 cargo test -p html --test alloc_guards --locked \
+  --features html5,count-alloc -- --test-threads=1 --nocapture --format pretty --color never
 ```
+
+The scheduled/manual `Perf` workflow runs this target in the independent
+`html_alloc_guards` Linux job. A heavy-performance failure cannot skip that job;
+allocation success does not conceal a heavy-performance failure or make the
+overall workflow successful. Existing allocation measurements are visible through
+`--nocapture`; the workflow does not add or change measurement instrumentation.
+
+Scheduled runs and manual runs without an override test their immutable event
+SHA. The single optional manual input `allocation_source_sha` accepts a full
+lowercase commit SHA from the workflow's repository. It lets a reviewed workflow
+definition qualify a separate, explicitly reviewed source commit without changing
+that commit. A valid SHA establishes identity, not trust in arbitrary source.
+
+The job records workflow, event, checkout and tree identities and the active
+Rust 1.92.0 toolchain. Each execution builds into a fresh directory under
+`$RUNNER_TEMP`; logs and source receipts also stay outside the checkout. Explicit
+source overrides restore/save no Cargo caches. Source cleanliness is checked
+before and after execution, including after test failure. Successful source
+verification alone does not constitute successful allocation qualification.
+
+Successful qualification also requires native libtest execution evidence. The
+job lists the target first, requires all existing allocation guards (including
+the pathological streaming guard), and compares that inventory with execution
+records. The final summary must report every listed test passed, with none
+failed, ignored or filtered out. The count is discovered, so future additions
+are included rather than blocked by a fixed six-test limit.
+Execution records support ordinary tests and Rust 1.92's `- should panic`
+annotation, including interleaved `--nocapture` diagnostics from expected panics.
+
+See [the #1471 qualification record](../../docs/ci/1471-html-allocation-qualification.md)
+for reproduction, trust boundaries, evidence requirements and outstanding hosted
+manual/scheduled acceptance. Manual evidence is not scheduled qualification.
