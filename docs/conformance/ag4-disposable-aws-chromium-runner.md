@@ -1213,6 +1213,87 @@ an ambiguous or bounded-out observation is unavailable, not proof of an owned
 survivor. Linux kernel-owned adopted-child reaping and macOS direct-child checks
 remain separate authoritative events. No PID inventory/lifetime abstraction is used.
 
+### Executable-binding fixture portability correction: #1473, 2026-11-17
+
+The executable-binding regression formerly copied `/bin/echo` to the private
+name `qualified-aws`. That assumed the host executable retained echo behavior
+under another name. PR #1472's Ubuntu 26.04 hosted correctness job failed at
+`out.status.success()`; it did not retain the helper child's status or stderr.
+The controlled utility probe reported that `qualified-aws` was not recognized,
+but that does not establish the original hosted child's exact internal error.
+
+The retained original comparison used ARM64 Ubuntu containers, not native
+x86-64 hosts. Both source identities gave the same portability result:
+
+| Original source | Ubuntu 24.04 ARM64 container | Ubuntu 26.04 ARM64 container |
+| --- | --- | --- |
+| Approved base `5d0fd878a8e954f4fd6047d8594b8ea113e32ea9` | PASS | FAIL |
+| PR #1472 head `00c49654a7f71e374365f341aed14bc9c7b90f80` | PASS | FAIL |
+
+The correction writes an owned mode-0700 script in the existing canonical
+mode-0700 invocation directory. Its absolute `#!/bin/sh` interpreter runs only
+builtin `printf`, with no PATH lookup, configuration read, AWS call or descendant
+process. The script emits NUL, `AG4_TRUSTED_EXECUTABLE`, NUL, decimal argument
+count, NUL, then each argument followed by NUL. The test requires exactly one
+marker, count 16, the independently specified ordered argument vector and the
+final terminator without extra output. Libtest's prefix is outside that record;
+the hostile executable marker remains forbidden throughout stdout.
+
+The parent still obtains the script's actual device, inode, length and SHA-256
+through `cli_identity`. The unchanged descriptor create/load/verify/execute path
+enforces canonical paths, symlink restrictions, trusted file ownership and modes,
+strict bounded JSON and the private single-link mode-0600 descriptor. Both hostile
+prompt values, hostile PATH, changed parent configuration and `operator.json`
+remain adversarial inputs. `--no-cli-auto-prompt` remains unconditional. No
+production EICE, environment, process-owner, deadline or cleanup code changes.
+
+This is real OS execution of the bound script: the kernel handles its shebang
+and replaces the helper with the interpreter. It verifies the configured file
+binding and exec argument boundary; it is not native ELF/Mach-O loader, pinned
+AWS CLI bundle/version or service-connectivity qualification. The existing
+trusted local filesystem/interpreter assumptions and separate native CLI
+qualification retain their scope.
+
+Failures identify the prompt scenario, timeout flag, exit code/signal, stream
+byte counts, trusted/hostile marker observations and argument mismatch position.
+Unknown stdout is withheld. The credential-free isolated child uses the existing
+`config::sanitize(&[], stderr, false)` before escaping and limiting stderr to
+1,000 characters plus a truncation marker; the sanitizer's existing 256-KiB
+withholding rule remains. The original five-second poll/kill/reap path is shared
+with builtin-only exit-23, SIGTERM and timeout controls. Additional regressions
+reject ambiguous, reordered, missing, duplicated and trailing argument records,
+and check diagnostic truncation, overflow withholding and authentication redaction.
+
+Local working-tree qualification on macOS 27.0.1 (26A434), native arm64,
+Rust/Cargo 1.92.0 passed the exact original regression, diagnostic controls,
+formatting, conformance Clippy, `make test-ag4`, `make conformance-ci` (7 PASS)
+and `make conformance-addressing` (22 PASS, 2 existing UNSUPPORTED).
+The corrected Linux ARM64 test binary, built offline with Rust/Cargo 1.92.0,
+passed the exact original regression and all 16 active EICE tests on both
+Ubuntu 24.04.5 and Ubuntu 26.04.1 containers. The existing isolated-helper entry
+remains ignored as a standalone test and is explicitly executed by its parent;
+no regression is newly ignored or retried to suppress a failure.
+
+Evidence is retained under
+`~/.local/share/borrowser/reviews/ag4/1473-executable-fixture-20261117-a1HpDJ/`:
+command/status receipts, platform/toolchain and source/fixture/binary identities,
+raw logs, and unchanged original comparison records with hashes. The first
+`make test-ag4` attempt failed a Python snapshot mode assertion because the
+qualification runner supplied umask 077. The retained correction uses normal
+umask 022; no test or file-permission contract was changed. Complete local
+`make ci` passed (exit 0, 828.430 seconds) for working-source Git tree
+`fabcb65c997f2227e040aff44697fbb07afbb68c`, with `make-ci.json` and `make-ci.log`
+retaining the result separately from focused checks. This documentation result
+note follows that run and changes the source tree; executable/test sources are
+unchanged. It does not constitute fresh qualification of a committed candidate.
+
+These are uncommitted-source results. The receipts distinguish base HEAD/tree
+from the working source identity. Native Ubuntu x86-64 qualification on both
+versions, committed-source qualification and ordinary hosted CI remain required.
+ARM64 containers do not satisfy those gates. No AWS resources, workflow changes,
+fresh native cleanup-timing campaign or reopening of historical AG4 completion
+is claimed.
+
 ### Native cleanup timing qualification: 2026-10-17
 
 The candidate 2-second natural / at-most-1-second TERM / 2-second forced-finalization
