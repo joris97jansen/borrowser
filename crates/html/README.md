@@ -116,5 +116,6 @@ Execution records support ordinary tests and Rust 1.92's `- should panic`
 annotation, including interleaved `--nocapture` diagnostics from expected panics.
 
 See [the #1471 qualification record](../../docs/ci/1471-html-allocation-qualification.md)
-for reproduction, trust boundaries, evidence requirements and outstanding hosted
-manual/scheduled acceptance. Manual evidence is not scheduled qualification.
+for reproduction, trust boundaries, evidence requirements and completed, verified
+hosted manual and scheduled qualification. Manual evidence is not scheduled
+qualification.
