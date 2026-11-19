@@ -41,6 +41,7 @@ jobs:
         run: cargo test -p html --all-targets --locked --features perf-tests,test-harness
 
       - name: Run html benches
+        shell: bash
         run: |
           mkdir -p ci_artifacts
           cargo bench -p html --bench html_bench --locked --features test-harness | tee ci_artifacts/html_bench.txt
