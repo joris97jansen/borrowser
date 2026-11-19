@@ -60,6 +60,64 @@ fn duplicate_detection_keeps_original_child_order_precedence() {
 }
 
 #[test]
+fn completion_and_full_checker_report_root_header_errors_first() {
+    let check = |arena: PatchValidationArena, detail| {
+        let expected = PatchValidationError::new("post-apply invariants", detail);
+        assert_eq!(
+            arena.assert_invariants(&mut Default::default()),
+            Err(expected.clone())
+        );
+        let attachment = DomPatch::AppendChild {
+            parent: PatchKey(1),
+            child: PatchKey(3),
+        };
+        for marker in [None, arena.root] {
+            // Inject corruption at the read-only checker boundary. Such an
+            // arena is never an admitted input to trusted patch application.
+            let isolated = arena.clone();
+            assert_eq!(
+                isolated.complete_trusted_batch(std::slice::from_ref(&attachment), marker),
+                Err(expected.clone())
+            );
+        }
+    };
+    let mut arena = PatchValidationArena::default();
+    arena.apply_batch(&tree_patches(1, false)).unwrap();
+
+    let mut empty = arena.clone();
+    empty.nodes.clear();
+    check(empty, "root must be absent when no nodes remain");
+
+    let mut undeclared = arena.clone();
+    undeclared.root = None;
+    check(
+        undeclared,
+        "non-empty patch arena must declare a document root",
+    );
+
+    let mut missing = arena.clone();
+    missing.nodes.remove(&PatchKey(1));
+    check(missing, "declared root node is missing");
+
+    let mut wrong_kind = arena.clone();
+    // This element also has a parent. Root kind takes precedence.
+    wrong_kind.root = Some(PatchKey(2));
+    check(wrong_kind, "root PatchKey(2) must be a document node");
+
+    // Both a marked document-order scan and the unmarked attachment check
+    // would reject this doctype. The root's parent error comes first.
+    let root = arena.nodes.get_mut(&PatchKey(1)).unwrap();
+    root.parent = Some(PatchKey(2));
+    root.children.push(PatchKey(3));
+    arena.nodes.get_mut(&PatchKey(3)).unwrap().kind = PatchKind::DocumentType {
+        name: Some("html".into()),
+        public_id: None,
+        system_id: None,
+    };
+    check(arena, "root node must not have a parent");
+}
+
+#[test]
 fn full_validator_preserves_dangling_and_duplicate_child_precedence() {
     let mut healthy = PatchValidationArena::default();
     healthy.apply_batch(&tree_patches(4, false)).unwrap();
@@ -106,27 +164,22 @@ fn full_validator_preserves_dangling_and_duplicate_child_precedence() {
 }
 
 #[test]
-fn subtree_removal_retains_empty_workspace_capacity_until_clear() {
+fn trusted_removal_clear_and_regrowth_preserve_identity_history() {
     let mut arena = PatchValidationArena::default();
-    let mut scratch = PatchValidationScratch::default();
     arena
-        .apply_batch_trusted(&tree_patches(1_024, true), &mut scratch)
+        .apply_batch_trusted(&tree_patches(1_024, true))
         .unwrap();
-    assert_empty(&scratch);
     let node_count = arena.nodes.len();
     let allocated_count = arena.allocated.len();
-    let before = (
-        scratch.child_keys.capacity(),
-        scratch.visited.capacity(),
-        scratch.visiting.capacity(),
-    );
+    let capacities =
+        |arena: &PatchValidationArena| (arena.nodes.capacity(), arena.allocated.capacity());
+    let before = capacities(&arena);
     let mut reference = arena.clone();
     let removal = DomPatch::RemoveNode { key: PatchKey(3) };
     reference
         .apply_batch(std::slice::from_ref(&removal))
         .unwrap();
-    arena.apply_batch_trusted(&[removal], &mut scratch).unwrap();
-    assert_empty(&scratch);
+    arena.apply_batch_trusted(&[removal]).unwrap();
     assert!(!arena.nodes.contains_key(&PatchKey(3)));
     assert!(arena.nodes.contains_key(&PatchKey(4)));
     assert!(arena.nodes.len() < node_count);
@@ -137,16 +190,12 @@ fn subtree_removal_retains_empty_workspace_capacity_until_clear() {
         &arena.materialize().unwrap(),
         DomSnapshotOptions::default(),
     );
-    let after_removal = (
-        scratch.child_keys.capacity(),
-        scratch.visited.capacity(),
-        scratch.visiting.capacity(),
-    );
-    assert_eq!(after_removal.0, before.0);
+    let after_removal = capacities(&arena);
+    assert!(after_removal.0 <= before.0);
     assert_eq!(after_removal.1, before.1);
-    assert!(after_removal.2 >= before.2);
-    arena.assert_invariants(&mut scratch).unwrap();
-    assert_empty(&scratch);
+    arena
+        .assert_invariants(&mut PatchValidationScratch::default())
+        .unwrap();
     let reuse = DomPatch::CreateText {
         key: PatchKey(3),
         text: "forbidden".to_owned(),
@@ -156,42 +205,28 @@ fn subtree_removal_retains_empty_workspace_capacity_until_clear() {
         PatchValidationError::new("create", "duplicate patch key PatchKey(3)")
     );
     arena
-        .apply_batch_trusted(
-            &[
-                DomPatch::CreateText {
-                    key: PatchKey(50_000),
-                    text: "fresh".to_owned(),
-                },
-                DomPatch::AppendChild {
-                    parent: PatchKey(2),
-                    child: PatchKey(50_000),
-                },
-            ],
-            &mut scratch,
-        )
+        .apply_batch_trusted(&[
+            DomPatch::CreateText {
+                key: PatchKey(50_000),
+                text: "fresh".to_owned(),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(2),
+                child: PatchKey(50_000),
+            },
+        ])
         .unwrap();
-    assert_empty(&scratch);
     arena
-        .apply_batch_trusted(
-            &[
-                DomPatch::Clear,
-                DomPatch::CreateDocument {
-                    key: PatchKey(60_000),
-                    doctype: None,
-                },
-            ],
-            &mut scratch,
-        )
+        .apply_batch_trusted(&[
+            DomPatch::Clear,
+            DomPatch::CreateDocument {
+                key: PatchKey(60_000),
+                doctype: None,
+            },
+        ])
         .unwrap();
-    assert_empty(&scratch);
-    let after_clear = (
-        scratch.child_keys.capacity(),
-        scratch.visited.capacity(),
-        scratch.visiting.capacity(),
-    );
-    assert_eq!(after_clear.0, 0);
-    assert!(after_clear.1 < after_removal.1);
-    assert!(after_clear.2 < after_removal.2);
+    let after_clear = capacities(&arena);
+    assert_eq!(arena.allocated.len(), allocated_count + 2);
     assert_eq!(arena.nodes.len(), 1);
     assert!(arena.allocated.contains(&PatchKey(3)));
     assert!(arena.allocated.contains(&PatchKey(50_000)));
@@ -199,20 +234,21 @@ fn subtree_removal_retains_empty_workspace_capacity_until_clear() {
         arena.apply_batch(&[reuse]).unwrap_err(),
         PatchValidationError::new("create", "duplicate patch key PatchKey(3)")
     );
-    arena.assert_invariants(&mut scratch).unwrap();
-    assert_empty(&scratch);
+    arena
+        .assert_invariants(&mut PatchValidationScratch::default())
+        .unwrap();
     eprintln!(
-        "workspace lifetime: initial_nodes={node_count} capacities_before={before:?} after_removal={after_removal:?} after_clear={after_clear:?}"
+        "live and historical key capacities: initial_nodes={node_count} capacities_before={before:?} after_removal={after_removal:?} after_clear={after_clear:?}"
     );
 }
 
 #[test]
-fn repeated_audits_preserve_wide_and_narrow_trees_and_release_on_clear() {
+fn complete_checker_preserves_wide_and_narrow_trees_across_trusted_clear() {
     for binary in [false, true] {
         let patches = tree_patches(1_024, binary);
         let mut arena = PatchValidationArena::default();
         let mut scratch = PatchValidationScratch::default();
-        arena.apply_batch_trusted(&patches, &mut scratch).unwrap();
+        arena.apply_batch_trusted(&patches).unwrap();
         let before = arena.materialize().unwrap();
         for _ in 0..3 {
             arena.assert_invariants(&mut scratch).unwrap();
@@ -230,20 +266,21 @@ fn repeated_audits_preserve_wide_and_narrow_trees_and_release_on_clear() {
         );
         eprintln!("validation workspace binary={binary}: capacities={capacity:?}");
         arena
-            .apply_batch_trusted(
-                &[
-                    DomPatch::Clear,
-                    DomPatch::CreateDocument {
-                        key: PatchKey(20_000),
-                        doctype: None,
-                    },
-                ],
-                &mut scratch,
-            )
+            .apply_batch_trusted(&[
+                DomPatch::Clear,
+                DomPatch::CreateDocument {
+                    key: PatchKey(20_000),
+                    doctype: None,
+                },
+            ])
             .unwrap();
         assert_empty(&scratch);
-        assert_eq!(scratch.child_keys.capacity(), 0);
-        assert!(scratch.visited.capacity() < capacity.1);
+        // Only the independent checker owns this workspace. A trusted Clear
+        // has no audit allocation to keep or release.
+        assert_eq!(scratch.child_keys.capacity(), capacity.0);
+        assert_eq!(scratch.visited.capacity(), capacity.1);
+        arena.assert_invariants(&mut scratch).unwrap();
+        assert_empty(&scratch);
         assert!(
             arena.allocated.contains(&PatchKey(1)),
             "Clear must preserve historical identities"
@@ -361,47 +398,34 @@ fn failed_public_audit_rolls_back_nodes_and_identity_history() {
 }
 
 #[test]
-fn trusted_operation_error_allows_workspace_reuse_in_a_different_arena() {
-    let mut scratch = PatchValidationScratch::default();
+fn trusted_operation_error_does_not_affect_a_fresh_arena() {
     let mut failed = PatchValidationArena::default();
+    failed.apply_batch_trusted(&template_seed_batch()).unwrap();
     failed
-        .apply_batch_trusted(&template_seed_batch(), &mut scratch)
-        .unwrap();
-    failed
-        .apply_batch_trusted(
-            &[
-                DomPatch::CreateText {
-                    key: PatchKey(99),
-                    text: "unpublished".to_owned(),
-                },
-                DomPatch::AppendChild {
-                    parent: PatchKey(999),
-                    child: PatchKey(99),
-                },
-            ],
-            &mut scratch,
-        )
+        .apply_batch_trusted(&[
+            DomPatch::CreateText {
+                key: PatchKey(99),
+                text: "unpublished".to_owned(),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(999),
+                child: PatchKey(99),
+            },
+        ])
         .expect_err("missing parent must terminalize the owner");
     // Never inspect or reuse the partially applied trusted arena.
     drop(failed);
-    assert_empty(&scratch);
 
     let mut next = PatchValidationArena::default();
-    next.apply_batch_trusted(&template_seed_batch(), &mut scratch)
-        .unwrap();
-    next.apply_batch_trusted(
-        &[
-            DomPatch::Clear,
-            DomPatch::CreateDocument {
-                key: PatchKey(99),
-                doctype: None,
-            },
-        ],
-        &mut scratch,
-    )
+    next.apply_batch_trusted(&template_seed_batch()).unwrap();
+    next.apply_batch_trusted(&[
+        DomPatch::Clear,
+        DomPatch::CreateDocument {
+            key: PatchKey(99),
+            doctype: None,
+        },
+    ])
     .unwrap();
-    assert_empty(&scratch);
-    assert_eq!(scratch.child_keys.capacity(), 0);
     assert_eq!(
         next.nodes.len(),
         1,

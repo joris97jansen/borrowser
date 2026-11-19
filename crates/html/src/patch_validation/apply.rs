@@ -2,9 +2,9 @@ use std::collections::HashSet;
 
 use crate::dom_patch::{DomPatch, PatchKey};
 
-use super::PatchValidationScratch;
 use super::error::{ArenaResult, PatchValidationError};
 use super::model::{PatchKind, PatchNode, PatchValidationArena};
+use super::validate::PatchValidationScratch;
 use crate::types::ParserCreatedFragmentKind;
 
 impl PatchValidationArena {
@@ -16,21 +16,14 @@ impl PatchValidationArena {
         Ok(())
     }
 
-    /// Apply a trusted batch in place.
-    ///
-    /// This is intended for internal engine paths that already treat any patch
-    /// validation failure as a terminal invariant violation for the session.
-    /// Unlike `apply_batch`, a failure may leave the arena partially updated.
-    pub(crate) fn apply_batch_trusted(
-        &mut self,
-        patches: &[DomPatch],
-        scratch: &mut PatchValidationScratch,
-    ) -> Result<(), PatchValidationError> {
-        if matches!(patches.first(), Some(DomPatch::Clear)) {
-            *scratch = PatchValidationScratch::default();
-        }
-        self.apply_batch_in_place(patches)?;
-        self.assert_invariants(scratch)
+    /// Apply to a default-empty arena or the valid result of successful admitted
+    /// mutations. A previously failed trusted arena is never an admissible input.
+    /// Completion establishes full structural validity before a drain succeeds.
+    /// On error the owner must discard the arena without inspecting, auditing,
+    /// materializing, exposing or reusing the partially applied state.
+    pub(crate) fn apply_batch_trusted(&mut self, patches: &[DomPatch]) -> ArenaResult<()> {
+        let document_order = self.apply_batch_in_place(patches)?;
+        self.complete_trusted_batch(patches, document_order)
     }
 
     fn clear(&mut self) {
@@ -124,6 +117,8 @@ impl PatchValidationArena {
         let mut stack = vec![child];
         let mut visited = HashSet::new();
         while let Some(current) = stack.pop() {
+            #[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+            super::work::record(|w| w.cycle_pops += 1);
             if !visited.insert(current) {
                 continue;
             }
@@ -160,7 +155,11 @@ impl PatchValidationArena {
         if let Some(parent) = parent
             && let Some(parent_node) = self.nodes.get_mut(&parent)
         {
-            parent_node.children.retain(|existing| *existing != child);
+            parent_node.children.retain(|existing| {
+                #[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+                super::work::record(|w| w.mutation_sibling_tests += 1);
+                *existing != child
+            });
         }
 
         self.nodes
@@ -171,7 +170,7 @@ impl PatchValidationArena {
         Ok(())
     }
 
-    fn append_child(&mut self, parent: PatchKey, child: PatchKey) -> ArenaResult<()> {
+    fn append_child(&mut self, parent: PatchKey, child: PatchKey) -> ArenaResult<bool> {
         if parent == child {
             return Err(PatchValidationError::new(
                 "AppendChild",
@@ -216,7 +215,7 @@ impl PatchValidationArena {
                 .get(&parent)
                 .is_some_and(|node| node.children.last() == Some(&child));
         if already_last {
-            return Ok(());
+            return Ok(false);
         }
 
         self.detach_child(child)?;
@@ -232,7 +231,7 @@ impl PatchValidationArena {
             .ok_or_else(|| PatchValidationError::new("AppendChild child", "missing child"))?
             .parent = Some(parent);
 
-        Ok(())
+        Ok(true)
     }
 
     fn insert_before(
@@ -240,7 +239,7 @@ impl PatchValidationArena {
         parent: PatchKey,
         child: PatchKey,
         before: PatchKey,
-    ) -> ArenaResult<()> {
+    ) -> ArenaResult<bool> {
         if parent == child {
             return Err(PatchValidationError::new(
                 "InsertBefore",
@@ -300,8 +299,16 @@ impl PatchValidationArena {
                 .get(&parent)
                 .ok_or_else(|| PatchValidationError::new("InsertBefore parent", "missing parent"))?
                 .children;
-            let child_index = siblings.iter().position(|key| *key == child);
-            let before_index = siblings.iter().position(|key| *key == before);
+            let child_index = siblings.iter().position(|key| {
+                #[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+                super::work::record(|w| w.mutation_sibling_tests += 1);
+                *key == child
+            });
+            let before_index = siblings.iter().position(|key| {
+                #[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+                super::work::record(|w| w.mutation_sibling_tests += 1);
+                *key == before
+            });
             matches!(
                 (child_index, before_index),
                 (Some(child_index), Some(before_index)) if child_index + 1 == before_index
@@ -311,7 +318,7 @@ impl PatchValidationArena {
         };
 
         if already_in_place {
-            return Ok(());
+            return Ok(false);
         }
 
         self.detach_child(child)?;
@@ -322,7 +329,11 @@ impl PatchValidationArena {
             .ok_or_else(|| PatchValidationError::new("InsertBefore parent", "missing parent"))?
             .children
             .iter()
-            .position(|key| *key == before)
+            .position(|key| {
+                #[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+                super::work::record(|w| w.mutation_sibling_tests += 1);
+                *key == before
+            })
             .ok_or_else(|| {
                 PatchValidationError::new("InsertBefore before", "before child not found in parent")
             })?;
@@ -338,7 +349,7 @@ impl PatchValidationArena {
             .ok_or_else(|| PatchValidationError::new("InsertBefore child", "missing child"))?
             .parent = Some(parent);
 
-        Ok(())
+        Ok(true)
     }
 
     fn remove_subtree(&mut self, key: PatchKey, association_owned: bool) -> ArenaResult<()> {
@@ -367,7 +378,11 @@ impl PatchValidationArena {
         if let Some(parent) = self.nodes.get(&key).and_then(|node| node.parent)
             && let Some(parent_node) = self.nodes.get_mut(&parent)
         {
-            parent_node.children.retain(|child| *child != key);
+            parent_node.children.retain(|child| {
+                #[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+                super::work::record(|w| w.mutation_sibling_tests += 1);
+                *child != key
+            });
         }
 
         for child in children {
@@ -393,7 +408,7 @@ impl PatchValidationArena {
         Ok(())
     }
 
-    fn apply_batch_in_place(&mut self, patches: &[DomPatch]) -> ArenaResult<()> {
+    fn apply_batch_in_place(&mut self, patches: &[DomPatch]) -> ArenaResult<Option<PatchKey>> {
         if patches
             .get(1..)
             .is_some_and(|rest| rest.iter().any(|p| matches!(p, DomPatch::Clear)))
@@ -410,6 +425,7 @@ impl PatchValidationArena {
             start = 1;
         }
 
+        let mut document_order = None;
         for patch in &patches[start..] {
             match patch {
                 DomPatch::Clear => {
@@ -590,14 +606,27 @@ impl PatchValidationArena {
                     )?;
                 }
                 DomPatch::AppendChild { parent, child } => {
-                    self.append_child(*parent, *child)?;
+                    if self.append_child(*parent, *child)?
+                        && self.root == Some(*parent)
+                        && matches!(self.nodes[child].kind, PatchKind::DocumentType { .. })
+                    {
+                        document_order = Some(*parent);
+                    }
                 }
                 DomPatch::InsertBefore {
                     parent,
                     child,
                     before,
                 } => {
-                    self.insert_before(*parent, *child, *before)?;
+                    if self.insert_before(*parent, *child, *before)?
+                        && self.root == Some(*parent)
+                        && matches!(
+                            self.nodes[child].kind,
+                            PatchKind::DocumentType { .. } | PatchKind::Element { .. }
+                        )
+                    {
+                        document_order = Some(*parent);
+                    }
                 }
                 DomPatch::RemoveNode { key } => {
                     self.ensure_node(*key, "RemoveNode target")?;
@@ -670,6 +699,6 @@ impl PatchValidationArena {
             }
         }
 
-        Ok(())
+        Ok(document_order)
     }
 }

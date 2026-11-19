@@ -6,7 +6,8 @@ use std::collections::{HashMap, HashSet};
 use crate::types::ParserCreatedFragmentKind;
 
 #[derive(Clone, Debug)]
-pub(crate) enum PatchKind {
+#[cfg_attr(test, derive(PartialEq))]
+pub(super) enum PatchKind {
     Document {
         doctype: Option<String>,
     },
@@ -37,14 +38,15 @@ pub(crate) enum PatchKind {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct PatchNode {
-    pub(crate) kind: PatchKind,
-    pub(crate) parent: Option<PatchKey>,
-    pub(crate) children: Vec<PatchKey>,
+#[cfg_attr(test, derive(PartialEq))]
+pub(super) struct PatchNode {
+    pub(super) kind: PatchKind,
+    pub(super) parent: Option<PatchKey>,
+    pub(super) children: Vec<PatchKey>,
 }
 
 impl PatchNode {
-    pub(crate) fn allows_children(&self) -> bool {
+    pub(super) fn allows_children(&self) -> bool {
         matches!(
             self.kind,
             PatchKind::Document { .. }
@@ -53,7 +55,7 @@ impl PatchNode {
         )
     }
 
-    pub(crate) fn template_contents(&self) -> Option<PatchKey> {
+    pub(super) fn template_contents(&self) -> Option<PatchKey> {
         match self.kind {
             PatchKind::Element {
                 template_contents, ..
@@ -76,9 +78,9 @@ impl PatchNode {
 /// - recreated content must therefore use fresh keys across the whole session
 #[derive(Clone, Default)]
 pub struct PatchValidationArena {
-    pub(crate) nodes: HashMap<PatchKey, PatchNode>,
-    pub(crate) allocated: HashSet<PatchKey>,
-    pub(crate) root: Option<PatchKey>,
+    pub(super) nodes: HashMap<PatchKey, PatchNode>,
+    pub(super) allocated: HashSet<PatchKey>,
+    pub(super) root: Option<PatchKey>,
 }
 
 #[cfg(feature = "parser-conformance")]
