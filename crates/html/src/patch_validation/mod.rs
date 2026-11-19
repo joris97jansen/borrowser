@@ -8,7 +8,9 @@ mod validate;
 
 pub use error::PatchValidationError;
 pub use model::PatchValidationArena;
-pub(crate) use validate::PatchValidationScratch;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+pub(crate) mod work;

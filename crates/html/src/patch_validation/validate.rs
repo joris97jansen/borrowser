@@ -1,18 +1,16 @@
 use std::collections::HashSet;
 
-use crate::dom_patch::PatchKey;
+use crate::dom_patch::{DomPatch, PatchKey};
 
 use super::error::{ArenaResult, PatchValidationError};
-use super::model::{PatchKind, PatchValidationArena};
+use super::model::{PatchKind, PatchNode, PatchValidationArena};
 
 #[cfg(test)]
 mod tests;
 
-/// Temporary audit data owned by a parser, outside transactional DOM state.
-/// Contents are empty between audits; capacity follows the current baseline's
-/// high-water mark and is released by a leading `Clear` or parser destruction.
+/// Temporary storage for the independent complete structural checker.
 #[derive(Default)]
-pub(crate) struct PatchValidationScratch {
+pub(super) struct PatchValidationScratch {
     child_keys: Vec<(PatchKey, usize)>,
     visited: HashSet<PatchKey>,
     visiting: HashSet<PatchKey>,
@@ -42,10 +40,66 @@ impl PatchValidationScratch {
 }
 
 impl PatchValidationArena {
-    pub(crate) fn assert_invariants(
+    pub(super) fn complete_trusted_batch(
+        &self,
+        patches: &[DomPatch],
+        document_order: Option<PatchKey>,
+    ) -> ArenaResult<()> {
+        #[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+        super::work::record(|w| w.completion_batches += 1);
+        let Some((root, root_node)) = self.checked_root()? else {
+            return Ok(());
+        };
+        if document_order == Some(root) {
+            self.assert_document_child_kind_invariants(root_node)?;
+        }
+        // Only ordinary creates can leave a detached component. A move can
+        // also leave a pre-existing doctype under the wrong parent. Inspect
+        // their final live identities: later operations can repair or remove them.
+        for patch in patches {
+            #[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+            super::work::record(|w| w.completion_patches += 1);
+            let key = match patch {
+                DomPatch::CreateDocumentType { key, .. }
+                | DomPatch::CreateElement { key, .. }
+                | DomPatch::CreateText { key, .. }
+                | DomPatch::CreateComment { key, .. }
+                | DomPatch::CreateProcessingInstruction { key, .. }
+                | DomPatch::AppendChild { child: key, .. }
+                | DomPatch::InsertBefore { child: key, .. } => key,
+                DomPatch::Clear
+                | DomPatch::CreateDocument { .. }
+                | DomPatch::CreateTemplateContents { .. }
+                | DomPatch::RemoveNode { .. }
+                | DomPatch::SetAttributes { .. }
+                | DomPatch::SetText { .. }
+                | DomPatch::AppendText { .. } => continue,
+            };
+            let Some(node) = self.nodes.get(key) else {
+                continue;
+            };
+            if matches!(node.kind, PatchKind::DocumentType { .. }) && node.parent != Some(root) {
+                return Err(PatchValidationError::new(
+                    "post-apply invariants",
+                    format!("doctype node {key:?} must be a document child"),
+                ));
+            }
+            if node.parent.is_none() {
+                return Err(PatchValidationError::new(
+                    "post-apply invariants",
+                    format!("detached non-root node {key:?}"),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn assert_invariants(
         &self,
         scratch: &mut PatchValidationScratch,
     ) -> ArenaResult<()> {
+        #[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+        super::work::record(|w| w.full_checks += 1);
         scratch.clear();
         let result = self.assert_invariants_with_scratch(scratch);
         // The inner audit may return early through `?`; never retain its keys.
@@ -53,10 +107,7 @@ impl PatchValidationArena {
         result
     }
 
-    fn assert_invariants_with_scratch(
-        &self,
-        scratch: &mut PatchValidationScratch,
-    ) -> ArenaResult<()> {
+    fn checked_root(&self) -> ArenaResult<Option<(PatchKey, &PatchNode)>> {
         if self.nodes.is_empty() {
             if self.root.is_some() {
                 return Err(PatchValidationError::new(
@@ -64,7 +115,7 @@ impl PatchValidationArena {
                     "root must be absent when no nodes remain",
                 ));
             }
-            return Ok(());
+            return Ok(None);
         }
 
         let root = self.root.ok_or_else(|| {
@@ -91,9 +142,21 @@ impl PatchValidationArena {
                 "root node must not have a parent",
             ));
         }
-        self.assert_document_child_kind_invariants(root, root_node)?;
+        Ok(Some((root, root_node)))
+    }
+
+    fn assert_invariants_with_scratch(
+        &self,
+        scratch: &mut PatchValidationScratch,
+    ) -> ArenaResult<()> {
+        let Some((root, root_node)) = self.checked_root()? else {
+            return Ok(());
+        };
+        self.assert_document_child_kind_invariants(root_node)?;
 
         for (key, node) in &self.nodes {
+            #[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+            super::work::record(|w| w.audit_nodes += 1);
             if matches!(node.kind, PatchKind::Document { .. }) && *key != root {
                 return Err(PatchValidationError::new(
                     "post-apply invariants",
@@ -191,7 +254,15 @@ impl PatchValidationArena {
                 let matches = parent_node
                     .children
                     .iter()
-                    .filter(|child| **child == *key)
+                    .filter(|child| {
+                        #[cfg(all(
+                            test,
+                            not(feature = "perf-tests"),
+                            not(feature = "count-alloc")
+                        ))]
+                        super::work::record(|w| w.reverse_comparisons += 1);
+                        **child == *key
+                    })
                     .count();
 
                 if matches != 1 {
@@ -211,6 +282,8 @@ impl PatchValidationArena {
 
             let first_duplicate = scratch.first_duplicate_child(&node.children);
             for (index, child) in node.children.iter().enumerate() {
+                #[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+                super::work::record(|w| w.audit_edges += 1);
                 if !self.nodes.contains_key(child) {
                     return Err(PatchValidationError::new(
                         "post-apply invariants",
@@ -265,14 +338,12 @@ impl PatchValidationArena {
         Ok(())
     }
 
-    fn assert_document_child_kind_invariants(
-        &self,
-        _root: PatchKey,
-        root_node: &super::model::PatchNode,
-    ) -> ArenaResult<()> {
+    fn assert_document_child_kind_invariants(&self, root_node: &PatchNode) -> ArenaResult<()> {
         let mut doctype = None;
         let mut first_element = None;
         for child in &root_node.children {
+            #[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+            super::work::record(|w| w.document_children += 1);
             let Some(child_node) = self.nodes.get(child) else {
                 continue;
             };

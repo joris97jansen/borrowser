@@ -3054,7 +3054,12 @@ mod tests {
         .unwrap();
         parser.push_str("<p>x</p>").unwrap();
         parser.finish().unwrap();
-        parser.force_materialization_failure_for_test();
+        parser
+            .inject_patch_for_conformance_test(crate::DomPatch::CreateText {
+                key: crate::PatchKey(u32::MAX),
+                text: String::new(),
+            })
+            .unwrap();
         let mut reserve = |_| Ok(());
         assert!(matches!(
             parser.into_output_with_final_audit(&mut reserve),
@@ -5952,6 +5957,82 @@ mod tests {
         let (_, diagnostics, history) = parser.into_output_with_observations().unwrap();
         assert_eq!(diagnostics, None);
         history.expect("requested complete raw history")
+    }
+
+    #[test]
+    fn trusted_drains_preserve_complete_canonical_document_observations() {
+        let source = b"<p><b><i>a</b>b</i><template><table>z<tr><td>x</table></template><?p data?>";
+        let target = ParserObservationTarget::DocumentParser;
+        let request = final_audit_request(target, ParserObservationInput::Bytes(source));
+        let capture = SurfaceCaptureRequest::Capture { capacity: 512 };
+        let whole = execute_parser_observation(request).unwrap();
+        assert!(
+            matches!(&whole.parse_errors, ObservationState::Captured(errors) if !errors.is_empty())
+        );
+        assert!(matches!(whole.tokens, ObservationState::Captured(_)));
+        assert!(matches!(whole.tree, ObservationState::Captured(_)));
+        assert!(matches!(whole.patches, ObservationState::Captured(_)));
+        assert!(matches!(
+            whole.document_mode,
+            ObservationState::Captured(crate::DocumentMode::Quirks)
+        ));
+        assert!(matches!(whole.transitions, ObservationState::Captured(_)));
+        assert!(matches!(
+            whole.implementation_diagnostics,
+            ObservationState::Captured(_)
+        ));
+        assert!(matches!(
+            whole.unsupported_features,
+            ObservationState::Captured(_)
+        ));
+        assert!(
+            matches!(&whole.final_invariants, ObservationState::Captured(report) if !report.has_failure())
+        );
+        for schedule in [&[1][..], &[1, 2, 3, 7, 64, 128, 256], &[64], &[1024]] {
+            let mut parser = HtmlParser::new_with_conformance_observations(
+                Default::default(),
+                ParserObservationConfig {
+                    tokens: capture,
+                    parse_errors: capture,
+                    implementation_diagnostics: capture,
+                    tree_transitions: capture,
+                    unsupported_features: capture,
+                },
+                PatchHistoryObservationConfig::capture(512),
+            )
+            .unwrap();
+            let mut input = source.as_slice();
+            for &size in schedule.iter().cycle() {
+                if input.is_empty() {
+                    break;
+                }
+                let (chunk, rest) = input.split_at(size.min(input.len()));
+                push_document_bytes(&mut parser, chunk).unwrap();
+                parser.take_patches().unwrap();
+                input = rest;
+            }
+            parser.finish().unwrap();
+            let bounded = ObservationRequest::Capture { capacity: 512 };
+            let (capture, mode, tree, patches, report) = finalize_document_parser(
+                parser,
+                true,
+                bounded,
+                bounded,
+                FinalInvariantRequest::Capture,
+            )
+            .unwrap();
+            let streamed = canonical_result(
+                capture,
+                ObservationState::Captured(mode),
+                tree,
+                patches,
+                target,
+                bounded,
+                report,
+            )
+            .unwrap();
+            assert_eq!(streamed, whole, "{schedule:?}");
+        }
     }
 
     #[test]

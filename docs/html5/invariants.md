@@ -94,36 +94,51 @@ Recommended usage:
 This keeps the emitted patch stream and the builder's internal live tree under
 the same structural contract.
 
-## Parser-Side Patch-Mirror Audit Storage
+## Parser-side patch-mirror validation
 
-`PatchValidationArena` continues to run its complete post-batch structural audit
-after every successful non-empty parser drain. Public `apply_batch` stages and
-audits a clone before committing it. The internal trusted path applies and audits
-in place; any failure remains terminal for the owning parser. See the
-[DomPatch atomic-batch contract](dompatch-contract.md#atomic-batch-rules).
+Every successful nonempty parser drain publishes a structurally valid patch
+mirror. The public `PatchValidationArena::apply_batch` stages the operations on
+a clone and runs the complete structural checker before committing. Its
+duplicate-child check preserves the original child-list error precedence.
+Failure rolls back the tree and historical identities together.
+See the [atomic-batch contract](dompatch-contract.md#atomic-batch-rules).
 
-`HtmlParser` owns one private `PatchValidationScratch` outside transactional DOM
-state. It retains collection capacity, never validation conclusions. Temporary
-keys are cleared before and after every audit, including error returns through
-`?`. Both ordinary draining and conformance finalization use this workspace.
-A leading `Clear` releases its capacity; parser destruction releases it as well.
-Within a baseline, retained storage follows the high-water node count, maximum
-sibling count, and traversal depth, including after subtree removal. Historical
-patch-key retention in the arena is unchanged.
+The private trusted path starts with a default-empty arena or a successful
+admitted state. Structural fields belong to the validator. Operations preserve
+reciprocal, unique child links by detaching before attachment. Cycle checks
+traverse ordinary children and template contents before adding an ordinary edge.
+A template association attaches a fresh fragment to its host atomically. Removal
+consumes the subtree including associated contents. Removed and cleared keys
+remain allocated for the lifetime of the session.
 
-Duplicate-child checks sort a scratch copy of `(PatchKey, original index)` pairs.
-The minimum duplicate occurrence index preserves the original child-order error
-precedence; authoritative children and patch order are never sorted. Reusing a
-vector avoids clearing a wide child hash table for every narrow sibling list.
-The traversal sets are cleared at audit boundaries, not per node;
-`HashSet::clear` retains capacity and costs time proportional to that capacity.
+An intermediate batch may be a forest. Only an ordinary create can leave a
+detached component root. An attachment can also place a doctype under a
+temporary parent. After applying the batch, completion first verifies that an
+empty arena has no root, or that a nonempty arena's declared root exists and
+is a parentless document. This takes at most one node lookup. Completion then
+checks surviving created ordinary nodes and moved children in the borrowed
+patch slice for attachment and doctype placement. Fresh keys make final identity lookups
+unambiguous. With unique incoming edges, acyclicity across both edge kinds,
+and every surviving ordinary non-document node attached, all nodes lead back
+to the single document. An empty tree is valid for the generic arena.
 
-This changes allocation behavior, not audit timing or the full-tree algorithm.
-Each audit still scans the retained structure. Parent/back-reference validation
-still scans each child's parent's sibling list, with total work proportional to
-the sum of squared sibling counts in the worst case. Sorting adds work bounded
-by the sibling lists' lengths and is measured alongside parsing time; this
-contract does not claim linear whole-session CPU cost under frequent drains.
+Appending a doctype to the document or inserting a doctype or element before
+a document child can invalidate doctype order or uniqueness. Each actual such
+edit records the current document key in a batch-local optional marker.
+No-ops and unrelated edits preserve it. Completion checks the final document's
+children once if the identities match. Removing the marked document makes the
+old mark irrelevant; an order-sensitive edit on a replacement records its
+fresh key. Temporary order violations can be repaired before completion.
+
+Completion uses constant auxiliary storage, a pass over the current operations
+with expected constant-time key lookups, and at most one marked document-child
+scan. No completion storage survives success, failure, Clear or parser drop.
+Cycle checks still cost work proportional to the moved subtree. Reordering,
+detachment and removal can scan or shift siblings. The independent complete
+checker still traverses the entire tree and checks reverse references. Neither
+whole-session parsing nor arbitrary sequences of moves have a linear-time
+guarantee. A trusted failure terminates the owner immediately. Consuming
+conformance finalization rejects a poisoned parser before any observation.
 
 ## Internal Live-Tree Boundary
 

@@ -1,4 +1,4 @@
-use super::PatchValidationArena;
+use super::{PatchValidationArena, PatchValidationError};
 use crate::dom_patch::PatchKey;
 use crate::test_support::{html_attribute, html_name};
 use crate::{DomPatch, Node};
@@ -797,4 +797,426 @@ fn processing_instruction_patch_rejects_non_parser_producible_payloads_atomicall
         .render();
         assert_eq!(before, after);
     }
+}
+
+fn document(key: u32) -> DomPatch {
+    DomPatch::CreateDocument {
+        key: PatchKey(key),
+        doctype: None,
+    }
+}
+
+fn doctype(key: u32) -> DomPatch {
+    DomPatch::CreateDocumentType {
+        key: PatchKey(key),
+        name: Some("html".into()),
+        public_id: None,
+        system_id: None,
+    }
+}
+
+fn element(key: u32) -> DomPatch {
+    DomPatch::CreateElement {
+        key: PatchKey(key),
+        name: html_name("div"),
+        attributes: Vec::new(),
+    }
+}
+
+fn append(parent: u32, child: u32) -> DomPatch {
+    DomPatch::AppendChild {
+        parent: PatchKey(parent),
+        child: PatchKey(child),
+    }
+}
+
+fn before(parent: u32, child: u32, anchor: u32) -> DomPatch {
+    DomPatch::InsertBefore {
+        parent: PatchKey(parent),
+        child: PatchKey(child),
+        before: PatchKey(anchor),
+    }
+}
+
+fn assert_keyed_state_eq(actual: &PatchValidationArena, expected: &PatchValidationArena) {
+    assert_eq!(actual.root, expected.root);
+    assert_eq!(actual.nodes, expected.nodes);
+    assert_eq!(actual.allocated, expected.allocated);
+}
+
+fn check_rejected_batch(
+    start: &PatchValidationArena,
+    patches: &[DomPatch],
+) -> (
+    PatchValidationArena,
+    PatchValidationError,
+    PatchValidationError,
+) {
+    // The failed trusted clone drops at the end of this statement.
+    let trusted_error = start.clone().apply_batch_trusted(patches).unwrap_err();
+    let mut reference = start.clone();
+    let public_error = reference.apply_batch(patches).unwrap_err();
+    assert_keyed_state_eq(&reference, start);
+    (reference, trusted_error, public_error)
+}
+
+fn check_completion(
+    start: &PatchValidationArena,
+    patches: &[DomPatch],
+    valid: bool,
+) -> PatchValidationArena {
+    if !valid {
+        // These cases have a single violation or a defined order of errors.
+        let (reference, trusted_error, public_error) = check_rejected_batch(start, patches);
+        assert_eq!(trusted_error, public_error, "{patches:?}");
+        return reference;
+    }
+    let mut trusted = start.clone();
+    let mut reference = start.clone();
+    trusted.apply_batch_trusted(patches).unwrap();
+    reference.apply_batch(patches).unwrap();
+    trusted.assert_invariants(&mut Default::default()).unwrap();
+    assert_keyed_state_eq(&trusted, &reference);
+    if trusted.root.is_some() {
+        crate::dom_snapshot::assert_dom_eq(
+            &trusted.materialize().unwrap(),
+            &reference.materialize().unwrap(),
+            Default::default(),
+        );
+    } else {
+        assert!(trusted.nodes.is_empty() && reference.nodes.is_empty());
+    }
+    reference
+}
+
+#[test]
+fn completion_preserves_equal_siblings_by_key_and_rolls_back_rejected_edits() {
+    use super::model::PatchKind;
+
+    let text = |id| DomPatch::CreateText {
+        key: PatchKey(id),
+        text: "same".into(),
+    };
+    let siblings = check_completion(
+        &PatchValidationArena::default(),
+        &[
+            document(1),
+            element(2),
+            append(1, 2),
+            text(3),
+            append(2, 3),
+            text(4),
+            append(2, 4),
+            before(2, 4, 3),
+        ],
+        true,
+    );
+    assert_eq!(
+        siblings.nodes[&PatchKey(2)].children,
+        [PatchKey(4), PatchKey(3)]
+    );
+    let update = DomPatch::SetText {
+        key: PatchKey(4),
+        text: "edited".into(),
+    };
+    // Stage a reorder and a payload change before creating two detached nodes.
+    let (rolled_back, trusted_error, public_error) =
+        check_rejected_batch(&siblings, &[append(2, 4), update.clone(), text(5), text(6)]);
+    let detached = [PatchKey(5), PatchKey(6)].map(|key| {
+        PatchValidationError::new(
+            "post-apply invariants",
+            format!("detached non-root node {key:?}"),
+        )
+    });
+    for error in [trusted_error, public_error] {
+        assert!(detached.contains(&error), "{error}");
+    }
+    let accepted = check_completion(&rolled_back, &[update, text(5), append(2, 5)], true);
+    assert_eq!(
+        accepted.nodes[&PatchKey(2)].children,
+        [PatchKey(4), PatchKey(3), PatchKey(5)]
+    );
+    for (id, expected) in [(4, "edited"), (3, "same"), (5, "same")] {
+        assert!(
+            matches!(&accepted.nodes[&PatchKey(id)].kind, PatchKind::Text { text } if text == expected)
+        );
+    }
+}
+
+#[test]
+fn document_order_marker_survives_unrelated_operations_and_noops() {
+    let batch = [
+        document(1),
+        element(2),
+        append(1, 2),
+        doctype(3),
+        append(1, 3),
+        element(4),
+        append(2, 4),
+        DomPatch::SetAttributes {
+            key: PatchKey(4),
+            attributes: vec![],
+        },
+        append(2, 4),
+        append(1, 3),
+    ];
+    check_completion(&Default::default(), &batch, false);
+    let mut repaired = batch.to_vec();
+    repaired.push(before(1, 3, 2));
+    check_completion(&Default::default(), &repaired, true);
+}
+
+#[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+#[test]
+fn obsolete_document_order_marker_skips_replacement_root() {
+    let batch = [
+        document(1),
+        doctype(2),
+        append(1, 2),
+        DomPatch::RemoveNode { key: PatchKey(1) },
+        document(3),
+        element(4),
+        append(3, 4),
+    ];
+    let mut arena = PatchValidationArena::default();
+    let (result, work) = super::work::measure(|| arena.apply_batch_trusted(&batch));
+    result.unwrap();
+    assert_eq!(work.document_children, 0);
+    assert_eq!(work.completion_patches, batch.len());
+    check_completion(&Default::default(), &batch, true);
+}
+
+#[test]
+fn replacement_document_order_marker_rejects_invalid_doctype() {
+    let batch = [
+        document(1),
+        doctype(2),
+        append(1, 2),
+        DomPatch::RemoveNode { key: PatchKey(1) },
+        document(3),
+        element(4),
+        append(3, 4),
+        doctype(5),
+        append(3, 5),
+    ];
+    check_completion(&Default::default(), &batch, false);
+}
+
+#[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+fn append_document_comment_and_pi(comment: u32, pi: u32) -> [DomPatch; 4] {
+    [
+        DomPatch::CreateComment {
+            key: PatchKey(comment),
+            text: "comment".into(),
+        },
+        append(1, comment),
+        DomPatch::CreateProcessingInstruction {
+            key: PatchKey(pi),
+            target: "pi".into(),
+            data: "data".into(),
+        },
+        append(1, pi),
+    ]
+}
+
+#[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+fn wide_document_with_trailing_doctype() -> PatchValidationArena {
+    let mut patches = vec![document(1)];
+    for comment in (10..138).step_by(2) {
+        patches.extend(append_document_comment_and_pi(comment, comment + 1));
+    }
+    patches.extend([doctype(2), append(1, 2)]);
+    let mut arena = PatchValidationArena::default();
+    arena.apply_batch(&patches).unwrap();
+    arena
+}
+
+#[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+fn measure_document_child_visits(arena: &mut PatchValidationArena, patches: &[DomPatch]) -> usize {
+    let mut reference = arena.clone();
+    let (result, work) = super::work::measure(|| arena.apply_batch_trusted(patches));
+    result.unwrap();
+    assert_eq!(work.completion_batches, 1);
+    assert_eq!(work.full_checks, 0);
+    reference.apply_batch(patches).unwrap();
+    assert_keyed_state_eq(arena, &reference);
+    work.document_children
+}
+
+#[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+#[test]
+fn wide_document_skips_child_scan_for_noops_and_unrelated_edits() {
+    let mut arena = wide_document_with_trailing_doctype();
+    assert_eq!(
+        measure_document_child_visits(&mut arena, &[append(1, 2)]),
+        0
+    );
+    assert_eq!(
+        measure_document_child_visits(&mut arena, &append_document_comment_and_pi(3, 4)),
+        0
+    );
+    arena.apply_batch(&[element(5), append(1, 5)]).unwrap();
+    assert_eq!(
+        measure_document_child_visits(
+            &mut arena,
+            &[
+                DomPatch::CreateText {
+                    key: PatchKey(6),
+                    text: "first".into()
+                },
+                append(5, 6),
+                DomPatch::AppendText {
+                    key: PatchKey(6),
+                    text: " second".into()
+                },
+            ]
+        ),
+        0
+    );
+}
+
+#[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+#[test]
+fn wide_document_scans_children_once_after_repaired_order_edits() {
+    let mut arena = wide_document_with_trailing_doctype();
+    // Insert an element before the doctype, move the doctype ahead of it,
+    // then append the doctype and repair its order again in the same batch.
+    let visits = measure_document_child_visits(
+        &mut arena,
+        &[
+            element(3),
+            before(1, 3, 2),
+            before(1, 2, 3),
+            append(1, 2),
+            before(1, 2, 3),
+        ],
+    );
+    assert_eq!(visits, arena.nodes[&PatchKey(1)].children.len());
+}
+
+#[test]
+fn trusted_completion_matches_reference_through_moves_and_repaired_forests() {
+    let mut start = PatchValidationArena::default();
+    start.apply_batch(&nested_template_seed_batch()).unwrap();
+    for (patches, valid) in [
+        (
+            vec![
+                element(20),
+                element(21),
+                append(20, 21),
+                append(4, 20),
+                before(4, 21, 20),
+                append(7, 20),
+                DomPatch::RemoveNode { key: PatchKey(6) },
+            ],
+            true,
+        ),
+        (vec![element(20), append(20, 3), append(4, 20)], false),
+        (vec![element(20), element(21), append(20, 21)], false),
+        (vec![doctype(20), append(2, 20), before(1, 20, 2)], true),
+        (vec![doctype(20), before(1, 20, 2), append(2, 20)], false),
+        (
+            vec![
+                doctype(20),
+                before(1, 20, 2),
+                doctype(21),
+                before(1, 21, 20),
+            ],
+            false,
+        ),
+        (
+            vec![
+                doctype(20),
+                before(1, 20, 2),
+                element(21),
+                before(1, 21, 20),
+            ],
+            false,
+        ),
+        (vec![element(20), before(2, 20, 5)], false),
+        (vec![element(20), append(5, 20)], false),
+        (vec![element(0)], false),
+        (vec![element(2)], false),
+        (vec![append(1, 2)], false),
+        (vec![DomPatch::Clear, document(1)], false),
+        (vec![element(20), DomPatch::Clear], false),
+        (vec![DomPatch::Clear], true),
+    ] {
+        check_completion(&start, &patches, valid);
+    }
+}
+
+#[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+#[test]
+fn full_checker_work_is_counted_separately() {
+    use super::work::{Work, measure};
+    let patches = nested_template_seed_batch();
+    let mut arena = PatchValidationArena::default();
+    let ((), work) = measure(|| arena.apply_batch_trusted(&patches).unwrap());
+    assert_eq!(work.completion_patches, patches.len());
+    assert_eq!(work.full_checks, 0);
+    assert_eq!(work.audit_nodes, 0);
+    let ((), reference) = measure(|| arena.assert_invariants(&mut Default::default()).unwrap());
+    assert_eq!(reference.full_checks, 1);
+    assert_eq!(reference.audit_nodes, arena.nodes.len());
+    assert!(reference.audit_edges > 0 && reference.reverse_comparisons > 0);
+    assert_eq!(reference.completion_patches, 0);
+    assert!(std::panic::catch_unwind(|| measure(|| measure(|| ()))).is_err());
+    assert_eq!(measure(|| ()).1, Work::default());
+}
+
+#[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+#[test]
+fn trusted_leaf_appends_and_text_updates_do_no_sibling_or_full_tree_work() {
+    use super::work::measure;
+    let mut arena = PatchValidationArena::default();
+    arena
+        .apply_batch_trusted(&[document(1), element(2), append(1, 2)])
+        .unwrap();
+    let count = 256;
+    let ((), work) = measure(|| {
+        for id in 3..3 + count {
+            arena
+                .apply_batch_trusted(&[
+                    DomPatch::CreateText {
+                        key: PatchKey(id),
+                        text: String::new(),
+                    },
+                    append(2, id),
+                ])
+                .unwrap();
+        }
+    });
+    assert_eq!(work.completion_batches, count as usize);
+    assert_eq!(work.completion_patches, 2 * count as usize);
+    assert_eq!(work.cycle_pops, count as usize);
+    assert_eq!(
+        (
+            work.full_checks,
+            work.document_children,
+            work.mutation_sibling_tests
+        ),
+        (0, 0, 0)
+    );
+    let ((), updates) = measure(|| {
+        for id in 3..3 + count {
+            arena
+                .apply_batch_trusted(&[DomPatch::AppendText {
+                    key: PatchKey(id),
+                    text: "x".into(),
+                }])
+                .unwrap();
+        }
+    });
+    assert_eq!(updates.completion_patches, count as usize);
+    assert_eq!(
+        (
+            updates.cycle_pops,
+            updates.mutation_sibling_tests,
+            updates.document_children,
+            updates.full_checks
+        ),
+        (0, 0, 0, 0)
+    );
+    arena.assert_invariants(&mut Default::default()).unwrap();
 }

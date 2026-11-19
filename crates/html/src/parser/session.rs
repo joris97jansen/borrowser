@@ -17,7 +17,7 @@ use crate::html5::shared::{ParserObservationCapture, ParserObservationConfig};
 use crate::html5::tree_builder::TreeBuilderFinalAuditAllocation;
 #[cfg(feature = "parser-conformance")]
 use crate::html5::{PatchHistoryObservationConfig, RawPatchHistoryCapture};
-use crate::patch_validation::{PatchValidationArena, PatchValidationScratch};
+use crate::patch_validation::PatchValidationArena;
 
 use super::options::HtmlParseOptions;
 use super::output::ParseOutput;
@@ -52,7 +52,6 @@ use super::types::{HtmlParseCounters, HtmlParseError, HtmlParseEvent};
 pub struct HtmlParser {
     session: Html5ParseSession,
     arena: PatchValidationArena,
-    validation_scratch: PatchValidationScratch,
     patches_drained_before_output: bool,
     poisoned: bool,
 }
@@ -156,7 +155,6 @@ impl HtmlParser {
         Ok(Self {
             session,
             arena: PatchValidationArena::default(),
-            validation_scratch: PatchValidationScratch::default(),
             patches_drained_before_output: false,
             poisoned: false,
         })
@@ -177,7 +175,6 @@ impl HtmlParser {
         Ok(Self {
             session,
             arena: PatchValidationArena::default(),
-            validation_scratch: PatchValidationScratch::default(),
             patches_drained_before_output: false,
             poisoned: false,
         })
@@ -447,6 +444,8 @@ impl HtmlParser {
         mut self,
         reserve: &mut impl FnMut(crate::conformance::ObservationReservationSite) -> Result<(), ()>,
     ) -> Result<ConformanceFinalizedOutput, ConformanceFinalizationError> {
+        self.ensure_not_poisoned()
+            .map_err(ConformanceFinalizationError::Parser)?;
         let builder_pending_patch_count_after_finish =
             self.session.builder_pending_patch_count_for_final_audit();
         let session_audit =
@@ -481,7 +480,7 @@ impl HtmlParser {
             // immediately; the partially updated private arena is never
             // inspected, materialized, audited, or exposed.
             self.arena
-                .apply_batch_trusted(&batch.patches, &mut self.validation_scratch)
+                .apply_batch_trusted(&batch.patches)
                 .map_err(|error| {
                     ConformanceFinalizationError::Parser(HtmlParseError::PatchValidation(
                         error.to_string(),
@@ -604,17 +603,14 @@ impl HtmlParser {
 
     #[cfg(all(test, feature = "parser-conformance"))]
     pub(crate) fn force_materialization_failure_for_test(&mut self) {
-        self.arena.root = Some(crate::PatchKey(u32::MAX));
+        self.arena = PatchValidationArena::default();
     }
 
     pub(super) fn apply_patches(&mut self, patches: &[DomPatch]) -> Result<(), HtmlParseError> {
         if patches.is_empty() {
             return Ok(());
         }
-        if let Err(err) = self
-            .arena
-            .apply_batch_trusted(patches, &mut self.validation_scratch)
-        {
+        if let Err(err) = self.arena.apply_batch_trusted(patches) {
             self.poisoned = true;
             return Err(HtmlParseError::PatchValidation(err.to_string()));
         }

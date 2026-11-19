@@ -439,7 +439,7 @@ fn patch_validation_failure_poisons_parser_for_future_mutation_and_drains() {
 }
 
 #[test]
-fn full_audit_failure_after_successful_drains_poison_parser_output() {
+fn completion_failure_after_successful_drains_poisons_parser_output() {
     let mut parser = HtmlParser::new(HtmlParseOptions::default()).unwrap();
     for chunk in [b"<!doctype html><div>".as_slice(), b"ok</div>"] {
         parser.push_bytes(chunk).unwrap();
@@ -451,7 +451,7 @@ fn full_audit_failure_after_successful_drains_poison_parser_output() {
             key: PatchKey(u32::MAX),
             text: "detached".to_owned(),
         }])
-        .expect_err("a previously successful audit cannot validate new corruption");
+        .expect_err("a previously successful drain cannot admit a detached create");
     assert!(matches!(error, crate::HtmlParseError::PatchValidation(_)));
     let fatal = crate::HtmlParseError::Fatal(crate::ParserFatalError::EngineInvariant);
     assert_eq!(parser.push_bytes(b"more").unwrap_err(), fatal);
@@ -462,7 +462,7 @@ fn full_audit_failure_after_successful_drains_poison_parser_output() {
 }
 
 #[test]
-fn reused_validation_workspace_preserves_complete_streaming_output() {
+fn trusted_completion_preserves_complete_streaming_output() {
     let source = "<!doctype html><div title='x&amp;y'>a\r\n€<span>z</span></div><template><b>inside</b></template><?target data?>";
     let whole = parse_document(source, HtmlParseOptions::default()).unwrap();
     for size in [1, 2, 7, 1024] {
@@ -1995,4 +1995,107 @@ fn facade_and_one_shot_preserve_typed_parser_fatal_failure() {
     )
     .expect_err("one-shot parse must publish no output after fatal failure");
     assert_eq!(one_shot, fatal);
+}
+
+#[cfg(all(test, not(feature = "perf-tests"), not(feature = "count-alloc")))]
+#[test]
+fn trusted_completion_work_is_bounded_across_drains() {
+    use crate::patch_validation::{PatchValidationArena, work::measure};
+    let balanced = (0..5).fold("<p>x</p>".to_owned(), |s, _| format!("<div>{s}{s}</div>"));
+    for source in [
+        "<div>x</div>".repeat(96),
+        format!("{}x{}", "<div>".repeat(80), "</div>".repeat(80)),
+        balanced,
+        "<p><b><i>x</b>y</i><table>z<tr><td>a</table>".repeat(8),
+        "<template><div>x</div></template>".repeat(12),
+    ] {
+        let whole = parse_document(&source, Default::default()).unwrap();
+        for schedule in [&[1][..], &[1, 2, 3, 7, 64, 128, 256], &[64], &[1024]] {
+            for drain_each in [true, false] {
+                let mut parser = HtmlParser::new(Default::default()).unwrap();
+                let mut batches = Vec::new();
+                let (output, work) = measure(|| {
+                    let mut pos = 0;
+                    for &size in schedule.iter().cycle() {
+                        if pos == source.len() {
+                            break;
+                        }
+                        let end = (pos + size).min(source.len());
+                        parser.push_bytes(&source.as_bytes()[pos..end]).unwrap();
+                        parser.pump().unwrap();
+                        if drain_each {
+                            let batch = parser.take_patches().unwrap();
+                            if !batch.is_empty() {
+                                batches.push(batch);
+                            }
+                            assert!(parser.take_patches().unwrap().is_empty());
+                        }
+                        pos = end;
+                    }
+                    parser.finish().unwrap();
+                    let last = parser.take_patches().unwrap();
+                    if !last.is_empty() {
+                        batches.push(last);
+                    }
+                    parser.into_output().unwrap()
+                });
+                assert_eq!(work.completion_batches, batches.len());
+                assert_eq!(work.completion_patches, whole.patches.len());
+                assert_eq!(
+                    (
+                        work.full_checks,
+                        work.audit_nodes,
+                        work.audit_edges,
+                        work.reverse_comparisons
+                    ),
+                    (0, 0, 0, 0)
+                );
+                assert_eq!(work.document_children, 0);
+                assert!(work.cycle_pops > 0);
+                // Reference validation runs outside the measured parser work.
+                let mut reference = PatchValidationArena::default();
+                for batch in &batches {
+                    reference.apply_batch(batch).unwrap();
+                }
+                crate::dom_snapshot::assert_dom_eq(
+                    &reference.materialize().unwrap(),
+                    &output.document,
+                    Default::default(),
+                );
+                crate::dom_snapshot::assert_dom_eq(
+                    &whole.document,
+                    &output.document,
+                    Default::default(),
+                );
+                assert_eq!(
+                    batches.into_iter().flatten().collect::<Vec<_>>(),
+                    whole.patches
+                );
+                assert_eq!(output.counters, whole.counters);
+                assert_eq!(output.document_mode, whole.document_mode);
+                assert_eq!(output.parse_errors, whole.parse_errors);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "parser-conformance")]
+#[test]
+fn poisoned_trusted_arena_rejects_consuming_final_audit_before_observation() {
+    let mut parser = HtmlParser::new(Default::default()).unwrap();
+    parser.push_str("<p>x").unwrap();
+    parser.finish().unwrap();
+    parser.take_patches().unwrap();
+    parser
+        .apply_patches(&[DomPatch::CreateComment {
+            key: PatchKey(u32::MAX),
+            text: String::new(),
+        }])
+        .unwrap_err();
+    assert!(matches!(
+        parser.into_output_with_final_audit(&mut |_| panic!("observed poisoned session")),
+        Err(super::session::ConformanceFinalizationError::Parser(
+            crate::HtmlParseError::Fatal(crate::ParserFatalError::EngineInvariant)
+        ))
+    ));
 }
