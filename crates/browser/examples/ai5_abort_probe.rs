@@ -417,7 +417,7 @@ fn cases() -> Vec<FailureCase> {
         ("chunk-end", b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\n".to_vec(), Read, Some(200), 3),
         ("chunk-syntax", b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nPRIVATE\r\n".to_vec(), Read, Some(200), 0),
         ("coding", b"HTTP/1.1 200 OK\r\nContent-Encoding: PRIVATE\r\nContent-Length: 0\r\n\r\n".to_vec(), UnsupportedResponse, Some(200), 0),
-        ("redirect", b"HTTP/1.1 302 Found\r\nLocation: http://user:pass@localhost/PRIVATE\r\nContent-Length: 0\r\n\r\n".to_vec(), UnsupportedResponse, Some(302), 0),
+        ("redirect", b"HTTP/1.1 302 Found\r\nLocation: http://user:pass@localhost/PRIVATE\r\nContent-Length: 0\r\n\r\n".to_vec(), Redirect(net::RedirectError::UrlCredentialsUnsupported), Some(302), 0),
         ("closed", vec![], Transport, None, 0),
     ];
     for (name, suffix) in [

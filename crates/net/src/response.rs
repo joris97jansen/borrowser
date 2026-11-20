@@ -2,7 +2,7 @@ use std::{fmt, sync::Arc};
 
 use addressing::{BrowserUrl, UrlFailure, UrlParseOutcome};
 
-use crate::{ContentType, HeaderError, HttpHeaders, InvalidContentType};
+use crate::{ContentType, HeaderError, HttpHeaders, InvalidContentType, RedirectHop};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResponseAdmissionError {
@@ -74,7 +74,7 @@ pub struct NetworkResponseInfo {
 
 // Start, completion, failure context and retained consumers share immutable
 // facts. This also keeps the existing bus/platform event envelopes compact.
-#[derive(PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 struct ResponseFacts {
     original_url: BrowserUrl,
     requested_url: String,
@@ -83,6 +83,7 @@ struct ResponseFacts {
     status: Option<HttpStatus>,
     headers: HttpHeaders,
     local_content_type: Option<String>,
+    redirect_chain: Vec<RedirectHop>,
 }
 
 impl NetworkResponseInfo {
@@ -153,12 +154,25 @@ impl NetworkResponseInfo {
                 status,
                 headers,
                 local_content_type,
+                redirect_chain: Vec::new(),
             }),
         }
     }
 
     pub fn original_url(&self) -> &BrowserUrl {
         &self.facts.original_url
+    }
+    /// Entered redirect acquisitions, not evidence of HTTP transmission. Empty
+    /// on supplied/local metadata unless the production Fetch loop followed hops.
+    pub fn redirect_chain(&self) -> &[RedirectHop] {
+        &self.facts.redirect_chain
+    }
+
+    pub(crate) fn with_redirect_chain(mut self, hops: &[RedirectHop]) -> Self {
+        // Copy-on-write: another observer may retain the acquired snapshot.
+        // Selected Start/terminal events reuse the resulting immutable snapshot.
+        Arc::make_mut(&mut self.facts).redirect_chain = hops.to_vec();
+        self
     }
     pub fn requested_url(&self) -> &str {
         &self.facts.requested_url
@@ -223,6 +237,7 @@ impl fmt::Debug for NetworkResponseInfo {
             .field("response_url", &provenance)
             .field("status", &self.facts.status)
             .field("headers", &self.facts.headers)
+            .field("redirect_chain", &self.facts.redirect_chain)
             .field(
                 "local_content_type_present",
                 &self.facts.local_content_type.is_some(),

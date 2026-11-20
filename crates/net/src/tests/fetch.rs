@@ -77,13 +77,21 @@ fn unsupported_and_rejected_urls_fail_before_a_resource_response() {
 }
 
 #[test]
-fn ai5_selected_redirect_preserves_url_without_traversal() {
+fn ai6_selected_redirect_preserves_original_correlation_and_follows_current_target() {
     let attempts = Arc::new(AtomicUsize::new(0));
     let observed = attempts.clone();
     let server = TestHttpServer::spawn(move |req| {
         observed.fetch_add(1, Ordering::SeqCst);
-        assert_eq!(req.path, "/redirect", "no redirect target may be contacted");
-        HttpReply::response("302 Found", vec![("Location", "/final".into())], Vec::new())
+        if req.path == "/redirect" {
+            HttpReply::response(
+                "302 Found",
+                vec![("Location", "/final".into())],
+                b"discarded".to_vec(),
+            )
+        } else {
+            assert_eq!(req.path, "/final");
+            HttpReply::response("200 OK", vec![], b"selected".to_vec())
+        }
     });
     let issued = server.url("/redirect");
     let result = collect_fetch_terminal(
@@ -91,23 +99,19 @@ fn ai5_selected_redirect_preserves_url_without_traversal() {
         ResourceKind::Html,
         HttpClientPolicy::default(),
     );
-    assert!(result.start.is_none());
-    assert!(result.done.is_none());
-    assert!(result.body.is_empty());
-    let error = result
-        .error
-        .expect("Follow is unsupported until explicit traversal exists");
-    assert_eq!(error.error_kind, NetworkErrorKind::UnsupportedResponse);
-    assert_eq!(error.body.unwrap().delivered_bytes(), 0);
-    let response = error.response.unwrap();
-    assert_eq!(response.status_code(), Some(302));
+    assert!(result.error.is_none());
+    assert_eq!(result.body, b"selected");
+    assert_eq!(result.done.unwrap().bytes_received, 8);
+    let response = result.start.unwrap().response;
+    assert_eq!(response.status_code(), Some(200));
     assert_eq!(response.requested_url(), issued);
-    assert_eq!(response.reported_response_url(), Some(issued.as_str()));
     assert_eq!(
-        response.headers().values("location").next(),
-        Some(b"/final".as_slice())
+        response.reported_response_url(),
+        Some(server.url("/final").as_str())
     );
-    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    assert_eq!(response.redirect_chain()[0].status().code(), 302);
+    assert_eq!(response.redirect_chain().len(), 1);
+    assert_eq!(attempts.load(Ordering::SeqCst), 2);
 }
 
 #[test]
@@ -159,7 +163,10 @@ fn ai5_credential_redirect_is_rejected_without_authenticating_target() {
     assert!(result.done.is_none());
     assert!(result.body.is_empty());
     let error = result.error.unwrap();
-    assert_eq!(error.error_kind, NetworkErrorKind::UnsupportedResponse);
+    assert_eq!(
+        error.error_kind,
+        NetworkErrorKind::Redirect(crate::RedirectError::UrlCredentialsUnsupported)
+    );
     assert_eq!(error.body.unwrap().delivered_bytes(), 0);
     assert!(!error.error.contains("user:pass"));
     let response = error.response.unwrap();

@@ -1,5 +1,8 @@
 # AI1: Fetch, HTTP Networking, And Response-Handling Architecture Contract
 
+Current redirect execution is qualified by [AI6](ai6-redirect-handling-limits-final-url.md).
+Earlier implementation descriptions retain their dated historical scope.
+
 Issue: [#1121](https://github.com/joris97jansen/borrowser/issues/1121).
 Milestone AI — Fetch, HTTP Networking, Redirects, and Response Handling.
 Authored: 2026-11-05. Inspected code baseline: master
@@ -538,3 +541,16 @@ connection safety and release-abort qualification. It supersedes conflicting
 legacy execution qualifications above without rewriting these historical records.
 This unmerged candidate is not a hosted-CI, merge, issue-closure or milestone-
 completion claim. AI6–AI9 retain their stated independent responsibilities.
+
+## AI6 implementation qualification (2026-11-20)
+
+The [AI6 contract](ai6-redirect-handling-limits-final-url.md) implements the
+section 7 GET redirect decisions and qualifies earlier single-attempt limitations.
+Its private byte adaptation escapes original non-ASCII Location bytes before AH
+resolution, preserving ASCII syntax and existing escapes. The Fetch byte/string
+boundary remains unsettled (#883/#814); the cited WPT is tentative. This is an
+explicit interoperability choice, not an unambiguous normative decoding claim.
+History commits on backend acquisition entry, and copy-on-write snapshots retain
+original correlation and acquired context. Shared-pool disposal evidence requires
+a retained agent and positive reuse controls; custom-policy fresh pools alone
+do not qualify exclusion. Historical AI1/AI5 descriptions remain dated evidence.

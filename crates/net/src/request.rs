@@ -20,8 +20,7 @@ impl TryFrom<&str> for RequestMethod {
     }
 }
 
-/// Follow intent. AI5 rejects a selected redirect requiring another request;
-/// AI6 owns explicit per-hop admission and traversal. No policy override.
+/// Follow within Fetch's bounded GET subset. No public policy override.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RedirectPolicy {
     Follow,
@@ -130,7 +129,7 @@ impl FetchRequest {
     pub fn original_url(&self) -> &BrowserUrl {
         self.address.url()
     }
-    /// Initial attempt only until AI5/AI6 expose backend hops.
+    /// Complete current admitted attempt target; original issuance stays intact.
     pub fn current_url(&self) -> &BrowserUrl {
         &self.current_url
     }
@@ -161,6 +160,21 @@ impl FetchRequest {
         ResourceAddress::new(self.current_url.clone(), self.address.kind()).retrieval_key()
     }
 
+    /// Derive the next HTTP attempt without changing original correlation or
+    /// restoring metadata from an earlier hop. Callers cannot mutate requests.
+    pub(crate) fn for_redirect(&self, target: BrowserUrl) -> Result<Self, RequestAdmissionError> {
+        if !matches!(target.scheme(), "http" | "https") {
+            return Err(RequestAdmissionError::UnsupportedScheme);
+        }
+        if !target.username().is_empty() || target.password().is_some() {
+            return Err(RequestAdmissionError::UrlCredentialsUnsupported);
+        }
+        Ok(Self {
+            current_url: target,
+            ..self.clone()
+        })
+    }
+
     /// Existing execution/limit routes, not a general Fetch destination model.
     pub fn validate_route(&self, route: ExecutionRoute) -> Result<(), RequestAdmissionError> {
         match (self.address.kind(), route) {
@@ -171,8 +185,8 @@ impl FetchRequest {
         }
     }
 
-    /// Temporary event-correlation projection, not transport targeting. AI3/AI5
-    /// evolve the string response protocol. Keep CSS's exact fragmentless issued
+    /// Original event-correlation projection, independent of current targeting.
+    /// Keep CSS's exact fragmentless issued
     /// provenance and complete document/image lookup strings unchanged.
     pub fn legacy_issued_url(
         &self,

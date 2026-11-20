@@ -1,5 +1,8 @@
 # AI3: Typed Response, HTTP Status, Headers, And Body Delivery
 
+Current redirect execution is qualified by [AI6](ai6-redirect-handling-limits-final-url.md).
+Earlier implementation descriptions retain their dated historical scope.
+
 Issue: [#1123](https://github.com/joris97jansen/borrowser/issues/1123).
 Milestone AI — Fetch, HTTP Networking, Redirects, and Response Handling.
 Implementation base: master `809a9b1ec115192e9b94411271397b8f54426e5f`.
@@ -502,3 +505,13 @@ connection safety and release-abort qualification. It supersedes conflicting
 legacy execution qualifications above without rewriting these historical records.
 This unmerged candidate is not a hosted-CI, merge, issue-closure or milestone-
 completion claim. AI6–AI9 retain their stated independent responsibilities.
+
+## AI6 immutable redirect history qualification (2026-11-20)
+
+[AI6](ai6-redirect-handling-limits-final-url.md) adds bounded actual redirect hops
+to the existing immutable response facts. History attachment is copy-on-write;
+retained acquired snapshots cannot change. A hop records entry into a target
+backend acquisition, not transmission/server receipt. Rejected or cancelled
+pending targets add no hop. After a next-attempt failure, the latest acquired
+source response can remain failure context with the entered history; no target
+response is invented. Selected Start and terminal facts remain identical.

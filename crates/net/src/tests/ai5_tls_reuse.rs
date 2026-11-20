@@ -20,12 +20,14 @@ enum Scenario {
     CloseNotify,
     Truncated,
     Corrupt,
+    UnreadRedirect,
 }
 
 #[derive(Debug, Default)]
 struct Seen {
     connections: AtomicUsize,
     paths: Mutex<Vec<String>>,
+    requests: Mutex<Vec<(usize, String)>>,
     reads: Mutex<Vec<usize>>,
     eligibility: Mutex<Vec<bool>>,
     partial_delivered: AtomicUsize,
@@ -46,8 +48,9 @@ impl ureq::TlsConnector for Connector {
         dns: &str,
         socket: Box<dyn ureq::ReadWrite>,
     ) -> Result<Box<dyn ureq::ReadWrite>, ureq::Error> {
-        self.seen.connections.fetch_add(1, Ordering::SeqCst);
+        let connection = self.seen.connections.fetch_add(1, Ordering::SeqCst) + 1;
         let peer = Peer {
+            connection,
             server: rustls::ServerConnection::new(self.server.clone()).unwrap(),
             socket,
             queued: VecDeque::new(),
@@ -101,6 +104,7 @@ impl ureq::ReadWrite for Observe {
 
 #[derive(Debug)]
 struct Peer {
+    connection: usize,
     server: rustls::ServerConnection,
     socket: Box<dyn ureq::ReadWrite>,
     queued: VecDeque<u8>,
@@ -133,6 +137,11 @@ impl Peer {
 
     fn respond(&mut self, path: &str) {
         self.seen.paths.lock().unwrap().push(path.into());
+        self.seen
+            .requests
+            .lock()
+            .unwrap()
+            .push((self.connection, path.into()));
         self.seen
             .versions
             .lock()
@@ -168,8 +177,14 @@ impl Peer {
             head.extend_from_slice(b"\r\n\r\n");
             head
         } else {
-            let mut response =
-                format!("HTTP/1.1 200 OK\r\nContent-Length: {length}\r\nX-Pad: ").into_bytes();
+            let head = if self.scenario == Scenario::UnreadRedirect {
+                format!(
+                    "HTTP/1.1 302 Found\r\nLocation: /two\r\nContent-Length: {length}\r\nX-Pad: "
+                )
+            } else {
+                format!("HTTP/1.1 200 OK\r\nContent-Length: {length}\r\nX-Pad: ")
+            };
+            let mut response = head.into_bytes();
             response.resize(8192 - 7, b'x');
             response.extend_from_slice(b"\r\n\r\none");
             response
@@ -178,7 +193,7 @@ impl Peer {
         let poison = b"HTTP/1.1 200 OK\r\nContent-Length: 6\r\n\r\nPOISON";
         if matches!(
             self.scenario,
-            Scenario::Plaintext | Scenario::HeadPlaintext(_)
+            Scenario::Plaintext | Scenario::HeadPlaintext(_) | Scenario::UnreadRedirect
         ) {
             response.extend_from_slice(poison);
         }
@@ -374,6 +389,69 @@ fn controlled_tls12_and_tls13_preserve_the_same_session_for_sequential_requests(
             rustls::ProtocolVersion::TLSv1_3
         };
         assert_eq!(*seen.versions.lock().unwrap(), [version; 2]);
+    }
+}
+
+#[test]
+fn ai6_real_tls_buffered_unread_redirect_isolation_has_a_shared_agent_reuse_control() {
+    use crate::NetEvent;
+    for tls12 in [false, true] {
+        for scenario in [Scenario::Clean, Scenario::UnreadRedirect] {
+            let (agent, url, seen) = fixture(scenario, tls12);
+            let events = super::ai5_connections::collect_agent(&agent, &format!("{url}/one"));
+            let expected: &[u8] = if scenario == Scenario::Clean {
+                b"one"
+            } else {
+                b"two"
+            };
+            let Some(NetEvent::Start {
+                response: start, ..
+            }) = events.first()
+            else {
+                panic!("{events:?}");
+            };
+            assert_eq!(
+                start.redirect_chain().len(),
+                usize::from(scenario == Scenario::UnreadRedirect)
+            );
+            let payload: Vec<_> = events
+                .iter()
+                .filter_map(|event| match event {
+                    NetEvent::Chunk { chunk, .. } => Some(chunk.as_slice()),
+                    _ => None,
+                })
+                .flatten()
+                .copied()
+                .collect();
+            assert_eq!(payload, expected);
+            assert!(
+                matches!(events.last(),Some(NetEvent::Done{response,body,..}) if response==start && body.delivered_bytes()==3)
+            );
+            if scenario == Scenario::Clean {
+                assert_eq!(acquire(&agent, &url, "/two").unwrap(), b"two");
+                assert_eq!(
+                    seen.connections.load(Ordering::SeqCst),
+                    1,
+                    "positive control must retain the TLS session"
+                );
+                assert_eq!(
+                    *seen.requests.lock().unwrap(),
+                    [(1, "/one".into()), (1, "/two".into())]
+                );
+            } else {
+                assert_eq!(seen.connections.load(Ordering::SeqCst), 2);
+                assert_eq!(
+                    *seen.requests.lock().unwrap(),
+                    [(1, "/one".into()), (2, "/two".into())]
+                );
+            }
+            let version = if tls12 {
+                rustls::ProtocolVersion::TLSv1_2
+            } else {
+                rustls::ProtocolVersion::TLSv1_3
+            };
+            assert_eq!(*seen.versions.lock().unwrap(), [version; 2]);
+        }
     }
 }
 

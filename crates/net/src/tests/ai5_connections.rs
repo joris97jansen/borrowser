@@ -7,7 +7,10 @@ use super::{
 };
 use crate::{
     FetchRequest, NetEvent, NetworkErrorKind,
-    backend::{AcquiredHttpResponse, HttpAcquireError, HttpResponseBackend, response_metadata},
+    backend::{
+        AcquiredHttpResponse, HttpAcquireError, HttpResponseBackend, build_http_request,
+        response_metadata,
+    },
     fetch::fetch_http_with_backend,
 };
 use core_types::ResourceKind;
@@ -584,17 +587,16 @@ impl HttpResponseBackend for AgentBackend {
     fn acquire(
         &self,
         req: &FetchRequest,
-        _: ResourceKind,
+        kind: ResourceKind,
     ) -> Result<AcquiredHttpResponse, HttpAcquireError> {
-        let url = req.legacy_issued_url(ResourceKind::Html).unwrap();
-        let response = self
-            .0
-            .get(&url)
+        let url = req.legacy_issued_url(kind).unwrap();
+        let response = match build_http_request(&self.0, req, kind)
+            .set("Accept-Encoding", "gzip")
             .call()
-            .map_err(|_| HttpAcquireError::Network {
-                kind: NetworkErrorKind::Transport,
-                error: "controlled acquisition failure".into(),
-            })?;
+        {
+            Ok(response) | Err(ureq::Error::Status(_, response)) => response,
+            Err(error) => return Err(HttpAcquireError::Backend(Box::new(error))),
+        };
         Ok(AcquiredHttpResponse {
             metadata: response_metadata(req, &url, &response)
                 .map_err(HttpAcquireError::Response)?,
@@ -633,6 +635,179 @@ fn transmission_failure_reports_one_typed_fetch_error_without_replay() {
         );
         assert_eq!(seen.connections.load(Ordering::SeqCst), 1);
         assert_eq!(seen.attempts.load(Ordering::SeqCst), 2);
+    }
+}
+
+struct UnreadRedirectBackend {
+    agent: AgentBackend,
+    reads: Arc<AtomicUsize>,
+    dropped: Arc<AtomicBool>,
+    source: Arc<Mutex<Option<crate::NetworkResponseInfo>>>,
+}
+struct UnreadRedirectReader {
+    reader: Box<dyn Read>,
+    reads: Arc<AtomicUsize>,
+    dropped: Arc<AtomicBool>,
+}
+impl Read for UnreadRedirectReader {
+    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        self.reads.fetch_add(1, Ordering::SeqCst);
+        self.reader.read(out)
+    }
+}
+impl Drop for UnreadRedirectReader {
+    fn drop(&mut self) {
+        self.dropped.store(true, Ordering::Release);
+    }
+}
+impl HttpResponseBackend for UnreadRedirectBackend {
+    fn acquire(
+        &self,
+        req: &FetchRequest,
+        kind: ResourceKind,
+    ) -> Result<AcquiredHttpResponse, HttpAcquireError> {
+        if req.current_url().path() == "/final" {
+            assert!(
+                self.dropped.load(Ordering::Acquire),
+                "next acquisition preceded intermediate reader release"
+            );
+        }
+        let mut acquired = self.agent.acquire(req, kind)?;
+        if req.current_url().path() == "/redirect" {
+            *self.source.lock().unwrap() = Some(acquired.metadata.clone());
+            acquired.reader = Box::new(UnreadRedirectReader {
+                reader: acquired.reader,
+                reads: self.reads.clone(),
+                dropped: self.dropped.clone(),
+            });
+        }
+        Ok(acquired)
+    }
+}
+
+#[test]
+fn ai6_unread_redirects_exclude_unfinished_connections_from_a_demonstrably_shared_pool() {
+    for https in [false, true] {
+        for framing in ["fixed", "chunked", "close"] {
+            let server = WireServer::spawn(https, move |req, _| {
+                if req.path == "/redirect" {
+                    // These bytes may already be buffered by head acquisition.
+                    // Fetch must not consume any more of this body reader.
+                    return match framing {
+                        "fixed" => WireReply::persistent(b"HTTP/1.1 302 Found\r\nLocation: /final\r\nContent-Length: 3\r\n\r\nold"),
+                        "chunked" => WireReply::persistent(b"HTTP/1.1 302 Found\r\nLocation: /final\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nold\r\n0\r\n\r\n"),
+                        _ => WireReply::close(b"HTTP/1.1 302 Found\r\nLocation: /final\r\n\r\nold"),
+                    };
+                }
+                let status = if req.path == "/final" { 500 } else { 200 };
+                WireReply::persistent(format!(
+                    "HTTP/1.1 {status} Status\r\nContent-Length: {}\r\n\r\n{}",
+                    req.path.len(),
+                    req.path
+                ))
+            });
+            // A single retained agent, including custom-root HTTPS. Clones share
+            // its pool; this never calls agent_for_policy once per redirect hop.
+            let agent = capacity_agent(8, 8);
+            for path in ["/eligible-a", "/eligible-b"] {
+                assert_pool_fetch_completed(
+                    &collect_agent(&agent, &server.url(path)),
+                    &server.url(path),
+                    path.as_bytes(),
+                );
+            }
+            let reads = Arc::new(AtomicUsize::new(0));
+            let dropped = Arc::new(AtomicBool::new(false));
+            let source = Arc::new(Mutex::new(None));
+            let (tx, rx) = mpsc::channel();
+            let issued = server.url("/redirect");
+            fetch_http_with_backend(
+                request(&issued, ResourceKind::Html),
+                ResourceKind::Html,
+                UnreadRedirectBackend {
+                    agent: AgentBackend(agent.clone()),
+                    reads: reads.clone(),
+                    dropped: dropped.clone(),
+                    source: source.clone(),
+                },
+                Arc::new(AtomicBool::new(false)),
+                Arc::new(move |e| tx.send(e).unwrap()),
+            )
+            .unwrap();
+            let events = events_until_closed(rx);
+            let Some(NetEvent::Start {
+                response: admitted, ..
+            }) = events.first()
+            else {
+                panic!("{events:?}");
+            };
+            assert_eq!(
+                admitted.status_code(),
+                Some(500),
+                "Status responses must stay HTTP responses"
+            );
+            assert_eq!(admitted.requested_url(), issued);
+            assert_eq!(
+                admitted.reported_response_url(),
+                Some(server.url("/final").as_str())
+            );
+            assert_eq!(admitted.redirect_chain().len(), 1);
+            assert!(
+                matches!(events.last(),Some(NetEvent::Done{response,body,..}) if response==admitted && body.delivered_bytes()==6)
+            );
+            let payload: Vec<_> = events
+                .iter()
+                .filter_map(|e| {
+                    if let NetEvent::Chunk { chunk, .. } = e {
+                        Some(chunk.as_slice())
+                    } else {
+                        None
+                    }
+                })
+                .flatten()
+                .copied()
+                .collect();
+            assert_eq!(payload, b"/final");
+            assert_eq!(reads.load(Ordering::SeqCst), 0);
+            assert!(dropped.load(Ordering::Acquire));
+            assert!(
+                source
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .unwrap()
+                    .redirect_chain()
+                    .is_empty()
+            );
+            assert_pool_fetch_completed(
+                &collect_agent(&agent, &server.url("/after")),
+                &server.url("/after"),
+                b"/after",
+            );
+            let seen = server.finish();
+            assert_eq!(seen.len(), 5);
+            let warm = connection_for(&seen, "/eligible-a");
+            assert_eq!(
+                warm,
+                connection_for(&seen, "/eligible-b"),
+                "positive reuse control"
+            );
+            assert_eq!(
+                warm,
+                connection_for(&seen, "/redirect"),
+                "redirect used the same live pool"
+            );
+            let selected = connection_for(&seen, "/final");
+            assert_ne!(
+                warm, selected,
+                "unread intermediate connection reused: {https}/{framing}"
+            );
+            assert_eq!(
+                selected,
+                connection_for(&seen, "/after"),
+                "selected completion remains reusable"
+            );
+        }
     }
 }
 

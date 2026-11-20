@@ -39,6 +39,7 @@ pub(super) fn format_network_error(
         NetworkErrorKind::ResourceLimit => {
             format!("Resource limit loading {resource_label}")
         }
+        NetworkErrorKind::Redirect(_) => format!("Redirect error loading {resource_label}"),
     };
     match status_code {
         Some(code) => format!("{message} [HTTP {code}]"),

@@ -1,5 +1,8 @@
 # AI4: HTTP Response Acquisition And Deterministic Fake Networking
 
+Current redirect execution is qualified by [AI6](ai6-redirect-handling-limits-final-url.md).
+Earlier implementation descriptions retain their dated historical scope.
+
 Issue: [#1124](https://github.com/joris97jansen/borrowser/issues/1124).
 Milestone AI — Fetch, HTTP Networking, Redirects, and Response Handling.
 Implementation baseline: master `212690a6267762d740f9e7050b86e45675f7e756`.
@@ -246,3 +249,12 @@ connection safety and release-abort qualification. It supersedes conflicting
 legacy execution qualifications above without rewriting these historical records.
 This unmerged candidate is not a hosted-CI, merge, issue-closure or milestone-
 completion claim. AI6–AI9 retain their stated independent responsibilities.
+
+## AI6 shared traversal qualification (2026-11-20)
+
+[AI6](ai6-redirect-handling-limits-final-url.md) replaces the historical absence
+of traversal in shared Fetch. FakeNetwork remains an immutable memory-only
+individual-attempt lookup using the current AH retrieval projection; Fetch alone
+resolves and follows Location. It has no real fallback or public fault scheduler.
+Actual-chain tests observe acquisition entries and reader release, rather than
+registering precomputed limit failures or inferring hops from reported URL changes.

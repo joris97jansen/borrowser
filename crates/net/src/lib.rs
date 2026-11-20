@@ -17,6 +17,7 @@ mod headers;
 mod limits;
 mod log;
 mod policy;
+mod redirect;
 mod request;
 mod response;
 mod stream;
@@ -28,6 +29,7 @@ pub use event::{NetEvent, NetworkErrorKind};
 pub use fetch::fetch_stream;
 pub use headers::{HeaderError, HttpHeaders};
 pub use policy::{HttpClientPolicy, HttpTimeoutPolicy, TlsTrustStore};
+pub use redirect::{RedirectError, RedirectHop};
 pub use request::{FetchRequest, RedirectPolicy, RequestAdmissionError, RequestMethod};
 pub use response::{HttpStatus, NetworkResponseInfo, ResponseAdmissionError};
 

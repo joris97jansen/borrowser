@@ -1,5 +1,8 @@
 # AI2: Typed Fetch Requests And Production Request Construction
 
+Current redirect execution is qualified by [AI6](ai6-redirect-handling-limits-final-url.md).
+Earlier implementation descriptions retain their dated historical scope.
+
 Issue: [#1122](https://github.com/joris97jansen/borrowser/issues/1122).
 Milestone AI — Fetch, HTTP Networking, Redirects, and Response Handling.
 Implementation baseline: master `92ab29634c29b8b68d202d9bda8becbed8e52c6a`.
@@ -389,3 +392,13 @@ connection safety and release-abort qualification. It supersedes conflicting
 legacy execution qualifications above without rewriting these historical records.
 This unmerged candidate is not a hosted-CI, merge, issue-closure or milestone-
 completion claim. AI6–AI9 retain their stated independent responsibilities.
+
+## AI6 current-target execution qualification (2026-11-20)
+
+[AI6](ai6-redirect-handling-limits-final-url.md) evolves the initial-current-target
+limitation. Private checked request derivation preserves original address/context,
+GET, ordinary fields and issued correlation while advancing current_url. Real
+execution uses the complete current URL; AH retrieval identity and the wire omit
+fragments. CSS correlation remains its original fragmentless issued spelling,
+while acquired response provenance retains complete current/final URLs. Backend
+following remains disabled and credential-bearing targets fail before acquisition.

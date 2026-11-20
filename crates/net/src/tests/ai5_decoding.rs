@@ -129,7 +129,8 @@ fn terminal(
                 events.last(),
                 Some(NetEvent::Error {
                     error_kind: NetworkErrorKind::MalformedResponse
-                        | NetworkErrorKind::UnsupportedResponse,
+                        | NetworkErrorKind::UnsupportedResponse
+                        | NetworkErrorKind::Redirect(_),
                     ..
                 })
             ),
@@ -140,7 +141,7 @@ fn terminal(
 }
 
 #[test]
-fn redirects_share_admission_and_never_execute_a_second_request() {
+fn ai6_repeated_locations_share_admission_and_never_execute_a_second_request() {
     for https in [false, true] {
         for status in [301, 302, 303, 307, 308] {
             let server = WireServer::spawn(https, move |req, addr| {
@@ -174,7 +175,13 @@ fn redirects_share_admission_and_never_execute_a_second_request() {
                 ResourceKind::Html,
             );
             for events in [&real, &fake] {
-                let facts = terminal(events, Err((NetworkErrorKind::UnsupportedResponse, 0)));
+                let facts = terminal(
+                    events,
+                    Err((
+                        NetworkErrorKind::Redirect(crate::RedirectError::RepeatedLocation),
+                        0,
+                    )),
+                );
                 assert_eq!(facts.status_code(), Some(status));
                 assert_eq!(facts.headers().values("location").count(), 2);
                 assert_eq!(events.len(), 1);

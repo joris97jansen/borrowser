@@ -326,7 +326,7 @@ fn credential_redirect_target_is_never_contacted_before_admission() {
     assert_eq!(requests.len(), 1);
     error(
         &events,
-        NetworkErrorKind::UnsupportedResponse,
+        NetworkErrorKind::Redirect(crate::RedirectError::UrlCredentialsUnsupported),
         Some(302),
         Some(0),
     );
@@ -334,7 +334,7 @@ fn credential_redirect_target_is_never_contacted_before_admission() {
 }
 
 #[test]
-fn fake_follow_redirect_must_share_the_temporary_fetch_rejection() {
+fn ai6_fake_follow_redirect_shares_selected_response_lifecycle() {
     let target = "https://fixture.invalid/redirect";
     let req = request(target, ResourceKind::Html);
     let mut headers = HttpHeaders::new();
@@ -352,6 +352,20 @@ fn fake_follow_redirect_must_share_the_temporary_fetch_rejection() {
             ),
         )
         .unwrap();
+    builder
+        .register_response(
+            &addressing::BrowserUrl::parse("https://fixture.invalid/target")
+                .unwrap()
+                .url,
+            RequestMethod::Get,
+            FakeResponse::new(
+                HttpStatus::try_from(500).unwrap(),
+                HttpHeaders::new(),
+                b"selected".to_vec(),
+                Some("https://fixture.invalid/target".into()),
+            ),
+        )
+        .unwrap();
     let network = builder.build();
     let (tx, rx) = mpsc::channel();
     network
@@ -366,13 +380,9 @@ fn fake_follow_redirect_must_share_the_temporary_fetch_rejection() {
         .unwrap();
     let events = events_until_closed(rx);
     assert_lifecycle(&events, target);
-    error(
-        &events,
-        NetworkErrorKind::UnsupportedResponse,
-        Some(302),
-        Some(0),
-    );
-    no_start(&events);
+    let response = done(&events, 500, b"selected");
+    assert_eq!(response.redirect_chain().len(), 1);
+    assert_eq!(response.requested_url(), target);
 }
 
 #[test]

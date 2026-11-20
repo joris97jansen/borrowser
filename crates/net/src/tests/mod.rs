@@ -8,6 +8,7 @@ mod ai5_tls_reuse;
 mod backend;
 mod fetch;
 mod limits;
+mod redirects;
 mod request_adapter;
 mod status;
 mod support;

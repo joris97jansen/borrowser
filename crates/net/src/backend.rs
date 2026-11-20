@@ -1,4 +1,4 @@
-//! Selected HTTP response acquisition, not an observable individual-attempt API.
+//! Individual HTTP attempt acquisition under Fetch-owned redirect coordination.
 use std::io::Read;
 
 use core_types::ResourceKind;
@@ -96,17 +96,17 @@ pub(crate) fn backend_failure(error: &ureq::Error) -> (NetworkErrorKind, &'stati
 
 // The full request stays owned by the worker. Only admitted fields enter ureq;
 // initiator/origin facts never implicitly generate policy or credential headers.
-// Keep the complete legacy input URL for response metadata compatibility; ureq
-// excludes the fragment from the wire request target. AI5 owns backend evolution.
+// Execute the complete current admitted target. Ureq preserves its provenance
+// but excludes fragments from the wire. Original issued strings are correlation.
 pub(crate) fn build_http_request(
     agent: &ureq::Agent,
     request: &FetchRequest,
     kind: ResourceKind,
 ) -> ureq::Request {
-    let url = request
-        .legacy_issued_url(kind)
+    request
+        .validate_route(kind)
         .expect("validated execution route");
-    let mut built = agent.get(&url);
+    let mut built = agent.get(request.current_url().as_str());
     for (name, value) in request.headers().iter() {
         let value = std::str::from_utf8(value).expect("admitted ASCII request field");
         built = built.set(name, value);

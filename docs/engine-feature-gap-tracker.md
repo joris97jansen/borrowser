@@ -1084,13 +1084,13 @@ Missing or incomplete:
 - full security policy enforcement, including CORS, CSP, mixed-content and
   filesystem access policies; AH5 supplies origin identity and same-origin
   classification, not authorization
-- complete WHATWG Fetch/redirect/response handling, despite AI2–AI5 typed
-  HTTP/HTTPS/file requests/responses; AI5 rejects traversal pending AI6
+- complete WHATWG Fetch/redirect/response handling, despite the AI2–AI6 bounded
+  HTTP/HTTPS/file and GET redirect subset; see the dated AI6 candidate below
 - MIME sniffing and complete response-type processing
 - cookies, HTTP cache, storage and service workers
-- complete networking integration beyond the AI2–AI5 typed transport subset;
-  redirect orchestration, aggregate loader metadata and AG networking fixtures
-  remain AI6/AI8/AI9, rather than legacy string-request migration
+- complete networking integration beyond the AI2–AI6 typed transport/redirect subset;
+  broader failures, aggregate loader metadata and AG networking fixtures
+  remain AI7/AI8/AI9
 - complete scheme/creation-context support and JavaScript-facing URL APIs
 - broad URL/origin/addressing WPT integration beyond pinned representative cases
 - resource loading for fonts, media, and broader image formats
@@ -1768,3 +1768,26 @@ implementation, not to a newly successful macOS CI run.
   compliance, browser compatibility and general rendering conformance remain
   gaps. See the
   [harness README](../crates/conformance/README.md).
+
+## AI6 redirect implementation candidate (2026-11-20)
+
+[AI6 #1126](platform/ai6-redirect-handling-limits-final-url.md) adds Fetch-owned
+GET redirects (301/302/303/307/308), AH Location resolution/fragment inheritance,
+original/current/final provenance, immutable entered-acquisition history and the
+twenty-follow budget. Missing Location selects; empty resolves; repeated values,
+invalid URLs, forbidden schemes and normalized credentials fail before following.
+A private bounded byte adaptation preserves raw field bytes and escapes only
+non-ASCII bytes before AH; specification issues remain open and the WPT tentative.
+Intermediate readers are released unread by Fetch; retained-agent/shared-pool
+controls, actual HTTP/HTTPS identities and real TLS seams qualify disposal.
+Runtime/consumer tests cover final bases and original image keys.
+
+This is an uncommitted local candidate; validation is recorded in the AI6 contract.
+Current affected lanes passed 680 tests and the Browser observation lane passed
+391, without failures/ignores. Full CI remains red at nine native Chromium
+ownership wrappers reproduced on untouched base and candidate. All other CI
+gates completed independently; no hosted or merge qualification is claimed.
+Existing GitHub closure from imported rust-url history does not establish this
+implementation's publication, review, hosted qualification or completion. AI7
+broader failures/cancellation/timeouts, AI8 aggregate metadata, AI9 AG integration
+and later cache/security/navigation capabilities remain pending with their owners.
