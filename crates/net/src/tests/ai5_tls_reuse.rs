@@ -546,7 +546,7 @@ fn tls_truncation_and_corruption_preserve_payload_and_discard_failed_readers() {
             .collect();
         assert_eq!(payload, b"one");
         assert!(
-            matches!(events.last(), Some(crate::NetEvent::Error { response: Some(response), body: Some(body), error_kind: crate::NetworkErrorKind::Read, .. }) if response == admitted && body.delivered_bytes() == 3)
+            matches!(events.last(), Some(crate::NetEvent::Error { response: Some(response), body: Some(body), error_kind, .. }) if *error_kind == if matches!(scenario, Scenario::Corrupt) {crate::NetworkErrorKind::TlsFailure} else {crate::NetworkErrorKind::Read} && response == admitted && body.delivered_bytes() == 3)
         );
         assert_eq!(
             events

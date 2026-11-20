@@ -153,37 +153,24 @@ pub(crate) struct StreamFailure {
 }
 
 fn read_failure(error: io::Error, body: BodyProgress) -> StreamFailure {
-    fn metadata_limit(error: &io::Error) -> bool {
-        error
-            .get_ref()
-            .and_then(|source| source.downcast_ref::<ureq::Error>())
-            .is_some_and(|error| error.kind() == ureq::ErrorKind::BodyMetadataTooLarge)
-    }
     let cause = error
         .get_ref()
         .and_then(|source| source.downcast_ref::<HttpBodyError>());
-    let (kind, message) = match cause {
-        Some(HttpBodyError::EncodedLimit) => (
-            NetworkErrorKind::ResourceLimit,
-            "encoded HTTP body limit exceeded",
-        ),
-        Some(HttpBodyError::SourceRead(source)) if metadata_limit(source) => (
-            NetworkErrorKind::ResourceLimit,
-            "HTTP body framing metadata limit exceeded",
-        ),
-        Some(HttpBodyError::Gzip(_)) => {
-            (NetworkErrorKind::Read, "invalid or incomplete gzip content")
+    let kind = match cause {
+        Some(HttpBodyError::EncodedLimit) => {
+            NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::EncodedBody)
         }
-        _ if metadata_limit(&error) => (
-            NetworkErrorKind::ResourceLimit,
-            "HTTP body framing metadata limit exceeded",
-        ),
-        _ => (NetworkErrorKind::Read, "response body read failed"),
+        Some(HttpBodyError::SourceRead(source)) => {
+            crate::backend::typed_failure(source).unwrap_or(NetworkErrorKind::Read)
+        }
+        Some(HttpBodyError::Gzip(_)) => NetworkErrorKind::ContentDecoding,
+        // Bare readers also serve local files. They provide no HTTP provenance.
+        None => NetworkErrorKind::Read,
     };
     StreamFailure {
         kind,
         body,
-        error: message.into(),
+        error: kind.diagnostic().into(),
     }
 }
 
@@ -215,7 +202,12 @@ pub(crate) fn verify_empty_body<R: Read>(
                 });
             }
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-            Err(error) => return Err(read_failure(error, body)),
+            Err(error) => {
+                return Err(read_failure(
+                    HttpBodyError::SourceRead(error).into_io(),
+                    body,
+                ));
+            }
         }
     }
 }
@@ -254,7 +246,9 @@ pub(crate) fn stream_reader<R: Read>(
                 }
                 if n > take {
                     return Err(StreamFailure {
-                        kind: NetworkErrorKind::ResourceLimit,
+                        kind: NetworkErrorKind::ResourceLimit(
+                            crate::ResourceLimitKind::DecodedBody,
+                        ),
                         body: BodyProgress::try_new(kind, total)
                             .expect("bounded stream accounting"),
                         error: format!(
@@ -276,6 +270,100 @@ pub(crate) fn stream_reader<R: Read>(
 mod http_body_tests {
     use super::*;
     use std::io::{Cursor, Write};
+
+    #[test]
+    fn ai7_bare_and_http_wrapped_source_errors_have_distinct_provenance() {
+        for (source, expected) in [
+            (io::ErrorKind::TimedOut, NetworkErrorKind::Timeout),
+            (
+                io::ErrorKind::ConnectionReset,
+                NetworkErrorKind::ConnectionFailure,
+            ),
+            (io::ErrorKind::WouldBlock, NetworkErrorKind::Read),
+            (io::ErrorKind::UnexpectedEof, NetworkErrorKind::Read),
+            (io::ErrorKind::InvalidData, NetworkErrorKind::Read),
+        ] {
+            let progress = BodyProgress::try_new(ResourceKind::Html, 3).unwrap();
+            let error = || io::Error::new(source, "https://user:password@PRIVATE/");
+            assert_eq!(read_failure(error(), progress).kind, NetworkErrorKind::Read);
+            let failure = read_failure(HttpBodyError::SourceRead(error()).into_io(), progress);
+            assert_eq!(failure.kind, expected);
+            assert_eq!(failure.body, progress);
+            assert!(!failure.error.contains("PRIVATE"));
+            // Exercise the actual shared reader path as well as its projection:
+            // the same finite prefix/error is bare for files and tagged for HTTP.
+            for http in [false, true] {
+                let source = SourceFault {
+                    bytes: Cursor::new(b"abc".to_vec()),
+                    offset: 3,
+                    metadata: false,
+                    kind: source,
+                };
+                let mut reader: Box<dyn Read> = if http {
+                    http_body_reader(
+                        Box::new(source),
+                        ResourceKind::Html,
+                        ContentCoding::Identity,
+                    )
+                } else {
+                    Box::new(source)
+                };
+                let callback: Arc<dyn Fn(NetEvent) + Send + Sync> = Arc::new(|event| {
+                    assert!(matches!(event, NetEvent::Chunk { chunk, .. } if chunk == b"abc"));
+                });
+                let failure = stream_reader(
+                    1,
+                    "fixture",
+                    ResourceKind::Html,
+                    &Arc::new(AtomicBool::new(false)),
+                    &callback,
+                    &mut reader,
+                )
+                .err()
+                .unwrap();
+                assert_eq!(
+                    failure.kind,
+                    if http {
+                        expected
+                    } else {
+                        NetworkErrorKind::Read
+                    }
+                );
+                assert_eq!(failure.body.delivered_bytes(), 3);
+            }
+        }
+        let error = || {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                rustls::Error::InvalidCertificate(rustls::CertificateError::UnknownIssuer),
+            )
+        };
+        let progress = BodyProgress::try_new(ResourceKind::Html, 0).unwrap();
+        assert_eq!(read_failure(error(), progress).kind, NetworkErrorKind::Read);
+        assert_eq!(
+            read_failure(HttpBodyError::SourceRead(error()).into_io(), progress).kind,
+            NetworkErrorKind::TlsFailure
+        );
+    }
+
+    #[test]
+    fn ai7_205_source_timeouts_use_http_provenance_and_keep_zero_progress() {
+        struct Timeout;
+        impl Read for Timeout {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                Err(io::Error::new(io::ErrorKind::TimedOut, "PRIVATE"))
+            }
+        }
+        let failure = verify_empty_body(
+            ResourceKind::Html,
+            &Arc::new(AtomicBool::new(false)),
+            &mut Timeout,
+        )
+        .err()
+        .unwrap();
+        assert_eq!(failure.kind, NetworkErrorKind::Timeout);
+        assert_eq!(failure.body.delivered_bytes(), 0);
+    }
 
     fn gzip(bytes: &[u8]) -> Vec<u8> {
         let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
@@ -310,7 +398,9 @@ mod http_body_tests {
                             ));
                             assert_eq!(
                                 read_failure(error, BodyProgress::try_new(route, 0).unwrap()).kind,
-                                NetworkErrorKind::ResourceLimit
+                                NetworkErrorKind::ResourceLimit(
+                                    crate::ResourceLimitKind::EncodedBody
+                                )
                             );
                             assert!(reader.read(&mut buffer).is_err());
                             break;
@@ -327,6 +417,7 @@ mod http_body_tests {
         bytes: Cursor<Vec<u8>>,
         offset: usize,
         metadata: bool,
+        kind: io::ErrorKind,
     }
     impl Read for SourceFault {
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
@@ -345,7 +436,7 @@ mod http_body_tests {
                     let response: ureq::Response = wire.parse().unwrap();
                     response.into_reader().read(&mut [0]).unwrap_err()
                 } else {
-                    io::Error::other("https://user:pass@PRIVATE/source")
+                    io::Error::new(self.kind, "https://user:pass@PRIVATE/source")
                 });
             }
             let n = buf.len().min(self.offset - position).min(7);
@@ -375,12 +466,49 @@ mod http_body_tests {
                     BodyProgress::try_new(ResourceKind::Html, delivered.len()).unwrap()
                 )
                 .kind,
-                NetworkErrorKind::ResourceLimit
+                NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::EncodedBody)
             );
             assert!(
                 reader.read(&mut [0]).is_err(),
                 "failure must not become successful EOF"
             );
+        }
+    }
+
+    #[test]
+    fn ai7_typed_source_causes_survive_every_gzip_stage_without_becoming_decoding_failures() {
+        let one = gzip(&[b'a'; 4096]);
+        let mut two = one.clone();
+        two.extend_from_slice(&one);
+        for (kind, expected) in [
+            (io::ErrorKind::TimedOut, NetworkErrorKind::Timeout),
+            (
+                io::ErrorKind::ConnectionReset,
+                NetworkErrorKind::ConnectionFailure,
+            ),
+            (io::ErrorKind::WouldBlock, NetworkErrorKind::Read),
+            (io::ErrorKind::UnexpectedEof, NetworkErrorKind::Read),
+            (io::ErrorKind::InvalidData, NetworkErrorKind::Read),
+        ] {
+            for offset in [0, 10, one.len() - 4, one.len(), one.len() + 2] {
+                let source = SourceFault {
+                    bytes: Cursor::new(two.clone()),
+                    offset,
+                    metadata: false,
+                    kind,
+                };
+                let mut reader = GzipReader::new(EncodedReader::new(source, two.len() + 1));
+                let mut delivered = Vec::new();
+                let error = reader.read_to_end(&mut delivered).unwrap_err();
+                let failure = read_failure(
+                    error,
+                    BodyProgress::try_new(ResourceKind::Html, delivered.len()).unwrap(),
+                );
+                assert_eq!(failure.kind, expected, "{kind:?} at {offset}");
+                assert_eq!(failure.body.delivered_bytes(), delivered.len());
+                assert!(!failure.error.contains("PRIVATE"));
+                assert!(reader.read(&mut [0]).is_err());
+            }
         }
     }
 
@@ -394,6 +522,7 @@ mod http_body_tests {
                 bytes: Cursor::new(two.clone()),
                 offset,
                 metadata: false,
+                kind: io::ErrorKind::Other,
             };
             let mut reader = GzipReader::new(EncodedReader::new(source, two.len() + 1));
             let mut delivered = Vec::new();
@@ -420,6 +549,7 @@ mod http_body_tests {
                 bytes: Cursor::new(bytes.clone()),
                 offset,
                 metadata: true,
+                kind: io::ErrorKind::Other,
             };
             let mut reader = GzipReader::new(EncodedReader::new(source, bytes.len() + 1));
             let mut body = Vec::new();
@@ -428,7 +558,10 @@ mod http_body_tests {
                 error,
                 BodyProgress::try_new(ResourceKind::Html, body.len()).unwrap(),
             );
-            assert_eq!(failure.kind, NetworkErrorKind::ResourceLimit);
+            assert_eq!(
+                failure.kind,
+                NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::FramingMetadata)
+            );
             assert!(!failure.error.contains("PRIVATE"));
         }
     }
@@ -450,7 +583,7 @@ mod http_body_tests {
                 BodyProgress::try_new(ResourceKind::Html, body.len()).unwrap()
             )
             .kind,
-            NetworkErrorKind::Read
+            NetworkErrorKind::ContentDecoding
         );
     }
 
@@ -461,6 +594,7 @@ mod http_body_tests {
                 bytes: Cursor::new(b"abc".to_vec()),
                 offset: 3,
                 metadata: false,
+                kind: io::ErrorKind::Other,
             },
             3,
         );

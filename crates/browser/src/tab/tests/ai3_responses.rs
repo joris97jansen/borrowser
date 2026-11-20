@@ -274,7 +274,7 @@ fn ai3_image_cancellation_uses_category_not_text() {
     for admitted in [false, true] {
         for (kind, text, forgotten) in [
             (NetworkErrorKind::Cancelled, "arbitrary detail", true),
-            (NetworkErrorKind::Transport, "cancelled", false),
+            (NetworkErrorKind::Backend, "cancelled", false),
         ] {
             let (mut tab, request) = fixture("https://images.test/a.png");
             if admitted {
@@ -538,7 +538,7 @@ fn ai3_real_network_runtime_handoff_preserves_http_facts_and_body_failures() {
                     ..
                 } => {
                     assert!(truncated, "HTTP status was converted to failure: {event:?}");
-                    assert_eq!(*error_kind, NetworkErrorKind::Read);
+                    assert_eq!(*error_kind, NetworkErrorKind::MalformedResponse);
                     assert_eq!(response.as_ref(), started.as_ref());
                     let progress = body.expect("known delivered bytes");
                     assert!(progress.matches_route(ResourceKind::Image));

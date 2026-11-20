@@ -965,3 +965,14 @@ response enters consumer body delivery. Immutable history records entered backen
 acquisitions, not server receipt. Addressing still owns URL semantics; runtime
 and Browser consumers gain no redirect policy. Qualification and exclusions are
 recorded in the AI6 contract, separately from GitHub issue state.
+
+## AI7: Typed network failure boundaries (2026-11-20)
+
+[AI7](../platform/ai7-network-errors-cancellation-timeouts-resource-failures.md)
+refines the existing net error enum without changing event envelopes. Fetch
+classifies concrete acquisition and HTTP body causes; runtime/bus preserve the
+typed category and correlation. Browser retains failure settlement and fixed
+presentation text. Synchronous admission stays separate from admitted-operation
+failure and HTTP status. Resource limits distinguish encoded bytes, delivered
+bytes, response head and framing/trailer metadata. No generic failure lifecycle,
+retry, scheduler, policy framework or downstream acknowledgement is introduced.

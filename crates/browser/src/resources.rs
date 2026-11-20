@@ -649,7 +649,7 @@ mod tests {
         resources.on_network_error(
             1,
             &url,
-            NetworkErrorKind::ResourceLimit,
+            NetworkErrorKind::ResourceLimit(net::ResourceLimitKind::DecodedBody),
             format!(
                 "image response exceeded byte limit of {} bytes",
                 MAX_IMAGE_BYTES

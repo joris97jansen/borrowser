@@ -54,7 +54,10 @@ fn oversized_document_response_emits_resource_limit_without_done() {
     assert_eq!(result.body.len(), MAX_DOCUMENT_BYTES);
     assert!(result.done.is_none(), "unexpected Done after limit failure");
     let error = result.error.expect("resource limit error");
-    assert_eq!(error.error_kind, NetworkErrorKind::ResourceLimit);
+    assert_eq!(
+        error.error_kind,
+        NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::DecodedBody)
+    );
     assert_eq!(error.status_code, Some(200));
     assert!(error.error.contains("exceeded byte limit"));
 }
@@ -82,7 +85,10 @@ fn oversized_stylesheet_response_emits_resource_limit_without_done() {
     assert_eq!(result.body.len(), MAX_STYLESHEET_BYTES);
     assert!(result.done.is_none(), "unexpected Done after limit failure");
     let error = result.error.expect("resource limit error");
-    assert_eq!(error.error_kind, NetworkErrorKind::ResourceLimit);
+    assert_eq!(
+        error.error_kind,
+        NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::DecodedBody)
+    );
     assert_eq!(error.status_code, Some(200));
     assert!(error.error.contains("exceeded byte limit"));
 }
@@ -110,7 +116,10 @@ fn oversized_image_response_emits_resource_limit_without_done() {
     assert_eq!(result.body.len(), MAX_IMAGE_BYTES);
     assert!(result.done.is_none(), "unexpected Done after limit failure");
     let error = result.error.expect("resource limit error");
-    assert_eq!(error.error_kind, NetworkErrorKind::ResourceLimit);
+    assert_eq!(
+        error.error_kind,
+        NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::DecodedBody)
+    );
     assert_eq!(error.status_code, Some(200));
     assert!(error.error.contains("exceeded byte limit"));
 }

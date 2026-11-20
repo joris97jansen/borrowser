@@ -17,6 +17,187 @@ fn request(url: &str, purpose: Purpose) -> FetchRequest {
 }
 
 #[test]
+fn ai7_contextual_core_error_debug_has_independent_literals_and_redacts_nested_contents() {
+    let mut headers = HttpHeaders::new();
+    headers
+        .append("PRIVATE_HEADER_NAME", b"PRIVATE_HEADER_VALUE")
+        .unwrap();
+    let response = net::NetworkResponseInfo::http(
+        BrowserUrl::parse("https://PRIVATE_USER:PRIVATE_PASSWORD@PRIVATE_ORIGINAL.invalid/PRIVATE_PATH?PRIVATE_QUERY#PRIVATE_FRAGMENT").unwrap().url,
+        "PRIVATE_ISSUED_URL".into(),
+        Some("https://PRIVATE_RESPONSE.invalid/PRIVATE_PATH".into()),
+        net::HttpStatus::try_from(500).unwrap(), headers,
+    ).unwrap();
+    let event = CoreEvent::NetworkError {
+        tab_id: 7654321,
+        request_id: 8765432,
+        stylesheet_slot_id: Some(StylesheetSlotId(9876543)),
+        kind: Route::Css,
+        url: "PRIVATE_EVENT_URL".into(),
+        error_kind: net::NetworkErrorKind::ResourceLimit(net::ResourceLimitKind::EncodedBody),
+        response: Some(response),
+        body: Some(net::BodyProgress::try_new(Route::Css, 3).unwrap()),
+        error: "PRIVATE_SOURCE_ERROR Authorization: PRIVATE_CREDENTIAL".into(),
+    };
+    assert_eq!(
+        format!("{event:?}"),
+        r#"NetworkError { kind: Css, error_kind: ResourceLimit(EncodedBody), response: Some(NetworkResponseInfo { original_url: "<redacted>", requested_url: "<redacted>", response_url: "parsed", status: Some(HttpStatus(500)), headers: [("<redacted>", "<redacted>")], redirect_chain: [], local_content_type_present: false }), body: Some(BodyProgress { route: Css, delivered_bytes: 3 }), .. }"#
+    );
+    assert_eq!(
+        format!("{event:#?}"),
+        r#"NetworkError {
+    kind: Css,
+    error_kind: ResourceLimit(
+        EncodedBody,
+    ),
+    response: Some(
+        NetworkResponseInfo {
+            original_url: "<redacted>",
+            requested_url: "<redacted>",
+            response_url: "parsed",
+            status: Some(
+                HttpStatus(500),
+            ),
+            headers: [
+                (
+                    "<redacted>",
+                    "<redacted>",
+                ),
+            ],
+            redirect_chain: [],
+            local_content_type_present: false,
+        },
+    ),
+    body: Some(
+        BodyProgress {
+            route: Css,
+            delivered_bytes: 3,
+        },
+    ),
+    ..
+}"#
+    );
+    let nested = Some(Err::<(), _>(&event));
+    assert_eq!(
+        format!("{nested:?}"),
+        r#"Some(Err(NetworkError { kind: Css, error_kind: ResourceLimit(EncodedBody), response: Some(NetworkResponseInfo { original_url: "<redacted>", requested_url: "<redacted>", response_url: "parsed", status: Some(HttpStatus(500)), headers: [("<redacted>", "<redacted>")], redirect_chain: [], local_content_type_present: false }), body: Some(BodyProgress { route: Css, delivered_bytes: 3 }), .. }))"#
+    );
+    for output in [
+        format!("{event:?}"),
+        format!("{event:#?}"),
+        format!("{nested:?}"),
+        format!("{nested:#?}"),
+    ] {
+        for private in ["PRIVATE", "7654321", "8765432", "9876543"] {
+            assert!(!output.contains(private));
+        }
+        assert!(output.len() < 4096);
+    }
+}
+
+#[test]
+fn ai7_real_failure_forwarding_preserves_categories_correlation_and_partial_progress() {
+    use std::{
+        io::{BufRead, BufReader, Read, Write},
+        net::TcpListener,
+        thread,
+    };
+    for (purpose, route, slot) in [
+        (Purpose::Document, Route::Html, None),
+        (Purpose::Stylesheet, Route::Css, Some(StylesheetSlotId(9))),
+        (Purpose::Image, Route::Image, None),
+    ] {
+        for (wire, expected, status, progress) in [
+            (
+                b"HTTP/1.1 PRIVATE\r\n\r\n".as_slice(),
+                net::NetworkErrorKind::MalformedResponse,
+                None,
+                None,
+            ),
+            (
+                b"HTTP/1.1 500 Error\r\nContent-Encoding: br\r\nContent-Length: 0\r\n\r\n",
+                net::NetworkErrorKind::UnsupportedEncoding,
+                Some(500),
+                Some(0),
+            ),
+            (
+                b"HTTP/1.1 500 Error\r\nContent-Length: 9\r\n\r\nabc",
+                net::NetworkErrorKind::MalformedResponse,
+                Some(500),
+                Some(3),
+            ),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let worker = thread::spawn(move || {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                socket
+                    .set_write_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut input = BufReader::new(socket.try_clone().unwrap()).take(16384);
+                loop {
+                    let mut line = String::new();
+                    assert!(input.read_line(&mut line).unwrap() > 0);
+                    if line == "\r\n" {
+                        break;
+                    }
+                }
+                socket.write_all(wire).unwrap();
+            });
+            let issued = format!("http://{address}/PRIVATE");
+            let (tx, rx) = mpsc::channel();
+            let (events, received) = mpsc::channel();
+            super::start_net_runtime(rx, events);
+            tx.send(
+                CoreCommand::try_fetch_stream(2, slot, route, request(&issued, purpose)).unwrap(),
+            )
+            .unwrap();
+            drop(tx);
+            let mut terminal = 0;
+            loop {
+                match received.recv_timeout(Duration::from_secs(5)) {
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    Ok(CoreEvent::NetworkError {
+                        tab_id,
+                        request_id,
+                        stylesheet_slot_id,
+                        kind,
+                        url,
+                        error_kind,
+                        response,
+                        body,
+                        ..
+                    }) => {
+                        terminal += 1;
+                        assert_eq!(
+                            (tab_id, request_id, stylesheet_slot_id, kind),
+                            (2, 17, slot, route)
+                        );
+                        assert_eq!(url, issued);
+                        assert_eq!(error_kind, expected);
+                        assert_eq!(
+                            response
+                                .as_ref()
+                                .and_then(net::NetworkResponseInfo::status_code),
+                            status
+                        );
+                        assert_eq!(body.map(net::BodyProgress::delivered_bytes), progress);
+                    }
+                    Ok(CoreEvent::NetworkDone { .. }) => panic!("failure cannot complete"),
+                    Ok(CoreEvent::NetworkStart { .. } | CoreEvent::NetworkChunk { .. }) => {}
+                    event => panic!("{event:?}"),
+                }
+            }
+            worker.join().unwrap();
+            assert_eq!(terminal, 1);
+        }
+    }
+}
+
+#[test]
 fn ai2_invalid_runtime_routes_never_emit_misclassified_events() {
     for (purpose, route, slot) in [
         (Purpose::Stylesheet, Route::Html, None),

@@ -47,6 +47,8 @@ pub enum FakeFixtureError {
     UnsupportedScheme,
     DuplicateRoute,
     InvalidBodyFailureOffset,
+    InvalidNetworkErrorKind,
+    InvalidBodyReadErrorKind,
 }
 
 impl fmt::Display for FakeFixtureError {
@@ -78,13 +80,24 @@ impl FakeNetworkBuilder {
         self.register(url, method, FakeOutcome::Response(response))
     }
 
-    /// Configure a pre-response Transport failure with a fixed safe diagnostic.
+    /// Configure an acquisition failure; this proves handling, not real transport.
     pub fn register_network_error(
         &mut self,
         url: &BrowserUrl,
         method: RequestMethod,
+        kind: NetworkErrorKind,
     ) -> Result<(), FakeFixtureError> {
-        self.register(url, method, FakeOutcome::NetworkFailure)
+        if !matches!(
+            kind,
+            NetworkErrorKind::DnsFailure
+                | NetworkErrorKind::ConnectionFailure
+                | NetworkErrorKind::TlsFailure
+                | NetworkErrorKind::Timeout
+                | NetworkErrorKind::Backend
+        ) {
+            return Err(FakeFixtureError::InvalidNetworkErrorKind);
+        }
+        self.register(url, method, FakeOutcome::NetworkFailure(kind))
     }
 
     fn register(
@@ -150,7 +163,7 @@ pub struct FakeResponse {
     headers: HttpHeaders,
     body: Arc<[u8]>,
     reported_response_url: Option<String>,
-    read_failure_after: Option<usize>,
+    read_failure_after: Option<(usize, io::ErrorKind)>,
 }
 
 impl FakeResponse {
@@ -172,14 +185,36 @@ impl FakeResponse {
     /// Fail at this encoded-byte offset, including zero or EOF. An offset beyond
     /// the finite fixture body is rejected. 204/304 bypass this reader; 205 must
     /// verify its framing source contains no content before any decoding.
-    pub fn with_read_failure_after(
+    pub fn with_read_failure_after(self, encoded_bytes: usize) -> Result<Self, FakeFixtureError> {
+        self.with_read_error_after(encoded_bytes, io::ErrorKind::Other)
+    }
+
+    /// A fresh fixed error at an encoded offset. Persistent Interrupted faults
+    /// would prevent progress forever and are rejected rather than scheduled.
+    pub fn with_read_error_after(
         mut self,
         encoded_bytes: usize,
+        kind: io::ErrorKind,
     ) -> Result<Self, FakeFixtureError> {
         if encoded_bytes > self.body.len() {
             return Err(FakeFixtureError::InvalidBodyFailureOffset);
         }
-        self.read_failure_after = Some(encoded_bytes);
+        if !matches!(
+            kind,
+            io::ErrorKind::Other
+                | io::ErrorKind::TimedOut
+                | io::ErrorKind::ConnectionRefused
+                | io::ErrorKind::ConnectionReset
+                | io::ErrorKind::ConnectionAborted
+                | io::ErrorKind::NotConnected
+                | io::ErrorKind::BrokenPipe
+                | io::ErrorKind::WouldBlock
+                | io::ErrorKind::UnexpectedEof
+                | io::ErrorKind::InvalidData
+        ) {
+            return Err(FakeFixtureError::InvalidBodyReadErrorKind);
+        }
+        self.read_failure_after = Some((encoded_bytes, kind));
         Ok(self)
     }
 }
@@ -192,7 +227,7 @@ struct RouteKey {
 
 enum FakeOutcome {
     Response(FakeResponse),
-    NetworkFailure,
+    NetworkFailure(NetworkErrorKind),
 }
 
 impl HttpResponseBackend for FakeNetwork {
@@ -212,14 +247,14 @@ impl HttpResponseBackend for FakeNetwork {
         let response = match outcome {
             None => {
                 return Err(HttpAcquireError::Network {
-                    kind: NetworkErrorKind::Transport,
+                    kind: NetworkErrorKind::Backend,
                     error: "fake network route not found".into(),
                 });
             }
-            Some((_, FakeOutcome::NetworkFailure)) => {
+            Some((_, FakeOutcome::NetworkFailure(kind))) => {
                 return Err(HttpAcquireError::Network {
-                    kind: NetworkErrorKind::Transport,
-                    error: "fake network failure".into(),
+                    kind: *kind,
+                    error: kind.diagnostic().into(),
                 });
             }
             Some((_, FakeOutcome::Response(response))) => response,
@@ -248,7 +283,7 @@ impl HttpResponseBackend for FakeNetwork {
 struct FakeBodyReader {
     bytes: Arc<[u8]>,
     position: usize,
-    fail_after: Option<usize>,
+    fail_after: Option<(usize, io::ErrorKind)>,
 }
 
 impl Read for FakeBodyReader {
@@ -256,10 +291,14 @@ impl Read for FakeBodyReader {
         if output.is_empty() {
             return Ok(0);
         }
-        if self.fail_after.is_some_and(|n| self.position >= n) {
-            return Err(io::Error::other("fake body read failure"));
+        if let Some((offset, kind)) = self.fail_after
+            && self.position >= offset
+        {
+            return Err(io::Error::new(kind, "fake body read failure"));
         }
-        let end = self.fail_after.unwrap_or(self.bytes.len());
+        let end = self
+            .fail_after
+            .map_or(self.bytes.len(), |(offset, _)| offset);
         let count = output.len().min(end - self.position);
         output[..count].copy_from_slice(&self.bytes[self.position..self.position + count]);
         self.position += count;
@@ -296,5 +335,31 @@ impl fmt::Debug for FakeResponse {
                 &self.read_failure_after.is_some(),
             )
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn ai7_reader_empty_reads_and_failure_at_eof_do_not_establish_completion() {
+        for offset in [0, 3] {
+            let mut reader = FakeBodyReader {
+                bytes: Arc::from(b"abc".as_slice()),
+                position: 0,
+                fail_after: Some((offset, io::ErrorKind::TimedOut)),
+            };
+            assert_eq!(reader.read(&mut []).unwrap(), 0);
+            if offset != 0 {
+                assert_eq!(reader.read(&mut [0; 3]).unwrap(), 3);
+            }
+            for _ in 0..2 {
+                assert_eq!(
+                    reader.read(&mut [0]).unwrap_err().kind(),
+                    io::ErrorKind::TimedOut
+                );
+                assert_eq!(reader.read(&mut []).unwrap(), 0);
+            }
+        }
     }
 }

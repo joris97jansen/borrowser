@@ -323,3 +323,18 @@ This migration and future upstream integrations require owner-authorized merge
 commits, followed by remote-master history/source and master-push verification.
 No repository settings change is part of this issue. Hosted-only tests, historical
 IDNA/setter findings and native baseline failures must retain their real status.
+
+## AI7 proposed source qualification (2026-11-20)
+
+[AI7](ai7-network-errors-cancellation-timeouts-resource-failures.md) intentionally
+changes seven current ureq Rust files: error.rs, rtls.rs, response.rs,
+chunked/decoder.rs, stream.rs, unit.rs and body.rs. TLS/body-framing markers retain source
+identity; demonstrated blocking TLS/write timeout gaps justify localized
+normalization. Request-body copying normalizes only destination writes, preserving
+caller-reader errors in both copy paths. The review correction changes only the
+body.rs/unit.rs inventory hashes and resulting independent policy digest. Source
+inventory entries and the independent policy digest advance
+together. Historical anchors/records, source modes, dependency versions/features,
+Cargo graphs and verifier behavior remain unchanged. Working-tree source/Cargo
+checks are distinct from committed-candidate qualification; no temporary commit
+or gate bypass is used. Final gates and exact-candidate acceptance remain pending.

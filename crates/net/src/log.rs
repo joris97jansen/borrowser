@@ -61,6 +61,27 @@ fn network_error_message(
 #[cfg(test)]
 mod redirect_tests {
     #[test]
+    fn ai7_failure_diagnostic_has_literal_stage_and_category_fields() {
+        assert_eq!(
+            super::network_error_message(
+                7,
+                core_types::ResourceKind::Css,
+                "body",
+                crate::NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::EncodedBody)
+            ),
+            "[net][req=7][css][subresource][stage=body][category=ResourceLimit(EncodedBody)]"
+        );
+        assert_eq!(
+            super::network_error_message(
+                7,
+                core_types::ResourceKind::Html,
+                "acquisition",
+                crate::NetworkErrorKind::Timeout
+            ),
+            "[net][req=7][html][top-level][stage=acquisition][category=Timeout]"
+        );
+    }
+    #[test]
     fn ai6_redirect_diagnostic_has_fixed_structural_fields() {
         assert_eq!(
             super::redirect_message(

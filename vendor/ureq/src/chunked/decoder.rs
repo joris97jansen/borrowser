@@ -36,7 +36,17 @@ pub struct Decoder<R> {
 }
 
 fn malformed() -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, "invalid HTTP chunk framing")
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        crate::ErrorKind::BadBody.msg("invalid HTTP chunk framing"),
+    )
+}
+
+fn incomplete() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::UnexpectedEof,
+        crate::ErrorKind::BadBody.msg("incomplete HTTP chunk framing"),
+    )
 }
 
 fn metadata_limit() -> io::Error {
@@ -83,7 +93,16 @@ impl<R: Read> Decoder<R> {
             return Err(metadata_limit());
         }
         let mut byte = [0];
-        self.source.read_exact(&mut byte)?;
+        // Only a locally observed EOF proves missing framing. A source error,
+        // even UnexpectedEof/InvalidData, retains its own identity and cause.
+        loop {
+            match self.source.read(&mut byte) {
+                Ok(0) => return Err(incomplete()),
+                Ok(_) => break,
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) => return Err(error),
+            }
+        }
         self.framing_bytes += 1;
         if trailer {
             self.trailer_bytes += 1;
@@ -185,10 +204,7 @@ impl<R: Read> Decoder<R> {
                         .min(buf.len());
                     let count = self.source.read(&mut buf[..amount])?;
                     if count == 0 {
-                        return Err(io::Error::new(
-                            io::ErrorKind::UnexpectedEof,
-                            "incomplete HTTP chunk payload",
-                        ));
+                        return Err(incomplete());
                     }
                     let remaining = remaining - u64::try_from(count).map_err(|_| malformed())?;
                     self.state = if remaining == 0 {
@@ -269,7 +285,10 @@ impl<R: Read> Decoder<R> {
                     }
                 }
                 State::End => return Ok(0),
-                State::Failed => return Err(malformed()),
+                // The first failure may have been source I/O, not framing.
+                State::Failed => {
+                    return Err(io::Error::other("HTTP chunk reader previously failed"))
+                }
             }
         }
     }

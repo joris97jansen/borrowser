@@ -316,12 +316,17 @@ pub enum ErrorKind {
     InsecureRequestHttpsOnly,
     /// Connection to server failed.
     ConnectionFailed,
+    /// Failure originating in TLS setup or handshake; inspect the source for
+    /// a more specific timeout or connection cause.
+    Tls,
     /// Too many redirects.
     TooManyRedirects,
     /// A status line we don't understand `HTTP/1.1 200 OK`.
     BadStatus,
     /// A header line that couldn't be parsed.
     BadHeader,
+    /// Positively detected malformed or incomplete HTTP body framing.
+    BadBody,
     /// Response-head processing exceeded its bounded resource budget.
     ResponseHeadTooLarge,
     /// Chunk framing or trailer processing exceeded its resource budget.
@@ -390,9 +395,11 @@ impl fmt::Display for ErrorKind {
                 write!(f, "Insecure request attempted with https_only set")
             }
             ErrorKind::ConnectionFailed => write!(f, "Connection Failed"),
+            ErrorKind::Tls => write!(f, "TLS Failed"),
             ErrorKind::TooManyRedirects => write!(f, "Too Many Redirects"),
             ErrorKind::BadStatus => write!(f, "Bad Status"),
             ErrorKind::BadHeader => write!(f, "Bad Header"),
+            ErrorKind::BadBody => write!(f, "Bad Body Framing"),
             ErrorKind::ResponseHeadTooLarge => write!(f, "Response Head Too Large"),
             ErrorKind::BodyMetadataTooLarge => write!(f, "Body Metadata Too Large"),
             ErrorKind::UnsupportedResponse => write!(f, "Unsupported Response"),

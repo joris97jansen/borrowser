@@ -1043,7 +1043,7 @@ impl<R: Read + Sized + Into<Stream>> Read for LimitedRead<R> {
                 self.reader.take();
                 Err(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
-                    "response body closed before all bytes were read",
+                    ErrorKind::BadBody.msg("response body closed before all bytes were read"),
                 ))
             }
             Ok(amount) => {

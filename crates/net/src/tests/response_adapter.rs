@@ -324,7 +324,7 @@ fn ai5b_head_admission_errors_are_typed_redacted_and_terminal() {
         ),
         (
             format!("HTTP/1.1 200 PRIVATE{}\r\n\r\n", "a".repeat(10 * 1024)).into_bytes(),
-            NetworkErrorKind::ResourceLimit,
+            NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::ResponseHead),
         ),
         (
             format!(
@@ -332,7 +332,7 @@ fn ai5b_head_admission_errors_are_typed_redacted_and_terminal() {
                 "a".repeat(10 * 1024)
             )
             .into_bytes(),
-            NetworkErrorKind::ResourceLimit,
+            NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::ResponseHead),
         ),
         (
             format!(
@@ -340,11 +340,11 @@ fn ai5b_head_admission_errors_are_typed_redacted_and_terminal() {
                 format!("X: PRIVATE{}\r\n", "a".repeat(8000)).repeat(9)
             )
             .into_bytes(),
-            NetworkErrorKind::ResourceLimit,
+            NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::ResponseHead),
         ),
         (
             format!("HTTP/1.1 200 OK\r\nX: {}\r\n\r\n", "a".repeat(8193)).into_bytes(),
-            NetworkErrorKind::ResourceLimit,
+            NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::ResponseHead),
         ),
     ] {
         let events = ai5b_wire_events(wire);
@@ -387,7 +387,7 @@ fn ai5b_partial_read_failure_preserves_opaque_metadata_and_known_progress() {
         else {
             panic!("contextual failure required");
         };
-        assert_eq!(*error_kind, NetworkErrorKind::Read);
+        assert_eq!(*error_kind, NetworkErrorKind::MalformedResponse);
         assert_eq!(response.status_code(), Some(404));
         assert_eq!(
             response.headers().values("content-length").next().unwrap(),
@@ -431,7 +431,7 @@ fn ai5b_wire_line_budget_is_independent_of_typed_header_bounds() {
     assert_eq!(parsed.headers_bytes().count(), 1);
     let events = ai5b_wire_events(format!("HTTP/1.1 200 OK\r\n{field}\r\n").into_bytes());
     assert!(
-        matches!(events.as_slice(), [NetEvent::Error { error_kind: NetworkErrorKind::ResourceLimit, response: None, body: None, error, .. }] if !error.contains("PRIVATE"))
+        matches!(events.as_slice(), [NetEvent::Error { error_kind: NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::ResponseHead), response: None, body: None, error, .. }] if !error.contains("PRIVATE"))
     );
 }
 

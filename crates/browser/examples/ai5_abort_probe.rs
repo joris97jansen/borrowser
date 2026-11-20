@@ -403,22 +403,23 @@ struct FailureCase {
     category: NetworkErrorKind,
     status: Option<u16>,
     progress: usize,
+    started: bool,
 }
 
 fn cases() -> Vec<FailureCase> {
     use NetworkErrorKind::*;
     let mut cases = vec![
-        ("status", b"HTTP/1.1 PRIVATE\r\n\r\n".to_vec(), MalformedResponse, None, 0),
-        ("field", b"HTTP/1.1 200 OK\r\nPRIVATE FIELD: PRIVATE\r\n\r\n".to_vec(), MalformedResponse, None, 0),
-        ("length", b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\na".to_vec(), MalformedResponse, None, 0),
-        ("invalid-length", b"HTTP/1.1 200 OK\r\nContent-Length: PRIVATE\r\n\r\n".to_vec(), MalformedResponse, None, 0),
-        ("fixed", b"HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\nabc".to_vec(), Read, Some(200), 3),
-        ("chunk-payload", b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n9\r\nabc".to_vec(), Read, Some(200), 3),
-        ("chunk-end", b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\n".to_vec(), Read, Some(200), 3),
-        ("chunk-syntax", b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nPRIVATE\r\n".to_vec(), Read, Some(200), 0),
-        ("coding", b"HTTP/1.1 200 OK\r\nContent-Encoding: PRIVATE\r\nContent-Length: 0\r\n\r\n".to_vec(), UnsupportedResponse, Some(200), 0),
-        ("redirect", b"HTTP/1.1 302 Found\r\nLocation: http://user:pass@localhost/PRIVATE\r\nContent-Length: 0\r\n\r\n".to_vec(), Redirect(net::RedirectError::UrlCredentialsUnsupported), Some(302), 0),
-        ("closed", vec![], Transport, None, 0),
+        ("status", b"HTTP/1.1 PRIVATE\r\n\r\n".to_vec(), MalformedResponse, None, 0, false),
+        ("field", b"HTTP/1.1 200 OK\r\nPRIVATE FIELD: PRIVATE\r\n\r\n".to_vec(), MalformedResponse, None, 0, false),
+        ("length", b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\na".to_vec(), MalformedResponse, None, 0, false),
+        ("invalid-length", b"HTTP/1.1 200 OK\r\nContent-Length: PRIVATE\r\n\r\n".to_vec(), MalformedResponse, None, 0, false),
+        ("fixed", b"HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\nabc".to_vec(), MalformedResponse, Some(200), 3, true),
+        ("chunk-payload", b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n9\r\nabc".to_vec(), MalformedResponse, Some(200), 3, true),
+        ("chunk-end", b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\n".to_vec(), MalformedResponse, Some(200), 3, true),
+        ("chunk-syntax", b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nPRIVATE\r\n".to_vec(), MalformedResponse, Some(200), 0, true),
+        ("coding", b"HTTP/1.1 200 OK\r\nContent-Encoding: PRIVATE\r\nContent-Length: 0\r\n\r\n".to_vec(), UnsupportedEncoding, Some(200), 0, false),
+        ("redirect", b"HTTP/1.1 302 Found\r\nLocation: http://user:pass@localhost/PRIVATE\r\nContent-Length: 0\r\n\r\n".to_vec(), Redirect(net::RedirectError::UrlCredentialsUnsupported), Some(302), 0, false),
+        ("closed", vec![], ConnectionFailure, None, 0, false),
     ];
     for (name, suffix) in [
         ("chunk-limit", format!("0;x={}\r\n\r\n", "a".repeat(8192))),
@@ -431,9 +432,10 @@ fn cases() -> Vec<FailureCase> {
             name,
             format!("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n{suffix}")
                 .into_bytes(),
-            ResourceLimit,
+            ResourceLimit(net::ResourceLimitKind::FramingMetadata),
             Some(200),
             3,
+            true,
         ));
     }
     let gzip = [
@@ -453,17 +455,20 @@ fn cases() -> Vec<FailureCase> {
         )
         .into_bytes();
         head.extend(bytes);
-        cases.push((name, head, Read, Some(200), 5));
+        cases.push((name, head, ContentDecoding, Some(200), 5, true));
     }
     cases
         .into_iter()
-        .map(|(name, wire, category, status, progress)| FailureCase {
-            name,
-            wire,
-            category,
-            status,
-            progress,
-        })
+        .map(
+            |(name, wire, category, status, progress, started)| FailureCase {
+                name,
+                wire,
+                category,
+                status,
+                progress,
+                started,
+            },
+        )
         .collect()
 }
 
@@ -535,13 +540,7 @@ fn worker(url: &str, case: usize, trace: bool) {
                     body.map(|p| p.delivered_bytes()),
                     expected.status.map(|_| progress)
                 );
-                assert_eq!(
-                    start.is_some(),
-                    matches!(
-                        expected.category,
-                        NetworkErrorKind::Read | NetworkErrorKind::ResourceLimit
-                    )
-                );
+                assert_eq!(start.is_some(), expected.started);
                 assert!(!error.contains("PRIVATE"));
                 assert!(!error.contains("user:pass"));
                 if let Some(facts) = &start {

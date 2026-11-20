@@ -232,7 +232,7 @@ fn ai5c_cumulative_framing_budget_counts_delimiters_and_final_termination() {
 // read error. No TLS handshake is simulated or claimed by this fixture.
 struct FragmentedConnector {
     wire: Vec<u8>,
-    reset: bool,
+    fault: Option<io::ErrorKind>,
     reads: Arc<AtomicUsize>,
     listener: Arc<TcpListener>,
 }
@@ -246,7 +246,7 @@ impl ureq::TlsConnector for FragmentedConnector {
         Ok(Box::new(FragmentedTransport {
             input: Cursor::new(self.wire.clone()),
             socket,
-            reset: self.reset,
+            fault: self.fault,
             interrupt: false,
             reads: self.reads.clone(),
             _listener: self.listener.clone(),
@@ -258,7 +258,7 @@ impl ureq::TlsConnector for FragmentedConnector {
 struct FragmentedTransport {
     input: Cursor<Vec<u8>>,
     socket: Box<dyn ureq::ReadWrite>,
-    reset: bool,
+    fault: Option<io::ErrorKind>,
     interrupt: bool,
     reads: Arc<AtomicUsize>,
     // Keep the peer's listening socket alive for the entire reader lifetime.
@@ -277,11 +277,8 @@ impl Read for FragmentedTransport {
         if self.interrupt {
             return Err(io::Error::from(io::ErrorKind::Interrupted));
         }
-        if self.reset && self.input.position() == self.input.get_ref().len() as u64 {
-            return Err(io::Error::new(
-                io::ErrorKind::ConnectionReset,
-                "injected read failure",
-            ));
+        if self.fault.is_some() && self.input.position() == self.input.get_ref().len() as u64 {
+            return Err(io::Error::new(self.fault.unwrap(), "injected read failure"));
         }
         self.input.read(&mut buf[..1])
     }
@@ -303,13 +300,21 @@ impl ureq::ReadWrite for FragmentedTransport {
 }
 
 fn fragmented(wire: String, reset: bool, reads: Arc<AtomicUsize>) -> ureq::Response {
+    fragmented_fault(wire, reset.then_some(io::ErrorKind::ConnectionReset), reads)
+}
+
+fn fragmented_fault(
+    wire: String,
+    fault: Option<io::ErrorKind>,
+    reads: Arc<AtomicUsize>,
+) -> ureq::Response {
     let listener = Arc::new(TcpListener::bind("127.0.0.1:0").unwrap());
     let agent = ureq::AgentBuilder::new()
         .redirects(0)
         .timeout(Duration::from_secs(5))
         .tls_connector(Arc::new(FragmentedConnector {
             wire: wire.into_bytes(),
-            reset,
+            fault,
             reads,
             listener: listener.clone(),
         }))
@@ -376,5 +381,65 @@ fn ai5c_fragmented_transport_failure_is_not_normal_eof_or_lost_payload() {
             reader.read(&mut [0]).is_err(),
             "a failed reader must not later claim EOF"
         );
+    }
+}
+
+#[test]
+fn ai7_framing_markers_require_positive_framing_evidence_and_source_errors_stay_failed() {
+    for (fields, body) in [
+        ("Content-Length: 5", "abc"),
+        ("Transfer-Encoding: chunked", "5\r\nabc"),
+        ("Transfer-Encoding: chunked", "3\r\nabc\r\n0\r\n"),
+        ("Transfer-Encoding: chunked", "PRIVATE\r\n"),
+    ] {
+        let wire = format!("HTTP/1.1 200 OK\r\n{fields}\r\n\r\n{body}");
+        let mut reader =
+            fragmented_fault(wire.clone(), None, Arc::new(AtomicUsize::new(0))).into_reader();
+        let error = reader.read_to_end(&mut Vec::new()).unwrap_err();
+        assert_eq!(
+            error
+                .get_ref()
+                .unwrap()
+                .downcast_ref::<ureq::Error>()
+                .unwrap()
+                .kind(),
+            ureq::ErrorKind::BadBody
+        );
+        assert!(!error.to_string().contains("PRIVATE"));
+        assert!(reader.read(&mut [0]).is_err());
+        assert_eq!(reader.read(&mut []).unwrap(), 0);
+
+        // A syntactically complete prefix reaching source I/O, including missing
+        // size/trailer bytes, must preserve the original kind and never invent
+        // framing on a subsequent nonempty read.
+        if body.contains("PRIVATE") {
+            continue;
+        }
+        for kind in [
+            io::ErrorKind::TimedOut,
+            io::ErrorKind::ConnectionReset,
+            io::ErrorKind::UnexpectedEof,
+            io::ErrorKind::InvalidData,
+        ] {
+            let mut reader =
+                fragmented_fault(wire.clone(), Some(kind), Arc::new(AtomicUsize::new(0)))
+                    .into_reader();
+            let error = reader.read_to_end(&mut Vec::new()).unwrap_err();
+            assert_eq!(error.kind(), kind);
+            assert!(
+                error
+                    .get_ref()
+                    .and_then(|e| e.downcast_ref::<ureq::Error>())
+                    .is_none()
+            );
+            let subsequent = reader.read(&mut [0]).unwrap_err();
+            assert!(
+                subsequent
+                    .get_ref()
+                    .and_then(|e| e.downcast_ref::<ureq::Error>())
+                    .is_none()
+            );
+            assert_eq!(reader.read(&mut []).unwrap(), 0);
+        }
     }
 }

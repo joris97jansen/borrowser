@@ -97,7 +97,7 @@ fn resource_associations_images_retain_selective_owners_and_retire_removed_nodes
     tab.resources.on_network_error(
         tab.nav_gen,
         "https://example.test/new/changed.png",
-        net::NetworkErrorKind::Transport,
+        net::NetworkErrorKind::Backend,
         "fixture failure".into(),
     );
     publish_addressing_patches(

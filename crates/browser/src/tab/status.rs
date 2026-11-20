@@ -23,9 +23,13 @@ pub(super) fn format_network_error(
 ) -> String {
     let message = match error_kind {
         NetworkErrorKind::Cancelled => format!("Cancelled {resource_label} load"),
-        NetworkErrorKind::Transport => {
-            format!("Transport error loading {resource_label}")
+        NetworkErrorKind::Backend => {
+            format!("Backend error loading {resource_label}")
         }
+        NetworkErrorKind::DnsFailure => format!("DNS error loading {resource_label}"),
+        NetworkErrorKind::ConnectionFailure => format!("Connection error loading {resource_label}"),
+        NetworkErrorKind::TlsFailure => format!("TLS error loading {resource_label}"),
+        NetworkErrorKind::Timeout => format!("Timed out loading {resource_label}"),
         NetworkErrorKind::LocalFile => {
             format!("Local file error loading {resource_label}")
         }
@@ -36,7 +40,13 @@ pub(super) fn format_network_error(
         NetworkErrorKind::UnsupportedResponse => {
             format!("Unsupported response loading {resource_label}")
         }
-        NetworkErrorKind::ResourceLimit => {
+        NetworkErrorKind::UnsupportedEncoding => {
+            format!("Unsupported encoding loading {resource_label}")
+        }
+        NetworkErrorKind::ContentDecoding => {
+            format!("Content decoding error loading {resource_label}")
+        }
+        NetworkErrorKind::ResourceLimit(_) => {
             format!("Resource limit loading {resource_label}")
         }
         NetworkErrorKind::Redirect(_) => format!("Redirect error loading {resource_label}"),

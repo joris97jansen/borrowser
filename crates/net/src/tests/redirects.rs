@@ -664,7 +664,7 @@ fn ai6_cancellation_pending_history_failure_precedence_and_snapshot_immutability
             failed(&events, NetworkErrorKind::Cancelled, 0);
             assert_eq!(seen.attempts.lock().unwrap().len(), 1);
         } else if !registered {
-            let response = failed(&events, NetworkErrorKind::Transport, 1);
+            let response = failed(&events, NetworkErrorKind::Backend, 1);
             assert_eq!(response.reported_response_url(), Some(source));
             assert_eq!(response.redirect_chain()[0].target_url().as_str(), target);
             assert_eq!(seen.attempts.lock().unwrap().len(), 2);
@@ -881,13 +881,13 @@ fn ai6_selected_body_failures_and_cancellation_preserve_the_start_history() {
             Some("PRIVATE"),
             None,
             b"".to_vec(),
-            NetworkErrorKind::UnsupportedResponse,
+            NetworkErrorKind::UnsupportedEncoding,
         ),
         (
             None,
             None,
             vec![b'x'; tools::common::MAX_STYLESHEET_BYTES + 1],
-            NetworkErrorKind::ResourceLimit,
+            NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::DecodedBody),
         ),
     ] {
         let mut builder = FakeNetworkBuilder::new();

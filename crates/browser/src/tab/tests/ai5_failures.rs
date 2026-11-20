@@ -149,7 +149,7 @@ fn ai5f_real_runtime_partial_failures_settle_each_consumer_without_sibling_compl
                     ..
                 } => {
                     terminals += 1;
-                    assert_eq!(*error_kind, NetworkErrorKind::Read);
+                    assert_eq!(*error_kind, NetworkErrorKind::MalformedResponse);
                     assert_eq!(response.as_ref(), started.as_ref());
                     assert_eq!(body.unwrap().delivered_bytes(), delivered);
                     assert!(!error.contains("PRIVATE"));
@@ -277,12 +277,18 @@ fn ai5f_real_runtime_partial_failures_settle_each_consumer_without_sibling_compl
 #[test]
 fn ai5f_status_strings_do_not_copy_semantic_urls_headers_or_error_text() {
     for kind in [
-        NetworkErrorKind::Transport,
+        NetworkErrorKind::Backend,
+        NetworkErrorKind::DnsFailure,
+        NetworkErrorKind::ConnectionFailure,
+        NetworkErrorKind::TlsFailure,
+        NetworkErrorKind::Timeout,
+        NetworkErrorKind::ContentDecoding,
+        NetworkErrorKind::UnsupportedEncoding,
         NetworkErrorKind::Read,
         NetworkErrorKind::LocalFile,
         NetworkErrorKind::MalformedResponse,
         NetworkErrorKind::UnsupportedResponse,
-        NetworkErrorKind::ResourceLimit,
+        NetworkErrorKind::ResourceLimit(net::ResourceLimitKind::DecodedBody),
         NetworkErrorKind::Cancelled,
         NetworkErrorKind::Redirect(net::RedirectError::InvalidLocation),
     ] {
@@ -310,4 +316,130 @@ fn ai5f_status_strings_do_not_copy_semantic_urls_headers_or_error_text() {
             .unwrap()
             .contains("PRIVATE")
     );
+}
+
+#[test]
+fn ai7_fake_acquisition_failures_settle_consumers_without_cancelling_siblings() {
+    use net::{NetEvent, fake::FakeNetworkBuilder};
+    use std::sync::{Arc, atomic::AtomicBool};
+    let issued = "https://fixture.invalid/resource";
+    let sibling = "https://fixture.invalid/sibling";
+    for kind in [
+        NetworkErrorKind::DnsFailure,
+        NetworkErrorKind::ConnectionFailure,
+        NetworkErrorKind::TlsFailure,
+        NetworkErrorKind::Timeout,
+        NetworkErrorKind::Backend,
+    ] {
+        for route in [ResourceKind::Html, ResourceKind::Css, ResourceKind::Image] {
+            let (mut tab, commands) = match route {
+                ResourceKind::Html => {
+                    let mut tab = Tab::new(1);
+                    let (tx, rx) = mpsc::channel();
+                    tab.set_bus_sender(tx);
+                    tab.navigate_to_new(issued.into());
+                    (tab, rx)
+                }
+                ResourceKind::Css => addressing_tab(&format!(
+                    "<!doctype html><link rel=stylesheet href='{issued}'><link rel=stylesheet href='{sibling}'>"
+                )),
+                ResourceKind::Image => addressing_tab(&format!(
+                    "<!doctype html><img src='{issued}'><img src='{sibling}'>"
+                )),
+            };
+            let command = commands.try_iter().find(|c| matches!(c,CoreCommand::FetchStream { request,.. } if request.original_url().as_str()==issued)).unwrap();
+            let CoreCommand::FetchStream {
+                request,
+                stylesheet_slot_id,
+                ..
+            } = command
+            else {
+                unreachable!()
+            };
+            let mut network = FakeNetworkBuilder::new();
+            network
+                .register_network_error(request.current_url(), request.method(), kind)
+                .unwrap();
+            let (tx, rx) = mpsc::channel();
+            network
+                .build()
+                .fetch_stream(
+                    *request,
+                    route,
+                    Arc::new(AtomicBool::new(false)),
+                    Arc::new(move |e| {
+                        tx.send(e).unwrap();
+                    }),
+                )
+                .unwrap();
+            let event = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            let NetEvent::Error {
+                request_id,
+                url,
+                error_kind,
+                response,
+                body,
+                error,
+            } = event
+            else {
+                panic!("expected failure")
+            };
+            assert_eq!(error_kind, kind);
+            assert!(response.is_none() && body.is_none());
+            tab.on_core_event(CoreEvent::NetworkError {
+                tab_id: tab.tab_id,
+                request_id,
+                stylesheet_slot_id,
+                kind: route,
+                url,
+                error_kind,
+                response,
+                body,
+                error,
+            })
+            .unwrap();
+            assert_eq!(
+                rx.recv_timeout(Duration::from_secs(5)).unwrap_err(),
+                mpsc::RecvTimeoutError::Disconnected
+            );
+            match route {
+                ResourceKind::Html => {
+                    assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Failed);
+                    assert!(!tab.loading);
+                    assert!(
+                        commands
+                            .try_iter()
+                            .any(|c| matches!(c, CoreCommand::CancelRequest { .. }))
+                    );
+                }
+                ResourceKind::Css => {
+                    assert!(
+                        !tab.stylesheet_loads
+                            .contains_key(&stylesheet_slot_id.unwrap())
+                    );
+                    assert_eq!(tab.page.pending_count(), 1);
+                    assert!(
+                        !commands
+                            .try_iter()
+                            .any(|c| matches!(c, CoreCommand::CancelRequest { .. }))
+                    );
+                }
+                ResourceKind::Image => {
+                    assert!(matches!(
+                        tab.resources.image_state_by_url(issued),
+                        crate::resources::ImageState::Error { .. }
+                    ));
+                    assert!(matches!(
+                        tab.resources.image_state_by_url(sibling),
+                        crate::resources::ImageState::Loading { .. }
+                    ));
+                    assert!(
+                        !commands
+                            .try_iter()
+                            .any(|c| matches!(c, CoreCommand::CancelRequest { .. }))
+                    );
+                }
+            }
+        }
+    }
 }

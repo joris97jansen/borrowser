@@ -554,3 +554,16 @@ History commits on backend acquisition entry, and copy-on-write snapshots retain
 original correlation and acquired context. Shared-pool disposal evidence requires
 a retained agent and positive reuse controls; custom-policy fresh pools alone
 do not qualify exclusion. Historical AI1/AI5 descriptions remain dated evidence.
+
+## AI7 failure classification qualification (2026-11-20)
+
+[AI7 #1127](ai7-network-errors-cancellation-timeouts-resource-failures.md) refines
+acquisition and HTTP body-source failures, content decoding/unsupported encoding,
+and encoded/delivered/head/framing-metadata limit domains. Earlier coarse error
+descriptions retain their historical scope. Admission remains synchronous; HTTP
+status, immutable acquired facts, actual progress, AI6 history/checkpoints,
+consumer settlement and no automatic replay remain unchanged. Cooperative
+cancellation and operation timeouts retain their documented limits. Typed fake
+faults prove handling separately from concrete production mapping evidence.
+The candidate is uncommitted; committed-candidate gates, final aggregate CI,
+publication and issue closure remain separate.
