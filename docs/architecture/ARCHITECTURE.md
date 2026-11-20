@@ -954,3 +954,14 @@ identities; opaque comparison uses actual origin values. A bounded offline drive
 accounts for issued commands in both directions and supplies declared CSS through
 the existing admission and runtime protocol. The phase path still denies resources.
 No network runtime, general loader, capture schema or renderer change follows.
+
+## AI6: Fetch-owned redirect attempts (2026-11-20)
+
+[AI6](../platform/ai6-redirect-handling-limits-final-url.md) replaces AI5's
+temporary redirect rejection with bounded individual attempts under Fetch.
+The backend executes the admitted current target with following disabled;
+original operation/attachment correlation survives all hops. Only the selected
+response enters consumer body delivery. Immutable history records entered backend
+acquisitions, not server receipt. Addressing still owns URL semantics; runtime
+and Browser consumers gain no redirect policy. Qualification and exclusions are
+recorded in the AI6 contract, separately from GitHub issue state.

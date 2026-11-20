@@ -57,6 +57,28 @@ fn ai2_adapter_preserves_admitted_fields_and_complete_correlation_url_without_io
         r.transport_target().as_str(),
         "https://example.invalid/a?x=1&x=2"
     );
+    let next = r
+        .for_redirect(
+            addressing::BrowserUrl::parse("https://next.invalid/b?y=2#new")
+                .unwrap()
+                .url,
+        )
+        .unwrap();
+    let built = build_http_request(
+        &ureq::AgentBuilder::new().build(),
+        &next,
+        ResourceKind::Image,
+    );
+    assert_eq!(built.url(), "https://next.invalid/b?y=2#new");
+    assert_eq!(
+        next.legacy_issued_url(ResourceKind::Image).unwrap(),
+        r.original_url().as_str()
+    );
+    assert_eq!(next.headers(), r.headers());
+    assert_eq!(
+        next.transport_target().as_str(),
+        "https://next.invalid/b?y=2"
+    );
 }
 
 #[test]

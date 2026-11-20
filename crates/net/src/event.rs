@@ -12,6 +12,7 @@ pub enum NetworkErrorKind {
     ResourceLimit,
     MalformedResponse,
     UnsupportedResponse,
+    Redirect(crate::RedirectError),
 }
 
 pub enum NetEvent {

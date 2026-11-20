@@ -284,6 +284,7 @@ fn ai5f_status_strings_do_not_copy_semantic_urls_headers_or_error_text() {
         NetworkErrorKind::UnsupportedResponse,
         NetworkErrorKind::ResourceLimit,
         NetworkErrorKind::Cancelled,
+        NetworkErrorKind::Redirect(net::RedirectError::InvalidLocation),
     ] {
         let message = super::super::status::format_network_error(
             "document",

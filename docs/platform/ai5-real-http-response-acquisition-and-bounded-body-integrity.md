@@ -1,5 +1,8 @@
 # AI5: Real HTTP Response Acquisition And Bounded Body Integrity
 
+Current redirect execution is qualified by [AI6](ai6-redirect-handling-limits-final-url.md).
+Earlier implementation descriptions retain their dated historical scope.
+
 Current source management: [the AI subtree maintenance contract](ai-dependency-subtree-maintenance.md) governs Borrowser-owned ureq development, current qualification and upstream history. The dated AI3/AI5 package and patch records below remain historical evidence; HTTP behavior is unchanged.
 
 Issue: [#1125](https://github.com/joris97jansen/borrowser/issues/1125).
@@ -579,3 +582,18 @@ foundation; this reviewed contract captures the approved hardened scope without
 silently modifying the issue. AI6–AI9, AJ/AK, AT and later security/platform work
 retain the ownership listed above. No independently unowned new deliverable was
 identified and no new issue is needed.
+
+## AI6 traversal and disposal qualification (2026-11-20)
+
+[AI6](ai6-redirect-handling-limits-final-url.md) supersedes temporary blanket
+redirect rejection with explicit Fetch traversal. Backend following stays off.
+Intermediate readers are dropped without additional reader consumption, decoding
+or delivery; header acquisition may have buffered payload. Head/framing validation
+and selected-body integrity/limits remain unchanged. Discard is not verified body
+completion. Default policy shares an agent; custom policy still creates one per
+acquisition. Consequently AI6 shared-pool exclusion uses the existing retained-agent
+and real TLS seams with positive reuse controls and request/connection identity,
+not merely separate connections from fresh custom-root agents. Cooperative
+checkpoints and pending/entered history are documented in AI6; stronger cancellation
+and timeout behavior remain AI7. The release credential case now expects the
+concrete Redirect(UrlCredentialsUnsupported) category with zero target requests.

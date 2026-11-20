@@ -106,3 +106,144 @@ fn ai2_real_runtime_local_file_handoff_preserves_ids_and_body() {
     }
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn ai6_real_redirect_handoff_preserves_tab_generation_slot_and_original_correlation() {
+    use std::{
+        io::{BufRead, BufReader, Read, Write},
+        net::{TcpListener, TcpStream},
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+        thread,
+    };
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let stop = Arc::new(AtomicBool::new(false));
+    let stopping = stop.clone();
+    let worker = thread::spawn(move || {
+        let mut seen = Vec::new();
+        loop {
+            let (mut socket, _) = listener.accept().unwrap();
+            if stopping.load(Ordering::Acquire) {
+                break;
+            }
+            socket
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            socket
+                .set_write_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut reader = BufReader::new(socket.try_clone().unwrap()).take(16384);
+            let mut line = String::new();
+            assert!(reader.read_line(&mut line).unwrap() > 0);
+            let path = line.split_whitespace().nth(1).unwrap().to_owned();
+            loop {
+                line.clear();
+                assert!(reader.read_line(&mut line).unwrap() > 0);
+                if line == "\r\n" {
+                    break;
+                }
+            }
+            match path.as_str(){
+                "/source?q=1"=>socket.write_all(b"HTTP/1.1 302 Found\r\nLocation: /selected?q=2#target\r\nContent-Length: 3\r\nConnection: close\r\n\r\nold").unwrap(),
+                "/selected?q=2"=>socket.write_all(b"HTTP/1.1 500 Error\r\nContent-Length: 8\r\nConnection: close\r\n\r\nselected").unwrap(),
+                _=>panic!("unexpected request {path}"),
+            }
+            seen.push(path);
+        }
+        seen
+    });
+    struct Cleanup(
+        std::net::SocketAddr,
+        Arc<AtomicBool>,
+        Option<std::thread::JoinHandle<Vec<String>>>,
+    );
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            if let Some(worker) = self.2.take() {
+                self.1.store(true, Ordering::Release);
+                let _ = TcpStream::connect_timeout(&self.0, Duration::from_secs(1));
+                let result = worker.join();
+                if !thread::panicking() {
+                    result.unwrap();
+                }
+            }
+        }
+    }
+    let mut fixture = Cleanup(addr, stop, Some(worker));
+    let source = format!("http://{addr}/source?q=1#original");
+    let issued = format!("http://{addr}/source?q=1");
+    let selected = format!("http://{addr}/selected?q=2#target");
+    let slot = Some(StylesheetSlotId(88));
+    let (tx, rx) = mpsc::channel();
+    let (events, received) = mpsc::channel();
+    super::start_net_runtime(rx, events);
+    tx.send(
+        CoreCommand::try_fetch_stream(2, slot, Route::Css, request(&source, Purpose::Stylesheet))
+            .unwrap(),
+    )
+    .unwrap();
+    drop(tx);
+    let (mut starts, mut terminals) = (0, 0);
+    let mut bytes = Vec::new();
+    let mut admitted = None;
+    loop {
+        match received.recv_timeout(Duration::from_secs(5)) {
+            Ok(CoreEvent::NetworkStart {
+                tab_id: 2,
+                request_id: 17,
+                stylesheet_slot_id,
+                kind: Route::Css,
+                response,
+            }) => {
+                assert_eq!(stylesheet_slot_id, slot);
+                assert_eq!(response.requested_url(), issued);
+                assert_eq!(response.original_url().as_str(), source);
+                assert_eq!(response.reported_response_url(), Some(selected.as_str()));
+                assert_eq!(response.status_code(), Some(500));
+                assert_eq!(response.redirect_chain().len(), 1);
+                starts += 1;
+                admitted = Some(response);
+            }
+            Ok(CoreEvent::NetworkChunk {
+                tab_id: 2,
+                request_id: 17,
+                stylesheet_slot_id,
+                kind: Route::Css,
+                url,
+                bytes: chunk,
+            }) => {
+                assert_eq!(starts, 1);
+                assert_eq!(stylesheet_slot_id, slot);
+                assert_eq!(url, issued);
+                bytes.extend(chunk);
+            }
+            Ok(CoreEvent::NetworkDone {
+                tab_id: 2,
+                request_id: 17,
+                stylesheet_slot_id,
+                kind: Route::Css,
+                response,
+                body,
+            }) => {
+                assert_eq!(stylesheet_slot_id, slot);
+                assert_eq!(admitted.as_ref(), Some(&response));
+                assert_eq!(body.delivered_bytes(), 8);
+                assert!(body.matches_route(Route::Css));
+                terminals += 1;
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            other => panic!("unexpected runtime event {other:?}"),
+        }
+    }
+    assert_eq!((starts, terminals), (1, 1));
+    assert_eq!(bytes, b"selected");
+    fixture.1.store(true, Ordering::Release);
+    let _ = TcpStream::connect_timeout(&addr, Duration::from_secs(1));
+    assert_eq!(
+        fixture.2.take().unwrap().join().unwrap(),
+        ["/source?q=1", "/selected?q=2"]
+    );
+}

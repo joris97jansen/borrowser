@@ -163,11 +163,16 @@ fn collect(
                         // retaining acquired facts and exactly zero progress.
                         assert!(response.is_some());
                         assert_eq!(delivered, 0);
-                        assert!(matches!(
-                            error_kind,
-                            NetworkErrorKind::UnsupportedResponse
-                                | NetworkErrorKind::MalformedResponse
-                        ));
+                        assert!(
+                            matches!(
+                                error_kind,
+                                NetworkErrorKind::UnsupportedResponse
+                                    | NetworkErrorKind::MalformedResponse
+                                    | NetworkErrorKind::Redirect(_)
+                                    | NetworkErrorKind::Cancelled
+                            ) || !response.as_ref().unwrap().redirect_chain().is_empty(),
+                            "pre-Start backend failure with progress requires prior acquired redirect context"
+                        );
                     }
                     assert!(body.matches_route(route));
                     assert_eq!(body.delivered_bytes(), delivered);
@@ -394,7 +399,7 @@ fn ai4_http_404_500_are_responses_all_routes() {
 }
 
 #[test]
-fn ai4_location_is_preserved_without_following() {
+fn ai6_failed_next_acquisition_preserves_source_location_and_entered_history() {
     let mut headers = HttpHeaders::new();
     headers.append("Location", b"/target").unwrap();
     let response = FakeResponse::new(
@@ -416,11 +421,11 @@ fn ai4_location_is_preserved_without_following() {
         Route::Html,
         CancelAt::Never,
     );
-    // AI4 preserved Location without traversing it. AI5's shared Follow
-    // admission now rejects this operation before Start, retaining those facts.
+    // The configured target failure must be reached through actual traversal.
+    // Retain source metadata, not an invented response for the failed target.
     let [
         NetEvent::Error {
-            error_kind: NetworkErrorKind::UnsupportedResponse,
+            error_kind: NetworkErrorKind::Transport,
             response: Some(response),
             body: Some(progress),
             ..
@@ -430,6 +435,11 @@ fn ai4_location_is_preserved_without_following() {
         panic!("redirect admission must be terminal: {events:?}");
     };
     assert_eq!(response.status_code(), Some(302));
+    assert_eq!(response.redirect_chain().len(), 1);
+    assert_eq!(
+        response.redirect_chain()[0].target_url().as_str(),
+        "https://fixture.invalid/target"
+    );
     assert_eq!(
         response.headers().values("location").next(),
         Some(b"/target".as_slice())

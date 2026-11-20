@@ -2,6 +2,34 @@ use crate::NetworkErrorKind;
 use core_types::ResourceKind;
 use std::io::Write;
 
+pub(crate) fn log_redirect_decision(
+    request_id: u64,
+    kind: ResourceKind,
+    followed: usize,
+    status: crate::HttpStatus,
+    decision: &'static str,
+) {
+    let _ = writeln!(
+        std::io::stderr().lock(),
+        "{}",
+        redirect_message(request_id, kind, followed, status, decision)
+    );
+}
+
+fn redirect_message(
+    request_id: u64,
+    kind: ResourceKind,
+    followed: usize,
+    status: crate::HttpStatus,
+    decision: &'static str,
+) -> String {
+    format!(
+        "[net][req={request_id}][{}][stage=redirect][followed={followed}][status={}][decision={decision}]",
+        kind.as_str(),
+        status.code()
+    )
+}
+
 pub(crate) fn log_network_error(
     request_id: u64,
     kind: ResourceKind,
@@ -28,4 +56,21 @@ fn network_error_message(
         kind.as_str(),
         kind.role_str(),
     )
+}
+
+#[cfg(test)]
+mod redirect_tests {
+    #[test]
+    fn ai6_redirect_diagnostic_has_fixed_structural_fields() {
+        assert_eq!(
+            super::redirect_message(
+                7,
+                core_types::ResourceKind::Html,
+                2,
+                crate::HttpStatus::try_from(302).unwrap(),
+                "entered"
+            ),
+            "[net][req=7][html][stage=redirect][followed=2][status=302][decision=entered]"
+        );
+    }
 }

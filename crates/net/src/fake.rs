@@ -141,8 +141,9 @@ impl FakeNetwork {
 /// not a completed Fetch result. gzip fixtures supply gzip bytes; shared Fetch
 /// performs the same decoding as real HTTP. Content-Length remains encoded.
 /// Reported URL provenance is explicit: missing/empty/invalid values reach the
-/// same production response validation as real acquisition. Location participates
-/// in shared redirect admission and never executes another fake or real route.
+/// same production response validation as real acquisition. Shared Fetch resolves
+/// and follows Location through subsequent acquisitions; this backend only looks
+/// up the current admitted route and never falls back to real I/O.
 #[derive(Clone)]
 pub struct FakeResponse {
     status: HttpStatus,
