@@ -51,9 +51,9 @@ impl ContentCoding {
             return Err(NetworkErrorKind::MalformedResponse);
         }
         if count != 1 {
-            return Err(NetworkErrorKind::UnsupportedResponse);
+            return Err(NetworkErrorKind::UnsupportedEncoding);
         }
-        selected.ok_or(NetworkErrorKind::UnsupportedResponse)
+        selected.ok_or(NetworkErrorKind::UnsupportedEncoding)
     }
 }
 
@@ -68,7 +68,9 @@ pub struct BodyProgress {
 impl BodyProgress {
     pub fn try_new(route: ResourceKind, delivered_bytes: usize) -> Result<Self, NetworkErrorKind> {
         if delivered_bytes > resource_byte_limit(route) {
-            return Err(NetworkErrorKind::ResourceLimit);
+            return Err(NetworkErrorKind::ResourceLimit(
+                crate::ResourceLimitKind::DecodedBody,
+            ));
         }
         Ok(Self {
             route,

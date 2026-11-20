@@ -1791,3 +1791,35 @@ Existing GitHub closure from imported rust-url history does not establish this
 implementation's publication, review, hosted qualification or completion. AI7
 broader failures/cancellation/timeouts, AI8 aggregate metadata, AI9 AG integration
 and later cache/security/navigation capabilities remain pending with their owners.
+
+## AI7 failure implementation candidate (2026-11-20)
+
+[AI7 #1127](platform/ai7-network-errors-cancellation-timeouts-resource-failures.md)
+provides typed DNS, connection, TLS, timeout, cancellation, malformed response,
+content-decoding, unsupported encoding/response, precise resource-limit domains,
+redirect and honest backend/read fallback outcomes. HTTP statuses remain response
+facts; acquired metadata, redirect context and delivered progress survive failure.
+Typed fake fixtures use the shared lifecycle; real/backend fixtures separately
+qualify mappings. Local-file reader fallback and current Browser settlement are
+preserved. Narrow backend markers and blocking-boundary timeout normalization
+retain concrete sources and no replay.
+
+This is an uncommitted implementation, not issue/milestone completion. Final
+committed-candidate dependency gates and complete CI remain pending a separately
+authorized commit. Cancellation is cooperative and navigation-scoped; DNS is
+synchronous, there is no overall fetch deadline, blocked I/O is not immediately
+interruptible, and producer emission is not acknowledged delivery. Retained
+cancellation records and process-wide resource/concurrency limits remain gaps.
+AI8 aggregate metadata, AI9 AG networking integration, AJ/AK loader lifecycles,
+AT cache work and later security/platform features remain outside AI7.
+
+AI7 review corrections preserve caller request-body reader errors separately from
+qualified destination write/flush timeouts in the maintained backend's existing
+chunked and content-length copy paths. Borrowser Fetch remains GET-only. The
+contextual CoreEvent error diagnostic now has independently authored literal
+ordinary and pretty output and ordinary nesting; pretty nesting checks redaction
+and bounds. Cancellation wording describes outer body-reader
+checkpoints and the separate raw-205 loop, including intervening internal reads.
+Fresh correction qualification is recorded in the AI7 contract; the earlier
+candidate's native failure evidence is preserved, and final committed-candidate
+gates and full CI remain pending.

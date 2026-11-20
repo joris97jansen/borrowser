@@ -211,7 +211,12 @@ fn fixed_length_failure_preserves_metadata_and_delivered_prefix() {
     let events = real(
         b"HTTP/1.1 404 Not Found\r\nContent-Length: 5\r\nX-Context: retained\r\n\r\nabc".to_vec(),
     );
-    error(&events, NetworkErrorKind::Read, Some(404), Some(3));
+    error(
+        &events,
+        NetworkErrorKind::MalformedResponse,
+        Some(404),
+        Some(3),
+    );
     assert_eq!(body(&events), b"abc");
     assert_context_header(&events);
 }
@@ -243,7 +248,12 @@ macro_rules! incomplete_chunk {
                 .as_bytes()
                 .to_vec(),
             );
-            error(&events, NetworkErrorKind::Read, Some(200), Some(3));
+            error(
+                &events,
+                NetworkErrorKind::MalformedResponse,
+                Some(200),
+                Some(3),
+            );
             assert_eq!(body(&events), b"abc");
             assert_context_header(&events);
         }
@@ -416,12 +426,12 @@ macro_rules! reject_content_coding {
 reject_content_coding!(
     unsupported_content_coding_must_not_deliver_encoded_bytes,
     "br",
-    UnsupportedResponse
+    UnsupportedEncoding
 );
 reject_content_coding!(
     stacked_content_coding_must_not_deliver_encoded_bytes,
     "gzip, gzip",
-    UnsupportedResponse
+    UnsupportedEncoding
 );
 reject_content_coding!(empty_content_coding_is_malformed, "", MalformedResponse);
 
@@ -461,13 +471,13 @@ fn decoded_gzip_must_preserve_acquired_encoding_and_length_metadata() {
 }
 
 #[test]
-fn corrupt_gzip_has_one_read_failure_with_response_and_progress() {
+fn corrupt_gzip_has_one_decoding_failure_with_response_and_progress() {
     let mut payload = GZIP_HELLO.to_vec();
     payload[17] ^= 1; // Corrupt CRC, not the HTTP framing or a transport EOF.
     let events = real(gzip_wire(&payload));
     match events.last().unwrap() {
         NetEvent::Error {
-            error_kind: NetworkErrorKind::Read,
+            error_kind: NetworkErrorKind::ContentDecoding,
             response: Some(response),
             body: Some(_),
             ..
@@ -512,7 +522,12 @@ fn status_205_chunk_payload_must_be_rejected_without_delivering_it() {
 fn status_205_empty_chunk_requires_complete_termination() {
     let events =
         real(b"HTTP/1.1 205 Reset Content\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n".to_vec());
-    error(&events, NetworkErrorKind::Read, Some(205), Some(0));
+    error(
+        &events,
+        NetworkErrorKind::MalformedResponse,
+        Some(205),
+        Some(0),
+    );
     assert!(body(&events).is_empty());
 }
 
@@ -707,7 +722,12 @@ fn ai5c_framing_failures_preserve_payload_and_response_context_on_http_and_https
             let server = WireServer::spawn(https, move |_, _| WireReply::close(wire.clone()));
             let events = collect(&server.url("/framing"), trusted_policy());
             assert_eq!(server.finish().len(), 1);
-            error(&events, NetworkErrorKind::Read, Some(500), Some(3));
+            error(
+                &events,
+                NetworkErrorKind::MalformedResponse,
+                Some(500),
+                Some(3),
+            );
             assert_eq!(body(&events), b"abc");
         }
     }
@@ -754,17 +774,17 @@ fn ai5c_205_verifies_framing_without_delivering_content_on_http_and_https() {
             (
                 "Transfer-Encoding: chunked\r\n",
                 "1\r\n",
-                Some(NetworkErrorKind::Read),
+                Some(NetworkErrorKind::MalformedResponse),
             ),
             (
                 "Transfer-Encoding: chunked\r\n",
                 "0\r\nX: incomplete",
-                Some(NetworkErrorKind::Read),
+                Some(NetworkErrorKind::MalformedResponse),
             ),
             (
                 "Transfer-Encoding: chunked\r\n",
                 "0\r\nContent-Length: 0\r\n\r\n",
-                Some(NetworkErrorKind::Read),
+                Some(NetworkErrorKind::MalformedResponse),
             ),
         ] {
             let wire = format!("HTTP/1.1 205 Reset Content\r\n{fields}\r\n{payload}");
@@ -799,7 +819,7 @@ fn ai5c_chunk_metadata_resource_failures_are_typed_and_keep_known_progress() {
             ));
             error(
                 &events,
-                NetworkErrorKind::ResourceLimit,
+                NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::FramingMetadata),
                 Some(status),
                 Some(if status == 205 { 0 } else { 3 }),
             );
@@ -818,7 +838,7 @@ fn ai5c_chunk_metadata_resource_failures_are_typed_and_keep_known_progress() {
     ));
     error(
         &events,
-        NetworkErrorKind::ResourceLimit,
+        NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::FramingMetadata),
         Some(200),
         Some(complete_chunks),
     );
@@ -829,7 +849,12 @@ fn ai5c_chunk_metadata_resource_failures_are_typed_and_keep_known_progress() {
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Encoding: gzip\r\n\r\n0;x={}\r\n\r\n",
         "a".repeat(8 * 1024)
     ));
-    error(&events, NetworkErrorKind::ResourceLimit, Some(200), Some(0));
+    error(
+        &events,
+        NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::FramingMetadata),
+        Some(200),
+        Some(0),
+    );
 }
 
 #[test]
@@ -852,7 +877,7 @@ fn ai5c_trailer_field_limit_keeps_response_facts_and_delivered_progress() {
             } else {
                 error(
                     &events,
-                    NetworkErrorKind::ResourceLimit,
+                    NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::FramingMetadata),
                     Some(status),
                     Some(payload.len()),
                 );
@@ -897,7 +922,7 @@ fn ai5c_close_delimited_205_stays_incomplete_until_read_timeout() {
                 response: started, ..
             },
             NetEvent::Error {
-                error_kind: NetworkErrorKind::Read,
+                error_kind: NetworkErrorKind::Timeout,
                 response: Some(failed),
                 body: Some(progress),
                 ..

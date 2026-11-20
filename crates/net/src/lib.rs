@@ -25,7 +25,7 @@ mod tls;
 
 pub use body::BodyProgress;
 pub use content_type::{ContentType, InvalidContentType};
-pub use event::{NetEvent, NetworkErrorKind};
+pub use event::{NetEvent, NetworkErrorKind, ResourceLimitKind};
 pub use fetch::fetch_stream;
 pub use headers::{HeaderError, HttpHeaders};
 pub use policy::{HttpClientPolicy, HttpTimeoutPolicy, TlsTrustStore};

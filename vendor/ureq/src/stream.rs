@@ -194,6 +194,16 @@ pub(crate) fn io_err_timeout(error: String) -> io::Error {
     io::Error::new(io::ErrorKind::TimedOut, error)
 }
 
+/// Only call after successful blocking socket setup for the relevant operation.
+/// A generic Read/Write or idle nonblocking probe does not provide this evidence.
+pub(crate) fn normalize_blocking_timeout(error: io::Error, finite: bool) -> io::Error {
+    if finite && error.kind() == io::ErrorKind::WouldBlock {
+        io::Error::new(io::ErrorKind::TimedOut, error)
+    } else {
+        error
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct ReadOnlyStream(Cursor<Vec<u8>>);
 
@@ -350,7 +360,26 @@ pub(crate) fn connect_https(unit: &Unit, hostname: &str) -> Result<Stream, Error
     let (sock, remote_addr) = connect_host(unit, hostname, port)?;
 
     let tls_conf = &unit.agent.config.tls_config;
-    let https_stream = tls_conf.connect(hostname, Box::new(sock))?;
+    // connect_host has set this owned TCP socket to blocking mode with the
+    // configured limits. TLS setup can read or write; normalize only when both
+    // operations are bounded and retain the complete original TLS/I/O cause.
+    let bounded =
+        unit.agent.config.timeout_read.is_some() && unit.agent.config.timeout_write.is_some();
+    let https_stream = tls_conf
+        .connect(hostname, Box::new(sock))
+        .map_err(|error| {
+            use std::error::Error as _;
+            if bounded
+                && error
+                    .source()
+                    .and_then(|e| e.downcast_ref::<io::Error>())
+                    .is_some_and(|e| e.kind() == io::ErrorKind::WouldBlock)
+            {
+                Error::from(io::Error::new(io::ErrorKind::TimedOut, error))
+            } else {
+                error
+            }
+        })?;
     let pool_key = PoolKey::new(&unit.url, unit.agent.config.proxy.clone());
     let pool_returner = PoolReturner::new(&unit.agent, pool_key);
     Ok(Stream::new(https_stream, remote_addr, pool_returner))

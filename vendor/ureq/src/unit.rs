@@ -237,9 +237,17 @@ fn connect_inner(unit: &Unit, use_pooled: bool, body: SizedReader) -> Result<Res
     }
     // Once transmission begins, all failures belong to this attempt. A stale
     // idle candidate may be discarded at checkout, never replayed after writes.
-    send_prelude(unit, &mut stream)?;
-    body::send_body(body, unit.is_chunked, &mut stream)?;
-    stream.flush()?;
+    // connect_socket successfully restored blocking mode and configured this
+    // socket for request I/O. Do not apply this rule to generic/non-socket I/O.
+    let finite_write = stream.socket().is_some() && unit.agent.config.timeout_write.is_some();
+    send_prelude(unit, &mut stream)
+        .map_err(|error| stream::normalize_blocking_timeout(error, finite_write))?;
+    // The copy can also fail in the caller's body reader. Its destination
+    // writer normalizes only actual socket writes, never aggregate copy errors.
+    body::send_body(body, unit.is_chunked, &mut stream, finite_write)?;
+    stream
+        .flush()
+        .map_err(|error| stream::normalize_blocking_timeout(error, finite_write))?;
     let resp = Response::do_from_stream(stream, unit.clone())?;
 
     // squirrel away cookies

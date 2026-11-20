@@ -77,20 +77,67 @@ impl HttpResponseBackend for UreqBackend {
 }
 
 pub(crate) fn backend_failure(error: &ureq::Error) -> (NetworkErrorKind, &'static str) {
+    let kind = typed_failure(error).unwrap_or(NetworkErrorKind::Backend);
+    let message = if matches!(
+        error.kind(),
+        ureq::ErrorKind::BadHeader | ureq::ErrorKind::BadStatus
+    ) {
+        "malformed HTTP response head"
+    } else {
+        kind.diagnostic()
+    };
+    (kind, message)
+}
+
+/// Inspect only concrete owned wrappers used by this backend. In particular,
+/// io::Error::get_ref() exposes payloads that a generic source walk can skip.
+/// Unknown wrappers/messages never authorize a more precise classification.
+pub(crate) fn typed_failure(error: &(dyn std::error::Error + 'static)) -> Option<NetworkErrorKind> {
+    use crate::ResourceLimitKind;
+    if let Some(error) = error.downcast_ref::<std::io::Error>() {
+        if error.kind() == std::io::ErrorKind::TimedOut {
+            return Some(NetworkErrorKind::Timeout);
+        }
+        if let Some(kind) = error.get_ref().and_then(|source| typed_failure(source)) {
+            return Some(kind);
+        }
+        return match error.kind() {
+            std::io::ErrorKind::ConnectionRefused
+            | std::io::ErrorKind::ConnectionReset
+            | std::io::ErrorKind::ConnectionAborted
+            | std::io::ErrorKind::NotConnected
+            | std::io::ErrorKind::BrokenPipe => Some(NetworkErrorKind::ConnectionFailure),
+            _ => None,
+        };
+    }
+    if error.is::<rustls::Error>() {
+        return Some(NetworkErrorKind::TlsFailure);
+    }
+    let error = error.downcast_ref::<ureq::Error>()?;
+    let direct = match error.kind() {
+        ureq::ErrorKind::ResponseHeadTooLarge => Some(NetworkErrorKind::ResourceLimit(
+            ResourceLimitKind::ResponseHead,
+        )),
+        ureq::ErrorKind::BodyMetadataTooLarge => Some(NetworkErrorKind::ResourceLimit(
+            ResourceLimitKind::FramingMetadata,
+        )),
+        ureq::ErrorKind::BadHeader | ureq::ErrorKind::BadStatus | ureq::ErrorKind::BadBody => {
+            Some(NetworkErrorKind::MalformedResponse)
+        }
+        ureq::ErrorKind::UnsupportedResponse => Some(NetworkErrorKind::UnsupportedResponse),
+        _ => None,
+    };
+    if direct.is_some() {
+        return direct;
+    }
+    if let Some(kind) = std::error::Error::source(error).and_then(typed_failure) {
+        return Some(kind);
+    }
     match error.kind() {
-        ureq::ErrorKind::ResponseHeadTooLarge => (
-            NetworkErrorKind::ResourceLimit,
-            "HTTP response head limit exceeded",
-        ),
-        ureq::ErrorKind::UnsupportedResponse => (
-            NetworkErrorKind::UnsupportedResponse,
-            "unsupported HTTP response",
-        ),
-        ureq::ErrorKind::BadHeader | ureq::ErrorKind::BadStatus => (
-            NetworkErrorKind::MalformedResponse,
-            "malformed HTTP response head",
-        ),
-        _ => (NetworkErrorKind::Transport, "HTTP acquisition failed"),
+        ureq::ErrorKind::Dns => Some(NetworkErrorKind::DnsFailure),
+        ureq::ErrorKind::ConnectionFailed => Some(NetworkErrorKind::ConnectionFailure),
+        ureq::ErrorKind::Tls => Some(NetworkErrorKind::TlsFailure),
+        _ => None,
     }
 }
 

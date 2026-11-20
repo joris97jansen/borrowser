@@ -303,3 +303,16 @@ Self-review found no material deviation from the approved AI6 design. The local
 implementation is available for review, with the scoped validation complete.
 The full CI aggregate remains failed and hosted Linux/Windows qualification,
 review approval, publication, merge and GitHub completion remain separate.
+
+## AI7 failure classification qualification (2026-11-20)
+
+[AI7 #1127](ai7-network-errors-cancellation-timeouts-resource-failures.md) refines
+acquisition and HTTP body-source failures, content decoding/unsupported encoding,
+and encoded/delivered/head/framing-metadata limit domains. Earlier coarse error
+descriptions retain their historical scope. Admission remains synchronous; HTTP
+status, immutable acquired facts, actual progress, AI6 history/checkpoints,
+consumer settlement and no automatic replay remain unchanged. Cooperative
+cancellation and operation timeouts retain their documented limits. Typed fake
+faults prove handling separately from concrete production mapping evidence.
+The candidate is uncommitted; committed-candidate gates, final aggregate CI,
+publication and issue closure remain separate.

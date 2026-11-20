@@ -34,7 +34,10 @@ fn ai3_stream_exact_and_over_limit_counts_every_route() {
                 result.ok().expect("exact limit completes")
             } else {
                 let failure = result.expect_err("over limit fails");
-                assert_eq!(failure.kind, NetworkErrorKind::ResourceLimit);
+                assert_eq!(
+                    failure.kind,
+                    NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::DecodedBody)
+                );
                 failure.body
             };
             assert_eq!(progress.delivered_bytes(), cap);
@@ -108,7 +111,7 @@ fn ai3_real_reader_failure_retains_http_error_metadata_and_partial_bytes() {
     assert!(result.done.is_none());
     let start = result.start.expect("acquired metadata");
     let failure = result.error.expect("read failure");
-    assert_eq!(failure.error_kind, NetworkErrorKind::Read);
+    assert_eq!(failure.error_kind, NetworkErrorKind::MalformedResponse);
     assert_eq!(failure.status_code, Some(500));
     assert_eq!(failure.response.as_ref(), Some(&start.response));
     assert_eq!(failure.body.unwrap().delivered_bytes(), result.body.len());

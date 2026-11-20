@@ -137,16 +137,44 @@ fn copy_chunked<R: Read, W: Write>(reader: &mut R, writer: &mut W) -> io::Result
     }
 }
 
+/// The body copy returns both caller-reader and destination errors. Qualify
+/// only the destination operations, leaving reader errors and sources intact.
+struct RequestBodyWriter<'a> {
+    stream: &'a mut Stream,
+    finite_write_timeout: bool,
+}
+
+impl Write for RequestBodyWriter<'_> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.stream.write(bytes).map_err(|error| {
+            crate::stream::normalize_blocking_timeout(error, self.finite_write_timeout)
+        })
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.stream.flush().map_err(|error| {
+            crate::stream::normalize_blocking_timeout(error, self.finite_write_timeout)
+        })
+    }
+}
+
 /// Helper to send a body, either as chunked or not.
 pub(crate) fn send_body(
     mut body: SizedReader,
     do_chunk: bool,
     stream: &mut Stream,
+    finite_write_timeout: bool,
 ) -> io::Result<()> {
+    // connect_inner supplies this qualification only after successful blocking
+    // socket preparation. Neither copy path normalizes a caller read error.
+    let mut writer = RequestBodyWriter {
+        stream,
+        finite_write_timeout,
+    };
     if do_chunk {
-        copy_chunked(&mut body.reader, stream)?;
+        copy_chunked(&mut body.reader, &mut writer)?;
     } else {
-        copy(&mut body.reader, stream)?;
+        copy(&mut body.reader, &mut writer)?;
     };
 
     Ok(())

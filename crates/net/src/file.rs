@@ -20,6 +20,12 @@ pub(crate) fn fetch_file_url(
     let path = match request.current_url().to_file_path() {
         Ok(path) => path,
         Err(_) => {
+            crate::log::log_network_error(
+                request_id,
+                kind,
+                "acquisition",
+                NetworkErrorKind::LocalFile,
+            );
             callback(NetEvent::Error {
                 request_id,
                 url: url.to_owned(),
@@ -42,6 +48,12 @@ pub(crate) fn fetch_file_url(
     let mut file = match File::open(&path) {
         Ok(file) => file,
         Err(_) => {
+            crate::log::log_network_error(
+                request_id,
+                kind,
+                "acquisition",
+                NetworkErrorKind::LocalFile,
+            );
             callback(NetEvent::Error {
                 request_id,
                 url: url.to_string(),
@@ -62,6 +74,7 @@ pub(crate) fn fetch_file_url(
     let body = match stream_reader(request_id, url, kind, cancel_token, callback, &mut file) {
         Ok(body) => body,
         Err(kind_and_error) => {
+            crate::log::log_network_error(request_id, kind, "body", kind_and_error.kind);
             callback(NetEvent::Error {
                 request_id,
                 url: url.to_string(),

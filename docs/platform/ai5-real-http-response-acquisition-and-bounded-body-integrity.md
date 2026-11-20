@@ -597,3 +597,16 @@ not merely separate connections from fresh custom-root agents. Cooperative
 checkpoints and pending/entered history are documented in AI6; stronger cancellation
 and timeout behavior remain AI7. The release credential case now expects the
 concrete Redirect(UrlCredentialsUnsupported) category with zero target requests.
+
+## AI7 failure classification qualification (2026-11-20)
+
+[AI7 #1127](ai7-network-errors-cancellation-timeouts-resource-failures.md) refines
+acquisition and HTTP body-source failures, content decoding/unsupported encoding,
+and encoded/delivered/head/framing-metadata limit domains. Earlier coarse error
+descriptions retain their historical scope. Admission remains synchronous; HTTP
+status, immutable acquired facts, actual progress, AI6 history/checkpoints,
+consumer settlement and no automatic replay remain unchanged. Cooperative
+cancellation and operation timeouts retain their documented limits. Typed fake
+faults prove handling separately from concrete production mapping evidence.
+The candidate is uncommitted; committed-candidate gates, final aggregate CI,
+publication and issue closure remain separate.

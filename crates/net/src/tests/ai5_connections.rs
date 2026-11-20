@@ -195,6 +195,9 @@ enum Fault {
     Checkout,
     Unsupported,
     ReadTimeout,
+    WriteTimeout,
+    BodyWriteTimeout,
+    FlushTimeout,
 }
 
 #[derive(Debug, Default)]
@@ -288,6 +291,12 @@ impl Write for FaultTransport {
                 .push((socket.read_timeout()?, socket.write_timeout()?));
         }
         if self.attempt == self.on_attempt {
+            if self.fault == Fault::WriteTimeout {
+                return Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    "PRIVATE write timeout",
+                ));
+            }
             if self.fault == Fault::Prelude {
                 if self.partial {
                     return Err(injected());
@@ -296,8 +305,16 @@ impl Write for FaultTransport {
                 self.request.extend_from_slice(&buf[..5]);
                 return Ok(5);
             }
-            if self.fault == Fault::Body && self.request.ends_with(b"\r\n\r\n") {
-                return Err(injected());
+            if self.request.ends_with(b"\r\n\r\n") {
+                if self.fault == Fault::Body {
+                    return Err(injected());
+                }
+                if self.fault == Fault::BodyWriteTimeout {
+                    return Err(io::Error::new(
+                        io::ErrorKind::WouldBlock,
+                        "PRIVATE body write timeout",
+                    ));
+                }
             }
         }
         self.request.extend_from_slice(buf);
@@ -307,6 +324,12 @@ impl Write for FaultTransport {
         self.seen.flushes.fetch_add(1, Ordering::SeqCst);
         if self.attempt == self.on_attempt && self.fault == Fault::Flush {
             return Err(injected());
+        }
+        if self.attempt == self.on_attempt && self.fault == Fault::FlushTimeout {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "PRIVATE flush timeout",
+            ));
         }
         if !(self.attempt == self.on_attempt && self.fault == Fault::HeadEof) {
             self.input.get_mut().extend_from_slice(match self.fault {
@@ -396,8 +419,142 @@ fn ai5f_timeout_normalization_retains_the_original_io_cause_without_replay() {
     assert_eq!(seen.attempts.load(Ordering::SeqCst), 1);
     assert_eq!(
         crate::backend::backend_failure(&error),
-        (NetworkErrorKind::Transport, "HTTP acquisition failed")
+        (NetworkErrorKind::Timeout, "network operation timed out")
     );
+}
+
+#[test]
+fn ai7_verified_blocking_request_write_timeout_is_not_replayed() {
+    let (agent, url, seen) = fault_agent(Fault::WriteTimeout, 1);
+    let events = collect_agent(&agent, &url);
+    assert!(matches!(
+        events.as_slice(),
+        [NetEvent::Error {
+            error_kind: NetworkErrorKind::Timeout,
+            response: None,
+            body: None,
+            ..
+        }]
+    ));
+    assert_eq!(seen.attempts.load(Ordering::SeqCst), 1);
+    assert_eq!(seen.connections.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn ai7_caller_body_would_block_is_not_a_destination_timeout_in_either_copy_path() {
+    use std::error::Error;
+
+    struct CallerBody {
+        head_received: mpsc::Receiver<()>,
+        reads: Arc<AtomicUsize>,
+    }
+    impl Read for CallerBody {
+        fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+            if bytes.is_empty() {
+                return Ok(0);
+            }
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            // The real destination has received the request head. This source
+            // fault is independent of its healthy socket and finite write limit.
+            self.head_received
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap();
+            Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                io::Error::new(io::ErrorKind::PermissionDenied, "PRIVATE caller body cause"),
+            ))
+        }
+    }
+
+    for chunked in [false, true] {
+        let (head_received, ready) = mpsc::channel();
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let observed = attempts.clone();
+        let server = WireServer::spawn(false, move |request, _| {
+            observed.fetch_add(1, Ordering::SeqCst);
+            assert_eq!(
+                request.header("transfer-encoding"),
+                chunked.then_some("chunked")
+            );
+            assert_eq!(request.header("content-length"), (!chunked).then_some("7"));
+            head_received.send(()).unwrap();
+            WireReply::close(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+        });
+        let agent = ureq::AgentBuilder::new()
+            .redirects(0)
+            .timeout_write(Duration::from_secs(2))
+            .build();
+        let mut request = agent.post(&server.url("/body-source"));
+        if !chunked {
+            request = request.set("Content-Length", "7");
+        }
+        let reads = Arc::new(AtomicUsize::new(0));
+        let error = request
+            .send(CallerBody {
+                head_received: ready,
+                reads: reads.clone(),
+            })
+            .unwrap_err();
+        let source = error.source().unwrap().downcast_ref::<io::Error>().unwrap();
+        assert_eq!(source.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(
+            crate::backend::backend_failure(&error).0,
+            NetworkErrorKind::Backend
+        );
+        assert_eq!(
+            source
+                .get_ref()
+                .unwrap()
+                .downcast_ref::<io::Error>()
+                .unwrap()
+                .kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        assert_eq!(reads.load(Ordering::SeqCst), 1);
+        assert_eq!(server.finish().len(), 1);
+        assert_eq!(
+            attempts.load(Ordering::SeqCst),
+            1,
+            "source failure must not replay"
+        );
+    }
+}
+
+#[test]
+fn ai7_destination_body_write_and_flush_timeouts_preserve_sources_without_replay() {
+    use std::error::Error;
+    for fault in [Fault::BodyWriteTimeout, Fault::FlushTimeout] {
+        for chunked in [false, true] {
+            for on_attempt in [1, 2] {
+                let (agent, url, seen) = fault_agent(fault, on_attempt);
+                if on_attempt == 2 {
+                    assert_eq!(read_response(agent.get(&url).call().unwrap()), b"abc");
+                }
+                let mut request = agent.post(&url);
+                if !chunked {
+                    request = request.set("Content-Length", "7");
+                }
+                let error = request.send(Cursor::new(b"payload")).unwrap_err();
+                let normalized = error.source().unwrap().downcast_ref::<io::Error>().unwrap();
+                assert_eq!(normalized.kind(), io::ErrorKind::TimedOut);
+                assert_eq!(
+                    normalized
+                        .get_ref()
+                        .unwrap()
+                        .downcast_ref::<io::Error>()
+                        .unwrap()
+                        .kind(),
+                    io::ErrorKind::WouldBlock
+                );
+                assert_eq!(
+                    crate::backend::backend_failure(&error).0,
+                    NetworkErrorKind::Timeout
+                );
+                assert_eq!(seen.attempts.load(Ordering::SeqCst), on_attempt);
+                assert_eq!(seen.connections.load(Ordering::SeqCst), 1);
+            }
+        }
+    }
 }
 
 #[test]
@@ -628,7 +785,7 @@ fn transmission_failure_reports_one_typed_fetch_error_without_replay() {
         let events = collect_agent(&agent, &url);
         assert!(
             matches!(&events[..], [NetEvent::Error {
-            request_id: 1, url: issued, error_kind: NetworkErrorKind::Transport,
+            request_id: 1, url: issued, error_kind: NetworkErrorKind::ConnectionFailure,
             response: None, body: None, ..
         }] if issued == &url),
             "{events:?}"

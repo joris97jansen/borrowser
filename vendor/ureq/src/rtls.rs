@@ -105,17 +105,14 @@ impl TlsConnector for Arc<rustls::ClientConfig> {
         };
 
         let sni = rustls_pki_types::ServerName::try_from(dns_name)
-            .map_err(|e| ErrorKind::Dns.msg(format!("parsing '{}'", dns_name)).src(e))?
+            .map_err(|e| ErrorKind::Tls.msg("invalid TLS server name").src(e))?
             .to_owned();
 
         let mut sess = rustls::ClientConnection::new(self.clone(), sni)
-            .map_err(|e| ErrorKind::Io.msg("tls connection creation failed").src(e))?;
+            .map_err(|e| ErrorKind::Tls.msg("tls connection creation failed").src(e))?;
 
-        sess.complete_io(&mut io).map_err(|e| {
-            ErrorKind::ConnectionFailed
-                .msg("tls connection init failed")
-                .src(e)
-        })?;
+        sess.complete_io(&mut io)
+            .map_err(|e| ErrorKind::Tls.msg("tls connection init failed").src(e))?;
         let stream = rustls::StreamOwned::new(sess, io);
 
         Ok(Box::new(RustlsStream(stream)))

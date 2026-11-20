@@ -45,6 +45,12 @@ pub(crate) fn fetch_stream_with_policy(
         let url = request.legacy_issued_url(kind)?;
         thread::spawn(move || {
             if cancel_token.load(Ordering::Relaxed) {
+                log_network_error(
+                    request.request_id(),
+                    kind,
+                    "acquisition",
+                    NetworkErrorKind::Cancelled,
+                );
                 callback(NetEvent::Error {
                     request_id: request.request_id(),
                     url,
@@ -96,6 +102,7 @@ pub(crate) fn fetch_http_with_backend<B: HttpResponseBackend>(
             // Includes the checkpoint after dropping an intermediate reader.
             // An admitted pending target is not yet acquisition history.
             if cancel_token.load(Ordering::Relaxed) {
+                log_network_error(request_id, kind, "acquisition", NetworkErrorKind::Cancelled);
                 callback(NetEvent::Error {
                     request_id,
                     url,
@@ -144,6 +151,7 @@ pub(crate) fn fetch_http_with_backend<B: HttpResponseBackend>(
             };
             let response_info = metadata.with_redirect_chain(&history);
             if let Err(error) = response_info.validate_backend_http() {
+                log_network_error(request_id, kind, "admission", admission_kind(error));
                 callback(NetEvent::Error {
                     request_id,
                     url,
@@ -158,6 +166,7 @@ pub(crate) fn fetch_http_with_backend<B: HttpResponseBackend>(
                 && response_info.headers().values("location").next().is_some();
             if candidate && cancel_token.load(Ordering::Relaxed) {
                 drop(reader);
+                log_network_error(request_id, kind, "redirect", NetworkErrorKind::Cancelled);
                 callback(NetEvent::Error {
                     request_id,
                     url,
@@ -316,7 +325,7 @@ fn admission_kind(error: ResponseAdmissionError) -> NetworkErrorKind {
             | crate::HeaderError::NameTooLong
             | crate::HeaderError::ValueTooLong
             | crate::HeaderError::ListTooLarge,
-        ) => NetworkErrorKind::ResourceLimit,
+        ) => NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::ResponseHead),
         _ => NetworkErrorKind::MalformedResponse,
     }
 }

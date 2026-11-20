@@ -129,7 +129,7 @@ fn terminal(
                 events.last(),
                 Some(NetEvent::Error {
                     error_kind: NetworkErrorKind::MalformedResponse
-                        | NetworkErrorKind::UnsupportedResponse
+                        | NetworkErrorKind::UnsupportedEncoding
                         | NetworkErrorKind::Redirect(_),
                     ..
                 })
@@ -255,16 +255,16 @@ fn malformed_unsupported_and_repeated_codings_reject_before_start() {
         (vec!["gzip PRIVATE"], NetworkErrorKind::MalformedResponse),
         (vec!["gzip;PRIVATE=1"], NetworkErrorKind::MalformedResponse),
         (vec!["\"gzip\""], NetworkErrorKind::MalformedResponse),
-        (vec!["br"], NetworkErrorKind::UnsupportedResponse),
-        (vec!["gzip, gzip"], NetworkErrorKind::UnsupportedResponse),
+        (vec!["br"], NetworkErrorKind::UnsupportedEncoding),
+        (vec!["gzip, gzip"], NetworkErrorKind::UnsupportedEncoding),
         (
             vec!["identity, gzip"],
-            NetworkErrorKind::UnsupportedResponse,
+            NetworkErrorKind::UnsupportedEncoding,
         ),
-        (vec!["gzip", "gzip"], NetworkErrorKind::UnsupportedResponse),
+        (vec!["gzip", "gzip"], NetworkErrorKind::UnsupportedEncoding),
         (
             vec!["identity", "identity"],
-            NetworkErrorKind::UnsupportedResponse,
+            NetworkErrorKind::UnsupportedEncoding,
         ),
         (
             vec!["gzip", "PRIVATE;broken"],
@@ -424,7 +424,7 @@ fn gzip_corruption_truncation_trailing_data_and_member_failures_never_complete()
         );
         let progress = payload(&events).len();
         assert_eq!(
-            terminal(&events, Err((NetworkErrorKind::Read, progress))).status_code(),
+            terminal(&events, Err((NetworkErrorKind::ContentDecoding, progress))).status_code(),
             Some(404)
         );
         assert!(matches!(events.first(), Some(NetEvent::Start { .. })));
@@ -553,7 +553,10 @@ fn encoded_budgets_accept_below_and_exact_eof_and_reject_an_observed_extra_byte(
                 if adjustment <= 0 {
                     Ok(0)
                 } else {
-                    Err((NetworkErrorKind::ResourceLimit, 0))
+                    Err((
+                        NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::EncodedBody),
+                        0,
+                    ))
                 },
             );
             assert_eq!(
@@ -573,7 +576,7 @@ fn exact_encoded_budget_with_incomplete_gzip_is_read_failure_not_limit_excess() 
     for route in [ResourceKind::Html, ResourceKind::Css, ResourceKind::Image] {
         terminal(
             &collect_members(route, 0, true),
-            Err((NetworkErrorKind::Read, 0)),
+            Err((NetworkErrorKind::ContentDecoding, 0)),
         );
     }
 }
@@ -597,7 +600,13 @@ fn encoded_limit_failure_retains_delivered_decoded_prefix_and_immutable_metadata
         )
         .unwrap();
         let events = events_until_closed(rx);
-        terminal(&events, Err((NetworkErrorKind::ResourceLimit, 6)));
+        terminal(
+            &events,
+            Err((
+                NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::EncodedBody),
+                6,
+            )),
+        );
         assert_eq!(payload(&events), b"prefix");
     }
 }
@@ -682,7 +691,10 @@ fn decoded_gzip_delivery_limits_remain_route_specific() {
                 if extra == 0 {
                     Ok(cap)
                 } else {
-                    Err((NetworkErrorKind::ResourceLimit, cap))
+                    Err((
+                        NetworkErrorKind::ResourceLimit(crate::ResourceLimitKind::DecodedBody),
+                        cap,
+                    ))
                 },
             );
             assert!(payload(&events).iter().all(|byte| *byte == b'a'));
@@ -722,8 +734,10 @@ fn decoding_and_framing_failures_do_not_contaminate_subsequent_http_or_https_req
             let first = super::ai5_connections::collect_agent(&agent, &server.url("/first"));
             terminal(
                 &first,
-                if incomplete || corrupt {
-                    Err((NetworkErrorKind::Read, 5))
+                if incomplete {
+                    Err((NetworkErrorKind::MalformedResponse, 5))
+                } else if corrupt {
+                    Err((NetworkErrorKind::ContentDecoding, 5))
                 } else {
                     Ok(5)
                 },

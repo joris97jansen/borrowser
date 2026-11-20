@@ -258,3 +258,16 @@ individual-attempt lookup using the current AH retrieval projection; Fetch alone
 resolves and follows Location. It has no real fallback or public fault scheduler.
 Actual-chain tests observe acquisition entries and reader release, rather than
 registering precomputed limit failures or inferring hops from reported URL changes.
+
+## AI7 failure classification qualification (2026-11-20)
+
+[AI7 #1127](ai7-network-errors-cancellation-timeouts-resource-failures.md) refines
+acquisition and HTTP body-source failures, content decoding/unsupported encoding,
+and encoded/delivered/head/framing-metadata limit domains. Earlier coarse error
+descriptions retain their historical scope. Admission remains synchronous; HTTP
+status, immutable acquired facts, actual progress, AI6 history/checkpoints,
+consumer settlement and no automatic replay remain unchanged. Cooperative
+cancellation and operation timeouts retain their documented limits. Typed fake
+faults prove handling separately from concrete production mapping evidence.
+The candidate is uncommitted; committed-candidate gates, final aggregate CI,
+publication and issue closure remain separate.

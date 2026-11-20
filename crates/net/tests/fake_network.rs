@@ -289,7 +289,11 @@ fn ai4_duplicate_routes_are_rejected_atomically() {
         .unwrap();
     for target in [URL, "https://FIXTURE.invalid:443/data#same"] {
         assert_eq!(
-            builder.register_network_error(&url(target), RequestMethod::Get),
+            builder.register_network_error(
+                &url(target),
+                RequestMethod::Get,
+                NetworkErrorKind::Backend
+            ),
             Err(FakeFixtureError::DuplicateRoute)
         );
         assert_eq!(
@@ -413,7 +417,11 @@ fn ai6_failed_next_acquisition_preserves_source_location_and_entered_history() {
         .register_response(&url(URL), RequestMethod::Get, response)
         .unwrap();
     builder
-        .register_network_error(&url("https://fixture.invalid/target"), RequestMethod::Get)
+        .register_network_error(
+            &url("https://fixture.invalid/target"),
+            RequestMethod::Get,
+            NetworkErrorKind::Backend,
+        )
         .unwrap();
     let events = collect(
         &builder.build(),
@@ -425,7 +433,7 @@ fn ai6_failed_next_acquisition_preserves_source_location_and_entered_history() {
     // Retain source metadata, not an invented response for the failed target.
     let [
         NetEvent::Error {
-            error_kind: NetworkErrorKind::Transport,
+            error_kind: NetworkErrorKind::Backend,
             response: Some(response),
             body: Some(progress),
             ..
@@ -456,7 +464,7 @@ fn ai4_missing_route_has_no_fallback() {
         Route::Html,
         CancelAt::Never,
     );
-    failure(&events, NetworkErrorKind::Transport);
+    failure(&events, NetworkErrorKind::Backend);
     assert!(
         matches!(&events[..], [NetEvent::Error { response: None, body: None, error, .. }] if error == "fake network route not found")
     );
@@ -466,7 +474,7 @@ fn ai4_missing_route_has_no_fallback() {
 fn ai4_configured_pre_response_failure() {
     let mut builder = FakeNetworkBuilder::new();
     builder
-        .register_network_error(&url(URL), RequestMethod::Get)
+        .register_network_error(&url(URL), RequestMethod::Get, NetworkErrorKind::Backend)
         .unwrap();
     let network = builder.build();
     for _ in 0..2 {
@@ -476,11 +484,99 @@ fn ai4_configured_pre_response_failure() {
             Route::Html,
             CancelAt::Never,
         );
-        failure(&events, NetworkErrorKind::Transport);
+        failure(&events, NetworkErrorKind::Backend);
         assert!(
-            matches!(&events[..], [NetEvent::Error { response: None, body: None, error, .. }] if error == "fake network failure")
+            matches!(&events[..], [NetEvent::Error { response: None, body: None, error, .. }] if error == "HTTP acquisition failed")
         );
     }
+}
+
+#[test]
+fn ai7_typed_acquisition_failures_are_repeatable_and_configuration_is_atomic() {
+    for kind in [
+        NetworkErrorKind::DnsFailure,
+        NetworkErrorKind::ConnectionFailure,
+        NetworkErrorKind::TlsFailure,
+        NetworkErrorKind::Timeout,
+        NetworkErrorKind::Backend,
+    ] {
+        let mut builder = FakeNetworkBuilder::new();
+        assert_eq!(
+            builder.register_network_error(
+                &url(URL),
+                RequestMethod::Get,
+                NetworkErrorKind::Cancelled
+            ),
+            Err(FakeFixtureError::InvalidNetworkErrorKind)
+        );
+        builder
+            .register_network_error(&url(URL), RequestMethod::Get, kind)
+            .unwrap();
+        let network = builder.build();
+        for id in [1, 2] {
+            let events = collect(
+                &network,
+                request(URL, Route::Html, id),
+                Route::Html,
+                CancelAt::Never,
+            );
+            failure(&events, kind);
+            assert!(matches!(
+                events.as_slice(),
+                [NetEvent::Error {
+                    response: None,
+                    body: None,
+                    ..
+                }]
+            ));
+        }
+    }
+}
+
+#[test]
+fn ai7_typed_reader_faults_keep_offsets_context_and_http_status_independent() {
+    use std::io::ErrorKind;
+    for (kind, expected) in [
+        (ErrorKind::TimedOut, NetworkErrorKind::Timeout),
+        (
+            ErrorKind::ConnectionReset,
+            NetworkErrorKind::ConnectionFailure,
+        ),
+        (ErrorKind::WouldBlock, NetworkErrorKind::Read),
+        (ErrorKind::UnexpectedEof, NetworkErrorKind::Read),
+        (ErrorKind::InvalidData, NetworkErrorKind::Read),
+    ] {
+        for route in [Route::Html, Route::Css, Route::Image] {
+            for offset in [0, 3] {
+                let net = network(
+                    URL,
+                    reply(500, b"abc".to_vec())
+                        .with_read_error_after(offset, kind)
+                        .unwrap(),
+                );
+                for id in [1, 2] {
+                    let events = collect(&net, request(URL, route, id), route, CancelAt::Never);
+                    failure(&events, expected);
+                    assert_eq!(body(&events), &b"abc"[..offset]);
+                    assert!(
+                        matches!(events.last(), Some(NetEvent::Error { response: Some(response), body: Some(progress), .. }) if response.status_code() == Some(500) && progress.delivered_bytes() == offset)
+                    );
+                }
+            }
+        }
+    }
+    assert_eq!(
+        reply(200, vec![1])
+            .with_read_error_after(2, ErrorKind::TimedOut)
+            .unwrap_err(),
+        FakeFixtureError::InvalidBodyFailureOffset
+    );
+    assert_eq!(
+        reply(200, vec![1])
+            .with_read_error_after(0, ErrorKind::Interrupted)
+            .unwrap_err(),
+        FakeFixtureError::InvalidBodyReadErrorKind
+    );
 }
 
 #[test]
@@ -681,7 +777,10 @@ fn ai4_exact_and_over_limit_for_each_route() {
             if extra == 0 {
                 success(&events);
             } else {
-                failure(&events, NetworkErrorKind::ResourceLimit);
+                failure(
+                    &events,
+                    NetworkErrorKind::ResourceLimit(net::ResourceLimitKind::DecodedBody),
+                );
             }
         }
     }
@@ -691,7 +790,11 @@ fn ai4_exact_and_over_limit_for_each_route() {
 fn ai4_fake_rejects_file_and_incompatible_routes() {
     let mut builder = FakeNetworkBuilder::new();
     assert_eq!(
-        builder.register_network_error(&url("file:///private/fixture"), RequestMethod::Get),
+        builder.register_network_error(
+            &url("file:///private/fixture"),
+            RequestMethod::Get,
+            NetworkErrorKind::Backend
+        ),
         Err(FakeFixtureError::UnsupportedScheme)
     );
     let network = builder.build();

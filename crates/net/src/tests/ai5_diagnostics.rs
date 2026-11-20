@@ -118,7 +118,7 @@ fn ai5f_acquisition_keeps_typed_source_until_controlled_diagnostic_projection() 
     );
     assert_eq!(
         backend_failure(&error),
-        (NetworkErrorKind::Transport, "HTTP acquisition failed")
+        (NetworkErrorKind::ConnectionFailure, "connection failed")
     );
     let (tx, rx) = mpsc::channel();
     fetch_http_with_backend(
@@ -133,7 +133,7 @@ fn ai5f_acquisition_keeps_typed_source_until_controlled_diagnostic_projection() 
     .unwrap();
     let events = events_until_closed(rx);
     assert!(
-        matches!(events.as_slice(), [NetEvent::Error { error_kind: NetworkErrorKind::Transport, response: None, body: None, error, url, .. }] if error == "HTTP acquisition failed" && url.contains("PRIVATE"))
+        matches!(events.as_slice(), [NetEvent::Error { error_kind: NetworkErrorKind::Backend, response: None, body: None, error, url, .. }] if error == "HTTP acquisition failed" && url.contains("PRIVATE"))
     );
 }
 
@@ -160,7 +160,7 @@ fn ai5f_certificate_rejection_keeps_the_concrete_tls_cause() {
     ));
     assert_eq!(
         backend_failure(&failure),
-        (NetworkErrorKind::Transport, "HTTP acquisition failed")
+        (NetworkErrorKind::TlsFailure, "TLS operation failed")
     );
     server.finish();
 }

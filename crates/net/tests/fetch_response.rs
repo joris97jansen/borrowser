@@ -247,7 +247,9 @@ fn ai3_body_accounting_is_route_bound() {
         assert!(p.matches_route(route));
         assert_eq!(
             BodyProgress::try_new(route, cap + 1),
-            Err(NetworkErrorKind::ResourceLimit)
+            Err(NetworkErrorKind::ResourceLimit(
+                net::ResourceLimitKind::DecodedBody
+            ))
         );
     }
     assert!(

@@ -14,6 +14,101 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 struct MustNotAcquire;
+
+#[test]
+fn ai7_acquisition_inspects_typed_sources_without_messages_or_scheme_guesses() {
+    use std::io;
+    for (source, expected) in [
+        (io::ErrorKind::TimedOut, NetworkErrorKind::Timeout),
+        (
+            io::ErrorKind::ConnectionReset,
+            NetworkErrorKind::ConnectionFailure,
+        ),
+        (
+            io::ErrorKind::ConnectionRefused,
+            NetworkErrorKind::ConnectionFailure,
+        ),
+        (
+            io::ErrorKind::BrokenPipe,
+            NetworkErrorKind::ConnectionFailure,
+        ),
+        (io::ErrorKind::WouldBlock, NetworkErrorKind::Backend),
+        (io::ErrorKind::UnexpectedEof, NetworkErrorKind::Backend),
+        (io::ErrorKind::InvalidData, NetworkErrorKind::Backend),
+        (io::ErrorKind::Other, NetworkErrorKind::Backend),
+    ] {
+        let original = io::Error::new(source, "TLS timeout https://user:password@PRIVATE/");
+        let error: ureq::Error = io::Error::other(original).into();
+        let (kind, message) = crate::backend::backend_failure(&error);
+        assert_eq!(kind, expected);
+        assert!(!message.contains("PRIVATE"));
+    }
+    let error: ureq::Error = io::Error::new(
+        io::ErrorKind::InvalidData,
+        rustls::Error::InvalidCertificate(rustls::CertificateError::UnknownIssuer),
+    )
+    .into();
+    assert_eq!(
+        crate::backend::backend_failure(&error).0,
+        NetworkErrorKind::TlsFailure
+    );
+}
+
+#[test]
+fn ai7_actual_resolver_failure_reaches_production_mapping_without_public_dns() {
+    use std::io;
+    for (source, expected) in [
+        (io::ErrorKind::NotFound, NetworkErrorKind::DnsFailure),
+        (io::ErrorKind::TimedOut, NetworkErrorKind::Timeout),
+    ] {
+        let agent = ureq::AgentBuilder::new()
+            .resolver(move |_: &str| Err(io::Error::new(source, "PRIVATE resolver cause")))
+            .build();
+        let events = super::ai5_connections::collect_agent(&agent, "http://fixture.invalid/");
+        assert!(
+            matches!(events.as_slice(), [NetEvent::Error { error_kind, response: None, body: None, .. }] if *error_kind == expected)
+        );
+    }
+}
+
+#[test]
+fn ai7_actual_response_head_timeout_has_no_invented_response_or_progress() {
+    use std::{
+        io::{BufRead, BufReader},
+        net::TcpListener,
+        thread,
+    };
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let (finish, finished) = mpsc::channel();
+    let worker = thread::spawn(move || {
+        let (socket, _) = listener.accept().unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut reader = BufReader::new(socket);
+        loop {
+            let mut line = String::new();
+            assert!(reader.read_line(&mut line).unwrap() > 0);
+            if line == "\r\n" {
+                break;
+            }
+        }
+        finished.recv_timeout(Duration::from_secs(5)).unwrap();
+    });
+    let mut policy = crate::HttpClientPolicy::default();
+    policy.timeouts.read = Duration::from_millis(100);
+    let failure = super::support::collect_fetch_error(
+        format!("http://{address}/"),
+        ResourceKind::Html,
+        policy,
+    );
+    finish.send(()).unwrap();
+    worker.join().unwrap();
+    assert_eq!(failure.error_kind, NetworkErrorKind::Timeout);
+    assert!(failure.response.is_none());
+    assert!(failure.body.is_none());
+}
 impl HttpResponseBackend for MustNotAcquire {
     fn acquire(
         &self,
