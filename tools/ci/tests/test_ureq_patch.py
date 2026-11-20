@@ -2,11 +2,13 @@
 
 import importlib.util
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import sys
 import unittest
@@ -194,16 +196,24 @@ class UreqPatchIntegrity(unittest.TestCase):
             CHECK.check_sources(self.root)
 
     def test_patch_reconstruction_checks_upstream_not_only_patch_digest(self):
-        # Historical replay uses its original 54-file snapshot, independently
-        # of the evolving current 65-file subtree inventory.
+        # Read the policy's frozen snapshot from the actual repository;
+        # evolving current vendor bytes are not historical fixture contents.
         historical = self.root / "historical"
         vendor = historical / "vendor/ureq"
-        shutil.copytree(self.root / "vendor/ureq", vendor)
-        for path in sorted(vendor.rglob("*"), reverse=True):
-            if path.is_file() and path.relative_to(vendor).as_posix() not in CHECK.RETAINED_FILES | CHECK.RECORD_FILES:
-                path.unlink()
-            elif path.is_dir() and not any(path.iterdir()):
-                path.rmdir()
+        archive = CHECK.subtrees.git(ROOT, "archive", self.policy["baseline"], "vendor/ureq").stdout
+        with tarfile.open(fileobj=io.BytesIO(archive)) as package:
+            for member in package:
+                path = Path(member.name)
+                if path.is_absolute() or ".." in path.parts:
+                    raise ValueError("invalid historical archive path")
+                if member.isdir():
+                    continue
+                if not member.isfile() or not path.is_relative_to("vendor/ureq"):
+                    raise ValueError("unsupported historical source entry")
+                target = historical / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(package.extractfile(member).read())
+        CHECK.check_historical_sources(historical)
         path = vendor / CHECK.PATCH_FILE
         original = path.read_text()
         changed = original.replace('-    "logging",', '-    "not-the-upstream-flag",', 1)
