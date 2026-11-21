@@ -561,7 +561,7 @@ fn test_response() -> net::NetworkResponseInfo {
     let mut headers = net::HttpHeaders::new();
     headers.append("content-type", b"text/css").unwrap();
     net::NetworkResponseInfo::http(
-        original,
+        &addressing::ResourceAddress::new(original, addressing::ResourceKind::Stylesheet),
         "https://example.com/a.css".into(),
         Some("https://example.com/a.css".into()),
         net::HttpStatus::try_from(200).unwrap(),

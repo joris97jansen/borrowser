@@ -10,6 +10,7 @@ const HTML: &str = "<!doctype html><style>p { color: red }</style><p>streaming p
 
 fn response(url: &str) -> NetworkResponseInfo {
     super::support::response_facts(
+        addressing::ResourceKind::Document,
         url.into(),
         url.into(),
         if addressing::BrowserUrl::parse(url).unwrap().url.scheme() == "file" {
@@ -75,8 +76,13 @@ fn document_lifecycle_unsupported_stale_and_duplicate_starts_preserve_file_origi
         let version = tab.dom_version;
         let state = tab.document_load.parse_status;
         rx.try_iter().for_each(drop);
-        let unsupported =
-            super::support::response_facts(file.into(), "about:srcdoc".into(), None, None);
+        let unsupported = super::support::response_facts(
+            addressing::ResourceKind::Document,
+            file.into(),
+            "about:srcdoc".into(),
+            None,
+            None,
+        );
         // Both wrong-tab and old-generation starts are filtered before admission.
         tab.on_core_event(CoreEvent::NetworkStart {
             tab_id: 2,
@@ -154,6 +160,7 @@ fn document_lifecycle_chunk_provenance_uses_requested_url_across_redirect_and_fr
     tab.navigate_to_new(requested.into());
     rx.try_iter().for_each(drop);
     let accepted = super::support::response_facts(
+        addressing::ResourceKind::Document,
         requested.into(),
         final_url.into(),
         if addressing::BrowserUrl::parse(requested)
@@ -279,6 +286,7 @@ fn document_lifecycle_chunk_provenance_rejects_unrelated_and_final_urls() {
         tab.set_bus_sender(tx);
         tab.navigate_to_new(requested.into());
         let accepted = super::support::response_facts(
+            addressing::ResourceKind::Document,
             requested.into(),
             final_url.into(),
             if addressing::BrowserUrl::parse(requested)
@@ -487,6 +495,7 @@ fn document_lifecycle_response_admission_is_required_before_chunk_or_done() {
         let history = tab.history.clone();
         let history_index = tab.history_index;
         let rejected = super::support::response_facts(
+            addressing::ResourceKind::Document,
             URL.into(),
             "data:text/html,unadmitted".into(),
             Some(200),
@@ -569,7 +578,10 @@ fn document_lifecycle_response_completion_cannot_replace_accepted_provenance() {
             // construction; genuine HTTP status replacement is covered by AI3.
             assert_eq!(
                 net::NetworkResponseInfo::http(
-                    accepted.original_url().clone(),
+                    &addressing::ResourceAddress::new(
+                        accepted.original_url().clone(),
+                        accepted.resource_kind()
+                    ),
                     accepted.requested_url().into(),
                     accepted.reported_response_url().map(str::to_owned),
                     net::HttpStatus::try_from(200).unwrap(),
@@ -583,7 +595,7 @@ fn document_lifecycle_response_completion_cannot_replace_accepted_provenance() {
         }
         let mut requested = accepted.requested_url().to_owned();
         let mut reported = accepted.reported_response_url().unwrap().to_owned();
-        let mut mime = accepted.legacy_content_type().map(str::to_owned);
+        let mut mime = Some("text/html".to_owned());
         match field {
             "requested" => requested = "file:///tmp/other-request.html".into(),
             "final" => reported = "https://different.test/".into(),
@@ -592,8 +604,13 @@ fn document_lifecycle_response_completion_cannot_replace_accepted_provenance() {
             "content-type" => mime = Some("text/plain".into()),
             _ => mime = None,
         }
-        let changed =
-            super::support::response_facts(requested, reported, accepted.status_code(), mime);
+        let changed = super::support::response_facts(
+            addressing::ResourceKind::Document,
+            requested,
+            reported,
+            accepted.status_code(),
+            mime,
+        );
         let addresses = tab.page.addresses.clone();
         let origin = addresses.as_ref().unwrap().document_origin().clone();
         assert!(origin.is_opaque());
@@ -686,8 +703,13 @@ fn document_lifecycle_response_valid_stream_preserves_admitted_file_origin() {
     tab.set_bus_sender(tx);
     tab.navigate_to_new(file.into());
     rx.try_iter().for_each(drop);
-    let accepted =
-        super::support::response_facts(file.into(), file.into(), None, Some("text/html".into()));
+    let accepted = super::support::response_facts(
+        addressing::ResourceKind::Document,
+        file.into(),
+        file.into(),
+        None,
+        Some("text/html".into()),
+    );
     tab.on_core_event(start(tab.nav_gen, accepted.clone()))
         .unwrap();
     let origin = tab

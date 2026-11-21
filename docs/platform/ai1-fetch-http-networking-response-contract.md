@@ -1,5 +1,9 @@
 # AI1: Fetch, HTTP Networking, And Response-Handling Architecture Contract
 
+Current aggregate metadata and loader handoff are qualified by
+[AI8](ai8-response-metadata-and-loader-handoff.md). Dated legacy metadata and
+consumer-parsing descriptions below retain their historical scope.
+
 Current redirect execution is qualified by [AI6](ai6-redirect-handling-limits-final-url.md).
 Earlier implementation descriptions retain their dated historical scope.
 

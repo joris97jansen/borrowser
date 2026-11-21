@@ -515,7 +515,10 @@ mod tests {
 
     fn image_response(url: &str) -> NetworkResponseInfo {
         NetworkResponseInfo::http(
-            BrowserUrl::parse(url).unwrap().url,
+            &addressing::ResourceAddress::new(
+                BrowserUrl::parse(url).unwrap().url,
+                addressing::ResourceKind::Image,
+            ),
             url.into(),
             Some(url.into()),
             net::HttpStatus::try_from(200).unwrap(),

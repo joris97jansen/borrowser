@@ -14,6 +14,40 @@ use std::time::{Duration, Instant};
 
 const URL: &str = "https://fixture.invalid/data";
 
+#[test]
+fn ai8_fake_length_outcomes_do_not_claim_http_framing() {
+    use net::DeclaredContentLength as Length;
+    for (value, expected) in [
+        ("7", Length::Value(7)),
+        ("7,8", Length::Conflicting),
+        ("+7", Length::Unusable),
+        ("18446744073709551616", Length::OutOfRange),
+    ] {
+        let mut headers = HttpHeaders::new();
+        headers.append("content-length", value.as_bytes()).unwrap();
+        let network = network(
+            URL,
+            FakeResponse::new(
+                HttpStatus::try_from(200).unwrap(),
+                headers,
+                b"abc".to_vec(),
+                Some(URL.into()),
+            ),
+        );
+        let events = collect(
+            &network,
+            request(URL, Route::Html, 8),
+            Route::Html,
+            CancelAt::Never,
+        );
+        let facts = success(&events);
+        assert_eq!(facts.declared_content_length(), expected);
+        assert!(
+            matches!(events.last(), Some(NetEvent::Done { body, .. }) if body.delivered_bytes() == 3)
+        );
+    }
+}
+
 fn url(value: &str) -> BrowserUrl {
     BrowserUrl::parse(value).unwrap().url
 }

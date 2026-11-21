@@ -196,6 +196,100 @@ fn completed<'a>(events: &'a [NetEvent], expected: &[u8]) -> &'a NetworkResponse
     assert_eq!(bytes, expected);
     response
 }
+
+#[test]
+fn ai8_redirect_selection_and_failed_target_keep_acquired_metadata_and_purpose() {
+    use crate::{DeclaredContentLength as Length, ResponseContentType};
+    use addressing::{ResourceAddress, ResourceKind as Purpose};
+    let source = "https://fixture.invalid/source#original";
+    let target = "https://fixture.invalid/target#original";
+    let make_request = || {
+        FetchRequest::try_new(
+            8,
+            ResourceAddress::new(url(source), Purpose::Hyperlink),
+            RequestMethod::Get,
+            HttpHeaders::new(),
+            None,
+            None,
+        )
+        .unwrap()
+    };
+    for fail in [false, true] {
+        let mut builder = FakeNetworkBuilder::new();
+        add(
+            &mut builder,
+            source,
+            302,
+            &[
+                ("location", b"/target"),
+                ("content-type", b"image/png"),
+                ("content-length", b"99"),
+            ],
+            Some(source),
+            b"discarded",
+        );
+        if fail {
+            builder
+                .register_network_error(
+                    &url(target),
+                    RequestMethod::Get,
+                    NetworkErrorKind::ConnectionFailure,
+                )
+                .unwrap();
+        } else {
+            add(
+                &mut builder,
+                target,
+                404,
+                &[
+                    ("content-type", b"text/css;charset=A, text/css"),
+                    ("content-length", b"3"),
+                ],
+                Some(target),
+                b"abc",
+            );
+        }
+        let (events, seen) = run(
+            builder.build(),
+            make_request(),
+            ResourceKind::Html,
+            false,
+            None,
+            None,
+        );
+        let facts = if fail {
+            let facts = failed(&events, NetworkErrorKind::ConnectionFailure, 1);
+            assert_eq!(facts.reported_response_url(), Some(source));
+            assert_eq!(facts.status_code(), Some(302));
+            assert_eq!(facts.declared_content_length(), Length::Value(99));
+            facts
+        } else {
+            let facts = completed(&events, b"abc");
+            assert_eq!(facts.reported_response_url(), Some(target));
+            assert_eq!(facts.status_code(), Some(404));
+            assert_eq!(facts.declared_content_length(), Length::Value(3));
+            facts
+        };
+        assert_eq!(facts.original_url().as_str(), source);
+        assert_eq!(facts.requested_url(), source);
+        assert_eq!(facts.resource_kind(), Purpose::Hyperlink);
+        assert_eq!(facts.redirect_chain().len(), 1);
+        let ResponseContentType::Parsed(mime) = facts.content_type() else {
+            panic!("parsed MIME");
+        };
+        assert_eq!(
+            mime.mime_type(),
+            if fail { "image/png" } else { "text/css" }
+        );
+        let snapshots = seen.responses.lock().unwrap();
+        assert!(
+            snapshots[0].redirect_chain().is_empty(),
+            "retained acquired snapshot must not mutate"
+        );
+        assert_eq!(snapshots[0].declared_content_length(), Length::Value(99));
+        assert_eq!(seen.attempts.lock().unwrap().len(), 2);
+    }
+}
 fn failed(events: &[NetEvent], kind: NetworkErrorKind, hops: usize) -> &NetworkResponseInfo {
     let [
         NetEvent::Error {

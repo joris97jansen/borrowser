@@ -16,6 +16,7 @@ fn tab() -> (Tab, mpsc::Receiver<CoreCommand>) {
 
 fn metadata(requested: &str, final_url: &str) -> NetworkResponseInfo {
     super::support::response_facts(
+        addressing::ResourceKind::Document,
         requested.into(),
         final_url.into(),
         if BrowserUrl::parse(requested).unwrap().url.scheme() == "file" {

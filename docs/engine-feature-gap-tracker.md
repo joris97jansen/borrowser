@@ -475,6 +475,24 @@ Notes:
 
 ## Browser Runtime / Platform
 
+Current response metadata qualification:
+[AI8 #1128](platform/ai8-response-metadata-and-loader-handoff.md) centralizes
+aggregate declared MIME/charset and bounded declared-length metadata on the
+existing immutable response handoff. Actual original request purpose, selected
+response provenance, redirect/failure context and explicit HTTP status classes
+are available independently of body completion and consumer acceptance. Browser
+CSS consumes typed metadata with documented missing/empty compatibility and
+intentional malformed/repeated-header behavior changes. Real/fake/local/supplied
+paths share construction; fake/supplied metadata does not prove wire framing.
+
+This is an uncommitted working-tree implementation, not committed-candidate or
+hosted qualification, issue closure, or milestone completion. AI8 validation is
+recorded in its contract. Earlier dated references to AI8 as pending describe
+their historical checkpoints. MIME sniffing, charset decoding, broader encoding/
+integrity/policy capabilities, Font/Media execution and full loader lifecycles
+remain gaps. AI9 retains broader AG networking integration. No new routes,
+cache/cookies/security enforcement, body parsers or generic loader machinery exist.
+
 Addressing foundation status (2026-11-04):
 
 AH1–AH9 implement the documented URL, origin, base URL and resource-addressing
@@ -1088,9 +1106,9 @@ Missing or incomplete:
   HTTP/HTTPS/file and GET redirect subset; see the dated AI6 candidate below
 - MIME sniffing and complete response-type processing
 - cookies, HTTP cache, storage and service workers
-- complete networking integration beyond the AI2–AI6 typed transport/redirect subset;
-  broader failures, aggregate loader metadata and AG networking fixtures
-  remain AI7/AI8/AI9
+- complete networking integration beyond the documented typed transport/redirect
+  subset and the AI8 metadata implementation above; AG networking fixtures remain
+  AI9, with broader loader lifecycles, cache and policy work retaining their owners
 - complete scheme/creation-context support and JavaScript-facing URL APIs
 - broad URL/origin/addressing WPT integration beyond pinned representative cases
 - resource loading for fonts, media, and broader image formats

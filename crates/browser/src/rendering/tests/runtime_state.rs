@@ -1709,7 +1709,7 @@ fn stylesheet_update_discards_retained_style_artifacts() {
         let mut headers = net::HttpHeaders::new();
         headers.append("content-type", b"text/css").unwrap();
         net::NetworkResponseInfo::http(
-            url,
+            &addressing::ResourceAddress::new(url, addressing::ResourceKind::Stylesheet),
             "https://example.com/style.css".into(),
             Some("https://example.com/style.css".into()),
             net::HttpStatus::try_from(200).unwrap(),

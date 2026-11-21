@@ -1,5 +1,11 @@
 # AI5: Real HTTP Response Acquisition And Bounded Body Integrity
 
+[AI8](ai8-response-metadata-and-loader-handoff.md) adds declared-length metadata
+without changing this framing implementation. Numeric framing agreement such as
+`7`/`007` remains admitted; Fetch metadata extraction reports textual disagreement.
+Declared metadata neither allocates a body nor proves its completion. Existing
+encoded/decoded limits, gzip processing and bodyless rules remain unchanged.
+
 Current redirect execution is qualified by [AI6](ai6-redirect-handling-limits-final-url.md).
 Earlier implementation descriptions retain their dated historical scope.
 

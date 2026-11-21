@@ -103,7 +103,15 @@ fn typed_local_file_execution_distinguishes_filenames_and_preserves_provenance()
                         assert_eq!(response.requested_url(), issued);
                         assert_eq!(response.reported_response_url().unwrap(), issued);
                         assert_eq!(response.status_code(), None);
-                        assert_eq!(response.legacy_content_type(), Some("text/html"));
+                        assert_eq!(response.resource_kind(), purpose);
+                        assert!(response.headers().is_empty());
+                        assert_eq!(
+                            response.declared_content_length(),
+                            net::DeclaredContentLength::Missing
+                        );
+                        assert!(
+                            matches!(response.content_type(), net::ResponseContentType::Parsed(value) if value.mime_type() == "text/html")
+                        );
                         accepted = Some(response);
                     }
                     NetEvent::Chunk {

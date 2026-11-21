@@ -6,6 +6,174 @@ use crate::{
 use core_types::ResourceKind;
 
 #[test]
+fn ai8_real_and_fake_preserve_metadata_without_changing_framing_or_decoding() {
+    use crate::{
+        DeclaredContentLength as Length, FetchRequest, HttpHeaders, HttpStatus, NetEvent,
+        RequestMethod, ResponseContentType,
+        fake::{FakeNetworkBuilder, FakeResponse},
+    };
+    use addressing::{BrowserUrl, ResourceAddress, ResourceKind as Purpose};
+    use std::{
+        io::Write,
+        sync::{Arc, atomic::AtomicBool, mpsc},
+    };
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(b"decoded content").unwrap();
+    let gzip = encoder.finish().unwrap();
+    let cases = [
+        (
+            200,
+            vec![
+                ("Content-Type", "image/png".to_owned()),
+                ("X-Between", "retained".into()),
+                ("Content-Type", "text/css;charset=A, text/css".into()),
+                ("Content-Length", "3".into()),
+                ("Content-Length", "03".into()),
+            ],
+            b"abc".to_vec(),
+            b"abc".to_vec(),
+            Length::Conflicting,
+            "text/css",
+            Some("A"),
+        ),
+        (
+            304,
+            vec![
+                ("Content-Type", "text/html".into()),
+                ("Content-Length", u64::MAX.to_string()),
+            ],
+            vec![],
+            vec![],
+            Length::Value(u64::MAX),
+            "text/html",
+            None,
+        ),
+        (
+            205,
+            vec![
+                ("Content-Type", "text/css".into()),
+                ("Content-Length", "0".into()),
+            ],
+            vec![],
+            vec![],
+            Length::Value(0),
+            "text/css",
+            None,
+        ),
+        (
+            200,
+            vec![
+                ("Content-Type", "text/html;charset=UTF-8".into()),
+                ("Content-Encoding", "gzip".into()),
+                ("Content-Length", gzip.len().to_string()),
+            ],
+            gzip.clone(),
+            b"decoded content".to_vec(),
+            Length::Value(gzip.len() as u64),
+            "text/html",
+            Some("UTF-8"),
+        ),
+    ];
+    for (status, fields, encoded, decoded, length, mime, charset) in cases {
+        let mut wire = format!("HTTP/1.1 {status} Response\r\n").into_bytes();
+        let mut headers = HttpHeaders::new();
+        for (name, value) in &fields {
+            wire.extend_from_slice(format!("{name}: {value}\r\n").as_bytes());
+            headers.append(name, value.as_bytes()).unwrap();
+        }
+        wire.extend_from_slice(b"\r\n");
+        wire.extend_from_slice(&encoded);
+        let server = WireServer::spawn(false, move |_, _| WireReply::close(wire.clone()));
+        let target = server.url("/metadata?q=1#original");
+        // Hyperlink and Document share Html execution; only actual request
+        // context can preserve this distinction in acquired response facts.
+        let req = FetchRequest::try_new(
+            8,
+            ResourceAddress::new(BrowserUrl::parse(&target).unwrap().url, Purpose::Hyperlink),
+            RequestMethod::Get,
+            HttpHeaders::new(),
+            None,
+            None,
+        )
+        .unwrap();
+        let (tx, rx) = mpsc::channel();
+        crate::fetch_stream(
+            req.clone(),
+            ResourceKind::Html,
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(move |event| tx.send(event).unwrap()),
+        )
+        .unwrap();
+        let real = super::backend::events_until_closed(rx);
+        assert_eq!(server.finish().len(), 1);
+        let mut fake = FakeNetworkBuilder::new();
+        fake.register_response(
+            req.current_url(),
+            RequestMethod::Get,
+            FakeResponse::new(
+                HttpStatus::try_from(status).unwrap(),
+                headers.clone(),
+                encoded,
+                Some(target.clone()),
+            ),
+        )
+        .unwrap();
+        let (tx, rx) = mpsc::channel();
+        fake.build()
+            .fetch_stream(
+                req,
+                ResourceKind::Html,
+                Arc::new(AtomicBool::new(false)),
+                Arc::new(move |event| tx.send(event).unwrap()),
+            )
+            .unwrap();
+        let fake = super::backend::events_until_closed(rx);
+        let mut facts = Vec::new();
+        for events in [&real, &fake] {
+            let Some(NetEvent::Start {
+                response: start, ..
+            }) = events.first()
+            else {
+                panic!("{events:?}");
+            };
+            let Some(NetEvent::Done { response, body, .. }) = events.last() else {
+                panic!("{events:?}");
+            };
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|e| matches!(e, NetEvent::Done { .. } | NetEvent::Error { .. }))
+                    .count(),
+                1
+            );
+            assert_eq!(response, start);
+            assert_eq!(response.resource_kind(), Purpose::Hyperlink);
+            assert_eq!(response.headers(), &headers);
+            assert_eq!(response.declared_content_length(), length);
+            assert_eq!(response.reported_response_url(), Some(target.as_str()));
+            let ResponseContentType::Parsed(content_type) = response.content_type() else {
+                panic!("parsed MIME");
+            };
+            assert_eq!(content_type.mime_type(), mime);
+            assert_eq!(content_type.charset(), charset);
+            let delivered: Vec<_> = events
+                .iter()
+                .filter_map(|e| match e {
+                    NetEvent::Chunk { chunk, .. } => Some(chunk.as_slice()),
+                    _ => None,
+                })
+                .flatten()
+                .copied()
+                .collect();
+            assert_eq!(delivered, decoded);
+            assert_eq!(body.delivered_bytes(), decoded.len());
+            facts.push(response);
+        }
+        assert_eq!(facts[0], facts[1]);
+    }
+}
+
+#[test]
 fn ai3_backend_projection_preserves_exposed_interleaved_fields() {
     let response: ureq::Response = "HTTP/1.1 404 Not Found\r\nX-A: one\r\nSet-Cookie: a=1\r\nX-B: middle\r\nSET-cookie: b=2\r\nX-A: two\r\n\r\n".parse().unwrap();
     let request = request("https://fixture.test/a#f", ResourceKind::Html);
@@ -195,7 +363,10 @@ fn ai3_backend_admission_requires_usable_reported_provenance() {
         (Some("https://a.test/valid%zz"), Ok(())),
     ] {
         let facts = NetworkResponseInfo::http(
-            BrowserUrl::parse("https://request.test/").unwrap().url,
+            &addressing::ResourceAddress::new(
+                BrowserUrl::parse("https://request.test/").unwrap().url,
+                addressing::ResourceKind::Document,
+            ),
             "https://request.test/".into(),
             reported.map(str::to_owned),
             HttpStatus::try_from(200).unwrap(),

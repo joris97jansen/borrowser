@@ -8,6 +8,7 @@
 mod agent;
 mod backend;
 mod body;
+mod content_length;
 mod content_type;
 mod event;
 pub mod fake;
@@ -24,14 +25,15 @@ mod stream;
 mod tls;
 
 pub use body::BodyProgress;
-pub use content_type::{ContentType, InvalidContentType};
+pub use content_length::DeclaredContentLength;
+pub use content_type::{ContentType, InvalidContentType, ResponseContentType};
 pub use event::{NetEvent, NetworkErrorKind, ResourceLimitKind};
 pub use fetch::fetch_stream;
 pub use headers::{HeaderError, HttpHeaders};
 pub use policy::{HttpClientPolicy, HttpTimeoutPolicy, TlsTrustStore};
 pub use redirect::{RedirectError, RedirectHop};
 pub use request::{FetchRequest, RedirectPolicy, RequestAdmissionError, RequestMethod};
-pub use response::{HttpStatus, NetworkResponseInfo, ResponseAdmissionError};
+pub use response::{HttpStatus, HttpStatusClass, NetworkResponseInfo, ResponseAdmissionError};
 
 #[cfg(test)]
 mod tests;
