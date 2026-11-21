@@ -1,0 +1,145 @@
+{
+  "rows": [
+    {
+      "request": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/data",
+          "current_url": "https://fixture.invalid/data",
+          "transport_target": "https://fixture.invalid/data",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [
+            [
+              "accept",
+              [
+                42,
+                47,
+                42
+              ]
+            ]
+          ],
+          "initiator_url": null,
+          "requesting_origin": null,
+          "redirect_policy": "follow",
+          "has_body": false
+        }
+      },
+      "acquisitions": [
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/data",
+            "current_url": "https://fixture.invalid/data",
+            "transport_target": "https://fixture.invalid/data",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/data",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/data",
+              "reported_response_url": "https://fixture.invalid/data",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/data",
+                "diagnostics": []
+              },
+              "status": 500,
+              "status_class": "server_error",
+              "headers": [],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        }
+      ],
+      "start": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/data",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/data",
+          "reported_response_url": "https://fixture.invalid/data",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/data",
+            "diagnostics": []
+          },
+          "status": 500,
+          "status_class": "server_error",
+          "headers": [],
+          "content_type": {
+            "state": "missing"
+          },
+          "declared_content_length": {
+            "state": "missing"
+          },
+          "redirect_chain": []
+        }
+      },
+      "terminal": {
+        "kind": "done",
+        "response": {
+          "original_url": "https://fixture.invalid/data",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/data",
+          "reported_response_url": "https://fixture.invalid/data",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/data",
+            "diagnostics": []
+          },
+          "status": 500,
+          "status_class": "server_error",
+          "headers": [],
+          "content_type": {
+            "state": "missing"
+          },
+          "declared_content_length": {
+            "state": "missing"
+          },
+          "redirect_chain": []
+        },
+        "progress": {
+          "route": "html",
+          "delivered_bytes": 2,
+          "limit_bytes": 10485760
+        }
+      },
+      "selected_final_url": {
+        "state": "present",
+        "value": "https://fixture.invalid/data"
+      },
+      "body": {
+        "kind": "bytes",
+        "bytes": [
+          0,
+          255
+        ]
+      }
+    }
+  ]
+}

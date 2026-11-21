@@ -1,0 +1,124 @@
+{
+  "id": "networking/fetch/body-bytes",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "networking": {
+    "kind": "fetch",
+    "rows": [
+      {
+        "request": {
+          "url": "https://fixture.invalid/binary",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/binary",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 200,
+              "headers": [],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  0,
+                  255,
+                  128,
+                  13,
+                  10
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/binary",
+              "read_failure_after": null
+            }
+          }
+        ]
+      },
+      {
+        "request": {
+          "url": "https://fixture.invalid/gzip",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/gzip",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 200,
+              "headers": [
+                [
+                  "content-encoding",
+                  [
+                    103,
+                    122,
+                    105,
+                    112
+                  ]
+                ],
+                [
+                  "content-length",
+                  [
+                    50,
+                    53
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  31,
+                  139,
+                  8,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  2,
+                  255,
+                  203,
+                  72,
+                  205,
+                  201,
+                  201,
+                  7,
+                  0,
+                  134,
+                  166,
+                  16,
+                  54,
+                  5,
+                  0,
+                  0,
+                  0
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/gzip",
+              "read_failure_after": null
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "networking",
+    "path": "body-bytes.expected.json"
+  }
+}

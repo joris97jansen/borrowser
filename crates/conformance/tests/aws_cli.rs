@@ -108,3 +108,24 @@ fn ag8_aws_execution_failures_and_harness_selection_have_distinct_provenance() {
         assert!(!stderr.contains("SKIP"));
     }
 }
+
+#[test]
+fn ai9_networking_only_aws_comparison_executes_locally_without_cloud_configuration() {
+    let output = Command::new(env!("CARGO_BIN_EXE_borrowser-conformance"))
+        .args(["--compare-aws", "networking/fetch/response-200"])
+        .env("AWS_CONFIG_FILE", "/must/not/read")
+        .env("AWS_SHARED_CREDENTIALS_FILE", "/must/not/read")
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["cases"][0]["borrowser_status"], "PASS");
+    assert_eq!(report["summary"]["executed_documents"], 0);
+    assert_eq!(report["summary"]["equal_fields"], 0);
+    assert_eq!(report["environment"]["phases"]["state"], "inapplicable");
+}

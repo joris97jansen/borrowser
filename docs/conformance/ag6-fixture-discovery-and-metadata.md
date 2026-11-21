@@ -1,5 +1,14 @@
 # AG6 fixture discovery, metadata and expectations
 
+Current AI9 qualification: [networking fixtures](../platform/ai9-fetch-network-conformance-fixtures-and-snapshots.md)
+add a closed `networking` input and `expected.kind=networking` alongside phase
+and AH9 addressing inputs. Families are mutually exclusive. All declarations
+are bounded to 256 KiB before parsing; networking expectation files to 1 MiB.
+The shared schema/bounds modules are explicit rebuild inputs. Runtime preflight
+validates the whole embedded catalogue before selection or artifact publication.
+The historical phase-only field table below is qualified by those later families.
+
+
 AG6 owns fixture authoring and selection in `crates/conformance`. HTML parsing,
 CSS computation, Layout, Paint and Browser observation authority stay in their
 existing production subsystems. The [AG5 contract](ag5-phase-comparison-projections.md)

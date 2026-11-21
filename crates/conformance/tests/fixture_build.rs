@@ -298,6 +298,22 @@ fn isolated_cargo_rebuild_and_standalone_execution() {
                 copy_tree(&entry.path(), &to.join(name));
             } else if ty.is_file() {
                 fs::copy(entry.path(), to.join(name)).unwrap();
+            } else if ty.is_symlink() {
+                // The maintained rust-url subtree has exactly these contained
+                // relative licence links. Never enable general symlink traversal.
+                let path = entry.path();
+                assert!(path.components().any(|p| p.as_os_str() == "vendor"));
+                assert!(matches!(
+                    name.to_str(),
+                    Some("LICENSE-APACHE" | "LICENSE-MIT")
+                ));
+                let link = fs::read_link(&path).unwrap();
+                assert_eq!(link, Path::new("..").join(&name));
+                assert!(path.canonicalize().unwrap().is_file());
+                #[cfg(unix)]
+                std::os::unix::fs::symlink(link, to.join(&name)).unwrap();
+                #[cfg(not(unix))]
+                fs::copy(path, to.join(&name)).unwrap();
             } else {
                 panic!("unexpected source entry {}", entry.path().display());
             }
@@ -315,6 +331,10 @@ fn isolated_cargo_rebuild_and_standalone_execution() {
             .current_dir(source)
             .env("CARGO_TARGET_DIR", target)
             .env("CARGO_BUILD_JOBS", "4")
+            // This validates fixture embedding, not debug information or
+            // incremental compilation. Keep disposable builds bounded on disk.
+            .env("CARGO_PROFILE_DEV_DEBUG", "0")
+            .env("CARGO_PROFILE_DEV_INCREMENTAL", "false")
             .env(
                 "BORROWSER_AG4_SOURCE_TREE",
                 "1111111111111111111111111111111111111111",
@@ -346,7 +366,7 @@ fn isolated_cargo_rebuild_and_standalone_execution() {
     for name in ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml"] {
         fs::copy(workspace.join(name), source.join(name)).unwrap();
     }
-    for name in ["src", "crates"] {
+    for name in ["src", "crates", "vendor"] {
         copy_tree(&workspace.join(name), &source.join(name));
     }
     let target = temp.path().join("target");
@@ -597,6 +617,8 @@ fn isolated_cargo_rebuild_and_standalone_execution() {
         .current_dir(&source)
         .env("CARGO_TARGET_DIR", &target)
         .env("CARGO_BUILD_JOBS", "4")
+        .env("CARGO_PROFILE_DEV_DEBUG", "0")
+        .env("CARGO_PROFILE_DEV_INCREMENTAL", "false")
         .env(
             "BORROWSER_AG4_SOURCE_TREE",
             "1111111111111111111111111111111111111111",
@@ -756,6 +778,8 @@ fn isolated_cargo_rebuild_and_standalone_execution() {
             .current_dir(&source)
             .env("CARGO_TARGET_DIR", &target)
             .env("CARGO_BUILD_JOBS", "4")
+            .env("CARGO_PROFILE_DEV_DEBUG", "0")
+            .env("CARGO_PROFILE_DEV_INCREMENTAL", "false")
             .env(
                 "BORROWSER_AG4_SOURCE_TREE",
                 "1111111111111111111111111111111111111111",
@@ -770,9 +794,154 @@ fn isolated_cargo_rebuild_and_standalone_execution() {
         );
         assert!(output.status.success());
     }
+    // AI9: metadata edits alone must rebuild embedded Fetch inputs. Expectations
+    // remain independently authored and byte-for-byte unchanged.
+    let networking_original = run(&exe, temp.path(), &["--suite", "networking"]);
+    assert_eq!(networking_original.status.code(), Some(0));
+    let network_path = root.join("networking/fetch/response-200.fixture.json");
+    let network_original = fs::read(&network_path).unwrap();
+    let mut network_value: Value = serde_json::from_slice(&network_original).unwrap();
+    network_value["networking"]["rows"][0]["routes"][0]["outcome"]["body"]["bytes"][1] = json!(254);
+    fs::write(&network_path, serde_json::to_vec(&network_value).unwrap()).unwrap();
+    build(&source, &target);
+    let changed_network = run(&exe, temp.path(), &["networking/fetch/response-200"]);
+    assert_eq!(changed_network.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&changed_network.stdout).contains("difference:"));
+    fs::write(&network_path, &network_original).unwrap();
+    // Discovery must see an added case, without expanding fixed required suites.
+    let network_dir = root.join("networking/fetch");
+    let mut added: Value = serde_json::from_slice(&network_original).unwrap();
+    added["id"] = json!("networking/fetch/added");
+    added["expected"]["path"] = json!("added.expected.json");
+    fs::write(
+        network_dir.join("added.fixture.json"),
+        serde_json::to_vec(&added).unwrap(),
+    )
+    .unwrap();
+    fs::copy(
+        network_dir.join("response-200.expected.json"),
+        network_dir.join("added.expected.json"),
+    )
+    .unwrap();
+    build(&source, &target);
+    assert_eq!(
+        run(&exe, temp.path(), &["networking/fetch/added"])
+            .status
+            .code(),
+        Some(0)
+    );
+    assert_eq!(
+        run(&exe, temp.path(), &["--suite", "networking"]).stdout,
+        networking_original.stdout
+    );
+    // A non-core declaration exercises expectation preflight and metadata via
+    // the real rebuilt CLI. Core members must retain match expectations.
+    let added_expected_path = network_dir.join("added.expected.json");
+    let added_expected = fs::read(&added_expected_path).unwrap();
+    for known_failure in [false, true] {
+        added["expectation"] = if known_failure {
+            json!({"kind":"known_failure","reason":"controlled evidence review"})
+        } else {
+            json!({"kind":"match"})
+        };
+        fs::write(
+            network_dir.join("added.fixture.json"),
+            serde_json::to_vec(&added).unwrap(),
+        )
+        .unwrap();
+        for missing in ["start", "request", "acquisitions"] {
+            let mut malformed: Value = serde_json::from_slice(&added_expected).unwrap();
+            malformed["rows"][0][missing] = if missing == "acquisitions" {
+                json!([])
+            } else {
+                json!({"state":"inapplicable"})
+            };
+            fs::write(
+                &added_expected_path,
+                serde_json::to_vec(&malformed).unwrap(),
+            )
+            .unwrap();
+            build(&source, &target);
+            // Even selecting an unrelated valid core member must validate the
+            // malformed catalogue first, before selection or worker execution.
+            for id in ["networking/fetch/added", "networking/fetch/response-200"] {
+                let output = run(&exe, temp.path(), &[id]);
+                assert_eq!(output.status.code(), Some(2), "{known_failure} {missing}");
+                let stdout = String::from_utf8(output.stdout).unwrap();
+                assert!(
+                    stdout.starts_with("ERROR networking.required-data:"),
+                    "{stdout}"
+                );
+                assert!(stdout.contains("networking/fetch/added"));
+                assert!(!stdout.contains("SUMMARY"));
+                assert!(!stdout.contains("XFAIL "));
+                let stderr = String::from_utf8(output.stderr).unwrap();
+                assert!(stderr.contains("case_results=not_published"));
+                assert!(!stderr.contains("[net]"));
+            }
+        }
+    }
+    fs::write(&added_expected_path, &added_expected).unwrap();
+    added["networking"]["rows"][0]["routes"][0]["outcome"]["status"] = json!(201);
+    for (known_failure, status, exit) in [(false, "FAIL", 1), (true, "XFAIL", 0)] {
+        added["expectation"] = if known_failure {
+            json!({"kind":"known_failure","reason":"controlled HTTP status mismatch"})
+        } else {
+            json!({"kind":"match"})
+        };
+        fs::write(
+            network_dir.join("added.fixture.json"),
+            serde_json::to_vec(&added).unwrap(),
+        )
+        .unwrap();
+        build(&source, &target);
+        let output = run(&exe, temp.path(), &["networking/fetch/added"]);
+        assert_eq!(output.status.code(), Some(exit));
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert!(text.starts_with(&format!("{status} networking/fetch/added\n")));
+        if known_failure {
+            assert!(text.contains("known failure: controlled HTTP status mismatch"));
+        }
+    }
+    added["networking"]["rows"][0]["routes"][0]["outcome"]["status"] = json!(200);
+    fs::write(
+        network_dir.join("added.fixture.json"),
+        serde_json::to_vec(&added).unwrap(),
+    )
+    .unwrap();
+    build(&source, &target);
+    let stale = run(&exe, temp.path(), &["networking/fetch/added"]);
+    assert_eq!(stale.status.code(), Some(1));
+    let text = String::from_utf8(stale.stdout).unwrap();
+    assert!(text.starts_with("XPASS networking/fetch/added\n"));
+    assert!(text.contains("known failure: controlled HTTP status mismatch"));
+    assert_eq!(
+        run(&exe, temp.path(), &["--suite", "networking"]).stdout,
+        networking_original.stdout
+    );
+    fs::remove_file(network_dir.join("added.fixture.json")).unwrap();
+    fs::remove_file(network_dir.join("added.expected.json")).unwrap();
+    build(&source, &target);
+    assert_eq!(
+        run(&exe, temp.path(), &["networking/fetch/added"])
+            .status
+            .code(),
+        Some(2)
+    );
+    assert_eq!(
+        run(&exe, temp.path(), &["--suite", "networking"]).stdout,
+        networking_original.stdout
+    );
     let standalone = temp.path().join("standalone");
     fs::copy(&exe, &standalone).unwrap();
     fs::remove_dir_all(&source).unwrap();
+    let standalone_network = run(&standalone, temp.path(), &["--suite", "networking"]);
+    assert_eq!(
+        standalone_network.status.code(),
+        networking_original.status.code()
+    );
+    assert_eq!(standalone_network.stdout, networking_original.stdout);
+    assert_eq!(standalone_network.stderr, networking_original.stderr);
     assert_eq!(
         run(&standalone, temp.path(), &["--suite", "addressing"]).stdout,
         addressing_original.stdout
@@ -986,5 +1155,73 @@ fn ah9_addressing_declarations_are_strict_and_assets_are_embedded() {
         };
         fs::write(path, text).unwrap();
         assert!(fixture_build::generate(temp.path()).is_err(), "{mutation}");
+    }
+}
+
+#[test]
+fn ai9_discovery_is_strict_bounded_embedded_and_rejects_mixed_families() {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for mutation in [
+        "none",
+        "unknown",
+        "mixed",
+        "duplicate",
+        "missing_expected",
+        "escape",
+        "rows",
+        "body",
+        "declaration_bytes",
+        "expectation_bytes",
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("fixtures");
+        fs::create_dir(&root).unwrap();
+        let declaration =
+            fs::read(source.join("fixtures/networking/fetch/response-200.fixture.json")).unwrap();
+        let expected =
+            fs::read(source.join("fixtures/networking/fetch/response-200.expected.json")).unwrap();
+        let mut value: Value = serde_json::from_slice(&declaration).unwrap();
+        match mutation {
+            "unknown" => value["networking"]["surprise"] = true.into(),
+            "mixed" => value["input"] = "case.html".into(),
+            "escape" => value["expected"]["path"] = "../response-200.expected.json".into(),
+            "rows" => {
+                value["networking"]["rows"] =
+                    json!(vec![value["networking"]["rows"][0].clone(); 33])
+            }
+            "body" => {
+                value["networking"]["rows"][0]["routes"][0]["outcome"]["body"] =
+                    json!({"kind":"repeat","byte":0,"len":2097154})
+            }
+            _ => {}
+        }
+        let metadata = if mutation == "declaration_bytes" {
+            vec![b' '; 256 * 1024 + 1]
+        } else {
+            serde_json::to_vec(&value).unwrap()
+        };
+        fs::write(root.join("case.fixture.json"), &metadata).unwrap();
+        if mutation == "duplicate" {
+            fs::write(root.join("duplicate.fixture.json"), &metadata).unwrap();
+        }
+        if mutation != "missing_expected" {
+            fs::write(
+                root.join("response-200.expected.json"),
+                if mutation == "expectation_bytes" {
+                    vec![b' '; 1024 * 1024 + 1]
+                } else {
+                    expected
+                },
+            )
+            .unwrap();
+        }
+        let result = fixture_build::generate(temp.path());
+        if mutation == "none" {
+            let generated = result.unwrap();
+            assert!(generated.contains("FixtureInput::Networking"));
+            assert!(generated.contains("include_str!"));
+        } else {
+            assert!(result.is_err(), "mutation accepted: {mutation}");
+        }
     }
 }

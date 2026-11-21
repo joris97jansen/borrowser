@@ -1,0 +1,78 @@
+{
+  "id": "networking/fetch/invalid-location",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "networking": {
+    "kind": "fetch",
+    "rows": [
+      {
+        "request": {
+          "url": "https://fixture.invalid/invalid-location",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/invalid-location",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    104,
+                    111,
+                    115,
+                    116,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    58,
+                    98,
+                    97,
+                    100,
+                    47
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/invalid-location",
+              "read_failure_after": null
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "networking",
+    "path": "invalid-location.expected.json"
+  }
+}

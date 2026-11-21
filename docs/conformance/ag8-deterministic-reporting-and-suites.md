@@ -1,5 +1,15 @@
 # AG8 deterministic reporting and bounded suites
 
+Current AI9 qualification: [AI9](../platform/ai9-fetch-network-conformance-fixtures-and-snapshots.md)
+adds fixed `--suite networking` membership and `GROUP networking/fetch` local
+counts. Comparison is now `borrowser.cross-engine-phases.v4`, with separate local
+networking observations/expectation verdicts, unsupported Chromium networking
+coverage, grouped local totals, and `environment.phases` applicability. Existing
+phase fields/counters/exit precedence remain. Networking adds no comparison
+fields or executed documents. Fatal errors publish no completed report.
+The v3 discussion below records AG8's earlier report contract.
+
+
 AG8 is harness tooling. It selects existing fixtures, summarizes existing
 verdicts, and makes failures reproducible. It adds no engine semantics, fixtures,
 WPT coverage, expected-difference baseline or execution backend. AG5 observations,
@@ -118,13 +128,16 @@ it is not a production baseline mechanism.
 
 ## Comparison schema and reproduction
 
-Comparison reports use **`borrowser.cross-engine-phases.v3`**. The previous schema
-has no documented additive-field compatibility promise, and existing consumers
-assert its identity/summary structure. V3 deliberately adds:
+Current comparison reports use **`borrowser.cross-engine-phases.v4`** under the
+[AI9 contract](../platform/ai9-fetch-network-conformance-fixtures-and-snapshots.md).
+Networking local results/groups and scoped phase environment facts are its only
+schema changes. Earlier schemas have no additive-field compatibility promise;
+consumers assert identity/summary structure. AG8's historical v3 added:
 
 - `cases[].borrowser_status`: the existing aggregate Borrowser case status;
 - `summary.borrowser_cases`: the eight derived totals above;
-- `selection`: suite (`ci`, `extended`, or legacy `catalogue`) and execution mode;
+- `selection`: suite and execution mode (AI9 also admits `networking`, alongside
+  `addressing`, `ci`, `extended` and legacy `catalogue`);
 - `cases[].reproduce`: a canonical exact-ID command within that selection.
 
 Existing `cases[].status`, `borrowser_expectation`, projections, field differences,

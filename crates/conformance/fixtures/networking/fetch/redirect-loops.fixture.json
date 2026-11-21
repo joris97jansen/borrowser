@@ -1,0 +1,186 @@
+{
+  "id": "networking/fetch/redirect-loops",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "networking": {
+    "kind": "fetch",
+    "rows": [
+      {
+        "request": {
+          "url": "https://fixture.invalid/self",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/self",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    115,
+                    101,
+                    108,
+                    102
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/self",
+              "read_failure_after": null
+            }
+          }
+        ]
+      },
+      {
+        "request": {
+          "url": "https://fixture.invalid/a",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/a",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/a",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/b",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    97
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/b",
+              "read_failure_after": null
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "networking",
+    "path": "redirect-loops.expected.json"
+  }
+}

@@ -86,6 +86,15 @@ class QualificationGate(unittest.TestCase):
                            "GITHUB_EVENT_NAME": event, "INTEGRATION_SHA": INTEGRATION,
                            "PR_HEAD_SHA": HEAD if event == "pull_request" else ""})
 
+    def test_ai9_networking_executes_in_required_conformance_job(self):
+        block = job_block("rust_conformance")
+        step = block.split("      - name: AI9 bounded offline networking suite\n", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("timeout-minutes: 2", step)
+        self.assertIn("run: make conformance-networking", step)
+        self.assertNotIn("continue-on-error", step)
+        self.assertNotIn("||", step)
+        self.assertIn("rust_conformance", PREREQUISITES)
+
     def test_gate_covers_every_normal_job(self):
         jobs = set(re.findall(r"^  ([a-z0-9_]+):$", WORKFLOW.split("\njobs:\n", 1)[1], re.MULTILINE))
         self.assertEqual(set(PREREQUISITES), jobs - {"ci_qualification", "rust", "ag4_proxy_timing"})

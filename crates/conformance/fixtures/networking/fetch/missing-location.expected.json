@@ -1,0 +1,151 @@
+{
+  "rows": [
+    {
+      "request": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/missing",
+          "current_url": "https://fixture.invalid/missing",
+          "transport_target": "https://fixture.invalid/missing",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [
+            [
+              "accept",
+              [
+                42,
+                47,
+                42
+              ]
+            ]
+          ],
+          "initiator_url": null,
+          "requesting_origin": null,
+          "redirect_policy": "follow",
+          "has_body": false
+        }
+      },
+      "acquisitions": [
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/missing",
+            "current_url": "https://fixture.invalid/missing",
+            "transport_target": "https://fixture.invalid/missing",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/missing",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/missing",
+              "reported_response_url": "https://fixture.invalid/missing",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/missing",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        }
+      ],
+      "start": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/missing",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/missing",
+          "reported_response_url": "https://fixture.invalid/missing",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/missing",
+            "diagnostics": []
+          },
+          "status": 302,
+          "status_class": "redirection",
+          "headers": [],
+          "content_type": {
+            "state": "missing"
+          },
+          "declared_content_length": {
+            "state": "missing"
+          },
+          "redirect_chain": []
+        }
+      },
+      "terminal": {
+        "kind": "done",
+        "response": {
+          "original_url": "https://fixture.invalid/missing",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/missing",
+          "reported_response_url": "https://fixture.invalid/missing",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/missing",
+            "diagnostics": []
+          },
+          "status": 302,
+          "status_class": "redirection",
+          "headers": [],
+          "content_type": {
+            "state": "missing"
+          },
+          "declared_content_length": {
+            "state": "missing"
+          },
+          "redirect_chain": []
+        },
+        "progress": {
+          "route": "html",
+          "delivered_bytes": 8,
+          "limit_bytes": 10485760
+        }
+      },
+      "selected_final_url": {
+        "state": "present",
+        "value": "https://fixture.invalid/missing"
+      },
+      "body": {
+        "kind": "bytes",
+        "bytes": [
+          115,
+          101,
+          108,
+          101,
+          99,
+          116,
+          101,
+          100
+        ]
+      }
+    }
+  ]
+}

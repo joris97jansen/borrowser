@@ -1,0 +1,512 @@
+{
+  "rows": [
+    {
+      "request": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/limit.css",
+          "current_url": "https://fixture.invalid/limit.css",
+          "transport_target": "https://fixture.invalid/limit.css",
+          "purpose": "stylesheet",
+          "route": "css",
+          "method": "GET",
+          "headers": [
+            [
+              "accept",
+              [
+                42,
+                47,
+                42
+              ]
+            ]
+          ],
+          "initiator_url": null,
+          "requesting_origin": null,
+          "redirect_policy": "follow",
+          "has_body": false
+        }
+      },
+      "acquisitions": [
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/limit.css",
+            "current_url": "https://fixture.invalid/limit.css",
+            "transport_target": "https://fixture.invalid/limit.css",
+            "purpose": "stylesheet",
+            "route": "css",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/limit.css",
+              "purpose": "stylesheet",
+              "requested_url": "https://fixture.invalid/limit.css",
+              "reported_response_url": "https://fixture.invalid/limit.css",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/limit.css",
+                "diagnostics": []
+              },
+              "status": 200,
+              "status_class": "successful",
+              "headers": [
+                [
+                  "content-length",
+                  [
+                    50,
+                    48,
+                    57,
+                    55,
+                    49,
+                    53,
+                    50
+                  ]
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "value",
+                "value": 2097152
+              },
+              "redirect_chain": []
+            }
+          }
+        }
+      ],
+      "start": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/limit.css",
+          "purpose": "stylesheet",
+          "requested_url": "https://fixture.invalid/limit.css",
+          "reported_response_url": "https://fixture.invalid/limit.css",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/limit.css",
+            "diagnostics": []
+          },
+          "status": 200,
+          "status_class": "successful",
+          "headers": [
+            [
+              "content-length",
+              [
+                50,
+                48,
+                57,
+                55,
+                49,
+                53,
+                50
+              ]
+            ]
+          ],
+          "content_type": {
+            "state": "missing"
+          },
+          "declared_content_length": {
+            "state": "value",
+            "value": 2097152
+          },
+          "redirect_chain": []
+        }
+      },
+      "terminal": {
+        "kind": "done",
+        "response": {
+          "original_url": "https://fixture.invalid/limit.css",
+          "purpose": "stylesheet",
+          "requested_url": "https://fixture.invalid/limit.css",
+          "reported_response_url": "https://fixture.invalid/limit.css",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/limit.css",
+            "diagnostics": []
+          },
+          "status": 200,
+          "status_class": "successful",
+          "headers": [
+            [
+              "content-length",
+              [
+                50,
+                48,
+                57,
+                55,
+                49,
+                53,
+                50
+              ]
+            ]
+          ],
+          "content_type": {
+            "state": "missing"
+          },
+          "declared_content_length": {
+            "state": "value",
+            "value": 2097152
+          },
+          "redirect_chain": []
+        },
+        "progress": {
+          "route": "css",
+          "delivered_bytes": 2097152,
+          "limit_bytes": 2097152
+        }
+      },
+      "selected_final_url": {
+        "state": "present",
+        "value": "https://fixture.invalid/limit.css"
+      },
+      "body": {
+        "kind": "summary",
+        "length": 2097152,
+        "sha256": "e303b22f75fb4f8b39e5ea623f1f24d455263303088135176e9d9dd4d6a6a556",
+        "prefix": [
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128
+        ],
+        "suffix": [
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "request": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/limit.css",
+          "current_url": "https://fixture.invalid/limit.css",
+          "transport_target": "https://fixture.invalid/limit.css",
+          "purpose": "stylesheet",
+          "route": "css",
+          "method": "GET",
+          "headers": [
+            [
+              "accept",
+              [
+                42,
+                47,
+                42
+              ]
+            ]
+          ],
+          "initiator_url": null,
+          "requesting_origin": null,
+          "redirect_policy": "follow",
+          "has_body": false
+        }
+      },
+      "acquisitions": [
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/limit.css",
+            "current_url": "https://fixture.invalid/limit.css",
+            "transport_target": "https://fixture.invalid/limit.css",
+            "purpose": "stylesheet",
+            "route": "css",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/limit.css",
+              "purpose": "stylesheet",
+              "requested_url": "https://fixture.invalid/limit.css",
+              "reported_response_url": "https://fixture.invalid/limit.css",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/limit.css",
+                "diagnostics": []
+              },
+              "status": 200,
+              "status_class": "successful",
+              "headers": [
+                [
+                  "content-length",
+                  [
+                    50,
+                    48,
+                    57,
+                    55,
+                    49,
+                    53,
+                    51
+                  ]
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "value",
+                "value": 2097153
+              },
+              "redirect_chain": []
+            }
+          }
+        }
+      ],
+      "start": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/limit.css",
+          "purpose": "stylesheet",
+          "requested_url": "https://fixture.invalid/limit.css",
+          "reported_response_url": "https://fixture.invalid/limit.css",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/limit.css",
+            "diagnostics": []
+          },
+          "status": 200,
+          "status_class": "successful",
+          "headers": [
+            [
+              "content-length",
+              [
+                50,
+                48,
+                57,
+                55,
+                49,
+                53,
+                51
+              ]
+            ]
+          ],
+          "content_type": {
+            "state": "missing"
+          },
+          "declared_content_length": {
+            "state": "value",
+            "value": 2097153
+          },
+          "redirect_chain": []
+        }
+      },
+      "terminal": {
+        "kind": "error",
+        "error": {
+          "kind": "resource_limit",
+          "reason": "decoded_body"
+        },
+        "response": {
+          "state": "present",
+          "value": {
+            "original_url": "https://fixture.invalid/limit.css",
+            "purpose": "stylesheet",
+            "requested_url": "https://fixture.invalid/limit.css",
+            "reported_response_url": "https://fixture.invalid/limit.css",
+            "response_url": {
+              "state": "parsed",
+              "url": "https://fixture.invalid/limit.css",
+              "diagnostics": []
+            },
+            "status": 200,
+            "status_class": "successful",
+            "headers": [
+              [
+                "content-length",
+                [
+                  50,
+                  48,
+                  57,
+                  55,
+                  49,
+                  53,
+                  51
+                ]
+              ]
+            ],
+            "content_type": {
+              "state": "missing"
+            },
+            "declared_content_length": {
+              "state": "value",
+              "value": 2097153
+            },
+            "redirect_chain": []
+          }
+        },
+        "progress": {
+          "state": "present",
+          "value": {
+            "route": "css",
+            "delivered_bytes": 2097152,
+            "limit_bytes": 2097152
+          }
+        }
+      },
+      "selected_final_url": {
+        "state": "present",
+        "value": "https://fixture.invalid/limit.css"
+      },
+      "body": {
+        "kind": "summary",
+        "length": 2097152,
+        "sha256": "e303b22f75fb4f8b39e5ea623f1f24d455263303088135176e9d9dd4d6a6a556",
+        "prefix": [
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128
+        ],
+        "suffix": [
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128,
+          128
+        ]
+      }
+    }
+  ]
+}

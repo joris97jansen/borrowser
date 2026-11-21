@@ -1,0 +1,50 @@
+{
+  "id": "networking/fetch/response-200",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "networking": {
+    "kind": "fetch",
+    "rows": [
+      {
+        "request": {
+          "url": "https://fixture.invalid/data",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/data",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 200,
+              "headers": [],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  0,
+                  255
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/data",
+              "read_failure_after": null
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "networking",
+    "path": "response-200.expected.json"
+  }
+}

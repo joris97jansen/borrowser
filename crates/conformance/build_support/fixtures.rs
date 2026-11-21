@@ -1,7 +1,14 @@
 //! AG6 build input only. Execution consumes the generated existing Fixture model.
 #[path = "../src/addressing/input.rs"]
 mod addressing_input;
+use addressing_input as purpose;
+#[allow(dead_code)]
+#[path = "../src/networking/bounds.rs"]
+mod bounds;
 mod external;
+#[allow(dead_code)]
+#[path = "../src/networking/input.rs"]
+mod networking_input;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -16,6 +23,7 @@ struct FixtureMetadata {
     classification: ClassificationMetadata,
     observations: Option<ObservationMetadata>,
     addressing: Option<addressing_input::AddressingCase>,
+    networking: Option<networking_input::NetworkingCase>,
     expectation: Option<ExpectationMetadata>,
     expected: Option<ExpectedMetadata>,
     provenance: Option<external::Provenance>,
@@ -44,6 +52,7 @@ enum ExpectedMetadata {
     Canvas { rgb8: [u8; 3] },
     Projection { path: String },
     Addressing { path: String },
+    Networking { path: String },
 }
 
 #[derive(Deserialize)]
@@ -308,7 +317,7 @@ pub fn generate(manifest_dir: &Path) -> Result<String, String> {
     let mut referenced = BTreeSet::new();
     for path in declarations {
         let compile = || -> Result<(String, String, Vec<String>), String> {
-            let bytes = fs::read(root.join(path)).map_err(|e| e.to_string())?;
+            let bytes = bounds::read(&root.join(path), bounds::DECLARATION)?;
             let metadata: FixtureMetadata =
                 serde_json::from_slice(&bytes).map_err(|e| format!("metadata: {e}"))?;
             if metadata.id.split('/').any(|part| {
@@ -319,6 +328,9 @@ pub fn generate(manifest_dir: &Path) -> Result<String, String> {
                     })
             }) {
                 return Err(format!("id: invalid fixture identity {:?}", metadata.id));
+            }
+            if let Some(case) = &metadata.networking {
+                return compile_networking(&root, path, &metadata, case, &files);
             }
             if let Some(case) = &metadata.addressing {
                 return compile_addressing(&root, path, &metadata, case, &files);
@@ -488,7 +500,8 @@ pub fn generate(manifest_dir: &Path) -> Result<String, String> {
                                 }
                             };
                             let expected = match expected {
-                                ExpectedMetadata::Addressing { .. } => {
+                                ExpectedMetadata::Addressing { .. }
+                                | ExpectedMetadata::Networking { .. } => {
                                     return Err(
                                         "addressing expectation requires addressing input".into()
                                     );
@@ -686,6 +699,91 @@ fn compile_addressing(
             embedded(path, true),
             literal(&format!("fixtures/{path}")),
             metadata.requires_javascript,
+        ),
+        references,
+    ))
+}
+
+fn compile_networking(
+    root: &Path,
+    path: &str,
+    metadata: &FixtureMetadata,
+    case: &networking_input::NetworkingCase,
+    files: &BTreeSet<String>,
+) -> Result<(String, String, Vec<String>), String> {
+    case.validate()?;
+    if metadata.input.is_some()
+        || metadata.observations.is_some()
+        || metadata.addressing.is_some()
+        || metadata.provenance.is_some()
+        || metadata.upstream_assertion.is_some()
+        || metadata.relationship.is_some()
+    {
+        return Err(
+            "networking cannot contain phase/addressing inputs, provenance or relationships".into(),
+        );
+    }
+    let mut references = Vec::new();
+    let kind = match &metadata.classification {
+        ClassificationMetadata::Runnable {} => {
+            if metadata.requires_javascript
+                || !matches!(case, networking_input::NetworkingCase::Fetch { .. })
+            {
+                return Err("runnable networking fixture requires no-JS fetch input".into());
+            }
+            let disposition = match metadata
+                .expectation
+                .as_ref()
+                .ok_or("expectation: required")?
+            {
+                ExpectationMetadata::Match {} => "Expectation::Match".to_string(),
+                ExpectationMetadata::KnownFailure { reason: text } => {
+                    reason(text)?;
+                    format!("Expectation::KnownFailure {{ reason: {} }}", literal(text))
+                }
+            };
+            let ExpectedMetadata::Networking { path: expected } =
+                metadata.expected.as_ref().ok_or("expected: required")?
+            else {
+                return Err("networking requires a networking expectation".into());
+            };
+            let expected = reference(path, expected, files)?;
+            if !expected.ends_with(".expected.json") {
+                return Err("expected: expected .expected.json".into());
+            }
+            let bytes = bounds::read(&root.join(&expected), bounds::EXPECTATION)?;
+            std::str::from_utf8(&bytes).map_err(|_| "expected: UTF-8 required")?;
+            references.push(expected.clone());
+            format!(
+                "FixtureKind::Runnable {{ checks: Checks::Independent(IndependentExpectation {{ expected: Expected::Networking({}), disposition: {disposition} }}) }}",
+                embedded(&expected, true)
+            )
+        }
+        ClassificationMetadata::Unsupported { reason: text }
+        | ClassificationMetadata::Skipped { reason: text } => {
+            reason(text)?;
+            if metadata.expected.is_some() || metadata.expectation.is_some() {
+                return Err("excluded networking fixture must omit expectations".into());
+            }
+            let variant = if matches!(
+                metadata.classification,
+                ClassificationMetadata::Unsupported { .. }
+            ) {
+                "Unsupported"
+            } else {
+                "Skipped"
+            };
+            format!("FixtureKind::{variant} {{ reason: {} }}", literal(text))
+        }
+    };
+    Ok((
+        metadata.id.clone(),
+        format!(
+            "Fixture {{ id: TestId({}), input: crate::model::FixtureInput::Networking(crate::networking::NetworkingInput {{ declaration: {} }}), upstream: None, metadata_source: {}, requires_javascript: {}, kind: {kind} }}",
+            literal(&metadata.id),
+            embedded(path, true),
+            literal(&format!("fixtures/{path}")),
+            metadata.requires_javascript
         ),
         references,
     ))

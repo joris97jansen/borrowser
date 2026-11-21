@@ -10,6 +10,7 @@ mod execute;
 mod fixtures;
 mod metadata_links;
 mod model;
+mod networking;
 mod projection;
 mod relationship;
 mod report;
@@ -50,7 +51,12 @@ fn options(args: &[String], chromium: bool) -> Result<Options<'_>, model::Harnes
                     Some("ci") => fixtures::Suite::Ci,
                     Some("extended") => fixtures::Suite::Extended,
                     Some("addressing") => fixtures::Suite::Addressing,
-                    _ => return Err(invalid("--suite requires ci, extended or addressing")),
+                    Some("networking") => fixtures::Suite::Networking,
+                    _ => {
+                        return Err(invalid(
+                            "--suite requires ci, extended, addressing or networking",
+                        ));
+                    }
                 });
             }
             "--chromium-executable" if chromium && !explicit_executable => {
@@ -88,6 +94,21 @@ fn run_fixture(fixture: &Fixture) -> Execution {
                         "fixture.configuration",
                         "runnable JavaScript requirement",
                     ));
+                }
+                if let model::FixtureInput::Networking(input) = fixture.input {
+                    let Some(model::IndependentExpectation {
+                        expected: model::Expected::Networking(json),
+                        ..
+                    }) = fixture.independent()
+                    else {
+                        return Err(networking::observations::error(
+                            "networking expectation required",
+                        ));
+                    };
+                    return Ok(match networking::execute(input, json) {
+                        Ok(v) => Execution::NetworkingObserved(v),
+                        Err(e) => Execution::NetworkingError(e),
+                    });
                 }
                 if let model::FixtureInput::Addressing(input) = fixture.input {
                     return addressing::execute(input).map(Execution::AddressingObserved);
@@ -129,18 +150,50 @@ fn run(args: &[String], out: &mut impl Write) -> io::Result<u8> {
     result
 }
 
+// One selection boundary: unresolved producer ownership prevents later execution.
+fn evaluate_selected<'a>(
+    selected: &[&'a Fixture],
+    mut execute: impl FnMut(&Fixture) -> Execution,
+) -> Result<Vec<report::CaseReport<'a>>, model::HarnessError> {
+    let mut reports = Vec::with_capacity(selected.len());
+    let mut storage = 0usize;
+    for fixture in selected {
+        let execution = execute(fixture);
+        if let Execution::NetworkingError(e) = &execution
+            && execution.unresolved_networking_shutdown()
+        {
+            return Err(model::HarnessError::new(
+                "networking.shutdown",
+                format!(
+                    "primary={}: {}; producer_closure=unresolved worker_termination=unverified; subsequent fixtures not executed",
+                    e.primary.code, e.primary.detail
+                ),
+            ));
+        }
+        let evaluated = report::evaluate(fixture, execution);
+        storage = storage.saturating_add(evaluated.networking_storage());
+        if storage > networking::bounds::INVOCATION_STORAGE {
+            return Err(networking::observations::error(
+                "invocation storage budget exceeded",
+            ));
+        }
+        reports.push(evaluated);
+    }
+    Ok(reports)
+}
+
 fn run_selected(args: &[String], out: &mut impl Write) -> io::Result<u8> {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     match args.first().map(String::as_str) {
         Some("--ag4-eice-proxy") => return aws::eice_proxy(&args[1..]),
-        Some("--compare-aws") => return aws::run(&args[1..], out, &mut io::stderr().lock()),
+        Some("--compare-aws") => return aws::run(&args[1..], out, &mut io::stderr()),
         Some("--aws-cleanup") => return aws::cleanup(&args[1..], &mut io::stderr().lock()),
         Some("--ag4-artifact-info") if args.len() == 1 => return aws::artifact_info(out),
         _ => {}
     }
     if args.first().map(String::as_str) == Some("--compare") {
         #[cfg(any(target_os = "linux", target_os = "macos"))]
-        return comparison::run(&args[1..], out, &mut io::stderr().lock());
+        return comparison::run(&args[1..], out, &mut io::stderr());
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         {
             writeln!(
@@ -165,7 +218,7 @@ fn run_selected(args: &[String], out: &mut impl Write) -> io::Result<u8> {
     if args == ["--help"] {
         writeln!(
             out,
-            "Usage: borrowser-conformance [--suite ci|extended|addressing] [TEST_ID]\nRun the embedded discovered fixture set, a bounded named suite, or one exact test identity.\n       borrowser-conformance --chromium [--suite ci|extended|addressing] [--chromium-executable PATH] [TEST_ID]\nCapture only, using the pinned Chrome for Testing (or BORROWSER_CHROMIUM_EXECUTABLE).\n       borrowser-conformance --compare [--suite ci|extended|addressing] [--chromium-executable PATH] [TEST_ID]\nCompare the requested static DOM, computed-style, fixed-layout, and guarded canvas observations.\n       borrowser-conformance --compare-aws --config PATH --artifact-dir PATH --state-dir PATH [TEST_ID]\n       borrowser-conformance --aws-cleanup --operation PATH --aws-cli PATH\nSee docs/conformance/ag4-disposable-aws-chromium-runner.md for AG4 prerequisites and qualification."
+            "Usage: borrowser-conformance [--suite ci|extended|addressing|networking] [TEST_ID]\nRun the embedded discovered fixture set, a bounded named suite, or one exact test identity.\n       borrowser-conformance --chromium [--suite ci|extended|addressing|networking] [--chromium-executable PATH] [TEST_ID]\nCapture only, using the pinned Chrome for Testing (or BORROWSER_CHROMIUM_EXECUTABLE).\n       borrowser-conformance --compare [--suite ci|extended|addressing|networking] [--chromium-executable PATH] [TEST_ID]\nCompare the requested static DOM, computed-style, fixed-layout, and guarded canvas observations.\n       borrowser-conformance --compare-aws --config PATH --artifact-dir PATH --state-dir PATH [TEST_ID]\n       borrowser-conformance --aws-cleanup --operation PATH --aws-cli PATH\nSee docs/conformance/ag4-disposable-aws-chromium-runner.md for AG4 prerequisites and qualification."
         )?;
         return Ok(0);
     }
@@ -200,11 +253,32 @@ fn run_selected(args: &[String], out: &mut impl Write) -> io::Result<u8> {
             return Ok(2);
         }
     };
-    let reports: Vec<_> = selected
-        .into_iter()
-        .map(|fixture| report::evaluate(fixture, run_fixture(fixture)))
-        .collect();
-    report::write_suite_report(&reports, options.suite, out)?;
+    let has_networking = selected
+        .iter()
+        .any(|f| matches!(f.input, model::FixtureInput::Networking(_)));
+    let reports = match evaluate_selected(&selected, run_fixture) {
+        Ok(reports) => reports,
+        Err(e) => {
+            writeln!(io::stderr().lock(), "ERROR {}: {}", e.code, e.detail)?;
+            report::write_run_error(&mut io::stderr().lock(), "harness", e.code, "not_published")?;
+            return Ok(2);
+        }
+    };
+    if has_networking {
+        let mut buffer = networking::bounds::Buffer::new(networking::bounds::REPORT);
+        if report::write_suite_report(&reports, options.suite, &mut buffer).is_err() {
+            report::write_run_error(
+                &mut io::stderr().lock(),
+                "harness",
+                "networking.report-budget",
+                "not_published",
+            )?;
+            return Ok(2);
+        }
+        out.write_all(&buffer.finish())?;
+    } else {
+        report::write_suite_report(&reports, options.suite, out)?;
+    }
     Ok(report::exit_code(&reports))
 }
 

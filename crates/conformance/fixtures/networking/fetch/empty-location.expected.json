@@ -1,0 +1,1322 @@
+{
+  "rows": [
+    {
+      "request": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/empty-location",
+          "current_url": "https://fixture.invalid/empty-location",
+          "transport_target": "https://fixture.invalid/empty-location",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [
+            [
+              "accept",
+              [
+                42,
+                47,
+                42
+              ]
+            ]
+          ],
+          "initiator_url": null,
+          "requesting_origin": null,
+          "redirect_policy": "follow",
+          "has_body": false
+        }
+      },
+      "acquisitions": [
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        },
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "current_url": "https://fixture.invalid/empty-location",
+            "transport_target": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty-location",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty-location",
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty-location",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        }
+      ],
+      "start": {
+        "state": "inapplicable"
+      },
+      "terminal": {
+        "kind": "error",
+        "error": {
+          "kind": "redirect",
+          "reason": "limit_exceeded"
+        },
+        "response": {
+          "state": "present",
+          "value": {
+            "original_url": "https://fixture.invalid/empty-location",
+            "purpose": "document",
+            "requested_url": "https://fixture.invalid/empty-location",
+            "reported_response_url": "https://fixture.invalid/empty-location",
+            "response_url": {
+              "state": "parsed",
+              "url": "https://fixture.invalid/empty-location",
+              "diagnostics": []
+            },
+            "status": 302,
+            "status_class": "redirection",
+            "headers": [
+              [
+                "location",
+                []
+              ]
+            ],
+            "content_type": {
+              "state": "missing"
+            },
+            "declared_content_length": {
+              "state": "missing"
+            },
+            "redirect_chain": [
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              },
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              },
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              },
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              },
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              },
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              },
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              },
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              },
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              },
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              },
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              },
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              },
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              },
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              },
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              },
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              },
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              },
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              },
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              },
+              {
+                "request_url": "https://fixture.invalid/empty-location",
+                "response_url": "https://fixture.invalid/empty-location",
+                "status": 302,
+                "target_url": "https://fixture.invalid/empty-location"
+              }
+            ]
+          }
+        },
+        "progress": {
+          "state": "present",
+          "value": {
+            "route": "html",
+            "delivered_bytes": 0,
+            "limit_bytes": 10485760
+          }
+        }
+      },
+      "selected_final_url": {
+        "state": "unavailable",
+        "value": "no_selected_response_start"
+      },
+      "body": {
+        "kind": "bytes",
+        "bytes": []
+      }
+    }
+  ]
+}

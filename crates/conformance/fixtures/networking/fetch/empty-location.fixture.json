@@ -1,0 +1,52 @@
+{
+  "id": "networking/fetch/empty-location",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "networking": {
+    "kind": "fetch",
+    "rows": [
+      {
+        "request": {
+          "url": "https://fixture.invalid/empty-location",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/empty-location",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  []
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/empty-location",
+              "read_failure_after": null
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "networking",
+    "path": "empty-location.expected.json"
+  }
+}

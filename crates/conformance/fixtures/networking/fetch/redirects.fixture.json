@@ -1,0 +1,1573 @@
+{
+  "id": "networking/fetch/redirects",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "networking": {
+    "kind": "fetch",
+    "rows": [
+      {
+        "request": {
+          "url": "https://fixture.invalid/start#keep",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/start#keep",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 301,
+              "headers": [
+                [
+                  "location",
+                  [
+                    47,
+                    102,
+                    105,
+                    110,
+                    97,
+                    108
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  105,
+                  103,
+                  110,
+                  111,
+                  114,
+                  101,
+                  100
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/start#keep",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/final#keep",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 200,
+              "headers": [],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  111,
+                  107
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/final#keep",
+              "read_failure_after": null
+            }
+          }
+        ]
+      },
+      {
+        "request": {
+          "url": "https://fixture.invalid/start#keep",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/start#keep",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    47,
+                    102,
+                    105,
+                    110,
+                    97,
+                    108
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  105,
+                  103,
+                  110,
+                  111,
+                  114,
+                  101,
+                  100
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/start#keep",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/final#keep",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 200,
+              "headers": [],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  111,
+                  107
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/final#keep",
+              "read_failure_after": null
+            }
+          }
+        ]
+      },
+      {
+        "request": {
+          "url": "https://fixture.invalid/start#keep",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/start#keep",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 303,
+              "headers": [
+                [
+                  "location",
+                  [
+                    47,
+                    102,
+                    105,
+                    110,
+                    97,
+                    108
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  105,
+                  103,
+                  110,
+                  111,
+                  114,
+                  101,
+                  100
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/start#keep",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/final#keep",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 200,
+              "headers": [],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  111,
+                  107
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/final#keep",
+              "read_failure_after": null
+            }
+          }
+        ]
+      },
+      {
+        "request": {
+          "url": "https://fixture.invalid/start#keep",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/start#keep",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 307,
+              "headers": [
+                [
+                  "location",
+                  [
+                    47,
+                    102,
+                    105,
+                    110,
+                    97,
+                    108
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  105,
+                  103,
+                  110,
+                  111,
+                  114,
+                  101,
+                  100
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/start#keep",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/final#keep",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 200,
+              "headers": [],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  111,
+                  107
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/final#keep",
+              "read_failure_after": null
+            }
+          }
+        ]
+      },
+      {
+        "request": {
+          "url": "https://fixture.invalid/start#keep",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/start#keep",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 308,
+              "headers": [
+                [
+                  "location",
+                  [
+                    47,
+                    102,
+                    105,
+                    110,
+                    97,
+                    108
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  105,
+                  103,
+                  110,
+                  111,
+                  114,
+                  101,
+                  100
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/start#keep",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/final#keep",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 200,
+              "headers": [],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  111,
+                  107
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/final#keep",
+              "read_failure_after": null
+            }
+          }
+        ]
+      },
+      {
+        "request": {
+          "url": "https://fixture.invalid/recover",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/recover",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    47,
+                    110,
+                    101,
+                    120,
+                    116,
+                    63,
+                    98,
+                    97,
+                    100,
+                    61,
+                    37
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/recover",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/next?bad=%",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 200,
+              "headers": [],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  111,
+                  107
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/next?bad=%",
+              "read_failure_after": null
+            }
+          }
+        ]
+      },
+      {
+        "request": {
+          "url": "https://fixture.invalid/fragment#keep",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/fragment#keep",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    47,
+                    102,
+                    105,
+                    110,
+                    97,
+                    108,
+                    35
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/fragment#keep",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/final#",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 200,
+              "headers": [],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  111,
+                  107
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/final#",
+              "read_failure_after": null
+            }
+          }
+        ]
+      },
+      {
+        "request": {
+          "url": "https://fixture.invalid/budget/0",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/budget/0",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    49
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/0",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/1",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    50
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/1",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/2",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    51
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/2",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/3",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    52
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/3",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/4",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    53
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/4",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/5",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    54
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/5",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/6",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    55
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/6",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/7",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    56
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/7",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/8",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    57
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/8",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/9",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    49,
+                    48
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/9",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/10",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    49,
+                    49
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/10",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/11",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    49,
+                    50
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/11",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/12",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    49,
+                    51
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/12",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/13",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    49,
+                    52
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/13",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/14",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    49,
+                    53
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/14",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/15",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    49,
+                    54
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/15",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/16",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    49,
+                    55
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/16",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/17",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    49,
+                    56
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/17",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/18",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    49,
+                    57
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/18",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/19",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    104,
+                    116,
+                    116,
+                    112,
+                    115,
+                    58,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101,
+                    46,
+                    105,
+                    110,
+                    118,
+                    97,
+                    108,
+                    105,
+                    100,
+                    47,
+                    98,
+                    117,
+                    100,
+                    103,
+                    101,
+                    116,
+                    47,
+                    50,
+                    48
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/budget/19",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/budget/20",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 200,
+              "headers": [],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  111,
+                  107
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/budget/20",
+              "read_failure_after": null
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "networking",
+    "path": "redirects.expected.json"
+  }
+}

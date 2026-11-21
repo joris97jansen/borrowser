@@ -1,0 +1,12 @@
+{
+  "id": "networking/fetch/unsupported-http-cache",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "unsupported",
+    "reason": "HTTP caching and revalidation belong to the later cache milestone"
+  },
+  "networking": {
+    "kind": "deferred",
+    "feature": "http_cache"
+  }
+}

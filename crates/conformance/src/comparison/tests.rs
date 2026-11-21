@@ -1482,7 +1482,7 @@ fn ag8_v3_counts_case_verdicts_separately_from_comparison_facts() {
     assert_eq!(exit, 1);
     assert!(diagnostics.is_empty());
     let wire: Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(wire["schema"], "borrowser.cross-engine-phases.v3");
+    assert_eq!(wire["schema"], "borrowser.cross-engine-phases.v4");
     assert_eq!(wire["selection"], json!({"suite":"ci","mode":"--compare"}));
     assert_eq!(wire["cases"][0]["borrowser_status"], "PASS");
     assert_eq!(wire["cases"][0]["status"], "different");
@@ -1548,4 +1548,115 @@ fn ag8_late_borrowser_failure_does_not_publish_earlier_cases() {
             .contains("origin=harness code=comparison.capture.overlap case_results=not_published")
     );
     assert!(!diagnostics.contains("SUMMARY"));
+}
+
+#[test]
+fn ai9_v4_mixed_phase_and_networking_results_keep_environment_and_counts_separate() {
+    let phase = crate::fixtures::fixture("canvas/root");
+    let actual = execute::execute_fixture(phase.phase().unwrap().0.html, phase.request()).unwrap();
+    let phase_case = report::Case::observed(phase, actual, capture([18, 52, 86])).unwrap();
+    let network = crate::fixtures::fixture("networking/fetch/response-200");
+    let network_case = report::Case::networking(network, crate::run_fixture(network)).unwrap();
+    let report = report::Report::new(vec![phase_case, network_case]);
+    assert_eq!(report.exit_code(), 3);
+    let (exit, bytes, diagnostics) = publish_bytes(Ok(report));
+    assert_eq!(exit, 3);
+    assert!(diagnostics.is_empty());
+    let wire: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(wire["summary"]["borrowser_cases"]["passed"], 2);
+    assert_eq!(wire["summary"]["groups"]["networking/fetch"]["passed"], 1);
+    assert_eq!(wire["summary"]["equal_fields"], 1);
+    assert_eq!(wire["summary"]["different_fields"], 0);
+    assert_eq!(wire["summary"]["executed_documents"], 1);
+    assert_eq!(wire["summary"]["incomplete_cases"], 1);
+    assert_eq!(wire["environment"]["phases"]["state"], "present");
+    assert_eq!(
+        wire["environment"]["phases"]["value"]["sample_pixel"],
+        json!([32, 32])
+    );
+    assert_eq!(
+        wire["cases"][1]["coverage"]["chromium"]["state"],
+        "unsupported"
+    );
+    assert!(wire["cases"][1]["fields"].as_array().unwrap().is_empty());
+}
+#[test]
+fn ai9_v4_local_mismatch_is_not_cross_engine_difference_and_fatal_errors_publish_nothing() {
+    let original = *crate::fixtures::fixture("networking/fetch/response-200");
+    let FixtureInput::Networking(input) = original.input else {
+        panic!()
+    };
+    let mut value: Value = serde_json::from_str(input.declaration).unwrap();
+    value["networking"]["rows"][0]["routes"][0]["outcome"]["status"] = json!(201);
+    let changed = Fixture {
+        input: FixtureInput::Networking(crate::networking::NetworkingInput {
+            declaration: Box::leak(value.to_string().into_boxed_str()),
+        }),
+        ..original
+    };
+    let case = report::Case::networking(&changed, crate::run_fixture(&changed)).unwrap();
+    let report = report::Report::new(vec![case]);
+    assert_eq!(report.exit_code(), 1);
+    let wire = serde_json::to_value(&report).unwrap();
+    assert_eq!(wire["summary"]["expectation_failures"], 1);
+    assert_eq!(wire["summary"]["different_fields"], 0);
+    assert_eq!(wire["summary"]["equal_fields"], 0);
+    assert_eq!(wire["summary"]["executed_documents"], 0);
+    assert_eq!(wire["summary"]["groups"]["networking/fetch"]["failed"], 1);
+    assert_eq!(wire["cases"][0]["status"], "incomplete");
+    assert_eq!(wire["cases"][0]["borrowser_status"], "FAIL");
+    let failure = report::Case::networking(
+        &original,
+        Execution::NetworkingError(crate::networking::Failure {
+            primary: HarnessError::new("networking.deadline", "primary sentinel"),
+            closure: crate::networking::ProducerClosure::Unresolved,
+        }),
+    )
+    .err()
+    .unwrap();
+    let (exit, bytes, diagnostics) = publish_bytes(Err(failure.into()));
+    assert_eq!(exit, 2);
+    assert!(bytes.is_empty());
+    assert!(diagnostics.contains("primary sentinel"));
+    assert!(diagnostics.contains("Unresolved"));
+}
+
+#[test]
+fn ai9_physical_publication_failure_preserves_exit_two_after_accepted_bytes() {
+    use std::io;
+    struct Partial {
+        accepted: usize,
+    }
+    impl io::Write for Partial {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            if self.accepted == 0 && !bytes.is_empty() {
+                self.accepted = 1;
+                Ok(1)
+            } else {
+                Err(io::Error::from(io::ErrorKind::BrokenPipe))
+            }
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::from(io::ErrorKind::BrokenPipe))
+        }
+    }
+    let fixture = crate::fixtures::fixture("networking/fetch/response-200");
+    let case = report::Case::networking(fixture, crate::run_fixture(fixture)).unwrap();
+    let mut out = Partial { accepted: 0 };
+    let mut diagnostic = Vec::new();
+    assert_eq!(
+        publish(
+            Ok(report::Report::new(vec![case])),
+            &mut out,
+            &mut diagnostic
+        )
+        .unwrap(),
+        2
+    );
+    assert_eq!(out.accepted, 1);
+    assert!(
+        String::from_utf8(diagnostic)
+            .unwrap()
+            .contains("case_results=publication_failed")
+    );
 }

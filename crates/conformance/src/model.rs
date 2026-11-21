@@ -48,12 +48,13 @@ pub(crate) enum FixtureInput {
         request: ObservationRequest,
     },
     Addressing(crate::addressing::AddressingInput),
+    Networking(crate::networking::NetworkingInput),
 }
 impl Fixture {
     pub(crate) fn phase(self) -> Result<(DocumentInput, ObservationRequest), HarnessError> {
         match self.input {
             FixtureInput::Phases { document, request } => Ok((document, request)),
-            FixtureInput::Addressing(_) => Err(HarnessError::new(
+            FixtureInput::Addressing(_) | FixtureInput::Networking(_) => Err(HarnessError::new(
                 "fixture.input",
                 "addressing input is not a phase document",
             )),
@@ -62,13 +63,13 @@ impl Fixture {
     pub(crate) fn request(self) -> ObservationRequest {
         match self.input {
             FixtureInput::Phases { request, .. } => request,
-            FixtureInput::Addressing(_) => ObservationRequest::NONE,
+            FixtureInput::Addressing(_) | FixtureInput::Networking(_) => ObservationRequest::NONE,
         }
     }
     pub(crate) fn source(self) -> &'static str {
         match self.input {
             FixtureInput::Phases { document, .. } => document.source,
-            FixtureInput::Addressing(_) => self.metadata_source,
+            FixtureInput::Addressing(_) | FixtureInput::Networking(_) => self.metadata_source,
         }
     }
     pub(crate) fn provenance(self) -> Option<UpstreamSource> {
@@ -219,6 +220,8 @@ pub(crate) enum Expectation {
 pub(crate) enum Execution {
     Observed(BorrowserCapture),
     AddressingObserved(crate::addressing::observations::AddressingObservation),
+    NetworkingObserved(crate::networking::observations::NetworkingObservation),
+    NetworkingError(crate::networking::Failure),
     ReferenceObserved {
         test: BorrowserCapture,
         reference: Box<BorrowserCapture>,
@@ -243,11 +246,12 @@ pub(crate) enum Expected {
     Canvas(CanvasColor),
     Projection(&'static str),
     Addressing(&'static str),
+    Networking(&'static str),
 }
 impl Expected {
     pub(crate) fn observations(self) -> Result<ProjectedObservations, HarnessError> {
         match self {
-            Self::Addressing(_) => Err(HarnessError::new(
+            Self::Addressing(_) | Self::Networking(_) => Err(HarnessError::new(
                 "expectation.invalid",
                 "addressing expectation used as a phase projection",
             )),
@@ -270,5 +274,11 @@ impl From<CanvasColor> for BorrowserCapture {
             layout_viewport_width: None,
             layout_artifact_source_width: None,
         }
+    }
+}
+
+impl Execution {
+    pub(crate) fn unresolved_networking_shutdown(&self) -> bool {
+        matches!(self,Self::NetworkingError(e) if e.closure==crate::networking::ProducerClosure::Unresolved)
     }
 }

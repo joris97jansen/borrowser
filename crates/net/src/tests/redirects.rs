@@ -25,6 +25,7 @@ fn url(value: &str) -> addressing::BrowserUrl {
 }
 
 struct ObserveReal {
+    requests: Arc<Mutex<Vec<FetchRequest>>>,
     backend: crate::backend::UreqBackend,
     responses: Arc<Mutex<Vec<NetworkResponseInfo>>>,
 }
@@ -34,6 +35,7 @@ impl HttpResponseBackend for ObserveReal {
         request: &FetchRequest,
         kind: ResourceKind,
     ) -> Result<AcquiredHttpResponse, HttpAcquireError> {
+        self.requests.lock().unwrap().push(request.clone());
         let acquired = self.backend.acquire(request, kind)?;
         self.responses
             .lock()
@@ -502,6 +504,7 @@ fn ai6_location_bytes_flow_through_fake_and_actual_http_acquisition() {
                 request(&server.url("/dir/source?old=1"), ResourceKind::Html),
                 ResourceKind::Html,
                 ObserveReal {
+                    requests: Arc::new(Mutex::new(Vec::new())),
                     backend: crate::backend::UreqBackend::new(trusted_policy()),
                     responses: acquired.clone(),
                 },
@@ -1110,5 +1113,207 @@ fn ai6_selected_body_failures_and_cancellation_preserve_the_start_history() {
                 .count(),
             1
         );
+    }
+}
+
+#[test]
+fn ai9_loopback_and_fake_failed_target_keep_context_with_independent_error_categories() {
+    use crate::fake::{FakeAcquisitionEvent as Entry, FakeAcquisitionResult as Result};
+    let server = WireServer::spawn(false, |req, _| match req.path.as_str() {
+        "/source" => WireReply::close(
+            b"HTTP/1.1 302 Found\r\nLocation: /target\r\nContent-Length: 0\r\n\r\n",
+        ),
+        "/target" => WireReply::close(b"HTTP/1.1 BAD Invalid\r\n\r\n"),
+        _ => panic!("unexpected loopback path"),
+    });
+    let source = server.url("/source");
+    let target = server.url("/target");
+    let entered = Arc::new(Mutex::new(Vec::new()));
+    let acquired = Arc::new(Mutex::new(Vec::new()));
+    let (tx, rx) = mpsc::channel();
+    fetch_http_with_backend(
+        request(&source, ResourceKind::Html),
+        ResourceKind::Html,
+        ObserveReal {
+            requests: entered.clone(),
+            responses: acquired.clone(),
+            backend: crate::backend::UreqBackend::new(trusted_policy()),
+        },
+        Arc::new(AtomicBool::new(false)),
+        Arc::new(move |e| tx.send(e).unwrap()),
+    )
+    .unwrap();
+    let real = events_until_closed(rx);
+    // The malformed status line is BadStatus in the pinned backend and is
+    // independently projected to MalformedResponse by production classification.
+    let real_context = failed(&real, NetworkErrorKind::MalformedResponse, 1);
+    assert_eq!(entered.lock().unwrap().len(), 2);
+    assert_eq!(acquired.lock().unwrap().len(), 1);
+    let wire = server.finish();
+    assert_eq!(
+        wire.iter()
+            .map(|r| r.request.path.as_str())
+            .collect::<Vec<_>>(),
+        ["/source", "/target"]
+    );
+    let mut builder = FakeNetworkBuilder::new();
+    add(
+        &mut builder,
+        &source,
+        302,
+        &[("location", b"/target")],
+        Some(&source),
+        b"",
+    );
+    // Existing fake faults model acquisition categories, not malformed HTTP bytes.
+    builder
+        .register_network_error(
+            &url(&target),
+            RequestMethod::Get,
+            NetworkErrorKind::ConnectionFailure,
+        )
+        .unwrap();
+    let (tx, rx) = mpsc::channel();
+    let (seen_tx, seen_rx) = mpsc::channel();
+    builder
+        .build()
+        .fetch_stream_observed(
+            request(&source, ResourceKind::Html),
+            ResourceKind::Html,
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(move |e| tx.send(e).unwrap()),
+            Arc::new(move |a| seen_tx.send(a).unwrap()),
+        )
+        .unwrap();
+    let fake = events_until_closed(rx);
+    let fake_context = failed(&fake, NetworkErrorKind::ConnectionFailure, 1);
+    let observations = (0..4)
+        .map(|_| {
+            seen_rx
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("missing acquisition observation")
+        })
+        .collect::<Vec<_>>();
+    assert!(matches!(
+        seen_rx.recv_timeout(std::time::Duration::from_secs(5)),
+        Err(mpsc::RecvTimeoutError::Disconnected)
+    ));
+    assert!(matches!(
+        observations.as_slice(),
+        [
+            Entry::Entered { .. },
+            Entry::Returned {
+                result: Result::Response(_)
+            },
+            Entry::Entered { .. },
+            Entry::Returned {
+                result: Result::NetworkError(NetworkErrorKind::ConnectionFailure)
+            }
+        ]
+    ));
+    for (events, context) in [(&real, real_context), (&fake, fake_context)] {
+        assert_eq!(events.len(), 1);
+        assert_eq!(context.status_code(), Some(302));
+        assert_eq!(context.reported_response_url(), Some(source.as_str()));
+        assert_eq!(context.redirect_chain()[0].target_url().as_str(), target);
+        assert_eq!(context.redirect_chain()[0].response_url().as_str(), source);
+        assert!(
+            matches!(events.as_slice(),[NetEvent::Error{body:Some(p),..}] if p.delivered_bytes()==0)
+        );
+    }
+}
+
+#[test]
+fn ai9_loopback_and_observed_fake_selected_responses_preserve_independent_facts() {
+    use crate::fake::{FakeAcquisitionEvent as Entry, FakeAcquisitionResult as Result};
+    for (status, payload) in [
+        (200, b"\0\xff".as_slice()),
+        (404, b"\0\xff"),
+        (500, b"\0\xff"),
+        (200, b""),
+    ] {
+        let server = WireServer::spawn(false, move |req, _| {
+            assert_eq!(req.path, "/selected");
+            assert_eq!(req.header("accept"), Some("*/*"));
+            let mut bytes=format!("HTTP/1.1 {status} Selected\r\nX-Repeat: first\r\nx-repeat: second\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",payload.len()).into_bytes();
+            bytes.extend_from_slice(payload);
+            WireReply::close(bytes)
+        });
+        let target = server.url("/selected");
+        let (tx, rx) = mpsc::channel();
+        fetch_stream_with_policy(
+            request(&target, ResourceKind::Html),
+            ResourceKind::Html,
+            trusted_policy(),
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(move |e| tx.send(e).unwrap()),
+        )
+        .unwrap();
+        let real = events_until_closed(rx);
+        let real_metadata = completed(&real, payload);
+        let mut headers = HttpHeaders::new();
+        headers.append("x-repeat", b"first").unwrap();
+        headers.append("x-repeat", b"second").unwrap();
+        headers
+            .append("content-type", b"application/octet-stream")
+            .unwrap();
+        headers
+            .append("content-length", payload.len().to_string().as_bytes())
+            .unwrap();
+        let mut builder = FakeNetworkBuilder::new();
+        builder
+            .register_response(
+                &url(&target),
+                RequestMethod::Get,
+                FakeResponse::new(
+                    HttpStatus::try_from(status).unwrap(),
+                    headers,
+                    payload.into(),
+                    Some(target.clone()),
+                ),
+            )
+            .unwrap();
+        let (tx, rx) = mpsc::channel();
+        let (seen_tx, seen_rx) = mpsc::channel();
+        builder
+            .build()
+            .fetch_stream_observed(
+                request(&target, ResourceKind::Html),
+                ResourceKind::Html,
+                Arc::new(AtomicBool::new(false)),
+                Arc::new(move |e| tx.send(e).unwrap()),
+                Arc::new(move |a| seen_tx.send(a).unwrap()),
+            )
+            .unwrap();
+        let fake = events_until_closed(rx);
+        let fake_metadata = completed(&fake, payload);
+        assert_eq!(real_metadata, fake_metadata);
+        assert_eq!(real_metadata.status_code(), Some(status));
+        assert_eq!(
+            real_metadata
+                .headers()
+                .values("x-repeat")
+                .collect::<Vec<_>>(),
+            [b"first".as_slice(), b"second"]
+        );
+        assert_eq!(
+            real_metadata.declared_content_length(),
+            crate::DeclaredContentLength::Value(payload.len() as u64)
+        );
+        let observations = (0..2)
+            .map(|_| {
+                seen_rx
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .expect("missing acquisition observation")
+            })
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            seen_rx.recv_timeout(std::time::Duration::from_secs(5)),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        ));
+        assert!(
+            matches!(observations.as_slice(),[Entry::Entered{..},Entry::Returned{result:Result::Response(r)}] if r==real_metadata)
+        );
+        assert_eq!(server.finish().len(), 1);
     }
 }

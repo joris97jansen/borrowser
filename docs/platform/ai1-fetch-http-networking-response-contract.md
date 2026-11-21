@@ -1,5 +1,10 @@
 # AI1: Fetch, HTTP Networking, And Response-Handling Architecture Contract
 
+Current AG fixture/discovery/reporting behavior is qualified by
+[AI9](ai9-fetch-network-conformance-fixtures-and-snapshots.md). This is an
+uncommitted implementation checkpoint, not milestone or issue completion.
+
+
 Current aggregate metadata and loader handoff are qualified by
 [AI8](ai8-response-metadata-and-loader-handoff.md). Dated legacy metadata and
 consumer-parsing descriptions below retain their historical scope.

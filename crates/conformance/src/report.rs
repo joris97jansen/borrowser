@@ -10,6 +10,8 @@ pub(crate) struct CaseReport<'a> {
     comparison: Option<Comparison>,
     expected: Option<ProjectedObservations>,
     addressing_expected: Option<crate::addressing::observations::AddressingObservation>,
+    networking_expected: Option<crate::networking::observations::NetworkingObservation>,
+    networking_differences: Vec<String>,
     pub(crate) relationship: Option<crate::relationship::Evaluation>,
 }
 
@@ -24,6 +26,8 @@ pub(crate) fn evaluate(fixture: &Fixture, execution: Execution) -> CaseReport<'_
     let mut addressing_expected = None;
     let mut comparison = None;
     let mut relationship = None;
+    let mut networking_expected = None;
+    let mut networking_differences = Vec::new();
     if let Execution::Observed(actual) = &execution {
         let result = (|| {
             actual.observations.validate(fixture.request())?;
@@ -97,12 +101,56 @@ pub(crate) fn evaluate(fixture: &Fixture, execution: Execution) -> CaseReport<'_
             comparison = None;
         }
     }
+    if let Execution::NetworkingObserved(actual) = &execution {
+        let result = (|| {
+            let crate::model::FixtureInput::Networking(input) = fixture.input else {
+                return Err(crate::networking::observations::error(
+                    "networking input required",
+                ));
+            };
+            let case = input.case()?;
+            let independent = fixture.independent().ok_or_else(|| {
+                crate::networking::observations::error("independent expectation required")
+            })?;
+            let Expected::Networking(json) = independent.expected else {
+                return Err(crate::networking::observations::error(
+                    "networking expectation required",
+                ));
+            };
+            let expected = crate::networking::expected(json, &case)?;
+            actual.validate(expected.rows.len())?;
+            if actual.rows.iter().zip(&expected.rows).any(|(a, b)| {
+                a.storage().saturating_add(b.storage()) > crate::networking::bounds::ROW_STORAGE
+            }) || actual.storage().saturating_add(expected.storage())
+                > crate::networking::bounds::FIXTURE_STORAGE
+            {
+                return Err(crate::networking::observations::error(
+                    "combined expectation/actual storage budget exceeded",
+                ));
+            }
+            comparison = Some(if *actual == expected {
+                Comparison::Match
+            } else {
+                Comparison::Mismatch
+            });
+            networking_differences =
+                crate::networking::observations::differences(&expected, actual)?;
+            networking_expected = Some(expected);
+            Ok(())
+        })();
+        if let Err(e) = result {
+            execution = Execution::Error(e);
+            comparison = None;
+        }
+    }
     CaseReport {
         fixture,
         execution,
         comparison,
         expected: validated_expected,
         addressing_expected,
+        networking_expected,
+        networking_differences,
         relationship,
     }
 }
@@ -110,10 +158,16 @@ pub(crate) fn evaluate(fixture: &Fixture, execution: Execution) -> CaseReport<'_
 impl CaseReport<'_> {
     pub(crate) fn independent_status(&self) -> Option<&'static str> {
         let independent = self.fixture.independent()?;
-        if matches!(self.execution, Execution::Error(_)) {
+        if matches!(
+            self.execution,
+            Execution::Error(_) | Execution::NetworkingError(_)
+        ) {
             return Some("ERROR");
         }
-        if let Execution::AddressingObserved(_) = &self.execution {
+        if matches!(
+            &self.execution,
+            Execution::AddressingObserved(_) | Execution::NetworkingObserved(_)
+        ) {
             return Some(match (self.comparison, independent.disposition) {
                 (Some(Comparison::Match), Expectation::Match) => "PASS",
                 (Some(Comparison::Mismatch), Expectation::Match) => "FAIL",
@@ -138,10 +192,12 @@ impl CaseReport<'_> {
     }
     pub(crate) fn status(&self) -> &'static str {
         match &self.execution {
-            Execution::Error(_) => "ERROR",
+            Execution::Error(_) | Execution::NetworkingError(_) => "ERROR",
             Execution::Unsupported { .. } => "UNSUPPORTED",
             Execution::Skipped { .. } => "SKIP",
-            Execution::Observed(_) | Execution::AddressingObserved(_) => {
+            Execution::Observed(_)
+            | Execution::AddressingObserved(_)
+            | Execution::NetworkingObserved(_) => {
                 let independent = self.independent_status();
                 if independent == Some("ERROR") {
                     return "ERROR";
@@ -281,9 +337,18 @@ pub(crate) fn write_suite_report(
     out: &mut impl Write,
 ) -> io::Result<()> {
     let mut counts = CaseCounts::default();
+    let mut networking_counts = CaseCounts::default();
+    let mut has_networking = false;
     for report in reports {
         let status = report.status();
         counts.record(status);
+        if matches!(
+            report.fixture.input,
+            crate::model::FixtureInput::Networking(_)
+        ) {
+            has_networking = true;
+            networking_counts.record(status);
+        }
         writeln!(out, "{status} {}", report.fixture.id.0)?;
         writeln!(out, "  source: {}", report.fixture.source())?;
         writeln!(out, "  metadata: {}", report.fixture.metadata_source)?;
@@ -297,6 +362,31 @@ pub(crate) fn write_suite_report(
             writeln!(out, "  reference source: {}", reference.source)?;
         }
         match (&report.execution, report.fixture.independent()) {
+            (Execution::NetworkingObserved(actual), Some(independent)) => {
+                writeln!(
+                    out,
+                    "  actual snapshot: {}",
+                    String::from_utf8(
+                        crate::networking::bounds::json(actual, crate::networking::bounds::REPORT)
+                            .map_err(io::Error::other)?
+                    )
+                    .map_err(io::Error::other)?
+                )?;
+                for difference in &report.networking_differences {
+                    writeln!(out, "  {difference}")?;
+                }
+                if let Expectation::KnownFailure { reason } = independent.disposition {
+                    writeln!(out, "  known failure: {reason}")?;
+                }
+            }
+            (Execution::NetworkingError(e), _) => {
+                writeln!(
+                    out,
+                    "  error: {}: {}; producer_closure={:?} worker_termination=unverified",
+                    e.primary.code, e.primary.detail, e.closure
+                )?;
+            }
+
             (
                 Execution::AddressingObserved(actual),
                 Some(IndependentExpectation {
@@ -475,6 +565,13 @@ pub(crate) fn write_suite_report(
             .count()
     )?;
     writeln!(out, "RUN harness_errors=0")?;
+    if has_networking {
+        write!(out, "GROUP networking/fetch")?;
+        for (status, count) in networking_counts.fields() {
+            write!(out, " {status}={count}")?;
+        }
+        writeln!(out)?;
+    }
     write!(out, "SUMMARY")?;
     for (status, count) in counts.fields() {
         write!(out, " {status}={count}")?;
@@ -494,5 +591,47 @@ pub(crate) fn exit_code(reports: &[CaseReport<'_>]) -> u8 {
         3
     } else {
         0
+    }
+}
+
+impl CaseReport<'_> {
+    pub(crate) fn networking_storage(&self) -> usize {
+        self.networking_expected.as_ref().map_or(0, |v| v.storage())
+            + match &self.execution {
+                Execution::NetworkingObserved(v) => v.storage(),
+                _ => 0,
+            }
+    }
+}
+
+impl CaseReport<'_> {
+    pub(crate) fn into_networking(
+        self,
+    ) -> Result<
+        (
+            crate::networking::observations::NetworkingObservation,
+            crate::networking::observations::NetworkingObservation,
+            Vec<String>,
+            &'static str,
+        ),
+        crate::model::HarnessError,
+    > {
+        let status = self.status();
+        match (self.execution, self.networking_expected) {
+            (Execution::NetworkingObserved(actual), Some(expected)) => {
+                Ok((actual, expected, self.networking_differences, status))
+            }
+            (Execution::NetworkingError(e), _) => Err(crate::model::HarnessError::new(
+                e.primary.code,
+                format!(
+                    "{}; producer_closure={:?}; worker_termination=unverified",
+                    e.primary.detail, e.closure
+                ),
+            )),
+            (Execution::Error(e), _) => Err(e),
+            _ => Err(crate::networking::observations::error(
+                "missing networking comparison evidence",
+            )),
+        }
     }
 }

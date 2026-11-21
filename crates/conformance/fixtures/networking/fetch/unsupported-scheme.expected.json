@@ -1,0 +1,231 @@
+{
+  "rows": [
+    {
+      "request": {
+        "state": "unavailable",
+        "value": "request_not_constructed"
+      },
+      "acquisitions": [],
+      "start": {
+        "state": "inapplicable"
+      },
+      "terminal": {
+        "kind": "construction_rejected",
+        "error": {
+          "kind": "unsupported_scheme"
+        }
+      },
+      "selected_final_url": {
+        "state": "inapplicable"
+      },
+      "body": {
+        "kind": "bytes",
+        "bytes": []
+      }
+    },
+    {
+      "request": {
+        "state": "present",
+        "value": {
+          "original_url": "file:///fixture",
+          "current_url": "file:///fixture",
+          "transport_target": "file:///fixture",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin": null,
+          "redirect_policy": "follow",
+          "has_body": false
+        }
+      },
+      "acquisitions": [],
+      "start": {
+        "state": "inapplicable"
+      },
+      "terminal": {
+        "kind": "dispatch_rejected",
+        "error": {
+          "kind": "unsupported_scheme"
+        }
+      },
+      "selected_final_url": {
+        "state": "inapplicable"
+      },
+      "body": {
+        "kind": "bytes",
+        "bytes": []
+      }
+    },
+    {
+      "request": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/unsupported",
+          "current_url": "https://fixture.invalid/unsupported",
+          "transport_target": "https://fixture.invalid/unsupported",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [
+            [
+              "accept",
+              [
+                42,
+                47,
+                42
+              ]
+            ]
+          ],
+          "initiator_url": null,
+          "requesting_origin": null,
+          "redirect_policy": "follow",
+          "has_body": false
+        }
+      },
+      "acquisitions": [
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/unsupported",
+            "current_url": "https://fixture.invalid/unsupported",
+            "transport_target": "https://fixture.invalid/unsupported",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/unsupported",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/unsupported",
+              "reported_response_url": "https://fixture.invalid/unsupported",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/unsupported",
+                "diagnostics": []
+              },
+              "status": 302,
+              "status_class": "redirection",
+              "headers": [
+                [
+                  "location",
+                  [
+                    102,
+                    105,
+                    108,
+                    101,
+                    58,
+                    47,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101
+                  ]
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        }
+      ],
+      "start": {
+        "state": "inapplicable"
+      },
+      "terminal": {
+        "kind": "error",
+        "error": {
+          "kind": "redirect",
+          "reason": "unsupported_scheme"
+        },
+        "response": {
+          "state": "present",
+          "value": {
+            "original_url": "https://fixture.invalid/unsupported",
+            "purpose": "document",
+            "requested_url": "https://fixture.invalid/unsupported",
+            "reported_response_url": "https://fixture.invalid/unsupported",
+            "response_url": {
+              "state": "parsed",
+              "url": "https://fixture.invalid/unsupported",
+              "diagnostics": []
+            },
+            "status": 302,
+            "status_class": "redirection",
+            "headers": [
+              [
+                "location",
+                [
+                  102,
+                  105,
+                  108,
+                  101,
+                  58,
+                  47,
+                  47,
+                  47,
+                  102,
+                  105,
+                  120,
+                  116,
+                  117,
+                  114,
+                  101
+                ]
+              ]
+            ],
+            "content_type": {
+              "state": "missing"
+            },
+            "declared_content_length": {
+              "state": "missing"
+            },
+            "redirect_chain": []
+          }
+        },
+        "progress": {
+          "state": "present",
+          "value": {
+            "route": "html",
+            "delivered_bytes": 0,
+            "limit_bytes": 10485760
+          }
+        }
+      },
+      "selected_final_url": {
+        "state": "unavailable",
+        "value": "no_selected_response_start"
+      },
+      "body": {
+        "kind": "bytes",
+        "bytes": []
+      }
+    }
+  ]
+}

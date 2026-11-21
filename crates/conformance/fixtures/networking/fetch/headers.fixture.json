@@ -1,0 +1,359 @@
+{
+  "id": "networking/fetch/headers",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "networking": {
+    "kind": "fetch",
+    "rows": [
+      {
+        "request": {
+          "url": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/headers",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 200,
+              "headers": [
+                [
+                  "X-Duplicate",
+                  [
+                    111,
+                    110,
+                    101
+                  ]
+                ],
+                [
+                  "x-duplicate",
+                  [
+                    128,
+                    255
+                  ]
+                ],
+                [
+                  "Content-Type",
+                  [
+                    116,
+                    101,
+                    120,
+                    116,
+                    47,
+                    99,
+                    115,
+                    115,
+                    59,
+                    99,
+                    104,
+                    97,
+                    114,
+                    115,
+                    101,
+                    116,
+                    61,
+                    85,
+                    84,
+                    70,
+                    45,
+                    56
+                  ]
+                ],
+                [
+                  "Content-Length",
+                  [
+                    49
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  120
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/headers",
+              "read_failure_after": null
+            }
+          }
+        ]
+      },
+      {
+        "request": {
+          "url": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/headers",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 200,
+              "headers": [],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  120
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/headers",
+              "read_failure_after": null
+            }
+          }
+        ]
+      },
+      {
+        "request": {
+          "url": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/headers",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 200,
+              "headers": [
+                [
+                  "content-type",
+                  [
+                    32,
+                    9
+                  ]
+                ],
+                [
+                  "content-length",
+                  []
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  120
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/headers",
+              "read_failure_after": null
+            }
+          }
+        ]
+      },
+      {
+        "request": {
+          "url": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/headers",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 200,
+              "headers": [
+                [
+                  "content-type",
+                  [
+                    63,
+                    63,
+                    63
+                  ]
+                ],
+                [
+                  "content-length",
+                  [
+                    49,
+                    56,
+                    52,
+                    52,
+                    54,
+                    55,
+                    52,
+                    52,
+                    48,
+                    55,
+                    51,
+                    55,
+                    48,
+                    57,
+                    53,
+                    53,
+                    49,
+                    54,
+                    49,
+                    54
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  120
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/headers",
+              "read_failure_after": null
+            }
+          }
+        ]
+      },
+      {
+        "request": {
+          "url": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/headers",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 200,
+              "headers": [
+                [
+                  "content-type",
+                  [
+                    116,
+                    101,
+                    120,
+                    116,
+                    47,
+                    99,
+                    115,
+                    115,
+                    59,
+                    99,
+                    104,
+                    97,
+                    114,
+                    115,
+                    101,
+                    116,
+                    61,
+                    111,
+                    110,
+                    101
+                  ]
+                ],
+                [
+                  "content-type",
+                  [
+                    116,
+                    101,
+                    120,
+                    116,
+                    47,
+                    99,
+                    115,
+                    115
+                  ]
+                ],
+                [
+                  "content-length",
+                  [
+                    49
+                  ]
+                ],
+                [
+                  "content-length",
+                  [
+                    49
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  120
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/headers",
+              "read_failure_after": null
+            }
+          }
+        ]
+      },
+      {
+        "request": {
+          "url": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/headers",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 200,
+              "headers": [
+                [
+                  "content-length",
+                  [
+                    49
+                  ]
+                ],
+                [
+                  "content-length",
+                  [
+                    48,
+                    49
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  120
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/headers",
+              "read_failure_after": null
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "networking",
+    "path": "headers.expected.json"
+  }
+}

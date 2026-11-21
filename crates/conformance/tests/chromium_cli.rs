@@ -258,3 +258,16 @@ fn ah9_capture_only_has_no_fabricated_addressing_documents() {
     assert!(output.stdout.is_empty());
     assert!(!String::from_utf8_lossy(&output.stderr).contains("launch failed"));
 }
+
+#[test]
+fn ai9_networking_only_capture_has_no_invented_phase_input_or_launch() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_borrowser-conformance"))
+        .args(["--chromium", "--suite", "networking"])
+        .env("BORROWSER_CHROMIUM_EXECUTABLE", "/must/not/launch")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(!error.contains("/must/not/launch:"));
+}

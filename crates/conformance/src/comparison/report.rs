@@ -157,6 +157,11 @@ fn fields(
 #[derive(Serialize)]
 pub(super) struct Case {
     borrowser_status: &'static str,
+    family: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    local_observations: Option<crate::networking::observations::NetworkingObservation>,
+    #[serde(skip)]
+    networking_storage: usize,
     reproduce: String,
     test_id: &'static str,
     source: &'static str,
@@ -172,9 +177,36 @@ pub(super) struct Case {
     projections: Option<Value>,
     fields: Vec<Field>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    borrowser_expectation: Option<Value>,
+    borrowser_expectation: Option<IndependentReport>,
     #[serde(skip_serializing_if = "Option::is_none")]
     skipped: Option<&'static str>,
+}
+#[derive(Serialize)]
+#[serde(untagged)]
+enum IndependentReport {
+    Phases(Value),
+    Networking {
+        expected: crate::networking::observations::NetworkingObservation,
+        metadata: &'static str,
+        reason: Option<&'static str>,
+        status: &'static str,
+        differences: Vec<String>,
+    },
+}
+impl IndependentReport {
+    fn status(&self) -> Option<&str> {
+        match self {
+            Self::Phases(v) => v["status"].as_str(),
+            Self::Networking { status, .. } => Some(status),
+        }
+    }
+}
+fn family(fixture: &Fixture) -> &'static str {
+    match fixture.input {
+        crate::model::FixtureInput::Networking(_) => "networking/fetch",
+        crate::model::FixtureInput::Addressing(_) => "addressing",
+        _ => "phases",
+    }
 }
 #[derive(Serialize)]
 struct ReferenceReport {
@@ -257,7 +289,7 @@ impl Case {
         let borrowser_expectation=fixture.independent().map(|independent| {
             let (metadata,reason)=match independent.disposition { Expectation::Match=>("match",None),Expectation::KnownFailure {reason}=>("known_failure",Some(reason)) };
             Ok::<_,HarnessError>(json!({"expected":independent.expected.observations()?,"metadata":metadata,"reason":reason,"status":evaluation.independent_status()}))
-        }).transpose()?;
+        }).transpose()?.map(IndependentReport::Phases);
         let all_fields = fields
             .iter()
             .chain(reference_document.iter().flat_map(|r| r.fields.iter()));
@@ -285,6 +317,9 @@ impl Case {
             borrowser_status: evaluation.status(),
             reproduce: crate::report::reproduction("--compare", None, fixture.id.0),
             test_id: fixture.id.0,
+            family: family(fixture),
+            local_observations: None,
+            networking_storage: 0,
             source: fixture.source(),
             status,
             coverage: coverage(&borrowser.observations),
@@ -299,6 +334,37 @@ impl Case {
             borrowser_expectation,
             skipped: None,
         })
+    }
+    pub(super) fn networking(
+        fixture: &Fixture,
+        execution: Execution,
+    ) -> Result<Self, HarnessError> {
+        let evaluation = crate::report::evaluate(fixture, execution);
+        let (actual, expected, differences, status) = evaluation.into_networking()?;
+        let storage = actual.storage().saturating_add(expected.storage());
+        let independent = fixture.independent().ok_or_else(|| {
+            crate::networking::observations::error("missing networking expectation")
+        })?;
+        let (metadata, reason) = match independent.disposition {
+            Expectation::Match => ("match", None),
+            Expectation::KnownFailure { reason } => ("known_failure", Some(reason)),
+        };
+        let mut case = Self::unsupported(fixture, crate::networking::COMPARISON_UNSUPPORTED);
+        case.borrowser_status = status;
+        case.coverage = json!({"chromium":{"state":"unsupported","reason":crate::networking::COMPARISON_UNSUPPORTED}});
+        case.local_observations = Some(actual);
+        case.networking_storage = storage;
+        case.borrowser_expectation = Some(IndependentReport::Networking {
+            expected,
+            metadata,
+            reason,
+            status,
+            differences,
+        });
+        Ok(case)
+    }
+    pub(super) fn networking_storage(&self) -> usize {
+        self.networking_storage
     }
     pub(super) fn unsupported(fixture: &Fixture, reason: &'static str) -> Self {
         use projection::Request;
@@ -331,6 +397,9 @@ impl Case {
                 .status(),
             reproduce: crate::report::reproduction("--compare", None, fixture.id.0),
             test_id: fixture.id.0,
+            family: family(fixture),
+            local_observations: None,
+            networking_storage: 0,
             source: fixture.source(),
             descriptor: None,
             provenance: fixture.provenance(),
@@ -352,6 +421,9 @@ impl Case {
                 .status(),
             reproduce: crate::report::reproduction("--compare", None, fixture.id.0),
             test_id: fixture.id.0,
+            family: family(fixture),
+            local_observations: None,
+            networking_storage: 0,
             source: fixture.source(),
             descriptor: None,
             provenance: fixture.provenance(),
@@ -433,6 +505,7 @@ fn coverage(p: &ProjectedObservations) -> Value {
 #[derive(Default, Serialize)]
 struct Summary {
     borrowser_cases: crate::report::CaseCounts,
+    groups: std::collections::BTreeMap<&'static str, crate::report::CaseCounts>,
     equal_fields: usize,
     different_fields: usize,
     unsupported_fields: usize,
@@ -461,6 +534,12 @@ impl Report {
         let mut s = Summary::default();
         for case in &cases {
             s.borrowser_cases.record(case.borrowser_status);
+            if case.family == "networking/fetch" {
+                s.groups
+                    .entry("networking/fetch")
+                    .or_default()
+                    .record(case.borrowser_status);
+            }
             for f in case
                 .fields
                 .iter()
@@ -487,15 +566,19 @@ impl Report {
             s.skipped_cases += usize::from(case.skipped.is_some());
             s.incomplete_cases += usize::from(case.status == "incomplete");
             if let Some(e) = &case.borrowser_expectation {
-                s.independent_expected_failures += usize::from(e["status"] == "XFAIL");
-                s.expectation_failures += usize::from(e["status"] == "FAIL");
-                s.expectation_unexpected_passes += usize::from(e["status"] == "XPASS");
+                s.independent_expected_failures += usize::from(e.status() == Some("XFAIL"));
+                s.expectation_failures += usize::from(e.status() == Some("FAIL"));
+                s.expectation_unexpected_passes += usize::from(e.status() == Some("XPASS"));
             }
         }
         Self {
-            schema: "borrowser.cross-engine-phases.v3",
+            schema: "borrowser.cross-engine-phases.v4",
             selection: json!({"suite":"catalogue","mode":"--compare"}),
-            environment: json!({"document_url":URL,"viewport":[WIDTH,HEIGHT],"device_scale_factor":1,"sample_pixel":SAMPLE,"color_space":"srgb"}),
+            environment: if s.executed_documents > 0 {
+                json!({"phases":{"state":"present","value":{"document_url":URL,"viewport":[WIDTH,HEIGHT],"device_scale_factor":1,"sample_pixel":SAMPLE,"color_space":"srgb"}}})
+            } else {
+                json!({"phases":{"state":"inapplicable"}})
+            },
             cases,
             summary: s,
         }

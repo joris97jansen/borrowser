@@ -475,6 +475,26 @@ Notes:
 
 ## Browser Runtime / Platform
 
+AI9 working-tree implementation: [fetch/network conformance](platform/ai9-fetch-network-conformance-fixtures-and-snapshots.md)
+adds sixteen required runnable declarations / thirty-six rows and two explicitly
+unsupported declarations, actual per-execution fake acquisition observations,
+bounded collector shutdown/evidence, independent snapshots, incremental body
+summaries, focused loopback evidence and required AG suite execution. Local
+networking expectation verdicts remain separate from unsupported Chromium
+networking coverage in v4 reports. Phase document counters/environment retain
+their scope. No public endpoint is required by the new tests.
+Expected and actual networking snapshots validate conditional lifecycle evidence
+before verdict classification; missing post-Start progress remains ERROR even
+with zero delivered bytes or known-failure metadata. Local XFAIL/XPASS reports
+retain their declared explanation.
+
+This is not committed-source, supported-native or hosted qualification and does
+not make #1129 closeable. Existing AI8 metadata/Fetch behavior is consumed, not
+reimplemented. JS networking APIs, cache/cookies/storage, full security policy,
+HTTP/2/3, WebSockets and AJ/AK document/resource lifecycle work remain deferred.
+Earlier dated references to AI9 as pending retain their historical scope.
+
+
 Current response metadata qualification:
 [AI8 #1128](platform/ai8-response-metadata-and-loader-handoff.md) centralizes
 aggregate declared MIME/charset and bounded declared-length metadata on the

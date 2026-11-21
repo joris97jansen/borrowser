@@ -338,3 +338,20 @@ together. Historical anchors/records, source modes, dependency versions/features
 Cargo graphs and verifier behavior remain unchanged. Working-tree source/Cargo
 checks are distinct from committed-candidate qualification; no temporary commit
 or gate bypass is used. Final gates and exact-candidate acceptance remain pending.
+
+## AI9 accompanying middleware syntax cleanup (uncommitted)
+
+The owner explicitly included the existing one-line `src/middleware.rs` cleanup
+with #1129: `&'a mut (dyn Iterator<Item = &'a dyn Middleware>)` becomes
+`&'a mut dyn Iterator<Item = &'a dyn Middleware>`. It changes no API ownership,
+network behavior, dependency version, feature, Cargo graph or upstream revision.
+
+The proposed current-source inventory updates only that file's SHA-256 to
+`b657657ff91c067a8c05efbdebce57745c8565e40f0bbd9f7e44da55ea80022f`;
+the independently pinned policy digest tracks those exact proposed inventory
+bytes. This is inventory maintenance for the reviewed source edit, not acceptance
+or evidence that a committed candidate passed. The immutable historical
+AI3/AI5 archive and patch records remain unchanged, as required by the evolving
+subtree workflow. Committed-source gates and exact-candidate qualification remain
+pending until a separately authorized commit exists. No temporary commit or
+verification bypass is used.

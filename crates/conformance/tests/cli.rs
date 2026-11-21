@@ -119,3 +119,40 @@ fn ag8_selection_errors_are_invocation_failures_without_case_results() {
         "SUMMARY PASS=1 FAIL=0 XFAIL=0 XPASS=0 UNSUPPORTED=0 SKIP=0 ERROR=0 INCOMPLETE=0\n"
     ));
 }
+
+#[test]
+fn ai9_networking_suite_is_required_stable_and_source_independent() {
+    let elsewhere = tempfile::tempdir().unwrap();
+    let run = || {
+        Command::new(env!("CARGO_BIN_EXE_borrowser-conformance"))
+            .args(["--suite", "networking"])
+            .current_dir(elsewhere.path())
+            .env("BORROWSER_CHROMIUM_EXECUTABLE", "/must/not/launch")
+            .env("AWS_CONFIG_FILE", "/must/not/read")
+            .env("AWS_SHARED_CREDENTIALS_FILE", "/must/not/read")
+            .output()
+            .unwrap()
+    };
+    let first = run();
+    assert_eq!(first.status.code(), Some(0));
+    support::assert_local_summary_exit(&first);
+    let stdout = std::str::from_utf8(&first.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .lines()
+            .filter(|l| l.starts_with("PASS networking/fetch/"))
+            .count(),
+        16
+    );
+    assert_eq!(
+        stdout
+            .lines()
+            .filter(|l| l.starts_with("UNSUPPORTED networking/fetch/"))
+            .count(),
+        2
+    );
+    assert!(stdout.contains("GROUP networking/fetch PASS=16 FAIL=0 XFAIL=0 XPASS=0 UNSUPPORTED=2 SKIP=0 ERROR=0 INCOMPLETE=0"));
+    let next = run();
+    assert_eq!(first.stdout, next.stdout);
+    assert_eq!(first.stderr, next.stderr);
+}

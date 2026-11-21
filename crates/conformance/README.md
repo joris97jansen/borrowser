@@ -1,5 +1,23 @@
 # Focused static conformance harness (AG1–AG9)
 
+## AI9 local networking fixtures
+
+[AI9's contract and authoring guide](../../docs/platform/ai9-fetch-network-conformance-fixtures-and-snapshots.md)
+adds the fixed `networking` suite: sixteen runnable declarations / thirty-six rows
+and two explicit unsupported capabilities. Run `make conformance-networking`.
+It uses production Fetch through immutable fake networking and requires no public
+endpoint. New loopback evidence lives in the net tests.
+
+Networking snapshots preserve actual acquisition entries/results, redirects,
+selected metadata, typed errors and bounded incremental body summaries. Required
+coverage cannot be changed to UNSUPPORTED/XFAIL to restore green.
+Comparison reports now use `borrowser.cross-engine-phases.v4`: networking local
+assertions still execute, while Chromium comparison is explicitly unsupported.
+A passing networking-only comparison exits 3; it contributes no equal fields or
+executed phase documents. Phase environment facts are scoped under
+`environment.phases`. This qualifies the historical AG8 v3 descriptions below.
+
+
 Borrowser has focused deterministic conformance infrastructure for its current
 static HTML/CSS scope and can compare selected behavior against Chromium.
 This is not broad WPT compliance, CSS compatibility, visual equivalence or general
@@ -663,7 +681,7 @@ no child processes. Restored signal dispositions apply after the capture phase.
 
 ### Report and failure semantics
 
-`--compare` emits pretty JSON, schema `borrowser.cross-engine-phases.v3`, followed
+`--compare` emits pretty JSON, schema `borrowser.cross-engine-phases.v4`, followed
 by one newline. Member order is fixed by typed serialization; case order is
 fixture-ID order; engine order is Borrowser then Chromium. Each canvas case has
 one `canvas_color_rgb8` field with both observed arrays, its `equal`/`different`
