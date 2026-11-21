@@ -234,11 +234,15 @@ fn real_chromium_combined_cli_is_stable_and_selects_exactly() {
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
             );
-            assert!(output.stderr.is_empty());
+            if selection.is_some() {
+                assert!(output.stderr.is_empty());
+            } else {
+                ag7::assert_structural_fetch_diagnostics(&output.stderr);
+            }
             let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-            assert_eq!(report["schema"], "borrowser.cross-engine-phases.v3");
+            assert_eq!(report["schema"], "borrowser.cross-engine-phases.v4");
             assert_eq!(
-                report["environment"]["sample_pixel"],
+                report["environment"]["phases"]["value"]["sample_pixel"],
                 serde_json::json!([32, 32])
             );
             let cases = report["cases"].as_array().unwrap();
@@ -404,13 +408,7 @@ fn real_chromium_ag7_scoped_relationships() {
         );
     }
     let output = command().output().unwrap();
-    assert!(
-        output.stderr.is_empty(),
-        "catalogue: status={} stdout={} stderr={}",
-        output.status,
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    ag7::assert_structural_fetch_diagnostics(&output.stderr);
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_general_catalogue(&report, output.status.code().unwrap());
 }
@@ -464,7 +462,7 @@ fn ag8_explicit_comparison_distinguishes_selection_and_capture_errors() {
     assert_eq!(output.status.code(), Some(3));
     assert!(output.stderr.is_empty());
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["schema"], "borrowser.cross-engine-phases.v3");
+    assert_eq!(report["schema"], "borrowser.cross-engine-phases.v4");
     assert_eq!(report["summary"]["borrowser_cases"]["unsupported"], 1);
     assert_eq!(report["summary"]["executed_documents"], 0);
 }
@@ -492,7 +490,7 @@ fn ag8_real_chromium_suites_are_stable() {
             );
             assert!(output.stderr.is_empty());
             let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-            assert_eq!(report["schema"], "borrowser.cross-engine-phases.v3");
+            assert_eq!(report["schema"], "borrowser.cross-engine-phases.v4");
             assert_eq!(report["selection"]["suite"], suite);
             assert_eq!(report["cases"].as_array().unwrap().len(), cases);
             assert_eq!(report["summary"]["executed_documents"], documents);
@@ -540,7 +538,7 @@ fn ah9_local_only_comparison_is_explicit_and_does_not_launch_a_backend() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["schema"], "borrowser.cross-engine-phases.v3");
+    assert_eq!(report["schema"], "borrowser.cross-engine-phases.v4");
     let cases = report["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 24);
     for case in cases {
@@ -564,4 +562,44 @@ fn ah9_local_only_comparison_is_explicit_and_does_not_launch_a_backend() {
     assert!(
         String::from_utf8_lossy(&local.stdout).starts_with("PASS addressing/scheme-capabilities\n")
     );
+}
+
+#[test]
+fn ai9_local_assertions_and_comparison_coverage_are_separate_without_backend_configuration() {
+    let output = command()
+        .args(["--suite", "networking"])
+        .env("BORROWSER_CHROMIUM_EXECUTABLE", "/must/not/launch")
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["schema"], "borrowser.cross-engine-phases.v4");
+    assert_eq!(report["environment"]["phases"]["state"], "inapplicable");
+    assert_eq!(report["summary"]["executed_documents"], 0);
+    assert_eq!(report["summary"]["equal_fields"], 0);
+    assert_eq!(report["summary"]["different_fields"], 0);
+    assert_eq!(report["summary"]["borrowser_cases"]["passed"], 16);
+    assert_eq!(
+        report["summary"]["groups"]["networking/fetch"]["passed"],
+        16
+    );
+    assert_eq!(
+        report["summary"]["groups"]["networking/fetch"]["unsupported"],
+        2
+    );
+    for case in report["cases"].as_array().unwrap() {
+        assert_eq!(case["status"], "incomplete");
+        assert!(case["descriptor"].is_null());
+        assert_eq!(case["fields"].as_array().unwrap().len(), 0);
+        if case["borrowser_status"] == "PASS" {
+            assert_eq!(case["borrowser_expectation"]["status"], "PASS");
+            assert!(case["local_observations"]["rows"].is_array());
+            assert_eq!(case["coverage"]["chromium"]["state"], "unsupported");
+        }
+    }
 }

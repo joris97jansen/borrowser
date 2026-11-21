@@ -1,0 +1,92 @@
+{
+  "id": "networking/fetch/unsupported-scheme",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "networking": {
+    "kind": "fetch",
+    "rows": [
+      {
+        "request": {
+          "url": "ftp://fixture.invalid/data",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": []
+      },
+      {
+        "request": {
+          "url": "file:///fixture",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": []
+      },
+      {
+        "request": {
+          "url": "https://fixture.invalid/unsupported",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/unsupported",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    102,
+                    105,
+                    108,
+                    101,
+                    58,
+                    47,
+                    47,
+                    47,
+                    102,
+                    105,
+                    120,
+                    116,
+                    117,
+                    114,
+                    101
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/unsupported",
+              "read_failure_after": null
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "networking",
+    "path": "unsupported-scheme.expected.json"
+  }
+}

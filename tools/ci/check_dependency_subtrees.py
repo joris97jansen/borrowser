@@ -21,7 +21,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
 POLICY_PATH = "tools/ci/dependency-subtrees.json"
-POLICY_SHA256 = "05bf5be4ff5c681178fe7519d030197927b11e08b84c0bc155c19609ac5130f3"
+POLICY_SHA256 = "bb82ded4b9231b31c3816b016b2696b27ed0314ed916dec0b1f44feb6ce48774"
 SERVO_BASE = "00a6ce58d02f4e0d43c5ca0702c0bedb8b1ebf3a"
 URL_SOURCE = "92f7fb395f9ffb2f706e7c664283781fd3b294a2"
 UREQ_RELEASE = "ba4555d54fd72e16fc737f7e8fcc812efb131260"

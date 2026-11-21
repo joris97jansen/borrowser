@@ -733,6 +733,9 @@ jobs:
       - name: AH9 bounded offline addressing suite
         timeout-minutes: 2
         run: make conformance-addressing
+      - name: AI9 bounded offline networking suite
+        timeout-minutes: 2
+        run: make conformance-networking
       - name: AG8 bounded Borrowser-only suite
         timeout-minutes: 2
         run: make conformance-ci

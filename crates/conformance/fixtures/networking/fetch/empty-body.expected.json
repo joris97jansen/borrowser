@@ -1,0 +1,280 @@
+{
+  "rows": [
+    {
+      "request": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/empty",
+          "current_url": "https://fixture.invalid/empty",
+          "transport_target": "https://fixture.invalid/empty",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [
+            [
+              "accept",
+              [
+                42,
+                47,
+                42
+              ]
+            ]
+          ],
+          "initiator_url": null,
+          "requesting_origin": null,
+          "redirect_policy": "follow",
+          "has_body": false
+        }
+      },
+      "acquisitions": [
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/empty",
+            "current_url": "https://fixture.invalid/empty",
+            "transport_target": "https://fixture.invalid/empty",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/empty",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/empty",
+              "reported_response_url": "https://fixture.invalid/empty",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/empty",
+                "diagnostics": []
+              },
+              "status": 200,
+              "status_class": "successful",
+              "headers": [],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        }
+      ],
+      "start": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/empty",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/empty",
+          "reported_response_url": "https://fixture.invalid/empty",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/empty",
+            "diagnostics": []
+          },
+          "status": 200,
+          "status_class": "successful",
+          "headers": [],
+          "content_type": {
+            "state": "missing"
+          },
+          "declared_content_length": {
+            "state": "missing"
+          },
+          "redirect_chain": []
+        }
+      },
+      "terminal": {
+        "kind": "done",
+        "response": {
+          "original_url": "https://fixture.invalid/empty",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/empty",
+          "reported_response_url": "https://fixture.invalid/empty",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/empty",
+            "diagnostics": []
+          },
+          "status": 200,
+          "status_class": "successful",
+          "headers": [],
+          "content_type": {
+            "state": "missing"
+          },
+          "declared_content_length": {
+            "state": "missing"
+          },
+          "redirect_chain": []
+        },
+        "progress": {
+          "route": "html",
+          "delivered_bytes": 0,
+          "limit_bytes": 10485760
+        }
+      },
+      "selected_final_url": {
+        "state": "present",
+        "value": "https://fixture.invalid/empty"
+      },
+      "body": {
+        "kind": "bytes",
+        "bytes": []
+      }
+    },
+    {
+      "request": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/null-body",
+          "current_url": "https://fixture.invalid/null-body",
+          "transport_target": "https://fixture.invalid/null-body",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [
+            [
+              "accept",
+              [
+                42,
+                47,
+                42
+              ]
+            ]
+          ],
+          "initiator_url": null,
+          "requesting_origin": null,
+          "redirect_policy": "follow",
+          "has_body": false
+        }
+      },
+      "acquisitions": [
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/null-body",
+            "current_url": "https://fixture.invalid/null-body",
+            "transport_target": "https://fixture.invalid/null-body",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/null-body",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/null-body",
+              "reported_response_url": "https://fixture.invalid/null-body",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/null-body",
+                "diagnostics": []
+              },
+              "status": 204,
+              "status_class": "successful",
+              "headers": [],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        }
+      ],
+      "start": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/null-body",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/null-body",
+          "reported_response_url": "https://fixture.invalid/null-body",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/null-body",
+            "diagnostics": []
+          },
+          "status": 204,
+          "status_class": "successful",
+          "headers": [],
+          "content_type": {
+            "state": "missing"
+          },
+          "declared_content_length": {
+            "state": "missing"
+          },
+          "redirect_chain": []
+        }
+      },
+      "terminal": {
+        "kind": "done",
+        "response": {
+          "original_url": "https://fixture.invalid/null-body",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/null-body",
+          "reported_response_url": "https://fixture.invalid/null-body",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/null-body",
+            "diagnostics": []
+          },
+          "status": 204,
+          "status_class": "successful",
+          "headers": [],
+          "content_type": {
+            "state": "missing"
+          },
+          "declared_content_length": {
+            "state": "missing"
+          },
+          "redirect_chain": []
+        },
+        "progress": {
+          "route": "html",
+          "delivered_bytes": 0,
+          "limit_bytes": 10485760
+        }
+      },
+      "selected_final_url": {
+        "state": "present",
+        "value": "https://fixture.invalid/null-body"
+      },
+      "body": {
+        "kind": "bytes",
+        "bytes": []
+      }
+    }
+  ]
+}

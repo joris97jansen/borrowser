@@ -1,0 +1,319 @@
+{
+  "rows": [
+    {
+      "request": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/failure",
+          "current_url": "https://fixture.invalid/failure",
+          "transport_target": "https://fixture.invalid/failure",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [
+            [
+              "accept",
+              [
+                42,
+                47,
+                42
+              ]
+            ]
+          ],
+          "initiator_url": null,
+          "requesting_origin": null,
+          "redirect_policy": "follow",
+          "has_body": false
+        }
+      },
+      "acquisitions": [
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/failure",
+            "current_url": "https://fixture.invalid/failure",
+            "transport_target": "https://fixture.invalid/failure",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "network_error",
+            "value": {
+              "kind": "connection_failure"
+            }
+          }
+        }
+      ],
+      "start": {
+        "state": "inapplicable"
+      },
+      "terminal": {
+        "kind": "error",
+        "error": {
+          "kind": "connection_failure"
+        },
+        "response": {
+          "state": "unavailable",
+          "value": "no_acquired_response"
+        },
+        "progress": {
+          "state": "unavailable",
+          "value": "no_body_progress"
+        }
+      },
+      "selected_final_url": {
+        "state": "unavailable",
+        "value": "no_selected_response_start"
+      },
+      "body": {
+        "kind": "bytes",
+        "bytes": []
+      }
+    },
+    {
+      "request": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/failure",
+          "current_url": "https://fixture.invalid/failure",
+          "transport_target": "https://fixture.invalid/failure",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [
+            [
+              "accept",
+              [
+                42,
+                47,
+                42
+              ]
+            ]
+          ],
+          "initiator_url": null,
+          "requesting_origin": null,
+          "redirect_policy": "follow",
+          "has_body": false
+        }
+      },
+      "acquisitions": [
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/failure",
+            "current_url": "https://fixture.invalid/failure",
+            "transport_target": "https://fixture.invalid/failure",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "missing_route"
+          }
+        }
+      ],
+      "start": {
+        "state": "inapplicable"
+      },
+      "terminal": {
+        "kind": "error",
+        "error": {
+          "kind": "backend"
+        },
+        "response": {
+          "state": "unavailable",
+          "value": "no_acquired_response"
+        },
+        "progress": {
+          "state": "unavailable",
+          "value": "no_body_progress"
+        }
+      },
+      "selected_final_url": {
+        "state": "unavailable",
+        "value": "no_selected_response_start"
+      },
+      "body": {
+        "kind": "bytes",
+        "bytes": []
+      }
+    },
+    {
+      "request": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/failure",
+          "current_url": "https://fixture.invalid/failure",
+          "transport_target": "https://fixture.invalid/failure",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [
+            [
+              "accept",
+              [
+                42,
+                47,
+                42
+              ]
+            ]
+          ],
+          "initiator_url": null,
+          "requesting_origin": null,
+          "redirect_policy": "follow",
+          "has_body": false
+        }
+      },
+      "acquisitions": [
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/failure",
+            "current_url": "https://fixture.invalid/failure",
+            "transport_target": "https://fixture.invalid/failure",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/failure",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/failure",
+              "reported_response_url": "https://fixture.invalid/failure",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/failure",
+                "diagnostics": []
+              },
+              "status": 200,
+              "status_class": "successful",
+              "headers": [],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        }
+      ],
+      "start": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/failure",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/failure",
+          "reported_response_url": "https://fixture.invalid/failure",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/failure",
+            "diagnostics": []
+          },
+          "status": 200,
+          "status_class": "successful",
+          "headers": [],
+          "content_type": {
+            "state": "missing"
+          },
+          "declared_content_length": {
+            "state": "missing"
+          },
+          "redirect_chain": []
+        }
+      },
+      "terminal": {
+        "kind": "error",
+        "error": {
+          "kind": "read"
+        },
+        "response": {
+          "state": "present",
+          "value": {
+            "original_url": "https://fixture.invalid/failure",
+            "purpose": "document",
+            "requested_url": "https://fixture.invalid/failure",
+            "reported_response_url": "https://fixture.invalid/failure",
+            "response_url": {
+              "state": "parsed",
+              "url": "https://fixture.invalid/failure",
+              "diagnostics": []
+            },
+            "status": 200,
+            "status_class": "successful",
+            "headers": [],
+            "content_type": {
+              "state": "missing"
+            },
+            "declared_content_length": {
+              "state": "missing"
+            },
+            "redirect_chain": []
+          }
+        },
+        "progress": {
+          "state": "present",
+          "value": {
+            "route": "html",
+            "delivered_bytes": 2,
+            "limit_bytes": 10485760
+          }
+        }
+      },
+      "selected_final_url": {
+        "state": "present",
+        "value": "https://fixture.invalid/failure"
+      },
+      "body": {
+        "kind": "bytes",
+        "bytes": [
+          10,
+          11
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "id": "networking/fetch/redirect-target-failure",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "networking": {
+    "kind": "fetch",
+    "rows": [
+      {
+        "request": {
+          "url": "https://fixture.invalid/source",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/source",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 302,
+              "headers": [
+                [
+                  "location",
+                  [
+                    47,
+                    102,
+                    97,
+                    105,
+                    108,
+                    101,
+                    100
+                  ]
+                ]
+              ],
+              "body": {
+                "kind": "bytes",
+                "bytes": []
+              },
+              "reported_response_url": "https://fixture.invalid/source",
+              "read_failure_after": null
+            }
+          },
+          {
+            "url": "https://fixture.invalid/failed",
+            "method": "GET",
+            "outcome": {
+              "kind": "network_error",
+              "error": "connection_failure"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "networking",
+    "path": "redirect-target-failure.expected.json"
+  }
+}

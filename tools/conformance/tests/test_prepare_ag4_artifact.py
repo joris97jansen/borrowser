@@ -315,6 +315,25 @@ subprocess.Popen=spawn
                 if index == 1: metadata.write_text('{"observations":{"target":"different"}}')
             self.assertEqual(len(set(trees)), 3)
 
+    def test_ai9_networking_data_is_bound_into_source_identity(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); source, _ = self.setup_repo(root)
+            fixtures = source / "crates/conformance/fixtures/networking/fetch"
+            fixtures.mkdir(parents=True)
+            metadata = fixtures / "case.fixture.json"
+            expected = fixtures / "case.expected.json"
+            metadata.write_text('{"id":"networking/fetch/case","networking":{"kind":"fetch"}}\n')
+            expected.write_text('{"rows":[]}\n')
+            identities = []
+            for index in range(2):
+                output = root / ("networking-" + str(index))
+                result = self.snapshot(source, output)
+                self.assertEqual(result.returncode, 0, result.stderr.decode())
+                self.assertEqual((output / "source" / expected.relative_to(source)).read_bytes(), expected.read_bytes())
+                identities.append((output / "source-tree.txt").read_text())
+                expected.write_text('{"rows":[{"changed":true}]}\n')
+            self.assertNotEqual(*identities)
+
     def test_ag6_fixture_json_is_snapshotted_and_changes_source_identity(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); source, _ = self.setup_repo(root)

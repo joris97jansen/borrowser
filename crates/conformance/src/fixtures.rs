@@ -34,6 +34,36 @@ fn validate_catalogue(fixtures: &[Fixture]) -> Result<(), HarnessError> {
                     "fixture identities must be unique and sorted",
                 ));
             }
+            if let crate::model::FixtureInput::Networking(input) = fixture.input {
+                let case = input.case()?;
+                if let FixtureKind::Runnable { checks } = fixture.kind {
+                    if fixture.requires_javascript {
+                        return Err(crate::networking::observations::error(
+                            "runnable networking requires no JS",
+                        ));
+                    }
+                    let crate::model::Checks::Independent(independent) = checks else {
+                        return Err(crate::networking::observations::error(
+                            "networking requires independent checks",
+                        ));
+                    };
+                    let crate::model::Expected::Networking(json) = independent.expected else {
+                        return Err(crate::networking::observations::error(
+                            "networking expectation required",
+                        ));
+                    };
+                    crate::networking::expected(json, &case)?;
+                } else if matches!(
+                    case,
+                    crate::networking::input::NetworkingCase::Deferred { .. }
+                ) && !matches!(fixture.kind, FixtureKind::Unsupported { .. })
+                {
+                    return Err(crate::networking::observations::error(
+                        "deferred networking requires unsupported classification",
+                    ));
+                }
+                return Ok(());
+            }
             if let crate::model::FixtureInput::Addressing(input) = fixture.input {
                 let case = input.case()?;
                 if fixture.requires_javascript
@@ -134,6 +164,7 @@ pub(crate) enum Suite {
     Ci,
     Extended,
     Addressing,
+    Networking,
 }
 
 const CI: &[&str] = &[
@@ -186,12 +217,34 @@ const ADDRESSING: &[&str] = &[
     "addressing/url-normalization",
 ];
 
+const NETWORKING: &[&str] = &[
+    "networking/fetch/body-bytes",
+    "networking/fetch/body-limit",
+    "networking/fetch/empty-body",
+    "networking/fetch/empty-location",
+    "networking/fetch/headers",
+    "networking/fetch/invalid-location",
+    "networking/fetch/missing-location",
+    "networking/fetch/network-error",
+    "networking/fetch/redirect-loops",
+    "networking/fetch/redirect-target-failure",
+    "networking/fetch/redirects",
+    "networking/fetch/repeated-location",
+    "networking/fetch/response-200",
+    "networking/fetch/response-404",
+    "networking/fetch/response-500",
+    "networking/fetch/unsupported-http-cache",
+    "networking/fetch/unsupported-javascript-fetch",
+    "networking/fetch/unsupported-scheme",
+];
+
 impl Suite {
     pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Ci => "ci",
             Self::Extended => "extended",
             Self::Addressing => "addressing",
+            Self::Networking => "networking",
         }
     }
 
@@ -200,6 +253,7 @@ impl Suite {
             Self::Ci => CI,
             Self::Extended => EXTENDED,
             Self::Addressing => ADDRESSING,
+            Self::Networking => NETWORKING,
         }
     }
 }
@@ -221,6 +275,25 @@ fn select_from<'a>(
     validate_catalogue(fixtures)?;
     if let Some(suite) = suite {
         let members = suite.members();
+        if suite == Suite::Networking {
+            for fixture in fixtures.iter().filter(|f| {
+                members.contains(&f.id.0)
+                    && f.id.0 != "networking/fetch/unsupported-http-cache"
+                    && f.id.0 != "networking/fetch/unsupported-javascript-fetch"
+            }) {
+                if !matches!(fixture.input, crate::model::FixtureInput::Networking(_))
+                    || !matches!(fixture.kind, FixtureKind::Runnable { .. })
+                    || !matches!(
+                        fixture.independent().map(|v| v.disposition),
+                        Some(crate::model::Expectation::Match)
+                    )
+                {
+                    return Err(crate::networking::observations::error(
+                        "required networking coverage must remain runnable with match expectations",
+                    ));
+                }
+            }
+        }
         if members.windows(2).any(|pair| pair[0] >= pair[1])
             || members
                 .iter()

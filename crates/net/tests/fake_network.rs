@@ -906,3 +906,130 @@ fn ai4_fake_debug_is_bounded_and_redacted() {
     }
     assert!(text.len() < 1000);
 }
+
+#[test]
+fn ai9_observed_acquisitions_are_actual_isolated_and_redacted() {
+    use net::fake::{FakeAcquisitionEvent as Event, FakeAcquisitionResult as Result};
+    let network = network(URL, reply(404, vec![0, 255]));
+    let mut workers = Vec::new();
+    for id in 10..14 {
+        let network = network.clone();
+        workers.push(std::thread::spawn(move || {
+            let (events_tx, events_rx) = mpsc::channel();
+            let (attempts_tx, attempts_rx) = mpsc::channel();
+            network.fetch_stream_observed(request(URL, Route::Html, id), Route::Html,
+                Arc::new(AtomicBool::new(false)),
+                Arc::new(move |e| events_tx.send(e).unwrap()),
+                Arc::new(move |a| attempts_tx.send(a).unwrap())).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let mut events = Vec::new();
+            loop {
+                assert!(Instant::now() < deadline, "absolute event deadline");
+                match events_rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                    Ok(e) => events.push(e),
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(e) => panic!("producer did not close: {e}"),
+                }
+            }
+            assert_eq!(body(&events), [0,255]);
+            assert!(matches!(events.last(), Some(NetEvent::Done{..})));
+            let mut attempts = Vec::new();
+            loop {
+                assert!(Instant::now() < deadline, "absolute observer deadline");
+                match attempts_rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                    Ok(a) => attempts.push(a),
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(e) => panic!("observer did not close: {e}"),
+                }
+            }
+            assert!(matches!(attempts.as_slice(), [Event::Entered{request,route:Route::Html},Event::Returned{result:Result::Response(response)}]
+                if request.request_id()==id && response.status_code()==Some(404)));
+            assert!(!format!("{attempts:#?}").contains("fixture.invalid"));
+        }));
+    }
+    for worker in workers {
+        worker.join().unwrap();
+    }
+}
+
+#[test]
+fn ai9_observed_rejection_cancellation_and_missing_route_are_distinct() {
+    use net::fake::{FakeAcquisitionEvent as Event, FakeAcquisitionResult as Result};
+    for (target, cancelled) in [("file:///fixture", false), (URL, true), (URL, false)] {
+        let network = FakeNetworkBuilder::new().build();
+        let (events_tx, events_rx) = mpsc::channel();
+        let (attempts_tx, attempts_rx) = mpsc::channel();
+        let admission = network.fetch_stream_observed(
+            request(target, Route::Html, 1),
+            Route::Html,
+            Arc::new(AtomicBool::new(cancelled)),
+            Arc::new(move |e| {
+                let _ = events_tx.send(e);
+            }),
+            Arc::new(move |a| {
+                let _ = attempts_tx.send(a);
+            }),
+        );
+        if target.starts_with("file:") {
+            assert_eq!(admission, Err(RequestAdmissionError::UnsupportedScheme));
+            assert!(matches!(
+                events_rx.try_recv(),
+                Err(mpsc::TryRecvError::Disconnected)
+            ));
+            assert!(matches!(
+                attempts_rx.try_recv(),
+                Err(mpsc::TryRecvError::Disconnected)
+            ));
+        } else {
+            admission.unwrap();
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let mut events = Vec::new();
+            loop {
+                assert!(Instant::now() < deadline, "absolute event deadline");
+                match events_rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                    Ok(e) => events.push(e),
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(e) => panic!("event producer did not close: {e}"),
+                }
+            }
+            let mut attempts = Vec::new();
+            loop {
+                assert!(Instant::now() < deadline, "absolute observer deadline");
+                match attempts_rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                    Ok(a) => attempts.push(a),
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(e) => panic!("observer did not close: {e}"),
+                }
+            }
+            if cancelled {
+                assert!(matches!(
+                    events.as_slice(),
+                    [NetEvent::Error {
+                        error_kind: NetworkErrorKind::Cancelled,
+                        response: None,
+                        ..
+                    }]
+                ));
+                assert!(attempts.is_empty());
+            } else {
+                assert!(matches!(
+                    events.as_slice(),
+                    [NetEvent::Error {
+                        error_kind: NetworkErrorKind::Backend,
+                        response: None,
+                        ..
+                    }]
+                ));
+                assert!(matches!(
+                    attempts.as_slice(),
+                    [
+                        Event::Entered { .. },
+                        Event::Returned {
+                            result: Result::MissingRoute
+                        }
+                    ]
+                ));
+            }
+        }
+    }
+}

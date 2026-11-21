@@ -36,7 +36,7 @@ use core_types::ResourceKind;
 
 use crate::{
     FetchRequest, HttpHeaders, HttpStatus, NetEvent, NetworkErrorKind, NetworkResponseInfo,
-    RequestAdmissionError, RequestMethod,
+    RequestAdmissionError, RequestMethod, ResponseAdmissionError,
     backend::{AcquiredHttpResponse, HttpAcquireError, HttpResponseBackend},
     fetch::fetch_http_with_backend,
 };
@@ -128,6 +128,51 @@ impl FakeNetworkBuilder {
     }
 }
 
+/// Actual entry and return at the fake acquisition boundary, scoped to one call.
+/// These records do not prove transmission, body completion or consumer acceptance.
+#[derive(Debug)]
+pub enum FakeAcquisitionEvent {
+    Entered {
+        request: Box<FetchRequest>,
+        route: ResourceKind,
+    },
+    Returned {
+        result: FakeAcquisitionResult,
+    },
+}
+
+/// Actual fake lookup/metadata construction result, before shared Fetch admission.
+/// Debug delegates to existing redacted types and never includes body contents.
+#[derive(Debug)]
+pub enum FakeAcquisitionResult {
+    Response(NetworkResponseInfo),
+    NetworkError(NetworkErrorKind),
+    MissingRoute,
+    ResponseConstructionRejected(ResponseAdmissionError),
+}
+
+type AcquisitionObserver = Arc<dyn Fn(FakeAcquisitionEvent) + Send + Sync>;
+
+// Only this invocation owns the observer; shared route definitions remain immutable.
+struct ObservedFakeNetwork {
+    network: FakeNetwork,
+    observer: AcquisitionObserver,
+}
+impl HttpResponseBackend for ObservedFakeNetwork {
+    fn acquire(
+        &self,
+        request: &FetchRequest,
+        kind: ResourceKind,
+    ) -> Result<AcquiredHttpResponse, HttpAcquireError> {
+        (self.observer)(FakeAcquisitionEvent::Entered {
+            request: Box::new(request.clone()),
+            route: kind,
+        });
+        self.network
+            .acquire_recorded(request, kind, Some(&self.observer))
+    }
+}
+
 /// Immutable routes with independent body readers for every execution.
 /// Clones share fixture data, never cursor, request provenance, or call order.
 #[derive(Clone)]
@@ -147,6 +192,29 @@ impl FakeNetwork {
         callback: Arc<dyn Fn(NetEvent) + Send + Sync>,
     ) -> Result<(), RequestAdmissionError> {
         fetch_http_with_backend(request, kind, self.clone(), cancel_token, callback)
+    }
+
+    /// Observe actual individual acquisitions without changing Fetch execution.
+    /// Callbacks run synchronously on the Fetch worker. Callers must release
+    /// their callback clones to observe producer closure; no worker join is exposed.
+    pub fn fetch_stream_observed(
+        &self,
+        request: FetchRequest,
+        kind: ResourceKind,
+        cancel_token: Arc<AtomicBool>,
+        callback: Arc<dyn Fn(NetEvent) + Send + Sync>,
+        acquisitions: Arc<dyn Fn(FakeAcquisitionEvent) + Send + Sync>,
+    ) -> Result<(), RequestAdmissionError> {
+        fetch_http_with_backend(
+            request,
+            kind,
+            ObservedFakeNetwork {
+                network: self.clone(),
+                observer: acquisitions,
+            },
+            cancel_token,
+            callback,
+        )
     }
 }
 
@@ -236,6 +304,17 @@ impl HttpResponseBackend for FakeNetwork {
         request: &FetchRequest,
         kind: ResourceKind,
     ) -> Result<AcquiredHttpResponse, HttpAcquireError> {
+        self.acquire_recorded(request, kind, None)
+    }
+}
+
+impl FakeNetwork {
+    fn acquire_recorded(
+        &self,
+        request: &FetchRequest,
+        kind: ResourceKind,
+        observer: Option<&AcquisitionObserver>,
+    ) -> Result<AcquiredHttpResponse, HttpAcquireError> {
         let key = RouteKey {
             url: request.transport_target(),
             method: request.method(),
@@ -244,39 +323,56 @@ impl HttpResponseBackend for FakeNetwork {
             .routes
             .iter()
             .find(|(registered, _)| registered == &key);
-        let response = match outcome {
+        let emit = |result| {
+            if let Some(observer) = observer {
+                observer(FakeAcquisitionEvent::Returned { result });
+            }
+        };
+        match outcome {
             None => {
-                return Err(HttpAcquireError::Network {
+                emit(FakeAcquisitionResult::MissingRoute);
+                Err(HttpAcquireError::Network {
                     kind: NetworkErrorKind::Backend,
                     error: "fake network route not found".into(),
-                });
+                })
             }
             Some((_, FakeOutcome::NetworkFailure(kind))) => {
-                return Err(HttpAcquireError::Network {
+                emit(FakeAcquisitionResult::NetworkError(*kind));
+                Err(HttpAcquireError::Network {
                     kind: *kind,
                     error: kind.diagnostic().into(),
-                });
+                })
             }
-            Some((_, FakeOutcome::Response(response))) => response,
-        };
-        let metadata = NetworkResponseInfo::http(
-            request.address(),
-            request
-                .legacy_issued_url(kind)
-                .expect("validated HTTP route"),
-            response.reported_response_url.clone(),
-            response.status,
-            response.headers.clone(),
-        )
-        .map_err(HttpAcquireError::Response)?;
-        Ok(AcquiredHttpResponse {
-            metadata,
-            reader: Box::new(FakeBodyReader {
-                bytes: response.body.clone(),
-                position: 0,
-                fail_after: response.read_failure_after,
-            }),
-        })
+            Some((_, FakeOutcome::Response(response))) => {
+                let metadata = match NetworkResponseInfo::http(
+                    request.address(),
+                    request
+                        .legacy_issued_url(kind)
+                        .expect("validated HTTP route"),
+                    response.reported_response_url.clone(),
+                    response.status,
+                    response.headers.clone(),
+                ) {
+                    Ok(metadata) => metadata,
+                    Err(e) => {
+                        emit(FakeAcquisitionResult::ResponseConstructionRejected(e));
+                        return Err(HttpAcquireError::Response(e));
+                    }
+                };
+                let acquired = AcquiredHttpResponse {
+                    metadata,
+                    reader: Box::new(FakeBodyReader {
+                        bytes: response.body.clone(),
+                        position: 0,
+                        fail_after: response.read_failure_after,
+                    }),
+                };
+                if observer.is_some() {
+                    emit(FakeAcquisitionResult::Response(acquired.metadata.clone()));
+                }
+                Ok(acquired)
+            }
+        }
     }
 }
 

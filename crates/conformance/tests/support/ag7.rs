@@ -69,7 +69,7 @@ pub fn assert_exact_difference_set(report: &Value) {
 }
 
 pub fn assert_initial_cases(report: &Value) {
-    assert_eq!(report["schema"], "borrowser.cross-engine-phases.v3");
+    assert_eq!(report["schema"], "borrowser.cross-engine-phases.v4");
     for id in RGB.into_iter().chain([LOCAL]) {
         let c = case(report, id);
         let rgb = id != LOCAL;
@@ -274,7 +274,7 @@ pub fn declarations(root: &Path) -> BTreeMap<String, Value> {
             } else if path.to_string_lossy().ends_with(".fixture.json") {
                 let mut m: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
                 let expected = match m["expected"]["kind"].as_str() {
-                    Some("addressing") => serde_json::from_slice(
+                    Some("addressing" | "networking") => serde_json::from_slice(
                         &std::fs::read(
                             path.parent()
                                 .unwrap()
@@ -381,7 +381,7 @@ fn summary(cases: &[&Value]) -> Value {
     for c in cases {
         let field = match c["borrowser_status"]
             .as_str()
-            .expect("v3 aggregate case status")
+            .expect("v4 aggregate case status")
         {
             "PASS" => "passed",
             "FAIL" => "failed",
@@ -449,6 +449,39 @@ pub fn assert_catalogue(
             assert!(c["upstream_assertion"].is_null());
         }
 
+        if !m["networking"].is_null() && classification == "runnable" {
+            assert_eq!(c["family"], "networking/fetch");
+            assert_eq!(c["status"], "incomplete");
+            assert_eq!(c["coverage"]["chromium"]["state"], "unsupported");
+            assert_eq!(c["fields"], json!([]));
+            for key in [
+                "descriptor",
+                "captures",
+                "projections",
+                "reference_document",
+                "relationships",
+            ] {
+                assert!(
+                    c[key].is_null(),
+                    "networking capture fabricated: {id}/{key}"
+                );
+            }
+            assert_eq!(
+                c["borrowser_expectation"]["expected"],
+                m["authored_expected"]
+            );
+            let matches = c["local_observations"] == m["authored_expected"];
+            let verdict = match (m["expectation"]["kind"].as_str().unwrap(), matches) {
+                ("match", true) => "PASS",
+                ("match", false) => "FAIL",
+                ("known_failure", true) => "XPASS",
+                ("known_failure", false) => "XFAIL",
+                _ => panic!("unsupported expectation metadata"),
+            };
+            assert_eq!(c["borrowser_expectation"]["status"], verdict);
+            assert_eq!(c["borrowser_status"], verdict);
+            continue;
+        }
         if !m["addressing"].is_null() {
             assert_eq!(c["status"], "incomplete");
             assert_eq!(c["borrowser_status"], "UNSUPPORTED");
@@ -625,10 +658,17 @@ pub fn assert_catalogue(
             m["upstream_assertion"].is_null()
         );
     }
-    assert_eq!(
-        report["summary"],
-        summary(&cases.iter().collect::<Vec<_>>())
-    );
+    let mut expected_summary = summary(&cases.iter().collect::<Vec<_>>());
+    let networking = cases
+        .iter()
+        .filter(|c| c["family"] == "networking/fetch")
+        .collect::<Vec<_>>();
+    expected_summary["groups"] = if networking.is_empty() {
+        json!({})
+    } else {
+        json!({"networking/fetch":summary(&networking)["borrowser_cases"]})
+    };
+    assert_eq!(report["summary"], expected_summary);
     // Exact known RGB differences require failure, regardless of additional passes.
     assert_eq!(exit, 1);
     for key in [
@@ -637,5 +677,16 @@ pub fn assert_catalogue(
         "relationship_failures",
     ] {
         assert_eq!(report["summary"][key], 0);
+    }
+}
+
+pub fn assert_structural_fetch_diagnostics(bytes: &[u8]) {
+    for line in std::str::from_utf8(bytes).unwrap().lines() {
+        assert!(
+            line.starts_with("[net][req=1][html][stage=redirect]")
+                || line.starts_with("[net][req=1][html][top-level][stage=")
+                || line.starts_with("[net][req=1][css][subresource][stage="),
+            "unexpected diagnostic: {line}"
+        );
     }
 }

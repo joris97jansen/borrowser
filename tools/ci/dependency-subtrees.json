@@ -517,7 +517,7 @@
         },
         "src/middleware.rs": {
           "mode": "100644",
-          "sha256": "1ff22ddc07afd5b1013cec6affb1a7a17f77f7092ef9569c9e4fb5be55cb126f"
+          "sha256": "b657657ff91c067a8c05efbdebce57745c8565e40f0bbd9f7e44da55ea80022f"
         },
         "src/ntls.rs": {
           "mode": "100644",

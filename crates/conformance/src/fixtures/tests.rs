@@ -266,3 +266,31 @@ fn ag8_regressing_ci_member_remains_required() {
         "SUMMARY PASS=6 FAIL=1 XFAIL=0 XPASS=0 UNSUPPORTED=0 SKIP=0 ERROR=0 INCOMPLETE=0\n"
     ));
 }
+
+#[test]
+fn ai9_required_suite_members_cannot_become_excluded_or_expected_failing() {
+    use crate::model::{Checks, IndependentExpectation};
+    for exclude in [true, false] {
+        let mut all = catalogue().unwrap().to_vec();
+        let f = all
+            .iter_mut()
+            .find(|f| f.id.0 == "networking/fetch/response-200")
+            .unwrap();
+        f.kind = if exclude {
+            FixtureKind::Unsupported {
+                reason: "test-only attempted exclusion",
+            }
+        } else {
+            let i = f.independent().unwrap();
+            FixtureKind::Runnable {
+                checks: Checks::Independent(IndependentExpectation {
+                    disposition: Expectation::KnownFailure {
+                        reason: "test-only attempted downgrade",
+                    },
+                    ..i
+                }),
+            }
+        };
+        assert!(select_from(&all, Some(Suite::Networking), None).is_err());
+    }
+}

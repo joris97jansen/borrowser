@@ -167,6 +167,11 @@ fn compare_captured(
     for fixture in fixtures {
         let case = match fixture.kind {
             FixtureKind::Runnable { .. }
+                if matches!(fixture.input, crate::model::FixtureInput::Networking(_)) =>
+            {
+                report::Case::networking(fixture, crate::run_fixture(fixture))?
+            }
+            FixtureKind::Runnable { .. }
                 if matches!(fixture.input, crate::model::FixtureInput::Addressing(_)) =>
             {
                 report::Case::unsupported(fixture, crate::addressing::COMPARISON_UNSUPPORTED)
@@ -196,6 +201,18 @@ fn compare_captured(
             FixtureKind::Unsupported { reason } => report::Case::unsupported(fixture, reason),
             FixtureKind::Skipped { reason } => report::Case::skipped(fixture, reason),
         };
+        let retained = cases
+            .iter()
+            .map(report::Case::networking_storage)
+            .sum::<usize>();
+        if retained.saturating_add(case.networking_storage())
+            > crate::networking::bounds::INVOCATION_STORAGE
+        {
+            return Err(crate::networking::observations::error(
+                "invocation networking storage budget exceeded",
+            )
+            .into());
+        }
         cases.push(case);
     }
     Ok(report::Report::new(cases))
@@ -237,8 +254,9 @@ fn publish(
         }
     };
     let code = report.exit_code();
-    let mut bytes = match serde_json::to_vec_pretty(&report) {
-        Ok(bytes) => bytes,
+    let mut buffer = crate::networking::bounds::Buffer::new(crate::networking::bounds::REPORT - 1);
+    let mut bytes = match serde_json::to_writer_pretty(&mut buffer, &report) {
+        Ok(()) => buffer.finish(),
         Err(error) => {
             writeln!(diagnostics, "ERROR comparison.serialize: {error}")?;
             crate::report::write_run_error(

@@ -425,6 +425,7 @@ ci:
 	@$(MAKE) check-network-dependencies
 	@$(MAKE) conformance-ci
 	@$(MAKE) conformance-addressing
+	@$(MAKE) conformance-networking
 	@$(MAKE) fmt-check
 	@$(MAKE) lint
 	@$(MAKE) lint-html5
@@ -535,3 +536,8 @@ conformance-extended:
 .PHONY: conformance-addressing
 conformance-addressing:
 	cargo run -q -p borrowser-conformance --locked -- --suite addressing
+
+# AI9: fixed required no-I/O Fetch assertions and explicit deferred capabilities.
+.PHONY: conformance-networking
+conformance-networking:
+	cargo run -q -p borrowser-conformance --locked -- --suite networking

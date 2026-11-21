@@ -1,8 +1,10 @@
 # AG4 disposable AWS Chromium runner
 
-AG8 changes the shared final comparison report to `borrowser.cross-engine-phases.v3`
-and distinguishes harness preflight failures from AWS execution failures in terminal
-stderr summaries. AWS remains an optional, suite-unaware backend with the existing
+AI9 changes the shared final comparison report to `borrowser.cross-engine-phases.v4`
+with separate local networking verdicts and unsupported Chromium networking coverage.
+See the [AI9 report contract](../platform/ai9-fetch-network-conformance-fixtures-and-snapshots.md).
+AG8's distinction between harness preflight and AWS execution failures in terminal
+stderr summaries remains. AWS remains an optional, suite-unaware backend with the existing
 all-catalogue/exact-ID interface. Artifact schema, remote capture wire/profile,
 cleanup and recovery contracts are unchanged. See the
 [AG8 reporting contract](ag8-deterministic-reporting-and-suites.md).

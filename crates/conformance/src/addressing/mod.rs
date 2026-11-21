@@ -49,7 +49,7 @@ impl AddressingInput {
     }
 }
 impl Purpose {
-    fn resource_kind(self) -> ResourceKind {
+    pub(crate) fn resource_kind(self) -> ResourceKind {
         match self {
             Self::Document => ResourceKind::Document,
             Self::Stylesheet => ResourceKind::Stylesheet,

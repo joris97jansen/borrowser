@@ -235,8 +235,10 @@ dumped. Primary failures and cleanup errors remain separate stderr diagnostics;
 no partial successful report is emitted.
 
 Producer, local consumer and AG4 ingestion now use `borrowser.chromium-phases.v2`;
-comparison now uses `borrowser.cross-engine-phases.v3` under the
-[AG8 reporting contract](ag8-deterministic-reporting-and-suites.md). V3 adds
+comparison now uses `borrowser.cross-engine-phases.v4` under the
+[AI9 reporting contract](../platform/ai9-fetch-network-conformance-fixtures-and-snapshots.md),
+which separates local networking assertions and scopes phase environment facts.
+The earlier [AG8 reporting contract](ag8-deterministic-reporting-and-suites.md) added
 aggregate Borrowser case status/totals and harness selection/reproduction context;
 existing comparison facts, coverage and exit precedence are unchanged. AG7 adds exact ordered capture
 descriptors and parsed link facts, with separate direct-reference evaluation. Old schema/profile output is

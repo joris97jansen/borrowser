@@ -1,0 +1,12 @@
+{
+  "id": "networking/fetch/unsupported-javascript-fetch",
+  "requires_javascript": true,
+  "classification": {
+    "kind": "unsupported",
+    "reason": "JavaScript fetch API is outside the no-JS networking foundation"
+  },
+  "networking": {
+    "kind": "deferred",
+    "feature": "javascript_fetch"
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "id": "networking/fetch/network-error",
+  "requires_javascript": false,
+  "classification": {
+    "kind": "runnable"
+  },
+  "networking": {
+    "kind": "fetch",
+    "rows": [
+      {
+        "request": {
+          "url": "https://fixture.invalid/failure",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/failure",
+            "method": "GET",
+            "outcome": {
+              "kind": "network_error",
+              "error": "connection_failure"
+            }
+          }
+        ]
+      },
+      {
+        "request": {
+          "url": "https://fixture.invalid/failure",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": []
+      },
+      {
+        "request": {
+          "url": "https://fixture.invalid/failure",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [],
+          "initiator_url": null,
+          "requesting_origin_url": null
+        },
+        "routes": [
+          {
+            "url": "https://fixture.invalid/failure",
+            "method": "GET",
+            "outcome": {
+              "kind": "response",
+              "status": 200,
+              "headers": [],
+              "body": {
+                "kind": "bytes",
+                "bytes": [
+                  10,
+                  11,
+                  12,
+                  13
+                ]
+              },
+              "reported_response_url": "https://fixture.invalid/failure",
+              "read_failure_after": 2
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "expectation": {
+    "kind": "match"
+  },
+  "expected": {
+    "kind": "networking",
+    "path": "network-error.expected.json"
+  }
+}

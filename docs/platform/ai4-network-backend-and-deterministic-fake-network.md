@@ -1,5 +1,13 @@
 # AI4: HTTP Response Acquisition And Deterministic Fake Networking
 
+Current AI9 qualification: [AI9](ai9-fetch-network-conformance-fixtures-and-snapshots.md)
+adds the concrete per-invocation `fetch_stream_observed` facade. Actual acquisition
+entry/return records do not mutate shared routes, expose the private backend
+trait/readers, or change ordinary Fetch semantics. Records retain Debug redaction.
+Producer closure is distinct from a worker join. AG networking discovery,
+snapshots, reporting and required execution are described by the AI9 contract.
+
+
 [AI8](ai8-response-metadata-and-loader-handoff.md) applies shared aggregate
 metadata construction to real/fake/supplied responses using actual request purpose.
 Fake declared-length outcomes do not establish wire-framing correctness or govern

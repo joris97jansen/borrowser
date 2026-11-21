@@ -22,6 +22,10 @@ AG8 builds on that completed baseline. Its comparison report is
 `borrowser.cross-engine-phases.v3`; historical AG7 captures/reports and their
 qualification identities are not rewritten. See the
 [AG8 contract](ag8-deterministic-reporting-and-suites.md) for suites and reporting.
+Current AI9 reports use `borrowser.cross-engine-phases.v4`, with local networking
+assertions separate from phase comparison. See the
+[AI9 contract](../platform/ai9-fetch-network-conformance-fixtures-and-snapshots.md);
+the retained AG7 qualification identities and native capture wire are unchanged.
 
 ## Supported-platform decision
 

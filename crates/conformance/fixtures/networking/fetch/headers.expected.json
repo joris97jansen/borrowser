@@ -1,0 +1,1342 @@
+{
+  "rows": [
+    {
+      "request": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/headers",
+          "current_url": "https://fixture.invalid/headers",
+          "transport_target": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [
+            [
+              "accept",
+              [
+                42,
+                47,
+                42
+              ]
+            ]
+          ],
+          "initiator_url": null,
+          "requesting_origin": null,
+          "redirect_policy": "follow",
+          "has_body": false
+        }
+      },
+      "acquisitions": [
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/headers",
+            "current_url": "https://fixture.invalid/headers",
+            "transport_target": "https://fixture.invalid/headers",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/headers",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/headers",
+              "reported_response_url": "https://fixture.invalid/headers",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/headers",
+                "diagnostics": []
+              },
+              "status": 200,
+              "status_class": "successful",
+              "headers": [
+                [
+                  "x-duplicate",
+                  [
+                    111,
+                    110,
+                    101
+                  ]
+                ],
+                [
+                  "x-duplicate",
+                  [
+                    128,
+                    255
+                  ]
+                ],
+                [
+                  "content-type",
+                  [
+                    116,
+                    101,
+                    120,
+                    116,
+                    47,
+                    99,
+                    115,
+                    115,
+                    59,
+                    99,
+                    104,
+                    97,
+                    114,
+                    115,
+                    101,
+                    116,
+                    61,
+                    85,
+                    84,
+                    70,
+                    45,
+                    56
+                  ]
+                ],
+                [
+                  "content-length",
+                  [
+                    49
+                  ]
+                ]
+              ],
+              "content_type": {
+                "state": "parsed",
+                "mime_type": "text/css",
+                "charset": "UTF-8"
+              },
+              "declared_content_length": {
+                "state": "value",
+                "value": 1
+              },
+              "redirect_chain": []
+            }
+          }
+        }
+      ],
+      "start": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/headers",
+          "reported_response_url": "https://fixture.invalid/headers",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/headers",
+            "diagnostics": []
+          },
+          "status": 200,
+          "status_class": "successful",
+          "headers": [
+            [
+              "x-duplicate",
+              [
+                111,
+                110,
+                101
+              ]
+            ],
+            [
+              "x-duplicate",
+              [
+                128,
+                255
+              ]
+            ],
+            [
+              "content-type",
+              [
+                116,
+                101,
+                120,
+                116,
+                47,
+                99,
+                115,
+                115,
+                59,
+                99,
+                104,
+                97,
+                114,
+                115,
+                101,
+                116,
+                61,
+                85,
+                84,
+                70,
+                45,
+                56
+              ]
+            ],
+            [
+              "content-length",
+              [
+                49
+              ]
+            ]
+          ],
+          "content_type": {
+            "state": "parsed",
+            "mime_type": "text/css",
+            "charset": "UTF-8"
+          },
+          "declared_content_length": {
+            "state": "value",
+            "value": 1
+          },
+          "redirect_chain": []
+        }
+      },
+      "terminal": {
+        "kind": "done",
+        "response": {
+          "original_url": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/headers",
+          "reported_response_url": "https://fixture.invalid/headers",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/headers",
+            "diagnostics": []
+          },
+          "status": 200,
+          "status_class": "successful",
+          "headers": [
+            [
+              "x-duplicate",
+              [
+                111,
+                110,
+                101
+              ]
+            ],
+            [
+              "x-duplicate",
+              [
+                128,
+                255
+              ]
+            ],
+            [
+              "content-type",
+              [
+                116,
+                101,
+                120,
+                116,
+                47,
+                99,
+                115,
+                115,
+                59,
+                99,
+                104,
+                97,
+                114,
+                115,
+                101,
+                116,
+                61,
+                85,
+                84,
+                70,
+                45,
+                56
+              ]
+            ],
+            [
+              "content-length",
+              [
+                49
+              ]
+            ]
+          ],
+          "content_type": {
+            "state": "parsed",
+            "mime_type": "text/css",
+            "charset": "UTF-8"
+          },
+          "declared_content_length": {
+            "state": "value",
+            "value": 1
+          },
+          "redirect_chain": []
+        },
+        "progress": {
+          "route": "html",
+          "delivered_bytes": 1,
+          "limit_bytes": 10485760
+        }
+      },
+      "selected_final_url": {
+        "state": "present",
+        "value": "https://fixture.invalid/headers"
+      },
+      "body": {
+        "kind": "bytes",
+        "bytes": [
+          120
+        ]
+      }
+    },
+    {
+      "request": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/headers",
+          "current_url": "https://fixture.invalid/headers",
+          "transport_target": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [
+            [
+              "accept",
+              [
+                42,
+                47,
+                42
+              ]
+            ]
+          ],
+          "initiator_url": null,
+          "requesting_origin": null,
+          "redirect_policy": "follow",
+          "has_body": false
+        }
+      },
+      "acquisitions": [
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/headers",
+            "current_url": "https://fixture.invalid/headers",
+            "transport_target": "https://fixture.invalid/headers",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/headers",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/headers",
+              "reported_response_url": "https://fixture.invalid/headers",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/headers",
+                "diagnostics": []
+              },
+              "status": 200,
+              "status_class": "successful",
+              "headers": [],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "missing"
+              },
+              "redirect_chain": []
+            }
+          }
+        }
+      ],
+      "start": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/headers",
+          "reported_response_url": "https://fixture.invalid/headers",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/headers",
+            "diagnostics": []
+          },
+          "status": 200,
+          "status_class": "successful",
+          "headers": [],
+          "content_type": {
+            "state": "missing"
+          },
+          "declared_content_length": {
+            "state": "missing"
+          },
+          "redirect_chain": []
+        }
+      },
+      "terminal": {
+        "kind": "done",
+        "response": {
+          "original_url": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/headers",
+          "reported_response_url": "https://fixture.invalid/headers",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/headers",
+            "diagnostics": []
+          },
+          "status": 200,
+          "status_class": "successful",
+          "headers": [],
+          "content_type": {
+            "state": "missing"
+          },
+          "declared_content_length": {
+            "state": "missing"
+          },
+          "redirect_chain": []
+        },
+        "progress": {
+          "route": "html",
+          "delivered_bytes": 1,
+          "limit_bytes": 10485760
+        }
+      },
+      "selected_final_url": {
+        "state": "present",
+        "value": "https://fixture.invalid/headers"
+      },
+      "body": {
+        "kind": "bytes",
+        "bytes": [
+          120
+        ]
+      }
+    },
+    {
+      "request": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/headers",
+          "current_url": "https://fixture.invalid/headers",
+          "transport_target": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [
+            [
+              "accept",
+              [
+                42,
+                47,
+                42
+              ]
+            ]
+          ],
+          "initiator_url": null,
+          "requesting_origin": null,
+          "redirect_policy": "follow",
+          "has_body": false
+        }
+      },
+      "acquisitions": [
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/headers",
+            "current_url": "https://fixture.invalid/headers",
+            "transport_target": "https://fixture.invalid/headers",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/headers",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/headers",
+              "reported_response_url": "https://fixture.invalid/headers",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/headers",
+                "diagnostics": []
+              },
+              "status": 200,
+              "status_class": "successful",
+              "headers": [
+                [
+                  "content-type",
+                  [
+                    32,
+                    9
+                  ]
+                ],
+                [
+                  "content-length",
+                  []
+                ]
+              ],
+              "content_type": {
+                "state": "empty"
+              },
+              "declared_content_length": {
+                "state": "unusable"
+              },
+              "redirect_chain": []
+            }
+          }
+        }
+      ],
+      "start": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/headers",
+          "reported_response_url": "https://fixture.invalid/headers",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/headers",
+            "diagnostics": []
+          },
+          "status": 200,
+          "status_class": "successful",
+          "headers": [
+            [
+              "content-type",
+              [
+                32,
+                9
+              ]
+            ],
+            [
+              "content-length",
+              []
+            ]
+          ],
+          "content_type": {
+            "state": "empty"
+          },
+          "declared_content_length": {
+            "state": "unusable"
+          },
+          "redirect_chain": []
+        }
+      },
+      "terminal": {
+        "kind": "done",
+        "response": {
+          "original_url": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/headers",
+          "reported_response_url": "https://fixture.invalid/headers",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/headers",
+            "diagnostics": []
+          },
+          "status": 200,
+          "status_class": "successful",
+          "headers": [
+            [
+              "content-type",
+              [
+                32,
+                9
+              ]
+            ],
+            [
+              "content-length",
+              []
+            ]
+          ],
+          "content_type": {
+            "state": "empty"
+          },
+          "declared_content_length": {
+            "state": "unusable"
+          },
+          "redirect_chain": []
+        },
+        "progress": {
+          "route": "html",
+          "delivered_bytes": 1,
+          "limit_bytes": 10485760
+        }
+      },
+      "selected_final_url": {
+        "state": "present",
+        "value": "https://fixture.invalid/headers"
+      },
+      "body": {
+        "kind": "bytes",
+        "bytes": [
+          120
+        ]
+      }
+    },
+    {
+      "request": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/headers",
+          "current_url": "https://fixture.invalid/headers",
+          "transport_target": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [
+            [
+              "accept",
+              [
+                42,
+                47,
+                42
+              ]
+            ]
+          ],
+          "initiator_url": null,
+          "requesting_origin": null,
+          "redirect_policy": "follow",
+          "has_body": false
+        }
+      },
+      "acquisitions": [
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/headers",
+            "current_url": "https://fixture.invalid/headers",
+            "transport_target": "https://fixture.invalid/headers",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/headers",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/headers",
+              "reported_response_url": "https://fixture.invalid/headers",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/headers",
+                "diagnostics": []
+              },
+              "status": 200,
+              "status_class": "successful",
+              "headers": [
+                [
+                  "content-type",
+                  [
+                    63,
+                    63,
+                    63
+                  ]
+                ],
+                [
+                  "content-length",
+                  [
+                    49,
+                    56,
+                    52,
+                    52,
+                    54,
+                    55,
+                    52,
+                    52,
+                    48,
+                    55,
+                    51,
+                    55,
+                    48,
+                    57,
+                    53,
+                    53,
+                    49,
+                    54,
+                    49,
+                    54
+                  ]
+                ]
+              ],
+              "content_type": {
+                "state": "unusable"
+              },
+              "declared_content_length": {
+                "state": "out_of_range"
+              },
+              "redirect_chain": []
+            }
+          }
+        }
+      ],
+      "start": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/headers",
+          "reported_response_url": "https://fixture.invalid/headers",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/headers",
+            "diagnostics": []
+          },
+          "status": 200,
+          "status_class": "successful",
+          "headers": [
+            [
+              "content-type",
+              [
+                63,
+                63,
+                63
+              ]
+            ],
+            [
+              "content-length",
+              [
+                49,
+                56,
+                52,
+                52,
+                54,
+                55,
+                52,
+                52,
+                48,
+                55,
+                51,
+                55,
+                48,
+                57,
+                53,
+                53,
+                49,
+                54,
+                49,
+                54
+              ]
+            ]
+          ],
+          "content_type": {
+            "state": "unusable"
+          },
+          "declared_content_length": {
+            "state": "out_of_range"
+          },
+          "redirect_chain": []
+        }
+      },
+      "terminal": {
+        "kind": "done",
+        "response": {
+          "original_url": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/headers",
+          "reported_response_url": "https://fixture.invalid/headers",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/headers",
+            "diagnostics": []
+          },
+          "status": 200,
+          "status_class": "successful",
+          "headers": [
+            [
+              "content-type",
+              [
+                63,
+                63,
+                63
+              ]
+            ],
+            [
+              "content-length",
+              [
+                49,
+                56,
+                52,
+                52,
+                54,
+                55,
+                52,
+                52,
+                48,
+                55,
+                51,
+                55,
+                48,
+                57,
+                53,
+                53,
+                49,
+                54,
+                49,
+                54
+              ]
+            ]
+          ],
+          "content_type": {
+            "state": "unusable"
+          },
+          "declared_content_length": {
+            "state": "out_of_range"
+          },
+          "redirect_chain": []
+        },
+        "progress": {
+          "route": "html",
+          "delivered_bytes": 1,
+          "limit_bytes": 10485760
+        }
+      },
+      "selected_final_url": {
+        "state": "present",
+        "value": "https://fixture.invalid/headers"
+      },
+      "body": {
+        "kind": "bytes",
+        "bytes": [
+          120
+        ]
+      }
+    },
+    {
+      "request": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/headers",
+          "current_url": "https://fixture.invalid/headers",
+          "transport_target": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [
+            [
+              "accept",
+              [
+                42,
+                47,
+                42
+              ]
+            ]
+          ],
+          "initiator_url": null,
+          "requesting_origin": null,
+          "redirect_policy": "follow",
+          "has_body": false
+        }
+      },
+      "acquisitions": [
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/headers",
+            "current_url": "https://fixture.invalid/headers",
+            "transport_target": "https://fixture.invalid/headers",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/headers",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/headers",
+              "reported_response_url": "https://fixture.invalid/headers",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/headers",
+                "diagnostics": []
+              },
+              "status": 200,
+              "status_class": "successful",
+              "headers": [
+                [
+                  "content-type",
+                  [
+                    116,
+                    101,
+                    120,
+                    116,
+                    47,
+                    99,
+                    115,
+                    115,
+                    59,
+                    99,
+                    104,
+                    97,
+                    114,
+                    115,
+                    101,
+                    116,
+                    61,
+                    111,
+                    110,
+                    101
+                  ]
+                ],
+                [
+                  "content-type",
+                  [
+                    116,
+                    101,
+                    120,
+                    116,
+                    47,
+                    99,
+                    115,
+                    115
+                  ]
+                ],
+                [
+                  "content-length",
+                  [
+                    49
+                  ]
+                ],
+                [
+                  "content-length",
+                  [
+                    49
+                  ]
+                ]
+              ],
+              "content_type": {
+                "state": "parsed",
+                "mime_type": "text/css",
+                "charset": "one"
+              },
+              "declared_content_length": {
+                "state": "value",
+                "value": 1
+              },
+              "redirect_chain": []
+            }
+          }
+        }
+      ],
+      "start": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/headers",
+          "reported_response_url": "https://fixture.invalid/headers",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/headers",
+            "diagnostics": []
+          },
+          "status": 200,
+          "status_class": "successful",
+          "headers": [
+            [
+              "content-type",
+              [
+                116,
+                101,
+                120,
+                116,
+                47,
+                99,
+                115,
+                115,
+                59,
+                99,
+                104,
+                97,
+                114,
+                115,
+                101,
+                116,
+                61,
+                111,
+                110,
+                101
+              ]
+            ],
+            [
+              "content-type",
+              [
+                116,
+                101,
+                120,
+                116,
+                47,
+                99,
+                115,
+                115
+              ]
+            ],
+            [
+              "content-length",
+              [
+                49
+              ]
+            ],
+            [
+              "content-length",
+              [
+                49
+              ]
+            ]
+          ],
+          "content_type": {
+            "state": "parsed",
+            "mime_type": "text/css",
+            "charset": "one"
+          },
+          "declared_content_length": {
+            "state": "value",
+            "value": 1
+          },
+          "redirect_chain": []
+        }
+      },
+      "terminal": {
+        "kind": "done",
+        "response": {
+          "original_url": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/headers",
+          "reported_response_url": "https://fixture.invalid/headers",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/headers",
+            "diagnostics": []
+          },
+          "status": 200,
+          "status_class": "successful",
+          "headers": [
+            [
+              "content-type",
+              [
+                116,
+                101,
+                120,
+                116,
+                47,
+                99,
+                115,
+                115,
+                59,
+                99,
+                104,
+                97,
+                114,
+                115,
+                101,
+                116,
+                61,
+                111,
+                110,
+                101
+              ]
+            ],
+            [
+              "content-type",
+              [
+                116,
+                101,
+                120,
+                116,
+                47,
+                99,
+                115,
+                115
+              ]
+            ],
+            [
+              "content-length",
+              [
+                49
+              ]
+            ],
+            [
+              "content-length",
+              [
+                49
+              ]
+            ]
+          ],
+          "content_type": {
+            "state": "parsed",
+            "mime_type": "text/css",
+            "charset": "one"
+          },
+          "declared_content_length": {
+            "state": "value",
+            "value": 1
+          },
+          "redirect_chain": []
+        },
+        "progress": {
+          "route": "html",
+          "delivered_bytes": 1,
+          "limit_bytes": 10485760
+        }
+      },
+      "selected_final_url": {
+        "state": "present",
+        "value": "https://fixture.invalid/headers"
+      },
+      "body": {
+        "kind": "bytes",
+        "bytes": [
+          120
+        ]
+      }
+    },
+    {
+      "request": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/headers",
+          "current_url": "https://fixture.invalid/headers",
+          "transport_target": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "route": "html",
+          "method": "GET",
+          "headers": [
+            [
+              "accept",
+              [
+                42,
+                47,
+                42
+              ]
+            ]
+          ],
+          "initiator_url": null,
+          "requesting_origin": null,
+          "redirect_policy": "follow",
+          "has_body": false
+        }
+      },
+      "acquisitions": [
+        {
+          "request": {
+            "original_url": "https://fixture.invalid/headers",
+            "current_url": "https://fixture.invalid/headers",
+            "transport_target": "https://fixture.invalid/headers",
+            "purpose": "document",
+            "route": "html",
+            "method": "GET",
+            "headers": [
+              [
+                "accept",
+                [
+                  42,
+                  47,
+                  42
+                ]
+              ]
+            ],
+            "initiator_url": null,
+            "requesting_origin": null,
+            "redirect_policy": "follow",
+            "has_body": false
+          },
+          "result": {
+            "kind": "response",
+            "value": {
+              "original_url": "https://fixture.invalid/headers",
+              "purpose": "document",
+              "requested_url": "https://fixture.invalid/headers",
+              "reported_response_url": "https://fixture.invalid/headers",
+              "response_url": {
+                "state": "parsed",
+                "url": "https://fixture.invalid/headers",
+                "diagnostics": []
+              },
+              "status": 200,
+              "status_class": "successful",
+              "headers": [
+                [
+                  "content-length",
+                  [
+                    49
+                  ]
+                ],
+                [
+                  "content-length",
+                  [
+                    48,
+                    49
+                  ]
+                ]
+              ],
+              "content_type": {
+                "state": "missing"
+              },
+              "declared_content_length": {
+                "state": "conflicting"
+              },
+              "redirect_chain": []
+            }
+          }
+        }
+      ],
+      "start": {
+        "state": "present",
+        "value": {
+          "original_url": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/headers",
+          "reported_response_url": "https://fixture.invalid/headers",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/headers",
+            "diagnostics": []
+          },
+          "status": 200,
+          "status_class": "successful",
+          "headers": [
+            [
+              "content-length",
+              [
+                49
+              ]
+            ],
+            [
+              "content-length",
+              [
+                48,
+                49
+              ]
+            ]
+          ],
+          "content_type": {
+            "state": "missing"
+          },
+          "declared_content_length": {
+            "state": "conflicting"
+          },
+          "redirect_chain": []
+        }
+      },
+      "terminal": {
+        "kind": "done",
+        "response": {
+          "original_url": "https://fixture.invalid/headers",
+          "purpose": "document",
+          "requested_url": "https://fixture.invalid/headers",
+          "reported_response_url": "https://fixture.invalid/headers",
+          "response_url": {
+            "state": "parsed",
+            "url": "https://fixture.invalid/headers",
+            "diagnostics": []
+          },
+          "status": 200,
+          "status_class": "successful",
+          "headers": [
+            [
+              "content-length",
+              [
+                49
+              ]
+            ],
+            [
+              "content-length",
+              [
+                48,
+                49
+              ]
+            ]
+          ],
+          "content_type": {
+            "state": "missing"
+          },
+          "declared_content_length": {
+            "state": "conflicting"
+          },
+          "redirect_chain": []
+        },
+        "progress": {
+          "route": "html",
+          "delivered_bytes": 1,
+          "limit_bytes": 10485760
+        }
+      },
+      "selected_final_url": {
+        "state": "present",
+        "value": "https://fixture.invalid/headers"
+      },
+      "body": {
+        "kind": "bytes",
+        "bytes": [
+          120
+        ]
+      }
+    }
+  ]
+}
