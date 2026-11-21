@@ -31,7 +31,7 @@ fn metadata(request: &FetchRequest, code: u16, reported: Option<&str>) -> Networ
     let mut headers = HttpHeaders::new();
     headers.append("Content-Type", b"image/png").unwrap();
     NetworkResponseInfo::http(
-        request.original_url().clone(),
+        request.address(),
         request.legacy_issued_url(ResourceKind::Image).unwrap(),
         reported.map(str::to_owned),
         HttpStatus::try_from(code).unwrap(),
@@ -225,7 +225,7 @@ fn ai3_image_handoff_rejects_wrong_identity_and_completion() {
             .unwrap();
         }
         let unissued = NetworkResponseInfo::http(
-            request.original_url().clone(),
+            request.address(),
             "https://unissued.test/a".into(),
             Some("https://cdn.test/final.png".into()),
             HttpStatus::try_from(200).unwrap(),
@@ -345,7 +345,10 @@ fn ai3_document_completion_rejects_status_headers_route_and_count_changes() {
         tab.set_bus_sender(tx);
         tab.navigate_to_new("https://doc.test/a".into());
         let response = NetworkResponseInfo::http(
-            BrowserUrl::parse("https://doc.test/a").unwrap().url,
+            &addressing::ResourceAddress::new(
+                BrowserUrl::parse("https://doc.test/a").unwrap().url,
+                addressing::ResourceKind::Document,
+            ),
             "https://doc.test/a".into(),
             Some("https://doc.test/a".into()),
             HttpStatus::try_from(200).unwrap(),
@@ -376,7 +379,10 @@ fn ai3_document_completion_rejects_status_headers_route_and_count_changes() {
             headers.append("X-Changed", b"value").unwrap();
         }
         let final_response = NetworkResponseInfo::http(
-            response.original_url().clone(),
+            &addressing::ResourceAddress::new(
+                response.original_url().clone(),
+                response.resource_kind(),
+            ),
             response.requested_url().into(),
             response.reported_response_url().map(str::to_owned),
             HttpStatus::try_from(if invalid == "status" { 404 } else { 200 }).unwrap(),

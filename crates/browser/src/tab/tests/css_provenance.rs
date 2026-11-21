@@ -28,6 +28,7 @@ fn fixture() -> (Tab, Receiver<CoreCommand>, StylesheetSlotId, String) {
 
 fn response(url: &str) -> NetworkResponseInfo {
     super::support::response_facts(
+        addressing::ResourceKind::Stylesheet,
         url.into(),
         "https://cdn.test/redirected.css".into(),
         Some(200),
@@ -95,6 +96,7 @@ fn ah6_css_duplicate_start_preserves_the_admitted_mime_decision() {
     start(&mut tab, slot, response(&url));
     let base = response(&url);
     let conflicting = super::support::response_facts(
+        addressing::ResourceKind::Stylesheet,
         base.requested_url().into(),
         base.reported_response_url().unwrap().into(),
         base.status_code(),
@@ -119,14 +121,24 @@ fn ah6_css_done_requires_the_immutable_response_snapshot() {
         let mut requested = base.requested_url().to_owned();
         let mut reported = base.reported_response_url().unwrap().to_owned();
         let mut status = base.status_code();
-        let mut mime = base.legacy_content_type().map(str::to_owned);
+        let mut mime = base
+            .headers()
+            .values("content-type")
+            .next()
+            .map(|value| std::str::from_utf8(value).unwrap().to_owned());
         match field {
             "requested" => requested.push_str("?changed"),
             "final" => reported.push_str("?changed"),
             "status" => status = Some(201),
             _ => mime = Some("text/css; charset=utf-8".into()),
         }
-        let changed = super::support::response_facts(requested, reported, status, mime);
+        let changed = super::support::response_facts(
+            addressing::ResourceKind::Stylesheet,
+            requested,
+            reported,
+            status,
+            mime,
+        );
         done(&mut tab, slot, changed);
         assert!(
             rx.try_iter()
@@ -612,9 +624,12 @@ fn ah6_css_unsupported_references_never_accept_events_or_emit_retirement_aborts(
                 CoreEvent::NetworkStart { response, .. }
                 | CoreEvent::NetworkDone { response, .. } => {
                     *response = net::NetworkResponseInfo::http(
-                        addressing::BrowserUrl::parse("https://unissued.test/sheet")
-                            .unwrap()
-                            .url,
+                        &addressing::ResourceAddress::new(
+                            addressing::BrowserUrl::parse("https://unissued.test/sheet")
+                                .unwrap()
+                                .url,
+                            addressing::ResourceKind::Stylesheet,
+                        ),
                         "data:text/css,p{}".into(),
                         Some("https://cdn.test/redirected.css".into()),
                         net::HttpStatus::try_from(200).unwrap(),
@@ -747,6 +762,7 @@ fn ah6_css_empty_and_rejected_mime_complete_without_a_decoded_block() {
         let (mut tab, rx, slot, url) = fixture();
         let base = response(&url);
         let admitted = super::support::response_facts(
+            addressing::ResourceKind::Stylesheet,
             base.requested_url().into(),
             base.reported_response_url().unwrap().into(),
             base.status_code(),
@@ -767,6 +783,7 @@ fn ah6_css_empty_and_rejected_mime_complete_without_a_decoded_block() {
     let (mut tab, rx, slot, url) = fixture();
     let base = response(&url);
     let rejected = super::support::response_facts(
+        addressing::ResourceKind::Stylesheet,
         base.requested_url().into(),
         base.reported_response_url().unwrap().into(),
         base.status_code(),

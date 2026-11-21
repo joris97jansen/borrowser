@@ -194,6 +194,7 @@ fn document_addressing_unsupported_response_never_partially_accepts() {
             let request_id = tab.nav_gen;
             rx.try_iter().for_each(drop);
             let rejected = super::support::response_facts(
+                addressing::ResourceKind::Document,
                 requested.clone(),
                 unsupported.into(),
                 if addressing::BrowserUrl::parse(&requested)
@@ -245,10 +246,11 @@ fn document_addressing_unsupported_response_never_partially_accepts() {
             );
             // Failure is terminal even if the next start would be supported.
             let supported = super::support::response_facts(
+                addressing::ResourceKind::Document,
                 rejected.requested_url().into(),
                 requested.clone(),
                 rejected.status_code(),
-                rejected.legacy_content_type().map(str::to_owned),
+                Some("text/html".into()),
             );
             tab.on_core_event(CoreEvent::NetworkStart {
                 tab_id: 1,
@@ -301,6 +303,7 @@ fn document_addressing_unsupported_response_never_partially_accepts() {
                 stylesheet_slot_id: None,
                 kind: ResourceKind::Html,
                 response: super::support::response_facts(
+                    addressing::ResourceKind::Document,
                     "https://recovery.test/".into(),
                     "https://recovery.test/".into(),
                     Some(200),
@@ -672,24 +675,46 @@ fn document_addressing_fragment_cross_document_navigation_replaces_address_and_a
         assert!(tab.page.dom.is_none());
         assert!(tab.page.image_sources.is_empty());
         assert!(tab.page.active_external_stylesheet_slots().is_empty());
-        assert!(rx.try_iter().any(|command| matches!(command,
-            CoreCommand::FetchStream { request: fetch_request, kind: ResourceKind::Html, .. }
-                if fetch_request.request_id() == generation + 1 && fetch_request.legacy_issued_url(ResourceKind::Html).unwrap() == destination
-        )));
+        let issued = rx
+            .try_iter()
+            .find_map(|command| match command {
+                CoreCommand::FetchStream {
+                    request,
+                    kind: ResourceKind::Html,
+                    ..
+                } => Some(*request),
+                _ => None,
+            })
+            .expect("issued hyperlink request");
+        assert_eq!(issued.request_id(), generation + 1);
+        assert_eq!(
+            issued.legacy_issued_url(ResourceKind::Html).unwrap(),
+            destination
+        );
+        assert_eq!(issued.address().kind(), addressing::ResourceKind::Hyperlink);
+        let mut headers = net::HttpHeaders::new();
+        headers.append("content-type", b"text/html").unwrap();
+        let response = net::NetworkResponseInfo::http(
+            issued.address(),
+            issued.legacy_issued_url(ResourceKind::Html).unwrap(),
+            Some(destination.into()),
+            net::HttpStatus::try_from(200).unwrap(),
+            headers,
+        )
+        .unwrap();
 
         tab.on_core_event(CoreEvent::NetworkStart {
             tab_id: 1,
             request_id: generation + 1,
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
-            response: super::support::response_facts(
-                destination.into(),
-                destination.into(),
-                Some(200),
-                Some("text/html".into()),
-            ),
+            response,
         })
         .unwrap();
+        assert_eq!(
+            tab.document_load.response.as_ref().unwrap().resource_kind(),
+            addressing::ResourceKind::Hyperlink
+        );
         assert_eq!(tab.page.document_url().unwrap().as_str(), destination);
         assert_eq!(tab.page.fallback_base_url().unwrap().as_str(), destination);
         assert_eq!(tab.page.active_base_url().unwrap().as_str(), destination);
@@ -709,6 +734,10 @@ fn document_addressing_fragment_cross_document_navigation_replaces_address_and_a
         })
         .unwrap();
         assert_eq!(tab.page.document_url().unwrap().as_str(), destination);
+        assert_eq!(
+            tab.document_load.response.as_ref().unwrap().resource_kind(),
+            addressing::ResourceKind::Hyperlink
+        );
         assert_eq!(tab.page.active_base_url().unwrap().as_str(), destination);
         assert_eq!(
             crate::page::selected_image_source(&tab.page.image_sources, old_image, "old.png"),
@@ -795,6 +824,7 @@ fn document_addressing_response_validation_and_no_synthetic_base() {
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
             response: super::support::response_facts(
+                addressing::ResourceKind::Document,
                 "https://example.test/requested".into(),
                 final_url.into(),
                 Some(200),
@@ -871,6 +901,7 @@ fn document_addressing_publication_rejections_preserve_committed_state_and_scope
         complete_css(&mut tab, loaded, &loaded_url, "p{color:red}");
         rx.try_iter().for_each(drop);
         let response = super::support::response_facts(
+            addressing::ResourceKind::Stylesheet,
             issued_url.clone(),
             issued_url.clone(),
             Some(200),

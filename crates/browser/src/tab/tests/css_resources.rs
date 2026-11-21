@@ -27,7 +27,13 @@ fn fixture(final_url: &str, css: &str) -> (Tab, std::sync::mpsc::Receiver<CoreCo
     complete_css_with_response(
         &mut tab,
         slot,
-        super::support::response_facts(url, final_url.into(), Some(200), Some("text/css".into())),
+        super::support::response_facts(
+            addressing::ResourceKind::Stylesheet,
+            url,
+            final_url.into(),
+            Some(200),
+            Some("text/css".into()),
+        ),
         css,
     );
     commands.try_iter().for_each(drop);
@@ -221,6 +227,7 @@ fn css_resource_inline_observations_follow_committed_document_base() {
         &mut tab,
         slot,
         super::support::response_facts(
+            addressing::ResourceKind::Stylesheet,
             url.clone(),
             "https://cdn.test/css/main.css".into(),
             Some(200),
@@ -388,6 +395,7 @@ fn css_resource_attachment_retirement_does_not_reuse_the_old_base() {
         &mut tab,
         new_slot,
         super::support::response_facts(
+            addressing::ResourceKind::Stylesheet,
             url,
             "https://new-cdn.test/other/main.css".into(),
             Some(200),

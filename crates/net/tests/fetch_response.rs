@@ -10,7 +10,10 @@ fn url(value: &str) -> BrowserUrl {
 }
 fn response(code: u16, reported: Option<&str>, headers: HttpHeaders) -> NetworkResponseInfo {
     NetworkResponseInfo::http(
-        url("https://example.test/a#original"),
+        &addressing::ResourceAddress::new(
+            url("https://example.test/a#original"),
+            addressing::ResourceKind::Document,
+        ),
         "https://example.test/a".into(),
         reported.map(str::to_owned),
         HttpStatus::try_from(code).unwrap(),
@@ -50,7 +53,10 @@ fn ai3_statuses_preserve_http_facts_without_fake_failures() {
         assert!(status.is_informational());
         assert_eq!(
             NetworkResponseInfo::http(
-                url("https://a.test/"),
+                &addressing::ResourceAddress::new(
+                    url("https://a.test/"),
+                    addressing::ResourceKind::Document
+                ),
                 "https://a.test/".into(),
                 None,
                 status,
@@ -93,7 +99,10 @@ fn ai3_url_provenance_is_exact_optional_and_parsed_once() {
 #[test]
 fn ai3_local_results_are_not_http_responses() {
     let r = NetworkResponseInfo::local_file(
-        url("file:///tmp/a.css#f"),
+        &addressing::ResourceAddress::new(
+            url("file:///tmp/a.css#f"),
+            addressing::ResourceKind::Document,
+        ),
         "file:///tmp/a.css".into(),
         Some("file:///tmp/a.css".into()),
         Some("text/css".into()),
@@ -102,10 +111,15 @@ fn ai3_local_results_are_not_http_responses() {
     assert_eq!(r.status(), None);
     assert!(r.headers().is_empty());
     assert_eq!(r.declared_content_types().count(), 0);
-    assert_eq!(r.legacy_content_type(), Some("text/css"));
+    assert!(
+        matches!(r.content_type(), net::ResponseContentType::Parsed(value) if value.mime_type() == "text/css")
+    );
     assert_eq!(
         NetworkResponseInfo::http(
-            url("file:///tmp/a"),
+            &addressing::ResourceAddress::new(
+                url("file:///tmp/a"),
+                addressing::ResourceKind::Document
+            ),
             "file:///tmp/a".into(),
             None,
             HttpStatus::try_from(200).unwrap(),
@@ -116,7 +130,10 @@ fn ai3_local_results_are_not_http_responses() {
     );
     assert_eq!(
         NetworkResponseInfo::local_file(
-            url("https://a.test/"),
+            &addressing::ResourceAddress::new(
+                url("https://a.test/"),
+                addressing::ResourceKind::Document
+            ),
             "https://a.test/".into(),
             None,
             None
@@ -268,7 +285,7 @@ fn ai3_debug_is_literal_bounded_and_redacted_when_nested() {
     let r = response(200, Some("https://SECRET.test/PRIVATE"), HttpHeaders::new());
     assert_eq!(
         format!("{r:?}"),
-        "NetworkResponseInfo { original_url: \"<redacted>\", requested_url: \"<redacted>\", response_url: \"parsed\", status: Some(HttpStatus(200)), headers: [], redirect_chain: [], local_content_type_present: false }"
+        "NetworkResponseInfo { original_url: \"<redacted>\", requested_url: \"<redacted>\", response_url: \"parsed\", status: Some(HttpStatus(200)), headers: [], redirect_chain: [], local_content_type_present: false, resource_kind: Document, content_type: Missing, declared_content_length: Missing, status_class: Some(Successful) }"
     );
     let mut h = HttpHeaders::new();
     h.append("PRIVATE_NAME", b"SECRET_HEADER").unwrap();

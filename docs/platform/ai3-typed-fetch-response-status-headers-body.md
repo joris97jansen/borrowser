@@ -1,5 +1,10 @@
 # AI3: Typed Response, HTTP Status, Headers, And Body Delivery
 
+[AI8](ai8-response-metadata-and-loader-handoff.md) extends these immutable facts
+with aggregate MIME/length extraction and actual request purpose. It retires the
+first-field compatibility accessor and Browser's local header interpretation;
+the per-field parser and original raw equality facts remain authoritative.
+
 Current redirect execution is qualified by [AI6](ai6-redirect-handling-limits-final-url.md).
 Earlier implementation descriptions retain their dated historical scope.
 

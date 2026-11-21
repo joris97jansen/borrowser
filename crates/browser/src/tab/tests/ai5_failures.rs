@@ -304,6 +304,7 @@ fn ai5f_status_strings_do_not_copy_semantic_urls_headers_or_error_text() {
         assert!(message.contains("500"));
     }
     let response = response_facts(
+        addressing::ResourceKind::Document,
         "https://user:pass@PRIVATE/".into(),
         "https://user:pass@PRIVATE/".into(),
         Some(200),

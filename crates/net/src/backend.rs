@@ -182,7 +182,7 @@ pub(crate) fn response_metadata(
             .map_err(ResponseAdmissionError::Headers)?;
     }
     NetworkResponseInfo::http(
-        request.original_url().clone(),
+        request.address(),
         issued_url.to_owned(),
         Some(response.get_url().to_owned()),
         status,

@@ -85,7 +85,7 @@ impl Tab {
             );
             return;
         }
-        let accept_body = should_accept_css_response(response.legacy_content_type());
+        let accept_body = should_accept_css_response(response.content_type());
         self.stylesheet_loads
             .get_mut(&slot)
             .expect("issued request")
@@ -329,8 +329,7 @@ impl Tab {
         if self.document_load.parse_status != DocumentParseStatus::Failed {
             self.last_status = Some(if !accept_body {
                 format!(
-                    "Stylesheet ignored • unexpected content type {} ({} remaining)",
-                    response.legacy_content_type().unwrap_or("unknown"),
+                    "Stylesheet ignored • unexpected or unusable content type ({} remaining)",
                     self.page.pending_count()
                 )
             } else if self.page.pending_count() > 0 {
@@ -348,18 +347,10 @@ impl Tab {
     }
 }
 
-pub(super) fn should_accept_css_response(content_type: Option<&str>) -> bool {
-    match normalized_content_type(content_type) {
-        None => true,
-        Some(content_type) => content_type == "text/css",
-    }
-}
-
-fn normalized_content_type(content_type: Option<&str>) -> Option<String> {
-    let content_type = content_type?.split(';').next()?.trim();
-    if content_type.is_empty() {
-        None
-    } else {
-        Some(content_type.to_ascii_lowercase())
+pub(super) fn should_accept_css_response(content_type: &net::ResponseContentType) -> bool {
+    match content_type {
+        net::ResponseContentType::Missing | net::ResponseContentType::Empty => true,
+        net::ResponseContentType::Unusable => false,
+        net::ResponseContentType::Parsed(value) => value.mime_type() == "text/css",
     }
 }

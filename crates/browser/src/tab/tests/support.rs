@@ -42,7 +42,13 @@ pub(super) fn complete_css(
     url: &str,
     text: &str,
 ) {
-    let response = response_facts(url.into(), url.into(), Some(200), Some("text/css".into()));
+    let response = response_facts(
+        addressing::ResourceKind::Stylesheet,
+        url.into(),
+        url.into(),
+        Some(200),
+        Some("text/css".into()),
+    );
     complete_css_with_response(tab, slot, response, text);
 }
 
@@ -131,6 +137,7 @@ pub(super) fn addressing_tab_with_response_url(
         stylesheet_slot_id: None,
         kind: core_types::ResourceKind::Html,
         response: response_facts(
+            addressing::ResourceKind::Document,
             addressing::BrowserUrl::parse(requested_url)
                 .unwrap()
                 .url
@@ -517,6 +524,7 @@ pub(super) fn find_dom_element<'a>(node: &'a Node, want: &str) -> Option<&'a Nod
 /// The explicit status distinguishes HTTP from local-resource facts.
 #[track_caller]
 pub(super) fn response_facts(
+    purpose: addressing::ResourceKind,
     requested: String,
     reported: String,
     status: Option<u16>,
@@ -533,7 +541,7 @@ pub(super) fn response_facts(
             headers.append("content-type", value.as_bytes()).unwrap();
         }
         net::NetworkResponseInfo::http(
-            original,
+            &addressing::ResourceAddress::new(original, purpose),
             requested,
             reported,
             net::HttpStatus::try_from(code).unwrap(),
@@ -541,7 +549,12 @@ pub(super) fn response_facts(
         )
         .expect("HTTP fixture facts")
     } else {
-        net::NetworkResponseInfo::local_file(original, requested, reported, content_type)
-            .expect("local fixture facts")
+        net::NetworkResponseInfo::local_file(
+            &addressing::ResourceAddress::new(original, purpose),
+            requested,
+            reported,
+            content_type,
+        )
+        .expect("local fixture facts")
     }
 }

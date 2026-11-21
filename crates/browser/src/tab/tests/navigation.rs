@@ -1,6 +1,7 @@
 use super::super::Tab;
 use super::support::no_quirks_patch_publication_from_output;
 use crate::rendering::{RenderInvalidationEntryPoint, render_invalidation_request};
+use addressing::ResourceKind as Purpose;
 use bus::{CoreCommand, CoreEvent};
 use core_types::ResourceKind;
 use egui::Context;
@@ -19,7 +20,13 @@ fn navigation_file_origin_is_retained_for_fragments_and_fresh_after_refetch() {
     let root = "file:///tmp/ah5-history.html";
     let (mut tab, rx) = history_test_tab();
     tab.navigate_to_new(root.into());
-    history_accept_document(&mut tab, root, root, "<!doctype html><p>file");
+    history_accept_document(
+        &mut tab,
+        Purpose::Document,
+        root,
+        root,
+        "<!doctype html><p>file",
+    );
     let first = tab
         .page
         .addresses
@@ -46,7 +53,13 @@ fn navigation_file_origin_is_retained_for_fragments_and_fresh_after_refetch() {
     tab.refresh();
     assert!(tab.page.addresses.is_none());
     let refreshed = "file:///tmp/ah5-history.html#two";
-    history_accept_document(&mut tab, refreshed, root, "<!doctype html><p>reloaded");
+    history_accept_document(
+        &mut tab,
+        Purpose::Document,
+        refreshed,
+        root,
+        "<!doctype html><p>reloaded",
+    );
     let second = tab
         .page
         .addresses
@@ -70,6 +83,7 @@ fn navigation_file_origin_is_retained_for_fragments_and_fresh_after_refetch() {
     tab.navigate_to_new("https://other.test/".into());
     history_accept_document(
         &mut tab,
+        Purpose::Document,
         "https://other.test/",
         "https://other.test/",
         "<!doctype html><p>other",
@@ -78,6 +92,7 @@ fn navigation_file_origin_is_retained_for_fragments_and_fresh_after_refetch() {
     assert!(tab.page.addresses.is_none());
     history_accept_document(
         &mut tab,
+        Purpose::Document,
         "file:///tmp/ah5-history.html#one",
         root,
         "<!doctype html><p>returned",
@@ -91,16 +106,23 @@ fn history_expect_fetch(
     rx: &std::sync::mpsc::Receiver<CoreCommand>,
     generation: u64,
     expected_url: &str,
-) {
+) -> net::FetchRequest {
     let commands: Vec<_> = rx.try_iter().collect();
-    assert!(
-        commands.iter().any(|command| matches!(
-            command,
-            CoreCommand::FetchStream { request: fetch_request, kind: ResourceKind::Html, .. }
-                if fetch_request.request_id() == generation && fetch_request.legacy_issued_url(ResourceKind::Html).unwrap() == expected_url
-        )),
-        "missing document request for {expected_url}: {commands:?}"
-    );
+    commands
+        .iter()
+        .find_map(|command| match command {
+            CoreCommand::FetchStream {
+                request,
+                kind: ResourceKind::Html,
+                ..
+            } if request.request_id() == generation
+                && request.legacy_issued_url(ResourceKind::Html).unwrap() == expected_url =>
+            {
+                Some((**request).clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("missing document request for {expected_url}: {commands:?}"))
 }
 
 fn history_expect_no_document_fetch(rx: &std::sync::mpsc::Receiver<CoreCommand>) {
@@ -113,9 +135,16 @@ fn history_expect_no_document_fetch(rx: &std::sync::mpsc::Receiver<CoreCommand>)
     )));
 }
 
-fn history_accept_document(tab: &mut Tab, requested: &str, final_url: &str, markup: &str) {
+fn history_accept_document(
+    tab: &mut Tab,
+    purpose: Purpose,
+    requested: &str,
+    final_url: &str,
+    markup: &str,
+) {
     let request_id = tab.nav_gen;
     let response = super::support::response_facts(
+        purpose,
         requested.into(),
         final_url.into(),
         if addressing::BrowserUrl::parse(requested)
@@ -138,6 +167,10 @@ fn history_accept_document(tab: &mut Tab, requested: &str, final_url: &str, mark
         response: response.clone(),
     })
     .unwrap();
+    assert_eq!(
+        tab.document_load.response.as_ref().unwrap().resource_kind(),
+        purpose
+    );
     tab.on_core_event(CoreEvent::NetworkChunk {
         tab_id: tab.tab_id,
         request_id,
@@ -173,6 +206,10 @@ fn history_accept_document(tab: &mut Tab, requested: &str, final_url: &str, mark
         }),
     })
     .unwrap();
+    assert_eq!(
+        tab.document_load.response.as_ref().unwrap().resource_kind(),
+        purpose
+    );
 }
 
 #[test]
@@ -181,9 +218,11 @@ fn navigation_history_back_from_fragment_free_replacement_never_relabels_new_doc
     let a = "https://example.test/page#old";
     let b = "https://example.test/page";
     tab.navigate_to_new(a.into());
-    history_expect_fetch(&rx, tab.nav_gen, a);
+    let address_bar_request = history_expect_fetch(&rx, tab.nav_gen, a);
+    assert_eq!(address_bar_request.address().kind(), Purpose::Document);
     history_accept_document(
         &mut tab,
+        Purpose::Document,
         a,
         a,
         "<!doctype html><base href='https://example.test/page#base-a'><img id=old src=a.png><link rel=stylesheet href=a.css>",
@@ -196,13 +235,19 @@ fn navigation_history_back_from_fragment_free_replacement_never_relabels_new_doc
 
     tab.activate_link("");
     let b_request = tab.nav_gen;
-    history_expect_fetch(&rx, b_request, b);
+    let link_request = history_expect_fetch(&rx, b_request, b);
+    assert_eq!(link_request.address().kind(), Purpose::Hyperlink);
     assert!(tab.page.document_url().is_none());
     history_accept_document(
         &mut tab,
+        link_request.address().kind(),
         b,
         b,
         "<!doctype html><base href='https://example.test/page#base-b'><img id=new src=b.png><link rel=stylesheet href=b.css>",
+    );
+    assert_eq!(
+        tab.document_load.response.as_ref().unwrap().resource_kind(),
+        Purpose::Hyperlink
     );
     assert_ne!(tab.dom_handle, old_handle);
     assert_eq!(tab.page.document_url().unwrap().as_str(), b);
@@ -215,7 +260,8 @@ fn navigation_history_back_from_fragment_free_replacement_never_relabels_new_doc
 
     tab.go_back();
     assert_eq!(tab.nav_gen, b_request + 1);
-    history_expect_fetch(&rx, tab.nav_gen, a);
+    let traversal_request = history_expect_fetch(&rx, tab.nav_gen, a);
+    assert_eq!(traversal_request.address().kind(), Purpose::Document);
     assert!(
         tab.page.document_url().is_none(),
         "B must not be relabeled as A"
@@ -226,6 +272,7 @@ fn navigation_history_back_from_fragment_free_replacement_never_relabels_new_doc
 
     history_accept_document(
         &mut tab,
+        Purpose::Document,
         a,
         a,
         "<!doctype html><base href='https://example.test/page#base-restored'><img id=restored src=restored.png>",
@@ -234,7 +281,8 @@ fn navigation_history_back_from_fragment_free_replacement_never_relabels_new_doc
     super::support::element_id(tab.page.dom.as_deref().unwrap(), "restored");
     rx.try_iter().for_each(drop);
     tab.go_forward();
-    history_expect_fetch(&rx, tab.nav_gen, b);
+    let forward_request = history_expect_fetch(&rx, tab.nav_gen, b);
+    assert_eq!(forward_request.address().kind(), Purpose::Document);
     assert!(tab.page.document_url().is_none());
     assert!(tab.page.dom.is_none());
 }
@@ -247,6 +295,7 @@ fn navigation_history_fragments_share_document_and_refresh_repopulates_the_group
     history_expect_fetch(&rx, tab.nav_gen, root);
     history_accept_document(
         &mut tab,
+        Purpose::Document,
         root,
         root,
         "<!doctype html><base href='https://example.test/page#frozen'><img id=old src=a.png><link rel=stylesheet href=a.css>",
@@ -284,10 +333,12 @@ fn navigation_history_fragments_share_document_and_refresh_repopulates_the_group
     tab.refresh();
     let refreshed = "https://example.test/page#two";
     assert_eq!(tab.nav_gen, original_generation + 1);
-    history_expect_fetch(&rx, tab.nav_gen, refreshed);
+    let refresh_request = history_expect_fetch(&rx, tab.nav_gen, refreshed);
+    assert_eq!(refresh_request.address().kind(), Purpose::Document);
     assert!(tab.page.dom.is_none());
     history_accept_document(
         &mut tab,
+        Purpose::Document,
         refreshed,
         refreshed,
         "<!doctype html><base href='https://example.test/page#new-frozen'><img id=new src=b.png><link rel=stylesheet href=b.css>",
@@ -326,12 +377,24 @@ fn navigation_history_identical_urls_from_different_document_lifetimes_fetch_on_
     let url = "https://example.test/page";
     tab.navigate_to_new(url.into());
     history_expect_fetch(&rx, tab.nav_gen, url);
-    history_accept_document(&mut tab, url, url, "<!doctype html><p id=first>first</p>");
+    history_accept_document(
+        &mut tab,
+        Purpose::Document,
+        url,
+        url,
+        "<!doctype html><p id=first>first</p>",
+    );
     let first = tab.dom_handle;
     rx.try_iter().for_each(drop);
     tab.navigate_to_new(url.into());
     history_expect_fetch(&rx, tab.nav_gen, url);
-    history_accept_document(&mut tab, url, url, "<!doctype html><p id=second>second</p>");
+    history_accept_document(
+        &mut tab,
+        Purpose::Document,
+        url,
+        url,
+        "<!doctype html><p id=second>second</p>",
+    );
     assert_ne!(tab.dom_handle, first);
     rx.try_iter().for_each(drop);
     let generation = tab.nav_gen;
@@ -342,6 +405,7 @@ fn navigation_history_identical_urls_from_different_document_lifetimes_fetch_on_
     assert!(tab.page.document_url().is_none());
     history_accept_document(
         &mut tab,
+        Purpose::Document,
         url,
         url,
         "<!doctype html><p id=restored>restored</p>",
@@ -365,6 +429,7 @@ fn navigation_history_repopulated_entry_rejoins_its_other_fragment_entries() {
     history_expect_fetch(&rx, tab.nav_gen, a);
     history_accept_document(
         &mut tab,
+        Purpose::Document,
         a,
         a,
         "<!doctype html><base href='https://example.test/page#frozen'><img id=old src=old.png>",
@@ -376,13 +441,20 @@ fn navigation_history_repopulated_entry_rejoins_its_other_fragment_entries() {
 
     tab.navigate_to_new(b.into());
     history_expect_fetch(&rx, tab.nav_gen, b);
-    history_accept_document(&mut tab, b, b, "<!doctype html><p id=b>B</p>");
+    history_accept_document(
+        &mut tab,
+        Purpose::Document,
+        b,
+        b,
+        "<!doctype html><p id=b>B</p>",
+    );
     rx.try_iter().for_each(drop);
     tab.go_back();
     history_expect_fetch(&rx, tab.nav_gen, a_two);
     assert!(tab.page.dom.is_none());
     history_accept_document(
         &mut tab,
+        Purpose::Document,
         a_two,
         a_two,
         "<!doctype html><base href='https://example.test/page#new-frozen'><img id=restored src=new.png>",
@@ -425,19 +497,32 @@ fn navigation_history_redirected_repopulation_does_not_reassociate_old_fragment_
     let redirected = "https://different.test/new";
     tab.navigate_to_new(a.into());
     history_expect_fetch(&rx, tab.nav_gen, a);
-    history_accept_document(&mut tab, a, a, "<!doctype html><p id=old>A</p>");
+    history_accept_document(
+        &mut tab,
+        Purpose::Document,
+        a,
+        a,
+        "<!doctype html><p id=old>A</p>",
+    );
     rx.try_iter().for_each(drop);
     tab.activate_link("#one");
     tab.activate_link("#two");
     history_expect_no_document_fetch(&rx);
     tab.navigate_to_new(b.into());
     history_expect_fetch(&rx, tab.nav_gen, b);
-    history_accept_document(&mut tab, b, b, "<!doctype html><p id=b>B</p>");
+    history_accept_document(
+        &mut tab,
+        Purpose::Document,
+        b,
+        b,
+        "<!doctype html><p id=b>B</p>",
+    );
     rx.try_iter().for_each(drop);
     tab.go_back();
     history_expect_fetch(&rx, tab.nav_gen, a_two);
     history_accept_document(
         &mut tab,
+        Purpose::Document,
         a_two,
         redirected,
         "<!doctype html><p id=redirect>redirect</p>",
@@ -465,20 +550,33 @@ fn navigation_history_repopulation_preserves_requested_fragment_when_response_om
     let b = "https://example.test/other";
     tab.navigate_to_new(a.into());
     history_expect_fetch(&rx, tab.nav_gen, a);
-    history_accept_document(&mut tab, a, a, "<!doctype html><p id=first>A</p>");
+    history_accept_document(
+        &mut tab,
+        Purpose::Document,
+        a,
+        a,
+        "<!doctype html><p id=first>A</p>",
+    );
     rx.try_iter().for_each(drop);
     tab.activate_link("#one");
     tab.activate_link("#two");
     history_expect_no_document_fetch(&rx);
     tab.navigate_to_new(b.into());
     history_expect_fetch(&rx, tab.nav_gen, b);
-    history_accept_document(&mut tab, b, b, "<!doctype html><p id=b>B</p>");
+    history_accept_document(
+        &mut tab,
+        Purpose::Document,
+        b,
+        b,
+        "<!doctype html><p id=b>B</p>",
+    );
     rx.try_iter().for_each(drop);
 
     tab.go_back();
     history_expect_fetch(&rx, tab.nav_gen, a_two);
     history_accept_document(
         &mut tab,
+        Purpose::Document,
         a_two,
         a,
         "<!doctype html><base href='https://example.test/page#restored'><img id=restored src=restored.png>",
@@ -515,6 +613,7 @@ fn navigation_history_new_navigation_after_back_truncates_forward_entries() {
         history_expect_fetch(&rx, tab.nav_gen, a);
         history_accept_document(
             &mut tab,
+            Purpose::Document,
             a,
             a,
             "<!doctype html><base href='https://example.test/page#frozen'><img id=a src=a.png>",
@@ -536,7 +635,13 @@ fn navigation_history_new_navigation_after_back_truncates_forward_entries() {
             assert_eq!(tab.nav_gen, generation + 1);
             history_expect_fetch(&rx, tab.nav_gen, b);
             assert!(tab.page.document_url().is_none());
-            history_accept_document(&mut tab, b, b, "<!doctype html><p id=b>B</p>");
+            history_accept_document(
+                &mut tab,
+                Purpose::Document,
+                b,
+                b,
+                "<!doctype html><p id=b>B</p>",
+            );
             rx.try_iter().for_each(drop);
             assert_eq!(
                 tab.history()
@@ -584,7 +689,13 @@ fn navigation_history_pending_failed_and_stale_responses_cannot_bind_the_wrong_d
     let redirected = "https://other.test/final";
     tab.navigate_to_new(a.into());
     history_expect_fetch(&rx, tab.nav_gen, a);
-    history_accept_document(&mut tab, a, a, "<!doctype html><p id=a>A</p>");
+    history_accept_document(
+        &mut tab,
+        Purpose::Document,
+        a,
+        a,
+        "<!doctype html><p id=a>A</p>",
+    );
     rx.try_iter().for_each(drop);
     tab.navigate_to_new(b.into());
     let cancelled = tab.nav_gen;
@@ -599,6 +710,7 @@ fn navigation_history_pending_failed_and_stale_responses_cannot_bind_the_wrong_d
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
         response: super::support::response_facts(
+            addressing::ResourceKind::Document,
             b.into(),
             b.into(),
             Some(200),
@@ -631,6 +743,7 @@ fn navigation_history_pending_failed_and_stale_responses_cannot_bind_the_wrong_d
     history_expect_fetch(&rx, tab.nav_gen, b);
     history_accept_document(
         &mut tab,
+        Purpose::Document,
         b,
         redirected,
         "<!doctype html><p id=redirect>redirect</p>",
@@ -655,7 +768,13 @@ fn navigation_history_does_not_reuse_a_response_without_a_published_document() {
         let two = "https://example.test/page#two";
         tab.navigate_to_new(root.into());
         history_expect_fetch(&rx, tab.nav_gen, root);
-        history_accept_document(&mut tab, root, root, "<!doctype html><p>original</p>");
+        history_accept_document(
+            &mut tab,
+            Purpose::Document,
+            root,
+            root,
+            "<!doctype html><p>original</p>",
+        );
         rx.try_iter().for_each(drop);
         tab.activate_link("#one");
         tab.activate_link("#two");
@@ -670,6 +789,7 @@ fn navigation_history_does_not_reuse_a_response_without_a_published_document() {
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
             response: super::support::response_facts(
+                addressing::ResourceKind::Document,
                 two.into(),
                 two.into(),
                 Some(200),
@@ -708,7 +828,13 @@ fn navigation_history_rejects_current_response_with_wrong_requested_url() {
     let b = "https://example.test/b";
     tab.navigate_to_new(a.into());
     history_expect_fetch(&rx, tab.nav_gen, a);
-    history_accept_document(&mut tab, a, a, "<!doctype html><p id=a>A</p>");
+    history_accept_document(
+        &mut tab,
+        Purpose::Document,
+        a,
+        a,
+        "<!doctype html><p id=a>A</p>",
+    );
     rx.try_iter().for_each(drop);
 
     tab.navigate_to_new(b.into());
@@ -720,6 +846,7 @@ fn navigation_history_rejects_current_response_with_wrong_requested_url() {
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
         response: super::support::response_facts(
+            addressing::ResourceKind::Document,
             "https://example.test/not-b".into(),
             b.into(),
             Some(200),
@@ -746,6 +873,7 @@ fn navigation_history_rejects_current_response_with_wrong_requested_url() {
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
         response: super::support::response_facts(
+            addressing::ResourceKind::Document,
             b.into(),
             b.into(),
             Some(200),
@@ -768,6 +896,7 @@ fn redirected_document_response_updates_tab_base_url_and_status() {
     tab.navigate_to_new(requested.clone());
     let final_url = "https://example.com/landing".to_string();
     let response = super::support::response_facts(
+        addressing::ResourceKind::Document,
         requested,
         final_url.clone(),
         Some(200),

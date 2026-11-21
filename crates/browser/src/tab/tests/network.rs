@@ -105,6 +105,7 @@ fn css_with_html_content_type_is_not_forwarded_to_css_runtime() {
     rx.try_iter().for_each(drop);
 
     let response = super::support::response_facts(
+        addressing::ResourceKind::Stylesheet,
         url.clone(),
         url.clone(),
         Some(404),
@@ -170,6 +171,7 @@ fn resource_limit_document_error_surfaces_status_and_stops_loading() {
     tab.nav_gen = 3;
 
     let response = super::support::response_facts(
+        addressing::ResourceKind::Document,
         "https://example.com".to_string(),
         "https://example.com".to_string(),
         Some(200),
@@ -218,6 +220,7 @@ fn stylesheet_resource_limit_aborts_partial_css_and_clears_pending_state() {
     rx.try_iter().for_each(drop);
 
     let response = super::support::response_facts(
+        addressing::ResourceKind::Stylesheet,
         url.clone(),
         url.clone(),
         Some(200),
@@ -293,6 +296,7 @@ fn decoded_css_for_aborted_stylesheet_slot_is_ignored() {
     let slot_id = super::support::append_stylesheet_link(&mut tab, &url);
     rx.try_iter().for_each(drop);
     let response = super::support::response_facts(
+        addressing::ResourceKind::Stylesheet,
         url.clone(),
         url.clone(),
         Some(200),
@@ -352,6 +356,7 @@ fn parser_completion_is_distinct_from_response_and_publication_and_failure_stays
     tab.navigate_to_new("https://example.com/".into());
     let request_id = tab.nav_gen;
     let response = super::support::response_facts(
+        addressing::ResourceKind::Document,
         tab.url.clone(),
         tab.url.clone(),
         Some(200),

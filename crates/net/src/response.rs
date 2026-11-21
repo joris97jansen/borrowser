@@ -1,8 +1,11 @@
 use std::{fmt, sync::Arc};
 
-use addressing::{BrowserUrl, UrlFailure, UrlParseOutcome};
+use addressing::{BrowserUrl, ResourceAddress, ResourceKind, UrlFailure, UrlParseOutcome};
 
-use crate::{ContentType, HeaderError, HttpHeaders, InvalidContentType, RedirectHop};
+use crate::{
+    ContentType, DeclaredContentLength, HeaderError, HttpHeaders, InvalidContentType, RedirectHop,
+    ResponseContentType,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResponseAdmissionError {
@@ -27,6 +30,15 @@ impl std::error::Error for ResponseAdmissionError {}
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct HttpStatus(u16);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HttpStatusClass {
+    Informational,
+    Successful,
+    Redirection,
+    ClientError,
+    ServerError,
+}
+
 impl TryFrom<u16> for HttpStatus {
     type Error = ResponseAdmissionError;
     fn try_from(code: u16) -> Result<Self, Self::Error> {
@@ -37,6 +49,15 @@ impl TryFrom<u16> for HttpStatus {
     }
 }
 impl HttpStatus {
+    pub const fn class(self) -> HttpStatusClass {
+        match self.0 / 100 {
+            1 => HttpStatusClass::Informational,
+            2 => HttpStatusClass::Successful,
+            3 => HttpStatusClass::Redirection,
+            4 => HttpStatusClass::ClientError,
+            _ => HttpStatusClass::ServerError,
+        }
+    }
     pub const fn code(self) -> u16 {
         self.0
     }
@@ -77,31 +98,34 @@ pub struct NetworkResponseInfo {
 #[derive(Clone, PartialEq, Eq)]
 struct ResponseFacts {
     original_url: BrowserUrl,
+    resource_kind: ResourceKind,
     requested_url: String,
     reported_response_url: Option<String>,
     response_url: Option<Result<UrlParseOutcome, UrlFailure>>,
     status: Option<HttpStatus>,
     headers: HttpHeaders,
     local_content_type: Option<String>,
+    content_type: ResponseContentType,
+    declared_content_length: DeclaredContentLength,
     redirect_chain: Vec<RedirectHop>,
 }
 
 impl NetworkResponseInfo {
     pub fn http(
-        original_url: BrowserUrl,
+        original_address: &ResourceAddress,
         requested_url: String,
         reported_response_url: Option<String>,
         status: HttpStatus,
         headers: HttpHeaders,
     ) -> Result<Self, ResponseAdmissionError> {
-        if !matches!(original_url.scheme(), "http" | "https") {
+        if !matches!(original_address.url().scheme(), "http" | "https") {
             return Err(ResponseAdmissionError::IncompatibleOriginalScheme);
         }
         if status.is_informational() {
             return Err(ResponseAdmissionError::InformationalResponseUnsupported);
         }
         Ok(Self::new(
-            original_url,
+            original_address,
             requested_url,
             reported_response_url,
             Some(status),
@@ -111,12 +135,12 @@ impl NetworkResponseInfo {
     }
 
     pub fn local_file(
-        original_url: BrowserUrl,
+        original_address: &ResourceAddress,
         requested_url: String,
         reported_response_url: Option<String>,
         content_type: Option<String>,
     ) -> Result<Self, ResponseAdmissionError> {
-        if original_url.scheme() != "file" {
+        if original_address.url().scheme() != "file" {
             return Err(ResponseAdmissionError::IncompatibleOriginalScheme);
         }
         // Local MIME is a loader fact, never a fabricated HTTP header.
@@ -127,7 +151,7 @@ impl NetworkResponseInfo {
                 .map_err(ResponseAdmissionError::Headers)?;
         }
         Ok(Self::new(
-            original_url,
+            original_address,
             requested_url,
             reported_response_url,
             None,
@@ -137,7 +161,7 @@ impl NetworkResponseInfo {
     }
 
     fn new(
-        original_url: BrowserUrl,
+        original_address: &ResourceAddress,
         requested_url: String,
         reported_response_url: Option<String>,
         status: Option<HttpStatus>,
@@ -145,15 +169,24 @@ impl NetworkResponseInfo {
         local_content_type: Option<String>,
     ) -> Self {
         let response_url = reported_response_url.as_deref().map(BrowserUrl::parse);
+        let content_type = if status.is_some() {
+            ResponseContentType::extract(&headers)
+        } else {
+            ResponseContentType::local(local_content_type.as_deref())
+        };
+        let declared_content_length = DeclaredContentLength::extract(&headers);
         Self {
             facts: Arc::new(ResponseFacts {
-                original_url,
+                original_url: original_address.url().clone(),
+                resource_kind: original_address.kind(),
                 requested_url,
                 reported_response_url,
                 response_url,
                 status,
                 headers,
                 local_content_type,
+                content_type,
+                declared_content_length,
                 redirect_chain: Vec::new(),
             }),
         }
@@ -161,6 +194,16 @@ impl NetworkResponseInfo {
 
     pub fn original_url(&self) -> &BrowserUrl {
         &self.facts.original_url
+    }
+    /// Actual original request purpose, never the runtime route or declared MIME.
+    pub fn resource_kind(&self) -> ResourceKind {
+        self.facts.resource_kind
+    }
+    pub fn content_type(&self) -> &ResponseContentType {
+        &self.facts.content_type
+    }
+    pub fn declared_content_length(&self) -> DeclaredContentLength {
+        self.facts.declared_content_length
     }
     /// Entered redirect acquisitions, not evidence of HTTP transmission. Empty
     /// on supplied/local metadata unless the production Fetch loop followed hops.
@@ -180,6 +223,9 @@ impl NetworkResponseInfo {
     pub fn reported_response_url(&self) -> Option<&str> {
         self.facts.reported_response_url.as_deref()
     }
+    /// Acquired response provenance, final for a selected Start/Done response.
+    /// Before selection, contextual Error may retain a redirect source response;
+    /// this never invents a response URL for an unacquired destination.
     pub fn response_url(&self) -> Option<&Result<UrlParseOutcome, UrlFailure>> {
         self.facts.response_url.as_ref()
     }
@@ -193,6 +239,7 @@ impl NetworkResponseInfo {
     pub fn headers(&self) -> &HttpHeaders {
         &self.facts.headers
     }
+    /// Per-field inspection only. Loader selection uses `content_type()`.
     pub fn declared_content_types(
         &self,
     ) -> impl Iterator<Item = Result<ContentType, InvalidContentType>> + '_ {
@@ -200,17 +247,6 @@ impl NetworkResponseInfo {
             .headers
             .values("content-type")
             .map(ContentType::parse)
-    }
-    /// Existing first-field compatibility selection. AI8 owns aggregate extraction.
-    pub fn legacy_content_type(&self) -> Option<&str> {
-        if self.facts.status.is_none() {
-            return self.facts.local_content_type.as_deref();
-        }
-        self.facts
-            .headers
-            .values("content-type")
-            .next()
-            .and_then(|v| std::str::from_utf8(v).ok())
     }
     pub(crate) fn validate_backend_http(&self) -> Result<(), ResponseAdmissionError> {
         match self.response_url() {
@@ -242,6 +278,13 @@ impl fmt::Debug for NetworkResponseInfo {
                 "local_content_type_present",
                 &self.facts.local_content_type.is_some(),
             )
+            .field("resource_kind", &self.facts.resource_kind)
+            .field("content_type", &self.facts.content_type)
+            .field(
+                "declared_content_length",
+                &self.facts.declared_content_length,
+            )
+            .field("status_class", &self.status().map(HttpStatus::class))
             .finish()
     }
 }

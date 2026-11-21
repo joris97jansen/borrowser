@@ -1,5 +1,10 @@
 # AI4: HTTP Response Acquisition And Deterministic Fake Networking
 
+[AI8](ai8-response-metadata-and-loader-handoff.md) applies shared aggregate
+metadata construction to real/fake/supplied responses using actual request purpose.
+Fake declared-length outcomes do not establish wire-framing correctness or govern
+the finite fixture reader's completion. The real backend retains framing authority.
+
 Current redirect execution is qualified by [AI6](ai6-redirect-handling-limits-final-url.md).
 Earlier implementation descriptions retain their dated historical scope.
 

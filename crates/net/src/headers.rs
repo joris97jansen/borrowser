@@ -84,6 +84,54 @@ impl HttpHeaders {
             .filter(move |(field, _)| field.eq_ignore_ascii_case(name))
             .map(|(_, value)| value)
     }
+
+    /// Fetch's logical get operation, used only by field-specific extraction.
+    /// The admitted list is unchanged. Its storage budget also bounds this
+    /// temporary combination, including the inserted separators.
+    pub(crate) fn combined_value(&self, name: &str) -> Option<Vec<u8>> {
+        let mut values = self.values(name);
+        let mut combined = values.next()?.to_vec();
+        for value in values {
+            combined.extend_from_slice(b", ");
+            combined.extend_from_slice(value);
+        }
+        Some(combined)
+    }
+}
+
+/// Fetch get/decode/split projected to byte slices. Isomorphic decoding preserves
+/// these delimiter decisions. Keep quotes/escapes in the slices for the MIME
+/// parser; an unfinished quote consumes the remaining logical field, including
+/// separators inserted between original occurrences. Empty members are retained.
+pub(crate) fn split_header_value(value: &[u8]) -> impl Iterator<Item = &[u8]> {
+    let mut remaining = Some(value);
+    std::iter::from_fn(move || {
+        let input = remaining.take()?;
+        let mut pos = 0;
+        let mut quoted = false;
+        while pos < input.len() {
+            match input[pos] {
+                b'\\' if quoted && pos + 1 < input.len() => pos += 2,
+                b'"' => {
+                    quoted = !quoted;
+                    pos += 1;
+                }
+                b',' if !quoted => break,
+                _ => pos += 1,
+            }
+        }
+        if pos < input.len() {
+            remaining = Some(&input[pos + 1..]);
+        }
+        let mut member = &input[..pos];
+        while matches!(member.first(), Some(b' ' | b'\t')) {
+            member = &member[1..];
+        }
+        while matches!(member.last(), Some(b' ' | b'\t')) {
+            member = &member[..member.len() - 1];
+        }
+        Some(member)
+    })
 }
 
 pub(crate) fn is_token_byte(b: u8) -> bool {

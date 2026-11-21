@@ -23,7 +23,7 @@ fn ai7_contextual_core_error_debug_has_independent_literals_and_redacts_nested_c
         .append("PRIVATE_HEADER_NAME", b"PRIVATE_HEADER_VALUE")
         .unwrap();
     let response = net::NetworkResponseInfo::http(
-        BrowserUrl::parse("https://PRIVATE_USER:PRIVATE_PASSWORD@PRIVATE_ORIGINAL.invalid/PRIVATE_PATH?PRIVATE_QUERY#PRIVATE_FRAGMENT").unwrap().url,
+        &addressing::ResourceAddress::new(BrowserUrl::parse("https://PRIVATE_USER:PRIVATE_PASSWORD@PRIVATE_ORIGINAL.invalid/PRIVATE_PATH?PRIVATE_QUERY#PRIVATE_FRAGMENT").unwrap().url, addressing::ResourceKind::Stylesheet),
         "PRIVATE_ISSUED_URL".into(),
         Some("https://PRIVATE_RESPONSE.invalid/PRIVATE_PATH".into()),
         net::HttpStatus::try_from(500).unwrap(), headers,
@@ -41,7 +41,7 @@ fn ai7_contextual_core_error_debug_has_independent_literals_and_redacts_nested_c
     };
     assert_eq!(
         format!("{event:?}"),
-        r#"NetworkError { kind: Css, error_kind: ResourceLimit(EncodedBody), response: Some(NetworkResponseInfo { original_url: "<redacted>", requested_url: "<redacted>", response_url: "parsed", status: Some(HttpStatus(500)), headers: [("<redacted>", "<redacted>")], redirect_chain: [], local_content_type_present: false }), body: Some(BodyProgress { route: Css, delivered_bytes: 3 }), .. }"#
+        r#"NetworkError { kind: Css, error_kind: ResourceLimit(EncodedBody), response: Some(NetworkResponseInfo { original_url: "<redacted>", requested_url: "<redacted>", response_url: "parsed", status: Some(HttpStatus(500)), headers: [("<redacted>", "<redacted>")], redirect_chain: [], local_content_type_present: false, resource_kind: Stylesheet, content_type: Missing, declared_content_length: Missing, status_class: Some(ServerError) }), body: Some(BodyProgress { route: Css, delivered_bytes: 3 }), .. }"#
     );
     assert_eq!(
         format!("{event:#?}"),
@@ -66,6 +66,12 @@ fn ai7_contextual_core_error_debug_has_independent_literals_and_redacts_nested_c
             ],
             redirect_chain: [],
             local_content_type_present: false,
+            resource_kind: Stylesheet,
+            content_type: Missing,
+            declared_content_length: Missing,
+            status_class: Some(
+                ServerError,
+            ),
         },
     ),
     body: Some(
@@ -80,7 +86,7 @@ fn ai7_contextual_core_error_debug_has_independent_literals_and_redacts_nested_c
     let nested = Some(Err::<(), _>(&event));
     assert_eq!(
         format!("{nested:?}"),
-        r#"Some(Err(NetworkError { kind: Css, error_kind: ResourceLimit(EncodedBody), response: Some(NetworkResponseInfo { original_url: "<redacted>", requested_url: "<redacted>", response_url: "parsed", status: Some(HttpStatus(500)), headers: [("<redacted>", "<redacted>")], redirect_chain: [], local_content_type_present: false }), body: Some(BodyProgress { route: Css, delivered_bytes: 3 }), .. }))"#
+        r#"Some(Err(NetworkError { kind: Css, error_kind: ResourceLimit(EncodedBody), response: Some(NetworkResponseInfo { original_url: "<redacted>", requested_url: "<redacted>", response_url: "parsed", status: Some(HttpStatus(500)), headers: [("<redacted>", "<redacted>")], redirect_chain: [], local_content_type_present: false, resource_kind: Stylesheet, content_type: Missing, declared_content_length: Missing, status_class: Some(ServerError) }), body: Some(BodyProgress { route: Css, delivered_bytes: 3 }), .. }))"#
     );
     for output in [
         format!("{event:?}"),

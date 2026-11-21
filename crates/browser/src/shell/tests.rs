@@ -6,13 +6,17 @@ use net::NetworkResponseInfo;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
-fn response(url: &str, content_type: &str) -> NetworkResponseInfo {
+fn response(
+    purpose: addressing::ResourceKind,
+    url: &str,
+    content_type: &str,
+) -> NetworkResponseInfo {
     let mut headers = net::HttpHeaders::new();
     headers
         .append("content-type", content_type.as_bytes())
         .unwrap();
     NetworkResponseInfo::http(
-        addressing::BrowserUrl::parse(url).unwrap().url,
+        &addressing::ResourceAddress::new(addressing::BrowserUrl::parse(url).unwrap().url, purpose),
         url.into(),
         Some(url.into()),
         net::HttpStatus::try_from(200).unwrap(),
@@ -38,7 +42,11 @@ fn open_document(
         request_id,
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
-        response: response(document_url, "text/html"),
+        response: response(
+            addressing::ResourceKind::Document,
+            document_url,
+            "text/html",
+        ),
     });
     let output = html::parse_document(
         "<!doctype html><link rel=stylesheet href=site.css>",
@@ -92,7 +100,7 @@ fn feed_chunk(
         request_id,
         stylesheet_slot_id: Some(slot),
         kind: ResourceKind::Css,
-        response: response(url, "text/css"),
+        response: response(addressing::ResourceKind::Stylesheet, url, "text/css"),
     });
     app.on_core_event(CoreEvent::NetworkChunk {
         tab_id,
@@ -205,7 +213,7 @@ fn stylesheet_runtime_tab_close_discards_old_buffer_and_does_not_touch_new_tab()
             request_id: generation,
             stylesheet_slot_id: Some(slot),
             kind: ResourceKind::Css,
-            response: response(&url, "text/css"),
+            response: response(addressing::ResourceKind::Stylesheet, &url, "text/css"),
             body: net::BodyProgress::try_new(ResourceKind::Css, 14).unwrap(),
         });
         runtime_tx

@@ -400,7 +400,7 @@ pub(crate) fn supplied_response(
         .map_err(|_| HarnessError::new("execution.route", "fixture response route mismatch"))?;
     let response = if request.original_url().scheme() == "file" {
         NetworkResponseInfo::local_file(
-            request.original_url().clone(),
+            request.address(),
             issued,
             reported,
             Some(content_type.into()),
@@ -411,7 +411,7 @@ pub(crate) fn supplied_response(
             .append("content-type", content_type.as_bytes())
             .map_err(|_| HarnessError::new("execution.headers", "invalid fixture content type"))?;
         NetworkResponseInfo::http(
-            request.original_url().clone(),
+            request.address(),
             issued,
             reported,
             net::HttpStatus::try_from(200).expect("fixed HTTP status"),

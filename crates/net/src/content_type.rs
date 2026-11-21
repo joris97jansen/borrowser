@@ -1,11 +1,78 @@
 use std::fmt;
 use std::path::Path;
 
+use crate::{HttpHeaders, headers::split_header_value};
+
+/// Declared MIME metadata, not a resource acceptance or encoding decision.
+/// Empty is the existing Browser compatibility distinction: every original
+/// declaration is HTTP whitespace only. Other extraction failures are Unusable.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ResponseContentType {
+    Missing,
+    Empty,
+    Unusable,
+    Parsed(ContentType),
+}
+
+impl ResponseContentType {
+    pub(crate) fn extract(headers: &HttpHeaders) -> Self {
+        let Some(combined) = headers.combined_value("content-type") else {
+            return Self::Missing;
+        };
+        if headers
+            .values("content-type")
+            .all(|value| trim_http_whitespace(value).is_empty())
+        {
+            return Self::Empty;
+        }
+        let mut essence = None;
+        let mut charset = None;
+        let mut selected = None;
+        for value in split_header_value(&combined) {
+            let Ok(candidate) = ContentType::parse(value) else {
+                continue;
+            };
+            if candidate.mime_type == "*/*" {
+                continue;
+            }
+            // Fetch's carryover belongs to the start of an essence run, not
+            // the latest explicit charset within that run.
+            if essence.as_ref() != Some(&candidate.mime_type) {
+                charset = candidate.charset.clone();
+                essence = Some(candidate.mime_type.clone());
+            }
+            selected = Some(candidate);
+        }
+        selected.map_or(Self::Unusable, |mut candidate| {
+            // Discarded candidates need no inherited string. Only the final
+            // selection materializes carryover, taking ownership of the saved
+            // run charset rather than copying it for every same-essence value.
+            if candidate.charset.is_none() {
+                candidate.charset = charset;
+            }
+            Self::Parsed(candidate)
+        })
+    }
+
+    /// A local loader supplies one MIME fact, not a logical HTTP field list.
+    pub(crate) fn local(value: Option<&str>) -> Self {
+        match value {
+            None => Self::Missing,
+            Some(value) if trim_http_whitespace(value.as_bytes()).is_empty() => Self::Empty,
+            Some(value) => match ContentType::parse(value.as_bytes()) {
+                Ok(parsed) if parsed.mime_type != "*/*" => Self::Parsed(parsed),
+                _ => Self::Unusable,
+            },
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InvalidContentType;
 
-/// A per-field declared MIME essence and charset. No sniffing, aggregate field
-/// selection, encoding lookup, or character decoding is performed.
+/// A MIME essence and declared charset projection. `parse` handles one value;
+/// `ResponseContentType` owns aggregate selection and charset carryover. Neither
+/// performs sniffing, encoding lookup, or character decoding.
 #[derive(Clone, PartialEq, Eq)]
 pub struct ContentType {
     mime_type: String,

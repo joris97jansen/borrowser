@@ -508,7 +508,7 @@ impl HttpResponseBackend for MemberBackend {
         let url = req.legacy_issued_url(kind).unwrap();
         Ok(AcquiredHttpResponse {
             metadata: NetworkResponseInfo::http(
-                req.original_url().clone(),
+                req.address(),
                 url.clone(),
                 Some(url),
                 HttpStatus::try_from(200).unwrap(),
@@ -623,7 +623,7 @@ impl HttpResponseBackend for NeverReadAfterStart {
         let url = req.legacy_issued_url(route).unwrap();
         Ok(AcquiredHttpResponse {
             metadata: NetworkResponseInfo::http(
-                req.original_url().clone(),
+                req.address(),
                 url.clone(),
                 Some(url),
                 HttpStatus::try_from(200).unwrap(),

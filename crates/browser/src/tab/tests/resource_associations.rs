@@ -180,6 +180,7 @@ fn resource_associations_stylesheet_moves_media_source_changes_and_retired_respo
     tab.on_css_network_start(
         first,
         super::support::response_facts(
+            addressing::ResourceKind::Stylesheet,
             fetched[0].1.clone(),
             fetched[0].1.clone(),
             Some(200),
@@ -228,7 +229,13 @@ fn resource_associations_stylesheet_moves_media_source_changes_and_retired_respo
     assert!(!tab.stylesheet_loads.contains_key(&first));
     tab.on_css_network_start(
         first,
-        super::support::response_facts(fetched[0].1.clone(), fetched[0].1.clone(), Some(200), None),
+        super::support::response_facts(
+            addressing::ResourceKind::Stylesheet,
+            fetched[0].1.clone(),
+            fetched[0].1.clone(),
+            Some(200),
+            None,
+        ),
         tab.nav_gen,
     );
     tab.on_css_decoded_block(first, &fetched[0].1, "p{color:blue}".into(), tab.nav_gen);
@@ -333,6 +340,7 @@ fn resource_associations_retirement_aborts_partial_css_and_late_events_cannot_re
     let url = fetched[0].1.clone();
     let owner = element_id(tab.page.dom.as_deref().unwrap(), "sheet");
     let response = super::support::response_facts(
+        addressing::ResourceKind::Stylesheet,
         url.clone(),
         url.clone(),
         Some(200),
@@ -494,6 +502,7 @@ fn resource_associations_streamed_css_uses_one_live_record_lookup_per_chunk() {
         let (slot, url) = fetched.last().unwrap();
         let slot = slot.unwrap();
         let response = super::support::response_facts(
+            addressing::ResourceKind::Stylesheet,
             url.clone(),
             url.clone(),
             Some(200),
@@ -540,8 +549,13 @@ fn resource_associations_streamed_css_uses_one_live_record_lookup_per_chunk() {
 }
 
 fn publish_network_document(tab: &mut super::super::Tab, url: &str, markup: &str) {
-    let response =
-        super::support::response_facts(url.into(), url.into(), Some(200), Some("text/html".into()));
+    let response = super::support::response_facts(
+        addressing::ResourceKind::Document,
+        url.into(),
+        url.into(),
+        Some(200),
+        Some("text/html".into()),
+    );
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: tab.tab_id,
         request_id: tab.nav_gen,
@@ -560,7 +574,13 @@ fn publish_network_document(tab: &mut super::super::Tab, url: &str, markup: &str
 }
 
 fn css_response(url: &str) -> NetworkResponseInfo {
-    super::support::response_facts(url.into(), url.into(), Some(200), Some("text/css".into()))
+    super::support::response_facts(
+        addressing::ResourceKind::Stylesheet,
+        url.into(),
+        url.into(),
+        Some(200),
+        Some("text/css".into()),
+    )
 }
 
 fn stylesheet_fetch(commands: &[CoreCommand]) -> (StylesheetSlotId, String) {
@@ -1146,6 +1166,7 @@ fn resource_associations_rejected_css_queued_before_parser_failure_settles_witho
     let handle = tab.dom_handle;
     let base = css_response(&url);
     let response = super::support::response_facts(
+        addressing::ResourceKind::Stylesheet,
         base.requested_url().into(),
         base.reported_response_url().unwrap().into(),
         base.status_code(),

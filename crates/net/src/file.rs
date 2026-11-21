@@ -38,7 +38,7 @@ pub(crate) fn fetch_file_url(
         }
     };
     let response = NetworkResponseInfo::local_file(
-        request.original_url().clone(),
+        request.address(),
         url.to_owned(),
         Some(url.to_owned()),
         guess_content_type_from_path(&path),

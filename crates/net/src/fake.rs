@@ -260,7 +260,7 @@ impl HttpResponseBackend for FakeNetwork {
             Some((_, FakeOutcome::Response(response))) => response,
         };
         let metadata = NetworkResponseInfo::http(
-            request.original_url().clone(),
+            request.address(),
             request
                 .legacy_issued_url(kind)
                 .expect("validated HTTP route"),
