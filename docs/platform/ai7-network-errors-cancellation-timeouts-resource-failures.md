@@ -1,5 +1,13 @@
 # AI7: Network Errors, Cancellation, Timeouts, And Resource Failure
 
+> Current-status qualification (2026-11-21): AI7 is merged through PR #1481 and
+> present in master `f77a6834`. The uncommitted-candidate and pending-closeability
+> statements below describe retained historical checkpoints, not current merge
+> status. [AI10](ai10-fetch-http-networking-response-handling-foundation-closeout.md)
+> records current behavior and successful exact-source baseline CI separately.
+> Original failures, sources and qualification records remain intact; final
+> AI10 documentation qualification and formal milestone closure remain pending.
+
 Issue: [#1127](https://github.com/joris97jansen/borrowser/issues/1127).
 Milestone AI — Fetch, HTTP Networking, Redirects, and Response Handling.
 Implementation base: `01827c613876e61929a92b429c7e99ccaca25f20`.

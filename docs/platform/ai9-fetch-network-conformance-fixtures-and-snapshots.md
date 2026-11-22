@@ -1,5 +1,13 @@
 # AI9: Fetch/network fixtures, observations, and AG integration
 
+> Current-status qualification (2026-11-21): AI9 is merged through PR #1483 as
+> master `f77a6834`; #1129 is closed. The uncommitted and pending-qualification
+> statements below remain historical checkpoints. The PR contains later
+> committed-source evidence, and [AI10](ai10-fetch-http-networking-response-handling-foundation-closeout.md)
+> records successful exact-source merged-baseline aggregate CI separately from
+> retained local failures. This does not qualify AI10's new documentation bytes,
+> establish Chromium networking equivalence or formally close Milestone AI.
+
 Issue: [#1129](https://github.com/joris97jansen/borrowser/issues/1129).
 Milestone AI — Fetch, HTTP Networking, Redirects, and Response Handling.
 Implementation base: `b9df9172c58c52fc384a4553cf8222d6132f6fcb`.

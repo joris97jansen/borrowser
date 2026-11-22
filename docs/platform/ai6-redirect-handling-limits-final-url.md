@@ -1,5 +1,13 @@
 # AI6: Redirect Handling, Limits, And Final Response Provenance
 
+> Current-status qualification (2026-11-21): AI6's implementation is merged
+> through PR #1480 and present in master `f77a6834`. This is separate from the
+> earlier unrelated imported-commit issue closure described below. The local
+> uncommitted/pending-qualification statements remain historical checkpoints.
+> [AI10](ai10-fetch-http-networking-response-handling-foundation-closeout.md)
+> records current scope and exact-source baseline CI; it does not rewrite prior
+> failures or establish final AI10 qualification or formal milestone closure.
+
 Issue: [#1126](https://github.com/joris97jansen/borrowser/issues/1126).
 Milestone AI — Fetch, HTTP Networking, Redirects, and Response Handling.
 Implementation base: `20b7a31042e33f488db66e76a1f167fec674b3a7`.
