@@ -187,6 +187,22 @@ This seam does not expose real redirect hops: ureq still follows internally,
 including its documented credential-bearing redirect limitation. AI5/AI6 retain
 controlled attempts and hop admission. No runtime/bus injection or policy is added.
 
+## AJ1: Static document loading and page assembly contract
+
+[AJ1](../platform/aj1-static-document-loading-and-page-assembly-contract.md)
+defines Document Loading as a logical Browser/runtime responsibility using the
+existing document, addressing and stylesheet attachment state. AH owns addressing
+semantics, AI owns Fetch facts/execution, AE owns HTML construction, CSS owns
+parsing/cascade/computation, and AC owns retained rendering orchestration.
+Final static input settlement concerns the current committed document and its
+selected supported stylesheet dependencies; streaming, resource work and preview
+rendering can overlap. Failed dependencies can settle without contributing CSS,
+while unsupported imports, inert scripts and unrelated resources create no
+implicit assembly wait. Existing CSS-backed render preparation consumes these
+inputs without a new loader or eager style stage. AJ1 is documentation only;
+its source/status and known implementation gaps are explicit in the contract
+and [feature-gap tracker](../engine-feature-gap-tracker.md).
+
 # 📤 Message Bus (CoreCommand / CoreEvent)
 
 At the heart of the engine is a **message-driven architecture**.
