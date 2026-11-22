@@ -475,6 +475,26 @@ Notes:
 
 ## Browser Runtime / Platform
 
+AJ1 architecture contract (2026-11-22, #1132):
+
+The [static document loading and page assembly contract](platform/aj1-static-document-loading-and-page-assembly-contract.md)
+defines ownership, provenance/identity, overlapping loading/publication and
+preview behavior, ordered stylesheet inputs, final static input settlement,
+failure isolation, no-JS scope and the existing AF/AC rendering handoff.
+It records the current subset separately from required architecture and future
+capabilities. This is a documentation-only contract change awaiting owner review,
+not implemented AJ loading, new test coverage or Milestone AJ completion.
+
+Document/stylesheet response applicability (including 204/205 active-document
+preservation, 304 and partial responses), character-encoding policy, complete
+stylesheet selection/conditions/imports, explicit assembly outcomes/diagnostics
+and integrated resource-backed conformance remain incomplete. Current previews,
+attachment lifetimes and ordering are preserved. Unsupported imports, inert
+scripts and unrelated image/font/media resources do not become implicit static
+stylesheet dependencies. No existing executable gap is marked implemented;
+cache/cookies, security enforcement, navigation/readiness/event-loop completeness
+and the other documented resource/platform exclusions remain open.
+
 Current AI foundation status (2026-11-21):
 
 AI1–AI9 implement the bounded no-JavaScript Fetch/networking foundation and are
