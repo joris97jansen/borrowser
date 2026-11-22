@@ -1,5 +1,13 @@
 # AI5: Real HTTP Response Acquisition And Bounded Body Integrity
 
+> Current-status qualification (2026-11-21): AI5 is merged through PR #1456 and
+> present in master `f77a6834`. The unmerged-candidate and pending-review/CI
+> statements below are retained historical checkpoints, further qualified by
+> AI6–AI9. [AI10](ai10-fetch-http-networking-response-handling-foundation-closeout.md)
+> records current scope and successful exact-source baseline CI separately from
+> those original results. AI10 documentation qualification and formal closure
+> remain pending; no historical failure or provenance identity is changed.
+
 [AI8](ai8-response-metadata-and-loader-handoff.md) adds declared-length metadata
 without changing this framing implementation. Numeric framing agreement such as
 `7`/`007` remains admitted; Fetch metadata extraction reports textual disagreement.

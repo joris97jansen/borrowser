@@ -1,5 +1,12 @@
 # AI1: Fetch, HTTP Networking, And Response-Handling Architecture Contract
 
+> Current-status qualification (2026-11-21): AI1–AI9 are merged in master
+> `f77a6834`; AI1 was merged through PR #1452. The candidate/uncommitted and
+> pending-qualification statements below retain their original checkpoint scope.
+> [AI10's current foundation assessment](ai10-fetch-http-networking-response-handling-foundation-closeout.md)
+> consolidates actual behavior, original contracts and exact-source baseline CI.
+> AI10 is an uncommitted documentation candidate, not formal milestone closure.
+
 Current AG fixture/discovery/reporting behavior is qualified by
 [AI9](ai9-fetch-network-conformance-fixtures-and-snapshots.md). This is an
 uncommitted implementation checkpoint, not milestone or issue completion.

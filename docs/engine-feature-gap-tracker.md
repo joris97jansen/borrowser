@@ -475,7 +475,33 @@ Notes:
 
 ## Browser Runtime / Platform
 
-AI9 working-tree implementation: [fetch/network conformance](platform/ai9-fetch-network-conformance-fixtures-and-snapshots.md)
+Current AI foundation status (2026-11-21):
+
+AI1–AI9 implement the bounded no-JavaScript Fetch/networking foundation and are
+merged in master `f77a6834db4f71b99b195fc43d35d13991a790b5`.
+[AI10's closeout assessment](platform/ai10-fetch-http-networking-response-handling-foundation-closeout.md)
+consolidates typed request admission and immutable responses, ordered HTTP
+fields, separate HTTP/network/body outcomes, fake and real HTTP/HTTPS execution,
+Fetch-owned GET redirects with twenty follows and entered history, declared
+MIME/charset/length metadata, bounded body/framing processing and AG networking
+fixtures. This narrows the missing networking foundation; it does not establish
+complete Fetch, resource loading, navigation or security policy. Font/Media
+purpose metadata does not supply execution routes or loaders.
+
+Exact merged-baseline [CI run 44943971694](https://github.com/joris97jansen/borrowser/actions/runs/44943971694)
+passed, including aggregate CI qualification and required Rust status, source
+provenance, networking suites/release qualification and native Linux Chromium.
+That is baseline evidence, not qualification of the new AI10 documentation.
+AI10 review, committed/hosted qualification, merge and formal issue/milestone
+closure remain pending. Historical macOS native failures remain failures; Linux
+success does not restore macOS Chromium support or prove networking equivalence.
+
+The AI candidate entries below, including AI6/AI7's later dated sections, retain
+their original implementation/validation checkpoint scope. Their uncommitted,
+pending and legacy-behavior statements are superseded for current status by
+the AI10 assessment, without rewriting results, source identities or decisions.
+
+Historical AI9 working-tree checkpoint (before PR #1483): [fetch/network conformance](platform/ai9-fetch-network-conformance-fixtures-and-snapshots.md)
 adds sixteen required runnable declarations / thirty-six rows and two explicitly
 unsupported declarations, actual per-execution fake acquisition observations,
 bounded collector shutdown/evidence, independent snapshots, incremental body
@@ -495,7 +521,7 @@ HTTP/2/3, WebSockets and AJ/AK document/resource lifecycle work remain deferred.
 Earlier dated references to AI9 as pending retain their historical scope.
 
 
-Current response metadata qualification:
+Historical AI8 working-tree metadata checkpoint (before PR #1482):
 [AI8 #1128](platform/ai8-response-metadata-and-loader-handoff.md) centralizes
 aggregate declared MIME/charset and bounded declared-length metadata on the
 existing immutable response handoff. Actual original request purpose, selected
@@ -1119,16 +1145,26 @@ Missing or incomplete:
 - full form submission and navigation/history/session semantics, despite existing
   navigation, fragment and back/forward machinery
 - focus management and keyboard navigation
-- full security policy enforcement, including CORS, CSP, mixed-content and
-  filesystem access policies; AH5 supplies origin identity and same-origin
-  classification, not authorization
-- complete WHATWG Fetch/redirect/response handling, despite the AI2–AI6 bounded
-  HTTP/HTTPS/file and GET redirect subset; see the dated AI6 candidate below
-- MIME sniffing and complete response-type processing
+- full security policy enforcement, including CORS, CSP, mixed-content, referrer
+  policy, HSTS and filesystem access policies; AH5 supplies origin identity and
+  same-origin classification, not authorization
+- complete WHATWG Fetch/HTTP/response processing beyond the implemented AI
+  foundation; HEAD/other methods and bodies, manual/error redirect modes,
+  informational-response continuation/upgrades and broader encodings remain gaps
+- HTTP/2, HTTP/3 and WebSockets
+- JavaScript `fetch()` and XMLHttpRequest
+- full MIME sniffing, charset determination/decoding and response applicability
 - cookies, HTTP cache, storage and service workers
-- complete networking integration beyond the documented typed transport/redirect
-  subset and the AI8 metadata implementation above; AG networking fixtures remain
-  AI9, with broader loader lifecycles, cache and policy work retaining their owners
+- authentication UI/policy and downloads/download UI
+- complete streaming-body APIs/backpressure, per-resource cancellation,
+  acknowledged delivery, bounded DNS/whole-Fetch deadlines, and process-wide
+  resource/concurrency guardrails; existing incremental body delivery and
+  cooperative generation cancellation are bounded subsets
+- resource prioritization, preload and prefetch behavior
+- broader document/stylesheet/image/media/font loading and navigation/history
+  lifecycles, HTTP-status/range applicability and 304 cache merging; AJ/AK/AT retain
+  those responsibilities. Typed handoffs and AG networking fixtures are implemented;
+  Chromium networking comparison remains unsupported
 - complete scheme/creation-context support and JavaScript-facing URL APIs
 - broad URL/origin/addressing WPT integration beyond pinned representative cases
 - resource loading for fonts, media, and broader image formats
@@ -1809,6 +1845,11 @@ implementation, not to a newly successful macOS CI run.
 
 ## AI6 redirect implementation candidate (2026-11-20)
 
+Historical checkpoint: current merge/qualification status is recorded in the
+[AI10 assessment](platform/ai10-fetch-http-networking-response-handling-foundation-closeout.md).
+The original local results and earlier unrelated issue-closure explanation below
+are preserved, not presented as the current implementation's completion status.
+
 [AI6 #1126](platform/ai6-redirect-handling-limits-final-url.md) adds Fetch-owned
 GET redirects (301/302/303/307/308), AH Location resolution/fragment inheritance,
 original/current/final provenance, immutable entered-acquisition history and the
@@ -1831,6 +1872,10 @@ broader failures/cancellation/timeouts, AI8 aggregate metadata, AI9 AG integrati
 and later cache/security/navigation capabilities remain pending with their owners.
 
 ## AI7 failure implementation candidate (2026-11-20)
+
+Historical checkpoint: the pending-commit/CI statements below describe this
+candidate's original evidence. See [AI10](platform/ai10-fetch-http-networking-response-handling-foundation-closeout.md)
+for current merged-baseline qualification; the retained failures are not changed.
 
 [AI7 #1127](platform/ai7-network-errors-cancellation-timeouts-resource-failures.md)
 provides typed DNS, connection, TLS, timeout, cancellation, malformed response,

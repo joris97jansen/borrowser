@@ -1,5 +1,14 @@
 # AI8: Response Metadata And Resource-Loader Handoff
 
+> Current-status qualification (2026-11-21): AI8 is merged through PR #1482 and
+> present in master `f77a6834`. The working-tree/uncommitted and pending-hosted
+> statements below retain their historical validation scope. They are not a
+> current claim that aggregate metadata remains unimplemented or unmerged.
+> [AI10](ai10-fetch-http-networking-response-handling-foundation-closeout.md)
+> records current scope and exact-source baseline CI. Its own documentation
+> qualification and formal milestone closure remain pending; prior results and
+> source identities are preserved.
+
 Issue: [#1128](https://github.com/joris97jansen/borrowser/issues/1128).
 Milestone AI — Fetch, HTTP Networking, Redirects, and Response Handling.
 Implementation base: `cc65bc134f21c31e3e34937132082c583b2de4de`.
