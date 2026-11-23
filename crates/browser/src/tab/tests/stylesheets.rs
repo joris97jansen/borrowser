@@ -13,8 +13,7 @@ use std::sync::mpsc;
 #[test]
 fn inline_styles_are_attached_and_computed_during_initial_document_load() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 11;
-    tab.page.start_nav("https://example.com/");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/");
 
     let output = parse_document(
         "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
@@ -24,7 +23,7 @@ fn inline_styles_are_attached_and_computed_during_initial_document_load() {
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 11,
+        request_id,
         publication: no_quirks_patch_publication_from_output(output),
     })
     .unwrap();
@@ -53,8 +52,7 @@ fn inline_styles_are_attached_and_computed_during_initial_document_load() {
 #[test]
 fn browser_selector_debug_marks_nonempty_media_stylesheet_as_cascade_inactive() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 111;
-    tab.page.start_nav("https://example.com/");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/");
     let output = parse_document(
         "<!doctype html><html><head><style media=screen>p { color: red; }</style></head><body><p>Hello</p></body></html>",
         HtmlParseOptions::default(),
@@ -62,7 +60,7 @@ fn browser_selector_debug_marks_nonempty_media_stylesheet_as_cascade_inactive() 
     .expect("parse should succeed");
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 111,
+        request_id,
         publication: no_quirks_patch_publication_from_output(output),
     })
     .unwrap();
@@ -89,8 +87,7 @@ fn browser_selector_debug_marks_nonempty_media_stylesheet_as_cascade_inactive() 
 #[test]
 fn browser_selector_failure_keeps_inactive_condition_and_sparse_source_provenance() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 112;
-    tab.page.start_nav("https://example.com/");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/");
     let output = parse_document(
         "<!doctype html><html><head><style media=screen>body p { color: red; }</style></head><body><p>Hello</p></body></html>",
         HtmlParseOptions::default(),
@@ -98,7 +95,7 @@ fn browser_selector_failure_keeps_inactive_condition_and_sparse_source_provenanc
     .expect("parse should succeed");
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 112,
+        request_id,
         publication: no_quirks_patch_publication_from_output(output),
     })
     .unwrap();
@@ -135,8 +132,7 @@ fn browser_selector_failure_keeps_inactive_condition_and_sparse_source_provenanc
 #[test]
 fn split_text_style_element_is_concatenated_without_synthetic_newlines() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 15;
-    tab.page.start_nav("https://example.com/");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/");
     let dom = Box::new(Node::Document {
         id: Id(1),
         doctype: None,
@@ -190,7 +186,7 @@ fn split_text_style_element_is_concatenated_without_synthetic_newlines() {
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 15,
+        request_id,
         publication: no_quirks_patch_publication_from_dom(dom),
     })
     .unwrap();
@@ -214,15 +210,14 @@ fn split_text_style_element_is_concatenated_without_synthetic_newlines() {
 #[test]
 fn repeated_dom_updates_reconcile_inline_styles_without_duplicate_slots() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 14;
-    tab.page.start_nav("https://example.com/");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/");
     let html = "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>";
 
     for _ in 0..2 {
         let output = parse_document(html, HtmlParseOptions::default()).expect("parse succeeds");
         tab.on_core_event(CoreEvent::DomPatchUpdate {
             tab_id: tab.tab_id,
-            request_id: 14,
+            request_id,
             publication: no_quirks_patch_publication_from_output(output),
         })
         .unwrap();
@@ -251,8 +246,7 @@ fn external_stylesheets_keep_document_order_when_network_arrives_out_of_order() 
     let mut tab = Tab::new(1);
     let (tx, rx) = mpsc::channel();
     tab.set_bus_sender(tx);
-    tab.nav_gen = 12;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
 
     let output = parse_document(
         "<!doctype html><html><head>\
@@ -266,7 +260,7 @@ fn external_stylesheets_keep_document_order_when_network_arrives_out_of_order() 
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 12,
+        request_id,
         publication: no_quirks_patch_publication_from_output(output),
     })
     .unwrap();
@@ -326,8 +320,7 @@ fn duplicate_same_url_stylesheets_keep_distinct_document_slots() {
     let mut tab = Tab::new(1);
     let (tx, rx) = mpsc::channel();
     tab.set_bus_sender(tx);
-    tab.nav_gen = 13;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
 
     let output = parse_document(
         "<!doctype html><html><head>\
@@ -340,7 +333,7 @@ fn duplicate_same_url_stylesheets_keep_distinct_document_slots() {
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 13,
+        request_id,
         publication: no_quirks_patch_publication_from_output(output),
     })
     .unwrap();
@@ -373,8 +366,7 @@ fn duplicate_same_url_stylesheets_participate_as_separate_cascade_slots() {
     let mut tab = Tab::new(1);
     let (tx, rx) = mpsc::channel();
     tab.set_bus_sender(tx);
-    tab.nav_gen = 16;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
 
     let output = parse_document(
         "<!doctype html><html><head>\
@@ -387,7 +379,7 @@ fn duplicate_same_url_stylesheets_participate_as_separate_cascade_slots() {
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 16,
+        request_id,
         publication: no_quirks_patch_publication_from_output(output),
     })
     .unwrap();
@@ -440,8 +432,7 @@ fn decoded_css_for_removed_stylesheet_slot_is_ignored() {
     let mut tab = Tab::new(1);
     let (tx, rx) = mpsc::channel();
     tab.set_bus_sender(tx);
-    tab.nav_gen = 17;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
 
     let with_link = parse_document(
         "<!doctype html><html><head>\
@@ -452,7 +443,7 @@ fn decoded_css_for_removed_stylesheet_slot_is_ignored() {
     .expect("parse should succeed");
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 17,
+        request_id,
         publication: no_quirks_patch_publication_from_output(with_link),
     })
     .unwrap();
@@ -484,14 +475,14 @@ fn decoded_css_for_removed_stylesheet_slot_is_ignored() {
     .expect("parse should succeed");
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 17,
+        request_id,
         publication: no_quirks_patch_publication_from_output(without_link),
     })
     .unwrap();
 
     tab.on_core_event(CoreEvent::CssDecodedBlock {
         tab_id: tab.tab_id,
-        request_id: 17,
+        request_id,
         stylesheet_slot_id: removed_slot,
         url: removed_url,
         css_block: "p { color: red; }".to_string(),
@@ -520,8 +511,7 @@ fn external_stylesheet_arrival_invalidates_cached_computed_style() {
     let mut tab = Tab::new(1);
     let (tx, rx) = mpsc::channel();
     tab.set_bus_sender(tx);
-    tab.nav_gen = 24;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
 
     let output = parse_document(
         "<!doctype html><html><head>\
@@ -533,7 +523,7 @@ fn external_stylesheet_arrival_invalidates_cached_computed_style() {
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 24,
+        request_id,
         publication: no_quirks_patch_publication_from_output(output),
     })
     .unwrap();
@@ -579,8 +569,7 @@ fn loaded_external_media_only_change_preserves_source_without_refetch_and_invali
     let mut tab = Tab::new(1);
     let (tx, rx) = mpsc::channel();
     tab.set_bus_sender(tx);
-    tab.nav_gen = 241;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
 
     let screen = parse_document(
         "<!doctype html><html><head><link rel=stylesheet href=site.css media=screen></head><body><p>Hello</p></body></html>",
@@ -589,7 +578,7 @@ fn loaded_external_media_only_change_preserves_source_without_refetch_and_invali
     .expect("screen document parses");
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 241,
+        request_id,
         publication: no_quirks_patch_publication_from_output(screen),
     })
     .unwrap();

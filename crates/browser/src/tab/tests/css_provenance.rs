@@ -39,7 +39,7 @@ fn response(url: &str) -> NetworkResponseInfo {
 fn start(tab: &mut Tab, slot: StylesheetSlotId, response: NetworkResponseInfo) {
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: tab.tab_id,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         stylesheet_slot_id: Some(slot),
         kind: ResourceKind::Css,
         response,
@@ -50,7 +50,7 @@ fn start(tab: &mut Tab, slot: StylesheetSlotId, response: NetworkResponseInfo) {
 fn chunk(tab: &mut Tab, slot: StylesheetSlotId, url: &str) {
     tab.on_core_event(CoreEvent::NetworkChunk {
         tab_id: tab.tab_id,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         stylesheet_slot_id: Some(slot),
         kind: ResourceKind::Css,
         url: url.into(),
@@ -62,7 +62,7 @@ fn chunk(tab: &mut Tab, slot: StylesheetSlotId, url: &str) {
 fn done(tab: &mut Tab, slot: StylesheetSlotId, response: NetworkResponseInfo) {
     tab.on_core_event(CoreEvent::NetworkDone {
         tab_id: tab.tab_id,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         stylesheet_slot_id: Some(slot),
         kind: ResourceKind::Css,
         response,
@@ -258,7 +258,7 @@ const EVENTS: [Event; 6] = [
 fn runtime_block(tab: &mut Tab, slot: StylesheetSlotId, url: &str, text: &str) {
     tab.on_core_event(CoreEvent::CssDecodedBlock {
         tab_id: tab.tab_id,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         stylesheet_slot_id: slot,
         url: url.into(),
         css_block: text.into(),
@@ -276,9 +276,9 @@ fn ah6_css_unknown_slots_tabs_generations_and_wrong_routing_are_inert() {
                 case,
                 if wrong == "tab" { 99 } else { tab.tab_id },
                 if wrong == "generation" {
-                    tab.nav_gen - 1
+                    tab.active_document_request_id().expect("admitted fixture") - 1
                 } else {
-                    tab.nav_gen
+                    tab.active_document_request_id().expect("admitted fixture")
                 },
                 if wrong == "slot" {
                     StylesheetSlotId(999)
@@ -324,7 +324,7 @@ fn ah6_css_unissued_retained_slot_cannot_admit_any_event() {
         tab.on_core_event(event(
             case,
             tab.tab_id,
-            tab.nav_gen,
+            tab.active_document_request_id().expect("admitted fixture"),
             slot,
             "https://example.test/not-issued.css",
         ))
@@ -363,8 +363,14 @@ fn ah6_css_exact_url_rejects_final_and_equivalent_spellings() {
                 done(&mut tab, slot, response(&url));
                 rx.try_iter().for_each(drop);
             }
-            tab.on_core_event(event(case, tab.tab_id, tab.nav_gen, slot, mismatch))
-                .unwrap();
+            tab.on_core_event(event(
+                case,
+                tab.tab_id,
+                tab.active_document_request_id().expect("admitted fixture"),
+                slot,
+                mismatch,
+            ))
+            .unwrap();
             let commands: Vec<_> = rx.try_iter().collect();
             assert_eq!(
                 commands
@@ -398,8 +404,14 @@ fn ah6_css_premature_runtime_and_done_settle_once() {
             if admitted && matches!(case, Event::Done) {
                 continue;
             }
-            tab.on_core_event(event(case, tab.tab_id, tab.nav_gen, slot, &url))
-                .unwrap();
+            tab.on_core_event(event(
+                case,
+                tab.tab_id,
+                tab.active_document_request_id().expect("admitted fixture"),
+                slot,
+                &url,
+            ))
+            .unwrap();
             assert_eq!(tab.page.pending_count(), 0);
             assert!(!tab.stylesheet_loads.contains_key(&slot));
             assert_eq!(
@@ -409,8 +421,14 @@ fn ah6_css_premature_runtime_and_done_settle_once() {
                 1
             );
             for late in EVENTS {
-                tab.on_core_event(event(late, tab.tab_id, tab.nav_gen, slot, &url))
-                    .unwrap();
+                tab.on_core_event(event(
+                    late,
+                    tab.tab_id,
+                    tab.active_document_request_id().expect("admitted fixture"),
+                    slot,
+                    &url,
+                ))
+                .unwrap();
             }
             assert!(rx.try_recv().is_err());
         }
@@ -435,7 +453,7 @@ fn ah6_css_redirect_control_duplicate_starts_and_terminal_events_preserve_respon
         tab.on_core_event(event(
             case,
             tab.tab_id,
-            tab.nav_gen,
+            tab.active_document_request_id().expect("admitted fixture"),
             slot,
             "https://conflict.test/other",
         ))
@@ -454,12 +472,24 @@ fn ah6_css_redirect_control_duplicate_starts_and_terminal_events_preserve_respon
     let generation = tab.page.style_generations();
     runtime_block(&mut tab, slot, &url, "p{color:blue}");
     assert_eq!(tab.page.style_generations(), generation);
-    tab.on_core_event(event(Event::SheetDone, tab.tab_id, tab.nav_gen, slot, &url))
-        .unwrap();
+    tab.on_core_event(event(
+        Event::SheetDone,
+        tab.tab_id,
+        tab.active_document_request_id().expect("admitted fixture"),
+        slot,
+        &url,
+    ))
+    .unwrap();
     assert_eq!(tab.page.pending_count(), 0);
     for case in EVENTS {
-        tab.on_core_event(event(case, tab.tab_id, tab.nav_gen, slot, &url))
-            .unwrap();
+        tab.on_core_event(event(
+            case,
+            tab.tab_id,
+            tab.active_document_request_id().expect("admitted fixture"),
+            slot,
+            &url,
+        ))
+        .unwrap();
     }
     assert_eq!(
         tab.stylesheet_loads[&slot].phase.accepted_response(),
@@ -497,7 +527,7 @@ fn ah6_css_runtime_requires_the_expected_block_and_retracts_invalid_unfinished_s
         tab.on_core_event(event(
             Event::SheetDone,
             tab.tab_id,
-            tab.nav_gen,
+            tab.active_document_request_id().expect("admitted fixture"),
             slot,
             completion_url,
         ))
@@ -569,25 +599,40 @@ fn ah6_css_runtime_delivery_failures_settle_without_reopening_or_global_cancella
                 rx.try_iter().for_each(drop);
             }
             let document = tab.page.document_url().unwrap().clone();
-            let generation = tab.nav_gen;
+            let generation = tab.active_document_request_id().expect("admitted fixture");
             disconnect(&mut tab, absent);
             match stage {
                 "chunk" => chunk(&mut tab, slot, &url),
                 "done" => done(&mut tab, slot, response(&url)),
                 _ => tab
-                    .on_core_event(event(Event::Error, tab.tab_id, tab.nav_gen, slot, &url))
+                    .on_core_event(event(
+                        Event::Error,
+                        tab.tab_id,
+                        tab.active_document_request_id().expect("admitted fixture"),
+                        slot,
+                        &url,
+                    ))
                     .unwrap(),
             }
             assert!(!tab.stylesheet_loads.contains_key(&slot));
             assert_eq!(tab.page.pending_count(), 0);
-            assert_eq!(tab.nav_gen, generation);
+            assert_eq!(
+                tab.active_document_request_id().expect("admitted fixture"),
+                generation
+            );
             assert_eq!(tab.page.document_url(), Some(&document));
             assert!(rx.try_recv().is_err());
             let (tx, later) = std::sync::mpsc::channel();
             tab.set_bus_sender(tx);
             for case in EVENTS {
-                tab.on_core_event(event(case, tab.tab_id, tab.nav_gen, slot, &url))
-                    .unwrap();
+                tab.on_core_event(event(
+                    case,
+                    tab.tab_id,
+                    tab.active_document_request_id().expect("admitted fixture"),
+                    slot,
+                    &url,
+                ))
+                .unwrap();
             }
             tab.retire_document_stylesheets();
             assert!(later.try_recv().is_err());
@@ -616,7 +661,7 @@ fn ah6_css_unsupported_references_never_accept_events_or_emit_retirement_aborts(
             let mut injected = event(
                 case,
                 tab.tab_id,
-                tab.nav_gen,
+                tab.active_document_request_id().expect("admitted fixture"),
                 slot,
                 "https://unissued.test/sheet",
             );
@@ -691,11 +736,11 @@ fn ah6_css_unsupported_references_never_accept_events_or_emit_retirement_aborts(
                 )
                 .unwrap();
             }
-            "navigation" => tab.navigate_to_new("https://other.test/".into()),
+            "navigation" => tab.navigate_to_new("https://other.test/".into()).unwrap(),
             "parser-failure" => tab
                 .on_core_event(CoreEvent::HtmlParseFinished {
                     tab_id: tab.tab_id,
-                    request_id: tab.nav_gen,
+                    request_id: tab.active_document_request_id().expect("admitted fixture"),
                     result: Err(bus::HtmlParseFailure::InputClosed),
                 })
                 .unwrap(),
@@ -748,9 +793,11 @@ fn ah6_css_fragment_keys_preserve_attachment_isolation_and_original_retirement_g
     assert!(rx.try_iter().all(|c| matches!(c, CoreCommand::CssAbort { stylesheet_slot_id, .. } if stylesheet_slot_id == *first)));
     complete_css(&mut tab, *second, url, "p{color:green}");
     assert_eq!(tab.page.css_stylesheets().len(), 1);
-    let old = tab.nav_gen;
+    let old = tab.active_document_request_id().expect("admitted fixture");
     rx.try_iter().for_each(drop);
-    tab.navigate_to_new("https://other.test/".into());
+    tab.navigate_to_new("https://other.test/".into()).unwrap();
+    assert_eq!(tab.active_document_request_id(), Some(old));
+    super::support::admit_pending(&mut tab);
     let commands: Vec<_> = rx.try_iter().collect();
     assert_eq!(commands.iter().filter(|c| matches!(c, CoreCommand::CssAbort { request_id, stylesheet_slot_id, url: actual, .. } if *request_id == old && *stylesheet_slot_id == *second && actual == url)).count(), 1);
     assert!(commands.iter().all(|c| !matches!(c, CoreCommand::CssAbort { stylesheet_slot_id, .. } if *stylesheet_slot_id == *first)));
@@ -774,8 +821,14 @@ fn ah6_css_empty_and_rejected_mime_complete_without_a_decoded_block() {
             rx.try_recv().unwrap(),
             CoreCommand::CssDone { .. }
         ));
-        tab.on_core_event(event(Event::SheetDone, tab.tab_id, tab.nav_gen, slot, &url))
-            .unwrap();
+        tab.on_core_event(event(
+            Event::SheetDone,
+            tab.tab_id,
+            tab.active_document_request_id().expect("admitted fixture"),
+            slot,
+            &url,
+        ))
+        .unwrap();
         assert_eq!(tab.page.pending_count(), 0);
         assert!(tab.page.css_stylesheets().is_empty());
         assert!(rx.try_recv().is_err());
@@ -830,8 +883,14 @@ fn ah6_css_issued_state_debug_is_content_redacted_in_all_phases() {
         }
         if phase == 3 {
             runtime_block(&mut tab, slot, &url, "p{}");
-            tab.on_core_event(event(Event::SheetDone, tab.tab_id, tab.nav_gen, slot, &url))
-                .unwrap();
+            tab.on_core_event(event(
+                Event::SheetDone,
+                tab.tab_id,
+                tab.active_document_request_id().expect("admitted fixture"),
+                slot,
+                &url,
+            ))
+            .unwrap();
         }
         for output in [
             format!("{:?}", tab.stylesheet_loads[&slot]),

@@ -475,6 +475,31 @@ Notes:
 
 ## Browser Runtime / Platform
 
+AJ3 implementation candidate (#1134):
+
+The [main document response preparation contract](platform/aj3-main-document-response-preparation.md)
+adds explicit status/declared-HTML/disposition applicability, typed pending failure,
+204/205 non-replacement, deferred history/activation and checked request reservation.
+The actual active document/work/origin/base/input/AC identities remain live while a
+replacement waits. Active identity derives only from its installed FetchRequest;
+there is no writable nav_gen. AI owns immutable disposition type extraction and
+existing body limits. Invalid disposition remains observable but is ignored for
+disposition applicability; valid attachment/extension types fail with unsupported
+download handling. Eligible 404/500 and empty HTML use the existing parser path.
+Body/parser/commit/stylesheet settlement and active-frame evidence stay distinct.
+Candidate validation/owner review remain separate from implementation capability.
+The [AJ3 candidate validation](platform/aj3-main-document-response-preparation.md#candidate-validation-2026-11-23)
+records passing issue/subsystem/AG/parser/fuzz/build/runtime lanes and the failed
+aggregate: nine native macOS Chromium ownership failures, freshly reproduced on
+the exact clean base. Complete green CI and manual visual navigation remain
+unqualified; inherited failures are not candidate passes.
+
+Strict declared text/html support intentionally rejects missing/empty/unusable or
+non-HTML MIME; sniffing and complete charset handling remain gaps. Downloads,
+filenames, full disposition recovery, 304 cache merging, 206/226 reconstruction,
+full navigation/history/security/events and complete stylesheet/page assembly
+remain unsupported. AJ3 does not close Milestone AJ.
+
 AJ2 implementation candidate (2026-11-22, #1133):
 
 The [document completion and lifecycle observation contract](platform/aj2-document-load-completion-and-lifecycle-observation.md)

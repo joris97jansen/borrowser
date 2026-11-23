@@ -39,13 +39,15 @@ impl Tab {
 
         let pending_work = std::mem::take(&mut self.pending_render_work);
         self.last_render_trace = None;
+        let visible_status = self.visible_load_status();
+        let presentation_loading = self.loading || self.navigation_pending();
         let outcome = content(
             ctx,
             &mut self.page,
             &mut self.document_input,
             &self.resources,
-            self.last_status.as_ref(),
-            self.loading,
+            visible_status.as_ref(),
+            presentation_loading,
             pending_work,
             #[cfg(feature = "conformance-observation")]
             observation,
@@ -57,7 +59,11 @@ impl Tab {
         }
         if let Some(action) = outcome.action {
             match action {
-                crate::view::PageAction::Navigate(href) => self.activate_link(&href),
+                crate::view::PageAction::Navigate(href) => {
+                    // Every entry presents rejection through the status overlay;
+                    // the returned typed cause is not another lifecycle owner.
+                    let _reported_submission = self.activate_link(&href);
+                }
             }
         }
         Ok(status)
@@ -122,7 +128,7 @@ impl Tab {
         }
 
         // 2) If still loading and we have a URL, show a loading label
-        if self.loading && !self.url.is_empty() {
+        if (self.loading || self.navigation_pending()) && !self.url.is_empty() {
             let core = self.url_label();
             if core.is_empty() {
                 return "Loading…".to_string();

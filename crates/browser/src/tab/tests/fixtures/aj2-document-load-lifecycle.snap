@@ -3,6 +3,7 @@ DocumentLoad {
   inputs: Idle
   response_installation_eligibility: not-established
   full_page_assembly: not-certified
+  active_request: absent
   admitted_response: absent
   failure_response_context: absent
   committed: false

@@ -21,7 +21,9 @@ impl Tab {
                 stylesheet_slot_id: None,
                 kind: ResourceKind::Html,
                 response,
-            } if self.is_current(tab_id, request_id) => {
+            } if self.is_current(tab_id, request_id)
+                || self.is_navigation_request(tab_id, request_id) =>
+            {
                 self.on_html_network_start(response, request_id);
             }
 
@@ -33,7 +35,9 @@ impl Tab {
                 url,
                 bytes,
                 ..
-            } if self.is_current(tab_id, request_id) => {
+            } if self.is_current(tab_id, request_id)
+                || self.is_navigation_request(tab_id, request_id) =>
+            {
                 self.on_html_network_chunk(&url, bytes, request_id);
             }
 
@@ -44,7 +48,9 @@ impl Tab {
                 kind: ResourceKind::Html,
                 response,
                 body,
-            } if self.is_current(tab_id, request_id) => {
+            } if self.is_current(tab_id, request_id)
+                || self.is_navigation_request(tab_id, request_id) =>
+            {
                 self.on_html_network_done(response, body, request_id);
             }
 
@@ -58,8 +64,10 @@ impl Tab {
                 response,
                 body,
                 error: _,
-            } if self.is_current(tab_id, request_id) => {
-                self.on_html_network_error(error_kind, response, body);
+            } if self.is_current(tab_id, request_id)
+                || self.is_navigation_request(tab_id, request_id) =>
+            {
+                self.on_html_network_error(error_kind, response, body, request_id);
             }
 
             CoreEvent::DomPatchUpdate {

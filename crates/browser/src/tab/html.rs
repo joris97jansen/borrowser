@@ -1,9 +1,90 @@
 use super::Tab;
-use super::state::{DocumentLoadFailure, DocumentParseStatus};
+use super::state::{DocumentLoadFailure, DocumentParseStatus, DocumentResponseRejection};
 use super::status::response_summary;
 use bus::CoreCommand;
 use core_types::RequestId;
-use net::{BodyProgress, NetworkErrorKind, NetworkResponseInfo};
+use net::{
+    BodyProgress, FetchRequest, NetworkErrorKind, NetworkResponseInfo, ResponseContentDisposition,
+    ResponseContentType,
+};
+
+enum DocumentResponsePreparation {
+    Html(Box<crate::page::DocumentAddressState>),
+    PreserveActiveDocument,
+}
+
+fn prepare_document_response(
+    request: &FetchRequest,
+    response: &NetworkResponseInfo,
+) -> Result<DocumentResponsePreparation, DocumentLoadFailure> {
+    if response.requested_url() != request.original_url().as_str()
+        || response.original_url() != request.original_url()
+        || response.resource_kind() != request.address().kind()
+    {
+        return Err(DocumentLoadFailure::ResponseRequestMismatch(
+            response.clone(),
+        ));
+    }
+    let url = match response.response_url() {
+        Some(Ok(parsed)) => parsed.url.clone(),
+        _ => {
+            return Err(DocumentLoadFailure::ResponseUrlUnavailable(
+                response.clone(),
+            ));
+        }
+    };
+    let reject = |reason| DocumentLoadFailure::ResponseRejected {
+        reason,
+        response_context: response.clone(),
+    };
+    // AI owns extraction. Invalid declarations remain visible and are ignored
+    // for applicability; only valid attachment/extension types prevent HTML.
+    if matches!(
+        response.content_disposition(),
+        ResponseContentDisposition::Attachment | ResponseContentDisposition::Other
+    ) {
+        return Err(reject(DocumentResponseRejection::DownloadUnsupported));
+    }
+    match response.status_code() {
+        Some(204 | 205) => return Ok(DocumentResponsePreparation::PreserveActiveDocument),
+        Some(304) => {
+            return Err(reject(
+                DocumentResponseRejection::NotModifiedWithoutRepresentation,
+            ));
+        }
+        Some(206) => {
+            return Err(reject(
+                DocumentResponseRejection::PartialRepresentationUnsupported,
+            ));
+        }
+        Some(226) => {
+            return Err(reject(
+                DocumentResponseRejection::InstanceManipulationUnsupported,
+            ));
+        }
+        _ => {}
+    }
+    match response.content_type() {
+        ResponseContentType::Missing => {
+            return Err(reject(DocumentResponseRejection::MissingContentType));
+        }
+        ResponseContentType::Empty => {
+            return Err(reject(DocumentResponseRejection::EmptyContentType));
+        }
+        ResponseContentType::Unusable => {
+            return Err(reject(DocumentResponseRejection::UnusableContentType));
+        }
+        ResponseContentType::Parsed(value) if value.mime_type() == "text/html" => {}
+        _ => return Err(reject(DocumentResponseRejection::UnsupportedContentType)),
+    }
+    let addresses = crate::page::DocumentAddressState::new(url).map_err(|cause| {
+        DocumentLoadFailure::UnsupportedDocumentCreation {
+            cause,
+            response_context: response.clone(),
+        }
+    })?;
+    Ok(DocumentResponsePreparation::Html(Box::new(addresses)))
+}
 
 impl Tab {
     pub(super) fn on_html_network_start(
@@ -11,64 +92,29 @@ impl Tab {
         response: NetworkResponseInfo,
         request_id: RequestId,
     ) {
-        // Networking emits one start for the final response, after redirects.
-        // Only navigation resets the lifecycle; duplicate starts must not clear
-        // a streaming publication or reopen a completed/failed parser session.
-        if self.document_load.parse_status != DocumentParseStatus::Pending
-            || self.document_load.response.is_some()
-        {
+        let Some(attempt) = self.navigation_attempt.as_ref().filter(|a| {
+            a.request.request_id() == request_id
+                && a.terminal.is_none()
+                && a.non_replacing_response.is_none()
+        }) else {
+            // Includes duplicate starts for an already activated document.
             return;
-        }
-        if !self.response_matches_history_request(response.requested_url()) {
-            self.fail_document(DocumentLoadFailure::ResponseRequestMismatch(response));
-            return;
-        }
-        let document_url = match response.response_url() {
-            Some(Ok(parsed)) => parsed.url.clone(),
-            _ => {
-                self.fail_document(DocumentLoadFailure::ResponseUrlUnavailable(response));
-                return;
-            }
         };
-        // All fallible admission work precedes history/response/page mutations.
-        // URL-origin computation alone cannot stand in for missing creation
-        // context. A rejected response follows the existing terminal failure
-        // path; navigation may already have retired the previous page.
-        let addresses = match crate::page::DocumentAddressState::new(document_url) {
-            Ok(addresses) => addresses,
-            Err(cause) => {
-                self.fail_document(DocumentLoadFailure::UnsupportedDocumentCreation {
-                    cause,
-                    response_context: response,
-                });
-                return;
+        match prepare_document_response(&attempt.request, &response) {
+            Ok(DocumentResponsePreparation::Html(addresses)) => {
+                if let Err(failure) = self.activate_document_response(response, *addresses) {
+                    self.fail_navigation_attempt(failure);
+                }
             }
-        };
-        self.accept_history_document(addresses.document_url());
-        self.retire_document_stylesheets();
-        self.dom_store.clear();
-        self.dom_handle = None;
-        self.dom_version = core_types::DomVersion::INITIAL;
-        self.document_load.response = Some(response.clone());
-        self.document_load.bytes_received = 0;
-        self.stylesheet_loads.clear();
-        self.url = response
-            .reported_response_url()
-            .expect("admitted response URL")
-            .to_owned();
-        self.page.reset_for_navigation();
-        self.page.begin_document(addresses);
-        self.clear_render_orchestration_state();
-        self.loading = true;
-        self.last_status = Some(format!(
-            "Loading document • {}",
-            response_summary(&response, 0)
-        ));
-        self.send_cmd(CoreCommand::ParseHtmlStart {
-            tab_id: self.tab_id,
-            request_id,
-        });
-        self.poke_redraw();
+            Ok(DocumentResponsePreparation::PreserveActiveDocument) => {
+                self.navigation_attempt
+                    .as_mut()
+                    .expect("matched attempt")
+                    .non_replacing_response = Some(response);
+                self.poke_redraw();
+            }
+            Err(failure) => self.fail_navigation_attempt(failure),
+        }
     }
 
     pub(super) fn on_html_network_chunk(
@@ -77,6 +123,25 @@ impl Tab {
         bytes: Vec<u8>,
         request_id: RequestId,
     ) {
+        if self.is_navigation_request(self.tab_id, request_id) {
+            if self
+                .navigation_attempt
+                .as_ref()
+                .is_some_and(|a| a.terminal.is_none())
+            {
+                let failure = if self
+                    .navigation_attempt
+                    .as_ref()
+                    .is_some_and(|a| a.non_replacing_response.is_some())
+                {
+                    DocumentLoadFailure::UnexpectedNoContentBody
+                } else {
+                    DocumentLoadFailure::ChunkBeforeAdmission
+                };
+                self.fail_navigation_attempt(failure);
+            }
+            return;
+        }
         if self.document_load.parse_status != DocumentParseStatus::Pending
             || self.document_load.body_completion.is_some()
         {
@@ -98,11 +163,13 @@ impl Tab {
             .document_load
             .bytes_received
             .saturating_add(bytes.len());
-        self.send_cmd(CoreCommand::ParseHtmlChunk {
+        if let Err(failure) = self.enqueue_html_command(CoreCommand::ParseHtmlChunk {
             tab_id: self.tab_id,
             request_id,
             bytes,
-        });
+        }) {
+            self.fail_document(failure);
+        }
     }
 
     pub(super) fn on_html_network_done(
@@ -111,6 +178,10 @@ impl Tab {
         body: BodyProgress,
         request_id: RequestId,
     ) {
+        if self.is_navigation_request(self.tab_id, request_id) {
+            self.finish_non_replacing_response(response, body);
+            return;
+        }
         if self.document_load.parse_status != DocumentParseStatus::Pending
             || self.document_load.body_completion.is_some()
         {
@@ -138,10 +209,13 @@ impl Tab {
         self.document_load.bytes_received = bytes_received;
         self.document_load.body_completion = Some(body);
         let summary = response_summary(accepted, bytes_received);
-        self.send_cmd(CoreCommand::ParseHtmlDone {
+        if let Err(failure) = self.enqueue_html_command(CoreCommand::ParseHtmlDone {
             tab_id: self.tab_id,
             request_id,
-        });
+        }) {
+            self.fail_document(failure);
+            return;
+        }
         self.last_status = Some(format!("Document response complete • {}", summary));
         self.poke_redraw();
     }
@@ -151,7 +225,16 @@ impl Tab {
         error_kind: NetworkErrorKind,
         response_context: Option<NetworkResponseInfo>,
         body_progress: Option<BodyProgress>,
+        request_id: RequestId,
     ) {
+        if self.is_navigation_request(self.tab_id, request_id) {
+            self.fail_navigation_attempt(DocumentLoadFailure::Network {
+                kind: error_kind,
+                response_context,
+                body_progress,
+            });
+            return;
+        }
         if self.document_load.parse_status != DocumentParseStatus::Pending
             || self.document_load.body_completion.is_some()
         {
@@ -162,5 +245,37 @@ impl Tab {
             response_context,
             body_progress,
         });
+    }
+    fn finish_non_replacing_response(&mut self, response: NetworkResponseInfo, body: BodyProgress) {
+        let Some(attempt) = self
+            .navigation_attempt
+            .as_ref()
+            .filter(|a| a.terminal.is_none())
+        else {
+            return;
+        };
+        let failure = match &attempt.non_replacing_response {
+            None => Some(DocumentLoadFailure::CompletionBeforeAdmission),
+            Some(accepted) if accepted != &response => {
+                Some(DocumentLoadFailure::CompletionMetadataMismatch(response))
+            }
+            Some(_)
+                if !body.matches_route(core_types::ResourceKind::Html)
+                    || body.delivered_bytes() != 0 =>
+            {
+                Some(DocumentLoadFailure::CompletionAccountingMismatch(body))
+            }
+            Some(_) => None,
+        };
+        if let Some(failure) = failure {
+            self.fail_navigation_attempt(failure);
+            return;
+        }
+        self.navigation_attempt
+            .as_mut()
+            .expect("matched attempt")
+            .terminal = Some(Ok(body));
+        self.restore_active_toolbar_url();
+        self.poke_redraw();
     }
 }

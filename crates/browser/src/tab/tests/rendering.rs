@@ -10,8 +10,7 @@ use html::{HtmlParseOptions, parse_document};
 #[test]
 fn ui_content_consumes_pending_render_work_through_explicit_orchestration_path() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 31;
-    tab.page.start_nav("https://example.com/");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/");
 
     let output = parse_document(
         "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
@@ -21,7 +20,7 @@ fn ui_content_consumes_pending_render_work_through_explicit_orchestration_path()
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 31,
+        request_id,
         publication: no_quirks_patch_publication_from_output(output),
     })
     .unwrap();

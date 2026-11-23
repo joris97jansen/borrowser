@@ -63,7 +63,7 @@ pub(super) fn complete_css_with_response(
     let request_url = response.requested_url().to_owned();
     let url = request_url.as_str();
     let tab_id = tab.tab_id;
-    let request_id = tab.nav_gen;
+    let request_id = tab.active_document_request_id().expect("admitted fixture");
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id,
         request_id,
@@ -107,6 +107,84 @@ pub(super) fn complete_css_with_response(
     .unwrap();
 }
 
+/// Read the actual successfully enqueued request before response activation.
+pub(super) fn pending_id(tab: &Tab) -> core_types::RequestId {
+    tab.navigation_attempt
+        .as_ref()
+        .expect("issued pending navigation")
+        .request
+        .request_id()
+}
+
+/// Admit the actual pending request at the production response boundary.
+pub(super) fn admit_pending(tab: &mut Tab) -> core_types::RequestId {
+    let request = tab
+        .navigation_attempt
+        .as_ref()
+        .expect("issued navigation")
+        .request
+        .clone();
+    let id = request.request_id();
+    let url = request.original_url().as_str().to_owned();
+    tab.on_core_event(bus::CoreEvent::NetworkStart {
+        tab_id: tab.tab_id,
+        request_id: id,
+        stylesheet_slot_id: None,
+        kind: core_types::ResourceKind::Html,
+        response: response_facts(
+            request.address().kind(),
+            url.clone(),
+            url,
+            if request.original_url().scheme() == "file" {
+                None
+            } else {
+                Some(200)
+            },
+            Some("text/html".into()),
+        ),
+    })
+    .unwrap();
+    assert_eq!(tab.active_document_request_id(), Some(id));
+    id
+}
+
+/// Establish response admission before a fixture supplies canonical publications.
+/// IDs come only from production reservation and the actual issued command.
+pub(super) fn admit_document(tab: &mut Tab, url: &str) -> core_types::RequestId {
+    let previous_sender = tab.cmd_tx.take();
+    let (sender, commands) = std::sync::mpsc::channel();
+    tab.set_bus_sender(sender);
+    tab.navigate_to_new(url.into())
+        .expect("fixture request admitted");
+    let request = match commands.recv().unwrap() {
+        bus::CoreCommand::FetchStream { request, .. } => request,
+        _ => panic!("fixture document fetch"),
+    };
+    let request_id = request.request_id();
+    tab.on_core_event(bus::CoreEvent::NetworkStart {
+        tab_id: tab.tab_id,
+        request_id,
+        stylesheet_slot_id: None,
+        kind: core_types::ResourceKind::Html,
+        response: response_facts(
+            addressing::ResourceKind::Document,
+            request.original_url().as_str().into(),
+            request.original_url().as_str().into(),
+            if request.original_url().scheme() == "file" {
+                None
+            } else {
+                Some(200)
+            },
+            Some("text/html".into()),
+        ),
+    })
+    .unwrap();
+    assert_eq!(tab.active_document_request_id(), Some(request_id));
+    assert!(commands.try_iter().any(|command| matches!(command, bus::CoreCommand::ParseHtmlStart { request_id: id, .. } if id == request_id)));
+    tab.cmd_tx = previous_sender;
+    request_id
+}
+
 pub(super) fn addressing_tab(source: &str) -> (Tab, std::sync::mpsc::Receiver<bus::CoreCommand>) {
     addressing_tab_with_url(source, ADDRESS_URL)
 }
@@ -127,13 +205,16 @@ pub(super) fn addressing_tab_with_response_url(
     document_url: &str,
 ) -> (Tab, std::sync::mpsc::Receiver<bus::CoreCommand>) {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 6;
     let (tx, rx) = std::sync::mpsc::channel();
     tab.set_bus_sender(tx);
-    tab.navigate_to_new(requested_url.into());
+    tab.navigate_to_new(requested_url.into()).unwrap();
+    let request_id = match rx.try_recv().unwrap() {
+        bus::CoreCommand::FetchStream { request, .. } => request.request_id(),
+        _ => panic!("issued document request"),
+    };
     tab.on_core_event(bus::CoreEvent::NetworkStart {
         tab_id: 1,
-        request_id: 7,
+        request_id,
         stylesheet_slot_id: None,
         kind: core_types::ResourceKind::Html,
         response: response_facts(
@@ -160,7 +241,7 @@ pub(super) fn addressing_tab_with_response_url(
     .unwrap();
     tab.on_core_event(bus::CoreEvent::NetworkChunk {
         tab_id: tab.tab_id,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         stylesheet_slot_id: None,
         kind: core_types::ResourceKind::Html,
         url: tab
@@ -177,7 +258,7 @@ pub(super) fn addressing_tab_with_response_url(
     let output = html::parse_document(source, html::HtmlParseOptions::default()).unwrap();
     tab.on_core_event(bus::CoreEvent::DomPatchUpdate {
         tab_id: 1,
-        request_id: 7,
+        request_id,
         publication: no_quirks_patch_publication_from_output(output),
     })
     .unwrap();
@@ -189,7 +270,7 @@ pub(super) fn addressing_tab_with_response_url(
 pub(super) fn complete_document_body(tab: &mut Tab) {
     tab.on_core_event(bus::CoreEvent::NetworkDone {
         tab_id: tab.tab_id,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         stylesheet_slot_id: None,
         kind: core_types::ResourceKind::Html,
         response: tab
@@ -212,7 +293,7 @@ pub(super) fn publish_addressing_patches(
 ) -> Result<(), bus::DocumentPublicationFailure> {
     tab.on_core_event(bus::CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         publication: no_quirks_patch_publication(
             tab.dom_handle.unwrap(),
             tab.dom_version,

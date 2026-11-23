@@ -114,7 +114,7 @@ impl Tab {
                 return Err(self.load_invariant(LoadStateInvariant::SlotWithoutRequest, Some(id)));
             };
             matched_requests += 1;
-            if load.request_id != self.nav_gen {
+            if Some(load.request_id) != self.active_document_request_id() {
                 return Err(self.load_invariant(LoadStateInvariant::RequestGeneration, Some(id)));
             }
             if let Some(accepted) = load.phase.accepted_response()
@@ -183,23 +183,51 @@ impl Tab {
             Ok(settlement) => writeln!(output, "  inputs: {settlement:?}").unwrap(),
             Err(failure) => writeln!(output, "  inputs: invariant-error({failure:?})").unwrap(),
         }
-        output.push_str("  response_installation_eligibility: not-established\n  full_page_assembly: not-certified\n");
+        let eligibility =
+            if self.active_document_request().is_some() && self.document_load.response.is_some() {
+                "admitted-static-html-subset"
+            } else {
+                "not-established"
+            };
+        writeln!(output, "  response_installation_eligibility: {eligibility}").unwrap();
+        output.push_str("  full_page_assembly: not-certified\n");
+        write_request_summary(
+            &mut output,
+            "active_request",
+            self.active_document_request(),
+        );
+        if let Some(attempt) = &self.navigation_attempt {
+            let state = match &attempt.terminal {
+                Some(Ok(_)) if self.active_document_request_id().is_some() => {
+                    "preserved-active-document"
+                }
+                Some(Ok(_)) => "completed-without-document",
+                Some(Err(_)) => "failed",
+                None if attempt.non_replacing_response.is_some() => "awaiting-non-replacing-body",
+                None => "awaiting-response",
+            };
+            writeln!(output, "  navigation: {state}").unwrap();
+            write_request_summary(&mut output, "navigation_request", Some(&attempt.request));
+            write_response_summary(
+                &mut output,
+                "non_replacing_response",
+                attempt.non_replacing_response.as_ref(),
+            );
+            if let Some(Err(failure)) = &attempt.terminal {
+                writeln!(output, "  navigation_failure: {failure:?}").unwrap();
+                write_response_summary(
+                    &mut output,
+                    "navigation_failure_context",
+                    failure_response(failure),
+                );
+                if let DocumentLoadFailure::Network { body_progress, .. } = failure {
+                    writeln!(output, "  navigation_failure_progress: {body_progress:?}").unwrap();
+                }
+            }
+        }
         let response = self.document_load.response.as_ref();
         write_response_summary(&mut output, "admitted_response", response);
-        let context = match self.document_load.failure() {
-            Some(DocumentLoadFailure::Network {
-                response_context, ..
-            }) => response_context.as_ref(),
-            Some(
-                DocumentLoadFailure::ResponseRequestMismatch(response)
-                | DocumentLoadFailure::ResponseUrlUnavailable(response)
-                | DocumentLoadFailure::CompletionMetadataMismatch(response),
-            ) => Some(response),
-            Some(DocumentLoadFailure::UnsupportedDocumentCreation {
-                response_context, ..
-            }) => Some(response_context),
-            _ => None,
-        };
+        let context = self.document_load.failure().and_then(failure_response);
         write_response_summary(&mut output, "failure_response_context", context);
         let failure = self
             .document_load
@@ -360,6 +388,37 @@ impl Tab {
     }
 }
 
+fn write_request_summary(output: &mut String, label: &str, request: Option<&net::FetchRequest>) {
+    match request {
+        None => writeln!(output, "  {label}: absent").unwrap(),
+        Some(request) => writeln!(
+            output,
+            "  {label}: original=present purpose={:?} method={:?} route=Html",
+            request.address().kind(),
+            request.method()
+        )
+        .unwrap(),
+    }
+}
+
+fn failure_response(failure: &DocumentLoadFailure) -> Option<&net::NetworkResponseInfo> {
+    match failure {
+        DocumentLoadFailure::Network {
+            response_context, ..
+        } => response_context.as_ref(),
+        DocumentLoadFailure::ResponseRequestMismatch(response)
+        | DocumentLoadFailure::ResponseUrlUnavailable(response)
+        | DocumentLoadFailure::CompletionMetadataMismatch(response) => Some(response),
+        DocumentLoadFailure::UnsupportedDocumentCreation {
+            response_context, ..
+        }
+        | DocumentLoadFailure::ResponseRejected {
+            response_context, ..
+        } => Some(response_context),
+        _ => None,
+    }
+}
+
 fn write_response_summary(
     output: &mut String,
     label: &str,
@@ -379,8 +438,8 @@ fn write_response_summary(
                 net::ResponseContentType::Unusable => "unusable",
                 net::ResponseContentType::Parsed(_) => "parsed",
             };
-            write!(output, "  {label}: original=present acquired_url={provenance} status={:?} redirects={} mime={mime} redirect_statuses=[",
-                response.status_code(), response.redirect_chain().len()).unwrap();
+            write!(output, "  {label}: original=present acquired_url={provenance} status={:?} redirects={} mime={mime} disposition={:?} redirect_statuses=[",
+                response.status_code(), response.redirect_chain().len(), response.content_disposition()).unwrap();
             for (index, hop) in response
                 .redirect_chain()
                 .iter()

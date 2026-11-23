@@ -131,7 +131,7 @@ fn ai6_runtime_redirected_document_stylesheet_image_smoke() {
     let mut tab = Tab::new(1);
     let (command_tx, commands) = mpsc::channel();
     tab.set_bus_sender(command_tx);
-    tab.navigate_to_new(server.url("/start#original"));
+    tab.navigate_to_new(server.url("/start#original")).unwrap();
     let mut completed = BTreeMap::new();
     let (mut parsed, mut installed) = (false, false);
     let mut starts = BTreeMap::new();
@@ -258,7 +258,7 @@ fn ai6_runtime_redirect_rejection_settles_consumers_and_keeps_siblings_independe
                 let mut tab = Tab::new(1);
                 let (tx, rx) = mpsc::channel();
                 tab.set_bus_sender(tx);
-                tab.navigate_to_new(issued.clone());
+                tab.navigate_to_new(issued.clone()).unwrap();
                 (tab, rx)
             }
             ResourceKind::Css => addressing_tab(&format!(
@@ -301,8 +301,8 @@ fn ai6_runtime_redirect_rejection_settles_consumers_and_keeps_siblings_independe
         match kind {
             ResourceKind::Html => {
                 assert!(matches!(
-                    &tab.document_load.parse_status,
-                    super::super::state::DocumentParseStatus::Failed(_)
+                    &tab.navigation_attempt.as_ref().unwrap().terminal,
+                    Some(Err(_))
                 ));
                 assert!(!tab.loading);
             }

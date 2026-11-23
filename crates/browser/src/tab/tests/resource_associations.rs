@@ -95,7 +95,7 @@ fn resource_associations_images_retain_selective_owners_and_retire_removed_nodes
         "https://example.test/new/changed.png"
     );
     tab.resources.on_network_error(
-        tab.nav_gen,
+        tab.active_document_request_id().expect("admitted fixture"),
         "https://example.test/new/changed.png",
         net::NetworkErrorKind::Backend,
         "fixture failure".into(),
@@ -186,7 +186,7 @@ fn resource_associations_stylesheet_moves_media_source_changes_and_retired_respo
             Some(200),
             Some("text/css".into()),
         ),
-        tab.nav_gen,
+        tab.active_document_request_id().expect("admitted fixture"),
     );
     complete_css(&mut tab, first, &fetched[0].1, "p{color:red}");
     publish_addressing_patches(
@@ -236,9 +236,14 @@ fn resource_associations_stylesheet_moves_media_source_changes_and_retired_respo
             Some(200),
             None,
         ),
-        tab.nav_gen,
+        tab.active_document_request_id().expect("admitted fixture"),
     );
-    tab.on_css_decoded_block(first, &fetched[0].1, "p{color:blue}".into(), tab.nav_gen);
+    tab.on_css_decoded_block(
+        first,
+        &fetched[0].1,
+        "p{color:blue}".into(),
+        tab.active_document_request_id().expect("admitted fixture"),
+    );
     assert!(!tab.stylesheet_loads.contains_key(&first));
     assert!(tab.page.css_stylesheets().is_empty());
     publish_addressing_patches(
@@ -282,7 +287,7 @@ fn resource_associations_clear_and_replacement_never_reuse_outstanding_slots() {
     assert_eq!(tab.page.image_sources.len(), 1);
     tab.on_core_event(CoreEvent::CssDecodedBlock {
         tab_id: 1,
-        request_id: 7,
+        request_id: tab.active_document_request_id().unwrap(),
         stylesheet_slot_id: old,
         url: "https://example.test/old/same.css".into(),
         css_block: "p{color:red}".into(),
@@ -296,7 +301,7 @@ fn resource_associations_clear_and_replacement_never_reuse_outstanding_slots() {
     .unwrap();
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: 1,
-        request_id: 7,
+        request_id: tab.active_document_request_id().unwrap(),
         publication: no_quirks_patch_publication_from_output(output),
     })
     .unwrap();
@@ -307,7 +312,7 @@ fn resource_associations_clear_and_replacement_never_reuse_outstanding_slots() {
         new,
         "https://example.test/new/same.css",
         "p{color:blue}".into(),
-        tab.nav_gen,
+        tab.active_document_request_id().expect("admitted fixture"),
     );
     assert!(tab.page.css_stylesheets().is_empty());
 }
@@ -346,8 +351,17 @@ fn resource_associations_retirement_aborts_partial_css_and_late_events_cannot_re
         Some(200),
         Some("text/css".into()),
     );
-    tab.on_css_network_start(slot, response.clone(), tab.nav_gen);
-    tab.on_css_network_chunk(slot, url.clone(), b"p{".to_vec(), 7);
+    tab.on_css_network_start(
+        slot,
+        response.clone(),
+        tab.active_document_request_id().expect("admitted fixture"),
+    );
+    tab.on_css_network_chunk(
+        slot,
+        url.clone(),
+        b"p{".to_vec(),
+        tab.active_document_request_id().unwrap(),
+    );
     assert!(
         matches!(rx.try_recv().unwrap(),CoreCommand::CssChunk{stylesheet_slot_id,..} if stylesheet_slot_id==slot)
     );
@@ -359,17 +373,26 @@ fn resource_associations_retirement_aborts_partial_css_and_late_events_cannot_re
     )
     .unwrap();
     assert!(
-        matches!(rx.try_recv().unwrap(),CoreCommand::CssAbort{stylesheet_slot_id,request_id:7,url:aborted,..} if stylesheet_slot_id==slot && aborted==url)
+        matches!(rx.try_recv().unwrap(),CoreCommand::CssAbort{stylesheet_slot_id,request_id:id,url:aborted,..} if stylesheet_slot_id==slot && aborted==url && Some(id)==tab.active_document_request_id())
     );
     assert!(rx.try_recv().is_err());
     assert!(tab.stylesheet_loads.is_empty());
-    tab.on_css_network_start(slot, response.clone(), tab.nav_gen);
-    tab.on_css_network_chunk(slot, url.clone(), b"color:red}".to_vec(), 7);
+    tab.on_css_network_start(
+        slot,
+        response.clone(),
+        tab.active_document_request_id().expect("admitted fixture"),
+    );
+    tab.on_css_network_chunk(
+        slot,
+        url.clone(),
+        b"color:red}".to_vec(),
+        tab.active_document_request_id().unwrap(),
+    );
     tab.on_css_network_done(
         slot,
         response,
         net::BodyProgress::try_new(ResourceKind::Css, 12).unwrap(),
-        7,
+        tab.active_document_request_id().unwrap(),
     );
     assert!(rx.try_recv().is_err());
     assert!(tab.stylesheet_loads.is_empty());
@@ -508,10 +531,19 @@ fn resource_associations_streamed_css_uses_one_live_record_lookup_per_chunk() {
             Some(200),
             Some("text/css".into()),
         );
-        tab.on_css_network_start(slot, response, tab.nav_gen);
+        tab.on_css_network_start(
+            slot,
+            response,
+            tab.active_document_request_id().expect("admitted fixture"),
+        );
         let before = tab.page.stylesheet_slot_lookup_count();
         for _ in 0..4096 {
-            tab.on_css_network_chunk(slot, url.clone(), b"p{}".to_vec(), 7);
+            tab.on_css_network_chunk(
+                slot,
+                url.clone(),
+                b"p{}".to_vec(),
+                tab.active_document_request_id().unwrap(),
+            );
         }
         assert_eq!(
             tab.page.stylesheet_slot_lookup_count() - before,
@@ -558,7 +590,7 @@ fn publish_network_document(tab: &mut super::super::Tab, url: &str, markup: &str
     );
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: tab.tab_id,
-        request_id: tab.nav_gen,
+        request_id: super::support::pending_id(tab),
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
         response,
@@ -567,7 +599,7 @@ fn publish_network_document(tab: &mut super::super::Tab, url: &str, markup: &str
     let output = html::parse_document(markup, Default::default()).unwrap();
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         publication: no_quirks_patch_publication_from_output(output),
     })
     .unwrap();
@@ -610,7 +642,7 @@ fn feed_partial_stylesheet(
     slot: StylesheetSlotId,
     url: &str,
 ) {
-    let request_id = tab.nav_gen;
+    let request_id = tab.active_document_request_id().expect("admitted fixture");
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: tab.tab_id,
         request_id,
@@ -658,7 +690,7 @@ fn resource_associations_runtime_retires_partial_css_on_document_lifecycle_bound
 
         if matches!(boundary, "back" | "forward") {
             let second = "https://example.test/second";
-            tab.navigate_to_new(second.into());
+            tab.navigate_to_new(second.into()).unwrap();
             rx.try_iter().for_each(drop);
             publish_network_document(
                 &mut tab,
@@ -668,7 +700,7 @@ fn resource_associations_runtime_retires_partial_css_on_document_lifecycle_bound
             commands = rx.try_iter().collect();
         }
         if boundary == "forward" {
-            tab.go_back();
+            tab.go_back().unwrap();
             rx.try_iter().for_each(drop);
             publish_network_document(
                 &mut tab,
@@ -678,14 +710,16 @@ fn resource_associations_runtime_retires_partial_css_on_document_lifecycle_bound
             commands = rx.try_iter().collect();
         }
         let (old_slot, old_url) = stylesheet_fetch(&commands);
-        let old_generation = tab.nav_gen;
+        let old_generation = tab.active_document_request_id().expect("admitted fixture");
         feed_partial_stylesheet(&mut tab, &rx, &runtime_tx, old_slot, &old_url);
 
         match boundary {
-            "navigation" => tab.navigate_to_new("https://example.test/third".into()),
-            "refresh" => tab.refresh(),
-            "back" => tab.go_back(),
-            "forward" => tab.go_forward(),
+            "navigation" => tab
+                .navigate_to_new("https://example.test/third".into())
+                .unwrap(),
+            "refresh" => tab.refresh().unwrap(),
+            "back" => tab.go_back().unwrap(),
+            "forward" => tab.go_forward().unwrap(),
             "clear" => {
                 let output = html::parse_document(
                     "<!doctype html><link rel=stylesheet href=new.css>",
@@ -722,6 +756,10 @@ fn resource_associations_runtime_retires_partial_css_on_document_lifecycle_bound
             }
             _ => unreachable!(),
         }
+        if tab.navigation_pending() {
+            assert_eq!(tab.active_document_request_id(), Some(old_generation));
+            super::support::admit_pending(&mut tab);
+        }
         let commands: Vec<_> = rx.try_iter().collect();
         let aborts: Vec<_> = commands
             .iter()
@@ -752,7 +790,10 @@ fn resource_associations_runtime_retires_partial_css_on_document_lifecycle_bound
                 "new fetch queue acceptance precedes retirement commit"
             );
         } else {
-            assert_eq!(tab.nav_gen, old_generation);
+            assert_eq!(
+                tab.active_document_request_id().expect("admitted fixture"),
+                old_generation
+            );
             let fetch = commands
                 .iter()
                 .position(|command| {
@@ -817,11 +858,18 @@ fn resource_associations_runtime_retires_partial_css_on_document_lifecycle_bound
         tab.on_core_event(old_done).unwrap();
 
         if let Some(url) = next_fetch {
-            publish_network_document(
-                &mut tab,
-                &url,
+            assert_eq!(tab.page.document_url().unwrap().as_str(), url);
+            let output = html::parse_document(
                 "<!doctype html><link rel=stylesheet href=new.css>",
-            );
+                Default::default(),
+            )
+            .unwrap();
+            tab.on_core_event(CoreEvent::DomPatchUpdate {
+                tab_id: tab.tab_id,
+                request_id: tab.active_document_request_id().unwrap(),
+                publication: no_quirks_patch_publication_from_output(output),
+            })
+            .unwrap();
             new_stylesheet = Some(stylesheet_fetch(&rx.try_iter().collect::<Vec<_>>()));
         }
         let (new_slot, new_url) = new_stylesheet.expect("new document stylesheet request");
@@ -861,7 +909,7 @@ fn resource_associations_runtime_retires_partial_css_on_document_lifecycle_bound
             "late retired chunks must not be forwarded"
         );
 
-        let current_generation = tab.nav_gen;
+        let current_generation = tab.active_document_request_id().expect("admitted fixture");
         tab.on_core_event(CoreEvent::NetworkStart {
             tab_id: tab.tab_id,
             request_id: current_generation,
@@ -932,7 +980,7 @@ fn resource_associations_parser_failure_retires_runtime_buffer_but_keeps_preview
     assert_eq!(fetched.len(), 2);
     let (loaded_slot, loaded_url) = (fetched[0].0.unwrap(), fetched[0].1.clone());
     let (slot, url) = (fetched[1].0.unwrap(), fetched[1].1.clone());
-    let generation = tab.nav_gen;
+    let generation = tab.active_document_request_id().expect("admitted fixture");
     let handle = tab.dom_handle;
     let base = tab.page.active_base_url().unwrap().clone();
     feed_partial_stylesheet(&mut tab, &rx, &runtime_tx, loaded_slot, &loaded_url);
@@ -1063,7 +1111,7 @@ fn resource_associations_completed_css_queued_before_parser_failure_still_applie
     let (events_tx, events_rx) = mpsc::channel();
     runtime_css::start_css_runtime(runtime_rx, events_tx);
     let (slot, url) = stylesheet_fetch(&rx.try_iter().collect::<Vec<_>>());
-    let generation = tab.nav_gen;
+    let generation = tab.active_document_request_id().expect("admitted fixture");
     let handle = tab.dom_handle;
     let base = tab.page.active_base_url().unwrap().clone();
     feed_partial_stylesheet(&mut tab, &rx, &runtime_tx, slot, &url);
@@ -1162,7 +1210,7 @@ fn resource_associations_rejected_css_queued_before_parser_failure_settles_witho
     let (events_tx, events_rx) = mpsc::channel();
     runtime_css::start_css_runtime(runtime_rx, events_tx);
     let (slot, url) = stylesheet_fetch(&rx.try_iter().collect::<Vec<_>>());
-    let generation = tab.nav_gen;
+    let generation = tab.active_document_request_id().expect("admitted fixture");
     let handle = tab.dom_handle;
     let base = css_response(&url);
     let response = super::support::response_facts(

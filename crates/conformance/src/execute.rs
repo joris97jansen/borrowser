@@ -85,19 +85,19 @@ pub(crate) fn begin_document(
     command_rx: &Receiver<CoreCommand>,
     requested_url: &str,
 ) -> Result<net::FetchRequest, HarnessError> {
-    tab.navigate_to_new(requested_url.into());
-    let request_id = tab.nav_gen;
+    tab.navigate_to_new(requested_url.into()).map_err(|error| {
+        HarnessError::new(
+            "execution.navigation",
+            format!("navigation rejected: {error:?}"),
+        )
+    })?;
     match command_rx.try_recv() {
         Ok(CoreCommand::FetchStream {
             tab_id: 1,
             request,
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
-        }) if request.request_id() == request_id
-            && request.original_url().as_str() == requested_url =>
-        {
-            Ok(*request)
-        }
+        }) if request.original_url().as_str() == requested_url => Ok(*request),
         _ => Err(HarnessError::new(
             "execution.navigation",
             "navigation did not request the fixture document",
@@ -109,10 +109,10 @@ pub(crate) fn publish_document(
     tab: &mut Tab,
     html: &[u8],
     response: NetworkResponseInfo,
+    request_id: core_types::RequestId,
     event_rx: &Receiver<CoreEvent>,
     mut forward: impl FnMut(&mut Tab) -> Result<(), HarnessError>,
 ) -> Result<(), HarnessError> {
-    let request_id = tab.nav_gen;
     apply(
         tab,
         CoreEvent::NetworkStart {
@@ -192,7 +192,7 @@ pub(crate) fn publish_document(
             break;
         }
     }
-    if tab.nav_gen != request_id {
+    if tab.active_document_request_id() != Some(request_id) {
         return Err(HarnessError::new(
             "execution.navigation",
             "navigation changed before rendering",
@@ -215,14 +215,14 @@ pub(crate) fn execute_fixture(
     let mut tab = Tab::new(1);
     tab.set_bus_sender(commands);
     let fetch_request = begin_document(&mut tab, &command_rx, URL)?;
-    let request_id = tab.nav_gen;
+    let request_id = fetch_request.request_id();
     let response = supplied_response(
         &fetch_request,
         ResourceKind::Html,
         Some(URL.into()),
         CONTENT_TYPE,
     )?;
-    publish_document(&mut tab, html, response, &event_rx, |_| {
+    publish_document(&mut tab, html, response, request_id, &event_rx, |_| {
         forward_commands(&command_rx, &parser)
     })?;
     let ctx = egui::Context::default();
@@ -250,7 +250,7 @@ pub(crate) fn execute_fixture(
     let frame = tab.ui_content(&ctx);
     let output = ctx.end_pass();
     forward_commands(&command_rx, &parser)?;
-    if tab.nav_gen != request_id {
+    if tab.active_document_request_id() != Some(request_id) {
         return Err(HarnessError::new(
             "execution.navigation",
             "navigation changed during rendering",

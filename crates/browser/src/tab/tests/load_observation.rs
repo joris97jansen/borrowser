@@ -44,7 +44,7 @@ fn finish_parser(
 ) -> Result<(), bus::DocumentPublicationFailure> {
     tab.on_core_event(CoreEvent::HtmlParseFinished {
         tab_id: tab.tab_id,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         result: Ok(completion),
     })
 }
@@ -78,7 +78,7 @@ fn install_awaiting_runtime(tab: &mut Tab, slot: StylesheetSlotId, url: &str) {
     );
     let text = "p{color:#123456}";
     let id = tab.tab_id;
-    let generation = tab.nav_gen;
+    let generation = tab.active_document_request_id().expect("admitted fixture");
     for event in [
         CoreEvent::NetworkStart {
             tab_id: id,
@@ -118,7 +118,7 @@ fn install_awaiting_runtime(tab: &mut Tab, slot: StylesheetSlotId, url: &str) {
 fn sheet_done(tab: &mut Tab, slot: StylesheetSlotId, url: &str) {
     tab.on_core_event(CoreEvent::CssSheetDone {
         tab_id: tab.tab_id,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         stylesheet_slot_id: slot,
         url: url.into(),
     })
@@ -146,7 +146,7 @@ fn aj2_body_completion_is_independent_and_terminal_network_events_are_inert() {
     );
     let before = format!("{tab:?}");
     complete_document_body(&mut tab);
-    let generation = tab.nav_gen;
+    let generation = tab.active_document_request_id().expect("admitted fixture");
     for event in [
         CoreEvent::NetworkChunk {
             tab_id: 1,
@@ -199,7 +199,7 @@ fn aj2_body_completion_is_independent_and_terminal_network_events_are_inert() {
 
 #[test]
 fn aj2_parser_success_requires_body_but_parser_failure_does_not() {
-    let (mut tab, _, parsed) = preview("<!doctype html><p>preview</p>");
+    let (mut tab, _commands, parsed) = preview("<!doctype html><p>preview</p>");
     let handle = tab.dom_handle;
     assert_eq!(
         finish_parser(&mut tab, parsed.clone()),
@@ -220,7 +220,7 @@ fn aj2_parser_success_requires_body_but_parser_failure_does_not() {
     let (mut tab, commands, _) = preview("<!doctype html><p>preview</p>");
     tab.on_core_event(CoreEvent::HtmlParseFinished {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         result: Err(HtmlParseFailure::InputClosed),
     })
     .unwrap();
@@ -238,7 +238,7 @@ fn aj2_parser_success_requires_body_but_parser_failure_does_not() {
 
 #[test]
 fn aj2_duplicate_parser_success_preserves_existing_invariant_rejection() {
-    let (mut tab, _, parsed) = preview("<!doctype html><p>complete</p>");
+    let (mut tab, _commands, parsed) = preview("<!doctype html><p>complete</p>");
     finish_document(&mut tab, parsed.clone());
     assert!(finish_parser(&mut tab, parsed).is_err());
     assert!(matches!(
@@ -261,15 +261,21 @@ fn aj2_zero_byte_completion_and_generation_replacement_use_actual_events() {
     );
     let parsed = completion(&tab);
     finish_parser(&mut tab, parsed).unwrap();
-    tab.activate_link("#fragment");
+    tab.activate_link("#fragment").unwrap();
     assert!(tab.document_load.body_completion.is_some());
-    let old_generation = tab.nav_gen;
+    let old_generation = tab.active_document_request_id().expect("admitted fixture");
     let old_response = tab.document_load.response.clone().unwrap();
     commands.try_iter().for_each(drop);
-    tab.refresh();
+    tab.refresh().unwrap();
+    assert!(tab.document_load.body_completion.is_some());
+    assert_eq!(tab.active_document_request_id(), Some(old_generation));
+    super::support::admit_pending(&mut tab);
     assert!(tab.document_load.body_completion.is_none());
-    assert!(tab.document_load.response.is_none());
-    assert_ne!(tab.nav_gen, old_generation);
+    assert!(tab.document_load.response.is_some());
+    assert_ne!(
+        tab.active_document_request_id().expect("admitted fixture"),
+        old_generation
+    );
     let snapshot = format!("{tab:?}");
     tab.on_core_event(CoreEvent::NetworkDone {
         tab_id: 1,
@@ -378,7 +384,7 @@ fn aj2_mid_discovery_failures_do_not_observe_provisional_slots() {
     QUERY_WORK.with(|work| work.set((0, 0)));
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         publication: no_quirks_patch_publication_from_output(output),
     })
     .unwrap();
@@ -407,7 +413,7 @@ fn aj2_mid_discovery_failures_do_not_observe_provisional_slots() {
     QUERY_WORK.with(|work| work.set((0, 0)));
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         publication: no_quirks_patch_publication_from_output(output),
     })
     .unwrap();
@@ -540,7 +546,9 @@ fn aj2_unavailable_css_base_keeps_usable_preview_css_and_stops_false_settlement(
         } else {
             "stylesheet_response_base_unavailable: missing=0 invalid=1"
         }));
-        assert!(snapshot.contains("response_installation_eligibility: not-established"));
+        assert!(
+            snapshot.contains("response_installation_eligibility: admitted-static-html-subset")
+        );
         assert!(snapshot.contains("full_page_assembly: not-certified"));
         assert_eq!(snapshot, format!("{tab:#?}"));
         assert!(snapshot.len() <= MAX_SNAPSHOT_BYTES);
@@ -631,7 +639,7 @@ fn aj2_failure_debug_and_ui_are_safe_through_every_owning_wrapper() {
         HtmlParseFailure::Execution(html::HtmlParseError::PatchValidation(secret.repeat(1000)));
     tab.on_core_event(CoreEvent::HtmlParseFinished {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         result: Err(error.clone()),
     })
     .unwrap();
@@ -661,7 +669,7 @@ fn aj2_failure_debug_and_ui_are_safe_through_every_owning_wrapper() {
     let first = tab.document_load.failure().cloned();
     tab.on_core_event(CoreEvent::HtmlParseFinished {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         result: Err(HtmlParseFailure::InputClosed),
     })
     .unwrap();
@@ -687,7 +695,7 @@ fn aj2_snapshot_is_canonical_bounded_and_observational_and_checks_omitted_work()
     let before = (
         tab.dom_handle,
         tab.dom_version,
-        tab.nav_gen,
+        tab.active_document_request_id().expect("admitted fixture"),
         tab.loading,
         tab.page.style_generations(),
         tab.page.retained_render_state_debug_snapshot(),
@@ -722,7 +730,7 @@ fn aj2_snapshot_is_canonical_bounded_and_observational_and_checks_omitted_work()
         (
             tab.dom_handle,
             tab.dom_version,
-            tab.nav_gen,
+            tab.active_document_request_id().expect("admitted fixture"),
             tab.loading,
             tab.page.style_generations(),
             tab.page.retained_render_state_debug_snapshot()
@@ -774,7 +782,7 @@ fn aj2_query_cost_is_linear_and_chunks_do_not_evaluate_settlement() {
         for _ in 0..10 {
             tab.on_core_event(CoreEvent::NetworkChunk {
                 tab_id: 1,
-                request_id: tab.nav_gen,
+                request_id: tab.active_document_request_id().expect("admitted fixture"),
                 stylesheet_slot_id: None,
                 kind: ResourceKind::Html,
                 url: response.requested_url().into(),
@@ -855,7 +863,7 @@ fn aj2_contextual_redirect_failure_from_shared_fetch_is_typed_and_not_admitted()
         let mut tab = Tab::new(1);
         let (sender, commands) = mpsc::channel();
         tab.set_bus_sender(sender);
-        tab.navigate_to_new(urls[0].clone());
+        tab.navigate_to_new(urls[0].clone()).unwrap();
         let request = match commands.try_recv().unwrap() {
             CoreCommand::FetchStream { request, .. } => *request,
             other => panic!("{other:?}"),
@@ -932,7 +940,7 @@ fn aj2_contextual_redirect_failure_from_shared_fetch_is_typed_and_not_admitted()
             Some(net::BodyProgress::try_new(ResourceKind::Html, 0).unwrap())
         );
         assert!(
-            matches!(tab.document_load.failure(), Some(Failure::Network { kind: net::NetworkErrorKind::TlsFailure, response_context: Some(retained), body_progress }) if retained == &response && body_progress == &body)
+            matches!(tab.navigation_attempt.as_ref().unwrap().terminal.as_ref().unwrap().as_ref().err(), Some(Failure::Network { kind: net::NetworkErrorKind::TlsFailure, response_context: Some(retained), body_progress }) if retained == &response && body_progress == &body)
         );
         assert!(tab.document_load.response.is_none());
         assert!(tab.page.addresses.is_none());
@@ -940,7 +948,7 @@ fn aj2_contextual_redirect_failure_from_shared_fetch_is_typed_and_not_admitted()
         assert_eq!(debug, format!("{tab:#?}"));
         assert!(debug.len() <= MAX_SNAPSHOT_BYTES);
         assert!(debug.contains("admitted_response: absent"));
-        assert!(debug.contains("failure_response_context: original=present"));
+        assert!(debug.contains("navigation_failure_context: original=present"));
         assert!(debug.contains(&format!("redirects={hop_count}")));
         let statuses = statuses
             .iter()
@@ -950,7 +958,9 @@ fn aj2_contextual_redirect_failure_from_shared_fetch_is_typed_and_not_admitted()
         assert!(debug.contains(&format!(
             "redirect_statuses=[{statuses}] redirect_statuses_omitted=0"
         )));
-        assert!(debug.contains("failure_body_progress: route=Html delivered_bytes=0"));
+        assert!(debug.contains(
+            "navigation_failure_progress: Some(BodyProgress { route: Html, delivered_bytes: 0 })"
+        ));
         for output in [
             format!("{:?}", tab.document_load.failure()),
             format!("{:#?}", tab.document_load.failure()),
@@ -959,7 +969,7 @@ fn aj2_contextual_redirect_failure_from_shared_fetch_is_typed_and_not_admitted()
             format!("{:?}", tab.document_load),
             format!("{:#?}", tab.document_load),
             debug,
-            tab.last_status.clone().unwrap(),
+            tab.visible_load_status().unwrap(),
         ] {
             assert!(output.len() <= MAX_SNAPSHOT_BYTES);
             for marker in [
@@ -984,7 +994,8 @@ fn aj2_failure_progress_distinguishes_pre_acquisition_from_partial_body_delivery
             let mut tab = Tab::new(1);
             let (sender, _commands) = mpsc::channel();
             tab.set_bus_sender(sender);
-            tab.navigate_to_new("https://fixture.invalid/?PRIVATE_TOKEN".into());
+            tab.navigate_to_new("https://fixture.invalid/?PRIVATE_TOKEN".into())
+                .unwrap();
             tab
         };
         let response = tab.document_load.response.clone();
@@ -994,7 +1005,11 @@ fn aj2_failure_progress_distinguishes_pre_acquisition_from_partial_body_delivery
         });
         tab.on_core_event(CoreEvent::NetworkError {
             tab_id: tab.tab_id,
-            request_id: tab.nav_gen,
+            request_id: if acquired {
+                tab.active_document_request_id().unwrap()
+            } else {
+                super::support::pending_id(&tab)
+            },
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
             url: "https://private.test/?PRIVATE_TOKEN".into(),
@@ -1019,7 +1034,7 @@ fn aj2_failure_progress_distinguishes_pre_acquisition_from_partial_body_delivery
         } else {
             assert!(snapshot.contains("admitted_response: absent"));
             assert!(snapshot.contains("failure_response_context: absent"));
-            assert!(snapshot.contains("failure_body_progress: absent"));
+            assert!(snapshot.contains("navigation_failure_progress: None"));
             assert!(!snapshot.contains("redirect_statuses="));
         }
         for marker in ["private.test", "fixture.invalid", "PRIVATE_"] {
@@ -1029,7 +1044,7 @@ fn aj2_failure_progress_distinguishes_pre_acquisition_from_partial_body_delivery
 }
 
 #[test]
-fn aj2_response_applicability_is_never_certified_by_input_completion() {
+fn aj3_ineligible_or_non_replacing_responses_cannot_commit_parser_inputs() {
     for (status, mime) in [
         (204, None),
         (205, None),
@@ -1040,16 +1055,12 @@ fn aj2_response_applicability_is_never_certified_by_input_completion() {
         (200, None),
     ] {
         let mut tab = Tab::new(1);
-        let (sender, _commands) = mpsc::channel();
+        let (sender, commands) = mpsc::channel();
         tab.set_bus_sender(sender);
-        tab.navigate_to_new("https://example.test/policy".into());
-        // Supplied null-body fixtures retain empty input. This characterizes the
-        // existing consumer, not HTTP eligibility or AJ3 active-page semantics.
-        let markup = if matches!(status, 204 | 205 | 304) {
-            ""
-        } else {
-            "<!doctype html><p>input</p>"
-        };
+        tab.navigate_to_new("https://example.test/policy".into())
+            .unwrap();
+        let request_id = super::support::pending_id(&tab);
+        commands.try_iter().for_each(drop);
         let response = response_facts(
             addressing::ResourceKind::Document,
             tab.url.clone(),
@@ -1059,53 +1070,50 @@ fn aj2_response_applicability_is_never_certified_by_input_completion() {
         );
         tab.on_core_event(CoreEvent::NetworkStart {
             tab_id: 1,
-            request_id: tab.nav_gen,
+            request_id,
+            stylesheet_slot_id: None,
+            kind: ResourceKind::Html,
+            response: response.clone(),
+        })
+        .unwrap();
+        tab.on_core_event(CoreEvent::NetworkDone {
+            tab_id: 1,
+            request_id,
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
             response,
+            body: net::BodyProgress::try_new(ResourceKind::Html, 0).unwrap(),
         })
         .unwrap();
-        tab.on_core_event(CoreEvent::NetworkChunk {
-            tab_id: 1,
-            request_id: tab.nav_gen,
-            stylesheet_slot_id: None,
-            kind: ResourceKind::Html,
-            url: tab.url.clone(),
-            bytes: markup.as_bytes().to_vec(),
-        })
-        .unwrap();
-        let output = html::parse_document(markup, Default::default()).unwrap();
+        assert_eq!(tab.active_document_request_id(), None);
+        assert!(tab.page.dom.is_none());
+        assert!(tab.history.is_empty());
+        assert_eq!(
+            matches!(
+                tab.navigation_attempt.as_ref().unwrap().terminal,
+                Some(Ok(_))
+            ),
+            matches!(status, 204 | 205)
+        );
+        let output =
+            html::parse_document("<!doctype html><p>ineligible", Default::default()).unwrap();
         tab.on_core_event(CoreEvent::DomPatchUpdate {
             tab_id: 1,
-            request_id: tab.nav_gen,
+            request_id,
             publication: no_quirks_patch_publication_from_output(output),
         })
         .unwrap();
-        let parsed = completion(&tab);
-        finish_document(&mut tab, parsed);
-        assert_eq!(
-            tab.static_input_settlement(),
-            Ok(Settlement::SettledInputsOnly)
-        );
-        let snapshot = format!("{tab:?}");
-        assert!(snapshot.contains("response_installation_eligibility: not-established"));
-        assert!(snapshot.contains("full_page_assembly: not-certified"));
-        #[cfg(feature = "conformance-observation")]
-        {
-            // An accepted rendering of these inputs is still not proof that
-            // the response was installable. No policy gate is invented here.
-            let frame = tab
-                .render_observed_frame(&egui::Context::default(), egui::RawInput::default())
-                .unwrap();
-            assert!(matches!(frame.document(), html::Node::Document { .. }));
-            drop(frame);
-            assert!(format!("{tab:?}").contains("full_page_assembly: not-certified"));
-        }
+        assert!(tab.page.dom.is_none());
+        assert!(!commands.try_iter().any(|c| matches!(
+            c,
+            CoreCommand::ParseHtmlStart { .. } | CoreCommand::ParseHtmlDone { .. }
+        )));
+        assert!(format!("{tab:?}").contains("full_page_assembly: not-certified"));
     }
 }
 
-#[cfg(feature = "conformance-observation")]
 #[test]
+#[cfg(feature = "conformance-observation")]
 fn aj2_checked_frame_requires_runtime_settlement_and_rejects_invariant_errors() {
     let (mut tab, commands, parsed) =
         preview("<!doctype html><link rel=stylesheet href=a.css><p>text</p>");

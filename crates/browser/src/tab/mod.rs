@@ -1,9 +1,10 @@
 //! Tab-level orchestration and streaming state.
 //!
 //! Invariants:
-//! - `nav_gen` is the navigation/request generation counter. All streaming
-//!   events are gated through `is_current` so stale events from previous
-//!   generations are ignored.
+//! - Active request identity comes exclusively from the installed FetchRequest.
+//!   A checked Tab-owned counter reserves every navigation identity exactly once.
+//!   Pending navigation events are routed independently until response admission;
+//!   only the active request can publish document/parser/subresource events.
 //! - Loading combines parser completion with pending stylesheet work. Network
 //!   completion and intermediate publications do not establish parser success.
 //!   Document failure stays latched until navigation replaces the document.
@@ -46,6 +47,7 @@ pub use addressing_observation::{
     DocumentAddressObservation,
 };
 
+pub use self::nav::NavigationError;
 pub use self::state::{HistoryEntry, Tab};
 pub use self::ui::PageFrameStatus;
 pub use dom_style::{inherited_color, page_background};

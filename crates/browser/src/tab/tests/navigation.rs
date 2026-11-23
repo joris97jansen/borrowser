@@ -19,7 +19,7 @@ fn history_test_tab() -> (Tab, std::sync::mpsc::Receiver<CoreCommand>) {
 fn navigation_file_origin_is_retained_for_fragments_and_fresh_after_refetch() {
     let root = "file:///tmp/ah5-history.html";
     let (mut tab, rx) = history_test_tab();
-    tab.navigate_to_new(root.into());
+    tab.navigate_to_new(root.into()).unwrap();
     history_accept_document(
         &mut tab,
         Purpose::Document,
@@ -41,17 +41,17 @@ fn navigation_file_origin_is_retained_for_fragments_and_fresh_after_refetch() {
         &first
     );
     rx.try_iter().for_each(drop);
-    tab.activate_link("#one");
-    tab.activate_link("#two");
-    tab.go_back();
-    tab.go_forward();
+    tab.activate_link("#one").unwrap();
+    tab.activate_link("#two").unwrap();
+    tab.go_back().unwrap();
+    tab.go_forward().unwrap();
     assert_eq!(
         tab.page.addresses.as_ref().unwrap().document_origin(),
         &first
     );
     history_expect_no_document_fetch(&rx);
-    tab.refresh();
-    assert!(tab.page.addresses.is_none());
+    tab.refresh().unwrap();
+    assert!(tab.page.addresses.is_some());
     let refreshed = "file:///tmp/ah5-history.html#two";
     history_accept_document(
         &mut tab,
@@ -70,9 +70,9 @@ fn navigation_file_origin_is_retained_for_fragments_and_fresh_after_refetch() {
     assert_ne!(second, first);
     assert_eq!(second.serialize(), first.serialize());
     rx.try_iter().for_each(drop);
-    tab.go_back();
-    tab.go_back();
-    tab.go_forward();
+    tab.go_back().unwrap();
+    tab.go_back().unwrap();
+    tab.go_forward().unwrap();
     assert_eq!(
         tab.page.addresses.as_ref().unwrap().document_origin(),
         &second
@@ -80,7 +80,7 @@ fn navigation_file_origin_is_retained_for_fragments_and_fresh_after_refetch() {
     history_expect_no_document_fetch(&rx);
     // A distinct load retires the available file document. Traversal back
     // must refetch and determine a new origin.
-    tab.navigate_to_new("https://other.test/".into());
+    tab.navigate_to_new("https://other.test/".into()).unwrap();
     history_accept_document(
         &mut tab,
         Purpose::Document,
@@ -88,8 +88,8 @@ fn navigation_file_origin_is_retained_for_fragments_and_fresh_after_refetch() {
         "https://other.test/",
         "<!doctype html><p>other",
     );
-    tab.go_back();
-    assert!(tab.page.addresses.is_none());
+    tab.go_back().unwrap();
+    assert!(tab.page.addresses.is_some());
     history_accept_document(
         &mut tab,
         Purpose::Document,
@@ -142,7 +142,7 @@ fn history_accept_document(
     final_url: &str,
     markup: &str,
 ) {
-    let request_id = tab.nav_gen;
+    let request_id = super::support::pending_id(tab);
     let response = super::support::response_facts(
         purpose,
         requested.into(),
@@ -217,8 +217,8 @@ fn navigation_history_back_from_fragment_free_replacement_never_relabels_new_doc
     let (mut tab, rx) = history_test_tab();
     let a = "https://example.test/page#old";
     let b = "https://example.test/page";
-    tab.navigate_to_new(a.into());
-    let address_bar_request = history_expect_fetch(&rx, tab.nav_gen, a);
+    tab.navigate_to_new(a.into()).unwrap();
+    let address_bar_request = history_expect_fetch(&rx, super::support::pending_id(&tab), a);
     assert_eq!(address_bar_request.address().kind(), Purpose::Document);
     history_accept_document(
         &mut tab,
@@ -233,11 +233,11 @@ fn navigation_history_back_from_fragment_free_replacement_never_relabels_new_doc
     let old_handle = tab.dom_handle;
     rx.try_iter().for_each(drop);
 
-    tab.activate_link("");
-    let b_request = tab.nav_gen;
+    tab.activate_link("").unwrap();
+    let b_request = super::support::pending_id(&tab);
     let link_request = history_expect_fetch(&rx, b_request, b);
     assert_eq!(link_request.address().kind(), Purpose::Hyperlink);
-    assert!(tab.page.document_url().is_none());
+    assert!(tab.page.document_url().is_some());
     history_accept_document(
         &mut tab,
         link_request.address().kind(),
@@ -258,17 +258,17 @@ fn navigation_history_back_from_fragment_free_replacement_never_relabels_new_doc
     assert!(old_slots.is_disjoint(&tab.page.active_external_stylesheet_slots()));
     rx.try_iter().for_each(drop);
 
-    tab.go_back();
-    assert_eq!(tab.nav_gen, b_request + 1);
-    let traversal_request = history_expect_fetch(&rx, tab.nav_gen, a);
+    tab.go_back().unwrap();
+    assert_eq!(super::support::pending_id(&tab), b_request + 1);
+    let traversal_request = history_expect_fetch(&rx, super::support::pending_id(&tab), a);
     assert_eq!(traversal_request.address().kind(), Purpose::Document);
     assert!(
-        tab.page.document_url().is_none(),
-        "B must not be relabeled as A"
+        tab.page.document_url().unwrap().as_str() == b,
+        "pending traversal must not relabel B as A"
     );
-    assert!(tab.page.dom.is_none());
-    assert!(tab.page.image_sources.is_empty());
-    assert!(tab.page.active_external_stylesheet_slots().is_empty());
+    assert!(tab.page.dom.is_some());
+    assert!(!tab.page.image_sources.is_empty());
+    assert!(!tab.page.active_external_stylesheet_slots().is_empty());
 
     history_accept_document(
         &mut tab,
@@ -280,19 +280,19 @@ fn navigation_history_back_from_fragment_free_replacement_never_relabels_new_doc
     assert_eq!(tab.page.document_url().unwrap().as_str(), a);
     super::support::element_id(tab.page.dom.as_deref().unwrap(), "restored");
     rx.try_iter().for_each(drop);
-    tab.go_forward();
-    let forward_request = history_expect_fetch(&rx, tab.nav_gen, b);
+    tab.go_forward().unwrap();
+    let forward_request = history_expect_fetch(&rx, super::support::pending_id(&tab), b);
     assert_eq!(forward_request.address().kind(), Purpose::Document);
-    assert!(tab.page.document_url().is_none());
-    assert!(tab.page.dom.is_none());
+    assert!(tab.page.document_url().is_some());
+    assert!(tab.page.dom.is_some());
 }
 
 #[test]
 fn navigation_history_fragments_share_document_and_refresh_repopulates_the_group() {
     let (mut tab, rx) = history_test_tab();
     let root = "https://example.test/page";
-    tab.navigate_to_new(root.into());
-    history_expect_fetch(&rx, tab.nav_gen, root);
+    tab.navigate_to_new(root.into()).unwrap();
+    history_expect_fetch(&rx, super::support::pending_id(&tab), root);
     history_accept_document(
         &mut tab,
         Purpose::Document,
@@ -301,7 +301,7 @@ fn navigation_history_fragments_share_document_and_refresh_repopulates_the_group
         "<!doctype html><base href='https://example.test/page#frozen'><img id=old src=a.png><link rel=stylesheet href=a.css>",
     );
     rx.try_iter().for_each(drop);
-    let original_generation = tab.nav_gen;
+    let original_generation = tab.active_document_request_id().expect("admitted fixture");
     let original_handle = tab.dom_handle;
     let original_frozen = tab.page.active_base_url().unwrap().clone();
     let original_image = super::support::element_id(tab.page.dom.as_deref().unwrap(), "old");
@@ -311,16 +311,19 @@ fn navigation_history_fragments_share_document_and_refresh_repopulates_the_group
     assert!(original_source.is_some());
     assert_eq!(original_slots.len(), 1);
 
-    tab.activate_link("#one");
-    tab.activate_link("#two");
-    tab.go_back();
+    tab.activate_link("#one").unwrap();
+    tab.activate_link("#two").unwrap();
+    tab.go_back().unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), Some("one"));
-    tab.go_back();
+    tab.go_back().unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), None);
-    tab.go_forward();
-    tab.go_forward();
+    tab.go_forward().unwrap();
+    tab.go_forward().unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), Some("two"));
-    assert_eq!(tab.nav_gen, original_generation);
+    assert_eq!(
+        tab.active_document_request_id().expect("admitted fixture"),
+        original_generation
+    );
     assert_eq!(tab.dom_handle, original_handle);
     assert_eq!(tab.page.active_base_url(), Some(&original_frozen));
     assert_eq!(
@@ -330,12 +333,12 @@ fn navigation_history_fragments_share_document_and_refresh_repopulates_the_group
     assert_eq!(tab.page.active_external_stylesheet_slots(), original_slots);
     history_expect_no_document_fetch(&rx);
 
-    tab.refresh();
+    tab.refresh().unwrap();
     let refreshed = "https://example.test/page#two";
-    assert_eq!(tab.nav_gen, original_generation + 1);
-    let refresh_request = history_expect_fetch(&rx, tab.nav_gen, refreshed);
+    assert_eq!(super::support::pending_id(&tab), original_generation + 1);
+    let refresh_request = history_expect_fetch(&rx, super::support::pending_id(&tab), refreshed);
     assert_eq!(refresh_request.address().kind(), Purpose::Document);
-    assert!(tab.page.dom.is_none());
+    assert!(tab.page.dom.is_some());
     history_accept_document(
         &mut tab,
         Purpose::Document,
@@ -352,15 +355,18 @@ fn navigation_history_fragments_share_document_and_refresh_repopulates_the_group
     assert!(refreshed_source.is_some());
     assert!(original_slots.is_disjoint(&refreshed_slots));
     rx.try_iter().for_each(drop);
-    let generation = tab.nav_gen;
-    tab.go_back();
+    let generation = tab.active_document_request_id().expect("admitted fixture");
+    tab.go_back().unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), Some("one"));
-    tab.go_back();
+    tab.go_back().unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), None);
-    tab.go_forward();
-    tab.go_forward();
+    tab.go_forward().unwrap();
+    tab.go_forward().unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), Some("two"));
-    assert_eq!(tab.nav_gen, generation);
+    assert_eq!(
+        tab.active_document_request_id().expect("admitted fixture"),
+        generation
+    );
     assert_eq!(tab.dom_handle, refreshed_handle);
     assert_eq!(tab.page.active_base_url(), Some(&refreshed_frozen));
     assert_eq!(
@@ -375,8 +381,8 @@ fn navigation_history_fragments_share_document_and_refresh_repopulates_the_group
 fn navigation_history_identical_urls_from_different_document_lifetimes_fetch_on_traversal() {
     let (mut tab, rx) = history_test_tab();
     let url = "https://example.test/page";
-    tab.navigate_to_new(url.into());
-    history_expect_fetch(&rx, tab.nav_gen, url);
+    tab.navigate_to_new(url.into()).unwrap();
+    history_expect_fetch(&rx, super::support::pending_id(&tab), url);
     history_accept_document(
         &mut tab,
         Purpose::Document,
@@ -386,8 +392,8 @@ fn navigation_history_identical_urls_from_different_document_lifetimes_fetch_on_
     );
     let first = tab.dom_handle;
     rx.try_iter().for_each(drop);
-    tab.navigate_to_new(url.into());
-    history_expect_fetch(&rx, tab.nav_gen, url);
+    tab.navigate_to_new(url.into()).unwrap();
+    history_expect_fetch(&rx, super::support::pending_id(&tab), url);
     history_accept_document(
         &mut tab,
         Purpose::Document,
@@ -397,12 +403,12 @@ fn navigation_history_identical_urls_from_different_document_lifetimes_fetch_on_
     );
     assert_ne!(tab.dom_handle, first);
     rx.try_iter().for_each(drop);
-    let generation = tab.nav_gen;
-    tab.go_back();
-    assert_eq!(tab.nav_gen, generation + 1);
-    history_expect_fetch(&rx, tab.nav_gen, url);
-    assert!(tab.page.dom.is_none());
-    assert!(tab.page.document_url().is_none());
+    let generation = tab.active_document_request_id().expect("admitted fixture");
+    tab.go_back().unwrap();
+    assert_eq!(super::support::pending_id(&tab), generation + 1);
+    history_expect_fetch(&rx, super::support::pending_id(&tab), url);
+    assert!(tab.page.dom.is_some());
+    assert!(tab.page.document_url().is_some());
     history_accept_document(
         &mut tab,
         Purpose::Document,
@@ -411,11 +417,11 @@ fn navigation_history_identical_urls_from_different_document_lifetimes_fetch_on_
         "<!doctype html><p id=restored>restored</p>",
     );
     rx.try_iter().for_each(drop);
-    let generation = tab.nav_gen;
-    tab.go_forward();
-    assert_eq!(tab.nav_gen, generation + 1);
-    history_expect_fetch(&rx, tab.nav_gen, url);
-    assert!(tab.page.dom.is_none());
+    let generation = tab.active_document_request_id().expect("admitted fixture");
+    tab.go_forward().unwrap();
+    assert_eq!(super::support::pending_id(&tab), generation + 1);
+    history_expect_fetch(&rx, super::support::pending_id(&tab), url);
+    assert!(tab.page.dom.is_some());
 }
 
 #[test]
@@ -425,8 +431,8 @@ fn navigation_history_repopulated_entry_rejoins_its_other_fragment_entries() {
     let a_one = "https://example.test/page#one";
     let a_two = "https://example.test/page#two";
     let b = "https://example.test/other";
-    tab.navigate_to_new(a.into());
-    history_expect_fetch(&rx, tab.nav_gen, a);
+    tab.navigate_to_new(a.into()).unwrap();
+    history_expect_fetch(&rx, super::support::pending_id(&tab), a);
     history_accept_document(
         &mut tab,
         Purpose::Document,
@@ -435,12 +441,12 @@ fn navigation_history_repopulated_entry_rejoins_its_other_fragment_entries() {
         "<!doctype html><base href='https://example.test/page#frozen'><img id=old src=old.png>",
     );
     rx.try_iter().for_each(drop);
-    tab.activate_link("#one");
-    tab.activate_link("#two");
+    tab.activate_link("#one").unwrap();
+    tab.activate_link("#two").unwrap();
     history_expect_no_document_fetch(&rx);
 
-    tab.navigate_to_new(b.into());
-    history_expect_fetch(&rx, tab.nav_gen, b);
+    tab.navigate_to_new(b.into()).unwrap();
+    history_expect_fetch(&rx, super::support::pending_id(&tab), b);
     history_accept_document(
         &mut tab,
         Purpose::Document,
@@ -449,9 +455,9 @@ fn navigation_history_repopulated_entry_rejoins_its_other_fragment_entries() {
         "<!doctype html><p id=b>B</p>",
     );
     rx.try_iter().for_each(drop);
-    tab.go_back();
-    history_expect_fetch(&rx, tab.nav_gen, a_two);
-    assert!(tab.page.dom.is_none());
+    tab.go_back().unwrap();
+    history_expect_fetch(&rx, super::support::pending_id(&tab), a_two);
+    assert!(tab.page.dom.is_some());
     history_accept_document(
         &mut tab,
         Purpose::Document,
@@ -459,7 +465,7 @@ fn navigation_history_repopulated_entry_rejoins_its_other_fragment_entries() {
         a_two,
         "<!doctype html><base href='https://example.test/page#new-frozen'><img id=restored src=new.png>",
     );
-    let generation = tab.nav_gen;
+    let generation = tab.active_document_request_id().expect("admitted fixture");
     let handle = tab.dom_handle;
     let frozen = tab.page.active_base_url().unwrap().clone();
     let restored = super::support::element_id(tab.page.dom.as_deref().unwrap(), "restored");
@@ -467,14 +473,17 @@ fn navigation_history_repopulated_entry_rejoins_its_other_fragment_entries() {
     assert!(source.is_some());
     rx.try_iter().for_each(drop);
 
-    tab.go_back();
+    tab.go_back().unwrap();
     assert_eq!(tab.page.document_url().unwrap().as_str(), a_one);
-    tab.go_back();
+    tab.go_back().unwrap();
     assert_eq!(tab.page.document_url().unwrap().as_str(), a);
-    tab.go_forward();
-    tab.go_forward();
+    tab.go_forward().unwrap();
+    tab.go_forward().unwrap();
     assert_eq!(tab.page.document_url().unwrap().as_str(), a_two);
-    assert_eq!(tab.nav_gen, generation);
+    assert_eq!(
+        tab.active_document_request_id().expect("admitted fixture"),
+        generation
+    );
     assert_eq!(tab.dom_handle, handle);
     assert_eq!(tab.page.active_base_url(), Some(&frozen));
     assert_eq!(
@@ -482,9 +491,9 @@ fn navigation_history_repopulated_entry_rejoins_its_other_fragment_entries() {
         source
     );
     history_expect_no_document_fetch(&rx);
-    tab.go_forward();
-    history_expect_fetch(&rx, tab.nav_gen, b);
-    assert!(tab.page.dom.is_none());
+    tab.go_forward().unwrap();
+    history_expect_fetch(&rx, super::support::pending_id(&tab), b);
+    assert!(tab.page.dom.is_some());
 }
 
 #[test]
@@ -495,8 +504,8 @@ fn navigation_history_redirected_repopulation_does_not_reassociate_old_fragment_
     let a_two = "https://example.test/page#two";
     let b = "https://example.test/other";
     let redirected = "https://different.test/new";
-    tab.navigate_to_new(a.into());
-    history_expect_fetch(&rx, tab.nav_gen, a);
+    tab.navigate_to_new(a.into()).unwrap();
+    history_expect_fetch(&rx, super::support::pending_id(&tab), a);
     history_accept_document(
         &mut tab,
         Purpose::Document,
@@ -505,11 +514,11 @@ fn navigation_history_redirected_repopulation_does_not_reassociate_old_fragment_
         "<!doctype html><p id=old>A</p>",
     );
     rx.try_iter().for_each(drop);
-    tab.activate_link("#one");
-    tab.activate_link("#two");
+    tab.activate_link("#one").unwrap();
+    tab.activate_link("#two").unwrap();
     history_expect_no_document_fetch(&rx);
-    tab.navigate_to_new(b.into());
-    history_expect_fetch(&rx, tab.nav_gen, b);
+    tab.navigate_to_new(b.into()).unwrap();
+    history_expect_fetch(&rx, super::support::pending_id(&tab), b);
     history_accept_document(
         &mut tab,
         Purpose::Document,
@@ -518,8 +527,8 @@ fn navigation_history_redirected_repopulation_does_not_reassociate_old_fragment_
         "<!doctype html><p id=b>B</p>",
     );
     rx.try_iter().for_each(drop);
-    tab.go_back();
-    history_expect_fetch(&rx, tab.nav_gen, a_two);
+    tab.go_back().unwrap();
+    history_expect_fetch(&rx, super::support::pending_id(&tab), a_two);
     history_accept_document(
         &mut tab,
         Purpose::Document,
@@ -530,15 +539,15 @@ fn navigation_history_redirected_repopulation_does_not_reassociate_old_fragment_
     assert_eq!(tab.page.document_url().unwrap().as_str(), redirected);
     super::support::element_id(tab.page.dom.as_deref().unwrap(), "redirect");
     rx.try_iter().for_each(drop);
-    let generation = tab.nav_gen;
-    tab.go_back();
-    assert_eq!(tab.nav_gen, generation + 1);
-    history_expect_fetch(&rx, tab.nav_gen, a_one);
+    let generation = tab.active_document_request_id().expect("admitted fixture");
+    tab.go_back().unwrap();
+    assert_eq!(super::support::pending_id(&tab), generation + 1);
+    history_expect_fetch(&rx, super::support::pending_id(&tab), a_one);
     assert!(
-        tab.page.document_url().is_none(),
-        "redirected replacement is not A"
+        tab.page.document_url().unwrap().as_str() == redirected,
+        "pending traversal must retain the redirected document"
     );
-    assert!(tab.page.dom.is_none());
+    assert!(tab.page.dom.is_some());
 }
 
 #[test]
@@ -548,8 +557,8 @@ fn navigation_history_repopulation_preserves_requested_fragment_when_response_om
     let a_one = "https://example.test/page#one";
     let a_two = "https://example.test/page#two";
     let b = "https://example.test/other";
-    tab.navigate_to_new(a.into());
-    history_expect_fetch(&rx, tab.nav_gen, a);
+    tab.navigate_to_new(a.into()).unwrap();
+    history_expect_fetch(&rx, super::support::pending_id(&tab), a);
     history_accept_document(
         &mut tab,
         Purpose::Document,
@@ -558,11 +567,11 @@ fn navigation_history_repopulation_preserves_requested_fragment_when_response_om
         "<!doctype html><p id=first>A</p>",
     );
     rx.try_iter().for_each(drop);
-    tab.activate_link("#one");
-    tab.activate_link("#two");
+    tab.activate_link("#one").unwrap();
+    tab.activate_link("#two").unwrap();
     history_expect_no_document_fetch(&rx);
-    tab.navigate_to_new(b.into());
-    history_expect_fetch(&rx, tab.nav_gen, b);
+    tab.navigate_to_new(b.into()).unwrap();
+    history_expect_fetch(&rx, super::support::pending_id(&tab), b);
     history_accept_document(
         &mut tab,
         Purpose::Document,
@@ -572,8 +581,8 @@ fn navigation_history_repopulation_preserves_requested_fragment_when_response_om
     );
     rx.try_iter().for_each(drop);
 
-    tab.go_back();
-    history_expect_fetch(&rx, tab.nav_gen, a_two);
+    tab.go_back().unwrap();
+    history_expect_fetch(&rx, super::support::pending_id(&tab), a_two);
     history_accept_document(
         &mut tab,
         Purpose::Document,
@@ -583,17 +592,20 @@ fn navigation_history_repopulation_preserves_requested_fragment_when_response_om
     );
     assert_eq!(tab.page.document_url().unwrap().as_str(), a);
     assert_eq!(tab.history[tab.history_index].url(), a_two);
-    let generation = tab.nav_gen;
+    let generation = tab.active_document_request_id().expect("admitted fixture");
     let handle = tab.dom_handle;
     let frozen = tab.page.active_base_url().unwrap().clone();
     rx.try_iter().for_each(drop);
 
-    tab.go_back();
+    tab.go_back().unwrap();
     assert_eq!(tab.page.document_url().unwrap().as_str(), a_one);
-    tab.go_forward();
+    tab.go_forward().unwrap();
     assert_eq!(tab.page.document_url().unwrap().as_str(), a_two);
     assert_eq!(tab.history[tab.history_index].url(), a_two);
-    assert_eq!(tab.nav_gen, generation);
+    assert_eq!(
+        tab.active_document_request_id().expect("admitted fixture"),
+        generation
+    );
     assert_eq!(tab.dom_handle, handle);
     assert_eq!(tab.page.active_base_url(), Some(&frozen));
     history_expect_no_document_fetch(&rx);
@@ -609,8 +621,8 @@ fn navigation_history_new_navigation_after_back_truncates_forward_entries() {
 
     for cross_document in [false, true] {
         let (mut tab, rx) = history_test_tab();
-        tab.navigate_to_new(a.into());
-        history_expect_fetch(&rx, tab.nav_gen, a);
+        tab.navigate_to_new(a.into()).unwrap();
+        history_expect_fetch(&rx, super::support::pending_id(&tab), a);
         history_accept_document(
             &mut tab,
             Purpose::Document,
@@ -619,22 +631,22 @@ fn navigation_history_new_navigation_after_back_truncates_forward_entries() {
             "<!doctype html><base href='https://example.test/page#frozen'><img id=a src=a.png>",
         );
         rx.try_iter().for_each(drop);
-        let generation = tab.nav_gen;
+        let generation = tab.active_document_request_id().expect("admitted fixture");
         let handle = tab.dom_handle;
         let frozen = tab.page.active_base_url().unwrap().clone();
-        tab.activate_link("#one");
-        tab.activate_link("#two");
-        tab.go_back();
+        tab.activate_link("#one").unwrap();
+        tab.activate_link("#two").unwrap();
+        tab.go_back().unwrap();
         assert_eq!(tab.page.document_url().unwrap().as_str(), a_one);
         assert_eq!(tab.history_index(), 1);
         assert_eq!(tab.history()[2].url(), a_two);
         history_expect_no_document_fetch(&rx);
 
         if cross_document {
-            tab.navigate_to_new(b.into());
-            assert_eq!(tab.nav_gen, generation + 1);
-            history_expect_fetch(&rx, tab.nav_gen, b);
-            assert!(tab.page.document_url().is_none());
+            tab.navigate_to_new(b.into()).unwrap();
+            assert_eq!(super::support::pending_id(&tab), generation + 1);
+            history_expect_fetch(&rx, super::support::pending_id(&tab), b);
+            assert!(tab.page.document_url().is_some());
             history_accept_document(
                 &mut tab,
                 Purpose::Document,
@@ -650,20 +662,23 @@ fn navigation_history_new_navigation_after_back_truncates_forward_entries() {
                     .collect::<Vec<_>>(),
                 vec![a, a_one, b]
             );
-            let b_generation = tab.nav_gen;
+            let b_generation = tab.active_document_request_id().expect("admitted fixture");
             let b_handle = tab.dom_handle;
-            tab.go_forward();
-            assert_eq!(tab.nav_gen, b_generation);
+            tab.go_forward().unwrap();
+            assert_eq!(
+                tab.active_document_request_id().expect("admitted fixture"),
+                b_generation
+            );
             assert_eq!(tab.dom_handle, b_handle);
             assert_eq!(tab.page.document_url().unwrap().as_str(), b);
             history_expect_no_document_fetch(&rx);
 
-            tab.go_back();
-            assert_eq!(tab.nav_gen, b_generation + 1);
-            history_expect_fetch(&rx, tab.nav_gen, a_one);
-            assert!(tab.page.dom.is_none());
+            tab.go_back().unwrap();
+            assert_eq!(super::support::pending_id(&tab), b_generation + 1);
+            history_expect_fetch(&rx, super::support::pending_id(&tab), a_one);
+            assert!(tab.page.dom.is_some());
         } else {
-            tab.activate_link("#new");
+            tab.activate_link("#new").unwrap();
             assert_eq!(
                 tab.history()
                     .iter()
@@ -671,8 +686,11 @@ fn navigation_history_new_navigation_after_back_truncates_forward_entries() {
                     .collect::<Vec<_>>(),
                 vec![a, a_one, a_new]
             );
-            tab.go_forward();
-            assert_eq!(tab.nav_gen, generation);
+            tab.go_forward().unwrap();
+            assert_eq!(
+                tab.active_document_request_id().expect("admitted fixture"),
+                generation
+            );
             assert_eq!(tab.dom_handle, handle);
             assert_eq!(tab.page.document_url().unwrap().as_str(), a_new);
             assert_eq!(tab.page.active_base_url(), Some(&frozen));
@@ -687,30 +705,34 @@ fn navigation_history_pending_failed_and_stale_responses_cannot_bind_the_wrong_d
     let a = "https://example.test/a";
     let b = "https://example.test/b";
     let redirected = "https://other.test/final";
-    tab.navigate_to_new(a.into());
-    history_expect_fetch(&rx, tab.nav_gen, a);
-    history_accept_document(
-        &mut tab,
-        Purpose::Document,
-        a,
-        a,
-        "<!doctype html><p id=a>A</p>",
-    );
-    rx.try_iter().for_each(drop);
-    tab.navigate_to_new(b.into());
-    let cancelled = tab.nav_gen;
+    for url in [a, b] {
+        tab.navigate_to_new(url.into()).unwrap();
+        history_expect_fetch(&rx, super::support::pending_id(&tab), url);
+        history_accept_document(
+            &mut tab,
+            Purpose::Document,
+            url,
+            url,
+            "<!doctype html><p>committed",
+        );
+        rx.try_iter().for_each(drop);
+    }
+    let active = tab.active_document_request_id();
+    let handle = tab.dom_handle;
+    tab.refresh().unwrap();
+    let cancelled = super::support::pending_id(&tab);
     history_expect_fetch(&rx, cancelled, b);
-    tab.go_back();
-    assert_eq!(tab.nav_gen, cancelled + 1);
-    history_expect_fetch(&rx, tab.nav_gen, a);
-    assert!(tab.page.document_url().is_none());
+    tab.go_back().unwrap();
+    let traversal = super::support::pending_id(&tab);
+    assert!(traversal > cancelled);
+    history_expect_fetch(&rx, traversal, a);
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: 1,
         request_id: cancelled,
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
         response: super::support::response_facts(
-            addressing::ResourceKind::Document,
+            Purpose::Document,
             b.into(),
             b.into(),
             Some(200),
@@ -718,13 +740,12 @@ fn navigation_history_pending_failed_and_stale_responses_cannot_bind_the_wrong_d
         ),
     })
     .unwrap();
-    assert!(
-        tab.page.document_url().is_none(),
-        "stale response cannot install B"
-    );
+    assert_eq!(tab.active_document_request_id(), active);
+    assert_eq!(tab.dom_handle, handle);
+    assert_eq!(tab.page.document_url().unwrap().as_str(), b);
     tab.on_core_event(CoreEvent::NetworkError {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: traversal,
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
         url: a.into(),
@@ -734,29 +755,30 @@ fn navigation_history_pending_failed_and_stale_responses_cannot_bind_the_wrong_d
         error: "synthetic failure".into(),
     })
     .unwrap();
-    assert!(tab.page.document_url().is_none());
-    assert!(tab.page.dom.is_none());
+    assert_eq!(tab.history_index(), 1);
+    assert_eq!(tab.dom_handle, handle);
+    assert_eq!(tab.active_document_request_id(), active);
     rx.try_iter().for_each(drop);
-    let failed = tab.nav_gen;
-    tab.go_forward();
-    assert_eq!(tab.nav_gen, failed + 1);
-    history_expect_fetch(&rx, tab.nav_gen, b);
+    // Retry traversal: the failed attempt never committed its target index.
+    tab.go_back().unwrap();
+    assert!(super::support::pending_id(&tab) > traversal);
+    history_expect_fetch(&rx, super::support::pending_id(&tab), a);
     history_accept_document(
         &mut tab,
         Purpose::Document,
-        b,
+        a,
         redirected,
         "<!doctype html><p id=redirect>redirect</p>",
     );
+    assert_eq!(tab.history_index(), 0);
     assert_eq!(tab.page.document_url().unwrap().as_str(), redirected);
     super::support::element_id(tab.page.dom.as_deref().unwrap(), "redirect");
     rx.try_iter().for_each(drop);
-    let generation = tab.nav_gen;
-    tab.go_back();
-    assert_eq!(tab.nav_gen, generation + 1);
-    history_expect_fetch(&rx, tab.nav_gen, a);
-    assert!(tab.page.document_url().is_none());
-    assert!(tab.page.dom.is_none());
+    let generation = tab.active_document_request_id();
+    tab.go_forward().unwrap();
+    history_expect_fetch(&rx, super::support::pending_id(&tab), b);
+    assert_eq!(tab.active_document_request_id(), generation);
+    assert_eq!(tab.page.document_url().unwrap().as_str(), redirected);
 }
 
 #[test]
@@ -766,8 +788,8 @@ fn navigation_history_does_not_reuse_a_response_without_a_published_document() {
         let root = "https://example.test/page";
         let one = "https://example.test/page#one";
         let two = "https://example.test/page#two";
-        tab.navigate_to_new(root.into());
-        history_expect_fetch(&rx, tab.nav_gen, root);
+        tab.navigate_to_new(root.into()).unwrap();
+        history_expect_fetch(&rx, super::support::pending_id(&tab), root);
         history_accept_document(
             &mut tab,
             Purpose::Document,
@@ -776,12 +798,12 @@ fn navigation_history_does_not_reuse_a_response_without_a_published_document() {
             "<!doctype html><p>original</p>",
         );
         rx.try_iter().for_each(drop);
-        tab.activate_link("#one");
-        tab.activate_link("#two");
+        tab.activate_link("#one").unwrap();
+        tab.activate_link("#two").unwrap();
         history_expect_no_document_fetch(&rx);
 
-        tab.refresh();
-        let request_id = tab.nav_gen;
+        tab.refresh().unwrap();
+        let request_id = super::support::pending_id(&tab);
         history_expect_fetch(&rx, request_id, two);
         tab.on_core_event(CoreEvent::NetworkStart {
             tab_id: 1,
@@ -813,11 +835,15 @@ fn navigation_history_does_not_reuse_a_response_without_a_published_document() {
             .unwrap();
         }
         rx.try_iter().for_each(drop);
-        tab.go_back();
-        assert_eq!(tab.nav_gen, request_id + 1, "failed={fail_before_back}");
-        history_expect_fetch(&rx, tab.nav_gen, one);
+        tab.go_back().unwrap();
+        assert_eq!(
+            super::support::pending_id(&tab),
+            request_id + 1,
+            "failed={fail_before_back}"
+        );
+        history_expect_fetch(&rx, super::support::pending_id(&tab), one);
         assert!(tab.page.dom.is_none());
-        assert!(tab.page.document_url().is_none());
+        assert_eq!(tab.page.document_url().unwrap().as_str(), two);
     }
 }
 
@@ -826,8 +852,8 @@ fn navigation_history_rejects_current_response_with_wrong_requested_url() {
     let (mut tab, rx) = history_test_tab();
     let a = "https://example.test/a";
     let b = "https://example.test/b";
-    tab.navigate_to_new(a.into());
-    history_expect_fetch(&rx, tab.nav_gen, a);
+    tab.navigate_to_new(a.into()).unwrap();
+    history_expect_fetch(&rx, super::support::pending_id(&tab), a);
     history_accept_document(
         &mut tab,
         Purpose::Document,
@@ -837,8 +863,8 @@ fn navigation_history_rejects_current_response_with_wrong_requested_url() {
     );
     rx.try_iter().for_each(drop);
 
-    tab.navigate_to_new(b.into());
-    let request_id = tab.nav_gen;
+    tab.navigate_to_new(b.into()).unwrap();
+    let request_id = super::support::pending_id(&tab);
     history_expect_fetch(&rx, request_id, b);
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: 1,
@@ -854,8 +880,8 @@ fn navigation_history_rejects_current_response_with_wrong_requested_url() {
         ),
     })
     .unwrap();
-    assert!(tab.page.document_url().is_none());
-    assert!(tab.page.dom.is_none());
+    assert_eq!(tab.page.document_url().unwrap().as_str(), a);
+    assert!(tab.page.dom.is_some());
     let commands: Vec<_> = rx.try_iter().collect();
     assert!(commands.iter().any(|command| matches!(command,
         CoreCommand::CancelRequest { request_id: cancelled, .. } if *cancelled == request_id
@@ -881,19 +907,28 @@ fn navigation_history_rejects_current_response_with_wrong_requested_url() {
         ),
     })
     .unwrap();
-    assert!(tab.page.document_url().is_none());
+    assert_eq!(tab.page.document_url().unwrap().as_str(), a);
     rx.try_iter().for_each(drop);
-    tab.go_back();
-    assert_eq!(tab.nav_gen, request_id + 1);
-    history_expect_fetch(&rx, tab.nav_gen, a);
-    assert!(tab.page.document_url().is_none());
+    tab.go_back().unwrap();
+    assert_eq!(tab.history_index(), 0);
+    assert_eq!(tab.page.document_url().unwrap().as_str(), a);
+    assert!(
+        tab.navigation_attempt
+            .as_ref()
+            .unwrap()
+            .terminal
+            .as_ref()
+            .unwrap()
+            .is_err()
+    );
+    history_expect_no_document_fetch(&rx);
 }
 
 #[test]
 fn redirected_document_response_updates_tab_base_url_and_status() {
     let (mut tab, _commands) = history_test_tab();
     let requested = "https://example.com/".to_string();
-    tab.navigate_to_new(requested.clone());
+    tab.navigate_to_new(requested.clone()).unwrap();
     let final_url = "https://example.com/landing".to_string();
     let response = super::support::response_facts(
         addressing::ResourceKind::Document,
@@ -969,10 +1004,9 @@ fn redirected_document_response_updates_tab_base_url_and_status() {
 }
 
 #[test]
-fn starting_new_navigation_clears_pending_render_work_and_last_trace() {
+fn eligible_navigation_activation_clears_pending_render_work_and_last_trace() {
     let (mut tab, _commands) = history_test_tab();
-    tab.nav_gen = 32;
-    tab.page.start_nav("https://example.com/");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/");
 
     let output = parse_document(
         "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
@@ -982,7 +1016,7 @@ fn starting_new_navigation_clears_pending_render_work_and_last_trace() {
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 32,
+        request_id,
         publication: no_quirks_patch_publication_from_output(output),
     })
     .unwrap();
@@ -1003,8 +1037,12 @@ fn starting_new_navigation_clears_pending_render_work_and_last_trace() {
     ));
     assert!(!tab.pending_render_work.is_empty());
 
-    tab.navigate_to_new("next.example.com/page".to_string());
+    tab.navigate_to_new("next.example.com/page".to_string())
+        .unwrap();
 
+    assert!(!tab.pending_render_work.is_empty());
+    assert!(tab.last_render_trace.is_some());
+    super::support::admit_pending(&mut tab);
     assert!(tab.pending_render_work.is_empty());
     assert!(tab.last_render_trace.is_none());
 }

@@ -254,7 +254,7 @@ fn html_resource_rejected_and_stale_publications_keep_the_committed_observation(
         html::parse_document("<!doctype html><a href='/stale'>x</a>", Default::default()).unwrap();
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: tab.nav_gen - 1,
+        request_id: tab.active_document_request_id().expect("admitted fixture") - 1,
         publication: no_quirks_patch_publication_from_output(output),
     })
     .unwrap();
@@ -287,7 +287,7 @@ fn html_resource_replacement_clear_and_navigation_have_no_retained_inventory() {
         html::parse_document("<!doctype html><a href=new>x</a>", Default::default()).unwrap();
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         publication: no_quirks_patch_publication_from_output(output),
     })
     .unwrap();
@@ -312,9 +312,11 @@ fn html_resource_replacement_clear_and_navigation_have_no_retained_inventory() {
     )
     .unwrap();
     assert!(tab.page.html_resource_references().unwrap().is_empty());
-    tab.navigate_to_new("https://other.test/new".into());
+    tab.navigate_to_new("https://other.test/new".into())
+        .unwrap();
+    super::support::admit_pending(&mut tab);
     assert!(tab.page.html_resource_references().is_none());
-    assert!(tab.document_address_debug_snapshot().is_none());
+    assert!(tab.document_address_debug_snapshot().is_some());
     assert!(Tab::new(99).document_address_debug_snapshot().is_none());
 }
 

@@ -39,15 +39,15 @@ fn document_lifecycle_unsupported_stale_and_duplicate_starts_preserve_file_origi
             "unpublished" => {
                 // Test duplicate starts before the first parser publication,
                 // using a separate real response-start lifecycle.
-                tab.refresh();
-                tab.on_core_event(start(tab.nav_gen, response(file)))
+                tab.refresh().unwrap();
+                tab.on_core_event(start(super::support::pending_id(&tab), response(file)))
                     .unwrap();
                 assert!(tab.page.dom.is_none());
             }
             "failed" => {
                 tab.on_core_event(CoreEvent::HtmlParseFinished {
                     tab_id: 1,
-                    request_id: tab.nav_gen,
+                    request_id: tab.active_document_request_id().expect("admitted fixture"),
                     result: Err(HtmlParseFailure::InputClosed),
                 })
                 .unwrap();
@@ -60,7 +60,7 @@ fn document_lifecycle_unsupported_stale_and_duplicate_starts_preserve_file_origi
                 super::support::complete_document_body(&mut tab);
                 tab.on_core_event(CoreEvent::HtmlParseFinished {
                     tab_id: 1,
-                    request_id: tab.nav_gen,
+                    request_id: tab.active_document_request_id().expect("admitted fixture"),
                     result: Ok(HtmlParseCompletion {
                         handle: tab.dom_handle.unwrap(),
                         version: tab.dom_version,
@@ -87,16 +87,23 @@ fn document_lifecycle_unsupported_stale_and_duplicate_starts_preserve_file_origi
         // Both wrong-tab and old-generation starts are filtered before admission.
         tab.on_core_event(CoreEvent::NetworkStart {
             tab_id: 2,
-            request_id: tab.nav_gen,
+            request_id: tab.active_document_request_id().expect("admitted fixture"),
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
             response: unsupported.clone(),
         })
         .unwrap();
-        tab.on_core_event(start(tab.nav_gen - 1, unsupported.clone()))
-            .unwrap();
+        tab.on_core_event(start(
+            tab.active_document_request_id().expect("admitted fixture") - 1,
+            unsupported.clone(),
+        ))
+        .unwrap();
         // A duplicate current start is ignored before unsupported-context checking.
-        tab.on_core_event(start(tab.nav_gen, unsupported)).unwrap();
+        tab.on_core_event(start(
+            tab.active_document_request_id().expect("admitted fixture"),
+            unsupported,
+        ))
+        .unwrap();
         assert_eq!(tab.page.addresses, addresses);
         assert_eq!(tab.document_load.response, accepted);
         assert_eq!(tab.document_load.parse_status, state);
@@ -120,11 +127,11 @@ fn navigating_tab() -> (Tab, Receiver<CoreCommand>) {
     let mut tab = Tab::new(1);
     let (tx, rx) = mpsc::channel();
     tab.set_bus_sender(tx);
-    tab.navigate_to_new(URL.into());
+    tab.navigate_to_new(URL.into()).unwrap();
     assert!(
         matches!(rx.try_recv().unwrap(), CoreCommand::FetchStream { request: fetch_request,
         tab_id: 1, kind: ResourceKind::Html, ..
-    } if fetch_request.request_id() == tab.nav_gen)
+    } if fetch_request.request_id() == super::support::pending_id(&tab))
     );
     (tab, rx)
 }
@@ -158,7 +165,7 @@ fn document_lifecycle_chunk_provenance_uses_requested_url_across_redirect_and_fr
     let mut tab = Tab::new(1);
     let (tx, rx) = mpsc::channel();
     tab.set_bus_sender(tx);
-    tab.navigate_to_new(requested.into());
+    tab.navigate_to_new(requested.into()).unwrap();
     rx.try_iter().for_each(drop);
     let accepted = super::support::response_facts(
         addressing::ResourceKind::Document,
@@ -176,7 +183,7 @@ fn document_lifecycle_chunk_provenance_uses_requested_url_across_redirect_and_fr
         },
         Some("text/html".into()),
     );
-    tab.on_core_event(start(tab.nav_gen, accepted.clone()))
+    tab.on_core_event(start(super::support::pending_id(&tab), accepted.clone()))
         .unwrap();
     let origin = tab
         .page
@@ -200,11 +207,11 @@ fn document_lifecycle_chunk_provenance_uses_requested_url_across_redirect_and_fr
     };
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         publication,
     })
     .unwrap();
-    tab.activate_link("#inflight");
+    tab.activate_link("#inflight").unwrap();
     assert_eq!(
         tab.page.document_url().unwrap().as_str(),
         "https://final.test/document#inflight"
@@ -213,7 +220,7 @@ fn document_lifecycle_chunk_provenance_uses_requested_url_across_redirect_and_fr
     for bytes in body.as_bytes().chunks(8) {
         tab.on_core_event(CoreEvent::NetworkChunk {
             tab_id: 1,
-            request_id: tab.nav_gen,
+            request_id: tab.active_document_request_id().expect("admitted fixture"),
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
             url: requested.into(),
@@ -230,15 +237,19 @@ fn document_lifecycle_chunk_provenance_uses_requested_url_across_redirect_and_fr
         );
     }
     assert_eq!(tab.document_load.bytes_received, body.len());
-    tab.on_core_event(html_done(tab.nav_gen, accepted.clone(), body.len()))
-        .unwrap();
+    tab.on_core_event(html_done(
+        tab.active_document_request_id().expect("admitted fixture"),
+        accepted.clone(),
+        body.len(),
+    ))
+    .unwrap();
     assert!(matches!(
         rx.try_recv().unwrap(),
         CoreCommand::ParseHtmlDone { .. }
     ));
     tab.on_core_event(CoreEvent::HtmlParseFinished {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         result: Ok(completion),
     })
     .unwrap();
@@ -285,7 +296,7 @@ fn document_lifecycle_chunk_provenance_rejects_unrelated_and_final_urls() {
         let mut tab = Tab::new(1);
         let (tx, rx) = mpsc::channel();
         tab.set_bus_sender(tx);
-        tab.navigate_to_new(requested.into());
+        tab.navigate_to_new(requested.into()).unwrap();
         let accepted = super::support::response_facts(
             addressing::ResourceKind::Document,
             requested.into(),
@@ -302,12 +313,12 @@ fn document_lifecycle_chunk_provenance_rejects_unrelated_and_final_urls() {
             },
             Some("text/html".into()),
         );
-        tab.on_core_event(start(tab.nav_gen, accepted.clone()))
+        tab.on_core_event(start(super::support::pending_id(&tab), accepted.clone()))
             .unwrap();
         let body = "<!doctype html><p>retained preview";
         tab.on_core_event(CoreEvent::NetworkChunk {
             tab_id: 1,
-            request_id: tab.nav_gen,
+            request_id: tab.active_document_request_id().expect("admitted fixture"),
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
             url: requested.into(),
@@ -317,11 +328,11 @@ fn document_lifecycle_chunk_provenance_rejects_unrelated_and_final_urls() {
         let parsed = html::parse_document(body, Default::default()).unwrap();
         tab.on_core_event(CoreEvent::DomPatchUpdate {
             tab_id: 1,
-            request_id: tab.nav_gen,
+            request_id: tab.active_document_request_id().expect("admitted fixture"),
             publication: no_quirks_patch_publication_from_output(parsed),
         })
         .unwrap();
-        tab.activate_link("#inflight");
+        tab.activate_link("#inflight").unwrap();
         let addresses = tab.page.addresses.clone();
         let origin = addresses.as_ref().unwrap().document_origin().clone();
         let handle = tab.dom_handle;
@@ -331,7 +342,7 @@ fn document_lifecycle_chunk_provenance_rejects_unrelated_and_final_urls() {
         rx.try_iter().for_each(drop);
         tab.on_core_event(CoreEvent::NetworkChunk {
             tab_id: 1,
-            request_id: tab.nav_gen - 1,
+            request_id: tab.active_document_request_id().expect("admitted fixture") - 1,
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
             url: invalid.into(),
@@ -342,7 +353,7 @@ fn document_lifecycle_chunk_provenance_rejects_unrelated_and_final_urls() {
         assert!(rx.try_recv().is_err());
         tab.on_core_event(CoreEvent::NetworkChunk {
             tab_id: 1,
-            request_id: tab.nav_gen,
+            request_id: tab.active_document_request_id().expect("admitted fixture"),
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
             url: invalid.into(),
@@ -379,13 +390,13 @@ fn document_lifecycle_chunk_provenance_rejects_unrelated_and_final_urls() {
             );
         }
         assert!(
-            matches!(rx.try_recv().unwrap(), CoreCommand::CancelRequest { request_id, .. } if request_id == tab.nav_gen)
+            matches!(rx.try_recv().unwrap(), CoreCommand::CancelRequest { request_id, .. } if request_id == tab.active_document_request_id().expect("admitted fixture"))
         );
         assert!(rx.try_recv().is_err(), "invalid chunk reached parser");
         let failed = document_snapshot(&tab);
         tab.on_core_event(CoreEvent::NetworkChunk {
             tab_id: 1,
-            request_id: tab.nav_gen,
+            request_id: tab.active_document_request_id().expect("admitted fixture"),
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
             url: requested.into(),
@@ -405,13 +416,14 @@ fn document_lifecycle_html_stylesheet_slot_associations_are_unmatched_routes() {
         let mut tab = Tab::new(1);
         let (tx, rx) = mpsc::channel();
         tab.set_bus_sender(tx);
-        tab.navigate_to_new(file.into());
+        tab.navigate_to_new(file.into()).unwrap();
+        let request_id = super::support::pending_id(&tab);
         if phase != "awaiting" {
-            tab.on_core_event(start(tab.nav_gen, response(file)))
+            tab.on_core_event(start(request_id, response(file)))
                 .unwrap();
             tab.on_core_event(CoreEvent::NetworkChunk {
                 tab_id: 1,
-                request_id: tab.nav_gen,
+                request_id,
                 stylesheet_slot_id: None,
                 kind: ResourceKind::Html,
                 url: file.into(),
@@ -428,14 +440,14 @@ fn document_lifecycle_html_stylesheet_slot_associations_are_unmatched_routes() {
             };
             tab.on_core_event(CoreEvent::DomPatchUpdate {
                 tab_id: 1,
-                request_id: tab.nav_gen,
+                request_id,
                 publication,
             })
             .unwrap();
             if phase == "failed" {
                 tab.on_core_event(CoreEvent::HtmlParseFinished {
                     tab_id: 1,
-                    request_id: tab.nav_gen,
+                    request_id,
                     result: Err(HtmlParseFailure::InputClosed),
                 })
                 .unwrap();
@@ -443,7 +455,7 @@ fn document_lifecycle_html_stylesheet_slot_associations_are_unmatched_routes() {
                 super::support::complete_document_body(&mut tab);
                 tab.on_core_event(CoreEvent::HtmlParseFinished {
                     tab_id: 1,
-                    request_id: tab.nav_gen,
+                    request_id,
                     result: Ok(completion),
                 })
                 .unwrap();
@@ -456,14 +468,14 @@ fn document_lifecycle_html_stylesheet_slot_associations_are_unmatched_routes() {
         for event in [
             CoreEvent::NetworkStart {
                 tab_id: 1,
-                request_id: tab.nav_gen,
+                request_id,
                 stylesheet_slot_id: slot,
                 kind: ResourceKind::Html,
                 response: response(file),
             },
             CoreEvent::NetworkChunk {
                 tab_id: 1,
-                request_id: tab.nav_gen,
+                request_id,
                 stylesheet_slot_id: slot,
                 kind: ResourceKind::Html,
                 url: "https://unrelated.test/".into(),
@@ -471,7 +483,7 @@ fn document_lifecycle_html_stylesheet_slot_associations_are_unmatched_routes() {
             },
             CoreEvent::NetworkDone {
                 tab_id: 1,
-                request_id: tab.nav_gen,
+                request_id,
                 stylesheet_slot_id: slot,
                 kind: ResourceKind::Html,
                 response: response(file),
@@ -479,7 +491,7 @@ fn document_lifecycle_html_stylesheet_slot_associations_are_unmatched_routes() {
             },
             CoreEvent::NetworkError {
                 tab_id: 1,
-                request_id: tab.nav_gen,
+                request_id,
                 stylesheet_slot_id: slot,
                 kind: ResourceKind::Html,
                 url: file.into(),
@@ -504,7 +516,7 @@ fn document_lifecycle_html_stylesheet_slot_associations_are_unmatched_routes() {
 fn document_lifecycle_response_admission_is_required_before_chunk_or_done() {
     for completion_first in [false, true] {
         let (mut tab, rx) = navigating_tab();
-        let request_id = tab.nav_gen;
+        let request_id = super::support::pending_id(&tab);
         let history = tab.history.clone();
         let history_index = tab.history_index;
         let rejected = super::support::response_facts(
@@ -527,10 +539,16 @@ fn document_lifecycle_response_admission_is_required_before_chunk_or_done() {
             html_chunk(request_id, b"unadmitted")
         };
         tab.on_core_event(event).unwrap();
-        assert!(matches!(
-            &tab.document_load.parse_status,
-            DocumentParseStatus::Failed(_)
-        ));
+        assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Pending);
+        assert!(
+            tab.navigation_attempt
+                .as_ref()
+                .unwrap()
+                .terminal
+                .as_ref()
+                .unwrap()
+                .is_err()
+        );
         assert!(tab.document_load.response.is_none());
         assert_eq!(tab.document_load.bytes_received, 0);
         assert!(tab.page.addresses.is_none());
@@ -556,9 +574,9 @@ fn document_lifecycle_response_admission_is_required_before_chunk_or_done() {
             .unwrap();
         assert_eq!(document_snapshot(&tab), failed);
         assert!(rx.try_recv().is_err());
-        tab.refresh();
-        assert_ne!(tab.nav_gen, request_id);
-        tab.on_core_event(start(tab.nav_gen, response(URL)))
+        tab.navigate_to_new(URL.into()).unwrap();
+        assert_ne!(super::support::pending_id(&tab), request_id);
+        tab.on_core_event(start(super::support::pending_id(&tab), response(URL)))
             .unwrap();
         assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Pending);
         assert_eq!(tab.document_load.response, Some(response(URL)));
@@ -637,13 +655,21 @@ fn document_lifecycle_response_completion_cannot_replace_accepted_provenance() {
         let count = tab.document_load.bytes_received;
         rx.try_iter().for_each(drop);
         // Wrong-generation completion is inert even if its provenance is invalid.
-        tab.on_core_event(html_done(tab.nav_gen - 1, changed.clone(), 999))
-            .unwrap();
+        tab.on_core_event(html_done(
+            tab.active_document_request_id().expect("admitted fixture") - 1,
+            changed.clone(),
+            999,
+        ))
+        .unwrap();
         assert_eq!(tab.document_load.response.as_ref(), Some(&accepted));
         assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Pending);
         assert!(rx.try_recv().is_err());
-        tab.on_core_event(html_done(tab.nav_gen, changed, 999))
-            .unwrap();
+        tab.on_core_event(html_done(
+            tab.active_document_request_id().expect("admitted fixture"),
+            changed,
+            999,
+        ))
+        .unwrap();
         assert!(
             matches!(
                 &tab.document_load.parse_status,
@@ -682,9 +708,17 @@ fn document_lifecycle_response_completion_cannot_replace_accepted_provenance() {
             "inconsistent completion reached parser"
         );
         let failed = document_snapshot(&tab);
-        tab.on_core_event(html_chunk(tab.nav_gen, b"late")).unwrap();
-        tab.on_core_event(html_done(tab.nav_gen, accepted, 999))
-            .unwrap();
+        tab.on_core_event(html_chunk(
+            tab.active_document_request_id().expect("admitted fixture"),
+            b"late",
+        ))
+        .unwrap();
+        tab.on_core_event(html_done(
+            tab.active_document_request_id().expect("admitted fixture"),
+            accepted,
+            999,
+        ))
+        .unwrap();
         assert_eq!(document_snapshot(&tab), failed);
         assert_eq!(
             tab.page.addresses.as_ref().unwrap().document_origin(),
@@ -692,19 +726,25 @@ fn document_lifecycle_response_completion_cannot_replace_accepted_provenance() {
         );
         assert!(rx.try_recv().is_err());
         // The retained preview remains eligible for same-document navigation.
-        tab.activate_link("#preview");
+        tab.activate_link("#preview").unwrap();
         assert_eq!(
             tab.page.addresses.as_ref().unwrap().document_origin(),
             &origin
         );
         assert!(rx.try_recv().is_err());
-        let previous_generation = tab.nav_gen;
-        tab.refresh();
-        assert_ne!(tab.nav_gen, previous_generation);
-        assert!(tab.page.addresses.is_none());
+        let previous_generation = tab.active_document_request_id().expect("admitted fixture");
+        tab.refresh().unwrap();
+        assert_eq!(tab.active_document_request_id(), Some(previous_generation));
+        assert_eq!(
+            tab.page.addresses.as_ref().unwrap().document_origin(),
+            &origin
+        );
         let requested = tab.url.clone();
-        tab.on_core_event(start(tab.nav_gen, response(&requested)))
-            .unwrap();
+        tab.on_core_event(start(
+            super::support::pending_id(&tab),
+            response(&requested),
+        ))
+        .unwrap();
         assert_ne!(
             tab.page.addresses.as_ref().unwrap().document_origin(),
             &origin
@@ -719,7 +759,7 @@ fn document_lifecycle_response_valid_stream_preserves_admitted_file_origin() {
     let mut tab = Tab::new(1);
     let (tx, rx) = mpsc::channel();
     tab.set_bus_sender(tx);
-    tab.navigate_to_new(file.into());
+    tab.navigate_to_new(file.into()).unwrap();
     rx.try_iter().for_each(drop);
     let accepted = super::support::response_facts(
         addressing::ResourceKind::Document,
@@ -728,7 +768,7 @@ fn document_lifecycle_response_valid_stream_preserves_admitted_file_origin() {
         None,
         Some("text/html".into()),
     );
-    tab.on_core_event(start(tab.nav_gen, accepted.clone()))
+    tab.on_core_event(start(super::support::pending_id(&tab), accepted.clone()))
         .unwrap();
     let origin = tab
         .page
@@ -743,14 +783,17 @@ fn document_lifecycle_response_valid_stream_preserves_admitted_file_origin() {
         CoreCommand::ParseHtmlStart { .. }
     ));
     // A duplicate start cannot replace admitted provenance while parsing.
-    tab.on_core_event(start(tab.nav_gen, response("https://duplicate.test/")))
-        .unwrap();
+    tab.on_core_event(start(
+        tab.active_document_request_id().expect("admitted fixture"),
+        response("https://duplicate.test/"),
+    ))
+    .unwrap();
     assert!(rx.try_recv().is_err());
     let body = b"<!doctype html><p>valid";
     for bytes in body.chunks(8) {
         tab.on_core_event(CoreEvent::NetworkChunk {
             tab_id: 1,
-            request_id: tab.nav_gen,
+            request_id: tab.active_document_request_id().expect("admitted fixture"),
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
             url: file.into(),
@@ -776,14 +819,14 @@ fn document_lifecycle_response_valid_stream_preserves_admitted_file_origin() {
     };
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         publication,
     })
     .unwrap();
     assert_eq!(tab.document_load.bytes_received, body.len());
     // Response provenance stays frozen even when the available document's URL
     // changes through a same-document navigation during streaming.
-    tab.activate_link("#inflight");
+    tab.activate_link("#inflight").unwrap();
     assert_eq!(
         tab.page.document_url().unwrap().fragment(),
         Some("inflight")
@@ -792,8 +835,12 @@ fn document_lifecycle_response_valid_stream_preserves_admitted_file_origin() {
         tab.page.addresses.as_ref().unwrap().document_origin(),
         &origin
     );
-    tab.on_core_event(html_done(tab.nav_gen, accepted.clone(), body.len()))
-        .unwrap();
+    tab.on_core_event(html_done(
+        tab.active_document_request_id().expect("admitted fixture"),
+        accepted.clone(),
+        body.len(),
+    ))
+    .unwrap();
     assert!(matches!(
         rx.try_recv().unwrap(),
         CoreCommand::ParseHtmlDone { .. }
@@ -805,7 +852,7 @@ fn document_lifecycle_response_valid_stream_preserves_admitted_file_origin() {
     );
     tab.on_core_event(CoreEvent::HtmlParseFinished {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         result: Ok(completion),
     })
     .unwrap();
@@ -813,7 +860,8 @@ fn document_lifecycle_response_valid_stream_preserves_admitted_file_origin() {
         tab.document_load.parse_status,
         DocumentParseStatus::Complete
     );
-    assert_late_network_events_ignored(&mut tab, &rx);
+    let request_id = tab.active_document_request_id().expect("admitted fixture");
+    assert_late_network_events_ignored(&mut tab, &rx, request_id);
     assert_eq!(tab.document_load.response.as_ref(), Some(&accepted));
     assert_eq!(
         tab.page.addresses.as_ref().unwrap().document_origin(),
@@ -823,7 +871,7 @@ fn document_lifecycle_response_valid_stream_preserves_admitted_file_origin() {
 
 fn streaming_tab() -> (Tab, Receiver<CoreCommand>, HtmlParseCompletion) {
     let (mut tab, rx) = navigating_tab();
-    let request_id = tab.nav_gen;
+    let request_id = super::support::pending_id(&tab);
     tab.on_core_event(start(request_id, response(URL))).unwrap();
     assert!(
         matches!(rx.try_recv().unwrap(), CoreCommand::ParseHtmlStart {
@@ -864,7 +912,7 @@ fn streaming_tab() -> (Tab, Receiver<CoreCommand>, HtmlParseCompletion) {
 
 fn streaming_addressed_preview() -> (Tab, Receiver<CoreCommand>) {
     let (mut tab, rx) = navigating_tab();
-    let request_id = tab.nav_gen;
+    let request_id = super::support::pending_id(&tab);
     tab.on_core_event(start(request_id, response(URL))).unwrap();
     assert!(matches!(
         rx.try_recv().unwrap(),
@@ -894,7 +942,7 @@ fn streaming_addressed_preview() -> (Tab, Receiver<CoreCommand>) {
 fn finish_document(tab: &mut Tab, rx: &Receiver<CoreCommand>, completion: HtmlParseCompletion) {
     tab.on_core_event(CoreEvent::NetworkDone {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
         response: response(URL),
@@ -907,7 +955,7 @@ fn finish_document(tab: &mut Tab, rx: &Receiver<CoreCommand>, completion: HtmlPa
     ));
     tab.on_core_event(CoreEvent::HtmlParseFinished {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         result: Ok(completion),
     })
     .unwrap();
@@ -921,7 +969,7 @@ fn finish_document(tab: &mut Tab, rx: &Receiver<CoreCommand>, completion: HtmlPa
 fn fail_parser(tab: &mut Tab, rx: &Receiver<CoreCommand>) {
     tab.on_core_event(CoreEvent::HtmlParseFinished {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         result: Err(HtmlParseFailure::InputClosed),
     })
     .unwrap();
@@ -933,7 +981,7 @@ fn fail_parser(tab: &mut Tab, rx: &Receiver<CoreCommand>) {
     assert!(
         matches!(rx.try_recv().unwrap(), CoreCommand::CancelRequest {
         tab_id: 1, request_id
-    } if request_id == tab.nav_gen)
+    } if request_id == tab.active_document_request_id().expect("admitted fixture"))
     );
 }
 
@@ -965,8 +1013,7 @@ fn document_snapshot(tab: &Tab) -> String {
     )
 }
 
-fn assert_late_network_events_ignored(tab: &mut Tab, rx: &Receiver<CoreCommand>) {
-    let request_id = tab.nav_gen;
+fn assert_late_network_events_ignored(tab: &mut Tab, rx: &Receiver<CoreCommand>, request_id: u64) {
     let before = document_snapshot(tab);
     // Include changed metadata: a repeated start is not authority to replace
     // the response, even if it purports to be a different redirect destination.
@@ -1014,7 +1061,7 @@ fn assert_late_network_events_ignored(tab: &mut Tab, rx: &Receiver<CoreCommand>)
 #[test]
 fn first_document_start_is_accepted_once_before_any_publication() {
     let (mut tab, rx) = navigating_tab();
-    let request_id = tab.nav_gen;
+    let request_id = super::support::pending_id(&tab);
     tab.on_core_event(start(request_id, response(URL))).unwrap();
     assert_eq!(tab.document_load.response, Some(response(URL)));
     assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Pending);
@@ -1042,7 +1089,7 @@ fn repeated_document_start_preserves_streaming_preview_and_stylesheet_work() {
     rx.try_iter().for_each(drop);
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         stylesheet_slot_id: Some(slot),
         kind: ResourceKind::Css,
         response: response(css_url),
@@ -1051,7 +1098,7 @@ fn repeated_document_start_preserves_streaming_preview_and_stylesheet_work() {
     assert!(tab.stylesheet_loads.contains_key(&slot));
     let before = document_snapshot(&tab);
     tab.on_core_event(start(
-        tab.nav_gen,
+        tab.active_document_request_id().expect("admitted fixture"),
         response("https://example.com/replacement"),
     ))
     .unwrap();
@@ -1060,7 +1107,7 @@ fn repeated_document_start_preserves_streaming_preview_and_stylesheet_work() {
     // The existing stylesheet and parser lifecycles can still finish normally.
     tab.on_core_event(CoreEvent::NetworkDone {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         stylesheet_slot_id: Some(slot),
         kind: ResourceKind::Css,
         response: response(css_url),
@@ -1073,7 +1120,7 @@ fn repeated_document_start_preserves_streaming_preview_and_stylesheet_work() {
     ));
     tab.on_core_event(CoreEvent::CssSheetDone {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         stylesheet_slot_id: slot,
         url: css_url.into(),
     })
@@ -1085,7 +1132,8 @@ fn repeated_document_start_preserves_streaming_preview_and_stylesheet_work() {
 fn late_same_request_start_after_parser_failure_cannot_reopen_document() {
     let (mut tab, rx, completion) = streaming_tab();
     fail_parser(&mut tab, &rx);
-    assert_late_network_events_ignored(&mut tab, &rx);
+    let request_id = tab.active_document_request_id().expect("admitted fixture");
+    assert_late_network_events_ignored(&mut tab, &rx, request_id);
     let before = document_snapshot(&tab);
     // Neither a later publication nor a matching terminal bookmark can replace
     // the original parser failure, even after the repeated network start.
@@ -1093,7 +1141,7 @@ fn late_same_request_start_after_parser_failure_cannot_reopen_document() {
     assert!(
         tab.on_core_event(CoreEvent::DomPatchUpdate {
             tab_id: 1,
-            request_id: tab.nav_gen,
+            request_id: tab.active_document_request_id().expect("admitted fixture"),
             publication: no_quirks_patch_publication_from_output(parsed),
         })
         .is_err()
@@ -1101,7 +1149,7 @@ fn late_same_request_start_after_parser_failure_cannot_reopen_document() {
     assert!(
         tab.on_core_event(CoreEvent::HtmlParseFinished {
             tab_id: 1,
-            request_id: tab.nav_gen,
+            request_id: tab.active_document_request_id().expect("admitted fixture"),
             result: Ok(completion),
         })
         .is_err()
@@ -1114,15 +1162,17 @@ fn late_same_request_start_after_parser_failure_cannot_reopen_document() {
 fn late_same_request_start_after_completion_cannot_reset_committed_document() {
     let (mut tab, rx, completion) = streaming_tab();
     finish_document(&mut tab, &rx, completion);
-    assert_late_network_events_ignored(&mut tab, &rx);
+    let request_id = tab.active_document_request_id().expect("admitted fixture");
+    assert_late_network_events_ignored(&mut tab, &rx, request_id);
 }
 
 #[test]
 fn cancellation_before_response_start_cannot_be_reopened_by_late_start() {
     let (mut tab, rx) = navigating_tab();
+    let request_id = super::support::pending_id(&tab);
     tab.on_core_event(CoreEvent::NetworkError {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id,
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
         url: URL.into(),
@@ -1133,15 +1183,21 @@ fn cancellation_before_response_start_cannot_be_reopened_by_late_start() {
     })
     .unwrap();
     assert!(tab.document_load.response.is_none());
-    assert!(matches!(
-        &tab.document_load.parse_status,
-        DocumentParseStatus::Failed(_)
-    ));
+    assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Pending);
+    assert!(
+        tab.navigation_attempt
+            .as_ref()
+            .unwrap()
+            .terminal
+            .as_ref()
+            .unwrap()
+            .is_err()
+    );
     assert!(matches!(
         rx.try_recv().unwrap(),
         CoreCommand::CancelRequest { .. }
     ));
-    assert_late_network_events_ignored(&mut tab, &rx);
+    assert_late_network_events_ignored(&mut tab, &rx, request_id);
 }
 
 #[test]
@@ -1154,51 +1210,52 @@ fn navigation_and_refresh_reset_terminal_state_but_fragment_navigation_does_not(
             } else {
                 finish_document(&mut tab, &rx, completion);
             }
-            let request_id = tab.nav_gen;
+            let request_id = tab.active_document_request_id().unwrap();
             let terminal = tab.document_load.parse_status.clone();
             let dom_handle = tab.dom_handle;
-            tab.navigate_to_new(format!("{URL}#fragment"));
-            assert_eq!(tab.nav_gen, request_id);
+            tab.navigate_to_new(format!("{URL}#fragment")).unwrap();
+            assert_eq!(tab.active_document_request_id(), Some(request_id));
             assert_eq!(tab.document_load.parse_status, terminal);
             assert_eq!(tab.dom_handle, dom_handle);
             assert!(rx.try_recv().is_err());
             if refresh {
-                tab.refresh();
+                tab.refresh().unwrap();
             } else {
-                tab.navigate_to_new("https://example.com/next".into());
+                tab.navigate_to_new("https://example.com/next".into())
+                    .unwrap();
             }
-            assert_ne!(tab.nav_gen, request_id);
-            assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Pending);
-            assert!(tab.document_load.response.is_none());
-            assert!(tab.loading);
-            assert!(matches!(rx.try_recv().unwrap(), CoreCommand::FetchStream {
-                request, kind: ResourceKind::Html, ..
-            } if request.request_id() == tab.nav_gen));
+            let pending_id = super::support::pending_id(&tab);
+            assert!(pending_id > request_id);
+            assert_eq!(tab.active_document_request_id(), Some(request_id));
+            assert_eq!(tab.document_load.parse_status, terminal);
+            assert_eq!(tab.dom_handle, dom_handle);
             assert!(
-                matches!(rx.try_recv().unwrap(), CoreCommand::CancelRequest {
-                request_id: id, ..
-            } if id == request_id)
+                matches!(rx.try_recv().unwrap(), CoreCommand::FetchStream {request, ..} if request.request_id() == pending_id)
+            );
+            assert!(
+                rx.try_recv().is_err(),
+                "pending replacement must not cancel the active document"
             );
             let before = document_snapshot(&tab);
             tab.on_core_event(start(request_id, response(URL))).unwrap();
-            assert_eq!(
-                document_snapshot(&tab),
-                before,
-                "stale generation must stay ignored"
-            );
+            assert_eq!(document_snapshot(&tab), before);
             assert!(rx.try_recv().is_err());
-            let new_response = response(&tab.url);
-            tab.on_core_event(start(tab.nav_gen, new_response.clone()))
+            let accepted = response(&tab.url);
+            tab.on_core_event(start(pending_id, accepted.clone()))
                 .unwrap();
-            assert_eq!(tab.document_load.response, Some(new_response));
+            assert_eq!(tab.active_document_request_id(), Some(pending_id));
+            assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Pending);
+            assert_eq!(tab.document_load.response, Some(accepted));
+            assert!(tab.loading);
             assert!(tab.dom_handle.is_none());
             assert!(tab.page.dom.is_none());
+            let commands: Vec<_> = rx.try_iter().collect();
             assert!(
-                matches!(rx.try_recv().unwrap(), CoreCommand::ParseHtmlStart {
-                request_id: id, ..
-            } if id == tab.nav_gen)
+                matches!(commands.first(),Some(CoreCommand::ParseHtmlStart{request_id: id,..}) if *id == pending_id)
             );
-            assert!(rx.try_recv().is_err());
+            assert!(commands.iter().any(
+                |c| matches!(c,CoreCommand::CancelRequest{request_id:id,..} if *id==request_id)
+            ));
         }
     }
 }
@@ -1206,7 +1263,7 @@ fn navigation_and_refresh_reset_terminal_state_but_fragment_navigation_does_not(
 #[test]
 fn document_lifecycle_published_preview_remains_active_during_parsing_and_after_failure() {
     let (mut tab, rx) = streaming_addressed_preview();
-    let generation = tab.nav_gen;
+    let generation = tab.active_document_request_id().expect("admitted fixture");
     let handle = tab.dom_handle;
     let version = tab.dom_version;
     let frozen_base = tab.page.active_base_url().unwrap().clone();
@@ -1216,16 +1273,19 @@ fn document_lifecycle_published_preview_remains_active_during_parsing_and_after_
     assert!(selected.is_some());
 
     // A published preview is the active document even while parsing continues.
-    tab.activate_link("#one");
-    tab.activate_link("#two");
-    tab.go_back();
+    tab.activate_link("#one").unwrap();
+    tab.activate_link("#two").unwrap();
+    tab.go_back().unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), Some("one"));
-    tab.go_back();
+    tab.go_back().unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), None);
-    tab.go_forward();
-    tab.go_forward();
+    tab.go_forward().unwrap();
+    tab.go_forward().unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), Some("two"));
-    assert_eq!(tab.nav_gen, generation);
+    assert_eq!(
+        tab.active_document_request_id().expect("admitted fixture"),
+        generation
+    );
     assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Pending);
     assert_eq!(tab.dom_handle, handle);
     assert_eq!(tab.dom_version, version);
@@ -1238,19 +1298,22 @@ fn document_lifecycle_published_preview_remains_active_during_parsing_and_after_
 
     // Parser failure preserves the accepted preview and its identity.
     fail_parser(&mut tab, &rx);
-    tab.activate_link("#after-failure");
+    tab.activate_link("#after-failure").unwrap();
     assert_eq!(
         tab.page.document_url().unwrap().fragment(),
         Some("after-failure")
     );
-    tab.go_back();
+    tab.go_back().unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), Some("two"));
-    tab.go_forward();
+    tab.go_forward().unwrap();
     assert_eq!(
         tab.page.document_url().unwrap().fragment(),
         Some("after-failure")
     );
-    assert_eq!(tab.nav_gen, generation);
+    assert_eq!(
+        tab.active_document_request_id().expect("admitted fixture"),
+        generation
+    );
     assert!(matches!(
         &tab.document_load.parse_status,
         DocumentParseStatus::Failed(_)
@@ -1272,49 +1335,46 @@ fn document_lifecycle_published_preview_remains_active_during_parsing_and_after_
 fn document_lifecycle_navigation_away_cannot_reuse_preview_or_accept_stale_publications() {
     for fail_before_navigation in [false, true] {
         let (mut tab, rx) = streaming_addressed_preview();
-        tab.activate_link("#preview");
+        tab.activate_link("#preview").unwrap();
         assert!(rx.try_recv().is_err());
         if fail_before_navigation {
             fail_parser(&mut tab, &rx);
         }
-        let previous_request = tab.nav_gen;
+        let previous_request = tab.active_document_request_id().expect("admitted fixture");
         let next_url = "https://example.com/replacement";
-        tab.navigate_to_new(next_url.into());
-        assert_eq!(tab.nav_gen, previous_request + 1);
-        assert!(tab.page.document_url().is_none());
-        assert!(tab.page.dom.is_none());
-        assert!(tab.page.image_sources.is_empty());
+        tab.navigate_to_new(next_url.into()).unwrap();
+        assert_eq!(tab.active_document_request_id(), Some(previous_request));
+        assert!(tab.page.dom.is_some());
+        let current_request = super::support::pending_id(&tab);
         let commands: Vec<_> = rx.try_iter().collect();
         assert!(commands.iter().any(|command| matches!(command,
             CoreCommand::FetchStream { request: fetch_request, kind: ResourceKind::Html, .. }
-                if fetch_request.request_id() == tab.nav_gen && fetch_request.legacy_issued_url(ResourceKind::Html).unwrap() == next_url
+                if fetch_request.request_id() == super::support::pending_id(&tab) && fetch_request.legacy_issued_url(ResourceKind::Html).unwrap() == next_url
         )));
 
-        // An old response and old DOM publication cannot revive the preview.
+        // Replacement admission ends the preview's publication authority.
+        tab.on_core_event(start(current_request, response(next_url)))
+            .unwrap();
+        assert_eq!(tab.active_document_request_id(), Some(current_request));
+        assert!(tab.page.dom.is_none());
+        assert!(tab.page.image_sources.is_empty());
+        let admitted_commands: Vec<_> = rx.try_iter().collect();
+        assert!(
+            matches!(admitted_commands.first(), Some(CoreCommand::ParseHtmlStart{request_id,..}) if *request_id == current_request)
+        );
         tab.on_core_event(start(previous_request, response(URL)))
             .unwrap();
-        let stale = html::parse_document(
-            "<!doctype html><p id=stale>stale</p>",
-            html::HtmlParseOptions::default(),
-        )
-        .unwrap();
+        let stale =
+            html::parse_document("<!doctype html><p id=stale>stale</p>", Default::default())
+                .unwrap();
         tab.on_core_event(CoreEvent::DomPatchUpdate {
             tab_id: 1,
             request_id: previous_request,
             publication: no_quirks_patch_publication_from_output(stale),
         })
         .unwrap();
-        assert!(tab.page.document_url().is_none());
         assert!(tab.page.dom.is_none());
         assert!(rx.try_recv().is_err());
-
-        let current_request = tab.nav_gen;
-        tab.on_core_event(start(current_request, response(next_url)))
-            .unwrap();
-        assert!(matches!(
-            rx.try_recv().unwrap(),
-            CoreCommand::ParseHtmlStart { request_id, .. } if request_id == current_request
-        ));
         let replacement = html::parse_document(
             "<!doctype html><p id=replacement>replacement</p>",
             html::HtmlParseOptions::default(),
@@ -1332,13 +1392,14 @@ fn document_lifecycle_navigation_away_cannot_reuse_preview_or_accept_stale_publi
 
         // The old history entry is a different document, even if it was a
         // committed preview; traversal must request it again.
-        tab.go_back();
-        assert_eq!(tab.nav_gen, current_request + 1);
-        assert!(tab.page.document_url().is_none());
-        assert!(tab.page.dom.is_none());
+        tab.go_back().unwrap();
+        assert_eq!(super::support::pending_id(&tab), current_request + 1);
+        assert_eq!(tab.active_document_request_id(), Some(current_request));
+        assert_eq!(tab.page.document_url().unwrap().as_str(), next_url);
+        assert!(tab.page.dom.is_some());
         assert!(rx.try_iter().any(|command| matches!(command,
             CoreCommand::FetchStream { request: fetch_request, kind: ResourceKind::Html, .. }
-                if fetch_request.request_id() == tab.nav_gen && fetch_request.legacy_issued_url(ResourceKind::Html).unwrap() == format!("{URL}#preview")
+                if fetch_request.request_id() == super::support::pending_id(&tab) && fetch_request.legacy_issued_url(ResourceKind::Html).unwrap() == format!("{URL}#preview")
         )));
     }
 }
@@ -1346,33 +1407,46 @@ fn document_lifecycle_navigation_away_cannot_reuse_preview_or_accept_stale_publi
 #[test]
 fn document_lifecycle_unpublished_request_and_response_cannot_be_reused() {
     let (mut tab, rx) = navigating_tab();
-    let first_request = tab.nav_gen;
+    let first = super::support::pending_id(&tab);
+    assert_eq!(tab.active_document_request_id(), None);
     assert!(tab.page.document_url().is_none());
-    assert!(tab.page.dom.is_none());
-    tab.navigate_to_new(format!("{URL}#before-response"));
-    assert_eq!(tab.nav_gen, first_request + 1);
-    assert!(rx.try_iter().any(|command| matches!(command,
-        CoreCommand::FetchStream { request: fetch_request, kind: ResourceKind::Html, .. } if fetch_request.request_id() == tab.nav_gen
-    )));
-
+    tab.navigate_to_new(format!("{URL}#before-response"))
+        .unwrap();
+    let second = super::support::pending_id(&tab);
+    assert!(second > first);
+    let commands: Vec<_> = rx.try_iter().collect();
     assert!(
-        matches!(rx.try_recv().unwrap(), CoreCommand::CancelRequest { request_id, .. } if request_id == first_request)
+        commands.iter().any(
+            |c| matches!(c,CoreCommand::FetchStream{request,..} if request.request_id()==second)
+        )
     );
+    assert!(
+        commands
+            .iter()
+            .any(|c| matches!(c,CoreCommand::CancelRequest{request_id,..} if *request_id==first))
+    );
+    assert_eq!(tab.active_document_request_id(), None);
     let second_url = format!("{URL}#before-response");
-    let second_request = tab.nav_gen;
-    tab.on_core_event(start(second_request, response(&second_url)))
+    tab.on_core_event(start(second, response(&second_url)))
         .unwrap();
     assert!(matches!(
         rx.try_recv().unwrap(),
         CoreCommand::ParseHtmlStart { .. }
     ));
+    assert_eq!(tab.active_document_request_id(), Some(second));
     assert!(tab.page.document_url().is_some());
     assert!(tab.page.dom.is_none());
-    tab.navigate_to_new(format!("{URL}#before-publication"));
-    assert_eq!(tab.nav_gen, second_request + 1);
-    assert!(tab.page.document_url().is_none());
+    // No parser publication exists: a fragment request must fetch instead of relabeling.
+    tab.navigate_to_new(format!("{URL}#before-publication"))
+        .unwrap();
+    let third = super::support::pending_id(&tab);
+    assert!(third > second);
+    assert_eq!(tab.active_document_request_id(), Some(second));
+    assert_eq!(tab.page.document_url().unwrap().as_str(), second_url);
     assert!(tab.page.dom.is_none());
-    assert!(rx.try_iter().any(|command| matches!(command,
-        CoreCommand::FetchStream { request: fetch_request, kind: ResourceKind::Html, .. } if fetch_request.request_id() == tab.nav_gen
-    )));
+    assert!(
+        rx.try_iter().any(
+            |c| matches!(c,CoreCommand::FetchStream{request,..} if request.request_id()==third)
+        )
+    );
 }

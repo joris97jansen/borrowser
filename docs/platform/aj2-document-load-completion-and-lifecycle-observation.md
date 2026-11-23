@@ -1,5 +1,7 @@
 # AJ2: Document Load Completion, Typed Failures, And Lifecycle Observation
 
+> AJ3 current qualification: [AJ3](aj3-main-document-response-preparation.md) refines response admission and concurrent navigation lifetime. Active body/parser/stylesheet settlement remains independent of a pending replacement. Pending failures and 204/205 outcomes have their own issued-attempt terminal; the active first-failure latch is preserved. A settled active frame remains observable while a replacement waits. Earlier negative response fixtures and eligibility qualifications below are historical AJ2 scope, superseded only by AJ3's explicit subset.
+
 Issue: [#1133](https://github.com/joris97jansen/borrowser/issues/1133).
 Milestone AJ. Implementation base: `fe8a154545ec126bc32a8c48900be30474d5ad2a`.
 This describes the implementation candidate; validation and review qualification

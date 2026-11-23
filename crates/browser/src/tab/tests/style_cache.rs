@@ -16,13 +16,12 @@ use html::{DomPatch, PatchKey, internal::Id};
 #[test]
 fn attribute_mutation_without_existing_style_cache_falls_back_to_full_recompute() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 28;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(280);
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 28,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -38,7 +37,7 @@ fn attribute_mutation_without_existing_style_cache_falls_back_to_full_recompute(
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 28,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(1),
@@ -83,12 +82,11 @@ fn attribute_mutation_without_existing_style_cache_falls_back_to_full_recompute(
 #[test]
 fn keyed_class_id_and_attribute_dependencies_authorize_suffix_recompute() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 291;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(2910);
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 291,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -120,7 +118,7 @@ fn keyed_class_id_and_attribute_dependencies_authorize_suffix_recompute() {
         let to = DomVersion(2 + index as u64);
         tab.on_core_event(CoreEvent::DomPatchUpdate {
             tab_id: tab.tab_id,
-            request_id: 291,
+            request_id,
             publication: no_quirks_patch_publication(
                 handle,
                 from,
@@ -149,12 +147,11 @@ fn keyed_class_id_and_attribute_dependencies_authorize_suffix_recompute() {
 #[test]
 fn irrelevant_attribute_change_reuses_computed_style_without_style_generation_change() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 292;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(2920);
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 292,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -168,7 +165,7 @@ fn irrelevant_attribute_change_reuses_computed_style_without_style_generation_ch
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 292,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(1),
@@ -200,12 +197,11 @@ fn irrelevant_attribute_change_reuses_computed_style_without_style_generation_ch
 #[test]
 fn inline_style_is_a_direct_cascade_dependency_without_style_selector() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 293;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(2930);
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 293,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -218,7 +214,7 @@ fn inline_style_is_a_direct_cascade_dependency_without_style_selector() {
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 293,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(1),
@@ -248,12 +244,11 @@ fn inline_style_is_a_direct_cascade_dependency_without_style_selector() {
 #[test]
 fn structural_full_recompute_reuses_compatible_dependency_artifact() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 294;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(2940);
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 294,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -270,7 +265,7 @@ fn structural_full_recompute_reuses_compatible_dependency_artifact() {
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 294,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(1),
@@ -307,12 +302,11 @@ fn structural_full_recompute_reuses_compatible_dependency_artifact() {
 #[test]
 fn multiple_attribute_operations_classify_committed_old_to_final_state() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 295;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(2950);
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 295,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -326,7 +320,7 @@ fn multiple_attribute_operations_classify_committed_old_to_final_state() {
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 295,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(1),
@@ -364,12 +358,11 @@ fn multiple_attribute_operations_classify_committed_old_to_final_state() {
 #[test]
 fn text_without_empty_dependency_skips_css_style_but_keeps_intrinsic_work() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 296;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(2960);
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 296,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -383,7 +376,7 @@ fn text_without_empty_dependency_skips_css_style_but_keeps_intrinsic_work() {
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 296,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(1),
@@ -418,13 +411,12 @@ fn text_without_empty_dependency_skips_css_style_but_keeps_intrinsic_work() {
 #[test]
 fn clean_style_cache_reuses_computed_document_without_recompute() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 29;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(290);
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 29,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,

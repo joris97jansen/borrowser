@@ -3,7 +3,8 @@ use gfx::input::{InputValueStore, InteractionState};
 /// Document-scoped input state owned by the browser layer.
 ///
 /// Lifecycle policy:
-/// - Cleared on full document navigations (new URL, reload, back/forward).
+/// - Cleared when an eligible replacement document is activated.
+/// - Preserved while a navigation is pending or completes without replacement.
 /// - Preserved on same-document navigations (e.g. fragment-only).
 #[derive(Debug, Default)]
 pub struct DocumentInputState {

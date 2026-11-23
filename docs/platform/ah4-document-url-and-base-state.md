@@ -1,5 +1,7 @@
 # AH4: Document URL And Frozen Document Base
 
+> AJ3 current qualification: [AJ3](aj3-main-document-response-preparation.md) moves irreversible navigation reset and history changes to eligible response activation. Pending, rejected and 204/205 navigations preserve the actual active document, origin, frozen base, associations and work. Active identity derives only from the installed FetchRequest; issued identities use a separate checked Tab reservation counter. Historical eager-reset descriptions below retain their original checkpoint.
+
 Current resource-address integration: [AH6](ah6-resource-addresses-and-identity-keys.md)
 adds typed complete references, fragmentless retrieval keys and operation capabilities.
 Browser's stylesheet handoff now retains references separately from issued request

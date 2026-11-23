@@ -325,7 +325,7 @@ fn ai8_metadata_debug_has_independent_literals_and_nested_redaction() {
     };
     assert_eq!(
         format!("{:?}", Some(Ok::<_, ()>(&event))),
-        r#"Some(Ok(Start { response: NetworkResponseInfo { original_url: "<redacted>", requested_url: "<redacted>", response_url: "parsed", status: Some(HttpStatus(200)), headers: [("<redacted>", "<redacted>"), ("<redacted>", "<redacted>")], redirect_chain: [], local_content_type_present: false, resource_kind: Document, content_type: Parsed(ContentType { mime_type: "<redacted>", charset_present: true }), declared_content_length: Value("<redacted>"), status_class: Some(Successful) }, .. }))"#
+        r#"Some(Ok(Start { response: NetworkResponseInfo { original_url: "<redacted>", requested_url: "<redacted>", response_url: "parsed", status: Some(HttpStatus(200)), headers: [("<redacted>", "<redacted>"), ("<redacted>", "<redacted>")], redirect_chain: [], local_content_type_present: false, resource_kind: Document, content_type: Parsed(ContentType { mime_type: "<redacted>", charset_present: true }), content_disposition: Missing, declared_content_length: Value("<redacted>"), status_class: Some(Successful) }, .. }))"#
     );
     let (tx, rx) = std::sync::mpsc::channel();
     drop(rx);
@@ -446,4 +446,56 @@ fn ai8_local_metadata_is_a_single_loader_fact_without_http_provenance() {
         assert_eq!(facts.declared_content_length(), Length::Missing);
         assert_eq!(facts.resource_kind(), Purpose::Stylesheet);
     }
+}
+
+#[test]
+fn aj3_disposition_type_is_bounded_metadata_and_preserves_raw_fields() {
+    use net::ResponseContentDisposition as D;
+    let cases: &[(&[&[u8]], D)] = &[
+        (&[], D::Missing),
+        (&[b"inline"], D::Inline),
+        (
+            &[b" \tATTACHMENT \t; filename=\"PRIVATE,a;b.txt\""],
+            D::Attachment,
+        ),
+        (&[b"inline; filename=\"attachment\""], D::Inline),
+        (&[b"attachment; filename=\"unfinished"], D::Attachment),
+        (&[b"x-private; filename*=UTF-8''PRIVATE"], D::Other),
+        (&[b""], D::Unusable),
+        (&[b" \t"], D::Unusable),
+        (&[b"\"attachment\""], D::Unusable),
+        (&[b"inline, attachment"], D::Unusable),
+        (&[b"inline garbage"], D::Unusable),
+        (&[b"\xff"], D::Unusable),
+        (&[b"attachment", b"inline"], D::Unusable),
+        (&[b"attachment", b"attachment"], D::Unusable),
+    ];
+    for (values, expected) in cases {
+        let facts = response("Content-Disposition", values);
+        assert_eq!(facts.content_disposition(), *expected);
+        assert_eq!(
+            facts
+                .headers()
+                .values("content-disposition")
+                .collect::<Vec<_>>(),
+            *values
+        );
+        assert_eq!(facts.clone(), facts);
+        let output = format!("{:#?}", Some(Ok::<_, ()>(&facts)));
+        for private in ["PRIVATE", "x-private", "filename", "unfinished"] {
+            assert!(!output.contains(private));
+        }
+    }
+    let local = NetworkResponseInfo::local_file(
+        &ResourceAddress::new(
+            BrowserUrl::parse("file:///tmp/document.html").unwrap().url,
+            Purpose::Document,
+        ),
+        "file:///tmp/document.html".into(),
+        Some("file:///tmp/document.html".into()),
+        Some("text/html".into()),
+    )
+    .unwrap();
+    assert_eq!(local.content_disposition(), D::Missing);
+    assert!(local.headers().is_empty());
 }
