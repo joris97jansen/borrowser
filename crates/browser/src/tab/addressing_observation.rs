@@ -122,7 +122,7 @@ impl Tab {
         slot: Option<core_types::StylesheetSlotId>,
     ) -> Option<AddressingRequestState> {
         use super::state::StylesheetLoadPhase;
-        if request != self.nav_gen {
+        if Some(request) != self.active_document_request_id() {
             return None;
         }
         match (kind, slot) {

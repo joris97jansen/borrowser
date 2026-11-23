@@ -60,15 +60,7 @@ impl ShellApp {
 
     fn retire_and_cancel_tab(&mut self, idx: usize) {
         if let Some(tab) = self.tabs.get_mut(idx) {
-            tab.retire_document_stylesheets();
-            if tab.nav_gen > 0
-                && let Some(tx) = &self.cmd_tx
-            {
-                let _ = tx.send(CoreCommand::CancelRequest {
-                    tab_id: tab.tab_id,
-                    request_id: tab.nav_gen,
-                });
-            }
+            tab.retire_and_cancel_requests();
         }
     }
 
@@ -274,18 +266,20 @@ impl ShellApp {
 
             let intent = navigation_widgets(ui, &mut tab.url, can_back, can_forward, input);
 
+            // Each Tab entry presents its Result through the existing page
+            // status. The shell need not retain a duplicate failure record.
             if intent.go_back {
-                tab.go_back();
+                let _reported_submission = tab.go_back();
             }
             if intent.go_forward {
-                tab.go_forward();
+                let _reported_submission = tab.go_forward();
             }
             if intent.refresh {
-                tab.refresh();
+                let _reported_submission = tab.refresh();
             }
 
             if let Some(url) = intent.navigate_to {
-                tab.navigate_to_new(url);
+                let _reported_submission = tab.navigate_to_new(url);
                 true
             } else {
                 false

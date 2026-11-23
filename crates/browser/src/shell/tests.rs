@@ -31,12 +31,20 @@ fn open_document(
     document_url: &str,
 ) -> (u64, u64, StylesheetSlotId, String) {
     let tab_id = app.tabs[app.active].tab_id;
-    app.tabs[app.active].navigate_to_new(document_url.into());
-    let request_id = app.tabs[app.active].nav_gen;
-    assert!(rx.try_iter().any(|command| matches!(command,
-        CoreCommand::FetchStream { request: fetch_request, tab_id: id, kind: ResourceKind::Html, .. }
-            if id == tab_id && fetch_request.request_id() == request_id
-    )));
+    app.tabs[app.active]
+        .navigate_to_new(document_url.into())
+        .unwrap();
+    let request_id = rx
+        .try_iter()
+        .find_map(|command| match command {
+            CoreCommand::FetchStream {
+                request,
+                kind: ResourceKind::Html,
+                ..
+            } => Some(request.request_id()),
+            _ => None,
+        })
+        .expect("actual document request");
     app.on_core_event(CoreEvent::NetworkStart {
         tab_id,
         request_id,
@@ -234,4 +242,73 @@ fn stylesheet_runtime_tab_close_discards_old_buffer_and_does_not_touch_new_tab()
         );
         app.on_core_event(done);
     }
+}
+
+#[test]
+fn aj3_shell_renders_rejected_submission_feedback_without_cancelling_pending_request() {
+    fn contains_text(shape: &egui::epaint::Shape, needle: &str) -> bool {
+        match shape {
+            egui::epaint::Shape::Text(text) => text.galley.text().contains(needle),
+            egui::epaint::Shape::Vec(shapes) => {
+                shapes.iter().any(|shape| contains_text(shape, needle))
+            }
+            _ => false,
+        }
+    }
+    let mut app = ShellApp::new();
+    let (sender, commands) = mpsc::channel();
+    app.set_bus_sender(sender);
+    app.active_tab_mut()
+        .navigate_to_new("https://fixture.invalid/pending".into())
+        .unwrap();
+    assert!(matches!(
+        commands.try_recv().unwrap(),
+        CoreCommand::FetchStream { .. }
+    ));
+    // The same entry called by ui_urlbar owns presentation even when the shell
+    // does not retain its returned Result.
+    let submission = app
+        .active_tab_mut()
+        .navigate_to_new("custom:PRIVATE".into());
+    assert!(matches!(
+        submission,
+        Err(crate::tab::NavigationError::Request(
+            net::RequestAdmissionError::UnsupportedScheme
+        ))
+    ));
+    let ctx = egui::Context::default();
+    let input = || egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(800.0, 600.0),
+        )),
+        ..Default::default()
+    };
+    let output = ctx.run(input(), |ctx| app.ui(ctx));
+    assert!(output.shapes.iter().any(|s| contains_text(
+        &s.shape,
+        "Navigation submission: Fetch request rejected: UnsupportedScheme"
+    )));
+    assert!(
+        output
+            .shapes
+            .iter()
+            .any(|s| contains_text(&s.shape, "Navigation • fetching document"))
+    );
+    assert!(commands.try_recv().is_err());
+    app.active_tab_mut().go_back().unwrap(); // Successful no-op clears only the notice.
+    let output = ctx.run(input(), |ctx| app.ui(ctx));
+    assert!(
+        !output
+            .shapes
+            .iter()
+            .any(|s| contains_text(&s.shape, "UnsupportedScheme"))
+    );
+    assert!(
+        output
+            .shapes
+            .iter()
+            .any(|s| contains_text(&s.shape, "Navigation • fetching document"))
+    );
+    assert!(commands.try_recv().is_err());
 }

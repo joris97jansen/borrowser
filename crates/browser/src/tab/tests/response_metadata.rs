@@ -49,7 +49,7 @@ fn metadata(request: &FetchRequest, values: &[&[u8]]) -> NetworkResponseInfo {
 fn start(tab: &mut Tab, slot: StylesheetSlotId, response: NetworkResponseInfo) {
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: tab.tab_id,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         stylesheet_slot_id: Some(slot),
         kind: Route::Css,
         response,
@@ -60,7 +60,7 @@ fn start(tab: &mut Tab, slot: StylesheetSlotId, response: NetworkResponseInfo) {
 fn done(tab: &mut Tab, slot: StylesheetSlotId, response: NetworkResponseInfo, size: usize) {
     tab.on_core_event(CoreEvent::NetworkDone {
         tab_id: tab.tab_id,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         stylesheet_slot_id: Some(slot),
         kind: Route::Css,
         response,
@@ -115,7 +115,7 @@ fn ai8_css_acceptance_matrix_drives_actual_runtime_and_installation() {
         let css = b"p{color:red}";
         tab.on_core_event(CoreEvent::NetworkChunk {
             tab_id: tab.tab_id,
-            request_id: tab.nav_gen,
+            request_id: tab.active_document_request_id().expect("admitted fixture"),
             stylesheet_slot_id: Some(slot),
             kind: Route::Css,
             url: request.legacy_issued_url(Route::Css).unwrap(),
@@ -228,11 +228,12 @@ fn ai8_css_completion_rejects_changed_raw_facts_and_purpose() {
 }
 
 #[test]
-fn ai8_document_retains_declared_metadata_without_a_new_mime_acceptance_rule() {
+fn ai8_document_metadata_survives_aj3_html_admission() {
     let mut tab = Tab::new(1);
     let (tx, rx) = mpsc::channel();
     tab.set_bus_sender(tx);
-    tab.navigate_to_new("https://document.invalid/source#original".into());
+    tab.navigate_to_new("https://document.invalid/source#original".into())
+        .unwrap();
     let request = rx
         .try_iter()
         .find_map(|command| match command {
@@ -246,7 +247,7 @@ fn ai8_document_retains_declared_metadata_without_a_new_mime_acceptance_rule() {
         .expect("actual document request");
     let mut headers = HttpHeaders::new();
     headers
-        .append("content-type", b"image/png;charset=X-UNKNOWN")
+        .append("content-type", b"text/html;charset=X-UNKNOWN")
         .unwrap();
     headers.append("content-length", b"999").unwrap();
     let facts = NetworkResponseInfo::http(
@@ -259,7 +260,7 @@ fn ai8_document_retains_declared_metadata_without_a_new_mime_acceptance_rule() {
     .unwrap();
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: tab.tab_id,
-        request_id: tab.nav_gen,
+        request_id: request.request_id(),
         stylesheet_slot_id: None,
         kind: Route::Html,
         response: facts.clone(),
@@ -273,7 +274,7 @@ fn ai8_document_retains_declared_metadata_without_a_new_mime_acceptance_rule() {
     assert_eq!(retained, &facts);
     assert_eq!(retained.resource_kind(), Purpose::Document);
     assert!(
-        matches!(retained.content_type(), net::ResponseContentType::Parsed(value) if value.mime_type() == "image/png" && value.charset() == Some("X-UNKNOWN"))
+        matches!(retained.content_type(), net::ResponseContentType::Parsed(value) if value.mime_type() == "text/html" && value.charset() == Some("X-UNKNOWN"))
     );
     assert_eq!(
         retained.declared_content_length(),
@@ -281,7 +282,7 @@ fn ai8_document_retains_declared_metadata_without_a_new_mime_acceptance_rule() {
     );
     tab.on_core_event(CoreEvent::NetworkDone {
         tab_id: tab.tab_id,
-        request_id: tab.nav_gen,
+        request_id: request.request_id(),
         stylesheet_slot_id: None,
         kind: Route::Html,
         response: facts.clone(),

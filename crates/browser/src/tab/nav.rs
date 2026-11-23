@@ -1,5 +1,5 @@
 use super::Tab;
-use super::state::{DocumentState, HistoryEntry};
+use super::state::{DocumentState, HistoryEntry, HistoryTarget, NavigationAttempt};
 use addressing::{
     BrowserUrl, Origin, ResourceAddress, ResourceKind as Purpose, UrlFailureKind, UrlParseError,
 };
@@ -7,23 +7,23 @@ use bus::CoreCommand;
 use core_types::ResourceKind;
 use net::{FetchRequest, HttpHeaders, RequestAdmissionError, RequestMethod};
 
-// The two existing history actions; preparation never mutates either one.
-enum HistoryTarget {
-    Append,
-    Existing(usize),
-}
-
-#[derive(Debug)]
-enum NavigationError {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NavigationError {
     EmptyInput,
     Url(UrlFailureKind),
     Request(RequestAdmissionError),
     DeliveryUnavailable,
+    RequestIdExhausted,
+    DocumentAddressUnavailable,
 }
 
 impl NavigationError {
     fn status(&self) -> String {
         match self {
+            Self::RequestIdExhausted => "Navigation request identities exhausted".into(),
+            Self::DocumentAddressUnavailable => {
+                "Cannot follow a link without document address state".into()
+            }
             Self::EmptyInput => "Navigation rejected: empty input".into(),
             Self::Url(kind) => format!("Navigation URL rejected: {kind:?}"),
             Self::Request(kind) => kind.to_string(),
@@ -33,23 +33,27 @@ impl NavigationError {
 }
 
 impl Tab {
-    pub fn navigate_to_new(&mut self, input: String) {
+    /// Submit navigation; success is queue acceptance or a same-document action.
+    pub fn navigate_to_new(&mut self, input: String) -> Result<(), NavigationError> {
         let result = normalize_address_bar(&input).and_then(|url| {
             self.navigate_url(ResourceAddress::new(url, Purpose::Document), None, None)
         });
-        self.report_navigation_result(result);
+        self.report_navigation_result(&result);
+        result
     }
 
-    pub(crate) fn activate_link(&mut self, href: &str) {
+    pub(crate) fn activate_link(&mut self, href: &str) -> Result<(), NavigationError> {
         let Some(base) = self.page.active_base_url() else {
-            self.last_status = Some("Cannot follow a link without document address state".into());
-            return;
+            let result = Err(NavigationError::DocumentAddressUnavailable);
+            self.report_navigation_result(&result);
+            return result;
         };
         let target = match base.resolve(href) {
             Ok(parsed) => parsed.url,
             Err(error) => {
-                self.report_navigation_result(Err(NavigationError::Url(error.kind)));
-                return;
+                let result = Err(NavigationError::Url(error.kind));
+                self.report_navigation_result(&result);
+                return result;
             }
         };
         let initiator = self.page.document_url().cloned();
@@ -63,7 +67,8 @@ impl Tab {
             initiator,
             origin,
         );
-        self.report_navigation_result(result);
+        self.report_navigation_result(&result);
+        result
     }
 
     fn navigate_url(
@@ -78,6 +83,7 @@ impl Tab {
             .filter(|target| target.fragment().is_some())
             .zip(self.active_document_state())
         {
+            self.cancel_pending_navigation();
             self.page
                 .addresses
                 .as_mut()
@@ -97,23 +103,29 @@ impl Tab {
         self.start_fetch(request, HistoryTarget::Append)
     }
 
-    pub fn go_back(&mut self) {
-        if self.history_index > 0 {
-            let result = self.load_current(self.history_index - 1, self.active_document_state());
-            self.report_navigation_result(result);
-        }
+    pub fn go_back(&mut self) -> Result<(), NavigationError> {
+        let result = if self.history_index > 0 {
+            self.load_current(self.history_index - 1, self.active_document_state())
+        } else {
+            Ok(())
+        };
+        self.report_navigation_result(&result);
+        result
     }
 
-    pub fn go_forward(&mut self) {
-        if self.history_index + 1 < self.history.len() {
-            let result = self.load_current(self.history_index + 1, self.active_document_state());
-            self.report_navigation_result(result);
-        }
+    pub fn go_forward(&mut self) -> Result<(), NavigationError> {
+        let result = if self.history_index + 1 < self.history.len() {
+            self.load_current(self.history_index + 1, self.active_document_state())
+        } else {
+            Ok(())
+        };
+        self.report_navigation_result(&result);
+        result
     }
 
-    pub fn refresh(&mut self) {
-        if let Some(entry) = self.history.get(self.history_index) {
-            let result = BrowserUrl::parse(&entry.url)
+    pub fn refresh(&mut self) -> Result<(), NavigationError> {
+        let result = if let Some(entry) = self.history.get(self.history_index) {
+            BrowserUrl::parse(&entry.url)
                 .map_err(|e| NavigationError::Url(e.kind))
                 .and_then(|parsed| {
                     self.prepare_document_request(
@@ -124,19 +136,22 @@ impl Tab {
                 })
                 .and_then(|request| {
                     self.start_fetch(request, HistoryTarget::Existing(self.history_index))
-                });
-            self.report_navigation_result(result);
-        }
+                })
+        } else {
+            Ok(())
+        };
+        self.report_navigation_result(&result);
+        result
     }
 
     fn prepare_document_request(
-        &self,
+        &mut self,
         address: ResourceAddress,
         initiator: Option<BrowserUrl>,
         origin: Option<Origin>,
     ) -> Result<FetchRequest, NavigationError> {
         FetchRequest::try_new(
-            self.nav_gen.wrapping_add(1),
+            self.reserve_navigation_request_id()?,
             address,
             RequestMethod::Get,
             HttpHeaders::new(),
@@ -152,49 +167,24 @@ impl Tab {
         history: HistoryTarget,
     ) -> Result<(), NavigationError> {
         let url = request.original_url().as_str().to_owned();
-        let generation = request.request_id();
-        let command = CoreCommand::try_fetch_stream(self.tab_id, None, ResourceKind::Html, request)
-            .map_err(NavigationError::Request)?;
-        // Queue acceptance precedes all navigation mutation. Exclusive &mut Tab
-        // prevents processing any fast response until commit completes. A failed
-        // send returns the command; never format that payload as an error.
+        let command =
+            CoreCommand::try_fetch_stream(self.tab_id, None, ResourceKind::Html, request.clone())
+                .map_err(NavigationError::Request)?;
+        // Enqueue before superseding a pending request. The actual active page
+        // and its runtime work remain untouched until response activation.
         self.cmd_tx
             .as_ref()
             .ok_or(NavigationError::DeliveryUnavailable)?
             .send(command)
             .map_err(|_| NavigationError::DeliveryUnavailable)?;
-        self.retire_document_stylesheets();
-        self.resources.retire_pending_images(self.nav_gen);
-        if self.nav_gen > 0 {
-            self.send_cmd(CoreCommand::CancelRequest {
-                tab_id: self.tab_id,
-                request_id: self.nav_gen,
-            });
-        }
-        match history {
-            HistoryTarget::Append => {
-                self.history.truncate(self.history_index + 1);
-                self.history.push(HistoryEntry {
-                    url: url.clone(),
-                    document_state: None,
-                });
-                self.history_index = self.history.len() - 1;
-            }
-            HistoryTarget::Existing(index) => {
-                // Retain the old association for response-time group rebinding.
-                self.history[index].url = url.clone();
-                self.history_index = index;
-            }
-        }
+        self.cancel_pending_navigation();
+        self.navigation_attempt = Some(NavigationAttempt {
+            request,
+            history_target: history,
+            non_replacing_response: None,
+            terminal: None,
+        });
         self.url = url;
-        self.document_input.clear_for_navigation();
-        self.nav_gen = generation;
-        self.loading = true;
-        self.document_load = Default::default();
-        self.stylesheet_loads.clear();
-        self.last_status = Some("Fetching document".into());
-        self.page.reset_for_navigation();
-        self.clear_render_orchestration_state();
         self.poke_redraw();
         Ok(())
     }
@@ -216,6 +206,7 @@ impl Tab {
         });
         if same_document {
             let url = destination.as_str().to_owned();
+            self.cancel_pending_navigation();
             self.page
                 .addresses
                 .as_mut()
@@ -235,9 +226,13 @@ impl Tab {
         self.start_fetch(request, HistoryTarget::Existing(target_index))
     }
 
-    fn report_navigation_result(&mut self, result: Result<(), NavigationError>) {
-        if let Err(error) = result {
-            self.last_status = Some(error.status());
+    fn report_navigation_result(&mut self, result: &Result<(), NavigationError>) {
+        // Presentation only: preserve the typed Result and actual A/B lifecycle.
+        // A successful submission/action dismisses the previous rejection;
+        // older network/parser events cannot erase a newer submission notice.
+        let notice = result.as_ref().err().map(NavigationError::status);
+        if self.navigation_notice != notice {
+            self.navigation_notice = notice;
             self.poke_redraw();
         }
     }
@@ -251,14 +246,6 @@ impl Tab {
         self.page.document_url()?;
         self.page.dom.as_ref()?;
         self.history.get(self.history_index)?.document_state.clone()
-    }
-
-    pub(super) fn response_matches_history_request(&self, requested_url: &str) -> bool {
-        // An untracked response keeps the existing event behavior but cannot
-        // acquire a reusable history association.
-        self.history
-            .get(self.history_index)
-            .is_none_or(|entry| entry.url == requested_url)
     }
 
     /// Bind an accepted response to the target entry, never to a pending

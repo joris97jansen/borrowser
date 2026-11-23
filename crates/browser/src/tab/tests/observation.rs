@@ -2,14 +2,19 @@ use super::super::{FrameObservationError, PageFrameStatus, Tab};
 use super::support::no_quirks_patch_publication_from_output;
 use bus::{CoreEvent, HtmlParseCompletion, HtmlParseFailure};
 use core_types::DomVersion;
-fn published() -> (Tab, HtmlParseCompletion) {
+fn published() -> (
+    Tab,
+    HtmlParseCompletion,
+    std::sync::mpsc::Receiver<bus::CoreCommand>,
+) {
     let mut tab = Tab::new(1);
-    let (sender, _commands) = std::sync::mpsc::channel();
+    let (sender, commands) = std::sync::mpsc::channel();
     tab.set_bus_sender(sender);
-    tab.navigate_to_new("https://example.com/ag5".into());
+    tab.navigate_to_new("https://example.com/ag5".into())
+        .unwrap();
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: super::support::pending_id(&tab),
         stylesheet_slot_id: None,
         kind: core_types::ResourceKind::Html,
         response: super::support::response_facts(
@@ -17,14 +22,14 @@ fn published() -> (Tab, HtmlParseCompletion) {
             tab.url.clone(),
             tab.url.clone(),
             Some(200),
-            None,
+            Some("text/html".into()),
         ),
     })
     .unwrap();
     let markup = "<!doctype html><div id='x' style='color:#123456;width:32px;height:16px'></div>";
     tab.on_core_event(CoreEvent::NetworkChunk {
         tab_id: tab.tab_id,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         stylesheet_slot_id: None,
         kind: core_types::ResourceKind::Html,
         url: tab
@@ -46,14 +51,14 @@ fn published() -> (Tab, HtmlParseCompletion) {
     };
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         publication,
     })
     .unwrap();
-    (tab, completion)
+    (tab, completion, commands)
 }
 fn completed() -> Tab {
-    let (mut tab, completion) = published();
+    let (mut tab, completion, _commands) = published();
     finish(&mut tab, completion).unwrap();
     tab
 }
@@ -64,7 +69,7 @@ fn finish(
     super::support::complete_document_body(tab);
     tab.on_core_event(CoreEvent::HtmlParseFinished {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         result: Ok(completion),
     })
 }
@@ -80,7 +85,7 @@ fn input() -> egui::RawInput {
 #[test]
 fn observation_requires_committed_publication_and_valid_completion() {
     let ctx = egui::Context::default();
-    let (mut tab, mut completion) = published();
+    let (mut tab, mut completion, _commands) = published();
     assert!(matches!(
         tab.render_observed_frame(&ctx, input()),
         Err(FrameObservationError::IncompleteDocument)
@@ -91,10 +96,10 @@ fn observation_requires_committed_publication_and_valid_completion() {
         tab.render_observed_frame(&ctx, input()),
         Err(FrameObservationError::IncompleteDocument)
     ));
-    let (mut tab, _) = published();
+    let (mut tab, _, _commands) = published();
     tab.on_core_event(CoreEvent::HtmlParseFinished {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         result: Err(HtmlParseFailure::InputClosed),
     })
     .unwrap();
@@ -119,7 +124,7 @@ fn observation_requires_committed_publication_and_valid_completion() {
 }
 #[test]
 fn observation_publication_failure_latches_even_with_existing_dom() {
-    let (mut tab, completion) = published();
+    let (mut tab, completion, _commands) = published();
     let parsed = html::parse_document(
         "<!doctype html><div>replacement</div>",
         html::HtmlParseOptions::default(),
@@ -131,7 +136,7 @@ fn observation_publication_failure_latches_even_with_existing_dom() {
     assert!(
         tab.on_core_event(CoreEvent::DomPatchUpdate {
             tab_id: 1,
-            request_id: tab.nav_gen,
+            request_id: tab.active_document_request_id().expect("admitted fixture"),
             publication
         })
         .is_err()
@@ -195,7 +200,11 @@ fn observation_rejects_stale_or_mismatched_artifacts() {
     assert!(!other.page.accepts_observed_artifacts(&draft));
     let (sender, _commands) = std::sync::mpsc::channel();
     tab.set_bus_sender(sender);
-    tab.navigate_to_new("https://example.com/other".into());
+    tab.navigate_to_new("https://example.com/other".into())
+        .unwrap();
+    assert!(tab.page.accepts_observed_artifacts(&draft));
+    assert!(tab.render_observed_frame(&ctx, input()).is_ok());
+    super::support::admit_pending(&mut tab);
     assert!(!tab.page.accepts_observed_artifacts(&draft));
     assert!(matches!(
         tab.render_observed_frame(&ctx, input()),

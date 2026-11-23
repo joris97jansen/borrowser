@@ -22,7 +22,7 @@ fn ah9_addressing_observation_borrows_committed_state_without_commands_or_raw_id
     let request_id = request.request_id();
     let url = request.original_url().as_str();
     let before = tab.document_address_debug_snapshot();
-    let generation = tab.nav_gen;
+    let generation = tab.active_document_request_id().expect("admitted fixture");
     let origin = {
         let view = tab.observe_document_addressing().unwrap().unwrap();
         assert_eq!(view.active_base().as_str(), "https://example.test/assets/");
@@ -49,11 +49,17 @@ fn ah9_addressing_observation_borrows_committed_state_without_commands_or_raw_id
         tab.observe_addressing_request(ResourceKind::Image, url, request_id, None),
         Some(AddressingRequestState::Pending)
     );
-    assert_eq!(tab.nav_gen, generation);
+    assert_eq!(
+        tab.active_document_request_id().expect("admitted fixture"),
+        generation
+    );
     assert_eq!(tab.document_address_debug_snapshot(), before);
     assert!(commands.try_recv().is_err());
     assert!(origin.is_same_origin(tab.observe_document_addressing().unwrap().unwrap().origin()));
-    tab.navigate_to_new("https://example.test/new-document".into());
+    tab.navigate_to_new("https://example.test/new-document".into())
+        .unwrap();
+    assert!(tab.observe_document_addressing().unwrap().is_some());
+    super::support::admit_pending(&mut tab);
     assert!(tab.observe_document_addressing().unwrap().is_none());
 }
 #[test]
@@ -70,7 +76,8 @@ fn ah9_file_document_observation_retains_opaque_identity() {
         .unwrap()
         .origin()
         .clone();
-    tab.navigate_to_new("file:///fixture/page.html#new".into());
+    tab.navigate_to_new("file:///fixture/page.html#new".into())
+        .unwrap();
     let view = tab.observe_document_addressing().unwrap().unwrap();
     assert!(origin.is_same_origin(view.origin()));
     assert!(!origin.is_same_origin(&view.document_url().url_origin()));

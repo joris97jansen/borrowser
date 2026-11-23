@@ -31,7 +31,7 @@ fn metadata(requested: &str, final_url: &str) -> NetworkResponseInfo {
 fn start(tab: &mut Tab, response: NetworkResponseInfo) {
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: super::support::pending_id(tab),
         stylesheet_slot_id: None,
         kind: Route::Html,
         response,
@@ -59,7 +59,7 @@ fn ai2_address_bar_host_port_precedence_and_normalized_exact_provenance() {
         ),
     ] {
         let (mut t, rx) = tab();
-        t.navigate_to_new(input.into());
+        t.navigate_to_new(input.into()).unwrap();
         let CoreCommand::FetchStream {
             request,
             kind: Route::Html,
@@ -71,9 +71,9 @@ fn ai2_address_bar_host_port_precedence_and_normalized_exact_provenance() {
         };
         assert_eq!(request.address().kind(), Purpose::Document);
         assert_eq!(request.original_url().as_str(), expected);
-        assert_eq!(t.history()[t.history_index()].url(), expected);
+        assert!(t.history().is_empty());
         assert_eq!(t.url, expected);
-        assert_eq!(request.request_id(), t.nav_gen);
+        assert_eq!(request.request_id(), super::support::pending_id(&t));
         assert!(request.initiator_url().is_none());
         assert!(request.requesting_origin().is_none());
         start(&mut t, metadata(expected, expected));
@@ -85,7 +85,8 @@ fn ai2_address_bar_host_port_precedence_and_normalized_exact_provenance() {
         ));
     }
     let (mut t, rx) = tab();
-    t.navigate_to_new("HTTPS://EXAMPLE.TEST:443/a^b".into());
+    t.navigate_to_new("HTTPS://EXAMPLE.TEST:443/a^b".into())
+        .unwrap();
     rx.try_iter().for_each(drop);
     start(
         &mut t,
@@ -95,18 +96,21 @@ fn ai2_address_bar_host_port_precedence_and_normalized_exact_provenance() {
         t.document_load.response.is_none(),
         "URL equivalence is not issuance provenance"
     );
-    assert!(t.history[t.history_index].document_state.is_none());
+    assert!(t.history.is_empty());
     assert!(
         !rx.try_iter()
             .any(|c| matches!(c, CoreCommand::ParseHtmlStart { .. }))
     );
 }
 
-fn assert_rejection_preserves(t: &mut Tab, action: impl FnOnce(&mut Tab)) {
+fn assert_rejection_preserves(
+    t: &mut Tab,
+    action: impl FnOnce(&mut Tab) -> Result<(), super::super::NavigationError>,
+) {
     let history = t.history.clone();
     let index = t.history_index;
     let visible = t.url.clone();
-    let generation = t.nav_gen;
+    let generation = t.active_document_request_id();
     let loading = t.loading;
     let addresses = t.page.addresses.clone();
     let dom = t.page.dom.as_deref().map(|n| n as *const html::Node);
@@ -126,9 +130,9 @@ fn assert_rejection_preserves(t: &mut Tab, action: impl FnOnce(&mut Tab)) {
         t.resources
             .image_state_by_url("https://example.test/dir/image.png")
     );
-    action(t);
+    action(t).expect_err("typed pre-dispatch rejection");
     assert_eq!(t.url, visible);
-    assert_eq!(t.nav_gen, generation);
+    assert_eq!(t.active_document_request_id(), generation);
     assert_eq!(t.loading, loading);
     assert_eq!(t.history_index, index);
     assert_eq!(t.history.len(), history.len());
@@ -207,14 +211,14 @@ fn ai2_rejected_navigation_and_failed_enqueue_preserve_preview_and_outstanding_w
 #[test]
 fn ai2_rejection_does_not_truncate_forward_history_or_move_traversal_selection() {
     let (mut t, rx) = addressing_tab("<!doctype html><p>available");
-    t.activate_link("#one");
-    t.activate_link("#two");
-    t.go_back();
+    t.activate_link("#one").unwrap();
+    t.activate_link("#two").unwrap();
+    t.go_back().unwrap();
     rx.try_iter().for_each(drop);
     assert_rejection_preserves(&mut t, |t| {
         t.navigate_to_new("https://user:pass@other.test".into())
     });
-    t.go_forward();
+    t.go_forward().unwrap();
     assert_eq!(t.page.document_url().unwrap().fragment(), Some("two"));
     // Explicit stale/unavailable history destinations exercise cross-document preflight.
     t.history.push(super::super::state::HistoryEntry {
@@ -224,7 +228,7 @@ fn ai2_rejection_does_not_truncate_forward_history_or_move_traversal_selection()
     assert_rejection_preserves(&mut t, Tab::go_forward);
     t.history[0].url = "https://user:pass@old.test/".into();
     t.history[0].document_state = None;
-    t.go_back(); // still the same available document
+    t.go_back().unwrap(); // still the same available document
     assert_rejection_preserves(&mut t, Tab::go_back);
     assert!(rx.try_recv().is_err());
 }
@@ -232,7 +236,8 @@ fn ai2_rejection_does_not_truncate_forward_history_or_move_traversal_selection()
 #[test]
 fn ai2_rejected_navigation_does_not_block_a_prior_pending_response() {
     let (mut t, rx) = tab();
-    t.navigate_to_new("https://example.test/pending".into());
+    t.navigate_to_new("https://example.test/pending".into())
+        .unwrap();
     rx.try_iter().for_each(drop);
     assert_rejection_preserves(&mut t, |t| t.navigate_to_new("custom:opaque".into()));
     assert!(rx.try_recv().is_err());
@@ -276,7 +281,10 @@ fn ai2_production_subresources_and_link_capture_actual_source_context() {
         );
         assert_eq!(request.requesting_origin(), Some(&origin));
         assert_eq!(request.original_url().fragment(), Some("source"));
-        assert_eq!(request.request_id(), t.nav_gen);
+        assert_eq!(
+            request.request_id(),
+            t.active_document_request_id().expect("admitted fixture")
+        );
         match kind {
             Route::Css => {
                 assert_eq!(request.address().kind(), Purpose::Stylesheet);
@@ -296,7 +304,7 @@ fn ai2_production_subresources_and_link_capture_actual_source_context() {
             _ => panic!("unexpected route"),
         }
     }
-    t.activate_link("next");
+    t.activate_link("next").unwrap();
     let request = rx
         .try_iter()
         .find_map(|c| match c {
@@ -325,17 +333,17 @@ fn ai2_credential_final_document_preserves_same_document_identity_and_rejects_re
     );
     rx.try_iter().for_each(drop);
     let origin = t.page.addresses.as_ref().unwrap().document_origin().clone();
-    let generation = t.nav_gen;
-    t.activate_link("#one");
-    t.activate_link("#two");
-    t.go_back();
-    t.go_forward();
+    let generation = t.active_document_request_id();
+    t.activate_link("#one").unwrap();
+    t.activate_link("#two").unwrap();
+    t.go_back().unwrap();
+    t.go_forward().unwrap();
     assert_eq!(t.page.document_url().unwrap().fragment(), Some("two"));
     assert_eq!(
         t.page.addresses.as_ref().unwrap().document_origin(),
         &origin
     );
-    assert_eq!(t.nav_gen, generation);
+    assert_eq!(t.active_document_request_id(), generation);
     assert!(rx.try_recv().is_err());
     assert_rejection_preserves(&mut t, Tab::refresh);
     assert!(rx.try_recv().is_err());
@@ -359,7 +367,7 @@ fn ai2_subresource_admission_and_delivery_failures_leave_no_phantom_pending_load
         let parsed = html::parse_document(markup, Default::default()).unwrap();
         t.on_core_event(CoreEvent::DomPatchUpdate {
             tab_id: 1,
-            request_id: t.nav_gen,
+            request_id: t.active_document_request_id().expect("admitted fixture"),
             publication: no_quirks_patch_publication_from_output(parsed),
         })
         .unwrap();
@@ -500,7 +508,8 @@ fn ai2_runtime_local_document_stylesheet_image_and_frame_smoke() {
     t.navigate_to_new(format!(
         "file://{}/My Page é.html?view=1#document",
         root.display()
-    ));
+    ))
+    .unwrap();
     let (mut html, mut css, mut image, mut parsed, mut installed) =
         (false, false, false, false, false);
     let mut purposes = Vec::new();

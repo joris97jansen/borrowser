@@ -8,6 +8,7 @@
 mod agent;
 mod backend;
 mod body;
+mod content_disposition;
 mod content_length;
 mod content_type;
 mod event;
@@ -25,6 +26,7 @@ mod stream;
 mod tls;
 
 pub use body::BodyProgress;
+pub use content_disposition::ResponseContentDisposition;
 pub use content_length::DeclaredContentLength;
 pub use content_type::{ContentType, InvalidContentType, ResponseContentType};
 pub use event::{NetEvent, NetworkErrorKind, ResourceLimitKind};

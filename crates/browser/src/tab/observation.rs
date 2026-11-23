@@ -112,7 +112,7 @@ impl Tab {
             return Err(FrameObservationError::IncompleteDocument);
         }
         let stamp = (
-            self.nav_gen,
+            self.active_document_request_id(),
             self.dom_handle,
             self.dom_version,
             self.page.document_mode,
@@ -124,7 +124,7 @@ impl Tab {
         let status = status.map_err(|e| FrameObservationError::Style(format!("{e:?}")))?;
         if stamp
             != (
-                self.nav_gen,
+                self.active_document_request_id(),
                 self.dom_handle,
                 self.dom_version,
                 self.page.document_mode,

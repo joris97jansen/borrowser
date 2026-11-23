@@ -1,5 +1,7 @@
 # AI8: Response Metadata And Resource-Loader Handoff
 
+> AJ3 current qualification: [AJ3](aj3-main-document-response-preparation.md) adds immutable ResponseContentDisposition type-only classification in net: Missing, Inline, Attachment, Other and Unusable. One field's ASCII token is classified without filename/parameter interpretation; malformed, empty, repeated or ambiguous types remain Unusable facts. Raw fields survive unchanged across real/fake/supplied response construction. Browser owns download rejection and ignores Unusable for disposition applicability before applying its status/MIME policy. No transport error or download capability is added.
+
 > Current-status qualification (2026-11-21): AI8 is merged through PR #1482 and
 > present in master `f77a6834`. The working-tree/uncommitted and pending-hosted
 > statements below retain their historical validation scope. They are not a

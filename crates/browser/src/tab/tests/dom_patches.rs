@@ -16,13 +16,12 @@ use layout::{LayoutPhaseInput, layout_document};
 #[test]
 fn dom_patch_attribute_change_triggers_restyle_through_computed_cache() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 19;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(190);
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 19,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -43,7 +42,7 @@ fn dom_patch_attribute_change_triggers_restyle_through_computed_cache() {
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 19,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(1),
@@ -84,13 +83,12 @@ fn dom_patch_attribute_change_triggers_restyle_through_computed_cache() {
 #[test]
 fn same_handle_clear_uses_neutral_replacement_fact_for_retained_identity_boundary() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 1901;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(1901);
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 1901,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -122,7 +120,7 @@ fn same_handle_clear_uses_neutral_replacement_fact_for_retained_identity_boundar
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 1901,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(1),
@@ -199,13 +197,12 @@ fn same_handle_clear_uses_neutral_replacement_fact_for_retained_identity_boundar
 #[test]
 fn dom_patch_node_insertion_triggers_restyle_for_inserted_subtree() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 20;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(200);
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 20,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -222,7 +219,7 @@ fn dom_patch_node_insertion_triggers_restyle_for_inserted_subtree() {
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 20,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(1),
@@ -274,13 +271,12 @@ fn dom_patch_node_insertion_triggers_restyle_for_inserted_subtree() {
 #[test]
 fn dom_patch_node_removal_triggers_restyle_and_removes_styled_node() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 21;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(210);
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 21,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -294,7 +290,7 @@ fn dom_patch_node_removal_triggers_restyle_and_removes_styled_node() {
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 21,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(1),
@@ -322,13 +318,12 @@ fn dom_patch_node_removal_triggers_restyle_and_removes_styled_node() {
 #[test]
 fn dom_patch_style_text_change_reconciles_stylesheet_slot_and_restyles() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 22;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(220);
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 22,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -344,7 +339,7 @@ fn dom_patch_style_text_change_reconciles_stylesheet_slot_and_restyles() {
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 22,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(1),
@@ -382,7 +377,7 @@ fn dom_patch_style_text_change_reconciles_stylesheet_slot_and_restyles() {
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 22,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(2),
@@ -425,13 +420,12 @@ fn dom_patch_style_text_change_reconciles_stylesheet_slot_and_restyles() {
 #[test]
 fn dom_patch_style_media_change_invalidates_stylesheet_generation() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 2201;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(2201);
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 2201,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -444,7 +438,7 @@ fn dom_patch_style_media_change_invalidates_stylesheet_generation() {
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 2201,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(1),
@@ -467,13 +461,12 @@ fn dom_patch_style_media_change_invalidates_stylesheet_generation() {
 #[test]
 fn dom_patch_attribute_change_incrementally_restyles_following_sibling_suffix() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 26;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(260);
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 26,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -487,7 +480,7 @@ fn dom_patch_attribute_change_incrementally_restyles_following_sibling_suffix() 
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 26,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(1),
@@ -535,13 +528,12 @@ fn dom_patch_attribute_change_incrementally_restyles_following_sibling_suffix() 
 #[test]
 fn queued_attribute_mutations_merge_to_earliest_dirty_suffix() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 27;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(270);
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 27,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -558,7 +550,7 @@ fn queued_attribute_mutations_merge_to_earliest_dirty_suffix() {
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 27,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(1),
@@ -572,7 +564,7 @@ fn queued_attribute_mutations_merge_to_earliest_dirty_suffix() {
     .unwrap();
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 27,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(2),
@@ -621,13 +613,12 @@ fn queued_attribute_mutations_merge_to_earliest_dirty_suffix() {
 #[test]
 fn dom_patch_normal_text_change_without_empty_dependency_reuses_style_and_dirties_layout() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 23;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(230);
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 23,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -644,7 +635,7 @@ fn dom_patch_normal_text_change_without_empty_dependency_reuses_style_and_dirtie
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 23,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(1),
@@ -687,12 +678,11 @@ fn dom_patch_normal_text_change_without_empty_dependency_reuses_style_and_dirtie
 #[test]
 fn published_text_mutation_restyles_retained_empty_selector_without_losing_layout_cause() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 230;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(2300);
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 230,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -713,7 +703,7 @@ fn published_text_mutation_restyles_retained_empty_selector_without_losing_layou
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 230,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(1),
@@ -765,11 +755,10 @@ fn published_text_mutation_restyles_retained_empty_selector_without_losing_layou
 #[test]
 fn browser_selector_debug_uses_the_bounded_authoritative_css_surface() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 232;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 232,
+        request_id,
         publication: no_quirks_patch_publication(
             DomHandle(2320),
             DomVersion::INITIAL,
@@ -806,11 +795,10 @@ fn browser_selector_debug_uses_the_bounded_authoritative_css_surface() {
 #[test]
 fn browser_rule_collection_debug_uses_production_handoff_and_bounded_af5_surface() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 233;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 233,
+        request_id,
         publication: no_quirks_patch_publication(
             DomHandle(2330),
             DomVersion::INITIAL,
@@ -866,11 +854,10 @@ fn browser_rule_collection_debug_uses_production_handoff_and_bounded_af5_surface
 #[test]
 fn browser_cascade_debug_uses_the_bounded_css_owned_af6_surface() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 234;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 234,
+        request_id,
         publication: no_quirks_patch_publication(
             DomHandle(2340),
             DomVersion::INITIAL,
@@ -942,12 +929,11 @@ fn browser_cascade_debug_uses_the_bounded_css_owned_af6_surface() {
 #[test]
 fn mixed_attribute_and_text_publication_preserves_both_identities_and_one_css_authorization() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 231;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(2310);
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 231,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -965,7 +951,7 @@ fn mixed_attribute_and_text_publication_preserves_both_identities_and_one_css_au
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 231,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(1),
@@ -1043,13 +1029,12 @@ fn mixed_attribute_and_text_publication_preserves_both_identities_and_one_css_au
 #[test]
 fn empty_dom_patch_batch_does_not_trigger_restyle() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 25;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(250);
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 25,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -1066,7 +1051,7 @@ fn empty_dom_patch_batch_does_not_trigger_restyle() {
 
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 25,
+        request_id,
         publication: no_quirks_patch_publication(handle, DomVersion(1), DomVersion(1), Vec::new()),
     })
     .expect_err("empty non-advancing publication is invalid");
@@ -1091,12 +1076,11 @@ fn empty_dom_patch_batch_does_not_trigger_restyle() {
 #[test]
 fn invalid_publication_preserves_committed_browser_state_and_reason() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 27;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(270);
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 27,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -1108,7 +1092,7 @@ fn invalid_publication_preserves_committed_browser_state_and_reason() {
     let before_dom = tab.page.dom.as_ref().map(|dom| format!("{dom:?}"));
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 27,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(1),
@@ -1136,7 +1120,7 @@ fn invalid_publication_preserves_committed_browser_state_and_reason() {
     assert!(
         tab.on_core_event(CoreEvent::HtmlParseFinished {
             tab_id: tab.tab_id,
-            request_id: 27,
+            request_id,
             result: Ok(bus::HtmlParseCompletion {
                 handle,
                 version: DomVersion(1),
@@ -1152,12 +1136,11 @@ fn invalid_publication_preserves_committed_browser_state_and_reason() {
 #[test]
 fn staged_identity_resolution_failure_rolls_back_the_complete_publication() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 271;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(2710);
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 271,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -1206,12 +1189,11 @@ fn staged_identity_resolution_failure_rolls_back_the_complete_publication() {
 #[test]
 fn same_handle_mode_mismatch_preserves_committed_state() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 28;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(280);
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 28,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -1222,7 +1204,7 @@ fn same_handle_mode_mismatch_preserves_committed_state() {
     .unwrap();
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 28,
+        request_id,
         publication: bus::DocumentPublication {
             handle,
             document_mode: html::DocumentMode::Quirks,
@@ -1250,8 +1232,7 @@ fn same_handle_mode_mismatch_preserves_committed_state() {
 #[test]
 fn inert_template_contents_publication_commits_without_restyle() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 26;
-    tab.page.start_nav("https://example.com/index.html");
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/index.html");
     let handle = DomHandle(260);
     let initial = vec![
         DomPatch::Clear,
@@ -1280,7 +1261,7 @@ fn inert_template_contents_publication_commits_without_restyle() {
     ];
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 26,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion::INITIAL,
@@ -1293,7 +1274,7 @@ fn inert_template_contents_publication_commits_without_restyle() {
     let before_dirty = tab.page.style_dirty();
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: tab.tab_id,
-        request_id: 26,
+        request_id,
         publication: no_quirks_patch_publication(
             handle,
             DomVersion(1),

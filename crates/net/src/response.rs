@@ -4,7 +4,7 @@ use addressing::{BrowserUrl, ResourceAddress, ResourceKind, UrlFailure, UrlParse
 
 use crate::{
     ContentType, DeclaredContentLength, HeaderError, HttpHeaders, InvalidContentType, RedirectHop,
-    ResponseContentType,
+    ResponseContentDisposition, ResponseContentType,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -106,6 +106,7 @@ struct ResponseFacts {
     headers: HttpHeaders,
     local_content_type: Option<String>,
     content_type: ResponseContentType,
+    content_disposition: ResponseContentDisposition,
     declared_content_length: DeclaredContentLength,
     redirect_chain: Vec<RedirectHop>,
 }
@@ -174,6 +175,7 @@ impl NetworkResponseInfo {
         } else {
             ResponseContentType::local(local_content_type.as_deref())
         };
+        let content_disposition = ResponseContentDisposition::extract(&headers);
         let declared_content_length = DeclaredContentLength::extract(&headers);
         Self {
             facts: Arc::new(ResponseFacts {
@@ -186,6 +188,7 @@ impl NetworkResponseInfo {
                 headers,
                 local_content_type,
                 content_type,
+                content_disposition,
                 declared_content_length,
                 redirect_chain: Vec::new(),
             }),
@@ -201,6 +204,10 @@ impl NetworkResponseInfo {
     }
     pub fn content_type(&self) -> &ResponseContentType {
         &self.facts.content_type
+    }
+    /// Declared disposition type only; never a download or applicability decision.
+    pub fn content_disposition(&self) -> ResponseContentDisposition {
+        self.facts.content_disposition
     }
     pub fn declared_content_length(&self) -> DeclaredContentLength {
         self.facts.declared_content_length
@@ -280,6 +287,7 @@ impl fmt::Debug for NetworkResponseInfo {
             )
             .field("resource_kind", &self.facts.resource_kind)
             .field("content_type", &self.facts.content_type)
+            .field("content_disposition", &self.facts.content_disposition)
             .field(
                 "declared_content_length",
                 &self.facts.declared_content_length,

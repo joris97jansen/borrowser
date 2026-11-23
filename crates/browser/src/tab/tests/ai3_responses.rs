@@ -343,7 +343,7 @@ fn ai3_document_completion_rejects_status_headers_route_and_count_changes() {
         let mut tab = Tab::new(1);
         let (tx, commands) = mpsc::channel();
         tab.set_bus_sender(tx);
-        tab.navigate_to_new("https://doc.test/a".into());
+        tab.navigate_to_new("https://doc.test/a".into()).unwrap();
         let response = NetworkResponseInfo::http(
             &addressing::ResourceAddress::new(
                 BrowserUrl::parse("https://doc.test/a").unwrap().url,
@@ -352,13 +352,17 @@ fn ai3_document_completion_rejects_status_headers_route_and_count_changes() {
             "https://doc.test/a".into(),
             Some("https://doc.test/a".into()),
             HttpStatus::try_from(200).unwrap(),
-            HttpHeaders::new(),
+            {
+                let mut headers = HttpHeaders::new();
+                headers.append("content-type", b"text/html").unwrap();
+                headers
+            },
         )
         .unwrap();
         commands.try_iter().for_each(drop);
         tab.on_core_event(CoreEvent::NetworkStart {
             tab_id: 1,
-            request_id: tab.nav_gen,
+            request_id: super::support::pending_id(&tab),
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
             response: response.clone(),
@@ -366,7 +370,7 @@ fn ai3_document_completion_rejects_status_headers_route_and_count_changes() {
         .unwrap();
         tab.on_core_event(CoreEvent::NetworkChunk {
             tab_id: 1,
-            request_id: tab.nav_gen,
+            request_id: tab.active_document_request_id().expect("admitted fixture"),
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
             url: "https://doc.test/a".into(),
@@ -391,7 +395,7 @@ fn ai3_document_completion_rejects_status_headers_route_and_count_changes() {
         .unwrap();
         tab.on_core_event(CoreEvent::NetworkDone {
             tab_id: 1,
-            request_id: tab.nav_gen,
+            request_id: tab.active_document_request_id().expect("admitted fixture"),
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
             response: final_response,
@@ -617,7 +621,7 @@ fn ai3_malformed_response_heads_settle_every_production_resource_route() {
                     let mut tab = Tab::new(1);
                     let (tx, rx) = mpsc::channel();
                     tab.set_bus_sender(tx);
-                    tab.navigate_to_new(url.clone());
+                    tab.navigate_to_new(url.clone()).unwrap();
                     (tab, rx)
                 }
                 ResourceKind::Css => addressing_tab(&format!(
@@ -694,8 +698,8 @@ fn ai3_malformed_response_heads_settle_every_production_resource_route() {
             match route {
                 ResourceKind::Html => {
                     assert!(matches!(
-                        &tab.document_load.parse_status,
-                        super::super::state::DocumentParseStatus::Failed(_)
+                        &tab.navigation_attempt.as_ref().unwrap().terminal,
+                        Some(Err(_))
                     ));
                     assert!(!tab.loading);
                     assert!(tab.document_load.response.is_none());

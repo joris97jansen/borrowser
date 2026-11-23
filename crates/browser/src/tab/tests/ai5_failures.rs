@@ -1,7 +1,5 @@
-use super::{
-    super::{Tab, state::DocumentParseStatus},
-    support::*,
-};
+use super::super::state::{DocumentLoadFailure, DocumentParseStatus};
+use super::{super::Tab, support::*};
 use bus::{CoreCommand, CoreEvent};
 use core_types::ResourceKind;
 use net::{BodyProgress, NetworkErrorKind};
@@ -30,13 +28,19 @@ impl Drop for ReplyWorker {
 fn ai5f_navigation_retires_pending_images_before_stale_cancellation() {
     let image = "https://example.test/old.png";
     let (mut tab, commands) = addressing_tab(&format!("<!doctype html><img src='{image}'>"));
-    let old = tab.nav_gen;
+    let old = tab.active_document_request_id().expect("admitted fixture");
     assert!(matches!(
         tab.resources.image_state_by_url(image),
         crate::resources::ImageState::Loading { .. }
     ));
     commands.try_iter().for_each(drop);
-    tab.navigate_to_new("https://example.test/new".into());
+    tab.navigate_to_new("https://example.test/new".into())
+        .unwrap();
+    assert!(matches!(
+        tab.resources.image_state_by_url(image),
+        crate::resources::ImageState::Loading { .. }
+    ));
+    super::support::admit_pending(&mut tab);
     assert!(
         matches!(
             tab.resources.image_state_by_url(image),
@@ -47,10 +51,14 @@ fn ai5f_navigation_retires_pending_images_before_stale_cancellation() {
     // A new generation may issue the same URL. A late old terminal must not
     // retire this new operation, and must not suppress its actual issuance.
     let mut issued = false;
-    tab.resources.request_image(tab.nav_gen, image.into(), || {
-        issued = true;
-        Ok(())
-    });
+    tab.resources.request_image(
+        tab.active_document_request_id().expect("admitted fixture"),
+        image.into(),
+        || {
+            issued = true;
+            Ok(())
+        },
+    );
     assert!(issued);
     tab.on_core_event(CoreEvent::NetworkError {
         tab_id: tab.tab_id,
@@ -92,7 +100,12 @@ fn ai5f_real_runtime_partial_failures_settle_each_consumer_without_sibling_compl
                     break;
                 }
             }
-            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/css\r\nX-Private: PRIVATE\r\nContent-Length: 9\r\nConnection: close\r\n\r\nabc").unwrap();
+            let content_type = if route == ResourceKind::Html {
+                "text/html"
+            } else {
+                "text/css"
+            };
+            write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nX-Private: PRIVATE\r\nContent-Length: 9\r\nConnection: close\r\n\r\nabc").unwrap();
         });
         let worker = ReplyWorker(address, Some(worker));
         let sibling = "https://example.test/sibling";
@@ -101,7 +114,7 @@ fn ai5f_real_runtime_partial_failures_settle_each_consumer_without_sibling_compl
                 let mut tab = Tab::new(1);
                 let (tx, rx) = mpsc::channel();
                 tab.set_bus_sender(tx);
-                tab.navigate_to_new(url.clone());
+                tab.navigate_to_new(url.clone()).unwrap();
                 (tab, rx)
             }
             ResourceKind::Css => addressing_tab(&format!(
@@ -113,6 +126,10 @@ fn ai5f_real_runtime_partial_failures_settle_each_consumer_without_sibling_compl
         };
         let outgoing: Vec<_> = commands.try_iter().collect();
         let command = outgoing.into_iter().find(|command| matches!(command, CoreCommand::FetchStream { request, .. } if request.original_url().as_str() == url)).unwrap();
+        let issued_id = match &command {
+            CoreCommand::FetchStream { request, .. } => request.request_id(),
+            _ => unreachable!(),
+        };
         let slot = if let CoreCommand::FetchStream {
             stylesheet_slot_id, ..
         } = &command
@@ -128,6 +145,8 @@ fn ai5f_real_runtime_partial_failures_settle_each_consumer_without_sibling_compl
         drop(tx);
         let mut started = None;
         let mut delivered = 0;
+        let mut delivered_bytes = Vec::new();
+        let mut terminal_body = None;
         let mut terminals = 0;
         loop {
             let event = match received.recv_timeout(Duration::from_secs(5)) {
@@ -140,6 +159,7 @@ fn ai5f_real_runtime_partial_failures_settle_each_consumer_without_sibling_compl
                 CoreEvent::NetworkChunk { bytes, .. } => {
                     assert!(started.is_some());
                     delivered += bytes.len();
+                    delivered_bytes.extend_from_slice(bytes);
                 }
                 CoreEvent::NetworkError {
                     error_kind,
@@ -152,12 +172,20 @@ fn ai5f_real_runtime_partial_failures_settle_each_consumer_without_sibling_compl
                     assert_eq!(*error_kind, NetworkErrorKind::MalformedResponse);
                     assert_eq!(response.as_ref(), started.as_ref());
                     assert_eq!(body.unwrap().delivered_bytes(), delivered);
+                    terminal_body = *body;
                     assert!(!error.contains("PRIVATE"));
                 }
                 CoreEvent::NetworkDone { .. } => panic!("partial content must never complete"),
                 _ => panic!("unexpected network runtime event"),
             }
+            let is_start = matches!(event, CoreEvent::NetworkStart { .. });
             tab.on_core_event(event).unwrap();
+            if route == ResourceKind::Html && is_start {
+                assert_eq!(tab.active_document_request_id(), Some(issued_id));
+                assert!(tab.navigation_attempt.is_none());
+                assert_eq!(tab.document_load.response.as_ref(), started.as_ref());
+                assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Pending);
+            }
         }
         assert_eq!(terminals, 1);
         assert_eq!(delivered, 3);
@@ -171,21 +199,70 @@ fn ai5f_real_runtime_partial_failures_settle_each_consumer_without_sibling_compl
         )));
         match route {
             ResourceKind::Html => {
-                assert!(matches!(
-                    &tab.document_load.parse_status,
-                    DocumentParseStatus::Failed(_)
-                ));
+                assert_eq!(tab.active_document_request_id(), Some(issued_id));
+                assert!(tab.navigation_attempt.is_none());
+                assert_eq!(tab.document_load.response.as_ref(), started.as_ref());
+                assert_eq!(tab.document_load.bytes_received, 3);
+                assert!(tab.document_load.body_completion.is_none());
+                let progress = terminal_body.expect("actual malformed-body terminal progress");
+                assert_eq!(progress.route(), ResourceKind::Html);
+                assert_eq!(progress.delivered_bytes(), 3);
+                let failure = DocumentLoadFailure::Network {
+                    kind: NetworkErrorKind::MalformedResponse,
+                    response_context: Some(started.clone().expect("actual selected response")),
+                    body_progress: Some(progress),
+                };
+                assert_eq!(tab.document_load.failure(), Some(&failure));
+                assert_eq!(
+                    tab.document_load.parse_status,
+                    DocumentParseStatus::Failed(failure.clone())
+                );
+                let mut parser = queued.iter().filter(|command| {
+                    matches!(
+                        command,
+                        CoreCommand::ParseHtmlStart { .. }
+                            | CoreCommand::ParseHtmlChunk { .. }
+                            | CoreCommand::ParseHtmlDone { .. }
+                    )
+                });
+                assert!(
+                    matches!(parser.next(), Some(CoreCommand::ParseHtmlStart { tab_id: 1, request_id }) if *request_id == issued_id)
+                );
+                let mut parser_bytes = Vec::new();
+                for command in parser {
+                    match command {
+                        CoreCommand::ParseHtmlChunk {
+                            tab_id: 1,
+                            request_id,
+                            bytes,
+                        } => {
+                            assert_eq!(*request_id, issued_id);
+                            parser_bytes.extend_from_slice(bytes);
+                        }
+                        _ => panic!("only HTML chunks may follow the single parser start"),
+                    }
+                }
+                assert_eq!(parser_bytes, delivered_bytes);
+                assert_eq!(parser_bytes, b"abc");
                 assert!(!tab.loading);
-                assert!(queued.iter().any(|c| matches!(c, CoreCommand::CancelRequest {request_id, ..} if *request_id == tab.nav_gen)));
+                assert!(queued.iter().any(|c| matches!(c, CoreCommand::CancelRequest {request_id, ..} if *request_id == issued_id)));
                 tab.on_core_event(CoreEvent::NetworkDone {
                     tab_id: 1,
-                    request_id: tab.nav_gen,
+                    request_id: issued_id,
                     stylesheet_slot_id: None,
                     kind: route,
                     response: started.unwrap(),
                     body: BodyProgress::try_new(route, 3).unwrap(),
                 })
                 .unwrap();
+                assert_eq!(tab.document_load.failure(), Some(&failure));
+                assert_eq!(
+                    tab.document_load.parse_status,
+                    DocumentParseStatus::Failed(failure)
+                );
+                assert!(tab.document_load.body_completion.is_none());
+                assert_eq!(tab.active_document_request_id(), Some(issued_id));
+                assert!(tab.navigation_attempt.is_none());
                 assert!(
                     !commands
                         .try_iter()
@@ -242,7 +319,7 @@ fn ai5f_real_runtime_partial_failures_settle_each_consumer_without_sibling_compl
                 css_tx
                     .send(CoreCommand::CssDone {
                         tab_id: tab.tab_id,
-                        request_id: tab.nav_gen,
+                        request_id: issued_id,
                         stylesheet_slot_id: slot.unwrap(),
                         url: url.clone(),
                     })
@@ -341,7 +418,7 @@ fn ai7_fake_acquisition_failures_settle_consumers_without_cancelling_siblings() 
                     let mut tab = Tab::new(1);
                     let (tx, rx) = mpsc::channel();
                     tab.set_bus_sender(tx);
-                    tab.navigate_to_new(issued.into());
+                    tab.navigate_to_new(issued.into()).unwrap();
                     (tab, rx)
                 }
                 ResourceKind::Css => addressing_tab(&format!(
@@ -409,8 +486,8 @@ fn ai7_fake_acquisition_failures_settle_consumers_without_cancelling_siblings() 
             match route {
                 ResourceKind::Html => {
                     assert!(matches!(
-                        &tab.document_load.parse_status,
-                        DocumentParseStatus::Failed(_)
+                        &tab.navigation_attempt.as_ref().unwrap().terminal,
+                        Some(Err(_))
                     ));
                     assert!(!tab.loading);
                     assert!(

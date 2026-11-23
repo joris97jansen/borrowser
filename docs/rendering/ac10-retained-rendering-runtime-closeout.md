@@ -1,5 +1,7 @@
 # AC10: Retained Rendering Runtime Closeout
 
+> AJ3 current qualification: [AJ3](../platform/aj3-main-document-response-preparation.md) clarifies the navigation boundary: pending fetch intent does not reset retained identity or artifacts. Eligible replacement activation does. Existing active-document work can legitimately update artifacts while a replacement waits; otherwise non-replacing navigation preserves them. An accepted frame describes the settled active document, independently of pending navigation outcomes.
+
 Last updated: 2026-06-24
 Status: implemented documentation closeout for Milestone AC issue 10
 

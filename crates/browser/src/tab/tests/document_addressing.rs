@@ -94,7 +94,7 @@ fn document_addressing_file_origin_survives_base_clear_handle_and_rejected_publi
     .unwrap();
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: 1,
-        request_id: tab.nav_gen,
+        request_id: tab.active_document_request_id().expect("admitted fixture"),
         publication: no_quirks_patch_publication_from_output(parsed),
     })
     .unwrap();
@@ -123,7 +123,7 @@ fn document_addressing_file_origin_survives_base_clear_handle_and_rejected_publi
     let parsed = html::parse_document("<!doctype html><p>stale", Default::default()).unwrap();
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: 1,
-        request_id: tab.nav_gen - 1,
+        request_id: tab.active_document_request_id().expect("admitted fixture") - 1,
         publication: no_quirks_patch_publication_from_output(parsed),
     })
     .unwrap();
@@ -155,7 +155,6 @@ fn document_addressing_file_origin_survives_base_clear_handle_and_rejected_publi
 
 #[test]
 fn document_addressing_unsupported_response_never_partially_accepts() {
-    use super::super::state::DocumentParseStatus;
     for unsupported in [
         "ftp://host/a",
         "ws://host/a",
@@ -168,41 +167,42 @@ fn document_addressing_unsupported_response_never_partially_accepts() {
         "custom-private:secret",
     ] {
         for transition in ["new", "refresh", "traversal"] {
-            let file = "file:///tmp/ah5-admission.html";
-            let (mut tab, rx) = addressing_tab_with_url("<!doctype html><p>previous", file);
-            tab.activate_link("#one");
-            tab.activate_link("#two");
-            match transition {
-                "new" => tab.navigate_to_new("https://request.test/new".into()),
-                "refresh" => tab.refresh(),
-                _ => {
-                    tab.navigate_to_new("https://request.test/other".into());
-                    tab.go_back();
-                }
+            let (mut tab, rx) = addressing_tab_with_url(
+                "<!doctype html><p>previous",
+                "file:///tmp/ah5-admission.html",
+            );
+            if transition == "traversal" {
+                let id = super::support::admit_document(&mut tab, "https://request.test/other");
+                let output =
+                    html::parse_document("<!doctype html><p>other", Default::default()).unwrap();
+                tab.on_core_event(CoreEvent::DomPatchUpdate {
+                    tab_id: 1,
+                    request_id: id,
+                    publication: super::support::no_quirks_patch_publication_from_output(output),
+                })
+                .unwrap();
             }
-            // Navigation has already retired the old page. Rejection must not
-            // restore it or rebind any historical document associations.
-            assert!(tab.page.addresses.is_none());
-            assert!(tab.page.dom.is_none());
-            assert!(tab.document_load.response.is_none());
-            let history = tab.history.clone();
-            let history_index = tab.history_index;
-            let toolbar = tab.url.clone();
-            let handle = tab.dom_handle;
-            let version = tab.dom_version;
-            let requested = tab.history[history_index].url.clone();
-            let request_id = tab.nav_gen;
+            let addresses = tab.page.addresses.clone();
+            let pointer = tab.page.dom.as_deref().unwrap() as *const html::Node;
+            let identity = tab.active_document_request_id();
+            let index = tab.history_index;
+            let len = tab.history.len();
+            let association = tab.history[index].document_state.clone().unwrap();
+            match transition {
+                "new" => tab
+                    .navigate_to_new("https://request.test/new".into())
+                    .unwrap(),
+                "refresh" => tab.refresh().unwrap(),
+                _ => tab.go_back().unwrap(),
+            }
+            let request = tab.navigation_attempt.as_ref().unwrap().request.clone();
+            assert_eq!(tab.page.addresses, addresses);
             rx.try_iter().for_each(drop);
-            let rejected = super::support::response_facts(
-                addressing::ResourceKind::Document,
-                requested.clone(),
+            let response = super::support::response_facts(
+                request.address().kind(),
+                request.original_url().as_str().into(),
                 unsupported.into(),
-                if addressing::BrowserUrl::parse(&requested)
-                    .unwrap()
-                    .url
-                    .scheme()
-                    == "file"
-                {
+                if request.original_url().scheme() == "file" {
                     None
                 } else {
                     Some(200)
@@ -211,117 +211,36 @@ fn document_addressing_unsupported_response_never_partially_accepts() {
             );
             tab.on_core_event(CoreEvent::NetworkStart {
                 tab_id: 1,
-                request_id,
+                request_id: request.request_id(),
                 stylesheet_slot_id: None,
                 kind: ResourceKind::Html,
-                response: rejected.clone(),
+                response,
             })
             .unwrap();
             assert!(matches!(
-                &tab.document_load.parse_status,
-                DocumentParseStatus::Failed(_)
+                tab.navigation_attempt.as_ref().unwrap().terminal,
+                Some(Err(
+                    super::super::state::DocumentLoadFailure::UnsupportedDocumentCreation { .. }
+                ))
             ));
-            assert!(!tab.loading);
+            assert_eq!(tab.active_document_request_id(), identity);
+            assert_eq!(tab.page.addresses, addresses);
             assert_eq!(
-                tab.last_status.as_deref(),
-                Some("Unsupported document creation context")
+                tab.page.dom.as_deref().unwrap() as *const html::Node,
+                pointer
             );
-            assert!(tab.document_load.response.is_none());
-            assert!(tab.page.addresses.is_none());
-            assert!(tab.page.dom.is_none());
-            assert_eq!(tab.dom_handle, handle);
-            assert_eq!(tab.dom_version, version);
-            assert_eq!(tab.url, toolbar);
-            assert_eq!(tab.history_index, history_index);
-            assert_eq!(tab.history.len(), history.len());
-            for (current, previous) in tab.history.iter().zip(&history) {
-                assert_eq!(current.url, previous.url);
-                match (&current.document_state, &previous.document_state) {
-                    (Some(a), Some(b)) => assert!(a.is_same(b)),
-                    (None, None) => {}
-                    _ => panic!("admission changed a history association"),
-                }
-            }
-            let commands: Vec<_> = rx.try_iter().collect();
-            assert_eq!(commands.len(), 1);
+            assert_eq!(tab.history_index, index);
+            assert_eq!(tab.history.len(), len);
             assert!(
-                matches!(commands[0], CoreCommand::CancelRequest { request_id: id, .. } if id == request_id)
-            );
-            // Failure is terminal even if the next start would be supported.
-            let supported = super::support::response_facts(
-                addressing::ResourceKind::Document,
-                rejected.requested_url().into(),
-                requested.clone(),
-                rejected.status_code(),
-                Some("text/html".into()),
-            );
-            tab.on_core_event(CoreEvent::NetworkStart {
-                tab_id: 1,
-                request_id,
-                stylesheet_slot_id: None,
-                kind: ResourceKind::Html,
-                response: supported.clone(),
-            })
-            .unwrap();
-            tab.on_core_event(CoreEvent::NetworkChunk {
-                tab_id: 1,
-                request_id,
-                stylesheet_slot_id: None,
-                kind: ResourceKind::Html,
-                url: requested,
-                bytes: b"ignored".to_vec(),
-            })
-            .unwrap();
-            tab.on_core_event(CoreEvent::NetworkDone {
-                tab_id: 1,
-                request_id,
-                stylesheet_slot_id: None,
-                kind: ResourceKind::Html,
-                response: supported,
-                body: net::BodyProgress::try_new(ResourceKind::Html, 7).unwrap(),
-            })
-            .unwrap();
-            let parsed =
-                html::parse_document("<!doctype html><p>late", Default::default()).unwrap();
-            assert!(
-                tab.on_core_event(CoreEvent::DomPatchUpdate {
-                    tab_id: 1,
-                    request_id,
-                    publication: no_quirks_patch_publication_from_output(parsed)
-                })
-                .is_err()
-            );
-            assert!(tab.page.addresses.is_none());
-            assert!(tab.document_load.response.is_none());
-            assert_eq!(
-                tab.last_status.as_deref(),
-                Some("Unsupported document creation context")
-            );
-            assert!(rx.try_recv().is_err());
-            // Only a fresh navigation generation can recover.
-            tab.navigate_to_new("https://recovery.test/".into());
-            tab.on_core_event(CoreEvent::NetworkStart {
-                tab_id: 1,
-                request_id: tab.nav_gen,
-                stylesheet_slot_id: None,
-                kind: ResourceKind::Html,
-                response: super::support::response_facts(
-                    addressing::ResourceKind::Document,
-                    "https://recovery.test/".into(),
-                    "https://recovery.test/".into(),
-                    Some(200),
-                    None,
-                ),
-            })
-            .unwrap();
-            assert_eq!(
-                tab.page
-                    .addresses
+                tab.history[index]
+                    .document_state
                     .as_ref()
                     .unwrap()
-                    .document_origin()
-                    .serialize(),
-                "https://recovery.test"
+                    .is_same(&association)
+            );
+            assert!(
+                !rx.try_iter()
+                    .any(|c| matches!(c, CoreCommand::ParseHtmlStart { .. }))
             );
         }
     }
@@ -334,7 +253,8 @@ fn document_addressing_ordered_changes_and_frozen_lifetime() {
     );
     let first = element_id(tab.page.dom.as_deref().unwrap(), "first");
     let second = element_id(tab.page.dom.as_deref().unwrap(), "second");
-    tab.activate_link("https://example.test/dir/page?q=1#new");
+    tab.activate_link("https://example.test/dir/page?q=1#new")
+        .unwrap();
     assert_eq!(
         tab.page.fallback_base_url().unwrap().fragment(),
         Some("new")
@@ -411,7 +331,7 @@ fn document_addressing_rejection_stale_events_and_replacement() {
         html::parse_document("<!doctype html><base href='/stale/'>", Default::default()).unwrap();
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: 1,
-        request_id: 6,
+        request_id: 0,
         publication: no_quirks_patch_publication_from_output(output),
     })
     .unwrap();
@@ -421,7 +341,7 @@ fn document_addressing_rejection_stale_events_and_replacement() {
     let output = html::parse_document("<!doctype html><p>replacement", Default::default()).unwrap();
     tab.on_core_event(CoreEvent::DomPatchUpdate {
         tab_id: 1,
-        request_id: 7,
+        request_id: tab.active_document_request_id().unwrap(),
         publication: no_quirks_patch_publication_from_output(output),
     })
     .unwrap();
@@ -452,7 +372,7 @@ fn document_addressing_chunking_qualifies_final_state_and_ordered_facts() {
     for chunk in [source.len(), 1, 2, 7, 19] {
         let mut parser = html::HtmlParser::new(Default::default()).unwrap();
         let mut tab = Tab::new(1);
-        tab.page.start_nav(ADDRESS_URL);
+        super::support::admit_document(&mut tab, ADDRESS_URL);
         let mut pending = Vec::new();
         let mut from = DomVersion::INITIAL;
         for bytes in source.as_bytes().chunks(chunk) {
@@ -473,7 +393,7 @@ fn document_addressing_chunking_qualifies_final_state_and_ordered_facts() {
                 };
                 tab.on_core_event(CoreEvent::DomPatchUpdate {
                     tab_id: 1,
-                    request_id: 0,
+                    request_id: tab.active_document_request_id().unwrap(),
                     publication,
                 })
                 .unwrap();
@@ -487,7 +407,7 @@ fn document_addressing_chunking_qualifies_final_state_and_ordered_facts() {
                 no_quirks_patch_publication(DomHandle(77), from, from.next(), pending);
             tab.on_core_event(CoreEvent::DomPatchUpdate {
                 tab_id: 1,
-                request_id: 0,
+                request_id: tab.active_document_request_id().unwrap(),
                 publication,
             })
             .unwrap();
@@ -503,18 +423,21 @@ fn document_addressing_chunking_qualifies_final_state_and_ordered_facts() {
 #[test]
 fn document_addressing_hyperlinks_and_history_are_separate_from_address_bar_guessing() {
     let (mut tab, rx) = addressing_tab("<!doctype html><p>document");
-    let generation = tab.nav_gen;
+    let generation = tab.active_document_request_id().expect("admitted fixture");
     tab.url = "editable address bar text".into();
-    tab.activate_link("#one");
-    tab.activate_link("#two");
+    tab.activate_link("#one").unwrap();
+    tab.activate_link("#two").unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), Some("two"));
-    tab.go_back();
+    tab.go_back().unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), Some("one"));
-    tab.go_back();
+    tab.go_back().unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), Some("initial"));
-    tab.go_forward();
+    tab.go_forward().unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), Some("one"));
-    assert_eq!(tab.nav_gen, generation);
+    assert_eq!(
+        tab.active_document_request_id().expect("admitted fixture"),
+        generation
+    );
     assert!(
         rx.try_iter()
             .all(|cmd| !matches!(cmd, CoreCommand::FetchStream { .. }))
@@ -527,27 +450,32 @@ fn document_addressing_hyperlinks_and_history_are_separate_from_address_bar_gues
         "custom:opaque",
         "http://[",
     ] {
-        tab.activate_link(href);
-        assert_eq!(tab.nav_gen, generation);
+        assert!(tab.activate_link(href).is_err());
+        assert_eq!(
+            tab.active_document_request_id().expect("admitted fixture"),
+            generation
+        );
         assert!(rx.try_recv().is_err());
     }
     let (mut tab, rx) = addressing_tab("<!doctype html><base href='https://other.test/different'>");
-    tab.activate_link("#fragment");
-    assert_eq!(tab.nav_gen, 8);
-    assert!(tab.page.document_url().is_none());
+    let active = tab.active_document_request_id();
+    tab.activate_link("#fragment").unwrap();
+    assert_eq!(tab.active_document_request_id(), active);
+    assert_eq!(super::support::pending_id(&tab), active.unwrap() + 1);
+    assert!(tab.page.document_url().is_some());
     assert!(rx.try_iter().any(|cmd| matches!(cmd, CoreCommand::FetchStream { request: fetch_request, kind: ResourceKind::Html, .. } if fetch_request.legacy_issued_url(ResourceKind::Html).unwrap() == "https://other.test/different#fragment")));
     let (mut tab, rx) = addressing_tab("<!doctype html><base href='../assets/'>");
-    tab.activate_link("child");
+    tab.activate_link("child").unwrap();
     assert!(rx.try_iter().any(|cmd| matches!(cmd, CoreCommand::FetchStream { request: fetch_request, .. } if fetch_request.legacy_issued_url(ResourceKind::Html).unwrap() == "https://example.test/assets/child")));
     let mut tab = Tab::new(1);
-    tab.activate_link("relative");
-    tab.activate_link("https://example.test/absolute");
-    tab.activate_link("custom:opaque");
-    assert_eq!(tab.nav_gen, 0);
+    assert!(tab.activate_link("relative").is_err());
+    assert!(tab.activate_link("https://example.test/absolute").is_err());
+    assert!(tab.activate_link("custom:opaque").is_err());
+    assert_eq!(tab.active_document_request_id(), None);
     assert!(tab.page.document_url().is_none());
     let (tx, rx) = std::sync::mpsc::channel();
     tab.set_bus_sender(tx);
-    tab.navigate_to_new("example.test".into());
+    tab.navigate_to_new("example.test".into()).unwrap();
     assert_eq!(tab.url, "https://example.test/");
     assert!(matches!(
         rx.try_recv().unwrap(),
@@ -638,6 +566,7 @@ fn document_addressing_fragment_cross_document_navigation_replaces_address_and_a
         let credential_target = addressing::BrowserUrl::parse(destination).unwrap().url;
         let has_credentials =
             !credential_target.username().is_empty() || credential_target.password().is_some();
+        let generation = tab.active_document_request_id().expect("admitted fixture");
         if has_credentials {
             let addresses = tab.page.addresses.clone();
             let history = tab
@@ -646,13 +575,13 @@ fn document_addressing_fragment_cross_document_navigation_replaces_address_and_a
                 .map(|e| e.url().to_owned())
                 .collect::<Vec<_>>();
             let visible = tab.url.clone();
-            let generation = tab.nav_gen;
-            tab.activate_link(href);
-            assert_eq!(
-                tab.nav_gen, generation,
-                "credentials never turn a cross-document destination into same-document navigation"
-            );
-            assert_eq!(tab.url, visible);
+            assert!(matches!(
+                tab.activate_link(href),
+                Err(super::super::NavigationError::Request(
+                    net::RequestAdmissionError::UrlCredentialsUnsupported
+                ))
+            ));
+            assert_eq!(tab.active_document_request_id(), Some(generation));
             assert_eq!(tab.page.addresses, addresses);
             assert_eq!(
                 tab.history
@@ -661,23 +590,24 @@ fn document_addressing_fragment_cross_document_navigation_replaces_address_and_a
                     .collect::<Vec<_>>(),
                 history
             );
+            assert_eq!(tab.url, visible);
             assert!(rx.try_recv().is_err());
             continue;
         }
         assert_eq!(old_slots.len(), 1);
-        let generation = tab.nav_gen;
-        tab.activate_link(href);
-        assert_eq!(tab.nav_gen, generation + 1, "base={base} href={href:?}");
+        tab.activate_link(href).unwrap();
+        assert_eq!(tab.active_document_request_id(), Some(generation));
+        assert_eq!(super::support::pending_id(&tab), generation + 1);
         assert_eq!(tab.url, destination);
-        assert_eq!(
+        assert_ne!(
             tab.history.last().map(|entry| entry.url()),
             Some(destination)
         );
-        assert!(tab.page.document_url().is_none());
-        assert!(tab.page.active_base_url().is_none());
-        assert!(tab.page.dom.is_none());
-        assert!(tab.page.image_sources.is_empty());
-        assert!(tab.page.active_external_stylesheet_slots().is_empty());
+        assert!(tab.page.document_url().is_some());
+        assert!(tab.page.active_base_url().is_some());
+        assert!(tab.page.dom.is_some());
+        assert!(!tab.page.image_sources.is_empty());
+        assert_eq!(tab.page.active_external_stylesheet_slots(), old_slots);
         let issued = rx
             .try_iter()
             .find_map(|command| match command {
@@ -765,7 +695,7 @@ fn document_addressing_fragment_navigation_preserves_frozen_base_and_owner_assoc
     let base = "https://old:secret@EXAMPLE.TEST:443/dir/page?q=1#frozen";
     let (mut tab, rx) = addressing_tab_at(current, base);
     rx.try_iter().for_each(drop);
-    let generation = tab.nav_gen;
+    let generation = tab.active_document_request_id().expect("admitted fixture");
     let handle = tab.dom_handle;
     let version = tab.dom_version;
     let frozen = tab.page.active_base_url().unwrap().clone();
@@ -781,24 +711,27 @@ fn document_addressing_fragment_navigation_preserves_frozen_base_and_owner_assoc
     assert!(tab.stylesheet_loads.is_empty());
     assert_eq!(tab.page.pending_count(), 0);
 
-    tab.activate_link("#one");
+    tab.activate_link("#one").unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), Some("one"));
-    tab.activate_link("#");
+    tab.activate_link("#").unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), Some(""));
     assert_eq!(
         tab.history.last().map(|entry| entry.url()),
         Some("https://old:secret@example.test/dir/page?q=1#")
     );
-    tab.go_back();
+    tab.go_back().unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), Some("one"));
-    tab.go_back();
+    tab.go_back().unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), None);
-    tab.go_forward();
+    tab.go_forward().unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), Some("one"));
-    tab.go_forward();
+    tab.go_forward().unwrap();
     assert_eq!(tab.page.document_url().unwrap().fragment(), Some(""));
 
-    assert_eq!(tab.nav_gen, generation);
+    assert_eq!(
+        tab.active_document_request_id().expect("admitted fixture"),
+        generation
+    );
     assert_eq!(tab.dom_handle, handle);
     assert_eq!(tab.dom_version, version);
     assert_eq!(tab.page.active_base_url(), Some(&frozen));
@@ -820,10 +753,13 @@ fn document_addressing_fragment_navigation_preserves_frozen_base_and_owner_assoc
 fn document_addressing_response_validation_and_no_synthetic_base() {
     for final_url in ["", "http://["] {
         let mut tab = Tab::new(1);
-        tab.navigate_to_new("https://example.test/requested".into());
+        let (tx, _commands) = std::sync::mpsc::channel();
+        tab.set_bus_sender(tx);
+        tab.navigate_to_new("https://example.test/requested".into())
+            .unwrap();
         tab.on_core_event(CoreEvent::NetworkStart {
             tab_id: 1,
-            request_id: tab.nav_gen,
+            request_id: super::support::pending_id(&tab),
             stylesheet_slot_id: None,
             kind: ResourceKind::Html,
             response: super::support::response_facts(
@@ -839,8 +775,8 @@ fn document_addressing_response_validation_and_no_synthetic_base() {
         // not synthesize a document address from the request.
         assert!(tab.page.document_url().is_none());
         assert!(matches!(
-            &tab.document_load.parse_status,
-            super::super::state::DocumentParseStatus::Failed(_)
+            &tab.navigation_attempt.as_ref().unwrap().terminal,
+            Some(Err(_))
         ));
     }
 }
@@ -898,7 +834,10 @@ fn document_addressing_publication_rejections_preserve_committed_state_and_scope
         assert_eq!(fetched.len(), 2);
         let (loaded, generation, loaded_url) = fetched[0].clone();
         let (unfinished, unfinished_generation, issued_url) = fetched[1].clone();
-        assert_eq!(generation, tab.nav_gen);
+        assert_eq!(
+            generation,
+            tab.active_document_request_id().expect("admitted fixture")
+        );
         assert_eq!(unfinished_generation, generation);
         assert_eq!(issued_url, "https://example.test/original/site.css?a=1&a=2");
         complete_css(&mut tab, loaded, &loaded_url, "p{color:red}");
@@ -954,7 +893,7 @@ fn document_addressing_publication_rejections_preserve_committed_state_and_scope
         let result = match rejection {
             "identity" => tab.commit_document_publication_with_forced_identity_failure_for_tests(
                 publication,
-                tab.nav_gen,
+                tab.active_document_request_id().expect("admitted fixture"),
                 PatchKey::from_id(base),
             ),
             "version" => {
@@ -1135,68 +1074,92 @@ fn document_addressing_history_preserves_valid_and_fallback_frozen_bases() {
     for href in ["", "http://[", "/assets/"] {
         let (mut tab, rx) = addressing_tab(&format!("<!doctype html><base href='{href}'>"));
         let frozen = tab.page.active_base_url().unwrap().clone();
-        tab.activate_link("https://example.test/dir/page?q=1#one");
-        tab.activate_link("https://example.test/dir/page?q=1#two");
-        tab.go_back();
+        tab.activate_link("https://example.test/dir/page?q=1#one")
+            .unwrap();
+        tab.activate_link("https://example.test/dir/page?q=1#two")
+            .unwrap();
+        tab.go_back().unwrap();
         assert_eq!(tab.page.document_url().unwrap().fragment(), Some("one"));
-        tab.go_forward();
+        tab.go_forward().unwrap();
         assert_eq!(tab.page.document_url().unwrap().fragment(), Some("two"));
         assert_eq!(tab.page.active_base_url(), Some(&frozen));
-        assert_eq!(tab.nav_gen, 7);
+        assert_eq!(tab.active_document_request_id(), Some(1));
         assert!(rx.try_recv().is_err());
     }
 }
 
 #[test]
 fn document_addressing_production_pointer_activation_resolves_authored_href_in_browser() {
-    let (mut tab, rx) =
-        addressing_tab("<!doctype html><base href='/assets/'><body><a id=link href=child>next</a>");
-    let ctx = egui::Context::default();
-    let raw = |events| egui::RawInput {
-        screen_rect: Some(egui::Rect::from_min_size(
-            egui::Pos2::ZERO,
-            egui::vec2(600.0, 400.0),
-        )),
-        events,
-        ..Default::default()
-    };
-    for _ in 0..2 {
-        let _ = ctx.run(raw(vec![]), |ctx| {
-            tab.ui_content(ctx).unwrap();
-        });
-    }
-    let link_id = element_id(tab.page.dom.as_deref().unwrap(), "link");
-    let pos = {
-        let retained = tab.page.retained_layout_artifact().unwrap().clone();
-        let style = tab.page.build_style_phase_output().unwrap().unwrap();
-        let layout = retained.materialize(style.root()).unwrap();
-        let measurer = gfx::text_measurer::EguiTextMeasurer::new(&ctx);
-        (0..100)
-            .find_map(|y| {
-                (0..200).find_map(|x| {
-                    let hit =
-                        layout::hit_test::hit_test(layout.root(), (x as f32, y as f32), &measurer)?;
-                    (hit.node_id == link_id && hit.kind == layout::HitKind::Link)
-                        .then_some(egui::pos2(x as f32, y as f32))
-                })
-            })
-            .expect("production layout exposes a link hit region")
-    };
-    for pressed in [true, false] {
-        let _ = ctx.run(
-            raw(vec![
-                egui::Event::PointerMoved(pos),
-                egui::Event::PointerButton {
-                    pos,
-                    button: egui::PointerButton::Primary,
-                    pressed,
-                    modifiers: egui::Modifiers::NONE,
-                },
-            ]),
-            |ctx| {
+    for (href, rejected) in [("child", false), ("custom:opaque", true)] {
+        let (mut tab, rx) = addressing_tab(&format!(
+            "<!doctype html><base href='/assets/'><body><a id=link href='{href}'>next</a>"
+        ));
+        let active_id = tab.active_document_request_id();
+        let active_status = tab.last_status.clone();
+        let ctx = egui::Context::default();
+        let raw = |events| egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(600.0, 400.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        for _ in 0..2 {
+            let _ = ctx.run(raw(vec![]), |ctx| {
                 tab.ui_content(ctx).unwrap();
-            },
-        );
+            });
+        }
+        let link_id = element_id(tab.page.dom.as_deref().unwrap(), "link");
+        let pos = {
+            let retained = tab.page.retained_layout_artifact().unwrap().clone();
+            let style = tab.page.build_style_phase_output().unwrap().unwrap();
+            let layout = retained.materialize(style.root()).unwrap();
+            let measurer = gfx::text_measurer::EguiTextMeasurer::new(&ctx);
+            (0..100)
+                .find_map(|y| {
+                    (0..200).find_map(|x| {
+                        let hit = layout::hit_test::hit_test(
+                            layout.root(),
+                            (x as f32, y as f32),
+                            &measurer,
+                        )?;
+                        (hit.node_id == link_id && hit.kind == layout::HitKind::Link)
+                            .then_some(egui::pos2(x as f32, y as f32))
+                    })
+                })
+                .expect("production layout exposes a link hit region")
+        };
+        for pressed in [true, false] {
+            let _ = ctx.run(
+                raw(vec![
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ]),
+                |ctx| {
+                    tab.ui_content(ctx).unwrap();
+                },
+            );
+        }
+        if rejected {
+            assert_eq!(
+                tab.visible_load_status(),
+                Some(format!(
+                    "Navigation submission: Fetch request rejected: UnsupportedScheme • {}",
+                    active_status.as_deref().unwrap()
+                ))
+            );
+            assert_eq!(tab.last_status, active_status);
+            assert_eq!(tab.active_document_request_id(), active_id);
+            assert!(tab.document_load.failure().is_none());
+            assert!(rx.try_recv().is_err());
+        } else {
+            assert!(rx.try_iter().any(|command|matches!(command,CoreCommand::FetchStream { request: fetch_request, kind:ResourceKind::Html,..} if fetch_request.legacy_issued_url(ResourceKind::Html).unwrap()=="https://example.test/assets/child")));
+        }
     }
-    assert!(rx.try_iter().any(|command|matches!(command,CoreCommand::FetchStream { request: fetch_request, kind:ResourceKind::Html,..} if fetch_request.legacy_issued_url(ResourceKind::Html).unwrap()=="https://example.test/assets/child")));
 }

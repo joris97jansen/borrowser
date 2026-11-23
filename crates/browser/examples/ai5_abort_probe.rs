@@ -491,7 +491,7 @@ fn worker(url: &str, case: usize, trace: bool) {
         let mut t = Tab::new(1);
         let (tx, rx) = mpsc::channel();
         t.set_bus_sender(tx);
-        t.navigate_to_new(url.into());
+        t.navigate_to_new(url.into()).unwrap();
         (t, rx)
     };
     let command = commands.recv_timeout(Duration::from_secs(5)).unwrap();

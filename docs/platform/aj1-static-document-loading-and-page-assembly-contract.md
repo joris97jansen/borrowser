@@ -1,5 +1,7 @@
 # AJ1: Static Document Loading And Page Assembly Contract
 
+> AJ3 current qualification: AJ3 qualifies the earlier eager navigation reset and response-policy gaps: fetch submission preserves the actual active document/work/history until eligible response admission. Typed status/MIME/disposition preparation and 204/205 preservation follow the [AJ3 contract](aj3-main-document-response-preparation.md). This establishes the declared-HTML subset, not full response applicability or assembly.
+
 Issue: [#1132](https://github.com/joris97jansen/borrowser/issues/1132).
 Milestone AJ — Document Loading Lifecycle, Stylesheet Loading, and Static Page Assembly.
 Architecture baseline: master `44097fafa00ca221f128d1ab4fc8a42188c1e83d`,

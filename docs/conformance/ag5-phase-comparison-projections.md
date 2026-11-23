@@ -1,5 +1,7 @@
 # AG5 static phase comparison contract
 
+> AJ3 current qualification: [AJ3](../platform/aj3-main-document-response-preparation.md) keeps active supported-input settlement separate from pending-navigation progress. A pending replacement alone does not invalidate an accepted frame of a settled active document. That observation does not establish success of the pending request. Fixture drivers correlate pre-activation work with the actual issued FetchRequest ID, and post-activation rendering with the read-only active identity.
+
 AG5 extends the AG3 vertical slice within the existing nine-issue milestone.
 It adds observations and comparisons, not rendering features. Its original six
 fixtures now belong to the AG6 discovered catalogue. The Chromium pin remains

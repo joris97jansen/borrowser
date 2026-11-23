@@ -285,7 +285,7 @@ fn ai3_debug_is_literal_bounded_and_redacted_when_nested() {
     let r = response(200, Some("https://SECRET.test/PRIVATE"), HttpHeaders::new());
     assert_eq!(
         format!("{r:?}"),
-        "NetworkResponseInfo { original_url: \"<redacted>\", requested_url: \"<redacted>\", response_url: \"parsed\", status: Some(HttpStatus(200)), headers: [], redirect_chain: [], local_content_type_present: false, resource_kind: Document, content_type: Missing, declared_content_length: Missing, status_class: Some(Successful) }"
+        "NetworkResponseInfo { original_url: \"<redacted>\", requested_url: \"<redacted>\", response_url: \"parsed\", status: Some(HttpStatus(200)), headers: [], redirect_chain: [], local_content_type_present: false, resource_kind: Document, content_type: Missing, content_disposition: Missing, declared_content_length: Missing, status_class: Some(Successful) }"
     );
     let mut h = HttpHeaders::new();
     h.append("PRIVATE_NAME", b"SECRET_HEADER").unwrap();

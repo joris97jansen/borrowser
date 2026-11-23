@@ -68,7 +68,7 @@ impl<'a> OfflineDocumentDriver<'a> {
             .map_err(|_| error("incompatible resource route"))?;
         CoreCommand::validate_fetch_stream(&request, kind, stylesheet_slot_id)
             .map_err(|_| error("incompatible resource attachment"))?;
-        if tab_id != tab.tab_id || request_id != tab.nav_gen {
+        if tab_id != tab.tab_id || Some(request_id) != tab.active_document_request_id() {
             return Err(error("resource request has wrong document identity"));
         }
         let manifest_kind = match (kind, stylesheet_slot_id) {
@@ -126,7 +126,8 @@ impl<'a> OfflineDocumentDriver<'a> {
                     tab_id, request_id, ..
                 }
                 | CoreCommand::ParseHtmlDone { tab_id, request_id }
-                    if *tab_id == tab.tab_id && *request_id == tab.nav_gen =>
+                    if *tab_id == tab.tab_id
+                        && Some(*request_id) == tab.active_document_request_id() =>
                 {
                     parser
                         .send(command)
@@ -270,6 +271,7 @@ pub(super) fn execute(
         &mut tab,
         input.asset(&case.html)?.as_bytes(),
         response,
+        request.request_id(),
         &event_rx,
         |tab| driver.forward_html(tab, &command_rx, &parser),
     )?;
@@ -430,7 +432,8 @@ pub(super) fn execute(
         .clone();
     let mut snapshots = vec![snapshot(&tab, &driver.slots)?];
     let retained_origin_same = if let Some(destination) = &case.same_document_url {
-        tab.navigate_to_new(destination.clone());
+        tab.navigate_to_new(destination.clone())
+            .map_err(|cause| error(format!("navigation rejected: {cause:?}")))?;
         if command_rx.try_recv().is_ok() {
             return Err(error("same-document fixture emitted a command"));
         }

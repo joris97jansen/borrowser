@@ -19,6 +19,9 @@ pub(super) fn document_failure_status(failure: &DocumentLoadFailure) -> String {
                 .and_then(NetworkResponseInfo::status_code),
             "",
         ),
+        ParserCommandDeliveryUnavailable => "Document parser command delivery unavailable".into(),
+        UnexpectedNoContentBody => "Unexpected body for a non-replacing document response".into(),
+        ResponseRejected { reason, .. } => format!("Document response rejected: {reason:?}"),
         Parser(error) => {
             use bus::HtmlParseFailure::*;
             let (stage, detail) = match error {
@@ -127,5 +130,56 @@ pub(super) fn format_network_error(
     match status_code {
         Some(code) => format!("{message} [HTTP {code}]"),
         None => message,
+    }
+}
+
+impl super::Tab {
+    /// Presentation only: never a lifecycle cache or an active-frame gate.
+    pub(super) fn visible_load_status(&self) -> Option<String> {
+        let active = self.active_document_request_id().and_then(|_| {
+            self.document_load
+                .failure()
+                .map(document_failure_status)
+                .or_else(|| self.last_status.clone())
+        });
+        let navigation =
+            self.navigation_attempt
+                .as_ref()
+                .and_then(|attempt| match &attempt.terminal {
+                    // Production Cancelled events originate only from the
+                    // runtime's Browser-commanded token. Browser first latches
+                    // its terminal or retires the request; see the AJ3 audit.
+                    // Keep that diagnostic without a misleading failure notice.
+                    Some(Err(DocumentLoadFailure::Network {
+                        kind: NetworkErrorKind::Cancelled,
+                        ..
+                    })) => None,
+                    Some(Err(failure)) => Some(format!(
+                        "Navigation failed • {}",
+                        document_failure_status(failure)
+                    )),
+                    Some(Ok(_)) => Some(if self.active_document_request_id().is_some() {
+                        "Navigation completed • active document preserved".into()
+                    } else {
+                        "Navigation completed • no document installed".into()
+                    }),
+                    None if attempt.non_replacing_response.is_some() => {
+                        Some("Navigation • awaiting non-replacing body completion".into())
+                    }
+                    None => Some("Navigation • fetching document".into()),
+                });
+        let lifecycle = match (active, navigation) {
+            (Some(active), Some(navigation)) => {
+                Some(format!("{navigation} • Active document: {active}"))
+            }
+            (active, navigation) => navigation.or(active),
+        };
+        match (&self.navigation_notice, lifecycle) {
+            (Some(notice), Some(lifecycle)) => {
+                Some(format!("Navigation submission: {notice} • {lifecycle}"))
+            }
+            (Some(notice), None) => Some(format!("Navigation submission: {notice}")),
+            (None, lifecycle) => lifecycle,
+        }
     }
 }

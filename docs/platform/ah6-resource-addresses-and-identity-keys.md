@@ -1,5 +1,7 @@
 # AH6: Resource Addresses And Retrieval Identity
 
+> AJ3 current qualification: [AJ3](aj3-main-document-response-preparation.md) preserves active generation/attachment work during a pending replacement and retires it only on eligible activation. Pending request identity is distinct from active identity and cannot be reused after cancellation. Existing exact issuance, slot identity, CSS source order and retirement invariants remain unchanged.
+
 Date: 2026-11-01
 Scope: Milestone AH resource addressing and the existing Browser stylesheet and
 hyperlink consumers. No new networking or CSS loading capability.

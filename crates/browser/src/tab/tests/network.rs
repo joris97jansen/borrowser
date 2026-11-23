@@ -26,9 +26,8 @@ fn qualified_urls_reach_image_requests_and_resource_lookup_keys() {
         let mut tab = Tab::new(1);
         let (tx, rx) = mpsc::channel();
         tab.set_bus_sender(tx);
-        tab.nav_gen = 7;
         let base = "http://example.test/page.html";
-        tab.page.start_nav(base);
+        let request_id = super::support::admit_document(&mut tab, base);
         let output = html::parse_document(
             format!("<!doctype html><img src=\"{source}\">"),
             html::HtmlParseOptions::default(),
@@ -36,7 +35,7 @@ fn qualified_urls_reach_image_requests_and_resource_lookup_keys() {
         .unwrap();
         tab.on_core_event(CoreEvent::DomPatchUpdate {
             tab_id: 1,
-            request_id: 7,
+            request_id,
             publication: no_quirks_patch_publication_from_output(output),
         })
         .unwrap();
@@ -98,7 +97,7 @@ fn qualified_urls_reach_image_requests_and_resource_lookup_keys() {
 #[test]
 fn css_with_html_content_type_is_not_forwarded_to_css_runtime() {
     let (mut tab, rx) = super::support::addressing_tab("<!doctype html><p>preview</p>");
-    tab.nav_gen = 7;
+    let request_id = tab.active_document_request_id().unwrap();
 
     let url = "https://example.com/site.css".to_string();
     let slot_id = super::support::append_stylesheet_link(&mut tab, &url);
@@ -114,7 +113,7 @@ fn css_with_html_content_type_is_not_forwarded_to_css_runtime() {
 
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: tab.tab_id,
-        request_id: 7,
+        request_id,
         stylesheet_slot_id: Some(slot_id),
         kind: ResourceKind::Css,
         response: response.clone(),
@@ -122,7 +121,7 @@ fn css_with_html_content_type_is_not_forwarded_to_css_runtime() {
     .unwrap();
     tab.on_core_event(CoreEvent::NetworkChunk {
         tab_id: tab.tab_id,
-        request_id: 7,
+        request_id,
         stylesheet_slot_id: Some(slot_id),
         kind: ResourceKind::Css,
         url: url.clone(),
@@ -131,7 +130,7 @@ fn css_with_html_content_type_is_not_forwarded_to_css_runtime() {
     .unwrap();
     tab.on_core_event(CoreEvent::NetworkDone {
         tab_id: tab.tab_id,
-        request_id: 7,
+        request_id,
         stylesheet_slot_id: Some(slot_id),
         kind: ResourceKind::Css,
         response,
@@ -153,7 +152,11 @@ fn css_with_html_content_type_is_not_forwarded_to_css_runtime() {
         "expected CssDone to clear pending stylesheet state"
     );
 
-    tab.on_css_sheet_done(slot_id, &url, tab.nav_gen);
+    tab.on_css_sheet_done(
+        slot_id,
+        &url,
+        tab.active_document_request_id().expect("admitted fixture"),
+    );
     assert_eq!(tab.page.pending_count(), 0);
     assert!(
         tab.last_status
@@ -168,19 +171,19 @@ fn css_with_html_content_type_is_not_forwarded_to_css_runtime() {
 #[test]
 fn resource_limit_document_error_surfaces_status_and_stops_loading() {
     let mut tab = Tab::new(1);
-    tab.nav_gen = 3;
+    let request_id = super::support::admit_document(&mut tab, "https://example.com/");
 
     let response = super::support::response_facts(
         addressing::ResourceKind::Document,
-        "https://example.com".to_string(),
-        "https://example.com".to_string(),
+        "https://example.com/".to_string(),
+        "https://example.com/".to_string(),
         Some(200),
         Some("text/html".to_string()),
     );
 
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: tab.tab_id,
-        request_id: 3,
+        request_id,
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
         response: response.clone(),
@@ -188,7 +191,7 @@ fn resource_limit_document_error_surfaces_status_and_stops_loading() {
     .unwrap();
     tab.on_core_event(CoreEvent::NetworkError {
         tab_id: tab.tab_id,
-        request_id: 3,
+        request_id,
         stylesheet_slot_id: None,
         kind: ResourceKind::Html,
         url: "https://example.com".to_string(),
@@ -213,7 +216,7 @@ fn resource_limit_document_error_surfaces_status_and_stops_loading() {
 #[test]
 fn stylesheet_resource_limit_aborts_partial_css_and_clears_pending_state() {
     let (mut tab, rx) = super::support::addressing_tab("<!doctype html><p>preview</p>");
-    tab.nav_gen = 9;
+    let request_id = tab.active_document_request_id().unwrap();
 
     let url = "https://example.com/site.css".to_string();
     let slot_id = super::support::append_stylesheet_link(&mut tab, &url);
@@ -229,7 +232,7 @@ fn stylesheet_resource_limit_aborts_partial_css_and_clears_pending_state() {
 
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: tab.tab_id,
-        request_id: 9,
+        request_id,
         stylesheet_slot_id: Some(slot_id),
         kind: ResourceKind::Css,
         response: response.clone(),
@@ -237,7 +240,7 @@ fn stylesheet_resource_limit_aborts_partial_css_and_clears_pending_state() {
     .unwrap();
     tab.on_core_event(CoreEvent::NetworkChunk {
         tab_id: tab.tab_id,
-        request_id: 9,
+        request_id,
         stylesheet_slot_id: Some(slot_id),
         kind: ResourceKind::Css,
         url: url.clone(),
@@ -246,7 +249,7 @@ fn stylesheet_resource_limit_aborts_partial_css_and_clears_pending_state() {
     .unwrap();
     tab.on_core_event(CoreEvent::NetworkError {
         tab_id: tab.tab_id,
-        request_id: 9,
+        request_id,
         stylesheet_slot_id: Some(slot_id),
         kind: ResourceKind::Css,
         url: url.clone(),
@@ -290,7 +293,7 @@ fn stylesheet_resource_limit_aborts_partial_css_and_clears_pending_state() {
 #[test]
 fn decoded_css_for_aborted_stylesheet_slot_is_ignored() {
     let (mut tab, rx) = super::support::addressing_tab("<!doctype html><p>preview</p>");
-    tab.nav_gen = 18;
+    let request_id = tab.active_document_request_id().unwrap();
 
     let url = "https://example.com/aborted.css".to_string();
     let slot_id = super::support::append_stylesheet_link(&mut tab, &url);
@@ -305,7 +308,7 @@ fn decoded_css_for_aborted_stylesheet_slot_is_ignored() {
 
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: tab.tab_id,
-        request_id: 18,
+        request_id,
         stylesheet_slot_id: Some(slot_id),
         kind: ResourceKind::Css,
         response: response.clone(),
@@ -313,7 +316,7 @@ fn decoded_css_for_aborted_stylesheet_slot_is_ignored() {
     .unwrap();
     tab.on_core_event(CoreEvent::NetworkError {
         tab_id: tab.tab_id,
-        request_id: 18,
+        request_id,
         stylesheet_slot_id: Some(slot_id),
         kind: ResourceKind::Css,
         url: url.clone(),
@@ -333,7 +336,7 @@ fn decoded_css_for_aborted_stylesheet_slot_is_ignored() {
 
     tab.on_core_event(CoreEvent::CssDecodedBlock {
         tab_id: tab.tab_id,
-        request_id: 18,
+        request_id,
         stylesheet_slot_id: slot_id,
         url,
         css_block: "p { color: red; }".to_string(),
@@ -353,8 +356,8 @@ fn parser_completion_is_distinct_from_response_and_publication_and_failure_stays
     let mut tab = Tab::new(1);
     let (tx, rx) = std::sync::mpsc::channel();
     tab.set_bus_sender(tx);
-    tab.navigate_to_new("https://example.com/".into());
-    let request_id = tab.nav_gen;
+    tab.navigate_to_new("https://example.com/".into()).unwrap();
+    let request_id = super::support::pending_id(&tab);
     let response = super::support::response_facts(
         addressing::ResourceKind::Document,
         tab.url.clone(),
@@ -426,8 +429,9 @@ fn parser_completion_is_distinct_from_response_and_publication_and_failure_stays
     );
 
     // Completion for a different committed version must fail, not mark success.
-    tab.navigate_to_new("https://example.com/next".into());
-    let request_id = tab.nav_gen;
+    tab.navigate_to_new("https://example.com/next".into())
+        .unwrap();
+    let request_id = super::support::admit_pending(&mut tab);
     assert_eq!(
         tab.on_core_event(CoreEvent::HtmlParseFinished {
             tab_id: 1,
