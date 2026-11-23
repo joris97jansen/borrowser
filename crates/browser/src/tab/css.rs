@@ -1,7 +1,5 @@
 use super::Tab;
-use super::state::{
-    CssRuntimeProgress, DocumentParseStatus, StylesheetLoadPhase, StylesheetLoadState,
-};
+use super::state::{CssRuntimeProgress, StylesheetLoadPhase, StylesheetLoadState};
 use super::status::format_network_error;
 use bus::CoreCommand;
 use core_types::{RequestId, StylesheetSlotId};
@@ -9,7 +7,7 @@ use net::{BodyProgress, NetworkErrorKind, NetworkResponseInfo};
 
 impl Tab {
     fn accepts_css_network_event(&self, slot: StylesheetSlotId, request: RequestId) -> bool {
-        self.document_load.parse_status != DocumentParseStatus::Failed
+        self.document_load.failure().is_none()
             && self.page.has_external_stylesheet_slot(slot)
             && self
                 .stylesheet_loads
@@ -21,8 +19,7 @@ impl Tab {
         self.page.has_external_stylesheet_slot(slot)
             && self.stylesheet_loads.get(&slot).is_some_and(|load| {
                 load.request_id == request
-                    && (self.document_load.parse_status != DocumentParseStatus::Failed
-                        || load.phase.network_complete())
+                    && (self.document_load.failure().is_none() || load.phase.network_complete())
             })
     }
 
@@ -42,7 +39,7 @@ impl Tab {
             request_id: load.request_id,
             stylesheet_slot_id: slot,
             url: load.issued_key.as_str().to_owned(),
-        }) && self.document_load.parse_status != DocumentParseStatus::Failed
+        }) && self.document_load.failure().is_none()
         {
             self.last_status = Some("Stylesheet runtime cleanup delivery failed".into());
         }
@@ -54,8 +51,10 @@ impl Tab {
         };
         let work = self.page.mark_css_aborted(slot);
         self.abort_css_buffer(slot, load);
-        self.update_loading();
-        if self.document_load.parse_status != DocumentParseStatus::Failed {
+        let settlement = self.update_loading();
+        if self.document_load.failure().is_none()
+            && settlement != super::load_observation::StaticInputSettlement::EvidenceUnavailable
+        {
             self.last_status = Some(reason.into());
         }
         if !self.request_optional_render_work(work) {
@@ -325,20 +324,21 @@ impl Tab {
             // No decoded body means no loaded contribution (existing semantics).
             self.stylesheet_loads.remove(&slot);
         }
-        self.update_loading();
-        if self.document_load.parse_status != DocumentParseStatus::Failed {
+        let settlement = self.update_loading();
+        if self.document_load.failure().is_none()
+            && settlement != super::load_observation::StaticInputSettlement::EvidenceUnavailable
+        {
             self.last_status = Some(if !accept_body {
                 format!(
                     "Stylesheet ignored • unexpected or unusable content type ({} remaining)",
                     self.page.pending_count()
                 )
-            } else if self.page.pending_count() > 0 {
-                format!(
-                    "Stylesheet loaded ({} remaining)",
-                    self.page.pending_count()
-                )
+            } else if settlement
+                == super::load_observation::StaticInputSettlement::SettledInputsOnly
+            {
+                "Stylesheet work settled".into()
             } else {
-                "All stylesheets loaded".into()
+                "Stylesheet completed".into()
             });
         }
         if !self.request_optional_render_work(work) {

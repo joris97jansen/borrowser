@@ -1,6 +1,6 @@
 use super::Tab;
-use super::state::DocumentParseStatus;
-use super::status::{format_network_error, response_summary};
+use super::state::{DocumentLoadFailure, DocumentParseStatus};
+use super::status::response_summary;
 use bus::CoreCommand;
 use core_types::RequestId;
 use net::{BodyProgress, NetworkErrorKind, NetworkResponseInfo};
@@ -20,13 +20,13 @@ impl Tab {
             return;
         }
         if !self.response_matches_history_request(response.requested_url()) {
-            self.fail_document("Document response does not match the current request".into());
+            self.fail_document(DocumentLoadFailure::ResponseRequestMismatch(response));
             return;
         }
         let document_url = match response.response_url() {
             Some(Ok(parsed)) => parsed.url.clone(),
             _ => {
-                self.fail_document("Document response URL is missing or invalid".into());
+                self.fail_document(DocumentLoadFailure::ResponseUrlUnavailable(response));
                 return;
             }
         };
@@ -36,8 +36,11 @@ impl Tab {
         // path; navigation may already have retired the previous page.
         let addresses = match crate::page::DocumentAddressState::new(document_url) {
             Ok(addresses) => addresses,
-            Err(crate::page::DocumentAddressError::UnsupportedDocumentCreationContext) => {
-                self.fail_document("Unsupported document creation context".into());
+            Err(cause) => {
+                self.fail_document(DocumentLoadFailure::UnsupportedDocumentCreation {
+                    cause,
+                    response_context: response,
+                });
                 return;
             }
         };
@@ -74,19 +77,21 @@ impl Tab {
         bytes: Vec<u8>,
         request_id: RequestId,
     ) {
-        if self.document_load.parse_status != DocumentParseStatus::Pending {
+        if self.document_load.parse_status != DocumentParseStatus::Pending
+            || self.document_load.body_completion.is_some()
+        {
             return;
         }
         // Pending also covers the interval before response admission. Only an
         // accepted start authorizes feeding this document's parser session.
         let Some(accepted) = self.document_load.response.as_ref() else {
-            self.fail_document("HTML chunk received before document admission".into());
+            self.fail_document(DocumentLoadFailure::ChunkBeforeAdmission);
             return;
         };
         // Producers label chunks with the original requested URL, even after
         // redirects or same-document URL changes. Preserve that exact provenance.
         if url != accepted.requested_url() {
-            self.fail_document("HTML chunk does not match the accepted response".into());
+            self.fail_document(DocumentLoadFailure::ChunkProvenanceMismatch);
             return;
         }
         self.document_load.bytes_received = self
@@ -106,11 +111,13 @@ impl Tab {
         body: BodyProgress,
         request_id: RequestId,
     ) {
-        if self.document_load.parse_status != DocumentParseStatus::Pending {
+        if self.document_load.parse_status != DocumentParseStatus::Pending
+            || self.document_load.body_completion.is_some()
+        {
             return;
         }
         let Some(accepted) = self.document_load.response.as_ref() else {
-            self.fail_document("HTML completion received before document admission".into());
+            self.fail_document(DocumentLoadFailure::CompletionBeforeAdmission);
             return;
         };
         // HTTP and file producers reuse the exact start snapshot at completion.
@@ -118,46 +125,42 @@ impl Tab {
         // requested/final URL, status, and content type must agree. Completion
         // cannot admit a document or change its retained URL/origin/history.
         if accepted != &response {
-            self.fail_document("HTML completion does not match the accepted response".into());
+            self.fail_document(DocumentLoadFailure::CompletionMetadataMismatch(response));
             return;
         }
         if !body.matches_route(core_types::ResourceKind::Html)
             || body.delivered_bytes() != self.document_load.bytes_received
         {
-            self.fail_document(
-                "Document completion body accounting does not match delivery".into(),
-            );
+            self.fail_document(DocumentLoadFailure::CompletionAccountingMismatch(body));
             return;
         }
         let bytes_received = body.delivered_bytes();
         self.document_load.bytes_received = bytes_received;
+        self.document_load.body_completion = Some(body);
+        let summary = response_summary(accepted, bytes_received);
         self.send_cmd(CoreCommand::ParseHtmlDone {
             tab_id: self.tab_id,
             request_id,
         });
-        self.last_status = Some(format!(
-            "Document response complete • {}",
-            response_summary(accepted, bytes_received)
-        ));
+        self.last_status = Some(format!("Document response complete • {}", summary));
         self.poke_redraw();
     }
 
     pub(super) fn on_html_network_error(
         &mut self,
-        url: String,
         error_kind: NetworkErrorKind,
-        status_code: Option<u16>,
-        error: String,
+        response_context: Option<NetworkResponseInfo>,
+        body_progress: Option<BodyProgress>,
     ) {
-        if self.document_load.parse_status != DocumentParseStatus::Pending {
+        if self.document_load.parse_status != DocumentParseStatus::Pending
+            || self.document_load.body_completion.is_some()
+        {
             return;
         }
-        self.fail_document(format_network_error(
-            "document",
-            &url,
-            error_kind,
-            status_code,
-            &error,
-        ));
+        self.fail_document(DocumentLoadFailure::Network {
+            kind: error_kind,
+            response_context,
+            body_progress,
+        });
     }
 }

@@ -300,10 +300,10 @@ fn ai6_runtime_redirect_rejection_settles_consumers_and_keeps_siblings_independe
         )));
         match kind {
             ResourceKind::Html => {
-                assert_eq!(
-                    tab.document_load.parse_status,
-                    super::super::state::DocumentParseStatus::Failed
-                );
+                assert!(matches!(
+                    &tab.document_load.parse_status,
+                    super::super::state::DocumentParseStatus::Failed(_)
+                ));
                 assert!(!tab.loading);
             }
             ResourceKind::Css => {

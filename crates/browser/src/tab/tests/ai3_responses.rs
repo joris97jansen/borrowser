@@ -414,7 +414,7 @@ fn ai3_document_completion_rejects_status_headers_route_and_count_changes() {
         );
         assert!(matches!(
             tab.document_load.parse_status,
-            super::super::state::DocumentParseStatus::Failed
+            super::super::state::DocumentParseStatus::Failed(_)
         ));
         assert_eq!(tab.document_load.response.as_ref(), Some(&response));
     }
@@ -693,10 +693,10 @@ fn ai3_malformed_response_heads_settle_every_production_resource_route() {
             );
             match route {
                 ResourceKind::Html => {
-                    assert_eq!(
-                        tab.document_load.parse_status,
-                        super::super::state::DocumentParseStatus::Failed
-                    );
+                    assert!(matches!(
+                        &tab.document_load.parse_status,
+                        super::super::state::DocumentParseStatus::Failed(_)
+                    ));
                     assert!(!tab.loading);
                     assert!(tab.document_load.response.is_none());
                 }

@@ -54,6 +54,15 @@ Tab or PageState. The borrow prevents navigation/publication during observation.
 Tooling constructs its owned selected values before the local Tab is dropped.
 There are no leaked objects, unsafe lifetime extensions or self-references.
 
+AJ2 qualification: checked frame entry additionally requires accepted main-body
+completion and derived settlement of current supported stylesheet work, including
+CSS runtime completion after installation. Pending or unavailable evidence is
+IncompleteDocument; contradictory slot/request evidence is InvalidArtifacts.
+The observation does not mutate or repair those facts. An accepted frame remains
+evidence of rendering current committed inputs, not response installation
+eligibility or full static page assembly. AJ3's HTTP status/MIME and 204/205
+lifetime gaps remain open; see the [AJ2 contract](../platform/aj2-document-load-completion-and-lifecycle-observation.md).
+
 `RetainedBoxView` exposes immutable rectangle/children/direct-DOM identity. It
 never maps anonymous or marker anchors to DOM-backed box identity. Inspection
 does not materialize another layout tree. The retained artifact records the

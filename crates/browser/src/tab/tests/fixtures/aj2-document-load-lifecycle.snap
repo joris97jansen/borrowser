@@ -1,0 +1,13 @@
+DocumentLoad {
+  state: DocumentLoadState { response_admitted: false, bytes_received: 0, body_completion: None, parse_status: Pending }
+  inputs: Idle
+  response_installation_eligibility: not-established
+  full_page_assembly: not-certified
+  admitted_response: absent
+  failure_response_context: absent
+  committed: false
+  address: absent
+  render_work_pending: false
+  accepted_rendering: requires-checked-frame
+  sheets_omitted: 0
+}

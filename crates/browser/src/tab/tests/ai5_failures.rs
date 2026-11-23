@@ -171,7 +171,10 @@ fn ai5f_real_runtime_partial_failures_settle_each_consumer_without_sibling_compl
         )));
         match route {
             ResourceKind::Html => {
-                assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Failed);
+                assert!(matches!(
+                    &tab.document_load.parse_status,
+                    DocumentParseStatus::Failed(_)
+                ));
                 assert!(!tab.loading);
                 assert!(queued.iter().any(|c| matches!(c, CoreCommand::CancelRequest {request_id, ..} if *request_id == tab.nav_gen)));
                 tab.on_core_event(CoreEvent::NetworkDone {
@@ -405,7 +408,10 @@ fn ai7_fake_acquisition_failures_settle_consumers_without_cancelling_siblings() 
             );
             match route {
                 ResourceKind::Html => {
-                    assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Failed);
+                    assert!(matches!(
+                        &tab.document_load.parse_status,
+                        DocumentParseStatus::Failed(_)
+                    ));
                     assert!(!tab.loading);
                     assert!(
                         commands

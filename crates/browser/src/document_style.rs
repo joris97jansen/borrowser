@@ -96,6 +96,40 @@ struct StylesheetSlot {
     state: StylesheetSlotState,
 }
 
+/// A call-local borrow of an authoritative slot. No parse/text or mutation API
+/// escapes this module; lifecycle consumers only inspect existing facts.
+pub(crate) struct StylesheetLifecycleView<'a> {
+    id: StylesheetSlotId,
+    slot: &'a StylesheetSlot,
+}
+
+impl<'a> StylesheetLifecycleView<'a> {
+    pub(crate) fn slot_id(&self) -> StylesheetSlotId {
+        self.id
+    }
+    pub(crate) fn is_external(&self) -> bool {
+        matches!(&self.slot.source, StylesheetSlotSource::External { .. })
+    }
+    pub(crate) fn selected_address(&self) -> Option<&'a ResourceAddress> {
+        match &self.slot.source {
+            StylesheetSlotSource::External { address, .. } => address.as_ref(),
+            StylesheetSlotSource::Inline(_) => None,
+        }
+    }
+    pub(crate) fn is_pending(&self) -> bool {
+        matches!(&self.slot.state, StylesheetSlotState::Pending)
+    }
+    pub(crate) fn has_loaded_parse(&self) -> bool {
+        matches!(&self.slot.state, StylesheetSlotState::Loaded(_))
+    }
+    pub(crate) fn is_failed(&self) -> bool {
+        matches!(&self.slot.state, StylesheetSlotState::Failed)
+    }
+    pub(crate) fn is_aborted(&self) -> bool {
+        matches!(&self.slot.state, StylesheetSlotState::Aborted)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct StylesheetFetch {
     pub(crate) slot_id: StylesheetSlotId,
@@ -122,6 +156,15 @@ pub(crate) struct DocumentStyleSet {
 }
 
 impl DocumentStyleSet {
+    pub(crate) fn lifecycle_slots(
+        &self,
+    ) -> impl ExactSizeIterator<Item = StylesheetLifecycleView<'_>> + '_ {
+        self.order.iter().map(|id| StylesheetLifecycleView {
+            id: *id,
+            slot: &self.slots[id],
+        })
+    }
+
     pub(crate) fn clear(&mut self) {
         self.slots.clear();
         self.order.clear();

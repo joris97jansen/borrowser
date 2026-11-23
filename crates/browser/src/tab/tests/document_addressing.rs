@@ -217,7 +217,10 @@ fn document_addressing_unsupported_response_never_partially_accepts() {
                 response: rejected.clone(),
             })
             .unwrap();
-            assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Failed);
+            assert!(matches!(
+                &tab.document_load.parse_status,
+                DocumentParseStatus::Failed(_)
+            ));
             assert!(!tab.loading);
             assert_eq!(
                 tab.last_status.as_deref(),
@@ -835,10 +838,10 @@ fn document_addressing_response_validation_and_no_synthetic_base() {
         // AI3 removes the old empty-final-URL fallback: absent provenance must
         // not synthesize a document address from the request.
         assert!(tab.page.document_url().is_none());
-        assert_eq!(
-            tab.document_load.parse_status,
-            super::super::state::DocumentParseStatus::Failed
-        );
+        assert!(matches!(
+            &tab.document_load.parse_status,
+            super::super::state::DocumentParseStatus::Failed(_)
+        ));
     }
 }
 
@@ -1048,7 +1051,10 @@ fn document_addressing_publication_rejections_preserve_committed_state_and_scope
             continue;
         }
 
-        assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Failed);
+        assert!(matches!(
+            &tab.document_load.parse_status,
+            DocumentParseStatus::Failed(_)
+        ));
         assert!(!tab.loading);
         assert_eq!(tab.page.pending_count(), 0);
         assert!(!tab.stylesheet_loads.contains_key(&unfinished));

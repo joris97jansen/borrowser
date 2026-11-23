@@ -4,9 +4,9 @@ use crate::page::{DomPublicationRenderInvalidation, PageState};
 use crate::rendering::{PendingRenderWork, RenderFrameExecutionTrace, RenderInvalidationRequest};
 use crate::resources::ResourceManager;
 use app_api::RepaintHandle;
-use bus::CoreCommand;
+use bus::{CoreCommand, DocumentPublicationFailure, HtmlParseFailure};
 use core_types::{DomHandle, DomVersion, RequestId, StylesheetSlotId, TabId};
-use net::NetworkResponseInfo;
+use net::{BodyProgress, NetworkErrorKind, NetworkResponseInfo};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::mpsc;
@@ -42,21 +42,105 @@ impl DocumentState {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub(super) enum DocumentParseStatus {
     #[default]
     Pending,
     Complete,
-    Failed,
+    Failed(DocumentLoadFailure),
 }
 
-#[derive(Clone, Debug, Default)]
+/// Only relationships checked by the current load observation, never free-form
+/// diagnostic text or a generalized resource error taxonomy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum LoadStateInvariant {
+    BodyWithoutAdmission,
+    BodyAccounting,
+    CommittedDocument,
+    ParserCompletion,
+    SlotWithoutRequest,
+    RequestWithoutSlot,
+    RequestGeneration,
+    RequestProvenance,
+    SlotPhase,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub(super) enum DocumentLoadFailure {
+    Network {
+        kind: NetworkErrorKind,
+        response_context: Option<NetworkResponseInfo>,
+        body_progress: Option<BodyProgress>,
+    },
+    Parser(HtmlParseFailure),
+    Publication(DocumentPublicationFailure),
+    ResponseRequestMismatch(NetworkResponseInfo),
+    ResponseUrlUnavailable(NetworkResponseInfo),
+    UnsupportedDocumentCreation {
+        cause: crate::page::DocumentAddressError,
+        response_context: NetworkResponseInfo,
+    },
+    ChunkBeforeAdmission,
+    ChunkProvenanceMismatch,
+    CompletionBeforeAdmission,
+    CompletionMetadataMismatch(NetworkResponseInfo),
+    CompletionAccountingMismatch(BodyProgress),
+    ParserCompletionBeforeBody,
+    LoadStateInvariantViolation {
+        relationship: LoadStateInvariant,
+        slot: Option<StylesheetSlotId>,
+        slot_records: usize,
+        request_records: usize,
+    },
+}
+
+impl std::fmt::Debug for DocumentLoadFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The presentation projection never formats nested owning error data.
+        f.write_str(&super::status::document_failure_status(self))
+    }
+}
+
+impl std::fmt::Debug for DocumentParseStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pending => f.write_str("Pending"),
+            Self::Complete => f.write_str("Complete"),
+            Self::Failed(failure) => f.debug_tuple("Failed").field(failure).finish(),
+        }
+    }
+}
+
+#[derive(Clone, Default)]
 pub(super) struct DocumentLoadState {
     // Immutable snapshot installed by successful HTML response-start admission.
     // Completion validates it; Pending alone is not admission.
     pub(super) response: Option<NetworkResponseInfo>,
     pub(super) bytes_received: usize,
+    // Only a matching, validated main-document NetworkDone installs this fact.
+    // It proves neither parser acknowledgement nor response applicability.
+    pub(super) body_completion: Option<BodyProgress>,
     pub(super) parse_status: DocumentParseStatus,
+}
+
+impl DocumentLoadState {
+    pub(super) fn failure(&self) -> Option<&DocumentLoadFailure> {
+        match &self.parse_status {
+            DocumentParseStatus::Failed(failure) => Some(failure),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Debug for DocumentLoadState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DocumentLoadState")
+            .field("response_admitted", &self.response.is_some())
+            .field("bytes_received", &self.bytes_received)
+            .field("body_completion", &self.body_completion)
+            .field("parse_status", &self.parse_status)
+            .finish()
+    }
 }
 
 #[derive(Clone)]
@@ -193,19 +277,27 @@ impl Tab {
         self.repaint = Some(h);
     }
 
-    pub(super) fn update_loading(&mut self) {
-        self.loading = match self.document_load.parse_status {
-            DocumentParseStatus::Pending => true,
-            DocumentParseStatus::Complete => self.page.pending_count() > 0,
-            DocumentParseStatus::Failed => false,
+    pub(super) fn update_loading(&mut self) -> super::load_observation::StaticInputSettlement {
+        use super::load_observation::StaticInputSettlement;
+        let settlement = match self.static_input_settlement() {
+            Ok(settlement) => settlement,
+            Err(failure) => {
+                self.fail_document(failure);
+                return StaticInputSettlement::Failed;
+            }
         };
+        self.loading = settlement == StaticInputSettlement::Pending;
+        if settlement == StaticInputSettlement::EvidenceUnavailable {
+            self.last_status = Some("Document input evidence is incomplete".into());
+        }
+        settlement
     }
 
-    pub(super) fn fail_document(&mut self, status: String) {
-        if self.document_load.parse_status != DocumentParseStatus::Failed {
-            self.document_load.parse_status = DocumentParseStatus::Failed;
+    pub(super) fn fail_document(&mut self, failure: DocumentLoadFailure) {
+        if self.document_load.failure().is_none() {
+            self.last_status = Some(super::status::document_failure_status(&failure));
+            self.document_load.parse_status = DocumentParseStatus::Failed(failure);
             self.loading = false;
-            self.last_status = Some(status);
             let completed = self
                 .stylesheet_loads
                 .iter()

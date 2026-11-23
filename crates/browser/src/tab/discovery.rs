@@ -31,11 +31,9 @@ impl Tab {
                 Err(_) => {
                     let work = self.page.mark_css_failed(fetch.slot_id);
                     self.request_optional_render_work(work);
-                    if self.document_load.parse_status != super::state::DocumentParseStatus::Failed
-                    {
+                    if self.document_load.failure().is_none() {
                         self.last_status = Some("Stylesheet request rejected".into());
                     }
-                    self.update_loading();
                     continue;
                 }
             };
@@ -63,10 +61,9 @@ impl Tab {
                 self.stylesheet_loads.remove(&fetch.slot_id);
                 let work = self.page.mark_css_failed(fetch.slot_id);
                 self.request_optional_render_work(work);
-                if self.document_load.parse_status != super::state::DocumentParseStatus::Failed {
+                if self.document_load.failure().is_none() {
                     self.last_status = Some("Stylesheet request delivery failed".into());
                 }
-                self.update_loading();
             }
         }
         self.request_optional_render_work(outcome.render_invalidation)

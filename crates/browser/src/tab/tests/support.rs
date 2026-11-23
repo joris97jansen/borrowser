@@ -158,6 +158,21 @@ pub(super) fn addressing_tab_with_response_url(
         ),
     })
     .unwrap();
+    tab.on_core_event(bus::CoreEvent::NetworkChunk {
+        tab_id: tab.tab_id,
+        request_id: tab.nav_gen,
+        stylesheet_slot_id: None,
+        kind: core_types::ResourceKind::Html,
+        url: tab
+            .document_load
+            .response
+            .as_ref()
+            .unwrap()
+            .requested_url()
+            .into(),
+        bytes: source.as_bytes().to_vec(),
+    })
+    .unwrap();
     rx.try_iter().for_each(drop);
     let output = html::parse_document(source, html::HtmlParseOptions::default()).unwrap();
     tab.on_core_event(bus::CoreEvent::DomPatchUpdate {
@@ -167,6 +182,28 @@ pub(super) fn addressing_tab_with_response_url(
     })
     .unwrap();
     (tab, rx)
+}
+
+/// Accept EOF through Browser's production accounting/admission path. Fixtures
+/// must have delivered their known HTML bytes; this never writes completion state.
+pub(super) fn complete_document_body(tab: &mut Tab) {
+    tab.on_core_event(bus::CoreEvent::NetworkDone {
+        tab_id: tab.tab_id,
+        request_id: tab.nav_gen,
+        stylesheet_slot_id: None,
+        kind: core_types::ResourceKind::Html,
+        response: tab
+            .document_load
+            .response
+            .clone()
+            .expect("admitted fixture"),
+        body: net::BodyProgress::try_new(
+            core_types::ResourceKind::Html,
+            tab.document_load.bytes_received,
+        )
+        .unwrap(),
+    })
+    .unwrap();
 }
 
 pub(super) fn publish_addressing_patches(

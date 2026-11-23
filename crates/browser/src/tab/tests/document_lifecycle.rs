@@ -57,6 +57,7 @@ fn document_lifecycle_unsupported_stale_and_duplicate_starts_preserve_file_origi
                 );
             }
             "complete" => {
+                super::support::complete_document_body(&mut tab);
                 tab.on_core_event(CoreEvent::HtmlParseFinished {
                     tab_id: 1,
                     request_id: tab.nav_gen,
@@ -74,7 +75,7 @@ fn document_lifecycle_unsupported_stale_and_duplicate_starts_preserve_file_origi
         let accepted = tab.document_load.response.clone();
         let status = tab.last_status.clone();
         let version = tab.dom_version;
-        let state = tab.document_load.parse_status;
+        let state = tab.document_load.parse_status.clone();
         rx.try_iter().for_each(drop);
         let unsupported = super::support::response_facts(
             addressing::ResourceKind::Document,
@@ -348,9 +349,11 @@ fn document_lifecycle_chunk_provenance_rejects_unrelated_and_final_urls() {
             bytes: b"unrelated".to_vec(),
         })
         .unwrap();
-        assert_eq!(
-            tab.document_load.parse_status,
-            DocumentParseStatus::Failed,
+        assert!(
+            matches!(
+                &tab.document_load.parse_status,
+                DocumentParseStatus::Failed(_)
+            ),
             "{invalid}"
         );
         assert_eq!(tab.document_load.bytes_received, body.len());
@@ -406,6 +409,15 @@ fn document_lifecycle_html_stylesheet_slot_associations_are_unmatched_routes() {
         if phase != "awaiting" {
             tab.on_core_event(start(tab.nav_gen, response(file)))
                 .unwrap();
+            tab.on_core_event(CoreEvent::NetworkChunk {
+                tab_id: 1,
+                request_id: tab.nav_gen,
+                stylesheet_slot_id: None,
+                kind: ResourceKind::Html,
+                url: file.into(),
+                bytes: b"<!doctype html><p>preview".to_vec(),
+            })
+            .unwrap();
             let parsed =
                 html::parse_document("<!doctype html><p>preview", Default::default()).unwrap();
             let publication = no_quirks_patch_publication_from_output(parsed);
@@ -428,6 +440,7 @@ fn document_lifecycle_html_stylesheet_slot_associations_are_unmatched_routes() {
                 })
                 .unwrap();
             } else if phase == "complete" {
+                super::support::complete_document_body(&mut tab);
                 tab.on_core_event(CoreEvent::HtmlParseFinished {
                     tab_id: 1,
                     request_id: tab.nav_gen,
@@ -514,7 +527,10 @@ fn document_lifecycle_response_admission_is_required_before_chunk_or_done() {
             html_chunk(request_id, b"unadmitted")
         };
         tab.on_core_event(event).unwrap();
-        assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Failed);
+        assert!(matches!(
+            &tab.document_load.parse_status,
+            DocumentParseStatus::Failed(_)
+        ));
         assert!(tab.document_load.response.is_none());
         assert_eq!(tab.document_load.bytes_received, 0);
         assert!(tab.page.addresses.is_none());
@@ -628,9 +644,11 @@ fn document_lifecycle_response_completion_cannot_replace_accepted_provenance() {
         assert!(rx.try_recv().is_err());
         tab.on_core_event(html_done(tab.nav_gen, changed, 999))
             .unwrap();
-        assert_eq!(
-            tab.document_load.parse_status,
-            DocumentParseStatus::Failed,
+        assert!(
+            matches!(
+                &tab.document_load.parse_status,
+                DocumentParseStatus::Failed(_)
+            ),
             "{field}"
         );
         assert_eq!(tab.document_load.response.as_ref(), Some(&accepted));
@@ -907,7 +925,10 @@ fn fail_parser(tab: &mut Tab, rx: &Receiver<CoreCommand>) {
         result: Err(HtmlParseFailure::InputClosed),
     })
     .unwrap();
-    assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Failed);
+    assert!(matches!(
+        &tab.document_load.parse_status,
+        DocumentParseStatus::Failed(_)
+    ));
     assert!(!tab.loading);
     assert!(
         matches!(rx.try_recv().unwrap(), CoreCommand::CancelRequest {
@@ -1112,7 +1133,10 @@ fn cancellation_before_response_start_cannot_be_reopened_by_late_start() {
     })
     .unwrap();
     assert!(tab.document_load.response.is_none());
-    assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Failed);
+    assert!(matches!(
+        &tab.document_load.parse_status,
+        DocumentParseStatus::Failed(_)
+    ));
     assert!(matches!(
         rx.try_recv().unwrap(),
         CoreCommand::CancelRequest { .. }
@@ -1131,7 +1155,7 @@ fn navigation_and_refresh_reset_terminal_state_but_fragment_navigation_does_not(
                 finish_document(&mut tab, &rx, completion);
             }
             let request_id = tab.nav_gen;
-            let terminal = tab.document_load.parse_status;
+            let terminal = tab.document_load.parse_status.clone();
             let dom_handle = tab.dom_handle;
             tab.navigate_to_new(format!("{URL}#fragment"));
             assert_eq!(tab.nav_gen, request_id);
@@ -1227,7 +1251,10 @@ fn document_lifecycle_published_preview_remains_active_during_parsing_and_after_
         Some("after-failure")
     );
     assert_eq!(tab.nav_gen, generation);
-    assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Failed);
+    assert!(matches!(
+        &tab.document_load.parse_status,
+        DocumentParseStatus::Failed(_)
+    ));
     assert_eq!(tab.dom_handle, handle);
     assert_eq!(tab.dom_version, version);
     assert_eq!(tab.page.active_base_url(), Some(&frozen_base));

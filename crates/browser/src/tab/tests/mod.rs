@@ -3,6 +3,7 @@ mod css_resources;
 mod document_lifecycle;
 mod dom_patches;
 mod fetch_requests;
+mod load_observation;
 mod navigation;
 mod network;
 #[cfg(feature = "conformance-observation")]

@@ -14,6 +14,13 @@ pub(crate) struct PageStylesheetReconcile {
 }
 
 impl PageState {
+    pub(crate) fn stylesheet_lifecycle_slots(
+        &self,
+    ) -> impl ExactSizeIterator<Item = crate::document_style::StylesheetLifecycleView<'_>> + '_
+    {
+        self.rendering.document_styles.lifecycle_slots()
+    }
+
     // --- CSS ---
     pub(crate) fn reconcile_document_stylesheets(&mut self) -> PageStylesheetReconcile {
         let Some(dom) = self.dom.as_deref() else {
