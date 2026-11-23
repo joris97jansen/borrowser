@@ -17,7 +17,9 @@ mod token;
 
 pub use atom::{AtomError, AtomId, AtomTable};
 pub use context::DocumentParseContext;
-pub use counters::Counters;
+#[cfg(any(test, feature = "internal-api"))]
+pub use counters::HtmlDecodeReport;
+pub use counters::{Counters, Utf8DecodeCounts};
 #[allow(unused_imports)]
 pub use error::{
     EngineInvariantError, ErrorOrigin, ErrorPolicy, Html5SessionError, LegacyParseErrorCode,

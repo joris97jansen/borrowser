@@ -1,0 +1,17 @@
+DocumentLoad {
+  state: DocumentLoadState { response_admitted: true, bytes_received: 24, body_completion: Some(BodyProgress { route: Html, delivered_bytes: 24 }), parse_status: Complete }
+  inputs: SettledInputsOnly
+  response_installation_eligibility: admitted-static-html-subset
+  full_page_assembly: not-certified
+  active_request: original=present purpose=Document method=Get route=Html
+  encoding_decision: Some(ResponseCharset)
+  encoding_policy: utf-8-only bom=retained-as-scalar meta=not-scanned
+  decode: complete-with-replacements invalid_sequences=1 incomplete_sequences_at_eof=1 total_replacements=2
+  admitted_response: original=present acquired_url=parsed status=Some(200) redirects=0 mime=parsed-html disposition=Missing redirect_statuses=[] redirect_statuses_omitted=0
+  failure_response_context: absent
+  committed: true
+  address: present origin=tuple base=fallback
+  render_work_pending: true
+  accepted_rendering: requires-checked-frame
+  sheets_omitted: 0
+}

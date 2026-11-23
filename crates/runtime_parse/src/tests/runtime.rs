@@ -58,6 +58,7 @@ fn collect_runtime_updates(chunks: &[&[u8]]) -> Vec<RuntimeUpdate> {
                 tab_id: actual_tab,
                 request_id: actual_request,
                 result,
+                ..
             }) => {
                 assert_eq!((actual_tab, actual_request), (tab_id, request_id));
                 let completion = result.expect("parser completed successfully");
@@ -306,4 +307,87 @@ fn terminal_outcomes_distinguish_input_close_cancellation_and_success() {
     assert_eq!(terminals[0].0, 2);
     assert!(terminals[0].1.is_ok());
     assert_eq!(terminals[1], (3, &Err(bus::HtmlParseFailure::InputClosed)));
+}
+
+#[test]
+fn aj4_reports_follow_existing_terminals_and_silent_retirement() {
+    let (commands, rx) = mpsc::channel();
+    let (tx, events) = mpsc::channel();
+    crate::start_parse_runtime(rx, tx);
+    let start = |id| {
+        commands
+            .send(CoreCommand::ParseHtmlStart {
+                tab_id: 1,
+                request_id: id,
+            })
+            .unwrap()
+    };
+    let chunk = |id, bytes: &[u8]| {
+        commands
+            .send(CoreCommand::ParseHtmlChunk {
+                tab_id: 1,
+                request_id: id,
+                bytes: bytes.to_vec(),
+            })
+            .unwrap()
+    };
+    start(1);
+    chunk(1, b"\xff\xe2");
+    commands
+        .send(CoreCommand::CancelRequest {
+            tab_id: 1,
+            request_id: 1,
+        })
+        .unwrap();
+    commands
+        .send(CoreCommand::ParseHtmlDone {
+            tab_id: 1,
+            request_id: 1,
+        })
+        .unwrap();
+    start(2);
+    chunk(2, b"\xff");
+    start(2);
+    chunk(2, b"<p>clean");
+    commands
+        .send(CoreCommand::ParseHtmlDone {
+            tab_id: 1,
+            request_id: 2,
+        })
+        .unwrap();
+    start(3);
+    chunk(3, b"\xff\xe2");
+    start(4);
+    chunk(4, b"<p>\xff\xe2");
+    commands
+        .send(CoreCommand::ParseHtmlDone {
+            tab_id: 1,
+            request_id: 4,
+        })
+        .unwrap();
+    drop(commands);
+    let terminals: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            CoreEvent::HtmlParseFinished {
+                request_id,
+                result,
+                decode_report,
+                ..
+            } => Some((request_id, result, decode_report.unwrap())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(terminals.iter().map(|t| t.0).collect::<Vec<_>>(), [2, 4, 3]);
+    assert!(terminals[0].1.is_ok());
+    assert!(terminals[0].2.eof_processed);
+    assert_eq!(terminals[0].2.replacements.total(), 0);
+    assert!(terminals[1].1.is_ok());
+    assert!(terminals[1].2.eof_processed);
+    assert_eq!(terminals[1].2.replacements.invalid_sequences, 1);
+    assert_eq!(terminals[1].2.replacements.incomplete_sequences_at_eof, 1);
+    assert_eq!(terminals[2].1, Err(bus::HtmlParseFailure::InputClosed));
+    assert!(!terminals[2].2.eof_processed);
+    assert_eq!(terminals[2].2.replacements.invalid_sequences, 1);
+    assert_eq!(terminals[2].2.replacements.incomplete_sequences_at_eof, 0);
 }

@@ -274,7 +274,7 @@ fn malformed_byte_drains_keep_production_tokens_and_decode_accounting_neutral() 
                 let _ = decoder.push_bytes_with_context(chunk, &mut input, &mut ctx);
             } else {
                 let (_, replacements) = decoder.push_bytes_counted(chunk, &mut input);
-                ctx.record_decode_replacements(replacements);
+                ctx.record_decode_counts(replacements);
             }
             loop {
                 let result = tokenizer.push_input(&mut input, &mut ctx);
@@ -300,7 +300,7 @@ fn malformed_byte_drains_keep_production_tokens_and_decode_accounting_neutral() 
             let _ = decoder.finish_with_context(&mut input, &mut ctx);
         } else {
             let (_, replacements) = decoder.finish_counted(&mut input);
-            ctx.record_decode_replacements(replacements);
+            ctx.record_decode_counts(replacements);
         }
         loop {
             let result = tokenizer.push_input(&mut input, &mut ctx);
@@ -359,7 +359,10 @@ fn malformed_byte_drains_keep_production_tokens_and_decode_accounting_neutral() 
             assert_eq!(ordinary_input, observed_input);
             assert_eq!(ordinary_ctx.counters, observed_ctx.counters);
             assert_eq!(ordinary_ctx.errors(), observed_ctx.errors());
-            assert_eq!(ordinary_ctx.counters.decode_errors, *expected_replacements);
+            assert_eq!(
+                ordinary_ctx.counters.decode_errors(),
+                *expected_replacements
+            );
             assert_eq!(
                 capture.tokens.items.len(),
                 observed_tokens.len(),

@@ -177,6 +177,7 @@ pub(crate) fn publish_document(
                 tab_id: 1,
                 request_id: id,
                 result,
+                ..
             } if *id == request_id => Some(result.clone()),
             _ => {
                 return Err(HarnessError::new(

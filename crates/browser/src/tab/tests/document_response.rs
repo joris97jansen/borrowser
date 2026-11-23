@@ -1150,6 +1150,7 @@ fn aj3_active_fatal_failure_does_not_fail_or_cancel_pending_replacement() {
     let active_id = tab.active_document_request_id().unwrap();
     let pending = submit(&mut tab, &commands, B);
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        decode_report: None,
         tab_id: 1,
         request_id: active_id,
         result: Err(bus::HtmlParseFailure::InputClosed),
@@ -1359,6 +1360,7 @@ fn aj3_fragment_cancellation_keeps_active_document_and_has_no_failure_overlay() 
     })
     .unwrap();
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        decode_report: None,
         tab_id: tab.tab_id,
         request_id: pending.request_id(),
         result: Err(bus::HtmlParseFailure::InputClosed),
@@ -1650,3 +1652,5 @@ fn aj3_fetch_cancellation_follows_browser_terminal_or_request_retirement() {
         assert!(commands.try_recv().is_err());
     }
 }
+
+mod decoding;

@@ -1,5 +1,7 @@
 # AJ1: Static Document Loading And Page Assembly Contract
 
+> AJ4 refinement: [document character decoding](aj4-document-character-decoding.md) selects the declared/default UTF-8 subset before activation and transports typed terminal decoder evidence. Silent cancellation, unavailable interruption evidence, and explicit BOM/meta deferral remain qualified limitations. Earlier charset-selection gaps below describe their historical checkpoints.
+
 > AJ3 current qualification: AJ3 qualifies the earlier eager navigation reset and response-policy gaps: fetch submission preserves the actual active document/work/history until eligible response admission. Typed status/MIME/disposition preparation and 204/205 preservation follow the [AJ3 contract](aj3-main-document-response-preparation.md). This establishes the declared-HTML subset, not full response applicability or assembly.
 
 Issue: [#1132](https://github.com/joris97jansen/borrowser/issues/1132).

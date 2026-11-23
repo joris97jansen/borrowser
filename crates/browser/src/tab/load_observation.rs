@@ -74,7 +74,13 @@ impl Tab {
             return Err(self.load_invariant(LoadStateInvariant::CommittedDocument, None));
         }
         if self.document_load.parse_status == DocumentParseStatus::Complete
-            && (response.is_none() || self.document_load.body_completion.is_none() || !committed)
+            && (response.is_none()
+                || self.document_load.body_completion.is_none()
+                || !committed
+                || !self
+                    .document_load
+                    .decode_report
+                    .is_some_and(|r| r.eof_processed))
         {
             return Err(self.load_invariant(LoadStateInvariant::ParserCompletion, None));
         }
@@ -215,6 +221,15 @@ impl Tab {
             );
             if let Some(Err(failure)) = &attempt.terminal {
                 writeln!(output, "  navigation_failure: {failure:?}").unwrap();
+                if matches!(
+                    failure,
+                    DocumentLoadFailure::ResponseRejected {
+                        reason: super::state::DocumentResponseRejection::UnsupportedDocumentCharset,
+                        ..
+                    }
+                ) {
+                    output.push_str("  navigation_encoding: rejected-unsupported-charset source=response-charset decode=not-started\n");
+                }
                 write_response_summary(
                     &mut output,
                     "navigation_failure_context",
@@ -223,6 +238,37 @@ impl Tab {
                 if let DocumentLoadFailure::Network { body_progress, .. } = failure {
                     writeln!(output, "  navigation_failure_progress: {body_progress:?}").unwrap();
                 }
+            }
+        }
+        writeln!(
+            output,
+            "  encoding_decision: {:?}",
+            self.document_load.encoding_decision
+        )
+        .unwrap();
+        output.push_str("  encoding_policy: utf-8-only bom=retained-as-scalar meta=not-scanned\n");
+        match self.document_load.decode_report {
+            Some(report) => {
+                let counts = report.replacements;
+                let total = counts.total();
+                let outcome = if !report.eof_processed {
+                    "prefix-only"
+                } else if total == 0 {
+                    "complete-clean"
+                } else {
+                    "complete-with-replacements"
+                };
+                writeln!(output,
+                    "  decode: {outcome} invalid_sequences={} incomplete_sequences_at_eof={} total_replacements={total}",
+                    counts.invalid_sequences, counts.incomplete_sequences_at_eof).unwrap();
+            }
+            None => {
+                let evidence = if self.document_load.failure().is_some() {
+                    "unavailable"
+                } else {
+                    "not-reported"
+                };
+                writeln!(output, "  decode: {evidence}").unwrap();
             }
         }
         let response = self.document_load.response.as_ref();
@@ -436,7 +482,10 @@ fn write_response_summary(
                 net::ResponseContentType::Missing => "missing",
                 net::ResponseContentType::Empty => "empty",
                 net::ResponseContentType::Unusable => "unusable",
-                net::ResponseContentType::Parsed(_) => "parsed",
+                net::ResponseContentType::Parsed(value) if value.mime_type() == "text/html" => {
+                    "parsed-html"
+                }
+                net::ResponseContentType::Parsed(_) => "parsed-other",
             };
             write!(output, "  {label}: original=present acquired_url={provenance} status={:?} redirects={} mime={mime} disposition={:?} redirect_statuses=[",
                 response.status_code(), response.redirect_chain().len(), response.content_disposition()).unwrap();

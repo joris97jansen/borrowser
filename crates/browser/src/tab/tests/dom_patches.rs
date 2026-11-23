@@ -1119,6 +1119,10 @@ fn invalid_publication_preserves_committed_browser_state_and_reason() {
     let failed_status = tab.last_status.clone();
     assert!(
         tab.on_core_event(CoreEvent::HtmlParseFinished {
+            decode_report: Some(html::internal::HtmlDecodeReport {
+                eof_processed: true,
+                replacements: Default::default()
+            }),
             tab_id: tab.tab_id,
             request_id,
             result: Ok(bus::HtmlParseCompletion {

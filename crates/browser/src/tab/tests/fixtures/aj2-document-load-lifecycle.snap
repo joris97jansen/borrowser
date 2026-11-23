@@ -4,6 +4,9 @@ DocumentLoad {
   response_installation_eligibility: not-established
   full_page_assembly: not-certified
   active_request: absent
+  encoding_decision: None
+  encoding_policy: utf-8-only bom=retained-as-scalar meta=not-scanned
+  decode: not-reported
   admitted_response: absent
   failure_response_context: absent
   committed: false

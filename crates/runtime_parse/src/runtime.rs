@@ -70,14 +70,18 @@ pub(crate) fn start_parse_runtime_with_policy_and_clock<C: PreviewClock + 'stati
             }
         }
         // Input closure is not successful finalization. Cancelled sessions were removed.
-        let mut unfinished: Vec<_> = htmls.into_keys().collect();
+        let mut unfinished: Vec<_> = htmls.keys().copied().collect();
         unfinished.sort_unstable();
         for (tab_id, request_id) in unfinished {
+            let state = htmls
+                .remove(&(tab_id, request_id))
+                .expect("remaining session");
             emit_parse_finished(
                 &evt_tx,
                 tab_id,
                 request_id,
                 Err(HtmlParseFailure::InputClosed),
+                Some(html::internal::html_decode_report(&state.parser)),
             );
         }
     });
@@ -95,7 +99,7 @@ fn handle_parse_start(
     let state = match result {
         Ok(state) => state,
         Err(error) => {
-            emit_parse_finished(evt_tx, tab_id, request_id, Err(error));
+            emit_parse_finished(evt_tx, tab_id, request_id, Err(error), None);
             return;
         }
     };
@@ -156,7 +160,7 @@ mod tests {
             assert!(states.is_empty());
             assert!(
                 matches!(rx.try_recv().unwrap(), CoreEvent::HtmlParseFinished {
-                tab_id: 3, request_id: 7, result: Err(error),
+                tab_id: 3, request_id: 7, result: Err(error), decode_report: None,
             } if error == failure)
             );
             assert!(rx.try_recv().is_err());
@@ -172,5 +176,42 @@ mod tests {
             Err(HtmlParseFailure::DomHandleExhausted)
         );
         assert_eq!(counter.load(Ordering::Relaxed), u64::MAX);
+    }
+    #[test]
+    fn aj4_failed_restart_retires_old_counts_and_closed_sink_drops_state() {
+        let mut states = HashMap::new();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let now = std::time::Instant::now();
+        let mut old = RuntimeState::new(now, 64, DomHandle(99)).unwrap();
+        old.parser.push_bytes(b"\xff").unwrap();
+        states.insert((1, 1), old);
+        handle_parse_start(
+            &mut states,
+            &tx,
+            1,
+            1,
+            Err(HtmlParseFailure::DomHandleExhausted),
+        );
+        assert!(states.is_empty());
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            CoreEvent::HtmlParseFinished {
+                decode_report: None,
+                result: Err(HtmlParseFailure::DomHandleExhausted),
+                ..
+            }
+        ));
+        handle_parse_done(&mut states, &tx, 1, 1);
+        assert!(rx.try_recv().is_err());
+        drop(rx);
+        handle_parse_start(
+            &mut states,
+            &tx,
+            1,
+            2,
+            RuntimeState::new(now, 64, DomHandle(100)).map_err(HtmlParseFailure::Initialization),
+        );
+        handle_parse_done(&mut states, &tx, 1, 2);
+        assert!(states.is_empty());
     }
 }

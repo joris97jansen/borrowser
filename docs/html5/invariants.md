@@ -550,3 +550,16 @@ remain higher-priority execution failures with no partial report.
 - Canonical tree guardrail accounting counts parser-created structural units
   plus typed template contents. Attributes and the outer `ObservedTree` wrapper
   do not consume tree units.
+
+## AJ4 decoder evidence
+
+- Authoritative UTF-8 category counts classify tools::utf8 replacement events;
+  their saturating sum supplies the unchanged facade decode_errors aggregate.
+- Ordinary/observed decoding and observation capacity cannot alter those counts.
+- Literal U+FFFD is input, not a replacement diagnostic.
+- Decoder EOF evidence records the actual phase, including when later parsing
+  fails. Empty carry and InputClosed do not imply successful finalization.
+- Cancellation and repeated-start retirement remain silent. Terminal reports
+  neither resurrect retired generations nor enrich failed Browser documents.
+- The [AJ4 contract](../platform/aj4-document-character-decoding.md) documents
+  retained BOM scalars, mode consequences, missing evidence and compatibility.

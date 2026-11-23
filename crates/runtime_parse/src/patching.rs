@@ -90,12 +90,14 @@ pub(crate) fn emit_parse_finished(
     tab_id: TabId,
     request_id: RequestId,
     result: Result<HtmlParseCompletion, HtmlParseFailure>,
+    decode_report: Option<html::internal::HtmlDecodeReport>,
 ) {
     // If the receiver is gone there is no recipient for a terminal event.
     let _ = evt_tx.send(CoreEvent::HtmlParseFinished {
         tab_id,
         request_id,
         result,
+        decode_report,
     });
 }
 

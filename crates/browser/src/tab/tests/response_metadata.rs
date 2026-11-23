@@ -247,7 +247,7 @@ fn ai8_document_metadata_survives_aj3_html_admission() {
         .expect("actual document request");
     let mut headers = HttpHeaders::new();
     headers
-        .append("content-type", b"text/html;charset=X-UNKNOWN")
+        .append("content-type", b"text/html;charset=unicode20utf8")
         .unwrap();
     headers.append("content-length", b"999").unwrap();
     let facts = NetworkResponseInfo::http(
@@ -274,7 +274,7 @@ fn ai8_document_metadata_survives_aj3_html_admission() {
     assert_eq!(retained, &facts);
     assert_eq!(retained.resource_kind(), Purpose::Document);
     assert!(
-        matches!(retained.content_type(), net::ResponseContentType::Parsed(value) if value.mime_type() == "text/html" && value.charset() == Some("X-UNKNOWN"))
+        matches!(retained.content_type(), net::ResponseContentType::Parsed(value) if value.mime_type() == "text/html" && value.charset() == Some("unicode20utf8"))
     );
     assert_eq!(
         retained.declared_content_length(),

@@ -1,5 +1,7 @@
 # AJ3: Main Document Response Preparation
 
+> AJ4 refinement: [document character decoding](aj4-document-character-decoding.md) selects the declared/default UTF-8 subset before activation and transports typed terminal decoder evidence. Silent cancellation, unavailable interruption evidence, and explicit BOM/meta deferral remain qualified limitations. Earlier charset-selection gaps below describe their historical checkpoints.
+
 Issue: [#1134](https://github.com/joris97jansen/borrowser/issues/1134).
 Milestone AJ. Implementation base: `efdcc3ca07825fff667225dcb3243ef3d9e5528c`.
 This contract refines [AJ1](aj1-static-document-loading-and-page-assembly-contract.md)

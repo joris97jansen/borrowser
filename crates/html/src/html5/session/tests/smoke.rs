@@ -24,7 +24,7 @@ fn session_smoke() {
     );
     let counters = session.debug_counters();
     assert_eq!(counters.patches_emitted, 0);
-    assert_eq!(counters.decode_errors, 0);
+    assert_eq!(counters.decode_errors(), 0);
     assert_eq!(counters.adapter_invariant_violations, 0);
     assert_eq!(counters.tree_builder_invariant_errors, 0);
 }

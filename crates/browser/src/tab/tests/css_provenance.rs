@@ -739,6 +739,7 @@ fn ah6_css_unsupported_references_never_accept_events_or_emit_retirement_aborts(
             "navigation" => tab.navigate_to_new("https://other.test/".into()).unwrap(),
             "parser-failure" => tab
                 .on_core_event(CoreEvent::HtmlParseFinished {
+                    decode_report: None,
                     tab_id: tab.tab_id,
                     request_id: tab.active_document_request_id().expect("admitted fixture"),
                     result: Err(bus::HtmlParseFailure::InputClosed),

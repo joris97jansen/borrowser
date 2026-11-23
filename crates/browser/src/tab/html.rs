@@ -1,5 +1,7 @@
 use super::Tab;
-use super::state::{DocumentLoadFailure, DocumentParseStatus, DocumentResponseRejection};
+use super::state::{
+    DocumentEncodingDecision, DocumentLoadFailure, DocumentParseStatus, DocumentResponseRejection,
+};
 use super::status::response_summary;
 use bus::CoreCommand;
 use core_types::RequestId;
@@ -9,8 +11,39 @@ use net::{
 };
 
 enum DocumentResponsePreparation {
-    Html(Box<crate::page::DocumentAddressState>),
+    Html {
+        addresses: Box<crate::page::DocumentAddressState>,
+        encoding: DocumentEncodingDecision,
+    },
     PreserveActiveDocument,
+}
+
+fn select_document_encoding(
+    charset: Option<&str>,
+) -> Result<DocumentEncodingDecision, DocumentResponseRejection> {
+    let Some(label) = charset else {
+        return Ok(DocumentEncodingDecision::MissingCharsetDefault);
+    };
+    // Encoding Standard ASCII whitespace, not Unicode whitespace or HTTP OWS.
+    let label = label.trim_matches(['\t', '\n', '\u{000C}', '\r', ' ']);
+    if label.is_empty() {
+        return Ok(DocumentEncodingDecision::EmptyCharsetDefault);
+    }
+    if [
+        "unicode-1-1-utf-8",
+        "unicode11utf8",
+        "unicode20utf8",
+        "utf-8",
+        "utf8",
+        "x-unicode20utf8",
+    ]
+    .iter()
+    .any(|accepted| label.eq_ignore_ascii_case(accepted))
+    {
+        Ok(DocumentEncodingDecision::ResponseCharset)
+    } else {
+        Err(DocumentResponseRejection::UnsupportedDocumentCharset)
+    }
 }
 
 fn prepare_document_response(
@@ -64,7 +97,7 @@ fn prepare_document_response(
         }
         _ => {}
     }
-    match response.content_type() {
+    let encoding = match response.content_type() {
         ResponseContentType::Missing => {
             return Err(reject(DocumentResponseRejection::MissingContentType));
         }
@@ -74,16 +107,21 @@ fn prepare_document_response(
         ResponseContentType::Unusable => {
             return Err(reject(DocumentResponseRejection::UnusableContentType));
         }
-        ResponseContentType::Parsed(value) if value.mime_type() == "text/html" => {}
+        ResponseContentType::Parsed(value) if value.mime_type() == "text/html" => {
+            select_document_encoding(value.charset()).map_err(reject)?
+        }
         _ => return Err(reject(DocumentResponseRejection::UnsupportedContentType)),
-    }
+    };
     let addresses = crate::page::DocumentAddressState::new(url).map_err(|cause| {
         DocumentLoadFailure::UnsupportedDocumentCreation {
             cause,
             response_context: response.clone(),
         }
     })?;
-    Ok(DocumentResponsePreparation::Html(Box::new(addresses)))
+    Ok(DocumentResponsePreparation::Html {
+        addresses: Box::new(addresses),
+        encoding,
+    })
 }
 
 impl Tab {
@@ -101,8 +139,13 @@ impl Tab {
             return;
         };
         match prepare_document_response(&attempt.request, &response) {
-            Ok(DocumentResponsePreparation::Html(addresses)) => {
-                if let Err(failure) = self.activate_document_response(response, *addresses) {
+            Ok(DocumentResponsePreparation::Html {
+                addresses,
+                encoding,
+            }) => {
+                if let Err(failure) =
+                    self.activate_document_response(response, *addresses, encoding)
+                {
                     self.fail_navigation_attempt(failure);
                 }
             }
@@ -277,5 +320,30 @@ impl Tab {
             .terminal = Some(Ok(body));
         self.restore_active_toolbar_url();
         self.poke_redraw();
+    }
+}
+
+#[cfg(test)]
+mod decoding_tests {
+    use super::*;
+
+    #[test]
+    fn aj4_charset_normalization_uses_only_encoding_standard_whitespace() {
+        assert_eq!(
+            select_document_encoding(Some("\t\n\u{c}\r UTF8 \r\n")),
+            Ok(DocumentEncodingDecision::ResponseCharset)
+        );
+        for label in [
+            "\u{b}utf8",
+            "\u{a0}utf8",
+            "\u{feff}utf8",
+            "utf_8",
+            "us-ascii",
+        ] {
+            assert_eq!(
+                select_document_encoding(Some(label)),
+                Err(DocumentResponseRejection::UnsupportedDocumentCharset)
+            );
+        }
     }
 }
