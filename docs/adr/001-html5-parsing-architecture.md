@@ -1,5 +1,7 @@
 # ADR 001: HTML5 Parsing Architecture (Tokenizer → Tree Builder → DomPatch)
 
+> Current AJ4 qualification: [HTML document decoding](../platform/aj4-document-character-decoding.md) coordinates Browser metadata selection with the existing HTML decoder. Basic per-kind replacement accounting and exact decoder EOF evidence cross the internal terminal boundary; full BOM/meta sniffing remains deferred. The architecture destination is broader than this implemented subset.
+
 Date: 2026-01-29
 Status: Accepted (implemented; legacy parser removed in M7)
 

@@ -285,7 +285,14 @@ impl<'a> ParserEventSink<'a> {
         reason: Utf8ReplacementReason,
         payload: Utf8ReplacementPayload,
     ) {
-        self.counters.decode_errors = self.counters.decode_errors.saturating_add(1);
+        self.counters.utf8_decode.record(match reason {
+            Utf8ReplacementReason::InvalidSequence => {
+                tools::utf8::Utf8DecodeIssueKind::InvalidSequence
+            }
+            Utf8ReplacementReason::IncompleteSequenceAtEof => {
+                tools::utf8::Utf8DecodeIssueKind::IncompleteSequenceAtEof
+            }
+        });
         self.record_implementation_diagnostic_known(
             input,
             position,

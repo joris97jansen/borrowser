@@ -415,6 +415,10 @@ fn parser_completion_is_distinct_from_response_and_publication_and_failure_stays
     .unwrap();
     assert!(tab.loading);
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        decode_report: Some(html::internal::HtmlDecodeReport {
+            eof_processed: true,
+            replacements: Default::default(),
+        }),
         tab_id: 1,
         request_id,
         result: Ok(completion.clone()),
@@ -434,6 +438,10 @@ fn parser_completion_is_distinct_from_response_and_publication_and_failure_stays
     let request_id = super::support::admit_pending(&mut tab);
     assert_eq!(
         tab.on_core_event(CoreEvent::HtmlParseFinished {
+            decode_report: Some(html::internal::HtmlDecodeReport {
+                eof_processed: true,
+                replacements: Default::default()
+            }),
             tab_id: 1,
             request_id,
             result: Ok(completion.clone()),
@@ -443,6 +451,10 @@ fn parser_completion_is_distinct_from_response_and_publication_and_failure_stays
     let failure = tab.last_status.clone();
     assert!(
         tab.on_core_event(CoreEvent::HtmlParseFinished {
+            decode_report: Some(html::internal::HtmlDecodeReport {
+                eof_processed: true,
+                replacements: Default::default()
+            }),
             tab_id: 1,
             request_id,
             result: Ok(completion),
@@ -458,6 +470,7 @@ fn parser_completion_is_distinct_from_response_and_publication_and_failure_stays
     .unwrap();
     // A stale parser failure must not change the current document either.
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        decode_report: None,
         tab_id: 1,
         request_id: request_id - 1,
         result: Err(HtmlParseFailure::InputClosed),

@@ -1,5 +1,7 @@
 # AJ2: Document Load Completion, Typed Failures, And Lifecycle Observation
 
+> AJ4 refinement: [document character decoding](aj4-document-character-decoding.md) selects the declared/default UTF-8 subset before activation and transports typed terminal decoder evidence. Silent cancellation, unavailable interruption evidence, and explicit BOM/meta deferral remain qualified limitations. Earlier charset-selection gaps below describe their historical checkpoints.
+
 > AJ3 current qualification: [AJ3](aj3-main-document-response-preparation.md) refines response admission and concurrent navigation lifetime. Active body/parser/stylesheet settlement remains independent of a pending replacement. Pending failures and 204/205 outcomes have their own issued-attempt terminal; the active first-failure latch is preserved. A settled active frame remains observable while a replacement waits. Earlier negative response fixtures and eligibility qualifications below are historical AJ2 scope, superseded only by AJ3's explicit subset.
 
 Issue: [#1133](https://github.com/joris97jansen/borrowser/issues/1133).

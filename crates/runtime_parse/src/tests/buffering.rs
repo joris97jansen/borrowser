@@ -568,3 +568,65 @@ fn dropped_publication_receiver_is_an_error_without_version_advancement() {
     assert!(state.failed);
     assert_eq!(state.version, core_types::DomVersion::INITIAL);
 }
+
+#[test]
+fn aj4_completed_decoder_evidence_survives_runtime_finalization_failure() {
+    let mut state =
+        RuntimeState::new(Instant::now(), MIN_PATCH_BUFFER_RETAIN, DomHandle(99)).unwrap();
+    state.parser.push_bytes(b"<p>\xff\xe2").unwrap();
+    // Exercise the existing production mode-consistency failure after decoder EOF.
+    state.document_mode = Some(html::DocumentMode::NoQuirks);
+    let (tx, rx) = mpsc::channel();
+    crate::driver::handle_runtime_done(Box::new(state), &tx, 1, 99);
+    let CoreEvent::HtmlParseFinished {
+        result,
+        decode_report: Some(report),
+        ..
+    } = rx.try_recv().unwrap()
+    else {
+        panic!("terminal report")
+    };
+    assert!(matches!(
+        result,
+        Err(bus::HtmlParseFailure::DocumentModeChanged { .. })
+    ));
+    assert!(report.eof_processed);
+    assert_eq!(report.replacements.invalid_sequences, 1);
+    assert_eq!(report.replacements.incomplete_sequences_at_eof, 1);
+    assert!(rx.try_recv().is_err());
+}
+
+#[cfg(feature = "parser-failure-injection")]
+#[test]
+fn aj4_parser_fatal_before_eof_reports_consumed_prefix_only() {
+    let mut state = template_failure_runtime_state(Instant::now());
+    let (tx, rx) = mpsc::channel();
+    assert!(handle_runtime_chunk(
+        &mut state,
+        b"\xff<template>",
+        &no_flush_policy(),
+        Instant::now(),
+        &tx,
+        1,
+        9
+    ));
+    let CoreEvent::HtmlParseFinished {
+        result,
+        decode_report: Some(report),
+        ..
+    } = rx.try_recv().unwrap()
+    else {
+        panic!("terminal report")
+    };
+    assert!(matches!(
+        result,
+        Err(bus::HtmlParseFailure::Execution(
+            html::HtmlParseError::Fatal(_)
+        ))
+    ));
+    assert!(!report.eof_processed);
+    assert_eq!(report.replacements.invalid_sequences, 1);
+    assert_eq!(report.replacements.incomplete_sequences_at_eof, 0);
+    handle_runtime_done(Box::new(state), &tx, 1, 9);
+    assert!(rx.try_recv().is_err());
+}

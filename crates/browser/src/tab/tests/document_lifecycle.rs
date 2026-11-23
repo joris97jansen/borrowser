@@ -46,6 +46,7 @@ fn document_lifecycle_unsupported_stale_and_duplicate_starts_preserve_file_origi
             }
             "failed" => {
                 tab.on_core_event(CoreEvent::HtmlParseFinished {
+                    decode_report: None,
                     tab_id: 1,
                     request_id: tab.active_document_request_id().expect("admitted fixture"),
                     result: Err(HtmlParseFailure::InputClosed),
@@ -59,6 +60,10 @@ fn document_lifecycle_unsupported_stale_and_duplicate_starts_preserve_file_origi
             "complete" => {
                 super::support::complete_document_body(&mut tab);
                 tab.on_core_event(CoreEvent::HtmlParseFinished {
+                    decode_report: Some(html::internal::HtmlDecodeReport {
+                        eof_processed: true,
+                        replacements: Default::default(),
+                    }),
                     tab_id: 1,
                     request_id: tab.active_document_request_id().expect("admitted fixture"),
                     result: Ok(HtmlParseCompletion {
@@ -248,6 +253,10 @@ fn document_lifecycle_chunk_provenance_uses_requested_url_across_redirect_and_fr
         CoreCommand::ParseHtmlDone { .. }
     ));
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        decode_report: Some(html::internal::HtmlDecodeReport {
+            eof_processed: true,
+            replacements: Default::default(),
+        }),
         tab_id: 1,
         request_id: tab.active_document_request_id().expect("admitted fixture"),
         result: Ok(completion),
@@ -446,6 +455,7 @@ fn document_lifecycle_html_stylesheet_slot_associations_are_unmatched_routes() {
             .unwrap();
             if phase == "failed" {
                 tab.on_core_event(CoreEvent::HtmlParseFinished {
+                    decode_report: None,
                     tab_id: 1,
                     request_id,
                     result: Err(HtmlParseFailure::InputClosed),
@@ -454,6 +464,10 @@ fn document_lifecycle_html_stylesheet_slot_associations_are_unmatched_routes() {
             } else if phase == "complete" {
                 super::support::complete_document_body(&mut tab);
                 tab.on_core_event(CoreEvent::HtmlParseFinished {
+                    decode_report: Some(html::internal::HtmlDecodeReport {
+                        eof_processed: true,
+                        replacements: Default::default(),
+                    }),
                     tab_id: 1,
                     request_id,
                     result: Ok(completion),
@@ -851,6 +865,10 @@ fn document_lifecycle_response_valid_stream_preserves_admitted_file_origin() {
         &origin
     );
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        decode_report: Some(html::internal::HtmlDecodeReport {
+            eof_processed: true,
+            replacements: Default::default(),
+        }),
         tab_id: 1,
         request_id: tab.active_document_request_id().expect("admitted fixture"),
         result: Ok(completion),
@@ -954,6 +972,10 @@ fn finish_document(tab: &mut Tab, rx: &Receiver<CoreCommand>, completion: HtmlPa
         CoreCommand::ParseHtmlDone { .. }
     ));
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        decode_report: Some(html::internal::HtmlDecodeReport {
+            eof_processed: true,
+            replacements: Default::default(),
+        }),
         tab_id: 1,
         request_id: tab.active_document_request_id().expect("admitted fixture"),
         result: Ok(completion),
@@ -968,6 +990,7 @@ fn finish_document(tab: &mut Tab, rx: &Receiver<CoreCommand>, completion: HtmlPa
 
 fn fail_parser(tab: &mut Tab, rx: &Receiver<CoreCommand>) {
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        decode_report: None,
         tab_id: 1,
         request_id: tab.active_document_request_id().expect("admitted fixture"),
         result: Err(HtmlParseFailure::InputClosed),
@@ -1148,6 +1171,10 @@ fn late_same_request_start_after_parser_failure_cannot_reopen_document() {
     );
     assert!(
         tab.on_core_event(CoreEvent::HtmlParseFinished {
+            decode_report: Some(html::internal::HtmlDecodeReport {
+                eof_processed: true,
+                replacements: Default::default()
+            }),
             tab_id: 1,
             request_id: tab.active_document_request_id().expect("admitted fixture"),
             result: Ok(completion),

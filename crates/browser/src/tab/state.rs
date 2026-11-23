@@ -68,6 +68,7 @@ pub(super) enum DocumentResponseRejection {
     UnusableContentType,
     UnsupportedContentType,
     DownloadUnsupported,
+    UnsupportedDocumentCharset,
 }
 
 #[derive(Clone, Default, PartialEq, Eq)]
@@ -145,6 +146,14 @@ impl std::fmt::Debug for DocumentParseStatus {
     }
 }
 
+/// The actual admitted UTF-8 choice, retained without copying arbitrary labels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum DocumentEncodingDecision {
+    ResponseCharset,
+    MissingCharsetDefault,
+    EmptyCharsetDefault,
+}
+
 #[derive(Clone, Default)]
 pub(super) struct DocumentLoadState {
     // Private: only activation installs the actual admitted request.
@@ -152,6 +161,8 @@ pub(super) struct DocumentLoadState {
     // Immutable snapshot installed by successful HTML response-start admission.
     // Completion validates it; Pending alone is not admission.
     pub(super) response: Option<NetworkResponseInfo>,
+    pub(super) encoding_decision: Option<DocumentEncodingDecision>,
+    pub(super) decode_report: Option<html::internal::HtmlDecodeReport>,
     pub(super) bytes_received: usize,
     // Only a matching, validated main-document NetworkDone installs this fact.
     // It proves neither parser acknowledgement nor response applicability.
@@ -355,6 +366,7 @@ impl Tab {
         &mut self,
         response: NetworkResponseInfo,
         addresses: crate::page::DocumentAddressState,
+        encoding: DocumentEncodingDecision,
     ) -> Result<(), DocumentLoadFailure> {
         let attempt = self
             .navigation_attempt
@@ -426,6 +438,7 @@ impl Tab {
         self.document_load = DocumentLoadState {
             request: Some(attempt.request),
             response: Some(response),
+            encoding_decision: Some(encoding),
             ..Default::default()
         };
         self.loading = true;

@@ -283,6 +283,12 @@ impl HtmlParser {
         self.take_patch_batch_internal(true)
     }
 
+    /// Read actual decoder evidence without draining a failed parser.
+    #[cfg(any(test, feature = "internal-api"))]
+    pub(crate) fn decode_report(&self) -> crate::html5::shared::HtmlDecodeReport {
+        self.session.decode_report()
+    }
+
     /// Return the current parser counters without mutating parser state.
     pub fn counters(&self) -> HtmlParseCounters {
         self.session.counters().into()

@@ -199,7 +199,13 @@ fn handle_runtime_failure(
             HtmlParseFailure::DocumentModeChanged { expected, actual }
         }
     };
-    emit_parse_finished(evt_tx, tab_id, request_id, Err(failure));
+    emit_parse_finished(
+        evt_tx,
+        tab_id,
+        request_id,
+        Err(failure),
+        Some(html::internal::html_decode_report(&st.parser)),
+    );
 }
 
 pub(crate) fn handle_runtime_chunk(
@@ -315,6 +321,7 @@ pub(crate) fn handle_runtime_done(
             tab_id,
             request_id,
             Err(HtmlParseFailure::Finalization(err)),
+            Some(html::internal::html_decode_report(&st.parser)),
         );
         return;
     }
@@ -361,5 +368,6 @@ pub(crate) fn handle_runtime_done(
             version: st.version,
             document_mode,
         }),
+        Some(html::internal::html_decode_report(&st.parser)),
     );
 }

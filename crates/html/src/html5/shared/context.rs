@@ -276,8 +276,8 @@ impl DocumentParseContext {
 
     /// Mandatory accounting for decoder replacements when canonical
     /// observation is not installed.
-    pub(crate) fn record_decode_replacements(&mut self, replacements: u64) {
-        self.counters.decode_errors = self.counters.decode_errors.saturating_add(replacements);
+    pub(crate) fn record_decode_counts(&mut self, replacements: super::Utf8DecodeCounts) {
+        self.counters.utf8_decode.merge(replacements);
     }
 
     pub(crate) fn observation_position_index_mut(
@@ -698,7 +698,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![1, 2, 3]
         );
-        assert_eq!(ctx.counters.decode_errors, 1);
+        assert_eq!(ctx.counters.decode_errors(), 1);
         assert_eq!(ctx.counters.parse_errors, 0);
     }
 

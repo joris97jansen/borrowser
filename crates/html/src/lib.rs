@@ -117,6 +117,15 @@ pub use crate::types::{ElementNode, Node, ProcessingInstructionNode};
 
 #[cfg(feature = "internal-api")]
 pub mod internal {
+    #[cfg(feature = "html5")]
+    pub use super::html5::shared::{HtmlDecodeReport, Utf8DecodeCounts};
+
+    /// Read actual decoder evidence without draining or mutating a failed parser.
+    #[cfg(feature = "html5")]
+    pub fn html_decode_report(parser: &super::HtmlParser) -> HtmlDecodeReport {
+        parser.decode_report()
+    }
+
     #[cfg(all(feature = "html5", feature = "parser-failure-injection"))]
     pub use super::html5::ParserFailureInjection;
     pub use super::processing_instruction::{

@@ -108,7 +108,7 @@ impl From<Html5Counters> for HtmlParseCounters {
         Self {
             tokens_processed: value.tokens_processed,
             patches_emitted: value.patches_emitted,
-            decode_errors: value.decode_errors,
+            decode_errors: value.decode_errors(),
             adapter_invariant_violations: value.adapter_invariant_violations,
             tree_builder_invariant_errors: value.tree_builder_invariant_errors,
             parse_errors: value.parse_errors,

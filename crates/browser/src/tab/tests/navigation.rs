@@ -197,6 +197,10 @@ fn history_accept_document(
     })
     .unwrap();
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        decode_report: Some(html::internal::HtmlDecodeReport {
+            eof_processed: true,
+            replacements: Default::default(),
+        }),
         tab_id: tab.tab_id,
         request_id,
         result: Ok(bus::HtmlParseCompletion {
@@ -980,6 +984,10 @@ fn redirected_document_response_updates_tab_base_url_and_status() {
     .unwrap();
 
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        decode_report: Some(html::internal::HtmlDecodeReport {
+            eof_processed: true,
+            replacements: Default::default(),
+        }),
         tab_id: tab.tab_id,
         request_id: 1,
         result: Ok(bus::HtmlParseCompletion {

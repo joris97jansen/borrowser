@@ -475,6 +475,30 @@ Notes:
 
 ## Browser Runtime / Platform
 
+AJ4 implementation candidate (#1135):
+
+[Document character decoding](platform/aj4-document-character-decoding.md) selects
+UTF-8 from AI8's aggregate charset, supports the six WHATWG UTF-8 labels, records
+missing/empty defaults and rejects other nonempty labels before AJ3 activation.
+HTML's existing decoder supplies typed malformed-sequence and incomplete-at-EOF
+counts; their derived total preserves the facade decode_errors contract. Existing
+parser terminal paths carry EOF-qualified reports. Cancellation/repeated starts
+remain silent; interrupted decoder evidence can be unavailable. Failed Browser
+documents cannot acquire late diagnostic enrichment. Snapshots remain redacted,
+bounded and deterministic. Backend Counters.decode_errors becomes an accessor.
+
+BOM sniffing/switching/removal and meta charset scanning/restart remain gaps. A
+UTF-8 BOM is retained as U+FEFF and can select quirks before a doctype. Legacy
+encodings, complete HTML encoding determination and full page assembly are not
+claimed. Validation and owner review remain separate from implemented capability.
+
+[Fresh AJ4 validation](platform/aj4-document-character-decoding.md#candidate-validation-2026-11-23)
+records passing targeted, subsystem, conformance, fuzz, build and deterministic
+runtime lanes. Full CI and both complete workspace configurations still fail the
+same nine native Chromium tests freshly reproduced on exact clean base
+`a7eac925af1bd60d0584fa37eade1666fe2f8be5`. Aggregate CI is not green. Native
+startup was visually inspected; manual page navigation remains unqualified.
+
 AJ3 implementation candidate (#1134):
 
 The [main document response preparation contract](platform/aj3-main-document-response-preparation.md)

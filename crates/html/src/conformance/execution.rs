@@ -1297,7 +1297,7 @@ fn execute_standalone_tokenizer(
             let _ = decoder.finish_with_context(&mut input, &mut ctx);
         } else {
             let (_, replacements) = decoder.finish_counted(&mut input);
-            ctx.record_decode_replacements(replacements);
+            ctx.record_decode_counts(replacements);
         }
     } else if ctx.observation_enabled() {
         let _ = input.finish_preprocessing_observed(ctx.observation_position_index_mut());
@@ -1380,7 +1380,7 @@ fn push_standalone_bytes(
         let _ = decoder.push_bytes_with_context(bytes, input, ctx);
     } else {
         let (_, replacements) = decoder.push_bytes_counted(bytes, input);
-        ctx.record_decode_replacements(replacements);
+        ctx.record_decode_counts(replacements);
     }
     pump_standalone(tokenizer, input, ctx)
 }

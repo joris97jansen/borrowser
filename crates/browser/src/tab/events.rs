@@ -89,8 +89,14 @@ impl Tab {
                 tab_id,
                 request_id,
                 result,
+                decode_report,
             } if self.is_current(tab_id, request_id) => match result {
-                Err(error) => self.fail_document(DocumentLoadFailure::Parser(error)),
+                Err(error) => {
+                    if self.document_load.parse_status == DocumentParseStatus::Pending {
+                        self.document_load.decode_report = decode_report;
+                    }
+                    self.fail_document(DocumentLoadFailure::Parser(error));
+                }
                 Ok(completion) => {
                     if self.document_load.parse_status != DocumentParseStatus::Pending
                         || self.dom_handle != Some(completion.handle)
@@ -106,6 +112,12 @@ impl Tab {
                         self.fail_document(DocumentLoadFailure::ParserCompletionBeforeBody);
                         return Err(DocumentPublicationFailure::InvariantViolation);
                     }
+                    if !decode_report.is_some_and(|report| report.eof_processed) {
+                        let failure = DocumentPublicationFailure::InvariantViolation;
+                        self.on_document_publication_failure(failure.clone());
+                        return Err(failure);
+                    }
+                    self.document_load.decode_report = decode_report;
                     self.document_load.parse_status = DocumentParseStatus::Complete;
                     let settlement = self.update_loading();
                     self.update_document_progress(settlement);

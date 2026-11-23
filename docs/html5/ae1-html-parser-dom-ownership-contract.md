@@ -1,5 +1,7 @@
 # AE1: HTML Parser And Parser-Created DOM Ownership Contract
 
+> Current AJ4 qualification: [HTML document decoding](../platform/aj4-document-character-decoding.md) coordinates Browser metadata selection with the existing HTML decoder. Basic per-kind replacement accounting and exact decoder EOF evidence cross the internal terminal boundary; full BOM/meta sniffing remains deferred. The architecture destination is broader than this implemented subset.
+
 Last updated: 2026-07-01
 Status: Milestone AE architecture contract
 Scope: `crates/html/src/html5`, parser-created DOM output, and downstream

@@ -43,6 +43,10 @@ fn finish_parser(
     completion: HtmlParseCompletion,
 ) -> Result<(), bus::DocumentPublicationFailure> {
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        decode_report: Some(html::internal::HtmlDecodeReport {
+            eof_processed: true,
+            replacements: Default::default(),
+        }),
         tab_id: tab.tab_id,
         request_id: tab.active_document_request_id().expect("admitted fixture"),
         result: Ok(completion),
@@ -219,6 +223,7 @@ fn aj2_parser_success_requires_body_but_parser_failure_does_not() {
 
     let (mut tab, commands, _) = preview("<!doctype html><p>preview</p>");
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        decode_report: None,
         tab_id: 1,
         request_id: tab.active_document_request_id().expect("admitted fixture"),
         result: Err(HtmlParseFailure::InputClosed),
@@ -638,6 +643,7 @@ fn aj2_failure_debug_and_ui_are_safe_through_every_owning_wrapper() {
     let error =
         HtmlParseFailure::Execution(html::HtmlParseError::PatchValidation(secret.repeat(1000)));
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        decode_report: None,
         tab_id: 1,
         request_id: tab.active_document_request_id().expect("admitted fixture"),
         result: Err(error.clone()),
@@ -668,6 +674,7 @@ fn aj2_failure_debug_and_ui_are_safe_through_every_owning_wrapper() {
     assert!(tab.last_status.as_ref().unwrap().len() <= 256);
     let first = tab.document_load.failure().cloned();
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        decode_report: None,
         tab_id: 1,
         request_id: tab.active_document_request_id().expect("admitted fixture"),
         result: Err(HtmlParseFailure::InputClosed),
@@ -1142,4 +1149,26 @@ fn aj2_checked_frame_requires_runtime_settlement_and_rejects_invariant_errors() 
         tab.document_load.failure().is_none(),
         "read-only precondition never mutates the lifecycle"
     );
+}
+
+#[test]
+fn aj4_parser_success_requires_real_finalized_decoder_evidence() {
+    for missing in [true, false] {
+        let (mut tab, _, completion) = preview("<!doctype html><p>x");
+        complete_document_body(&mut tab);
+        // An actual unfinalized parser supplies the negative protocol fixture.
+        let mut parser = html::HtmlParser::new(Default::default()).unwrap();
+        parser.push_bytes(b"\xe2").unwrap();
+        let report = html::internal::html_decode_report(&parser);
+        assert!(!report.eof_processed);
+        let result = tab.on_core_event(CoreEvent::HtmlParseFinished {
+            tab_id: tab.tab_id,
+            request_id: tab.active_document_request_id().unwrap(),
+            result: Ok(completion),
+            decode_report: if missing { None } else { Some(report) },
+        });
+        assert!(result.is_err());
+        assert!(tab.document_load.failure().is_some());
+        assert!(tab.document_load.decode_report.is_none());
+    }
 }

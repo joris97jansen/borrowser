@@ -2099,3 +2099,141 @@ fn poisoned_trusted_arena_rejects_consuming_final_audit_before_observation() {
         ))
     ));
 }
+
+#[test]
+fn aj4_decode_report_preserves_kinds_and_chunk_equivalence() {
+    use crate::html5::shared::Utf8DecodeCounts;
+    let cases: &[(&[u8], &str, u64, u64)] = &[
+        (b"", "", 0, 0),
+        ("<p>é€😀</p>".as_bytes(), "<p>é€😀</p>", 0, 0),
+        (b"\xffa\xe2(\x80", "�a�(�", 3, 0),
+        (b"\xe2\x82", "�", 0, 1),
+        (b"\xff\xe2\x82", "��", 1, 1),
+        ("�".as_bytes(), "�", 0, 0),
+        (
+            b"\xef\xbb\xbf<!doctype html><p>x",
+            "\u{feff}<!doctype html><p>x",
+            0,
+            0,
+        ),
+        (b"\xef", "�", 0, 1),
+        (b"\xef\xbb", "�", 0, 1),
+        (b"\xef\xbbA", "�A", 1, 0),
+        (b"\xfe\xff", "��", 2, 0),
+        (b"a\r\nb\r", "a\nb\n", 0, 0),
+    ];
+    for &(bytes, text, invalid, incomplete) in cases {
+        let expected = Utf8DecodeCounts {
+            invalid_sequences: invalid,
+            incomplete_sequences_at_eof: incomplete,
+        };
+        let mut baseline_summary = None;
+        for split in 0..=bytes.len() {
+            let mut parser = HtmlParser::new(Default::default()).unwrap();
+            for chunk in [&bytes[..split], b"", &bytes[split..]] {
+                parser.push_bytes(chunk).unwrap();
+                parser.pump().unwrap();
+                assert!(!parser.decode_report().eof_processed);
+                assert_eq!(
+                    parser
+                        .decode_report()
+                        .replacements
+                        .incomplete_sequences_at_eof,
+                    0
+                );
+            }
+            parser.finish().unwrap();
+            assert_eq!(parser.normalized_input_for_test(), text);
+            let report = parser.decode_report();
+            assert!(report.eof_processed);
+            assert_eq!(
+                report.replacements, expected,
+                "split={split} bytes={bytes:?}"
+            );
+            assert_eq!(parser.counters().decode_errors, expected.total());
+            let output = parser.into_output().unwrap();
+            let mut summary = Vec::new();
+            summarize(&output.document, &mut summary);
+            if let Some(baseline) = &baseline_summary {
+                assert_eq!(&summary, baseline, "DOM changed at split={split}");
+            } else {
+                baseline_summary = Some(summary);
+            }
+            if bytes.starts_with(b"\xef\xbb\xbf") {
+                assert_eq!(output.document_mode, crate::DocumentMode::Quirks);
+            }
+        }
+        let mut parser = HtmlParser::new(Default::default()).unwrap();
+        for byte in bytes {
+            parser.push_bytes(&[*byte]).unwrap();
+            parser.pump().unwrap();
+        }
+        parser.finish().unwrap();
+        assert_eq!(parser.decode_report().replacements, expected);
+        let output = parser.into_output().unwrap();
+        let mut summary = Vec::new();
+        summarize(&output.document, &mut summary);
+        assert_eq!(Some(summary), baseline_summary);
+    }
+    let mut parser = HtmlParser::new(Default::default()).unwrap();
+    parser.push_str("<p>é�\r\n").unwrap();
+    parser.finish().unwrap();
+    assert_eq!(
+        parser.decode_report().replacements,
+        Utf8DecodeCounts::default()
+    );
+}
+
+#[cfg(feature = "parser-conformance")]
+#[test]
+fn aj4_basic_diagnostics_do_not_depend_on_observation_retention() {
+    use crate::html5::shared::{ParserObservationConfig, SurfaceCaptureRequest};
+    for capacity in [0, 1, 32] {
+        for split in 0..=4 {
+            let mut parser = HtmlParser::new_with_observations(
+                Default::default(),
+                ParserObservationConfig {
+                    implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity },
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let bytes = b"\xff\xff\xe2\x82";
+            parser.push_bytes(&bytes[..split]).unwrap();
+            parser.pump().unwrap();
+            parser.push_bytes(&bytes[split..]).unwrap();
+            parser.finish().unwrap();
+            let report = parser.decode_report();
+            assert_eq!(report.replacements.invalid_sequences, 2);
+            assert_eq!(report.replacements.incomplete_sequences_at_eof, 1);
+            assert_eq!(parser.counters().decode_errors, 3);
+            let capture = parser.take_observations_for_conformance().unwrap().unwrap();
+            assert_eq!(
+                capture.implementation_diagnostics.items.len() as u64
+                    + capture.implementation_diagnostics.dropped,
+                3
+            );
+        }
+    }
+}
+
+#[test]
+fn aj4_decoder_report_survives_parser_poisoning_after_eof() {
+    let mut parser = HtmlParser::new(Default::default()).unwrap();
+    parser.push_bytes(b"<p>\xff\xe2").unwrap();
+    parser.finish().unwrap();
+    let report = parser.decode_report();
+    assert!(report.eof_processed);
+    assert_eq!(report.replacements.total(), 2);
+    assert!(
+        parser
+            .apply_patches(&[DomPatch::AppendChild {
+                parent: PatchKey(u32::MAX),
+                child: PatchKey(u32::MAX - 1)
+            }])
+            .is_err()
+    );
+    assert_eq!(parser.decode_report(), report);
+    assert!(parser.finish().is_err());
+    assert_eq!(parser.decode_report(), report);
+}

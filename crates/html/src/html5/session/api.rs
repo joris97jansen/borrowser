@@ -31,6 +31,7 @@ pub(crate) struct Html5SessionFinalAudit {
 pub struct Html5ParseSession {
     pub(super) ctx: DocumentParseContext,
     pub(super) decoder: ByteStreamDecoder,
+    decoder_eof_processed: bool,
     pub(super) input: Input,
     pub(super) tokenizer: Html5Tokenizer,
     pub(super) builder: Html5TreeBuilder,
@@ -113,6 +114,7 @@ impl Html5ParseSession {
         Ok(Self {
             ctx,
             decoder: ByteStreamDecoder::new(),
+            decoder_eof_processed: false,
             input: Input::new(),
             tokenizer,
             builder,
@@ -139,7 +141,7 @@ impl Html5ParseSession {
                 .push_bytes_with_context(bytes, &mut self.input, &mut self.ctx);
         } else {
             let (_, replacements) = self.decoder.push_bytes_counted(bytes, &mut self.input);
-            self.ctx.record_decode_replacements(replacements);
+            self.ctx.record_decode_counts(replacements);
         }
         Ok(())
     }
@@ -182,8 +184,9 @@ impl Html5ParseSession {
                 .finish_with_context(&mut self.input, &mut self.ctx);
         } else {
             let (_, replacements) = self.decoder.finish_counted(&mut self.input);
-            self.ctx.record_decode_replacements(replacements);
+            self.ctx.record_decode_counts(replacements);
         }
+        self.decoder_eof_processed = true;
         self.pump_live_input()?;
         let _ = self
             .tokenizer
@@ -227,6 +230,14 @@ impl Html5ParseSession {
 
     pub fn tokens_processed(&self) -> u64 {
         self.ctx.counters.tokens_processed
+    }
+
+    #[cfg(any(test, feature = "internal-api"))]
+    pub(crate) fn decode_report(&self) -> crate::html5::shared::HtmlDecodeReport {
+        crate::html5::shared::HtmlDecodeReport {
+            eof_processed: self.decoder_eof_processed,
+            replacements: self.ctx.counters.utf8_decode,
+        }
     }
 
     pub fn counters(&self) -> Counters {

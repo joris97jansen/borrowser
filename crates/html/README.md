@@ -37,6 +37,14 @@ Notes:
 - The legacy-vs-HTML5 parity contract is documented in
   `docs/html5/parser-parity-matrix.md`.
 
+AJ4 keeps the stable `HtmlParseCounters.decode_errors` field unchanged. Its value
+is derived from the two authoritative UTF-8 replacement categories. Low-level
+`html::html5::Counters` users must replace `.decode_errors` with `.decode_errors()`.
+Backend category storage is crate-private; use `Counters::default()` instead of
+external backend struct literals. Internal terminal reports expose both categories and actual EOF evidence without
+requiring canonical observation. See the [AJ4 contract](../../docs/platform/aj4-document-character-decoding.md)
+for the supported charset policy, interruption evidence and BOM/meta limitations.
+
 ## Benchmarks
 
 This crate uses Criterion for statistically robust micro-benchmarks that are

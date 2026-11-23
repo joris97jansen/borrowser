@@ -2,7 +2,8 @@
 
 use super::span::Span;
 use super::{
-    DocumentParseContext, NormalizedPositionIndex, Utf8ReplacementPayload, Utf8ReplacementReason,
+    DocumentParseContext, NormalizedPositionIndex, Utf8DecodeCounts, Utf8ReplacementPayload,
+    Utf8ReplacementReason,
 };
 use std::num::NonZeroU64;
 use tools::utf8::{
@@ -183,16 +184,16 @@ impl ByteStreamDecoder {
         &mut self,
         bytes: &[u8],
         input: &mut Input,
-    ) -> (DecodeResult, u64) {
+    ) -> (DecodeResult, Utf8DecodeCounts) {
         if bytes.is_empty() {
-            return (DecodeResult::NeedMoreInput, 0);
+            return (DecodeResult::NeedMoreInput, Utf8DecodeCounts::default());
         }
         let before_len = input.buffer.len();
         let before_pending_cr = input.pending_cr;
         let replacements = {
             let mut sink = PlainHtmlInputDecodeSink {
                 input,
-                replacements: 0,
+                replacements: Utf8DecodeCounts::default(),
             };
             push_utf8_chunk_with_state(&mut self.state, bytes, &mut sink);
             sink.replacements
@@ -232,13 +233,13 @@ impl ByteStreamDecoder {
         self.finish_counted(input).0
     }
 
-    pub(crate) fn finish_counted(&mut self, input: &mut Input) -> (DecodeResult, u64) {
+    pub(crate) fn finish_counted(&mut self, input: &mut Input) -> (DecodeResult, Utf8DecodeCounts) {
         let before_len = input.buffer.len();
         let before_pending_cr = input.pending_cr;
         let replacements = {
             let mut sink = PlainHtmlInputDecodeSink {
                 input,
-                replacements: 0,
+                replacements: Utf8DecodeCounts::default(),
             };
             finish_utf8_with_state(&mut self.state, &mut sink);
             sink.replacements
@@ -285,7 +286,7 @@ impl ByteStreamDecoder {
 
 struct PlainHtmlInputDecodeSink<'a> {
     input: &'a mut Input,
-    replacements: u64,
+    replacements: Utf8DecodeCounts,
 }
 
 impl Utf8DecodeSink for PlainHtmlInputDecodeSink<'_> {
@@ -293,12 +294,9 @@ impl Utf8DecodeSink for PlainHtmlInputDecodeSink<'_> {
         self.input.push_str(segment);
     }
 
-    fn replacement(&mut self, _issue: Utf8DecodeIssue) {
+    fn replacement(&mut self, issue: Utf8DecodeIssue) {
         self.input.push_str("\u{FFFD}");
-        self.replacements = self
-            .replacements
-            .checked_add(1)
-            .expect("one byte chunk cannot contain more than u64 UTF-8 replacements");
+        self.replacements.record(issue.kind);
     }
 }
 

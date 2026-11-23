@@ -425,6 +425,7 @@ fn css_resource_loaded_preview_keeps_response_base_after_document_failure() {
     );
     let before = address(&outcomes(&tab)[0]).to_owned();
     tab.on_core_event(bus::CoreEvent::HtmlParseFinished {
+        decode_report: None,
         tab_id: tab.tab_id,
         request_id: tab.active_document_request_id().expect("admitted fixture"),
         result: Err(bus::HtmlParseFailure::InputClosed),
