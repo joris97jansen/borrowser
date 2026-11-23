@@ -475,6 +475,35 @@ Notes:
 
 ## Browser Runtime / Platform
 
+AJ2 implementation candidate (2026-11-22, #1133):
+
+The [document completion and lifecycle observation contract](platform/aj2-document-load-completion-and-lifecycle-observation.md)
+records accepted main-body completion independently of response admission and
+accepted parser completion. Browser retains typed fatal causes and available
+contextual response/redirect facts without admitting failure context as a
+document response. Existing state derives current supported stylesheet settlement,
+including CSS runtime completion after parse installation. Pending work,
+unavailable evidence and invariant failures remain distinguishable. Missing or
+invalid stylesheet response bases retain usable preview CSS.
+
+Bounded redacted lifecycle Debug, canonical dependency order and focused
+production-path regressions cover these capabilities. Candidate qualification,
+owner review and issue closure remain separate. The [initial candidate validation](platform/aj2-document-load-completion-and-lifecycle-observation.md#initial-candidate-validation-2026-11-22)
+recorded 396/407 default/observation unit tests plus 5 integration tests each,
+and runtime and required AG suite passes. The [diagnostic correction validation](platform/aj2-document-load-completion-and-lifecycle-observation.md#diagnostic-review-correction-validation)
+recorded 398/409 unit tests plus 5 integration tests each and 19 targeted AJ2
+feature-enabled tests. The [stylesheet status correction validation](platform/aj2-document-load-completion-and-lifecycle-observation.md#stylesheet-status-correction-validation)
+records 399/410 unit tests plus 5 integration tests each and 20 targeted AJ2
+feature-enabled tests after adding the concurrent completion-message regression.
+These are separate recorded runs, not fresh qualification of subsequent edits.
+Full CI still fails nine native Chromium ownership tests,
+reproduced on the clean exact base; the qualification record retains that failure
+and manual visual limits. No response eligibility, complete assembly, new
+stylesheet selection/import semantics or readiness/events are claimed. AJ3 #1134
+owns response applicability and 204/205 active-document preservation. Character
+encoding, integrated resource-backed conformance and the other AJ1/platform gaps
+remain open; this entry does not close Milestone AJ.
+
 AJ1 architecture contract (2026-11-22, #1132):
 
 The [static document loading and page assembly contract](platform/aj1-static-document-loading-and-page-assembly-contract.md)
@@ -669,8 +698,8 @@ redirects, AI7 broader failures, AI8 aggregate metadata, and AI9 networking
 conformance remain open. No cache or security enforcement is claimed.
 
 The eager navigation reset and generation/history architecture are preserved.
-**204/205 active-document preservation is not implemented** (AJ2 #1133 / AJ3
-#1134). HTML 304/206 preparation remains AJ3, CSS HTTP-status/range policy AJ7
+**204/205 active-document preservation is not implemented** (AJ3 #1134).
+HTML 304/206 preparation remains AJ3, CSS HTTP-status/range policy AJ7
 #1138, full image results/lifetimes AK4 #1145, and 304 merge/cache integration
 AT5 #1245 / AT6 #1246. CSS may still accept HTTP-error text/css and existing
 HTML/CSS may misuse partial responses. AI3 neither labels those behaviors

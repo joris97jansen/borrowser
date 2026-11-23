@@ -203,6 +203,15 @@ inputs without a new loader or eager style stage. AJ1 is documentation only;
 its source/status and known implementation gaps are explicit in the contract
 and [feature-gap tracker](../engine-feature-gap-tracker.md).
 
+[AJ2](../platform/aj2-document-load-completion-and-lifecycle-observation.md)
+retains accepted document body completion and typed fatal causes within the
+existing load. Its tab-private query derives current supported input settlement
+from committed parser/document facts and ordered slot/request/runtime state.
+Invariant errors remain distinct from pending work and unavailable evidence.
+Mechanical input settlement does not certify response eligibility or assembly;
+accepted rendering still requires AC's actual frame/artifact checks. Bounded
+redacted Debug observes the existing owners without a public loader API.
+
 # 📤 Message Bus (CoreCommand / CoreEvent)
 
 At the heart of the engine is a **message-driven architecture**.

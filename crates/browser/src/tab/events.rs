@@ -1,4 +1,7 @@
-use super::{Tab, state::DocumentParseStatus};
+use super::{
+    Tab,
+    state::{DocumentLoadFailure, DocumentParseStatus},
+};
 use crate::dom_store::{
     DomIdentityResolutionError, DomMutationSnapshotInvariantError, DomMutationSnapshotLimits,
     DomPatchError,
@@ -50,20 +53,13 @@ impl Tab {
                 request_id,
                 stylesheet_slot_id: None,
                 kind: ResourceKind::Html,
-                url,
+                url: _,
                 error_kind,
                 response,
-                body: _,
-                error,
+                body,
+                error: _,
             } if self.is_current(tab_id, request_id) => {
-                self.on_html_network_error(
-                    url,
-                    error_kind,
-                    response
-                        .as_ref()
-                        .and_then(net::NetworkResponseInfo::status_code),
-                    error,
-                );
+                self.on_html_network_error(error_kind, response, body);
             }
 
             CoreEvent::DomPatchUpdate {
@@ -86,7 +82,7 @@ impl Tab {
                 request_id,
                 result,
             } if self.is_current(tab_id, request_id) => match result {
-                Err(error) => self.fail_document(format!("Document parsing failed: {error:?}")),
+                Err(error) => self.fail_document(DocumentLoadFailure::Parser(error)),
                 Ok(completion) => {
                     if self.document_load.parse_status != DocumentParseStatus::Pending
                         || self.dom_handle != Some(completion.handle)
@@ -98,9 +94,13 @@ impl Tab {
                         self.on_document_publication_failure(failure.clone());
                         return Err(failure);
                     }
+                    if self.document_load.body_completion.is_none() {
+                        self.fail_document(DocumentLoadFailure::ParserCompletionBeforeBody);
+                        return Err(DocumentPublicationFailure::InvariantViolation);
+                    }
                     self.document_load.parse_status = DocumentParseStatus::Complete;
-                    self.update_loading();
-                    self.update_document_progress();
+                    let settlement = self.update_loading();
+                    self.update_document_progress(settlement);
                     self.poke_redraw();
                 }
             },
@@ -359,8 +359,8 @@ impl Tab {
             .seed_input_values_from_dom(&mut self.document_input.input_values);
         self.page.update_visible_text_cache();
         self.discover_resources(request_id);
-        self.update_loading();
-        self.update_document_progress();
+        let settlement = self.update_loading();
+        self.update_document_progress(settlement);
         self.request_dom_publication_render_work(render_work);
         Ok(())
     }
@@ -387,7 +387,17 @@ impl Tab {
         )
     }
 
-    fn update_document_progress(&mut self) {
+    fn update_document_progress(
+        &mut self,
+        settlement: super::load_observation::StaticInputSettlement,
+    ) {
+        if matches!(
+            settlement,
+            super::load_observation::StaticInputSettlement::Failed
+                | super::load_observation::StaticInputSettlement::EvidenceUnavailable
+        ) {
+            return;
+        }
         let pending = self.page.pending_count();
         let phase = if self.document_load.parse_status == DocumentParseStatus::Complete {
             "Document parsed"
@@ -409,7 +419,7 @@ impl Tab {
     }
 
     fn on_document_publication_failure(&mut self, failure: DocumentPublicationFailure) {
-        self.fail_document(format!("Document publication failed: {failure:?}"));
+        self.fail_document(DocumentLoadFailure::Publication(failure));
     }
 }
 

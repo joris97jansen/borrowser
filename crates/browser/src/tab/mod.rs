@@ -20,6 +20,7 @@ mod dom_style;
 mod events;
 mod html;
 mod image;
+mod load_observation;
 mod nav;
 mod state;
 mod status;

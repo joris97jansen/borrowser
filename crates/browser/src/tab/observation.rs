@@ -98,6 +98,11 @@ impl Tab {
         ctx: &egui::Context,
         input: egui::RawInput,
     ) -> Result<CompletedPageFrame<'tab>, FrameObservationError> {
+        match self.static_input_settlement() {
+            Ok(super::load_observation::StaticInputSettlement::SettledInputsOnly) => {}
+            Ok(_) => return Err(FrameObservationError::IncompleteDocument),
+            Err(_) => return Err(FrameObservationError::InvalidArtifacts),
+        }
         if self.document_load.parse_status != DocumentParseStatus::Complete
             || self.dom_handle.is_none()
             || self.page.dom.is_none()

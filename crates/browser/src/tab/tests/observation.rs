@@ -21,11 +21,23 @@ fn published() -> (Tab, HtmlParseCompletion) {
         ),
     })
     .unwrap();
-    let parsed = html::parse_document(
-        "<!doctype html><div id='x' style='color:#123456;width:32px;height:16px'></div>",
-        html::HtmlParseOptions::default(),
-    )
+    let markup = "<!doctype html><div id='x' style='color:#123456;width:32px;height:16px'></div>";
+    tab.on_core_event(CoreEvent::NetworkChunk {
+        tab_id: tab.tab_id,
+        request_id: tab.nav_gen,
+        stylesheet_slot_id: None,
+        kind: core_types::ResourceKind::Html,
+        url: tab
+            .document_load
+            .response
+            .as_ref()
+            .unwrap()
+            .requested_url()
+            .into(),
+        bytes: markup.as_bytes().to_vec(),
+    })
     .unwrap();
+    let parsed = html::parse_document(markup, html::HtmlParseOptions::default()).unwrap();
     let publication = no_quirks_patch_publication_from_output(parsed);
     let completion = HtmlParseCompletion {
         handle: publication.handle,
@@ -49,6 +61,7 @@ fn finish(
     tab: &mut Tab,
     completion: HtmlParseCompletion,
 ) -> Result<(), bus::DocumentPublicationFailure> {
+    super::support::complete_document_body(tab);
     tab.on_core_event(CoreEvent::HtmlParseFinished {
         tab_id: 1,
         request_id: tab.nav_gen,
