@@ -197,6 +197,7 @@ fn history_accept_document(
     })
     .unwrap();
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        diagnostics: Some(super::support::finalized_parser_diagnostics()),
         decode_report: Some(html::internal::HtmlDecodeReport {
             eof_processed: true,
             replacements: Default::default(),
@@ -984,6 +985,7 @@ fn redirected_document_response_updates_tab_base_url_and_status() {
     .unwrap();
 
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        diagnostics: Some(super::support::finalized_parser_diagnostics()),
         decode_report: Some(html::internal::HtmlDecodeReport {
             eof_processed: true,
             replacements: Default::default(),

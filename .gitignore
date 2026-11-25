@@ -4,4 +4,5 @@ __pycache__/
 /fuzz/target
 /fuzz/artifacts
 WORKFLOW.md
+WORKFLOW_v2.md
 .env

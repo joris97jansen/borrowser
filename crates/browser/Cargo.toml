@@ -35,3 +35,7 @@ rustls-pemfile = "2"
 [[example]]
 name = "ai5_abort_probe"
 required-features = ["conformance-observation"]
+
+[[example]]
+name = "aj5_document_probe"
+required-features = ["conformance-observation"]

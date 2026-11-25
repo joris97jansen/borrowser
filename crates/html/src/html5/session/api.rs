@@ -32,6 +32,7 @@ pub struct Html5ParseSession {
     pub(super) ctx: DocumentParseContext,
     pub(super) decoder: ByteStreamDecoder,
     decoder_eof_processed: bool,
+    finish_succeeded: bool,
     pub(super) input: Input,
     pub(super) tokenizer: Html5Tokenizer,
     pub(super) builder: Html5TreeBuilder,
@@ -115,6 +116,7 @@ impl Html5ParseSession {
             ctx,
             decoder: ByteStreamDecoder::new(),
             decoder_eof_processed: false,
+            finish_succeeded: false,
             input: Input::new(),
             tokenizer,
             builder,
@@ -135,7 +137,11 @@ impl Html5ParseSession {
     }
 
     fn push_bytes_usable(&mut self, bytes: &[u8]) -> Result<(), Html5SessionError> {
-        if self.ctx.observation_enabled() {
+        self.finish_succeeded = false;
+        let observed = self.ctx.decoder_observation_required();
+        #[cfg(test)]
+        crate::html5::shared::record_decoder_path_for_test(observed);
+        if observed {
             let _ = self
                 .decoder
                 .push_bytes_with_context(bytes, &mut self.input, &mut self.ctx);
@@ -153,9 +159,9 @@ impl Html5ParseSession {
     }
 
     fn push_str_usable(&mut self, text: &str) -> Result<(), Html5SessionError> {
-        if self.ctx.observation_enabled() {
-            self.input
-                .push_str_observed(text, self.ctx.observation_position_index_mut());
+        self.finish_succeeded = false;
+        if let Some(index) = self.ctx.observation_position_index_mut() {
+            self.input.push_str_observed(text, Some(index));
         } else {
             self.input.push_str(text);
         }
@@ -173,12 +179,17 @@ impl Html5ParseSession {
     pub fn finish(&mut self) -> Result<(), Html5SessionError> {
         self.ensure_usable()?;
         let result = self.finish_usable();
-        self.latch_fatal(result)
+        self.latch_fatal(result)?;
+        self.finish_succeeded = true;
+        Ok(())
     }
 
     fn finish_usable(&mut self) -> Result<(), Html5SessionError> {
         self.pump_live_input()?;
-        if self.ctx.observation_enabled() {
+        let observed = self.ctx.decoder_observation_required();
+        #[cfg(test)]
+        crate::html5::shared::record_decoder_path_for_test(observed);
+        if observed {
             let _ = self
                 .decoder
                 .finish_with_context(&mut self.input, &mut self.ctx);
@@ -187,6 +198,10 @@ impl Html5ParseSession {
             self.ctx.record_decode_counts(replacements);
         }
         self.decoder_eof_processed = true;
+        #[cfg(test)]
+        if crate::html5::shared::FAIL_AFTER_DECODER_EOF.with(|f| f.replace(false)) {
+            return Err(EngineInvariantError.into());
+        }
         self.pump_live_input()?;
         let _ = self
             .tokenizer
@@ -198,6 +213,14 @@ impl Html5ParseSession {
         self.finalize_adapter_invariants()?;
         self.sync_debug_counters();
         Ok(())
+    }
+
+    #[cfg_attr(not(any(test, feature = "internal-api")), allow(dead_code))]
+    pub(crate) fn take_runtime_diagnostics(
+        &mut self,
+    ) -> Option<crate::html5::shared::HtmlParserDiagnosticReport> {
+        self.ctx
+            .take_runtime_diagnostics(self.input.as_str(), self.finish_succeeded)
     }
 
     pub fn take_patches(&mut self) -> Result<Vec<DomPatch>, Html5SessionError> {

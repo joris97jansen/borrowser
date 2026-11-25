@@ -256,6 +256,7 @@ fn aj4_stale_generation_cannot_replace_actual_decoder_evidence() {
     let report = tab.document_load.decode_report;
     let before = format!("{tab:?}");
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        diagnostics: None,
         tab_id: 1,
         request_id: old_id,
         result: Err(bus::HtmlParseFailure::InputClosed),

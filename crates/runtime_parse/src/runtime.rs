@@ -73,7 +73,7 @@ pub(crate) fn start_parse_runtime_with_policy_and_clock<C: PreviewClock + 'stati
         let mut unfinished: Vec<_> = htmls.keys().copied().collect();
         unfinished.sort_unstable();
         for (tab_id, request_id) in unfinished {
-            let state = htmls
+            let mut state = htmls
                 .remove(&(tab_id, request_id))
                 .expect("remaining session");
             emit_parse_finished(
@@ -82,6 +82,7 @@ pub(crate) fn start_parse_runtime_with_policy_and_clock<C: PreviewClock + 'stati
                 request_id,
                 Err(HtmlParseFailure::InputClosed),
                 Some(html::internal::html_decode_report(&state.parser)),
+                state.take_diagnostics(),
             );
         }
     });
@@ -99,7 +100,7 @@ fn handle_parse_start(
     let state = match result {
         Ok(state) => state,
         Err(error) => {
-            emit_parse_finished(evt_tx, tab_id, request_id, Err(error), None);
+            emit_parse_finished(evt_tx, tab_id, request_id, Err(error), None, None);
             return;
         }
     };
@@ -159,7 +160,7 @@ mod tests {
             handle_parse_done(&mut states, &tx, 3, 7);
             assert!(states.is_empty());
             assert!(
-                matches!(rx.try_recv().unwrap(), CoreEvent::HtmlParseFinished {
+                matches!(rx.try_recv().unwrap(), CoreEvent::HtmlParseFinished { diagnostics: None,
                 tab_id: 3, request_id: 7, result: Err(error), decode_report: None,
             } if error == failure)
             );

@@ -120,6 +120,36 @@ pub mod internal {
     #[cfg(feature = "html5")]
     pub use super::html5::shared::{HtmlDecodeReport, Utf8DecodeCounts};
 
+    #[cfg(feature = "html5")]
+    pub use super::html5::shared::{
+        DiagnosticCaptureFailure, DiagnosticCaptureStatus, EventPosition,
+        HtmlParserDiagnosticReport, InputCoordinateSpace, InputPosition, InputPreprocessingStage,
+        NormalizedInputPosition, NormalizedLineNumber, NormalizedScalarColumn,
+        ObservedInsertionMode, ParseErrorCode, ParseErrorEvent, ParserContextSummary,
+        ParserInputCompletion, ParserRecoveryAction, ParserStage, ParserTokenKind,
+        PositionUnavailableReason, SourceBytePosition, SourcePositionUnavailableReason,
+        TokenizerExtensionParseErrorCode, TreeConstructionParseErrorCode, WhatwgParseErrorCode,
+    };
+    #[cfg(feature = "html5")]
+    pub fn html_parser_with_runtime_diagnostics(
+        options: super::HtmlParseOptions,
+    ) -> Result<super::HtmlParser, super::HtmlParseError> {
+        super::HtmlParser::new_with_runtime_diagnostics(options)
+    }
+    #[cfg(feature = "html5")]
+    pub fn take_runtime_parser_diagnostics(
+        parser: &mut super::HtmlParser,
+    ) -> Option<HtmlParserDiagnosticReport> {
+        parser.take_runtime_diagnostics()
+    }
+    #[cfg(all(feature = "html5", feature = "parser-failure-injection"))]
+    pub fn html_parser_with_runtime_diagnostics_and_failure_injection(
+        options: super::HtmlParseOptions,
+        injection: ParserFailureInjection,
+    ) -> Result<super::HtmlParser, super::HtmlParseError> {
+        super::HtmlParser::new_with_runtime_diagnostics_and_failure_injection(options, injection)
+    }
+
     /// Read actual decoder evidence without draining or mutating a failed parser.
     #[cfg(feature = "html5")]
     pub fn html_decode_report(parser: &super::HtmlParser) -> HtmlDecodeReport {

@@ -1,0 +1,24 @@
+ParsedDocument {
+  phase: Parsed navigation_pending=false
+  scopes: tree=Final address=Committed diagnostics=parser-session
+  input: body_bytes_received=Some(26) normalized_available_bytes=Some(26) encoding=Some("utf-8-declared")
+  document_url: https-redacted
+  origin: tuple
+  fallback_base: https-redacted source=document-url
+  active_base: https-redacted selection=fallback
+  document_mode: Some(Quirks)
+  diagnostics: Reported
+  parser_input: Finalized capture=Complete
+  counts: semantics=exact total=2 retained=2 dropped=0
+  diagnostic[0]: occurrence=1 stage=Tokenizer code=Standard(DuplicateAttribute) position=known-normalized
+  diagnostic[1]: occurrence=2 stage=TreeConstruction code=TreeConstruction(ExpectedDoctypeBeforeNonSpaceToken) position=unavailable-parser-position
+  decoder: eof=true invalid=0 incomplete_at_eof=0
+  tree[0]: parent=None edge=root depth=0 kind=document namespace=none children=1 attributes=0
+  tree[1]: parent=Some(0) edge=ordinary depth=1 kind=element namespace=html children=2 attributes=0
+  tree[2]: parent=Some(1) edge=ordinary depth=2 kind=element namespace=html children=0 attributes=0
+  tree[3]: parent=Some(1) edge=ordinary depth=2 kind=element namespace=html children=1 attributes=0
+  tree[4]: parent=Some(3) edge=ordinary depth=3 kind=element namespace=html children=0 attributes=1
+  tree_observation: visited=5 complete=true node_limit=false depth_limit=false
+  truncation: diagnostic_rows_omitted=0 byte_limit=false record_limit=false
+  full_page_assembly: not-certified
+}

@@ -464,7 +464,12 @@ fn aj3_no_content_preserves_actual_document_history_and_artifacts() {
                 .unwrap()
                 .non_replacing_response
                 .clone();
-            let load = tab.document_load.clone();
+            let load = (
+                tab.document_load.response.clone(),
+                tab.document_load.bytes_received,
+                tab.document_load.body_completion,
+                tab.document_load.parse_status.clone(),
+            );
             let render = (
                 tab.pending_render_work.clone(),
                 tab.last_render_trace.clone(),
@@ -495,10 +500,10 @@ fn aj3_no_content_preserves_actual_document_history_and_artifacts() {
                     .non_replacing_response,
                 response
             );
-            assert_eq!(tab.document_load.response, load.response);
-            assert_eq!(tab.document_load.bytes_received, load.bytes_received);
-            assert_eq!(tab.document_load.body_completion, load.body_completion);
-            assert_eq!(tab.document_load.parse_status, load.parse_status);
+            assert_eq!(tab.document_load.response, load.0);
+            assert_eq!(tab.document_load.bytes_received, load.1);
+            assert_eq!(tab.document_load.body_completion, load.2);
+            assert_eq!(tab.document_load.parse_status, load.3);
             assert_eq!(
                 (
                     tab.pending_render_work.clone(),
@@ -1150,6 +1155,7 @@ fn aj3_active_fatal_failure_does_not_fail_or_cancel_pending_replacement() {
     let active_id = tab.active_document_request_id().unwrap();
     let pending = submit(&mut tab, &commands, B);
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        diagnostics: None,
         decode_report: None,
         tab_id: 1,
         request_id: active_id,
@@ -1360,6 +1366,7 @@ fn aj3_fragment_cancellation_keeps_active_document_and_has_no_failure_overlay() 
     })
     .unwrap();
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        diagnostics: None,
         decode_report: None,
         tab_id: tab.tab_id,
         request_id: pending.request_id(),
@@ -1458,7 +1465,12 @@ fn aj3_empty_tab_terminal_does_not_hide_new_submission_feedback_or_claim_a_docum
         if status != 0 {
             assert_eq!(before, "Navigation completed • no document installed");
             assert!(matches!(terminal,Some(Ok(body)) if body.delivered_bytes()==0));
-            let load = tab.document_load.clone();
+            let load = (
+                tab.document_load.response.clone(),
+                tab.document_load.bytes_received,
+                tab.document_load.body_completion,
+                tab.document_load.parse_status.clone(),
+            );
             let artifacts = tab.page.retained_render_state_debug_snapshot();
             let render = (
                 tab.pending_render_work.clone(),
@@ -1479,10 +1491,10 @@ fn aj3_empty_tab_terminal_does_not_hide_new_submission_feedback_or_claim_a_docum
             assert_eq!(tab.active_document_request_id(), None);
             assert!(tab.page.dom.is_none());
             assert!(tab.history().is_empty());
-            assert_eq!(tab.document_load.response, load.response);
-            assert_eq!(tab.document_load.bytes_received, load.bytes_received);
-            assert_eq!(tab.document_load.body_completion, load.body_completion);
-            assert_eq!(tab.document_load.parse_status, load.parse_status);
+            assert_eq!(tab.document_load.response, load.0);
+            assert_eq!(tab.document_load.bytes_received, load.1);
+            assert_eq!(tab.document_load.body_completion, load.2);
+            assert_eq!(tab.document_load.parse_status, load.3);
             assert_eq!(tab.page.retained_render_state_debug_snapshot(), artifacts);
             assert_eq!(
                 (
@@ -1654,3 +1666,5 @@ fn aj3_fetch_cancellation_follows_browser_terminal_or_request_retirement() {
 }
 
 mod decoding;
+
+mod parsed_document;

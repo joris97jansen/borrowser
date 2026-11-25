@@ -12,6 +12,13 @@ mod input;
 mod observation;
 mod observation_model;
 mod reservation;
+mod runtime_diagnostics;
+#[cfg(any(test, feature = "internal-api"))]
+pub use runtime_diagnostics::DiagnosticCaptureStatus;
+pub(crate) use runtime_diagnostics::ParseErrorPositionSource;
+#[cfg(any(test, feature = "internal-api"))]
+pub use runtime_diagnostics::ParserInputCompletion;
+pub use runtime_diagnostics::{DiagnosticCaptureFailure, HtmlParserDiagnosticReport};
 mod span;
 mod token;
 
@@ -47,3 +54,17 @@ pub use reservation::ParserFailureInjection;
 pub(crate) use reservation::ParserReservationController;
 pub use span::{Span, TextSpan};
 pub use token::{Attribute, AttributeValue, ProcessingInstructionToken, TextValue, Token};
+
+#[cfg(test)]
+pub(crate) use runtime_diagnostics::{
+    PATH_WORK, record_decoder_path_for_test, record_token_path_for_test,
+};
+
+#[cfg(test)]
+thread_local! {pub(crate) static FAIL_AFTER_DECODER_EOF: std::cell::Cell<bool> = const {std::cell::Cell::new(false)};}
+
+#[cfg(test)]
+thread_local! {pub(crate) static NEXT_CAPTURE_FAILURE: std::cell::Cell<(bool,bool,Option<usize>)> = const {std::cell::Cell::new((false,false,None))};}
+
+#[cfg(test)]
+pub(crate) use runtime_diagnostics::LAST_WORK;

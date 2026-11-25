@@ -253,6 +253,7 @@ pub enum CoreEvent {
         tab_id: TabId,
         request_id: u64,
         decode_report: Option<html::internal::HtmlDecodeReport>,
+        diagnostics: Option<html::internal::HtmlParserDiagnosticReport>,
         result: Result<HtmlParseCompletion, HtmlParseFailure>,
     },
 

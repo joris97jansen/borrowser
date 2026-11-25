@@ -130,14 +130,14 @@ pub(crate) struct CapturedSurface<T> {
 }
 
 #[derive(Debug)]
-struct BoundedCapture<T> {
+pub(super) struct BoundedCapture<T> {
     capacity: Option<usize>,
-    items: Vec<T>,
+    pub(super) items: Vec<T>,
     dropped: u64,
 }
 
 impl<T> BoundedCapture<T> {
-    fn new(request: SurfaceCaptureRequest) -> Self {
+    pub(super) fn new(request: SurfaceCaptureRequest) -> Self {
         Self {
             capacity: request.capacity(),
             items: Vec::new(),
@@ -149,12 +149,12 @@ impl<T> BoundedCapture<T> {
         self.capacity.is_some()
     }
 
-    fn can_retain(&self) -> bool {
+    pub(super) fn can_retain(&self) -> bool {
         self.capacity
             .is_some_and(|capacity| self.items.len() < capacity)
     }
 
-    fn push_reserved(&mut self, item: T) {
+    pub(super) fn push_reserved(&mut self, item: T) {
         debug_assert!(self.can_retain());
         self.items.push(item);
     }
@@ -179,13 +179,47 @@ impl<T> BoundedCapture<T> {
 }
 
 #[derive(Debug)]
+enum ParseErrorCapture {
+    Conformance(BoundedCapture<ParseErrorEvent>),
+    #[cfg_attr(not(any(test, feature = "internal-api")), allow(dead_code))]
+    Runtime(super::runtime_diagnostics::RuntimeDiagnosticCapture),
+}
+impl ParseErrorCapture {
+    fn conformance(&self) -> &BoundedCapture<ParseErrorEvent> {
+        match self {
+            Self::Conformance(capture) => capture,
+            Self::Runtime(_) => unreachable!("conformance-only access"),
+        }
+    }
+    fn conformance_mut(&mut self) -> &mut BoundedCapture<ParseErrorEvent> {
+        match self {
+            Self::Conformance(capture) => capture,
+            Self::Runtime(_) => unreachable!("conformance-only access"),
+        }
+    }
+    fn can_retain(&self) -> bool {
+        match self {
+            Self::Conformance(capture) => capture.can_retain(),
+            Self::Runtime(_) => false,
+        }
+    }
+    #[cfg(any(test, feature = "parser-conformance"))]
+    fn finish(self) -> CapturedSurface<ParseErrorEvent> {
+        match self {
+            Self::Conformance(capture) => capture.finish(),
+            Self::Runtime(_) => unreachable!("runtime capture has its own extraction"),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct ParserObservationRecorder {
     next_parse_error_occurrence: Option<u64>,
     next_implementation_diagnostic_occurrence: Option<u64>,
     next_tree_transition_occurrence: Option<u64>,
     next_unsupported_feature_occurrence: Option<u64>,
     tokens: BoundedCapture<ObservedToken>,
-    parse_errors: BoundedCapture<ParseErrorEvent>,
+    parse_errors: ParseErrorCapture,
     implementation_diagnostics: BoundedCapture<ImplementationDiagnosticEvent>,
     tree_transitions: BoundedCapture<TreeTransitionEvent>,
     unsupported_features: BoundedCapture<UnsupportedFeatureEvent>,
@@ -206,19 +240,146 @@ impl ParserObservationRecorder {
                 .implementation_diagnostics
                 .capacity()
                 .is_some_and(|capacity| capacity > 0);
-        Some(Self {
+        Some(Self::build(
+            config,
+            ParseErrorCapture::Conformance(BoundedCapture::new(config.parse_errors)),
+            position_requested.then(NormalizedPositionIndex::new),
+        ))
+    }
+
+    #[cfg_attr(not(any(test, feature = "internal-api")), allow(dead_code))]
+    pub(crate) fn new_runtime() -> Self {
+        Self::build(
+            ParserObservationConfig::default(),
+            ParseErrorCapture::Runtime(super::runtime_diagnostics::RuntimeDiagnosticCapture::new()),
+            None,
+        )
+    }
+
+    fn build(
+        config: ParserObservationConfig,
+        parse_errors: ParseErrorCapture,
+        position_index: Option<NormalizedPositionIndex>,
+    ) -> Self {
+        Self {
             next_parse_error_occurrence: Some(1),
             next_implementation_diagnostic_occurrence: Some(1),
             next_tree_transition_occurrence: Some(1),
             next_unsupported_feature_occurrence: Some(1),
             tokens: BoundedCapture::new(config.tokens),
-            parse_errors: BoundedCapture::new(config.parse_errors),
+            parse_errors,
             implementation_diagnostics: BoundedCapture::new(config.implementation_diagnostics),
             tree_transitions: BoundedCapture::new(config.tree_transitions),
             unsupported_features: BoundedCapture::new(config.unsupported_features),
-            position_index: position_requested.then(NormalizedPositionIndex::new),
+            position_index,
             failure: None,
-        })
+        }
+    }
+
+    #[cfg_attr(not(any(test, feature = "internal-api")), allow(dead_code))]
+    pub(crate) fn is_runtime(&self) -> bool {
+        matches!(self.parse_errors, ParseErrorCapture::Runtime(_))
+    }
+    pub(crate) fn decoder_observation_required(&self) -> bool {
+        self.position_index.is_some() || self.implementation_diagnostics.is_requested()
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn record_parse_error_source(
+        &mut self,
+        stage: super::ParserStage,
+        code: super::ParseErrorCode,
+        recovery: Option<super::ParserRecoveryAction>,
+        context: Option<super::ParserContextSummary>,
+        description: Option<&'static str>,
+        source: super::ParseErrorPositionSource<'_>,
+    ) {
+        if let ParseErrorCapture::Runtime(capture) = &mut self.parse_errors {
+            let Some(occurrence) = self.next_parse_error_occurrence else {
+                capture.fail(super::DiagnosticCaptureFailure::OccurrenceSequenceExhausted);
+                return;
+            };
+            self.next_parse_error_occurrence = occurrence.checked_add(1);
+            capture.record(
+                occurrence,
+                stage,
+                code,
+                recovery,
+                context,
+                description,
+                source,
+            );
+            if self.next_parse_error_occurrence.is_none() {
+                capture.fail(super::DiagnosticCaptureFailure::OccurrenceSequenceExhausted);
+            }
+            return;
+        }
+        let Some(occurrence) = self.reserve_parse_error() else {
+            return;
+        };
+        let position = match source {
+            super::ParseErrorPositionSource::Known { input, offset } => {
+                match self.resolve_position(
+                    input.as_str(),
+                    ObservationPositionSource::NormalizedOffset(offset),
+                ) {
+                    ObservationPositionResolution::Known(position) => {
+                        super::EventPosition::Known(position)
+                    }
+                    ObservationPositionResolution::GenuinelyUnavailable(reason) => {
+                        super::EventPosition::Unavailable(reason)
+                    }
+                    ObservationPositionResolution::InvariantFailure(_) => return,
+                }
+            }
+            super::ParseErrorPositionSource::Unavailable(reason) => {
+                super::EventPosition::Unavailable(reason)
+            }
+        };
+        self.retain_parse_error(ParseErrorEvent {
+            occurrence,
+            stage,
+            code,
+            recovery,
+            position,
+            context,
+            description,
+        });
+    }
+    #[cfg_attr(not(any(test, feature = "internal-api")), allow(dead_code))]
+    pub(crate) fn finish_runtime(
+        self,
+        input: &str,
+        finalized: bool,
+        total: u64,
+    ) -> super::HtmlParserDiagnosticReport {
+        let ParseErrorCapture::Runtime(capture) = self.parse_errors else {
+            unreachable!("runtime extraction checked before taking")
+        };
+        #[cfg(test)]
+        let capture = {
+            let mut capture = capture;
+            capture.work.position_index_present = self.position_index.is_some();
+            capture.work.position_checkpoints = self
+                .position_index
+                .as_ref()
+                .map_or(0, |i| i.checkpoints.len());
+            capture.work.unrelated_surfaces_requested = [
+                self.tokens.is_requested(),
+                self.implementation_diagnostics.is_requested(),
+                self.tree_transitions.is_requested(),
+                self.unsupported_features.is_requested(),
+            ]
+            .into_iter()
+            .filter(|v| *v)
+            .count();
+            capture
+        };
+        capture.finish(
+            input,
+            finalized,
+            total,
+            self.next_parse_error_occurrence.is_some(),
+        )
     }
 
     pub(crate) fn tokens_can_retain(&self) -> bool {
@@ -247,7 +408,7 @@ impl ParserObservationRecorder {
 
     /// Assign the next parse-error occurrence before applying capacity.
     pub(crate) fn reserve_parse_error(&mut self) -> Option<u64> {
-        if !self.parse_errors.is_requested() {
+        if !self.parse_errors.conformance().is_requested() {
             return None;
         }
         let Some(occurrence) = self.next_parse_error_occurrence else {
@@ -265,7 +426,7 @@ impl ParserObservationRecorder {
         if self.parse_errors.can_retain() {
             Some(occurrence)
         } else {
-            if !self.parse_errors.record_drop() {
+            if !self.parse_errors.conformance_mut().record_drop() {
                 self.record_invariant(ParserObservationInvariant::DroppedCountOverflow(
                     ObservationSurface::ParseErrors,
                 ));
@@ -276,7 +437,7 @@ impl ParserObservationRecorder {
     }
 
     pub(crate) fn retain_parse_error(&mut self, event: ParseErrorEvent) {
-        self.parse_errors.push_reserved(event);
+        self.parse_errors.conformance_mut().push_reserved(event);
         self.disable_position_index_if_exhausted();
     }
 
@@ -881,7 +1042,7 @@ mod tests {
         })
         .unwrap();
         recorder.next_parse_error_occurrence = Some(u64::MAX);
-        recorder.parse_errors.dropped = u64::MAX;
+        recorder.parse_errors.conformance_mut().dropped = u64::MAX;
 
         assert_eq!(recorder.reserve_parse_error(), None);
         assert_eq!(
@@ -938,7 +1099,7 @@ mod tests {
             ..ParserObservationConfig::default()
         })
         .unwrap();
-        recorder.parse_errors.dropped = u64::MAX;
+        recorder.parse_errors.conformance_mut().dropped = u64::MAX;
         assert_eq!(recorder.reserve_parse_error(), None);
         assert_eq!(
             recorder.finish().failure,

@@ -356,3 +356,8 @@ ordered canonical structural/href facts; Browser owns document URL and frozen
 base state and commits it with the materialized DOM. Addressing supplies the
 existing URL operations. Raw head metadata does not select the active base.
 Template associations and foreign namespaces preserve their existing boundaries.
+
+AJ5's runtime diagnostic capture uses the existing canonical parser event fanout.
+HTML validates normalized position offsets at emission and resolves retained
+coordinates only at terminal extraction; Browser neither reconstructs errors nor
+interprets HTML recovery. See the [candidate AJ5 contract](../platform/aj5-parsed-document-and-parser-diagnostics.md).

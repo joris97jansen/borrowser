@@ -154,7 +154,7 @@ pub(super) enum DocumentEncodingDecision {
     EmptyCharsetDefault,
 }
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub(super) struct DocumentLoadState {
     // Private: only activation installs the actual admitted request.
     request: Option<FetchRequest>,
@@ -163,6 +163,7 @@ pub(super) struct DocumentLoadState {
     pub(super) response: Option<NetworkResponseInfo>,
     pub(super) encoding_decision: Option<DocumentEncodingDecision>,
     pub(super) decode_report: Option<html::internal::HtmlDecodeReport>,
+    pub(super) diagnostics: Option<html::internal::HtmlParserDiagnosticReport>,
     pub(super) bytes_received: usize,
     // Only a matching, validated main-document NetworkDone installs this fact.
     // It proves neither parser acknowledgement nor response applicability.
@@ -171,6 +172,12 @@ pub(super) struct DocumentLoadState {
 }
 
 impl DocumentLoadState {
+    pub(super) fn has_finalized_diagnostics(&self) -> bool {
+        self.diagnostics
+            .as_ref()
+            .is_some_and(|r| r.completion() == html::internal::ParserInputCompletion::Finalized)
+    }
+
     pub(super) fn failure(&self) -> Option<&DocumentLoadFailure> {
         match &self.parse_status {
             DocumentParseStatus::Failed(failure) => Some(failure),

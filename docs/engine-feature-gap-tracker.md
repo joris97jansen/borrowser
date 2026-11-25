@@ -2004,3 +2004,16 @@ checkpoints and the separate raw-205 loop, including intervening internal reads.
 Fresh correction qualification is recorded in the AI7 contract; the earlier
 candidate's native failure evidence is preserved, and final committed-candidate
 gates and full CI remain pending.
+
+## AJ5 local implementation candidate (#1136)
+
+Canonical bounded recoverable diagnostics now have a candidate parser → runtime
+terminal → Browser ownership path, plus bounded redacted parsed-document
+snapshots and borrowed exact fixture observations. The existing final response
+URL, origin, frozen base, parser mode and identity integration is exercised at
+production boundaries. See [AJ5 contract](platform/aj5-parsed-document-and-parser-diagnostics.md)
+for accounting, lifecycle, privacy, resource limits and qualification obligations.
+This entry does not claim implementation approval, complete local qualification,
+hosted qualification, merge or issue closure. AJ6 stylesheet dependency discovery
+and full static assembly remain separate gaps. AJ4 UTF-8/BOM/meta limitations,
+unsupported addressing contexts and security-policy limitations remain unchanged.

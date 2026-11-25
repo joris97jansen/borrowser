@@ -415,3 +415,86 @@ fn atom_lookup_path_does_not_allocate() {
 
     assert_eq!((a1, b1, r1), (a2, b2, r2));
 }
+
+/// Capture adds bounded event storage, never a document-sized position index.
+#[cfg(feature = "internal-api")]
+#[test]
+fn aj5_runtime_diagnostic_capture_has_constant_auxiliary_allocation() {
+    fn measure(input: &[u8], capture: bool) -> ((usize, usize, usize), u64, usize) {
+        let mut options = HtmlParseOptions::default();
+        options.error_policy.track = false;
+        options.error_policy.max_stored = 0;
+        options.error_policy.track_counters = true;
+        let _guard = AllocGuard::new();
+        let mut p = if capture {
+            html::internal::html_parser_with_runtime_diagnostics(options)
+        } else {
+            HtmlParser::new(options)
+        }
+        .unwrap();
+        for chunk in input.chunks(1024) {
+            p.push_bytes(chunk).unwrap();
+            p.pump().unwrap();
+            drop(p.take_patches().unwrap());
+        }
+        p.finish().unwrap();
+        drop(p.take_patches().unwrap());
+        let report = html::internal::take_runtime_parser_diagnostics(&mut p);
+        let counts = alloc_counts();
+        let total = p.counters().parse_errors;
+        let retained = report.as_ref().map_or(0, |r| r.retained());
+        if capture {
+            let r = report.unwrap();
+            assert_eq!(r.total(), total);
+            assert!(r.retained() <= 128);
+            assert_eq!(r.total(), r.retained() as u64 + r.dropped());
+        }
+        (counts, total, retained)
+    }
+    for size in [65536, 1048576] {
+        for kind in ["clean", "late", "heavy"] {
+            let mut input = String::from("<!doctype html><body>");
+            if kind == "heavy" {
+                let group = format!(
+                    "<div>{}</div>",
+                    "<span a='first' a='second'></span>".repeat(32)
+                );
+                while input.len() + group.len() <= size {
+                    input.push_str(&group);
+                }
+            }
+            let tail = if kind == "late" { "<p a=x a=y>" } else { "" };
+            input.extend(std::iter::repeat_n('\n', size - input.len() - tail.len()));
+            input.push_str(tail);
+            assert_eq!(input.len(), size);
+            let (plain, total, _) = measure(input.as_bytes(), false);
+            let (captured, actual, retained) = measure(input.as_bytes(), true);
+            assert_eq!(total, actual);
+            const RETENTION: usize = 128;
+            let extra_events = if total == 0 { 0 } else { 2 };
+            // Private-module work tests establish PendingParseError <= public
+            // ParseErrorEvent. Bound pending128 + the actual output rows.
+            let extra_bytes = if total == 0 {
+                0
+            } else {
+                (RETENTION + retained) * std::mem::size_of::<html::internal::ParseErrorEvent>()
+            };
+            assert_eq!(retained, (total as usize).min(RETENTION));
+            assert!(
+                captured.0 <= plain.0 + extra_events,
+                "auxiliary allocation events {plain:?} {captured:?}"
+            );
+            assert!(
+                captured.1 <= plain.1 + extra_bytes,
+                "auxiliary allocation bytes {plain:?} {captured:?}"
+            );
+            assert_eq!(captured.2, plain.2, "capture must not grow repeatedly");
+            if total == 0 {
+                assert_eq!(captured, plain, "clean capture reserves no event storage");
+            }
+            eprintln!(
+                "AJ5_ALLOC size={size} kind={kind} plain={plain:?} captured={captured:?} total={total} retained={retained} type_bound={extra_bytes}"
+            );
+        }
+    }
+}

@@ -87,6 +87,34 @@ pub(crate) enum ConformanceFinalizationError {
 }
 
 impl HtmlParser {
+    #[cfg_attr(not(any(test, feature = "internal-api")), allow(dead_code))]
+    pub(crate) fn new_with_runtime_diagnostics(
+        options: HtmlParseOptions,
+    ) -> Result<Self, HtmlParseError> {
+        let mut ctx = DocumentParseContext::with_error_policy(options.error_policy.into());
+        ctx.install_runtime_diagnostics();
+        Self::with_context(options, ctx)
+    }
+    #[cfg(all(
+        feature = "parser-failure-injection",
+        any(test, feature = "internal-api")
+    ))]
+    pub(crate) fn new_with_runtime_diagnostics_and_failure_injection(
+        options: HtmlParseOptions,
+        injection: ParserFailureInjection,
+    ) -> Result<Self, HtmlParseError> {
+        let mut ctx =
+            DocumentParseContext::with_failure_injection(options.error_policy.into(), injection);
+        ctx.install_runtime_diagnostics();
+        Self::with_context(options, ctx)
+    }
+    #[cfg_attr(not(any(test, feature = "internal-api")), allow(dead_code))]
+    pub(crate) fn take_runtime_diagnostics(
+        &mut self,
+    ) -> Option<crate::html5::shared::HtmlParserDiagnosticReport> {
+        self.session.take_runtime_diagnostics()
+    }
+
     /// Create a new streaming HTML parser backed by the HTML5 pipeline.
     pub fn new(options: HtmlParseOptions) -> Result<Self, HtmlParseError> {
         let ctx = DocumentParseContext::with_error_policy(options.error_policy.into());

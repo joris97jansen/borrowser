@@ -2237,3 +2237,5 @@ fn aj4_decoder_report_survives_parser_poisoning_after_eof() {
     assert!(parser.finish().is_err());
     assert_eq!(parser.decode_report(), report);
 }
+
+mod diagnostics;

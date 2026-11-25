@@ -162,7 +162,7 @@ jobs:
         run: |
           set -euo pipefail
           # Listing compiles the same target without executing its tests.
-          cargo test -p html --test alloc_guards --locked --features html5,count-alloc -- --list --format terse --color never \
+          cargo test -p html --test alloc_guards --locked --features html5,count-alloc,internal-api -- --list --format terse --color never \
             2>&1 | tee "$ALLOCATION_EVIDENCE_DIR/alloc_guards-list.log"
           sed -n 's/: test$//p' "$ALLOCATION_EVIDENCE_DIR/alloc_guards-list.log" \
             | LC_ALL=C sort > "$ALLOCATION_EVIDENCE_DIR/alloc_guards-listed.txt"
@@ -176,10 +176,11 @@ jobs:
           parse_document_plain_text_allocation_is_bounded
           parse_document_rawtext_allocation_is_bounded
           streaming_parser_chunk_sizes_do_not_cause_pathological_alloc_growth
+          aj5_runtime_diagnostic_capture_has_constant_auxiliary_allocation
           REQUIRED_GUARDS
           test_count=$(wc -l < "$ALLOCATION_EVIDENCE_DIR/alloc_guards-listed.txt")
           test_count=$((test_count))
-          cargo test -p html --test alloc_guards --locked --features html5,count-alloc -- --test-threads=1 --nocapture --format pretty --color never \
+          cargo test -p html --test alloc_guards --locked --features html5,count-alloc,internal-api -- --test-threads=1 --nocapture --format pretty --color never \
             2>&1 | tee "$ALLOCATION_EVIDENCE_DIR/alloc_guards.log"
           # --nocapture may put measurements between a test's prefix and its ok.
           # Rust 1.92 integration tests annotate expected panics before the dots.

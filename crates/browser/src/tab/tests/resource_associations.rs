@@ -1022,6 +1022,7 @@ fn resource_associations_parser_failure_retires_runtime_buffer_but_keeps_preview
     feed_partial_stylesheet(&mut tab, &rx, &runtime_tx, slot, &url);
 
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        diagnostics: None,
         decode_report: None,
         tab_id: tab.tab_id,
         request_id: generation,
@@ -1144,6 +1145,7 @@ fn resource_associations_completed_css_queued_before_parser_failure_still_applie
     // The worker's FIFO makes completion deterministic. Do not deliver its
     // decoded events to Browser until after the parser failure is committed.
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        diagnostics: None,
         decode_report: None,
         tab_id: tab.tab_id,
         request_id: generation,
@@ -1259,6 +1261,7 @@ fn resource_associations_rejected_css_queued_before_parser_failure_settles_witho
     runtime_tx.send(css_done).unwrap();
 
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        diagnostics: None,
         decode_report: None,
         tab_id: tab.tab_id,
         request_id: generation,
