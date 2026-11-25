@@ -3,6 +3,8 @@
 Fixtures use real Git, Cargo and libtest. A deadline-command fixture forwards
 commands or injects exit 124 without making tests wait eight minutes.
 No production qualification helper or alternative Rust test runner is involved.
+AJ5 path-ownership fixtures stub costly Cargo/smoke commands while executing the
+actual workflow shell, inventory tools and Git source safeguard.
 """
 
 import copy
@@ -14,6 +16,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import textwrap
 import tomllib
@@ -74,29 +77,259 @@ def bash(program, environment, cwd=None):
 
 class Aj5PersistentQualification(unittest.TestCase):
     def test_aj5_feature_loops_and_artifacts_are_owned(self):
-        workflow=(Path(__file__).resolve().parents[3]/".github/workflows/ci.yml").read_text()
-        for profile in ("debug","release"):
-            self.assertIn(f"ci_artifacts/aj5-{profile}/",workflow)
-            self.assertIn(f'ci_artifacts/aj5-{profile}/$features-listed.txt',workflow)
-            self.assertIn(f'ci_artifacts/aj5-{profile}/$features-executed.txt',workflow)
+        workflow = WORKFLOW
         for profile, owner in (("debug", "rust_correctness"), ("release", "rust_release")):
             block = job_block(owner)
+            step_name = Aj5EvidenceOwnership.STEPS[profile]
+            program = workflow_program(step_name)
+            self.assertIn("set -euo pipefail", program)
+            self.assertIn("args=(--locked)", program)
+            self.assertIn(f'evidence="$RUNNER_TEMP/aj5-{profile}"', program)
+            self.assertIn('mkdir -p "$evidence"', program)
+            for suffix in ("listed.log", "listed.txt", "execution.log", "executed.txt"):
+                self.assertIn(f'"$evidence/$features-{suffix}"', program)
+            self.assertNotIn("ci_artifacts/aj5-", block)
+            step = block.split("      - name: " + step_name + "\n", 1)[1].split("      - name:", 1)[0]
+            self.assertIn(f"timeout-minutes: {15 if profile == 'debug' else 20}", step)
+            self.assertIn("shell: bash", step)
+            self.assertNotIn("continue-on-error", step)
             artifact = block.split("      - name: Retain AJ5 " + profile + " evidence\n", 1)[1]
             self.assertIn("        if: always()", artifact)
             self.assertIn("uses: actions/upload-artifact@v4", artifact)
-            self.assertIn("path: ci_artifacts/aj5-" + profile + "/", artifact)
+            self.assertIn("path: ${{ runner.temp }}/aj5-" + profile + "/", artifact)
+            self.assertIn("name: aj5-${{ github.job }}-${{ github.sha }}-${{ github.run_attempt }}", artifact)
             self.assertIn("if-no-files-found: error", artifact)
+            self.assertIn("retention-days: 14", artifact)
             self.assertIn("path: target/cargo-timings/", block)
         self.assertEqual(workflow.count('for features in default exact; do'),2)
-        self.assertEqual(workflow.count('args=(--features "browser/conformance-observation html/parser-conformance runtime_parse/parser-failure-injection")'),2)
+        self.assertEqual(workflow.count('args+=(--features "browser/conformance-observation html/parser-conformance runtime_parse/parser-failure-injection")'),2)
         for name in ("parser::tests::diagnostics::aj5_canonical_diagnostics","tests::diagnostics::aj5_runtime_diagnostics_are_finalized_and_partition_independent","tab::tests::document_response::parsed_document::aj5_authored_safe_and_exact_snapshots_and_parser_identities"):
             self.assertEqual(workflow.count("grep -Fx '"+name+"'"),2)
 
     def test_aj5_failure_path_smoke_uses_owned_supervision_and_retained_receipts(self):
         block=job_block("rust_release")
-        self.assertIn("python3 -I -B tools/perf/aj5_diagnostics_probe.py --smoke-binary target/release/examples/aj5_document_probe --smoke-evidence ci_artifacts/aj5-release/loopback",block)
-        self.assertIn("path: ci_artifacts/aj5-release/",block)
+        self.assertIn('python3 -I -B tools/perf/aj5_diagnostics_probe.py --smoke-binary target/release/examples/aj5_document_probe --smoke-evidence "$evidence/loopback"', block)
+        self.assertIn("path: ${{ runner.temp }}/aj5-release/", block)
 
+
+
+class Aj5EvidenceOwnership(unittest.TestCase):
+    """Execute real workflow shell and Git; stub only costly Cargo/smoke work.
+
+    These fixtures prove path ownership and fail-closed behavior, not Rust test
+    success or native cleanup. GitHub artifact actions need hosted qualification.
+    """
+
+    STEPS = {
+        "debug": "AJ5 production and exact-observation regression evidence",
+        "release": "AJ5 optimized production retention and loopback qualification",
+    }
+    REQUIRED = (
+        "parser::tests::diagnostics::aj5_canonical_diagnostics",
+        "tests::diagnostics::aj5_runtime_diagnostics_are_finalized_and_partition_independent",
+        "tab::tests::document_response::parsed_document::aj5_authored_safe_and_exact_snapshots_and_parser_identities",
+    )
+    SMOKES = ("success", "before-navigation", "after-navigation", "after-first-terminal", "abort")
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="aj5-evidence-tests-")
+        self.addCleanup(temporary.cleanup)
+        self.directory = Path(temporary.name).resolve()
+        self.repo = self.directory / "source checkout"
+        self.runner = self.directory / "runner temp"
+        self.binaries = self.directory / "bin"
+        for directory in (self.repo, self.runner, self.binaries):
+            directory.mkdir()
+        self.output = self.runner / "github-output"
+        self.calls = self.runner / "command-calls.jsonl"
+        self.names = (*self.REQUIRED, "parser::tests::diagnostics::aj5_fixture_extra")
+        self.environment = dict(
+            GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
+            GIT_AUTHOR_NAME="Fixture", GIT_AUTHOR_EMAIL="fixture@example.invalid",
+            GIT_COMMITTER_NAME="Fixture", GIT_COMMITTER_EMAIL="fixture@example.invalid",
+            GIT_AUTHOR_DATE="2001-01-01T00:00:00+0000",
+            GIT_COMMITTER_DATE="2001-01-01T00:00:00+0000",
+            RUNNER_TEMP=str(self.runner), GITHUB_OUTPUT=str(self.output),
+            GITHUB_EVENT_NAME="pull_request", PYTHONDONTWRITEBYTECODE="1",
+            AJ5_FIXTURE_NAMES=json.dumps(self.names), AJ5_FIXTURE_SMOKES=json.dumps(self.SMOKES),
+            AJ5_FIXTURE_CALLS=str(self.calls), AJ5_FIXTURE_FAULT="", AJ5_FIXTURE_FEATURE="default",
+        )
+        self.git("init", "-q")
+        self.git("config", "core.hooksPath", "/dev/null")
+        self.git("config", "commit.gpgsign", "false")
+        (self.repo / "source.txt").write_text("unchanged fixture source\n")
+        self.git("add", "source.txt")
+        self.git("commit", "-qm", "Disposable AJ5 source fixture")
+        self.head = self.git("rev-parse", "HEAD")
+        self.tree = self.git("rev-parse", "HEAD^{tree}")
+        self.environment.update(GITHUB_SHA=self.head, PR_HEAD_SHA=self.head)
+        fixture = self.binaries / "command_fixture.py"
+        fixture.write_text(textwrap.dedent('''\
+            import json, os, sys
+            from pathlib import Path
+            tool, *args = sys.argv[1:]
+            with Path(os.environ["AJ5_FIXTURE_CALLS"]).open("a") as log:
+                log.write(json.dumps({"tool": tool, "args": args}) + "\\n")
+            fault = os.environ["AJ5_FIXTURE_FAULT"]
+            if tool == "python3":
+                assert args[:-1] == ["-I", "-B", "tools/perf/aj5_diagnostics_probe.py",
+                                    "--smoke-binary", "target/release/examples/aj5_document_probe", "--smoke-evidence"]
+                evidence = Path(args[-1])
+                evidence.mkdir()
+                for mode in json.loads(os.environ["AJ5_FIXTURE_SMOKES"]):
+                    (evidence / (mode + ".json")).write_text(json.dumps({"fixture_only": True, "mode": mode}) + "\\n")
+                    if fault == "smoke-failure":
+                        sys.exit(31)
+                sys.exit(0)
+            assert tool == "cargo"
+            if args[0] == "run":
+                print("test-owned standalone smoke fixture")
+                sys.exit(0)
+            assert args[0] == "test"
+            names = json.loads(os.environ["AJ5_FIXTURE_NAMES"])
+            feature = "exact" if "--features" in args else "default"
+            if feature != os.environ["AJ5_FIXTURE_FEATURE"]:
+                fault = ""
+            if "--list" in args:
+                if fault == "empty-list": names = []
+                if fault.startswith("missing-required-"): names.pop(int(fault.rsplit("-", 1)[1]))
+                for name in names: print(name + ": test")
+                sys.exit(29 if fault == "listing-failure" else 0)
+            if fault == "execution-mismatch": names.pop()
+            if fault == "execution-failure":
+                print("test-owned failing Cargo command", file=sys.stderr)
+                names = names[:1]
+            for name in names: print("test " + name + " ... ok")
+            sys.exit(23 if fault == "execution-failure" else 0)
+            '''))
+        for name in ("cargo", "python3"):
+            wrapper = self.binaries / name
+            wrapper.write_text("#!/bin/sh\nexec " + shlex.join([sys.executable, str(fixture), name]) + ' "$@"\n')
+            wrapper.chmod(0o755)
+        self.environment["PATH"] = str(self.binaries) + os.pathsep + os.environ["PATH"]
+
+    def git(self, *arguments):
+        return subprocess.run(["git", *arguments], cwd=self.repo,
+                              env=dict(os.environ, **self.environment), capture_output=True,
+                              text=True, timeout=30, check=True).stdout.strip()
+
+    def run_evidence(self, profile, *, fault="", feature="default", complete=False, runner=None):
+        program = workflow_program(self.STEPS[profile])
+        if complete:
+            program += "\n" + COMPLETE
+        environment = dict(self.environment, AJ5_FIXTURE_FAULT=fault, AJ5_FIXTURE_FEATURE=feature)
+        if runner is not None:
+            environment["RUNNER_TEMP"] = str(runner)
+        return bash(program, environment, self.repo)
+
+    def assert_external_evidence(self, profile):
+        evidence = self.runner / ("aj5-" + profile)
+        expected = {f"{feature}-{suffix}" for feature in ("default", "exact")
+                    for suffix in ("listed.log", "listed.txt", "execution.log", "executed.txt")}
+        if profile == "release":
+            expected.update("loopback/" + mode + ".json" for mode in self.SMOKES)
+        actual = {p.relative_to(evidence).as_posix() for p in evidence.rglob("*") if p.is_file()}
+        self.assertEqual(actual, expected)
+        self.assertFalse(evidence.is_relative_to(self.repo))
+        self.assertFalse((self.repo / "ci_artifacts").exists())
+        for feature in ("default", "exact"):
+            listed = (evidence / (feature + "-listed.txt")).read_text()
+            self.assertEqual(listed.splitlines(), sorted(self.names))
+            self.assertEqual(listed, (evidence / (feature + "-executed.txt")).read_text())
+        block = job_block("rust_correctness" if profile == "debug" else "rust_release")
+        self.assertIn("path: ${{ runner.temp }}/" + evidence.name + "/", block)
+        self.assertEqual(self.git("status", "--porcelain", "--untracked-files=all"), "")
+
+    def assert_commands(self, profile):
+        calls = [json.loads(line) for line in self.calls.read_text().splitlines()]
+        expected = []
+        for feature in ("default", "exact"):
+            args = ["test", "-p", "html", "-p", "runtime_parse", "-p", "browser", "--lib"]
+            if profile == "release":
+                args.append("--release")
+            args.append("--locked")
+            if feature == "exact":
+                args += ["--features", "browser/conformance-observation html/parser-conformance runtime_parse/parser-failure-injection"]
+            args += ["aj5_", "--"]
+            expected += [{"tool": "cargo", "args": args + ["--list"]},
+                         {"tool": "cargo", "args": args + ["--format", "pretty", "--color", "never"]}]
+        if profile == "release":
+            expected += [{"tool": "cargo", "args": ["run", "-p", "browser", "--example", "aj5_document_probe",
+                                                    "--features", "conformance-observation", "--release", "--locked"]},
+                         {"tool": "python3", "args": ["-I", "-B", "tools/perf/aj5_diagnostics_probe.py", "--smoke-binary",
+                                                      "target/release/examples/aj5_document_probe", "--smoke-evidence",
+                                                      str(self.runner / "aj5-release/loopback")]}]
+        self.assertEqual(calls, expected)
+
+    def test_debug_evidence_preserves_clean_source_and_qualified_outputs(self):
+        self.check_success("debug")
+
+    def test_release_and_smoke_evidence_preserve_clean_source_and_qualified_outputs(self):
+        self.check_success("release")
+
+    def check_success(self, profile):
+        result = self.run_evidence(profile)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_external_evidence(profile)
+        self.assert_commands(profile)
+        qualified = bash(COMPLETE, self.environment, self.repo)
+        self.assertEqual(qualified.returncode, 0, qualified.stdout + qualified.stderr)
+        self.assertEqual(self.output.read_text(), f"qualified_sha={self.head}\nqualified_tree={self.tree}\npr_head_tree={self.tree}\n")
+
+    def test_external_evidence_does_not_hide_untracked_source(self):
+        for profile in self.STEPS:
+            with self.subTest(profile=profile):
+                self.assertEqual(self.run_evidence(profile).returncode, 0)
+        (self.repo / "unrelated.txt").write_text("unexpected source\n")
+        self.assertNotEqual(bash(COMPLETE, self.environment, self.repo).returncode, 0)
+        self.assertFalse(self.output.exists())
+
+    def test_external_evidence_does_not_hide_tracked_source_modification(self):
+        self.assertEqual(self.run_evidence("debug").returncode, 0)
+        (self.repo / "source.txt").write_text("modified tracked source\n")
+        self.assertNotEqual(bash(COMPLETE, self.environment, self.repo).returncode, 0)
+        self.assertFalse(self.output.exists())
+
+    def test_external_evidence_does_not_hide_wrong_checkout(self):
+        self.assertEqual(self.run_evidence("release").returncode, 0)
+        (self.repo / "source.txt").write_text("different committed source\n")
+        self.git("add", "source.txt")
+        self.git("commit", "-qm", "Disposable different checkout")
+        self.assertNotEqual(self.git("rev-parse", "HEAD"), self.head)
+        self.assertEqual(self.git("status", "--porcelain", "--untracked-files=all"), "")
+        self.assertNotEqual(bash(COMPLETE, self.environment, self.repo).returncode, 0)
+        self.assertFalse(self.output.exists())
+
+    def test_inventory_and_command_failures_remain_nonzero_with_retained_evidence(self):
+        faults = ("empty-list", *("missing-required-" + str(i) for i in range(3)),
+                  "execution-mismatch", "listing-failure", "execution-failure")
+        for profile in self.STEPS:
+            for feature in ("default", "exact"):
+                for fault in faults:
+                    with self.subTest(profile=profile, feature=feature, fault=fault):
+                        runner = self.runner / (profile + "-" + feature + "-" + fault)
+                        runner.mkdir()
+                        result = self.run_evidence(profile, fault=fault, feature=feature, complete=True, runner=runner)
+                        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                        self.assertFalse(self.output.exists())
+                        evidence = runner / ("aj5-" + profile)
+                        self.assertTrue((evidence / (feature + "-listed.log")).is_file())
+                        if fault in ("execution-mismatch", "execution-failure"):
+                            self.assertTrue((evidence / (feature + "-execution.log")).is_file())
+                        if fault == "execution-failure":
+                            self.assertEqual(result.returncode, 23)
+                            self.assertIn("test-owned failing Cargo command", result.stderr)
+                        if fault == "listing-failure":
+                            self.assertEqual(result.returncode, 29)
+                        self.assertEqual(self.git("status", "--porcelain", "--untracked-files=all"), "")
+
+    def test_smoke_failure_retains_external_receipt_without_qualification(self):
+        result = self.run_evidence("release", fault="smoke-failure", complete=True)
+        self.assertEqual(result.returncode, 31, result.stdout + result.stderr)
+        receipt = self.runner / "aj5-release/loopback/success.json"
+        self.assertEqual(json.loads(receipt.read_text()), {"fixture_only": True, "mode": "success"})
+        self.assertFalse(self.output.exists())
+        self.assertEqual(self.git("status", "--porcelain", "--untracked-files=all"), "")
 
 
 class QualificationGate(unittest.TestCase):

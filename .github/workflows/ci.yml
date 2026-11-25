@@ -601,19 +601,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p ci_artifacts/aj5-debug
+          evidence="$RUNNER_TEMP/aj5-debug"
+          mkdir -p "$evidence"
           for features in default exact; do
-            args=()
-            if test "$features" = exact; then args=(--features "browser/conformance-observation html/parser-conformance runtime_parse/parser-failure-injection"); fi
-            cargo test -p html -p runtime_parse -p browser --lib --locked "${args[@]}" aj5_ -- --list > "ci_artifacts/aj5-debug/$features-listed.log"
-            grep -E '^.*aj5_.*: test$' "ci_artifacts/aj5-debug/$features-listed.log" | sed 's/: test$//' | sort > "ci_artifacts/aj5-debug/$features-listed.txt"
-            test -s "ci_artifacts/aj5-debug/$features-listed.txt"
-            grep -Fx 'parser::tests::diagnostics::aj5_canonical_diagnostics' "ci_artifacts/aj5-debug/$features-listed.txt"
-            grep -Fx 'tests::diagnostics::aj5_runtime_diagnostics_are_finalized_and_partition_independent' "ci_artifacts/aj5-debug/$features-listed.txt"
-            grep -Fx 'tab::tests::document_response::parsed_document::aj5_authored_safe_and_exact_snapshots_and_parser_identities' "ci_artifacts/aj5-debug/$features-listed.txt"
-            cargo test -p html -p runtime_parse -p browser --lib --locked "${args[@]}" aj5_ -- --format pretty --color never | tee "ci_artifacts/aj5-debug/$features-execution.log"
-            sed -nE 's/^test ([^ ]+) \.\.\. ok$/\1/p' "ci_artifacts/aj5-debug/$features-execution.log" | sort > "ci_artifacts/aj5-debug/$features-executed.txt"
-            cmp "ci_artifacts/aj5-debug/$features-listed.txt" "ci_artifacts/aj5-debug/$features-executed.txt"
+            args=(--locked)
+            if test "$features" = exact; then args+=(--features "browser/conformance-observation html/parser-conformance runtime_parse/parser-failure-injection"); fi
+            cargo test -p html -p runtime_parse -p browser --lib "${args[@]}" aj5_ -- --list > "$evidence/$features-listed.log"
+            grep -E '^.*aj5_.*: test$' "$evidence/$features-listed.log" | sed 's/: test$//' | sort > "$evidence/$features-listed.txt"
+            test -s "$evidence/$features-listed.txt"
+            grep -Fx 'parser::tests::diagnostics::aj5_canonical_diagnostics' "$evidence/$features-listed.txt"
+            grep -Fx 'tests::diagnostics::aj5_runtime_diagnostics_are_finalized_and_partition_independent' "$evidence/$features-listed.txt"
+            grep -Fx 'tab::tests::document_response::parsed_document::aj5_authored_safe_and_exact_snapshots_and_parser_identities' "$evidence/$features-listed.txt"
+            cargo test -p html -p runtime_parse -p browser --lib "${args[@]}" aj5_ -- --format pretty --color never | tee "$evidence/$features-execution.log"
+            sed -nE 's/^test ([^ ]+) \.\.\. ok$/\1/p' "$evidence/$features-execution.log" | sort > "$evidence/$features-executed.txt"
+            cmp "$evidence/$features-listed.txt" "$evidence/$features-executed.txt"
           done
       - name: Clippy (deny warnings)
         run: |
@@ -669,7 +670,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: aj5-${{ github.job }}-${{ github.sha }}-${{ github.run_attempt }}
-          path: ci_artifacts/aj5-debug/
+          path: ${{ runner.temp }}/aj5-debug/
           if-no-files-found: error
           retention-days: 14
 
@@ -710,22 +711,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p ci_artifacts/aj5-release
+          evidence="$RUNNER_TEMP/aj5-release"
+          mkdir -p "$evidence"
           for features in default exact; do
-            args=()
-            if test "$features" = exact; then args=(--features "browser/conformance-observation html/parser-conformance runtime_parse/parser-failure-injection"); fi
-            cargo test -p html -p runtime_parse -p browser --lib --release --locked "${args[@]}" aj5_ -- --list > "ci_artifacts/aj5-release/$features-listed.log"
-            grep -E '^.*aj5_.*: test$' "ci_artifacts/aj5-release/$features-listed.log" | sed 's/: test$//' | sort > "ci_artifacts/aj5-release/$features-listed.txt"
-            test -s "ci_artifacts/aj5-release/$features-listed.txt"
-            grep -Fx 'parser::tests::diagnostics::aj5_canonical_diagnostics' "ci_artifacts/aj5-release/$features-listed.txt"
-            grep -Fx 'tests::diagnostics::aj5_runtime_diagnostics_are_finalized_and_partition_independent' "ci_artifacts/aj5-release/$features-listed.txt"
-            grep -Fx 'tab::tests::document_response::parsed_document::aj5_authored_safe_and_exact_snapshots_and_parser_identities' "ci_artifacts/aj5-release/$features-listed.txt"
-            cargo test -p html -p runtime_parse -p browser --lib --release --locked "${args[@]}" aj5_ -- --format pretty --color never | tee "ci_artifacts/aj5-release/$features-execution.log"
-            sed -nE 's/^test ([^ ]+) \.\.\. ok$/\1/p' "ci_artifacts/aj5-release/$features-execution.log" | sort > "ci_artifacts/aj5-release/$features-executed.txt"
-            cmp "ci_artifacts/aj5-release/$features-listed.txt" "ci_artifacts/aj5-release/$features-executed.txt"
+            args=(--locked)
+            if test "$features" = exact; then args+=(--features "browser/conformance-observation html/parser-conformance runtime_parse/parser-failure-injection"); fi
+            cargo test -p html -p runtime_parse -p browser --lib --release "${args[@]}" aj5_ -- --list > "$evidence/$features-listed.log"
+            grep -E '^.*aj5_.*: test$' "$evidence/$features-listed.log" | sed 's/: test$//' | sort > "$evidence/$features-listed.txt"
+            test -s "$evidence/$features-listed.txt"
+            grep -Fx 'parser::tests::diagnostics::aj5_canonical_diagnostics' "$evidence/$features-listed.txt"
+            grep -Fx 'tests::diagnostics::aj5_runtime_diagnostics_are_finalized_and_partition_independent' "$evidence/$features-listed.txt"
+            grep -Fx 'tab::tests::document_response::parsed_document::aj5_authored_safe_and_exact_snapshots_and_parser_identities' "$evidence/$features-listed.txt"
+            cargo test -p html -p runtime_parse -p browser --lib --release "${args[@]}" aj5_ -- --format pretty --color never | tee "$evidence/$features-execution.log"
+            sed -nE 's/^test ([^ ]+) \.\.\. ok$/\1/p' "$evidence/$features-execution.log" | sort > "$evidence/$features-executed.txt"
+            cmp "$evidence/$features-listed.txt" "$evidence/$features-executed.txt"
           done
           cargo run -p browser --example aj5_document_probe --features conformance-observation --release --locked
-          python3 -I -B tools/perf/aj5_diagnostics_probe.py --smoke-binary target/release/examples/aj5_document_probe --smoke-evidence ci_artifacts/aj5-release/loopback
+          python3 -I -B tools/perf/aj5_diagnostics_probe.py --smoke-binary target/release/examples/aj5_document_probe --smoke-evidence "$evidence/loopback"
       - name: AI5 bounded HTTP/HTTPS release-abort qualification
         timeout-minutes: 6
         # Builds the feature-qualified example once, reusing release dependency
@@ -749,7 +751,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: aj5-${{ github.job }}-${{ github.sha }}-${{ github.run_attempt }}
-          path: ci_artifacts/aj5-release/
+          path: ${{ runner.temp }}/aj5-release/
           if-no-files-found: error
           retention-days: 14
 
