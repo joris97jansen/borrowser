@@ -22,6 +22,13 @@ mod events;
 mod html;
 mod image;
 mod load_observation;
+mod parsed_document_observation;
+pub use parsed_document_observation::ParsedDocumentSnapshotError;
+#[cfg(feature = "conformance-observation")]
+pub use parsed_document_observation::{
+    DiagnosticAvailability, ParsedAddressScope, ParsedDocumentObservation, ParsedDocumentPhase,
+    ParsedTreeScope,
+};
 mod nav;
 mod state;
 mod status;

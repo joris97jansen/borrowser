@@ -68,6 +68,7 @@ fn finish(
 ) -> Result<(), bus::DocumentPublicationFailure> {
     super::support::complete_document_body(tab);
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        diagnostics: Some(super::support::finalized_parser_diagnostics()),
         decode_report: Some(html::internal::HtmlDecodeReport {
             eof_processed: true,
             replacements: Default::default(),
@@ -102,6 +103,7 @@ fn observation_requires_committed_publication_and_valid_completion() {
     ));
     let (mut tab, _, _commands) = published();
     tab.on_core_event(CoreEvent::HtmlParseFinished {
+        diagnostics: None,
         decode_report: None,
         tab_id: 1,
         request_id: tab.active_document_request_id().expect("admitted fixture"),

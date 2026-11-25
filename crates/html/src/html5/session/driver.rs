@@ -45,7 +45,10 @@ impl Html5ParseSession {
 
     pub(super) fn drain_token_granular_batch(&mut self) -> Result<DrainOutcome, Html5SessionError> {
         let processed = {
-            let batch = if self.ctx.observation_enabled() {
+            let observed = self.ctx.token_observation_requested();
+            #[cfg(test)]
+            crate::html5::shared::record_token_path_for_test(observed);
+            let batch = if observed {
                 self.tokenizer
                     .next_batch_observed(&mut self.input, &mut self.ctx)
             } else {
@@ -81,7 +84,10 @@ impl Html5ParseSession {
 
     pub(super) fn drain_all_queued_batches(&mut self) -> Result<DrainOutcome, Html5SessionError> {
         let (steps, failure) = {
-            let batch = if self.ctx.observation_enabled() {
+            let observed = self.ctx.token_observation_requested();
+            #[cfg(test)]
+            crate::html5::shared::record_token_path_for_test(observed);
+            let batch = if observed {
                 self.tokenizer
                     .next_batch_observed(&mut self.input, &mut self.ctx)
             } else {

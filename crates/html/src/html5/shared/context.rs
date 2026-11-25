@@ -288,6 +288,42 @@ impl DocumentParseContext {
             .and_then(ParserObservationRecorder::position_index_mut)
     }
 
+    #[cfg_attr(not(any(test, feature = "internal-api")), allow(dead_code))]
+    pub(crate) fn install_runtime_diagnostics(&mut self) {
+        self.error_policy.track_counters = true;
+        self.observations = Some(ParserObservationRecorder::new_runtime());
+    }
+    pub(crate) fn decoder_observation_required(&self) -> bool {
+        self.observations
+            .as_ref()
+            .is_some_and(ParserObservationRecorder::decoder_observation_required)
+    }
+    pub(crate) fn token_observation_requested(&self) -> bool {
+        self.observations
+            .as_ref()
+            .is_some_and(ParserObservationRecorder::tokens_requested)
+    }
+    #[cfg_attr(not(any(test, feature = "internal-api")), allow(dead_code))]
+    pub(crate) fn take_runtime_diagnostics(
+        &mut self,
+        input: &str,
+        finalized: bool,
+    ) -> Option<super::HtmlParserDiagnosticReport> {
+        if !self
+            .observations
+            .as_ref()
+            .is_some_and(ParserObservationRecorder::is_runtime)
+        {
+            return None;
+        }
+        Some(
+            self.observations
+                .take()
+                .expect("checked runtime capture")
+                .finish_runtime(input, finalized, self.counters.parse_errors),
+        )
+    }
+    #[cfg(any(test, feature = "parser-conformance"))]
     pub(crate) fn observation_enabled(&self) -> bool {
         self.observations.is_some()
     }

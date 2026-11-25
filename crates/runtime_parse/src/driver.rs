@@ -205,6 +205,7 @@ fn handle_runtime_failure(
         request_id,
         Err(failure),
         Some(html::internal::html_decode_report(&st.parser)),
+        st.take_diagnostics(),
     );
 }
 
@@ -322,6 +323,7 @@ pub(crate) fn handle_runtime_done(
             request_id,
             Err(HtmlParseFailure::Finalization(err)),
             Some(html::internal::html_decode_report(&st.parser)),
+            st.take_diagnostics(),
         );
         return;
     }
@@ -369,5 +371,6 @@ pub(crate) fn handle_runtime_done(
             document_mode,
         }),
         Some(html::internal::html_decode_report(&st.parser)),
+        st.take_diagnostics(),
     );
 }

@@ -72,6 +72,33 @@ def bash(program, environment, cwd=None):
                           capture_output=True, text=True, timeout=120)
 
 
+class Aj5PersistentQualification(unittest.TestCase):
+    def test_aj5_feature_loops_and_artifacts_are_owned(self):
+        workflow=(Path(__file__).resolve().parents[3]/".github/workflows/ci.yml").read_text()
+        for profile in ("debug","release"):
+            self.assertIn(f"ci_artifacts/aj5-{profile}/",workflow)
+            self.assertIn(f'ci_artifacts/aj5-{profile}/$features-listed.txt',workflow)
+            self.assertIn(f'ci_artifacts/aj5-{profile}/$features-executed.txt',workflow)
+        for profile, owner in (("debug", "rust_correctness"), ("release", "rust_release")):
+            block = job_block(owner)
+            artifact = block.split("      - name: Retain AJ5 " + profile + " evidence\n", 1)[1]
+            self.assertIn("        if: always()", artifact)
+            self.assertIn("uses: actions/upload-artifact@v4", artifact)
+            self.assertIn("path: ci_artifacts/aj5-" + profile + "/", artifact)
+            self.assertIn("if-no-files-found: error", artifact)
+            self.assertIn("path: target/cargo-timings/", block)
+        self.assertEqual(workflow.count('for features in default exact; do'),2)
+        self.assertEqual(workflow.count('args=(--features "browser/conformance-observation html/parser-conformance runtime_parse/parser-failure-injection")'),2)
+        for name in ("parser::tests::diagnostics::aj5_canonical_diagnostics","tests::diagnostics::aj5_runtime_diagnostics_are_finalized_and_partition_independent","tab::tests::document_response::parsed_document::aj5_authored_safe_and_exact_snapshots_and_parser_identities"):
+            self.assertEqual(workflow.count("grep -Fx '"+name+"'"),2)
+
+    def test_aj5_failure_path_smoke_uses_owned_supervision_and_retained_receipts(self):
+        block=job_block("rust_release")
+        self.assertIn("python3 -I -B tools/perf/aj5_diagnostics_probe.py --smoke-binary target/release/examples/aj5_document_probe --smoke-evidence ci_artifacts/aj5-release/loopback",block)
+        self.assertIn("path: ci_artifacts/aj5-release/",block)
+
+
+
 class QualificationGate(unittest.TestCase):
     def successful_results(self):
         results = {name: {"result": "success", "outputs": {}} for name in PREREQUISITES}
@@ -296,7 +323,8 @@ class QualificationGate(unittest.TestCase):
                 'cargo build --workspace --all-targets --features html5 --locked', 'make html-entities-check'],
             "rust_release": ['cargo build --workspace --release --locked', 'cargo build --workspace --release --features html5 --locked',
                              'make qualify-network-release', 'cargo bench -p html --bench html_bench --features html5 --no-run --locked',
-                             'make compile-css-benches'],
+                             'make compile-css-benches',
+                             'cargo run -p browser --example aj5_document_probe --features conformance-observation --release --locked'],
             "rust_conformance": ['cargo build -p borrowser-conformance --locked', 'make conformance-addressing', 'make conformance-ci'],
             "ag4_nonbillable": ['python -m pip install --require-hashes -r crates/conformance/aws/requirements.lock',
                                 'python -m unittest discover -s crates/conformance/aws/tests -v',

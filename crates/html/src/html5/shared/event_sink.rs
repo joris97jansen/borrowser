@@ -4,7 +4,7 @@ use super::{
     Counters, DiagnosticEventMetadata, ErrorOrigin, ErrorPolicy, EventPosition,
     ImplementationDiagnosticEvent, Input, InputPreprocessingStage, LegacyParseErrorCode,
     ObservationPositionResolution, ObservationPositionSource, ParseError, ParseErrorCode,
-    ParseErrorEvent, ParserContextSummary, ParserGuardrail, ParserGuardrailPayload,
+    ParseErrorPositionSource, ParserContextSummary, ParserGuardrail, ParserGuardrailPayload,
     ParserObservationRecorder, ParserRecoveryAction, ParserResourceLimit,
     ParserResourceLimitPayload, ParserStage, PositionUnavailableReason,
     TreeConstructionImplementationDiagnosticCode, TreeTransitionEvent, UnsupportedFeatureEvent,
@@ -64,17 +64,9 @@ impl<'a> ParserEventSink<'a> {
             recovery,
             context,
             description,
-            |recorder| match recorder.resolve_position(
-                input.as_str(),
-                ObservationPositionSource::NormalizedOffset(position),
-            ) {
-                ObservationPositionResolution::Known(position) => {
-                    Some(EventPosition::Known(position))
-                }
-                ObservationPositionResolution::GenuinelyUnavailable(reason) => {
-                    Some(EventPosition::Unavailable(reason))
-                }
-                ObservationPositionResolution::InvariantFailure(_) => None,
+            ParseErrorPositionSource::Known {
+                input,
+                offset: position,
             },
             legacy,
         );
@@ -93,11 +85,9 @@ impl<'a> ParserEventSink<'a> {
             recovery,
             Some(context),
             description,
-            |_| {
-                Some(EventPosition::Unavailable(
-                    PositionUnavailableReason::ParserDidNotProvidePosition,
-                ))
-            },
+            ParseErrorPositionSource::Unavailable(
+                PositionUnavailableReason::ParserDidNotProvidePosition,
+            ),
             None,
         );
     }
@@ -113,26 +103,22 @@ impl<'a> ParserEventSink<'a> {
         recovery: Option<ParserRecoveryAction>,
         context: Option<ParserContextSummary>,
         description: Option<&'static str>,
-        resolve_position: impl FnOnce(&mut ParserObservationRecorder) -> Option<EventPosition>,
+        position: ParseErrorPositionSource<'_>,
         legacy: Option<LegacyDiagnosticProjection>,
     ) {
         if self.error_policy.track_counters {
             self.counters.parse_errors = self.counters.parse_errors.saturating_add(1);
         }
 
-        if let Some(recorder) = self.observations.as_mut()
-            && let Some(occurrence) = recorder.reserve_parse_error()
-            && let Some(position) = resolve_position(recorder)
-        {
-            recorder.retain_parse_error(ParseErrorEvent {
-                occurrence,
+        if let Some(recorder) = self.observations.as_mut() {
+            recorder.record_parse_error_source(
                 stage,
                 code,
                 recovery,
-                position,
                 context,
                 description,
-            });
+                position,
+            );
         }
 
         if let Some(legacy) = legacy {

@@ -40,6 +40,7 @@ REQUIRED_GUARDS = (
     "parse_document_plain_text_allocation_is_bounded",
     "parse_document_rawtext_allocation_is_bounded",
     "streaming_parser_chunk_sizes_do_not_cause_pathological_alloc_growth",
+    "aj5_runtime_diagnostic_capture_has_constant_auxiliary_allocation",
 )
 
 
@@ -59,7 +60,7 @@ def allocation_log(names=REQUIRED_GUARDS, *, passed=None, ignored=0, filtered=0,
                 "ok\n"
             )
             continue
-        output = "fixture allocation measurements\nok" if name == REQUIRED_GUARDS[-1] else "ok"
+        output = "fixture allocation measurements\nok" if name == "streaming_parser_chunk_sizes_do_not_cause_pathological_alloc_growth" else "ok"
         records.append(f"test {name} ... {output}\n")
     count = len(names) if passed is None else passed
     return (f"running {len(names)} tests\n" + "".join(records) +
@@ -301,12 +302,12 @@ class PerfQualification(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.evidence / "cargo-arguments.txt").read_text().splitlines(), [
             "test", "-p", "html", "--test", "alloc_guards", "--locked", "--features",
-            "html5,count-alloc", "--", "--test-threads=1", "--nocapture",
+            "html5,count-alloc,internal-api", "--", "--test-threads=1", "--nocapture",
             "--format", "pretty", "--color", "never",
         ])
         self.assertEqual((self.evidence / "cargo-list-arguments.txt").read_text().splitlines(), [
             "test", "-p", "html", "--test", "alloc_guards", "--locked", "--features",
-            "html5,count-alloc", "--", "--list", "--format", "terse", "--color", "never",
+            "html5,count-alloc,internal-api", "--", "--list", "--format", "terse", "--color", "never",
         ])
         self.assertEqual((self.evidence / "cargo-target.txt").read_text().strip(), str(self.target))
         log = (self.evidence / "alloc_guards.log").read_text()
@@ -334,20 +335,29 @@ class PerfQualification(unittest.TestCase):
         self.assert_incomplete_allocation_rejected(execution="")
 
     def test_ignored_required_guard_cannot_qualify(self):
-        log = allocation_log(passed=5, ignored=1).replace(
+        log = allocation_log(passed=len(REQUIRED_GUARDS)-1, ignored=1).replace(
             "fixture allocation measurements\nok", "ignored")
         self.assert_incomplete_allocation_rejected(execution=log)
 
     def test_filtered_required_guard_cannot_qualify(self):
-        self.assert_incomplete_allocation_rejected(execution=allocation_log(REQUIRED_GUARDS[:-1], filtered=1))
+        self.assert_incomplete_allocation_rejected(execution=allocation_log(tuple(n for n in REQUIRED_GUARDS if n != "streaming_parser_chunk_sizes_do_not_cause_pathological_alloc_growth"), filtered=1))
 
     def test_missing_streaming_guard_cannot_hide_behind_successful_summary(self):
-        self.assert_incomplete_allocation_rejected(execution=allocation_log(REQUIRED_GUARDS[:-1], passed=6))
+        self.assert_incomplete_allocation_rejected(execution=allocation_log(tuple(n for n in REQUIRED_GUARDS if n != "streaming_parser_chunk_sizes_do_not_cause_pathological_alloc_growth"), passed=len(REQUIRED_GUARDS)))
 
     def test_required_streaming_guard_must_be_in_compiled_inventory(self):
-        self.assert_incomplete_allocation_rejected(listed=REQUIRED_GUARDS[:-1],
-                                                  execution=allocation_log(REQUIRED_GUARDS[:-1]))
+        self.assert_incomplete_allocation_rejected(listed=tuple(n for n in REQUIRED_GUARDS if n != "streaming_parser_chunk_sizes_do_not_cause_pathological_alloc_growth"),
+                                                  execution=allocation_log(tuple(n for n in REQUIRED_GUARDS if n != "streaming_parser_chunk_sizes_do_not_cause_pathological_alloc_growth")))
         self.assertFalse((self.evidence / "cargo-arguments.txt").exists())
+
+    def test_aj5_guard_is_required_in_inventory_and_execution(self):
+        names = tuple(n for n in REQUIRED_GUARDS if n != "aj5_runtime_diagnostic_capture_has_constant_auxiliary_allocation")
+        self.assert_incomplete_allocation_rejected(listed=names, execution=allocation_log(names))
+        self.assertFalse((self.evidence / "cargo-arguments.txt").exists())
+
+    def test_missing_aj5_execution_cannot_hide_behind_summary(self):
+        names = tuple(n for n in REQUIRED_GUARDS if n != "aj5_runtime_diagnostic_capture_has_constant_auxiliary_allocation")
+        self.assert_incomplete_allocation_rejected(execution=allocation_log(names, passed=len(REQUIRED_GUARDS)))
 
     def test_successful_cargo_without_final_summary_cannot_qualify(self):
         self.assert_incomplete_allocation_rejected(execution=allocation_log().split("test result:", 1)[0])
@@ -404,7 +414,7 @@ class PerfQualification(unittest.TestCase):
         additional = "additional_expected_panic_allocation_guard"
         names = (*REQUIRED_GUARDS, additional)
         # Ignored tests have no test-mode annotation in Rust 1.92.
-        log = allocation_log(names, passed=6, ignored=1).replace(
+        log = allocation_log(names, passed=len(REQUIRED_GUARDS), ignored=1).replace(
             f"test {additional} ... ok\n", f"test {additional} ... ignored\n")
         self.assert_incomplete_allocation_rejected(listed=names, execution=log)
 

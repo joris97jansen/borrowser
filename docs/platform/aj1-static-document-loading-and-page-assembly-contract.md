@@ -478,3 +478,9 @@ continues to record incomplete loading and platform behavior.
 | Relationship to AC, AE, AF, AH, AI and AG | Linked contracts and actual production handoffs/observation limits. |
 | Future lifecycle extension points | Concrete existing seams, owners and required semantics; no speculative framework/API. |
 | Closeable without loading implementation | Documentation-only outcome; tracker records contract scope, while implementation, conformance and milestone completion remain separate. |
+
+AJ5 candidate diagnostic transport and passive parsed-document observations are
+specified in [AJ5](aj5-parsed-document-and-parser-diagnostics.md). A successful
+parser terminal requires present finalized diagnostic evidence independently of
+capture completeness. This does not complete later stylesheet discovery or full
+static page assembly, and remains subject to independent implementation review.

@@ -1,7 +1,24 @@
 use html::internal::{Id, ParserCreatedFragmentKind};
 use html::{Node, internal};
 
+fn inspect_canonical(report: &internal::HtmlParserDiagnosticReport) {
+    for event in report.events() {
+        let _: internal::ParserStage = event.stage;
+        let _: &internal::EventPosition = &event.position;
+        let _: &Option<internal::ParserContextSummary> = &event.context;
+        match event.code {
+            internal::ParseErrorCode::Standard(code) => { let _: internal::WhatwgParseErrorCode = code; }
+            internal::ParseErrorCode::TokenizerExtension(code) => { let _: internal::TokenizerExtensionParseErrorCode = code; }
+            internal::ParseErrorCode::TreeConstruction(code) => { let _: internal::TreeConstructionParseErrorCode = code; }
+        }
+    }
+}
 fn main() {
+    let mut parser = internal::html_parser_with_runtime_diagnostics(Default::default()).unwrap();
+    parser.push_bytes(b"<p a=x a=y>").unwrap();
+    parser.finish().unwrap();
+    let report = internal::take_runtime_parser_diagnostics(&mut parser).unwrap();
+    inspect_canonical(&report);
     let template = internal::template_element_from_parts(
         Id(1),
         internal::html_name("template"),

@@ -676,3 +676,14 @@ pub(super) fn response_facts(
         .expect("local fixture facts")
     }
 }
+
+/// Valid terminal evidence for tests whose subject is synthetic Browser event admission.
+pub(super) fn finalized_parser_diagnostics() -> html::internal::HtmlParserDiagnosticReport {
+    let mut parser =
+        html::internal::html_parser_with_runtime_diagnostics(Default::default()).unwrap();
+    parser
+        .push_bytes(b"<!doctype html><html><head></head><body></body></html>")
+        .unwrap();
+    parser.finish().unwrap();
+    html::internal::take_runtime_parser_diagnostics(&mut parser).unwrap()
+}

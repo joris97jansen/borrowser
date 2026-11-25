@@ -90,10 +90,12 @@ impl Tab {
                 request_id,
                 result,
                 decode_report,
+                diagnostics,
             } if self.is_current(tab_id, request_id) => match result {
                 Err(error) => {
                     if self.document_load.parse_status == DocumentParseStatus::Pending {
                         self.document_load.decode_report = decode_report;
+                        self.document_load.diagnostics = diagnostics;
                     }
                     self.fail_document(DocumentLoadFailure::Parser(error));
                 }
@@ -117,6 +119,14 @@ impl Tab {
                         self.on_document_publication_failure(failure.clone());
                         return Err(failure);
                     }
+                    if !diagnostics.as_ref().is_some_and(|r| {
+                        r.completion() == html::internal::ParserInputCompletion::Finalized
+                    }) {
+                        let failure = DocumentPublicationFailure::InvariantViolation;
+                        self.on_document_publication_failure(failure.clone());
+                        return Err(failure);
+                    }
+                    self.document_load.diagnostics = diagnostics;
                     self.document_load.decode_report = decode_report;
                     self.document_load.parse_status = DocumentParseStatus::Complete;
                     let settlement = self.update_loading();

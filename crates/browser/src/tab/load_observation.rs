@@ -77,6 +77,7 @@ impl Tab {
             && (response.is_none()
                 || self.document_load.body_completion.is_none()
                 || !committed
+                || !self.document_load.has_finalized_diagnostics()
                 || !self
                     .document_load
                     .decode_report
