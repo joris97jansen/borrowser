@@ -28,6 +28,11 @@ and the matched-declaration handoff to the existing cascade pipeline.
 `CssParseOrigin` is parser-entry metadata and is never converted into
 `CascadeOrigin`.
 
+[AJ6 passive discovery](../platform/aj6-stylesheet-dependency-discovery.md) reuses
+CSS's effective style-attribute lookup and media subset classifier without parsing
+or collecting CSS. Its authored candidate positions are not AF5 source/order or
+active cascade positions, and it changes no attachment or CSS execution behavior.
+
 The authoritative lifetime is:
 
 ```text

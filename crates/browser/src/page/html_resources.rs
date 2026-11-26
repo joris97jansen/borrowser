@@ -118,8 +118,13 @@ fn html_ascii_whitespace(ch: char) -> bool {
 }
 
 fn has_stylesheet_token(rel: &str) -> bool {
+    html_rel_tokens(rel).any(|token| token.eq_ignore_ascii_case("stylesheet"))
+}
+
+/// Shared authored-link tokenization. Loader compatibility helpers stay separate.
+pub(super) fn html_rel_tokens(rel: &str) -> impl Iterator<Item = &str> {
     rel.split(html_ascii_whitespace)
-        .any(|token| token.eq_ignore_ascii_case("stylesheet"))
+        .filter(|token| !token.is_empty())
 }
 
 /// Only resource-purpose classification, not script preparation or execution.

@@ -3,8 +3,24 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 thread_local! {static WORK:Cell<(bool,[usize;3])>=const{Cell::new((false,[0;3]))};}
 thread_local! {static REFUSE_NEXT:Cell<bool>=const{Cell::new(false)};}
+thread_local! {static REFUSE_AFTER:Cell<Option<usize>>=const{Cell::new(None)};}
 fn refuse() -> bool {
-    REFUSE_NEXT.try_with(|v| v.replace(false)).unwrap_or(false)
+    if REFUSE_NEXT.try_with(|v| v.replace(false)).unwrap_or(false) {
+        return true;
+    }
+    REFUSE_AFTER
+        .try_with(|v| match v.get() {
+            Some(0) => {
+                v.set(None);
+                true
+            }
+            Some(remaining) => {
+                v.set(Some(remaining - 1));
+                false
+            }
+            None => false,
+        })
+        .unwrap_or(false)
 }
 struct ObservationAllocator;
 fn record(bytes: usize, reallocation: bool) {
@@ -89,5 +105,28 @@ pub(super) fn refuse_next_allocation<T>(f: impl FnOnce() -> T) -> T {
     let unconsumed = REFUSE_NEXT.with(|v| v.replace(false));
     drop(reset);
     assert!(!unconsumed, "fallible reservation must consume refusal");
+    value
+}
+
+/// Refuse one later allocation at the same production reservation boundary.
+pub(super) fn refuse_allocation_after<T>(
+    successful_allocations: usize,
+    f: impl FnOnce() -> T,
+) -> T {
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            REFUSE_AFTER.with(|v| v.set(None));
+        }
+    }
+    REFUSE_AFTER.with(|v| assert!(v.replace(Some(successful_allocations)).is_none()));
+    let reset = Reset;
+    let value = f();
+    let pending = REFUSE_AFTER.with(|v| v.take());
+    drop(reset);
+    assert!(
+        pending.is_none(),
+        "targeted fallible reservation must consume refusal"
+    );
     value
 }

@@ -207,9 +207,9 @@ Milestone AF foundation status:
   pre-winner diagnostic includes bounded declaration property/value state and
   stable error labels. Media is metadata rather than slot identity, so a
   media-only change preserves the current loaded source while invalidating
-  style. Non-empty
-  stylesheet `media` attributes and internal conditional at-rules currently
-  fail closed. Real media queries remain AQ work; complete HTML stylesheet-set
+  style. Missing, empty and ASCII-whitespace-only stylesheet `media` attributes
+  are active in the current subset; other values and internal conditional
+  at-rules remain deferred/inactive. Real media queries remain AQ work; complete HTML stylesheet-set
   processing remains AJ work. AF10 closes the documented AF foundation without
   turning those deferred features into supported cascade inputs.
 
@@ -2017,3 +2017,18 @@ This entry does not claim implementation approval, complete local qualification,
 hosted qualification, merge or issue closure. AJ6 stylesheet dependency discovery
 and full static assembly remain separate gaps. AJ4 UTF-8/BOM/meta limitations,
 unsupported addressing contexts and security-policy limitations remain unchanged.
+
+## AJ6 local implementation candidate (#1137)
+
+Browser now has an on-demand typed authored stylesheet-candidate inventory through
+the existing parsed-document observation and a bounded redacted debug snapshot.
+It observes HTML links/blocks and separate AF-eligible style attributes in ordinary
+parsed-tree order, retains explicit unsupported/contextual facts and AH outcomes,
+and separates semantic failure from formatting omission. See the
+[AJ6 contract](platform/aj6-stylesheet-dependency-discovery.md) for coherence,
+identity, borrowing, resource admission, delegated AH costs and privacy guarantees.
+The production loader and its addressing/attachment history remain unchanged.
+Candidate-bound local qualification belongs to the external implementation review
+packet; independent approval, hosted qualification, publication and closure are
+not claimed. AJ7–AJ10 loading/parsing/assembly/conformance and full stylesheet-set,
+media/import/security capabilities remain separate gaps.
