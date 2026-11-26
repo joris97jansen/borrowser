@@ -10,7 +10,7 @@ use html::internal::{
 };
 
 const FINAL: &str = "https://final.test/docs/page.html?doc=1#target";
-fn loaded(markup: &[u8], width: usize) -> (Tab, Receiver<CoreCommand>) {
+pub(super) fn loaded(markup: &[u8], width: usize) -> (Tab, Receiver<CoreCommand>) {
     let (mut tab, commands) = tab();
     let request = submit(&mut tab, &commands, "https://start.test/request");
     let final_url = addressing::BrowserUrl::parse(FINAL).unwrap().url;

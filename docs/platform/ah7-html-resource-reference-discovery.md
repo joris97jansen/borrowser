@@ -141,6 +141,11 @@ Their optional results discard resolution diagnostics and cannot serve as AH7
 outcomes. AH7's local ASCII rel predicate does not silently migrate those paths.
 Existing loading commands, attachment identities and ordering remain unchanged.
 
+[AJ6's passive stylesheet candidate observation](aj6-stylesheet-dependency-discovery.md)
+shares only the concrete ASCII rel-token iterator. Its broader membership,
+candidate indices, attribute facts, limits and diagnostics are separate from this
+authored href inventory. Neither observation becomes loader scheduling authority.
+
 ## Debug integration and privacy
 
 Call `Tab::document_address_debug_snapshot()` on the runtime Tab. It delegates to

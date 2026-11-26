@@ -1,0 +1,22 @@
+StylesheetDiscovery {
+  phase=Parsing tree=Preview address=Committed navigation_pending=false
+  availability: available semantics=authored-candidates runtime-eligibility=not-observed issued-work=not-observed
+  occurrence[0] owner=element[0] dependency=None kind=link rel=NonStylesheet raw-rel=redacted alternate=Absent other-tokens=true href=redacted
+    type=absent advisory-unassessed title=absent selection=NotStylesheetRelationship disabled=not-stylesheet/absent media=not-stylesheet/absent
+    policies: crossorigin=other-relation-unassessed integrity=other-relation-unassessed referrerpolicy=other-relation-unassessed
+    address: not-stylesheet-relationship
+    diagnostics: total=0 shown=[]
+  occurrence[1] owner=element[1] dependency=Some(0) kind=link rel=Stylesheet raw-rel=redacted alternate=Present other-tokens=false href=redacted
+    type=redacted advisory-unassessed title=redacted selection=AlternateSelectionUnsupported(Named) disabled=present/redacted media=af-deferred-unsupported/redacted
+    policies: crossorigin=present-unenforced integrity=present-unenforced referrerpolicy=present-unenforced
+    address: resolved-redacted retrieval=Supported
+    diagnostics: total=2 shown=[EmbeddedCredentials, DomainToAscii]
+  occurrence[2] owner=element[2] dependency=Some(1) kind=inline-block text=redacted type=unsupported/redacted title=redacted selection=NamedSelectionUnsupported media=af-active-subset/absent
+    inapplicable-link-attributes: disabled=absent crossorigin=absent integrity=absent referrerpolicy=absent
+  occurrence[3] owner=element[3] dependency=None kind=element-attached-attribute value=redacted contribution=not-assessed
+  observation: availability=available semantic_complete=true formatting_complete=true
+  shown: occurrences=4/4 diagnostics=2/Some(2)
+  diagnostics_omitted: false
+  formatting_limits: records=false diagnostics=false bytes=false scratch=false
+  parsing-and-page-assembly: not-certified
+}

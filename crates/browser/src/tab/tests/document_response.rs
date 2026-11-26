@@ -1668,3 +1668,4 @@ fn aj3_fetch_cancellation_follows_browser_terminal_or_request_retirement() {
 mod decoding;
 
 mod parsed_document;
+mod stylesheet_discovery;

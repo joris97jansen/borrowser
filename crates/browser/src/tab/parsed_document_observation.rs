@@ -1,7 +1,11 @@
-//! Bounded, passive views of the active parsed document. No inventories or retained cache.
+//! Bounded, passive views of the active parsed document. No retained inventory or cache.
 use super::{
     Tab,
     state::{DocumentEncodingDecision, DocumentParseStatus},
+};
+use crate::page::stylesheet_discovery::{
+    StylesheetDiscovery, StylesheetDiscoveryError, StylesheetDiscoveryLimits,
+    StylesheetDiscoverySnapshotError, debug::Snapshot as StylesheetSnapshot, discover_stylesheets,
 };
 use addressing::{BrowserUrl, Origin};
 use core_types::{DomHandle, DomVersion, RequestId};
@@ -57,6 +61,35 @@ pub struct ParsedDocumentObservation<'tab> {
 }
 
 impl<'tab> ParsedDocumentObservation<'tab> {
+    /// The sole AJ6 committed-input admission. Lifecycle evidence remains separate.
+    fn committed_stylesheet_inputs(
+        &self,
+    ) -> Result<Option<(&'tab Node, &'tab BrowserUrl)>, StylesheetDiscoveryError> {
+        match (
+            self.document(),
+            self.document_handle(),
+            self.document_mode(),
+            self.tab.page.addresses.as_ref(),
+        ) {
+            (None, None, None, _) => Ok(None),
+            (Some(document), Some(_), Some(_), Some(addresses)) => {
+                Ok(Some((document, addresses.active_base_url())))
+            }
+            _ => Err(StylesheetDiscoveryError::CommittedStateInconsistent),
+        }
+    }
+
+    /// Observe authored candidates, never effective loader eligibility or work.
+    pub fn stylesheet_discovery(
+        &self,
+    ) -> Result<Option<StylesheetDiscovery<'tab>>, StylesheetDiscoveryError> {
+        self.committed_stylesheet_inputs()?
+            .map(|(document, base)| {
+                discover_stylesheets(document, base, &StylesheetDiscoveryLimits::default())
+            })
+            .transpose()
+    }
+
     #[cfg(test)]
     pub(super) fn for_test(tab: &'tab Tab) -> Self {
         Self { tab }
@@ -211,6 +244,25 @@ impl<'tab> ParsedDocumentObservation<'tab> {
 }
 
 impl Tab {
+    /// Bounded redacted AJ6 regression text, not a public loading/assembly API.
+    pub fn stylesheet_discovery_debug_snapshot(
+        &self,
+    ) -> Result<String, StylesheetDiscoverySnapshotError> {
+        let snapshot = StylesheetSnapshot::new()?;
+        let view = ParsedDocumentObservation { tab: self };
+        let result = view.stylesheet_discovery();
+        Ok(snapshot.finish(
+            format_args!(
+                "phase={:?} tree={:?} address={:?} navigation_pending={}",
+                view.phase(),
+                view.tree_scope(),
+                view.address_scope(),
+                view.navigation_pending()
+            ),
+            result,
+        ))
+    }
+
     #[cfg(feature = "conformance-observation")]
     pub fn observe_parsed_document(&self) -> ParsedDocumentObservation<'_> {
         ParsedDocumentObservation { tab: self }

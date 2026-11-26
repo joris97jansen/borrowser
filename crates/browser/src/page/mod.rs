@@ -4,6 +4,7 @@ mod debug;
 pub(crate) use addressing::{DocumentAddressError, DocumentAddressState};
 mod dom_mutation;
 pub(crate) mod html_resources;
+pub(crate) mod stylesheet_discovery;
 pub(crate) use html_resources::{HtmlReferenceOutcome, HtmlResourceReference};
 mod image_sources;
 mod retained_render_state;

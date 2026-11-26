@@ -23,6 +23,17 @@ mod html;
 mod image;
 mod load_observation;
 mod parsed_document_observation;
+pub use crate::page::stylesheet_discovery::StylesheetDiscoverySnapshotError;
+#[cfg(feature = "conformance-observation")]
+pub use crate::page::stylesheet_discovery::{
+    AlternateFact, AlternateTitleFact, DisabledFact, HrefObservation, InlineStyleText,
+    LinkDiscovery, LinkPolicyFacts, LinkTypeFact, MediaFact, OccurrenceIndex, PolicyFact,
+    RelationFacts, RelationKind, SetSelectionFact, StyleBlockDiscovery, StyleBlockLinkAttributes,
+    StyleTextChunks, StyleTypeFact, StylesheetDependencyOrder, StylesheetDiscovery,
+    StylesheetDiscoveryError, StylesheetDiscoveryLimit, StylesheetDiscoveryStorage,
+    StylesheetHrefOutcome, StylesheetIndexDomain, StylesheetOccurrence, StylesheetSource,
+    TitleFact,
+};
 pub use parsed_document_observation::ParsedDocumentSnapshotError;
 #[cfg(feature = "conformance-observation")]
 pub use parsed_document_observation::{
