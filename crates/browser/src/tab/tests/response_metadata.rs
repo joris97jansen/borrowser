@@ -1,4 +1,4 @@
-use super::super::{Tab, state::StylesheetLoadPhase};
+use super::super::Tab;
 use super::support::addressing_tab;
 use addressing::ResourceKind as Purpose;
 use bus::{CoreCommand, CoreEvent};
@@ -137,7 +137,7 @@ fn ai8_css_acceptance_matrix_drives_actual_runtime_and_installation() {
                 .iter()
                 .filter(|c| matches!(c, CoreCommand::CssDone { .. }))
                 .count(),
-            1
+            usize::from(*accept)
         );
         let (tx, css_rx) = mpsc::channel();
         let (events, event_rx) = mpsc::channel();
@@ -165,10 +165,13 @@ fn ai8_css_acceptance_matrix_drives_actual_runtime_and_installation() {
         );
         assert_eq!(tab.page.pending_count(), 0);
         if *accept {
-            let StylesheetLoadPhase::Complete { response } = &tab.stylesheet_loads[&slot].phase
-            else {
-                panic!("installed phase");
-            };
+            let response = tab
+                .page
+                .stylesheet_fetch_result(slot)
+                .unwrap()
+                .response()
+                .response()
+                .unwrap();
             assert_eq!(response, &facts);
             assert_eq!(
                 response
@@ -221,7 +224,7 @@ fn ai8_css_completion_rejects_changed_raw_facts_and_purpose() {
                 .iter()
                 .any(|c| matches!(c, CoreCommand::CssDone { .. }))
         );
-        assert!(commands.iter().any(|c| matches!(c, CoreCommand::CssAbort { stylesheet_slot_id, .. } if *stylesheet_slot_id == slot)));
+        assert!(commands.iter().all(|c| !matches!(c, CoreCommand::CssAbort { stylesheet_slot_id, .. } if *stylesheet_slot_id == slot)));
         assert_eq!(tab.page.pending_count(), 0);
         assert!(tab.page.css_stylesheets().is_empty());
     }

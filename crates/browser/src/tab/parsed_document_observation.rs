@@ -79,6 +79,17 @@ impl<'tab> ParsedDocumentObservation<'tab> {
         }
     }
 
+    pub(super) fn for_fetch_snapshot(tab: &'tab Tab) -> Self {
+        Self { tab }
+    }
+    pub fn stylesheet_fetches(
+        &self,
+    ) -> Result<
+        Option<super::stylesheet_fetch_observation::StylesheetFetchObservation<'tab>>,
+        super::stylesheet_fetch_observation::StylesheetFetchObservationError,
+    > {
+        self.committed_stylesheet_inputs().map(|input|input.map(|_|super::stylesheet_fetch_observation::StylesheetFetchObservation{tab:self.tab})).map_err(|_|super::stylesheet_fetch_observation::StylesheetFetchObservationError::CommittedStateInconsistent)
+    }
     /// Observe authored candidates, never effective loader eligibility or work.
     pub fn stylesheet_discovery(
         &self,

@@ -108,6 +108,13 @@ fn ah6_css_duplicate_start_preserves_the_admitted_mime_decision() {
         rx.try_iter()
             .filter(|cmd| matches!(cmd, CoreCommand::CssChunk { .. }))
             .count(),
+        0
+    );
+    done(&mut tab, slot, response(&url));
+    assert_eq!(
+        rx.try_iter()
+            .filter(|c| matches!(c, CoreCommand::CssChunk { .. }))
+            .count(),
         1
     );
 }
@@ -377,7 +384,7 @@ fn ah6_css_exact_url_rejects_final_and_equivalent_spellings() {
                     .iter()
                     .filter(|c| matches!(c, CoreCommand::CssAbort { .. }))
                     .count(),
-                1,
+                usize::from(matches!(case, Event::Block | Event::SheetDone)),
                 "{case:?}/{mismatch}"
             );
             assert!(
@@ -412,13 +419,19 @@ fn ah6_css_premature_runtime_and_done_settle_once() {
                 &url,
             ))
             .unwrap();
+            if matches!(case, Event::Block | Event::SheetDone) {
+                assert_eq!(tab.page.pending_count(), 1);
+                assert!(tab.stylesheet_loads.contains_key(&slot));
+                assert!(rx.try_recv().is_err());
+                continue;
+            }
             assert_eq!(tab.page.pending_count(), 0);
             assert!(!tab.stylesheet_loads.contains_key(&slot));
             assert_eq!(
                 rx.try_iter()
                     .filter(|c| matches!(c, CoreCommand::CssAbort { .. }))
                     .count(),
-                1
+                0
             );
             for late in EVENTS {
                 tab.on_core_event(event(
@@ -458,10 +471,7 @@ fn ah6_css_redirect_control_duplicate_starts_and_terminal_events_preserve_respon
             "https://conflict.test/other",
         ))
         .unwrap();
-        assert_eq!(
-            tab.stylesheet_loads[&slot].phase.accepted_response(),
-            Some(&admitted)
-        );
+        assert_eq!(tab.stylesheet_response_for_tests(slot), Some(&admitted));
     }
     runtime_block(
         &mut tab,
@@ -491,10 +501,7 @@ fn ah6_css_redirect_control_duplicate_starts_and_terminal_events_preserve_respon
         ))
         .unwrap();
     }
-    assert_eq!(
-        tab.stylesheet_loads[&slot].phase.accepted_response(),
-        Some(&admitted)
-    );
+    assert_eq!(tab.stylesheet_response_for_tests(slot), Some(&admitted));
     assert_eq!(tab.page.style_generations(), generation);
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
     let sources = tab.page.css_resource_references().unwrap().unwrap();
@@ -602,7 +609,10 @@ fn ah6_css_runtime_delivery_failures_settle_without_reopening_or_global_cancella
             let generation = tab.active_document_request_id().expect("admitted fixture");
             disconnect(&mut tab, absent);
             match stage {
-                "chunk" => chunk(&mut tab, slot, &url),
+                "chunk" => {
+                    chunk(&mut tab, slot, &url);
+                    done(&mut tab, slot, response(&url));
+                }
                 "done" => done(&mut tab, slot, response(&url)),
                 _ => tab
                     .on_core_event(event(
@@ -801,7 +811,7 @@ fn ah6_css_fragment_keys_preserve_attachment_isolation_and_original_retirement_g
     assert_eq!(tab.active_document_request_id(), Some(old));
     super::support::admit_pending(&mut tab);
     let commands: Vec<_> = rx.try_iter().collect();
-    assert_eq!(commands.iter().filter(|c| matches!(c, CoreCommand::CssAbort { request_id, stylesheet_slot_id, url: actual, .. } if *request_id == old && *stylesheet_slot_id == *second && actual == url)).count(), 1);
+    assert_eq!(commands.iter().filter(|c| matches!(c, CoreCommand::CssAbort { request_id, stylesheet_slot_id, url: actual, .. } if *request_id == old && *stylesheet_slot_id == *second && actual == url)).count(), 0);
     assert!(commands.iter().all(|c| !matches!(c, CoreCommand::CssAbort { stylesheet_slot_id, .. } if *stylesheet_slot_id == *first)));
 }
 
@@ -818,11 +828,25 @@ fn ah6_css_empty_and_rejected_mime_complete_without_a_decoded_block() {
             mime.map(str::to_owned),
         );
         start(&mut tab, slot, admitted.clone());
-        done(&mut tab, slot, admitted);
-        assert!(matches!(
-            rx.try_recv().unwrap(),
-            CoreCommand::CssDone { .. }
-        ));
+        tab.on_core_event(CoreEvent::NetworkDone {
+            tab_id: tab.tab_id,
+            request_id: tab.active_document_request_id().unwrap(),
+            stylesheet_slot_id: Some(slot),
+            kind: ResourceKind::Css,
+            response: admitted,
+            body: net::BodyProgress::try_new(ResourceKind::Css, 0).unwrap(),
+        })
+        .unwrap();
+        if mime != Some("text/html") {
+            assert!(
+                matches!(rx.try_recv().unwrap(),CoreCommand::CssChunk{bytes,..}if bytes.is_empty())
+            );
+            assert!(matches!(
+                rx.try_recv().unwrap(),
+                CoreCommand::CssDone { .. }
+            ));
+            runtime_block(&mut tab, slot, &url, "");
+        }
         tab.on_core_event(event(
             Event::SheetDone,
             tab.tab_id,
@@ -832,7 +856,10 @@ fn ah6_css_empty_and_rejected_mime_complete_without_a_decoded_block() {
         ))
         .unwrap();
         assert_eq!(tab.page.pending_count(), 0);
-        assert!(tab.page.css_stylesheets().is_empty());
+        assert_eq!(
+            tab.page.css_stylesheets().len(),
+            usize::from(mime != Some("text/html"))
+        );
         assert!(rx.try_recv().is_err());
     }
     let (mut tab, rx, slot, url) = fixture();
@@ -895,8 +922,20 @@ fn ah6_css_issued_state_debug_is_content_redacted_in_all_phases() {
             .unwrap();
         }
         for output in [
-            format!("{:?}", tab.stylesheet_loads[&slot]),
-            format!("{:#?}", tab.stylesheet_loads[&slot]),
+            format!(
+                "{:?}",
+                (
+                    tab.stylesheet_loads.get(&slot),
+                    tab.page.stylesheet_fetch_result(slot)
+                )
+            ),
+            format!(
+                "{:#?}",
+                (
+                    tab.stylesheet_loads.get(&slot),
+                    tab.page.stylesheet_fetch_result(slot)
+                )
+            ),
         ] {
             for value in [
                 "SECRET_USER",
@@ -910,7 +949,9 @@ fn ah6_css_issued_state_debug_is_content_redacted_in_all_phases() {
             ] {
                 assert!(!output.contains(value), "{output}");
             }
-            assert!(output.contains("<redacted>"));
+            assert!(
+                output.contains("StylesheetLoadState") || output.contains("StylesheetFetchResult")
+            );
         }
     }
 }

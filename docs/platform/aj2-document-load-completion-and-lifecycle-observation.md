@@ -9,6 +9,17 @@ Milestone AJ. Implementation base: `fe8a154545ec126bc32a8c48900be30474d5ad2a`.
 This describes the implementation candidate; validation and review qualification
 are recorded separately. It does not close AJ or establish complete loading.
 
+## Acquisition evidence and settlement
+
+[AJ7](aj7-deterministic-stylesheet-acquisition.md) extends the existing settlement
+authority to cross-check frozen source/request/response identity, issuance and
+independent credits, policy, complete raw bytes and exact producer completion.
+Ready acquisition survives installation failure. A successful installed terminal
+requires Ready plus successful installation; BlockReceived remains Pending until
+SheetDone. Contradictory rows cannot certify settlement even when diagnostic row
+limits omit them. Fatal-document precedence and permitted completed runtime work
+on the retained preview remain unchanged.
+
 ## Authority and request context
 
 [AJ1](aj1-static-document-loading-and-page-assembly-contract.md) remains the
@@ -104,7 +115,8 @@ parse clone or persistent observation state.
 Installed CSS can coexist with
 `StylesheetLoadPhase::AwaitingRuntime { progress: BlockReceived, .. }`.
 Consequently zero pending slots does not establish runtime settlement. Terminal
-external installation also requires the current issued record to be Complete.
+external installation requires coherent Ready acquisition and successful
+installation, with no remaining live runtime entry.
 Failed/aborted slots retain identity and order but supply no CSS parse. Sibling
 requests stay independent. Retirement removes installation authority; late
 events cannot recreate it. Eligible completed work may still finish for a failed

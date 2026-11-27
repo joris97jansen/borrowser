@@ -127,13 +127,19 @@ occurrence inventory and request accounting are independent.
 Declared pending requests must first be observed and remain pending. They receive
 no fabricated success/error events. Supplied CSS starts from a real issued slot
 and traverses Browser's NetworkStart/Chunk/Done admission with immutable response
-metadata. Actual CssChunk/Done commands go through the existing CSS runtime; only
-its real decoded/completion events are applied. Missing, excess, mismatched or
-misordered commands/events, uninstalled CSS, and timeout are errors. The driver
-also verifies the final production pending/completed states.
+metadata. Ready acquisitions produce actual CssChunk/Done commands through the
+existing CSS runtime; only its real decoded/completion events are applied. Missing,
+excess, mismatched or misordered commands/events, uninstalled Ready CSS and timeout
+are errors. Typed missing/invalid final-provenance rejections instead require exact
+response/body/completion retention, no runtime work or installed parse/base and
+recoverable terminal dependency settlement. The driver derives rejection labels
+from actual typed results, never fixture names or reparsed expected URL strings.
 
-Supplied CSS uses the admitted final response URL as its base. Missing and invalid
-final URLs retain their respective provenance and existing resolution outcomes.
+Installed CSS uses the admitted final response URL as its base. The
+`css-missing-base` and `css-invalid-base` fixtures now assert AJ7 typed acquisition
+rejection and preserve inline CSS/reference resolution. Lower-level AH8
+unavailable-base independence is tested at `CssSourceReferences::outcome`, without
+installing a rejected external response.
 The request URL and document base are never substitutes. Distinct final response
 metadata exercises the existing response handoff, not redirect processing.
 `supplied_final_url` records the exact fixture transport input; the CSS base
@@ -146,7 +152,8 @@ provenance row now exercises production admission rejection: it must emit the
 matching cancellation, commit no addressing snapshot, and remain rejected after
 completion. Its expected snapshot list is empty rather than inventing the request
 URL as a selected response. The two valid-URL rows retain their original complete
-snapshots. CSS missing/invalid response-base observations remain unchanged.
+snapshots. AJ7 refines CSS missing/invalid final-provenance admission as described above;
+the historical AI3 qualification checkpoint remains unchanged.
 
 ## Exact snapshots and privacy
 
@@ -189,7 +196,7 @@ not public APIs, capture wire formats or a complete Fetch/cache model.
 | document-default/base-selection/base-rejected/base-frozen/document-file-origin | AH4/AH5 accepted document state, first applicable base, rejected first candidate, frozen value retention, retained origin |
 | html-resources/html-boundaries | AH7 finite matrix, namespace/template boundaries, empty/whitespace values, source occurrences and production request counts |
 | css-inline/css-contexts | AH8 decoding/spans, inline bases, unsupported contexts, local/empty/invalid shapes, authored-before-cascade inventory |
-| css-external/css-missing-base/css-invalid-base | AH8 actual admitted final response base, unavailable-base independence and typed failures |
+| css-external/css-missing-base/css-invalid-base | AH8 admitted final base; AJ7 typed missing/invalid provenance rejection, exact retained response/body and no installed fallback; independent lower-level AH8 unavailable-base coverage |
 | unsupported-about-inheritance/unsupported-blob-entry | Explicit missing creation contexts; these exclusions do not replace runnable URL-only assertions |
 
 Expected transformations, origins, keys, booleans and discovery records are

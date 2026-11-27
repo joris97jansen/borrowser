@@ -60,7 +60,7 @@ fn html_resource_inventory_is_observational() {
             (
                 *id,
                 load.request_id,
-                load.issued_key.clone(),
+                load.issued_key().to_owned(),
                 format!("{load:?}"),
             )
         })
@@ -108,7 +108,7 @@ fn html_resource_inventory_is_observational() {
         for (id, request, key, debug) in &issued {
             let load = &tab.stylesheet_loads[id];
             assert_eq!(load.request_id, *request);
-            assert_eq!(&load.issued_key, key);
+            assert_eq!(&load.issued_key(), key);
             assert_eq!(&format!("{load:?}"), debug);
         }
         assert_eq!(
@@ -149,7 +149,7 @@ fn html_resource_current_base_inventory_preserves_selected_loader_associations()
     let (slot, key) = tab
         .stylesheet_loads
         .iter()
-        .map(|(slot, load)| (*slot, load.issued_key.clone()))
+        .map(|(slot, load)| (*slot, load.issued_key().to_owned()))
         .next()
         .unwrap();
     let before = tab.page.html_resource_references().unwrap();
@@ -197,7 +197,7 @@ fn html_resource_current_base_inventory_preserves_selected_loader_associations()
         crate::page::selected_image_source(&tab.page.image_sources, image, "image.png"),
         selected_image
     );
-    assert_eq!(tab.stylesheet_loads[&slot].issued_key, key);
+    assert_eq!(tab.stylesheet_loads[&slot].issued_key(), key);
     assert_eq!(
         tab.page.active_external_stylesheet_slots(),
         std::collections::HashSet::from([slot])

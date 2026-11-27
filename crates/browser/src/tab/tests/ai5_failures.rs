@@ -295,16 +295,26 @@ fn ai5f_real_runtime_partial_failures_settle_each_consumer_without_sibling_compl
                     .flatten()
                     .copied()
                     .collect();
-                assert_eq!(partial, b"abc");
-                assert!(queued.iter().any(|c| matches!(c, CoreCommand::CssAbort { stylesheet_slot_id, .. } if Some(*stylesheet_slot_id) == slot)));
+                assert!(
+                    partial.is_empty(),
+                    "failed acquisition cannot reach CSS runtime"
+                );
+                assert_eq!(
+                    tab.page
+                        .stylesheet_fetch_result(slot.unwrap())
+                        .unwrap()
+                        .body()
+                        .bytes(),
+                    Some(b"abc".as_slice())
+                );
+                assert!(queued.iter().all(|c| !matches!(c, CoreCommand::CssAbort { stylesheet_slot_id, .. } if Some(*stylesheet_slot_id) == slot)));
                 assert!(
                     !queued
                         .iter()
                         .any(|c| matches!(c, CoreCommand::CancelRequest { .. }))
                 );
-                // Exercise the real assembly worker with Browser's ordered
-                // Chunk/Abort commands. Even a delayed Done cannot publish the
-                // failed partial text or complete the sibling stylesheet.
+                // Failed acquisition creates no runtime buffer. A direct delayed
+                // Done cannot publish its retained prefix or finish a sibling.
                 let (css_tx, css_rx) = mpsc::channel();
                 let (events, decoded) = mpsc::channel();
                 runtime_css::start_css_runtime(css_rx, events);

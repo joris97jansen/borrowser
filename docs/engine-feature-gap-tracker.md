@@ -2032,3 +2032,17 @@ Candidate-bound local qualification belongs to the external implementation revie
 packet; independent approval, hosted qualification, publication and closure are
 not claimed. AJ7–AJ10 loading/parsing/assembly/conformance and full stylesheet-set,
 media/import/security capabilities remain separate gaps.
+
+## AJ7 local implementation candidate (#1138)
+
+[AJ7](platform/aj7-deterministic-stylesheet-acquisition.md) implements ordered
+attachment-owned fetch outcomes, raw delivered evidence, strict final provenance,
+complete-response status/MIME policy, recoverable sheet failures and post-completion
+runtime handoff, including empty CSS. Prepared bounded inventory publication and
+independent logical body/source/fetch-metadata limits are intentional supported
+subset guardrails. Local and hosted qualification status belongs to the external
+candidate review packet; this entry does not claim independent approval, issue
+closure or full conformance. Earlier AJ1/AI8 descriptions and qualification counts
+remain historical; stylesheet HTTP applicability is now governed by AJ7. AJ8
+decoding/parsing, AJ9 assembly/rendering and AJ10 resource-backed conformance remain
+open, along with complete selection/media/import/security/cache/cancellation.

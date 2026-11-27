@@ -1001,3 +1001,13 @@ presentation text. Synchronous admission stays separate from admitted-operation
 failure and HTTP status. Resource limits distinguish encoded bytes, delivered
 bytes, response head and framing/trailer metadata. No generic failure lifecycle,
 retry, scheduler, policy framework or downstream acknowledgement is introduced.
+
+### AJ7 stylesheet acquisition
+
+Browser owns bounded prepared attachment reconciliation and terminal acquisition
+evidence; the existing live map alone admits network/runtime events. AH owns URL
+semantics, AI owns acquisition/transport and CSS owns parsing/cascade. Raw bytes
+move into terminal attachment evidence before one fallible CSS runtime handoff
+copy. See [the AJ7 contract](../platform/aj7-deterministic-stylesheet-acquisition.md)
+for independent acquisition/installation outcomes, reservations, fatal publication
+errors, event identity, supported response policy and memory-bound qualifications.

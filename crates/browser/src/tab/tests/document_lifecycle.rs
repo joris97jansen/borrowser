@@ -1123,7 +1123,13 @@ fn repeated_document_start_preserves_streaming_preview_and_stylesheet_work() {
         request_id: tab.active_document_request_id().expect("admitted fixture"),
         stylesheet_slot_id: Some(slot),
         kind: ResourceKind::Css,
-        response: response(css_url),
+        response: super::support::response_facts(
+            addressing::ResourceKind::Stylesheet,
+            css_url.into(),
+            css_url.into(),
+            Some(200),
+            Some("text/css".into()),
+        ),
     })
     .unwrap();
     assert!(tab.stylesheet_loads.contains_key(&slot));
@@ -1141,14 +1147,29 @@ fn repeated_document_start_preserves_streaming_preview_and_stylesheet_work() {
         request_id: tab.active_document_request_id().expect("admitted fixture"),
         stylesheet_slot_id: Some(slot),
         kind: ResourceKind::Css,
-        response: response(css_url),
+        response: super::support::response_facts(
+            addressing::ResourceKind::Stylesheet,
+            css_url.into(),
+            css_url.into(),
+            Some(200),
+            Some("text/css".into()),
+        ),
         body: net::BodyProgress::try_new(ResourceKind::Css, 0).unwrap(),
     })
     .unwrap();
+    assert!(matches!(rx.try_recv().unwrap(),CoreCommand::CssChunk{bytes,..}if bytes.is_empty()));
     assert!(matches!(
         rx.try_recv().unwrap(),
         CoreCommand::CssDone { .. }
     ));
+    tab.on_core_event(CoreEvent::CssDecodedBlock {
+        tab_id: 1,
+        request_id: tab.active_document_request_id().unwrap(),
+        stylesheet_slot_id: slot,
+        url: css_url.into(),
+        css_block: String::new(),
+    })
+    .unwrap();
     tab.on_core_event(CoreEvent::CssSheetDone {
         tab_id: 1,
         request_id: tab.active_document_request_id().expect("admitted fixture"),

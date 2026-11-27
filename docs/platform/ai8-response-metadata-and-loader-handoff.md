@@ -20,6 +20,18 @@ issue/milestone closure are separate.
 The original qualification history is preserved separately from the focused
 review corrections and their new working-tree evidence at the end of this record.
 
+## Browser completion admission
+
+[AJ7](aj7-deterministic-stylesheet-acquisition.md) preserves the MIME subset above
+and admits CSS only after authenticated complete acquisition and strict usable
+final provenance. Complete rejected bodies and legitimate failed prefixes survive
+on attachments. Error may supply contextual redirect/admission/coding facts before
+Start; those are not a selected final response. Wrong-key/conflicting optional
+facts are omitted, independently of primary failure precedence. Present progress
+must be CSS-route and equal the legitimately observed count, including before
+Start (absent or zero is legitimate). Producer error kind remains separate.
+Charset is retained without adding decoding or broader nosniff/quirks enforcement.
+
 ## Ownership and handoff
 
 [AI1](ai1-fetch-http-networking-response-contract.md) governs ownership;

@@ -4,76 +4,125 @@ use net::{NetworkErrorKind, NetworkResponseInfo};
 /// Fixed, bounded presentation of owning typed failures. Parser/backend details,
 /// URLs, headers and bodies never enter UI text or nested Debug through here.
 pub(super) fn document_failure_status(failure: &DocumentLoadFailure) -> String {
+    let mut out = String::new();
+    write_document_failure_status(&mut out, failure).expect("String formatting");
+    out
+}
+pub(super) fn write_document_failure_status(
+    out: &mut impl std::fmt::Write,
+    failure: &DocumentLoadFailure,
+) -> std::fmt::Result {
     use DocumentLoadFailure::*;
     match failure {
         Network {
             kind,
             response_context,
             ..
-        } => format_network_error(
+        } => write_network_error(
+            out,
             "document",
-            "",
             *kind,
             response_context
                 .as_ref()
                 .and_then(NetworkResponseInfo::status_code),
-            "",
         ),
-        ParserCommandDeliveryUnavailable => "Document parser command delivery unavailable".into(),
-        UnexpectedNoContentBody => "Unexpected body for a non-replacing document response".into(),
-        ResponseRejected { reason, .. } => format!("Document response rejected: {reason:?}"),
+        StylesheetInventory(cause) => {
+            write!(out, "Document stylesheet inventory unavailable: {cause:?}")
+        }
+        ParserCommandDeliveryUnavailable => {
+            out.write_str("Document parser command delivery unavailable")
+        }
+        UnexpectedNoContentBody => {
+            out.write_str("Unexpected body for a non-replacing document response")
+        }
+        ResponseRejected { reason, .. } => write!(out, "Document response rejected: {reason:?}"),
         Parser(error) => {
             use bus::HtmlParseFailure::*;
             let (stage, detail) = match error {
-                Initialization(error) => ("Initialization", Some(error)),
-                Execution(error) => ("Execution", Some(error)),
-                Finalization(error) => ("Finalization", Some(error)),
+                Initialization(e) => ("Initialization", Some(e)),
+                Execution(e) => ("Execution", Some(e)),
+                Finalization(e) => ("Finalization", Some(e)),
                 DomHandleExhausted => ("DomHandleExhausted", None),
                 PreSelectionBudgetExceeded => ("PreSelectionBudgetExceeded", None),
                 DocumentModeUnavailable => ("DocumentModeUnavailable", None),
                 DocumentModeChanged { .. } => ("DocumentModeChanged", None),
                 InputClosed => ("InputClosed", None),
             };
-            let detail = detail.map(|error| match error {
+            let detail = detail.map(|e| match e {
                 html::HtmlParseError::Decode => "Decode",
                 html::HtmlParseError::DocumentModeUnavailable => "DocumentModeUnavailable",
                 html::HtmlParseError::Fatal(_) => "Fatal",
                 html::HtmlParseError::PatchValidation(_) => "PatchValidation",
             });
             match detail {
-                Some(detail) => format!("Document parsing failed: {stage}({detail})"),
-                None => format!("Document parsing failed: {stage}"),
+                Some(d) => write!(out, "Document parsing failed: {stage}({d})"),
+                None => write!(out, "Document parsing failed: {stage}"),
             }
         }
-        Publication(error) => format!("Document publication failed: {error:?}"),
-        ResponseRequestMismatch(_) => "Document response does not match the current request".into(),
-        ResponseUrlUnavailable(_) => "Document response URL is missing or invalid".into(),
-        UnsupportedDocumentCreation { .. } => "Unsupported document creation context".into(),
-        ChunkBeforeAdmission => "HTML chunk received before document admission".into(),
-        ChunkProvenanceMismatch => "HTML chunk does not match the accepted response".into(),
-        CompletionBeforeAdmission => "HTML completion received before document admission".into(),
+        Publication(error) => write!(out, "Document publication failed: {error:?}"),
+        ResponseRequestMismatch(_) => {
+            out.write_str("Document response does not match the current request")
+        }
+        ResponseUrlUnavailable(_) => out.write_str("Document response URL is missing or invalid"),
+        UnsupportedDocumentCreation { .. } => {
+            out.write_str("Unsupported document creation context")
+        }
+        ChunkBeforeAdmission => out.write_str("HTML chunk received before document admission"),
+        ChunkProvenanceMismatch => out.write_str("HTML chunk does not match the accepted response"),
+        CompletionBeforeAdmission => {
+            out.write_str("HTML completion received before document admission")
+        }
         CompletionMetadataMismatch(_) => {
-            "HTML completion does not match the accepted response".into()
+            out.write_str("HTML completion does not match the accepted response")
         }
         CompletionAccountingMismatch(_) => {
-            "Document completion body accounting does not match delivery".into()
+            out.write_str("Document completion body accounting does not match delivery")
         }
         ParserCompletionBeforeBody => {
-            "Document parser completed before accepted body completion".into()
+            out.write_str("Document parser completed before accepted body completion")
         }
-        // A slot's snapshot-local ordinal requires DocumentStyleSet's order.
-        // Tab Debug supplies that correlation, including omitted rows; this
-        // context-free projection must not invent it or expose the raw ID.
         LoadStateInvariantViolation {
             relationship,
             slot,
             slot_records,
             request_records,
-        } => format!(
+        } => write!(
+            out,
             "Document load state invariant violated: {relationship:?} (slot_present={} slots={slot_records} issued={request_records})",
             slot.is_some()
         ),
     }
+}
+fn write_network_error(
+    out: &mut impl std::fmt::Write,
+    label: &str,
+    kind: NetworkErrorKind,
+    status: Option<u16>,
+) -> std::fmt::Result {
+    match kind {
+        NetworkErrorKind::Cancelled => write!(out, "Cancelled {label} load")?,
+        NetworkErrorKind::Backend => write!(out, "Backend error loading {label}")?,
+        NetworkErrorKind::DnsFailure => write!(out, "DNS error loading {label}")?,
+        NetworkErrorKind::ConnectionFailure => write!(out, "Connection error loading {label}")?,
+        NetworkErrorKind::TlsFailure => write!(out, "TLS error loading {label}")?,
+        NetworkErrorKind::Timeout => write!(out, "Timed out loading {label}")?,
+        NetworkErrorKind::LocalFile => write!(out, "Local file error loading {label}")?,
+        NetworkErrorKind::Read => write!(out, "Read error loading {label}")?,
+        NetworkErrorKind::MalformedResponse => write!(out, "Malformed response loading {label}")?,
+        NetworkErrorKind::UnsupportedResponse => {
+            write!(out, "Unsupported response loading {label}")?
+        }
+        NetworkErrorKind::UnsupportedEncoding => {
+            write!(out, "Unsupported encoding loading {label}")?
+        }
+        NetworkErrorKind::ContentDecoding => write!(out, "Content decoding error loading {label}")?,
+        NetworkErrorKind::ResourceLimit(_) => write!(out, "Resource limit loading {label}")?,
+        NetworkErrorKind::Redirect(_) => write!(out, "Redirect error loading {label}")?,
+    }
+    if let Some(code) = status {
+        write!(out, " [HTTP {code}]")?;
+    }
+    Ok(())
 }
 
 pub(super) fn response_summary(response: &NetworkResponseInfo, bytes_received: usize) -> String {
@@ -97,40 +146,10 @@ pub(super) fn format_network_error(
     status_code: Option<u16>,
     _error: &str,
 ) -> String {
-    let message = match error_kind {
-        NetworkErrorKind::Cancelled => format!("Cancelled {resource_label} load"),
-        NetworkErrorKind::Backend => {
-            format!("Backend error loading {resource_label}")
-        }
-        NetworkErrorKind::DnsFailure => format!("DNS error loading {resource_label}"),
-        NetworkErrorKind::ConnectionFailure => format!("Connection error loading {resource_label}"),
-        NetworkErrorKind::TlsFailure => format!("TLS error loading {resource_label}"),
-        NetworkErrorKind::Timeout => format!("Timed out loading {resource_label}"),
-        NetworkErrorKind::LocalFile => {
-            format!("Local file error loading {resource_label}")
-        }
-        NetworkErrorKind::Read => format!("Read error loading {resource_label}"),
-        NetworkErrorKind::MalformedResponse => {
-            format!("Malformed response loading {resource_label}")
-        }
-        NetworkErrorKind::UnsupportedResponse => {
-            format!("Unsupported response loading {resource_label}")
-        }
-        NetworkErrorKind::UnsupportedEncoding => {
-            format!("Unsupported encoding loading {resource_label}")
-        }
-        NetworkErrorKind::ContentDecoding => {
-            format!("Content decoding error loading {resource_label}")
-        }
-        NetworkErrorKind::ResourceLimit(_) => {
-            format!("Resource limit loading {resource_label}")
-        }
-        NetworkErrorKind::Redirect(_) => format!("Redirect error loading {resource_label}"),
-    };
-    match status_code {
-        Some(code) => format!("{message} [HTTP {code}]"),
-        None => message,
-    }
+    let mut message = String::new();
+    write_network_error(&mut message, resource_label, error_kind, status_code)
+        .expect("String formatting");
+    message
 }
 
 impl super::Tab {

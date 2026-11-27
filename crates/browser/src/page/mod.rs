@@ -181,7 +181,11 @@ impl PageState {
         dom: Box<Node>,
         document_mode: html::DocumentMode,
         facts: DomMutationFacts,
-    ) -> DomPublicationRenderInvalidation {
+        prepared_styles: crate::document_style::PreparedStylesheetReconcile,
+    ) -> (
+        DomPublicationRenderInvalidation,
+        stylesheets::PageStylesheetReconcile,
+    ) {
         self.document_mode = Some(document_mode);
         self.dom = Some(dom);
         if facts.document_replaced() {
@@ -190,7 +194,9 @@ impl PageState {
             self.rendering
                 .reset_retained_identities_for_document_replacement();
         }
-        self.mark_dom_changed(facts)
+        let dom_work = self.mark_dom_changed(facts);
+        let styles = self.commit_document_stylesheets(prepared_styles);
+        (dom_work, styles)
     }
 
     pub(crate) fn mark_dom_changed(

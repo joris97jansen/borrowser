@@ -362,9 +362,7 @@ fn resource_associations_retirement_aborts_partial_css_and_late_events_cannot_re
         b"p{".to_vec(),
         tab.active_document_request_id().unwrap(),
     );
-    assert!(
-        matches!(rx.try_recv().unwrap(),CoreCommand::CssChunk{stylesheet_slot_id,..} if stylesheet_slot_id==slot)
-    );
+    assert!(rx.try_recv().is_err());
     publish_addressing_patches(
         &mut tab,
         vec![DomPatch::RemoveNode {
@@ -372,9 +370,6 @@ fn resource_associations_retirement_aborts_partial_css_and_late_events_cannot_re
         }],
     )
     .unwrap();
-    assert!(
-        matches!(rx.try_recv().unwrap(),CoreCommand::CssAbort{stylesheet_slot_id,request_id:id,url:aborted,..} if stylesheet_slot_id==slot && aborted==url && Some(id)==tab.active_document_request_id())
-    );
     assert!(rx.try_recv().is_err());
     assert!(tab.stylesheet_loads.is_empty());
     tab.on_css_network_start(
@@ -554,11 +549,31 @@ fn resource_associations_streamed_css_uses_one_live_record_lookup_per_chunk() {
             rx.try_iter()
                 .filter(|cmd| matches!(cmd, CoreCommand::CssChunk { .. }))
                 .count(),
-            4096
+            0
+        );
+        let response = css_response(url);
+        tab.on_css_network_done(
+            slot,
+            response,
+            net::BodyProgress::try_new(ResourceKind::Css, 4096 * 3).unwrap(),
+            tab.active_document_request_id().unwrap(),
+        );
+        let commands = rx.try_iter().collect::<Vec<_>>();
+        assert_eq!(commands.len(), 2);
+        assert!(matches!(&commands[0],CoreCommand::CssChunk{bytes,..}if bytes.len()==4096*3));
+        assert_eq!(
+            tab.page
+                .stylesheet_fetch_result(slot)
+                .unwrap()
+                .body()
+                .bytes()
+                .unwrap()
+                .len(),
+            4096 * 3
         );
         let owner = element_id(
             tab.page.dom.as_deref().unwrap(),
-            &format!("s{}", attachments - 1),
+            &format!("s{}", fetched.len() - 1),
         );
         publish_addressing_patches(
             &mut tab,
@@ -572,7 +587,7 @@ fn resource_associations_streamed_css_uses_one_live_record_lookup_per_chunk() {
         for _ in 0..4096 {
             tab.on_css_network_chunk(slot, url.clone(), b"late".to_vec(), 7);
         }
-        assert_eq!(tab.page.stylesheet_slot_lookup_count() - before, 4096);
+        assert_eq!(tab.page.stylesheet_slot_lookup_count() - before, 0);
         assert!(
             rx.try_recv().is_err(),
             "retired chunks are rejected before forwarding"
@@ -660,13 +675,8 @@ fn feed_partial_stylesheet(
         bytes: b"p{color:red".to_vec(),
     })
     .unwrap();
-    let chunk = rx
-        .try_recv()
-        .expect("Browser forwards the partial CSS chunk");
-    assert!(
-        matches!(&chunk, CoreCommand::CssChunk { request_id: id, stylesheet_slot_id, .. } if *id == request_id && *stylesheet_slot_id == slot)
-    );
-    runtime.send(chunk).unwrap();
+    assert!(rx.try_recv().is_err());
+    let _ = runtime;
 }
 
 #[test]
@@ -712,6 +722,19 @@ fn resource_associations_runtime_retires_partial_css_on_document_lifecycle_bound
         let (old_slot, old_url) = stylesheet_fetch(&commands);
         let old_generation = tab.active_document_request_id().expect("admitted fixture");
         feed_partial_stylesheet(&mut tab, &rx, &runtime_tx, old_slot, &old_url);
+        tab.on_css_network_done(
+            old_slot,
+            css_response(&old_url),
+            net::BodyProgress::try_new(ResourceKind::Css, 11).unwrap(),
+            old_generation,
+        );
+        runtime_tx
+            .send(rx.try_recv().expect("postDone chunk"))
+            .unwrap();
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            CoreCommand::CssDone { .. }
+        ));
 
         match boundary {
             "navigation" => tab
@@ -927,7 +950,7 @@ fn resource_associations_runtime_retires_partial_css_on_document_lifecycle_bound
             bytes: b"p{color:green}".to_vec(),
         })
         .unwrap();
-        runtime_tx.send(rx.try_recv().unwrap()).unwrap();
+        assert!(rx.try_recv().is_err());
         // Repeated old cleanup is idempotent and cannot remove the new key.
         runtime_tx
             .send(CoreCommand::CssAbort {
@@ -947,6 +970,9 @@ fn resource_associations_runtime_retires_partial_css_on_document_lifecycle_bound
         })
         .unwrap();
         runtime_tx.send(rx.try_recv().unwrap()).unwrap();
+        runtime_tx
+            .send(rx.try_recv().expect("postDone runtime completion"))
+            .unwrap();
         let decoded = events_rx
             .recv_timeout(Duration::from_secs(5))
             .expect("decoded CSS");
@@ -993,7 +1019,7 @@ fn resource_associations_parser_failure_retires_runtime_buffer_but_keeps_preview
         bytes: b"}".to_vec(),
     })
     .unwrap();
-    runtime_tx.send(rx.try_recv().unwrap()).unwrap();
+    assert!(rx.try_recv().is_err());
     tab.on_core_event(CoreEvent::NetworkDone {
         tab_id: tab.tab_id,
         request_id: generation,
@@ -1003,6 +1029,7 @@ fn resource_associations_parser_failure_retires_runtime_buffer_but_keeps_preview
         body: net::BodyProgress::try_new(ResourceKind::Css, 12).unwrap(),
     })
     .unwrap();
+    runtime_tx.send(rx.try_recv().unwrap()).unwrap();
     runtime_tx.send(rx.try_recv().unwrap()).unwrap();
     let loaded_block = events_rx
         .recv_timeout(Duration::from_secs(5))
@@ -1042,8 +1069,8 @@ fn resource_associations_parser_failure_retires_runtime_buffer_but_keeps_preview
     assert!(commands.iter().any(|command| matches!(command, CoreCommand::CancelRequest { request_id, .. } if *request_id == generation)));
     let aborts = commands.iter().filter(|command| matches!(command, CoreCommand::CssAbort { request_id, stylesheet_slot_id, url: aborted, .. } if *request_id == generation && *stylesheet_slot_id == slot && aborted == &url)).count();
     assert_eq!(
-        aborts, 1,
-        "partial attachment must be retired on cancellation"
+        aborts, 0,
+        "partial acquisition never creates a runtime buffer"
     );
     assert!(commands.iter().all(|command| !matches!(command, CoreCommand::CssAbort { stylesheet_slot_id, .. } if *stylesheet_slot_id == loaded_slot)), "completed attachment must not be cancelled");
     for command in commands {
@@ -1126,7 +1153,7 @@ fn resource_associations_completed_css_queued_before_parser_failure_still_applie
         bytes: b"}".to_vec(),
     })
     .unwrap();
-    runtime_tx.send(rx.try_recv().unwrap()).unwrap();
+    assert!(rx.try_recv().is_err());
     tab.on_core_event(CoreEvent::NetworkDone {
         tab_id: tab.tab_id,
         request_id: generation,
@@ -1136,6 +1163,12 @@ fn resource_associations_completed_css_queued_before_parser_failure_still_applie
         body: net::BodyProgress::try_new(ResourceKind::Css, 12).unwrap(),
     })
     .unwrap();
+    runtime_tx
+        .send(
+            rx.try_recv()
+                .expect("completed transfer queues aggregate chunk"),
+        )
+        .unwrap();
     let css_done = rx.try_recv().expect("completed transfer queues CssDone");
     assert!(
         matches!(&css_done, CoreCommand::CssDone { request_id, stylesheet_slot_id, .. } if *request_id == generation && *stylesheet_slot_id == slot)
@@ -1206,11 +1239,10 @@ fn resource_associations_completed_css_queued_before_parser_failure_still_applie
 #[test]
 fn resource_associations_rejected_css_queued_before_parser_failure_settles_without_style() {
     use std::sync::mpsc;
-    use std::time::Duration;
 
     let (mut tab, rx) =
         addressing_tab("<!doctype html><link rel=stylesheet href=site.css><p>preview</p>");
-    let (runtime_tx, runtime_rx) = mpsc::channel();
+    let (_runtime_tx, runtime_rx) = mpsc::channel();
     let (events_tx, events_rx) = mpsc::channel();
     runtime_css::start_css_runtime(runtime_rx, events_tx);
     let (slot, url) = stylesheet_fetch(&rx.try_iter().collect::<Vec<_>>());
@@ -1254,12 +1286,7 @@ fn resource_associations_rejected_css_queued_before_parser_failure_settles_witho
         body: net::BodyProgress::try_new(ResourceKind::Css, 12).unwrap(),
     })
     .unwrap();
-    let css_done = rx.try_recv().expect("completion queues CssDone");
-    assert!(
-        matches!(&css_done, CoreCommand::CssDone { request_id, stylesheet_slot_id, .. } if *request_id == generation && *stylesheet_slot_id == slot)
-    );
-    runtime_tx.send(css_done).unwrap();
-
+    assert!(rx.try_recv().is_err());
     tab.on_core_event(CoreEvent::HtmlParseFinished {
         diagnostics: None,
         decode_report: None,
@@ -1280,16 +1307,10 @@ fn resource_associations_rejected_css_queued_before_parser_failure_settles_witho
         "a transfer whose completion is queued must not be aborted"
     );
 
-    // No bytes reached the runtime, so the FIFO completion event must be
-    // CssSheetDone directly; a decoded block would be an erroneous stylesheet.
-    let done = events_rx
-        .recv_timeout(Duration::from_secs(5))
-        .expect("queued CSS completion");
-    assert!(
-        matches!(&done, CoreEvent::CssSheetDone { request_id, stylesheet_slot_id, .. }
-        if *request_id == generation && *stylesheet_slot_id == slot)
-    );
-    tab.on_core_event(done).unwrap();
+    assert!(matches!(
+        events_rx.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Empty)
+    ));
     assert_eq!(tab.dom_handle, handle);
     assert!(tab.page.dom.is_some());
     assert!(tab.page.css_stylesheets().is_empty());

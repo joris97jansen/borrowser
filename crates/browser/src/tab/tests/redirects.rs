@@ -325,3 +325,96 @@ fn ai6_runtime_redirect_rejection_settles_consumers_and_keeps_siblings_independe
         assert_eq!(server.finish(), ["/source"]);
     }
 }
+
+#[cfg(feature = "conformance-observation")]
+#[test]
+fn aj7_runtime_http_rejection_empty_sibling_style_and_checked_frame() {
+    use crate::stylesheet_fetch::{StylesheetFetchOutcome, StylesheetResponseRejection};
+    use std::time::Instant;
+    let server=Server::new(BTreeMap::from([
+        ("/doc".into(),reply(200,&[("Content-Type","text/html")],b"<!doctype html><link rel=stylesheet href=good.css><link rel=stylesheet href=empty.css><link rel=stylesheet href=bad.css><p>AJ7 HTTP recovery</p>")),
+        ("/good.css".into(),reply(200,&[("Content-Type","text/css")],b"p{color:blue}")),
+        ("/empty.css".into(),reply(200,&[("Content-Type","text/css")],b"")),
+        ("/bad.css".into(),reply(404,&[("Content-Type","text/css")],b"p{color:red}")),
+    ]));
+    let (net_tx, net_rx) = mpsc::channel();
+    let (parse_tx, parse_rx) = mpsc::channel();
+    let (css_tx, css_rx) = mpsc::channel();
+    let (event_tx, event_rx) = mpsc::channel();
+    runtime_net::start_net_runtime(net_rx, event_tx.clone());
+    runtime_parse::start_parse_runtime(parse_rx, event_tx.clone());
+    runtime_css::start_css_runtime(css_rx, event_tx);
+    let (tx, commands) = mpsc::channel();
+    let mut tab = Tab::new(1);
+    tab.set_bus_sender(tx);
+    tab.navigate_to_new(server.url("/doc")).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        for command in commands.try_iter() {
+            match command {
+                c @ CoreCommand::FetchStream { .. } => net_tx.send(c).unwrap(),
+                CoreCommand::CancelRequest { tab_id, request_id } => {
+                    net_tx
+                        .send(CoreCommand::CancelRequest { tab_id, request_id })
+                        .unwrap();
+                    parse_tx
+                        .send(CoreCommand::CancelRequest { tab_id, request_id })
+                        .unwrap();
+                }
+                c @ (CoreCommand::ParseHtmlStart { .. }
+                | CoreCommand::ParseHtmlChunk { .. }
+                | CoreCommand::ParseHtmlDone { .. }) => parse_tx.send(c).unwrap(),
+                c @ (CoreCommand::CssChunk { .. }
+                | CoreCommand::CssDone { .. }
+                | CoreCommand::CssAbort { .. }) => css_tx.send(c).unwrap(),
+            }
+        }
+        if tab.document_load.parse_status == super::super::state::DocumentParseStatus::Complete
+            && !tab.loading
+        {
+            break;
+        }
+        let e = event_rx
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .expect("HTTP runtime deadline");
+        assert!(!matches!(e, CoreEvent::NetworkError { .. }), "{e:?}");
+        tab.on_core_event(e).unwrap();
+    }
+    assert!(tab.document_load.failure().is_none());
+    assert!(tab.stylesheet_loads.is_empty());
+    assert_eq!(tab.page.pending_count(), 0);
+    assert_eq!(tab.page.css_stylesheets().len(), 2);
+    assert_eq!(
+        super::support::current_element_color(&mut tab, "p"),
+        (0, 0, 255, 255)
+    );
+    let view = tab.observe_parsed_document();
+    let fetches = view.stylesheet_fetches().unwrap().unwrap();
+    let entries = fetches.entries().collect::<Vec<_>>();
+    assert_eq!(entries.len(), 3);
+    assert_eq!(
+        entries[0].result().unwrap().outcome(),
+        StylesheetFetchOutcome::Ready
+    );
+    assert_eq!(
+        entries[1].result().unwrap().body().bytes(),
+        Some([].as_slice())
+    );
+    assert_eq!(entries[1].installation(), Some(Ok(())));
+    assert_eq!(
+        entries[2].result().unwrap().outcome(),
+        StylesheetFetchOutcome::Rejected(StylesheetResponseRejection::HttpStatus(404))
+    );
+    assert_eq!(
+        entries[2].result().unwrap().body().bytes(),
+        Some(b"p{color:red}".as_slice())
+    );
+    assert_eq!(entries[2].installation(), None);
+    let frame = tab
+        .render_observed_frame(&egui::Context::default(), egui::RawInput::default())
+        .expect("recovered HTTP frame");
+    assert!(!frame.element_styles().is_empty());
+    let mut paths = server.finish();
+    paths.sort();
+    assert_eq!(paths, ["/bad.css", "/doc", "/empty.css", "/good.css"]);
+}
