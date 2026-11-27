@@ -842,13 +842,14 @@ fn document_addressing_publication_rejections_preserve_committed_state_and_scope
         assert_eq!(issued_url, "https://example.test/original/site.css?a=1&a=2");
         complete_css(&mut tab, loaded, &loaded_url, "p{color:red}");
         rx.try_iter().for_each(drop);
-        let response = super::support::response_facts(
-            addressing::ResourceKind::Stylesheet,
+        let response = net::NetworkResponseInfo::http(
+            tab.page.stylesheet_address(unfinished).unwrap(),
             issued_url.clone(),
-            issued_url.clone(),
-            Some(200),
-            Some("text/css".into()),
-        );
+            Some(issued_url.clone()),
+            net::HttpStatus::try_from(200).unwrap(),
+            net::HttpHeaders::new(),
+        )
+        .unwrap();
         tab.on_core_event(CoreEvent::NetworkStart {
             tab_id: tab.tab_id,
             request_id: generation,
@@ -866,9 +867,8 @@ fn document_addressing_publication_rejections_preserve_committed_state_and_scope
             bytes: b"p{color:".to_vec(),
         })
         .unwrap();
-        assert!(matches!(rx.try_recv().unwrap(), CoreCommand::CssChunk {
-            request_id, stylesheet_slot_id, url, ..
-        } if request_id == generation && stylesheet_slot_id == unfinished && url == issued_url));
+        // AJ7 buffers raw acquisition until authenticated completion.
+
         assert!(rx.try_recv().is_err());
         assert_eq!(tab.page.pending_count(), 1);
         assert_eq!(tab.page.css_stylesheets().len(), 2);
@@ -976,16 +976,13 @@ fn document_addressing_publication_rejections_preserve_committed_state_and_scope
             assert_eq!(tab.document_load.parse_status, DocumentParseStatus::Pending);
             assert_eq!(tab.last_status, status_before);
             assert_eq!(tab.page.pending_count(), 1);
-            assert_eq!(tab.stylesheet_loads.len(), 2);
+            assert_eq!(tab.stylesheet_loads.len(), 1);
             assert!(matches!(
                 tab.stylesheet_loads[&unfinished].phase,
-                StylesheetLoadPhase::Receiving { .. }
+                StylesheetLoadPhase::Fetching(_)
             ));
             assert_eq!(tab.stylesheet_loads[&unfinished].request_id, generation);
-            assert_eq!(
-                tab.stylesheet_loads[&unfinished].issued_key.as_str(),
-                issued_url
-            );
+            assert_eq!(tab.stylesheet_loads[&unfinished].issued_key(), issued_url);
             assert!(commands.is_empty());
             continue;
         }
@@ -997,21 +994,18 @@ fn document_addressing_publication_rejections_preserve_committed_state_and_scope
         assert!(!tab.loading);
         assert_eq!(tab.page.pending_count(), 0);
         assert!(!tab.stylesheet_loads.contains_key(&unfinished));
-        assert_eq!(tab.stylesheet_loads.len(), 1);
-        assert!(matches!(
-            tab.stylesheet_loads[&loaded].phase,
-            StylesheetLoadPhase::Complete { .. }
-        ));
+        assert!(tab.stylesheet_loads.is_empty());
+        assert_eq!(
+            tab.page.stylesheet_installation_result(loaded),
+            Some(Ok(()))
+        );
         // Only unfinished work is retired. Speculative replacement retirement
         // would also abort the completed request and remove its preview style.
-        assert_eq!(commands.len(), 2, "{rejection}: {commands:?}");
+        assert_eq!(commands.len(), 1, "{rejection}: {commands:?}");
         assert!(
             commands
                 .iter()
-                .any(|command| matches!(command, CoreCommand::CssAbort {
-            tab_id, request_id, stylesheet_slot_id, url,
-        } if *tab_id == tab.tab_id && *request_id == generation
-            && *stylesheet_slot_id == unfinished && url == &issued_url))
+                .all(|command| !matches!(command, CoreCommand::CssAbort { .. }))
         );
         assert!(
             commands

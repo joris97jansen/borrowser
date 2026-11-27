@@ -122,7 +122,14 @@ fn assert_rejection_preserves(
     let mut issued = t
         .stylesheet_loads
         .iter()
-        .map(|(id, s)| (*id, s.request_id, s.issued_key.clone(), format!("{s:?}")))
+        .map(|(id, s)| {
+            (
+                *id,
+                s.request_id,
+                s.issued_key().to_owned(),
+                format!("{s:?}"),
+            )
+        })
         .collect::<Vec<_>>();
     issued.sort_by_key(|(id, ..)| id.0);
     let image = format!(
@@ -155,7 +162,7 @@ fn assert_rejection_preserves(
     for (id, generation, key, state) in issued {
         let actual = &t.stylesheet_loads[&id];
         assert_eq!(actual.request_id, generation);
-        assert_eq!(actual.issued_key, key);
+        assert_eq!(actual.issued_key(), key);
         assert_eq!(format!("{actual:?}"), state);
     }
     assert_eq!(

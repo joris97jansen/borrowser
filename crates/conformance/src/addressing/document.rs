@@ -5,6 +5,7 @@ use crate::{
     execute::{begin_document, publish_document, supplied_response},
     model::HarnessError,
 };
+use browser::tab::{StylesheetFetchOutcome, StylesheetFetchResult, StylesheetResponseRejection};
 use browser::{
     Tab,
     tab::{
@@ -162,8 +163,25 @@ impl<'a> OfflineDocumentDriver<'a> {
                 } else {
                     AddressingRequestState::Pending
                 };
+                let rejected = if declared.response.is_some() && kind == ResourceKind::Css {
+                    rejection_label(
+                        stylesheet_result(
+                            tab,
+                            actual
+                                .slot
+                                .ok_or_else(|| error("missing stylesheet slot"))?,
+                        )?
+                        .outcome(),
+                    )?
+                } else {
+                    None
+                };
                 if tab.observe_addressing_request(kind, &declared.url, actual.request, actual.slot)
-                    != Some(expected)
+                    != if rejected.is_some() {
+                        None
+                    } else {
+                        Some(expected)
+                    }
                 {
                     return Err(error(
                         "served/pending resource does not have the required production state",
@@ -182,12 +200,13 @@ impl<'a> OfflineDocumentDriver<'a> {
                     kind: kind.as_str().into(),
                     url: declared.url.clone(),
                     stylesheet,
-                    state: if declared.response.is_some() {
-                        "complete"
-                    } else {
-                        "pending_unserved"
-                    }
-                    .into(),
+                    state: rejected
+                        .unwrap_or(if declared.response.is_some() {
+                            "complete"
+                        } else {
+                            "pending_unserved"
+                        })
+                        .into(),
                     supplied_final_url: declared
                         .response
                         .as_ref()
@@ -200,6 +219,31 @@ impl<'a> OfflineDocumentDriver<'a> {
     }
 }
 
+fn stylesheet_result(
+    tab: &Tab,
+    slot: StylesheetSlotId,
+) -> Result<&StylesheetFetchResult, HarnessError> {
+    tab.observe_parsed_document()
+        .stylesheet_fetches()
+        .map_err(|e| error(format!("fetch observation: {e:?}")))?
+        .ok_or_else(|| error("missing stylesheet inventory"))?
+        .entries()
+        .find(|entry| entry.slot_id() == slot)
+        .and_then(|entry| entry.result())
+        .ok_or_else(|| error("missing terminal acquisition"))
+}
+fn rejection_label(outcome: StylesheetFetchOutcome) -> Result<Option<&'static str>, HarnessError> {
+    match outcome {
+        StylesheetFetchOutcome::Ready => Ok(None),
+        StylesheetFetchOutcome::Rejected(StylesheetResponseRejection::MissingFinalUrl) => {
+            Ok(Some("rejected_missing_final_url"))
+        }
+        StylesheetFetchOutcome::Rejected(StylesheetResponseRejection::InvalidFinalUrl) => {
+            Ok(Some("rejected_invalid_final_url"))
+        }
+        _ => Err(error("unexpected stylesheet acquisition outcome")),
+    }
+}
 pub(super) fn execute(
     input: AddressingInput,
     case: &DocumentCase,
@@ -324,11 +368,58 @@ pub(super) fn execute(
                 request_id: issued.request,
                 stylesheet_slot_id: Some(slot),
                 kind: ResourceKind::Css,
-                response: metadata,
+                response: metadata.clone(),
                 body: net::BodyProgress::try_new(ResourceKind::Css, bytes.len())
                     .map_err(|_| error("fixture stylesheet exceeds limit"))?,
             },
         )?;
+        let result = stylesheet_result(&tab, slot)?;
+        if result.body().bytes() != Some(bytes)
+            || result.response().response() != Some(&metadata)
+            || !result.request().enqueued()
+            || result.request().request().is_none_or(|request| {
+                request.request_id() != issued.request
+                    || request.original_url() != issued.fetch.original_url()
+            })
+            || result.producer_progress()
+                != Some(
+                    net::BodyProgress::try_new(ResourceKind::Css, bytes.len())
+                        .map_err(|_| error("invalid fixture progress"))?,
+                )
+        {
+            return Err(error(
+                "stylesheet acquisition lost exact response/body/request/completion evidence",
+            ));
+        }
+        if rejection_label(result.outcome())?.is_some() {
+            let view = tab.observe_parsed_document();
+            if view.phase() != browser::tab::ParsedDocumentPhase::Parsed {
+                return Err(error("rejected dependency failed the parsed document"));
+            }
+            let fetches = view
+                .stylesheet_fetches()
+                .map_err(|_| error("inconsistent fetch inventory"))?
+                .ok_or_else(|| error("missing inventory"))?;
+            let entry = fetches
+                .entries()
+                .find(|entry| entry.slot_id() == slot)
+                .ok_or_else(|| error("missing rejected attachment"))?;
+            if entry.live().is_some()
+                || entry.installation().is_some()
+                || entry.phase() != "terminal"
+                || command_rx.try_recv().is_ok()
+            {
+                return Err(error(
+                    "rejected stylesheet retained pending work or emitted CSS commands",
+                ));
+            }
+            let addresses = tab
+                .observe_document_addressing()
+                .map_err(|_| error("address observation unavailable"))?
+                .ok_or_else(|| error("missing document"))?;
+            if addresses.css_sources().iter().any(|source|matches!(source.source(),CssSource::Stylesheet{slot:actual,..}if *actual==slot)){return Err(error("rejected stylesheet installed a parse/resource base"));}
+            continue;
+        }
         let (css, css_rx) = mpsc::channel();
         let (css_events, css_event_rx) = mpsc::channel();
         runtime_css::start_css_runtime(css_rx, css_events);

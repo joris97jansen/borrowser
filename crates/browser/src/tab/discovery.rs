@@ -6,67 +6,207 @@ use core_types::{RequestId, ResourceKind, StylesheetSlotId};
 use net::{FetchRequest, HttpHeaders, RequestAdmissionError, RequestMethod};
 
 impl Tab {
-    pub(crate) fn discover_resources(&mut self, request_id: RequestId) {
-        let _ = self.discover_stylesheets(request_id);
-        self.discover_images(request_id);
-    }
-
-    fn discover_stylesheets(&mut self, request_id: RequestId) -> bool {
-        let outcome = self.page.reconcile_document_stylesheets();
-        self.retire_stylesheet_requests(outcome.retired);
-        for fetch in outcome.fetches {
-            let issued_key = fetch.address.retrieval_key();
-            let command = self
-                .resource_request(request_id, fetch.address)
-                .and_then(|request| {
-                    CoreCommand::try_fetch_stream(
-                        self.tab_id,
-                        Some(fetch.slot_id),
-                        ResourceKind::Css,
-                        request,
-                    )
-                });
-            let command = match command {
-                Ok(command) => command,
-                Err(_) => {
-                    let work = self.page.mark_css_failed(fetch.slot_id);
-                    self.request_optional_render_work(work);
-                    if self.document_load.failure().is_none() {
-                        self.last_status = Some("Stylesheet request rejected".into());
-                    }
+    pub(super) fn dispatch_stylesheets(
+        &mut self,
+        request_id: RequestId,
+        fetches: Vec<StylesheetSlotId>,
+    ) {
+        #[cfg(test)]
+        use crate::stylesheet_fetch::{AllocationBoundary, allocation_refused};
+        use crate::stylesheet_fetch::{
+            METADATA_BYTES, StylesheetFetchAccumulator, StylesheetFetchFailure,
+            StylesheetRequestEvidence, StylesheetRetentionFailure, request_charge_before_copy,
+        };
+        for slot in fetches {
+            let reject = |tab: &mut Self, failure: StylesheetFetchFailure| {
+                tab.finish_unissued_stylesheet(
+                    slot,
+                    StylesheetRequestEvidence::NotConstructed,
+                    failure,
+                );
+            };
+            if !self.page.stylesheet_body_available() {
+                reject(
+                    self,
+                    StylesheetFetchFailure::Retention(
+                        StylesheetRetentionFailure::BodyReservationDenied,
+                    ),
+                );
+                continue;
+            }
+            if let Err(f) = self.page.reserve_stylesheet_metadata(slot) {
+                reject(self, StylesheetFetchFailure::Retention(f));
+                continue;
+            }
+            let opaque = self
+                .page
+                .addresses
+                .as_ref()
+                .is_none_or(|a| a.document_origin().is_opaque());
+            let origin_allowance = if opaque {
+                Some(0)
+            } else {
+                self.page
+                    .document_url()
+                    .map_or(Some(32), |u| u.as_str().len().checked_add(32))
+            };
+            let charge = request_charge_before_copy(
+                self.page
+                    .stylesheet_address(slot)
+                    .expect("prepared frozen address")
+                    .url(),
+                self.page.document_url(),
+                opaque,
+            );
+            if charge.is_none_or(|n| n > METADATA_BYTES) || origin_allowance.is_none() {
+                self.page.release_stylesheet_metadata(slot);
+                reject(
+                    self,
+                    StylesheetFetchFailure::Retention(
+                        StylesheetRetentionFailure::RequestMetadataLimit,
+                    ),
+                );
+                continue;
+            }
+            let request = match self.resource_request(
+                request_id,
+                self.page
+                    .stylesheet_address(slot)
+                    .expect("admitted frozen address")
+                    .clone(),
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    self.page.release_stylesheet_metadata(slot);
+                    reject(self, StylesheetFetchFailure::RequestAdmission(e));
                     continue;
                 }
             };
-            // Register before enqueueing. Event handlers require exclusive &mut
-            // Tab access, so none can observe the provisional record during this
-            // call. Queue acceptance is not response admission or network execution.
-            let std::collections::hash_map::Entry::Vacant(entry) =
-                self.stylesheet_loads.entry(fetch.slot_id)
-            else {
-                // A retained attachment never starts a second request. Preserve
-                // any existing admission rather than replacing its provenance.
-                continue;
+            let origin_allowance = origin_allowance.expect("checked origin allowance");
+            let accumulator = match StylesheetFetchAccumulator::try_new(request, origin_allowance) {
+                Ok(accumulator) => accumulator,
+                Err(result) => {
+                    self.page.release_stylesheet_metadata(slot);
+                    self.page.finish_stylesheet_fetch(slot, result);
+                    let work = self.page.mark_css_failed(slot);
+                    self.request_optional_render_work(work);
+                    continue;
+                }
             };
-            entry.insert(StylesheetLoadState {
-                request_id,
+            let StylesheetFetchAccumulator {
+                request,
                 issued_key,
-                phase: StylesheetLoadPhase::AwaitingStart,
-            });
+                origin_allowance,
+                ..
+            } = accumulator;
+            if let Err(f) = self.page.provision_stylesheet_body(slot) {
+                self.finish_unissued_stylesheet(
+                    slot,
+                    StylesheetRequestEvidence::Constructed {
+                        request,
+                        issued_key,
+                        enqueued: false,
+                        origin_allowance,
+                    },
+                    StylesheetFetchFailure::Retention(f),
+                );
+                continue;
+            }
+            #[cfg(test)]
+            let refused = allocation_refused(AllocationBoundary::RequestRecord);
+            #[cfg(not(test))]
+            let refused = false;
+            if refused || self.stylesheet_loads.try_reserve(1).is_err() {
+                self.finish_unissued_stylesheet(
+                    slot,
+                    StylesheetRequestEvidence::Constructed {
+                        request,
+                        issued_key,
+                        enqueued: false,
+                        origin_allowance,
+                    },
+                    StylesheetFetchFailure::Retention(
+                        StylesheetRetentionFailure::RequestRecordAllocation,
+                    ),
+                );
+                continue;
+            }
+            let command = match CoreCommand::try_fetch_stream(
+                self.tab_id,
+                Some(slot),
+                ResourceKind::Css,
+                request.clone(),
+            ) {
+                Ok(c) => c,
+                Err(e) => {
+                    self.finish_unissued_stylesheet(
+                        slot,
+                        StylesheetRequestEvidence::Constructed {
+                            request,
+                            issued_key,
+                            enqueued: false,
+                            origin_allowance,
+                        },
+                        StylesheetFetchFailure::RequestAdmission(e),
+                    );
+                    continue;
+                }
+            };
+            self.stylesheet_loads.insert(
+                slot,
+                StylesheetLoadState {
+                    request_id,
+                    phase: StylesheetLoadPhase::Fetching(StylesheetFetchAccumulator {
+                        request,
+                        issued_key,
+                        origin_allowance,
+                        response: None,
+                        policy: None,
+                        bytes: Vec::new(),
+                        observed_bytes: 0,
+                    }),
+                },
+            );
             if self
                 .cmd_tx
                 .as_ref()
-                .is_none_or(|tx| tx.send(command).is_err())
+                .is_some_and(|tx| tx.send(command).is_ok())
             {
-                // Nothing was dispatched: rollback without a phantom CssAbort.
-                self.stylesheet_loads.remove(&fetch.slot_id);
-                let work = self.page.mark_css_failed(fetch.slot_id);
-                self.request_optional_render_work(work);
-                if self.document_load.failure().is_none() {
-                    self.last_status = Some("Stylesheet request delivery failed".into());
-                }
+                self.page.issue_stylesheet_body(slot);
+            } else {
+                let load = self
+                    .stylesheet_loads
+                    .remove(&slot)
+                    .expect("provisional request");
+                let StylesheetLoadPhase::Fetching(a) = load.phase else {
+                    unreachable!("new request")
+                };
+                self.finish_unissued_stylesheet(
+                    slot,
+                    StylesheetRequestEvidence::Constructed {
+                        request: a.request,
+                        issued_key: a.issued_key,
+                        enqueued: false,
+                        origin_allowance: a.origin_allowance,
+                    },
+                    StylesheetFetchFailure::RequestDeliveryUnavailable,
+                );
             }
         }
-        self.request_optional_render_work(outcome.render_invalidation)
+    }
+    fn finish_unissued_stylesheet(
+        &mut self,
+        slot: core_types::StylesheetSlotId,
+        request: crate::stylesheet_fetch::StylesheetRequestEvidence,
+        failure: crate::stylesheet_fetch::StylesheetFetchFailure,
+    ) {
+        self.page.rollback_stylesheet_body(slot);
+        self.page.finish_stylesheet_fetch(
+            slot,
+            crate::stylesheet_fetch::StylesheetFetchResult::unissued(request, failure),
+        );
+        let work = self.page.mark_css_failed(slot);
+        self.request_optional_render_work(work);
     }
 
     pub(super) fn retire_stylesheet_requests(&mut self, retired: Vec<StylesheetSlotId>) {
@@ -85,7 +225,7 @@ impl Tab {
         self.retire_stylesheet_requests(retired);
     }
 
-    fn discover_images(&mut self, request_id: RequestId) {
+    pub(super) fn discover_images(&mut self, request_id: RequestId) {
         let sources = self.page.reconcile_image_sources();
         let cmd_tx = self.cmd_tx.clone();
         let tab_id = self.tab_id;

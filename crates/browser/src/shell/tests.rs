@@ -101,7 +101,7 @@ fn feed_chunk(
     key: (u64, u64, StylesheetSlotId),
     url: &str,
     bytes: &[u8],
-) {
+) -> CoreCommand {
     let (tab_id, request_id, slot) = key;
     app.on_core_event(CoreEvent::NetworkStart {
         tab_id,
@@ -118,11 +118,22 @@ fn feed_chunk(
         url: url.into(),
         bytes: bytes.to_vec(),
     });
-    let chunk = rx.try_recv().expect("Browser forwards CSS bytes");
+    app.on_core_event(CoreEvent::NetworkDone {
+        tab_id,
+        request_id,
+        stylesheet_slot_id: Some(slot),
+        kind: ResourceKind::Css,
+        response: response(addressing::ResourceKind::Stylesheet, url, "text/css"),
+        body: net::BodyProgress::try_new(ResourceKind::Css, bytes.len()).unwrap(),
+    });
+    let chunk = rx.try_recv().expect("Browser forwards completed CSS bytes");
     assert!(
         matches!(&chunk, CoreCommand::CssChunk { tab_id: id, request_id: request, stylesheet_slot_id, .. } if *id == tab_id && *request == request_id && *stylesheet_slot_id == slot)
     );
     runtime.send(chunk).unwrap();
+    let done = rx.try_recv().unwrap();
+    assert!(matches!(done, CoreCommand::CssDone { .. }));
+    done
 }
 
 #[test]
@@ -198,7 +209,7 @@ fn stylesheet_runtime_tab_close_discards_old_buffer_and_does_not_touch_new_tab()
         let (new_tab, generation, slot, url) =
             open_document(&mut app, &cmd_rx, "https://example.test/new/page");
         assert_ne!(old_tab, new_tab);
-        feed_chunk(
+        let actual_done = feed_chunk(
             &mut app,
             &cmd_rx,
             &runtime_tx,
@@ -224,9 +235,7 @@ fn stylesheet_runtime_tab_close_discards_old_buffer_and_does_not_touch_new_tab()
             response: response(addressing::ResourceKind::Stylesheet, &url, "text/css"),
             body: net::BodyProgress::try_new(ResourceKind::Css, 14).unwrap(),
         });
-        runtime_tx
-            .send(cmd_rx.try_recv().expect("Browser forwards CssDone"))
-            .unwrap();
+        runtime_tx.send(actual_done).unwrap();
         let decoded = events_rx
             .recv_timeout(Duration::from_secs(5))
             .expect("new stylesheet decoded");

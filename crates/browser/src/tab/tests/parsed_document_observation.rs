@@ -4,6 +4,14 @@ use std::cell::Cell;
 thread_local! {static WORK:Cell<(bool,[usize;3])>=const{Cell::new((false,[0;3]))};}
 thread_local! {static REFUSE_NEXT:Cell<bool>=const{Cell::new(false)};}
 thread_local! {static REFUSE_AFTER:Cell<Option<usize>>=const{Cell::new(None)};}
+// Arm immediately before a qualified fallible inventory reservation, avoiding
+// accidental refusal in inherited AH/CSS or fixture construction allocations.
+pub(crate) fn arm_inventory_allocation_refusal() {
+    REFUSE_NEXT.with(|v| assert!(!v.replace(true)));
+}
+pub(crate) fn inventory_refusal_consumed() -> bool {
+    REFUSE_NEXT.with(|v| !v.get())
+}
 fn refuse() -> bool {
     if REFUSE_NEXT.try_with(|v| v.replace(false)).unwrap_or(false) {
         return true;
@@ -80,7 +88,7 @@ impl Drop for Scope {
         });
     }
 }
-pub(super) fn allocation_work<T>(f: impl FnOnce() -> T) -> (T, [usize; 3]) {
+pub(crate) fn allocation_work<T>(f: impl FnOnce() -> T) -> (T, [usize; 3]) {
     WORK.with(|w| {
         assert!(!w.get().0);
         w.set((true, [0; 3]));

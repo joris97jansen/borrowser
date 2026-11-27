@@ -92,6 +92,8 @@ pub(super) enum LoadStateInvariant {
     RequestGeneration,
     RequestProvenance,
     SlotPhase,
+    RetentionAccounting,
+    FetchEvidence,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -109,6 +111,7 @@ pub(super) enum DocumentLoadFailure {
         response_context: NetworkResponseInfo,
     },
     Publication(DocumentPublicationFailure),
+    StylesheetInventory(crate::stylesheet_fetch::StylesheetInventoryError),
     ResponseRequestMismatch(NetworkResponseInfo),
     ResponseUrlUnavailable(NetworkResponseInfo),
     UnsupportedDocumentCreation {
@@ -132,7 +135,7 @@ pub(super) enum DocumentLoadFailure {
 impl std::fmt::Debug for DocumentLoadFailure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // The presentation projection never formats nested owning error data.
-        f.write_str(&super::status::document_failure_status(self))
+        super::status::write_document_failure_status(f, self)
     }
 }
 
@@ -197,71 +200,59 @@ impl std::fmt::Debug for DocumentLoadState {
     }
 }
 
-#[derive(Clone)]
 pub(super) struct StylesheetLoadState {
     pub(super) request_id: RequestId,
-    pub(super) issued_key: addressing::ResourceIdentityKey,
     pub(super) phase: StylesheetLoadPhase,
 }
-
-#[derive(Clone)]
+// Inline acquisition ownership avoids an unqualified Box allocation per request.
+#[allow(clippy::large_enum_variant)]
 pub(super) enum StylesheetLoadPhase {
-    AwaitingStart,
-    Receiving {
-        response: NetworkResponseInfo,
-        accept_body: bool,
-        body_forwarded: bool,
-    },
+    Fetching(crate::stylesheet_fetch::StylesheetFetchAccumulator),
     AwaitingRuntime {
-        response: NetworkResponseInfo,
-        accept_body: bool,
         progress: CssRuntimeProgress,
-    },
-    Complete {
-        response: NetworkResponseInfo,
+        abort_url: String,
     },
 }
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum CssRuntimeProgress {
-    NoBlockExpected,
     AwaitingBlock,
     BlockReceived,
 }
-
-impl StylesheetLoadPhase {
-    pub(super) fn accepted_response(&self) -> Option<&NetworkResponseInfo> {
-        match self {
-            Self::AwaitingStart => None,
-            Self::Receiving { response, .. }
-            | Self::AwaitingRuntime { response, .. }
-            | Self::Complete { response } => Some(response),
+impl StylesheetLoadState {
+    #[cfg(any(test, feature = "conformance-observation"))]
+    pub(super) fn issued_key(&self) -> &str {
+        match &self.phase {
+            StylesheetLoadPhase::Fetching(a) => a.issued_key.as_str(),
+            StylesheetLoadPhase::AwaitingRuntime { abort_url, .. } => abort_url.as_str(),
         }
     }
-    pub(super) fn network_complete(&self) -> bool {
-        matches!(self, Self::AwaitingRuntime { .. } | Self::Complete { .. })
-    }
 }
-
 impl std::fmt::Debug for StylesheetLoadState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let phase = match self.phase {
-            StylesheetLoadPhase::AwaitingStart => "awaiting-start",
-            StylesheetLoadPhase::Receiving { .. } => "receiving",
-            StylesheetLoadPhase::AwaitingRuntime { .. } => "awaiting-runtime",
-            StylesheetLoadPhase::Complete { .. } => "complete",
-        };
         f.debug_struct("StylesheetLoadState")
-            .field("issued_key", &self.issued_key)
-            .field("phase", &phase)
             .field(
-                "response_admitted",
-                &self.phase.accepted_response().is_some(),
+                "phase",
+                &match &self.phase {
+                    StylesheetLoadPhase::Fetching(a) if a.response.is_none() => "awaiting-start",
+                    StylesheetLoadPhase::Fetching(_) => "receiving",
+                    StylesheetLoadPhase::AwaitingRuntime { .. } => "awaiting-runtime",
+                },
             )
             .finish()
     }
 }
-
+impl StylesheetLoadPhase {
+    pub(super) fn network_complete(&self) -> bool {
+        matches!(self, Self::AwaitingRuntime { .. })
+    }
+    #[cfg(test)]
+    pub(super) fn accepted_response(&self) -> Option<&NetworkResponseInfo> {
+        match self {
+            Self::Fetching(a) => a.response.as_ref(),
+            _ => None,
+        }
+    }
+}
 pub struct Tab {
     pub tab_id: TabId,
 
@@ -546,25 +537,44 @@ impl Tab {
     }
 
     pub(super) fn fail_document(&mut self, failure: DocumentLoadFailure) {
-        if self.document_load.failure().is_none() {
-            self.last_status = Some(super::status::document_failure_status(&failure));
-            self.document_load.parse_status = DocumentParseStatus::Failed(failure);
-            self.loading = false;
-            let completed = self
-                .stylesheet_loads
-                .iter()
-                .filter_map(|(id, load)| load.phase.network_complete().then_some(*id))
-                .collect();
-            let pending = self.page.abort_pending_external_stylesheets(&completed);
-            self.retire_stylesheet_requests(pending);
-            if let Some(request_id) = self.active_document_request_id() {
-                self.send_cmd(CoreCommand::CancelRequest {
-                    tab_id: self.tab_id,
-                    request_id,
-                });
-            }
-            self.poke_redraw();
+        if self.document_load.failure().is_some() {
+            return;
         }
+        let inventory_failure = matches!(failure, DocumentLoadFailure::StylesheetInventory(_));
+        self.document_load.parse_status = DocumentParseStatus::Failed(failure);
+        self.loading = false;
+        self.last_status = None;
+        for index in 0..self.page.stylesheet_slot_count() {
+            let slot = self
+                .page
+                .stylesheet_slot_id_at(index)
+                .expect("current order");
+            if self
+                .stylesheet_loads
+                .get(&slot)
+                .is_some_and(|l| !l.phase.network_complete())
+            {
+                self.fail_css_acquisition(
+                    slot,
+                    crate::stylesheet_fetch::StylesheetFetchFailure::DocumentAborted,
+                    None,
+                    crate::stylesheet_fetch::StylesheetCollectionStop::DocumentAborted,
+                );
+            }
+        }
+        if let Some(request_id) = self.active_document_request_id() {
+            self.send_cmd(CoreCommand::CancelRequest {
+                tab_id: self.tab_id,
+                request_id,
+            });
+        }
+        if !inventory_failure {
+            self.last_status = self
+                .document_load
+                .failure()
+                .map(super::status::document_failure_status);
+        }
+        self.poke_redraw();
     }
 
     pub(super) fn is_current(&self, tab_id: TabId, request_id: RequestId) -> bool {

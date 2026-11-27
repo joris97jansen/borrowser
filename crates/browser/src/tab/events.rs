@@ -10,6 +10,25 @@ use crate::page::{DomMutationFacts, PendingDomMutationFacts};
 use bus::{CoreEvent, DocumentPublication, DocumentPublicationFailure, DocumentPublicationPayload};
 use core_types::ResourceKind;
 
+enum DocumentCommitFailure {
+    Publication(DocumentPublicationFailure),
+    StylesheetInventory(crate::stylesheet_fetch::StylesheetInventoryError),
+}
+impl From<DocumentPublicationFailure> for DocumentCommitFailure {
+    fn from(e: DocumentPublicationFailure) -> Self {
+        Self::Publication(e)
+    }
+}
+impl DocumentCommitFailure {
+    #[cfg(test)]
+    fn public_category(self) -> DocumentPublicationFailure {
+        match self {
+            Self::Publication(e) => e,
+            Self::StylesheetInventory(_) => DocumentPublicationFailure::ResourceUnavailable,
+        }
+    }
+}
+
 impl Tab {
     /// Apply an event, returning Browser publication/commit failures.
     /// Parser execution failures remain owned by `HtmlParseFinished`.
@@ -80,9 +99,16 @@ impl Tab {
                     self.on_document_publication_failure(failure.clone());
                     return Err(failure);
                 }
-                if let Err(failure) = self.commit_document_publication(publication, request_id) {
-                    self.on_document_publication_failure(failure.clone());
-                    return Err(failure);
+                match self.commit_document_publication(publication, request_id) {
+                    Ok(()) => {}
+                    Err(DocumentCommitFailure::Publication(error)) => {
+                        self.on_document_publication_failure(error.clone());
+                        return Err(error);
+                    }
+                    Err(DocumentCommitFailure::StylesheetInventory(cause)) => {
+                        self.fail_document(DocumentLoadFailure::StylesheetInventory(cause));
+                        return Err(DocumentPublicationFailure::ResourceUnavailable);
+                    }
                 }
             }
             CoreEvent::HtmlParseFinished {
@@ -202,17 +228,15 @@ impl Tab {
                 url,
                 error_kind,
                 response,
-                body: _,
-                error,
+                body,
+                error: _,
             } if self.is_current(tab_id, request_id) => {
                 self.on_css_network_error(
                     stylesheet_slot_id,
                     url,
                     error_kind,
-                    response
-                        .as_ref()
-                        .and_then(net::NetworkResponseInfo::status_code),
-                    error,
+                    response,
+                    body,
                     request_id,
                 );
             }
@@ -259,7 +283,7 @@ impl Tab {
         &mut self,
         publication: DocumentPublication,
         request_id: u64,
-    ) -> Result<(), DocumentPublicationFailure> {
+    ) -> Result<(), DocumentCommitFailure> {
         self.commit_document_publication_with_identity_resolver(
             publication,
             request_id,
@@ -279,7 +303,7 @@ impl Tab {
             crate::dom_store::ResolvedMutationNodeIds,
             DomIdentityResolutionError,
         >,
-    ) -> Result<(), DocumentPublicationFailure> {
+    ) -> Result<(), DocumentCommitFailure> {
         let DocumentPublication {
             handle,
             document_mode,
@@ -298,7 +322,7 @@ impl Tab {
         let (dom, mutation_facts, staged_version) = match payload {
             DocumentPublicationPayload::Patch { from, to, patches } => {
                 if !new_handle && self.page.document_mode != Some(document_mode) {
-                    return Err(DocumentPublicationFailure::DocumentModeChanged);
+                    return Err(DocumentPublicationFailure::DocumentModeChanged.into());
                 }
                 if new_handle {
                     staged_store.clear();
@@ -368,27 +392,29 @@ impl Tab {
             }
         };
 
-        // Commit only after the candidate store and materialized DOM validate.
-        let retired = if mutation_facts.document_replaced() {
-            let mut ids: Vec<_> = self.stylesheet_loads.keys().copied().collect();
-            ids.sort_by_key(|id| id.0);
-            ids
-        } else {
-            Vec::new()
-        };
+        let prepared_styles = self
+            .page
+            .prepare_document_stylesheets(
+                &dom,
+                Some(addresses.active_base_url()),
+                mutation_facts.document_replaced(),
+            )
+            .map_err(DocumentCommitFailure::StylesheetInventory)?;
         self.page.addresses = Some(addresses);
         self.dom_store = staged_store;
         self.dom_handle = Some(handle);
         self.dom_version = staged_version;
-        let render_work = self
-            .page
-            .commit_dom_publication(dom, document_mode, mutation_facts);
-        self.retire_stylesheet_requests(retired);
+        let (render_work, styles) =
+            self.page
+                .commit_dom_publication(dom, document_mode, mutation_facts, prepared_styles);
+        self.retire_stylesheet_requests(styles.retired);
         self.page.update_head_metadata();
         self.page
             .seed_input_values_from_dom(&mut self.document_input.input_values);
         self.page.update_visible_text_cache();
-        self.discover_resources(request_id);
+        self.dispatch_stylesheets(request_id, styles.fetches);
+        self.request_optional_render_work(styles.render_invalidation);
+        self.discover_images(request_id);
         let settlement = self.update_loading();
         self.update_document_progress(settlement);
         self.request_dom_publication_render_work(render_work);
@@ -415,6 +441,7 @@ impl Tab {
                 }
             },
         )
+        .map_err(DocumentCommitFailure::public_category)
     }
 
     fn update_document_progress(

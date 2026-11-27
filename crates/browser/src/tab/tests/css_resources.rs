@@ -1,7 +1,6 @@
 use super::super::Tab;
 use super::support::*;
-use crate::page::css_resources::{CssBase, CssReferenceOutcome as O, CssSource};
-use addressing::{UrlDiagnostic as D, UrlFailureKind, UrlParseError as E};
+use crate::page::css_resources::{CssReferenceOutcome as O, CssSource};
 use bus::CoreCommand;
 
 fn fixture(final_url: &str, css: &str) -> (Tab, std::sync::mpsc::Receiver<CoreCommand>) {
@@ -137,11 +136,15 @@ fn css_resource_response_base_is_distinct_from_request_identity() {
     assert_eq!(address(&results[1]), address(&results[0]));
     assert_eq!(address(&results[2]), "https://cdn.test/assets/cursor.png");
     assert_eq!(
-        tab.stylesheet_loads
-            .values()
+        tab.page
+            .stylesheet_lifecycle_slots()
             .next()
             .unwrap()
-            .issued_key
+            .fetch_result()
+            .unwrap()
+            .request()
+            .issued_key()
+            .unwrap()
             .as_str(),
         "https://example.test/dir/site.css"
     );
@@ -151,23 +154,25 @@ fn css_resource_unavailable_bases_do_not_guess_and_keep_failures_separate() {
     let css = "p{background:url(https:icons/logo.svg),url('https:'),url(icons/logo.svg),url(https://cdn.test/a),url('https://[::1'),url('https://cdn.test/a%zz%yy')}";
     for base in ["", "https://source.test:bad/main.css"] {
         let (tab, _) = fixture(base, css);
-        let sources = tab.page.css_resource_references().unwrap().unwrap();
-        if base.is_empty() {
-            assert!(matches!(sources[0].base, CssBase::Response(None)));
-        } else {
-            assert!(
-                matches!(sources[0].base, CssBase::Response(Some(Err(f))) if f.kind == UrlFailureKind::InvalidInput(E::InvalidPort))
-            );
-        }
-        let results = outcomes(&tab);
-        assert!(results[..3].iter().all(|r| matches!(r, O::UnresolvedBase)));
-        assert_eq!(address(&results[3]), "https://cdn.test/a");
         assert!(
-            matches!(&results[4], O::Failed(f) if f.kind == UrlFailureKind::InvalidInput(E::InvalidIpv6Address) && f.base.is_none())
+            tab.page
+                .css_resource_references()
+                .unwrap()
+                .unwrap()
+                .is_empty()
         );
-        assert!(
-            matches!(&results[5], O::Resolved { diagnostics, .. } if diagnostics == &[D::InvalidPercentEncoding, D::InvalidPercentEncoding])
-        );
+        let r = tab
+            .page
+            .stylesheet_lifecycle_slots()
+            .next()
+            .unwrap()
+            .fetch_result()
+            .unwrap();
+        assert!(matches!(
+            r.outcome(),
+            crate::stylesheet_fetch::StylesheetFetchOutcome::Rejected(_)
+        ));
+        assert!(tab.stylesheet_loads.is_empty());
     }
     let (tab, _) = fixture("https://example.test/css/main.css", css);
     let results = outcomes(&tab);
@@ -260,7 +265,16 @@ fn css_resource_inline_observations_follow_committed_document_base() {
             "https://cdn.test/css/external.svg"
         ]
     );
-    assert_eq!(tab.stylesheet_loads[&slot].issued_key.as_str(), url);
+    assert_eq!(
+        tab.page
+            .stylesheet_fetch_result(slot)
+            .unwrap()
+            .request()
+            .issued_key()
+            .unwrap()
+            .as_str(),
+        url
+    );
     assert!(commands.try_recv().is_err());
 }
 #[test]
@@ -363,7 +377,12 @@ fn css_resource_incomplete_source_blocks_resolution_without_erasing_context() {
 #[test]
 fn css_resource_attachment_retirement_does_not_reuse_the_old_base() {
     let (mut tab, commands) = fixture("https://old-cdn.test/css/main.css", "p{background:url(a)}");
-    let old_slot = *tab.stylesheet_loads.keys().next().unwrap();
+    let old_slot = tab
+        .page
+        .stylesheet_lifecycle_slots()
+        .next()
+        .unwrap()
+        .slot_id();
     let owner = element_id(tab.page.dom.as_deref().unwrap(), "sheet");
     publish_addressing_patches(
         &mut tab,

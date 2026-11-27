@@ -22,6 +22,24 @@ mod events;
 mod html;
 mod image;
 mod load_observation;
+mod stylesheet_fetch_observation;
+#[cfg(feature = "conformance-observation")]
+pub use crate::document_style::StylesheetSourceObservation;
+#[cfg(feature = "conformance-observation")]
+pub use crate::stylesheet_fetch::{
+    StylesheetBodyEvidence, StylesheetCollectionStop, StylesheetErrorContext,
+    StylesheetEvidenceOmission, StylesheetFetchFailure, StylesheetFetchOutcome,
+    StylesheetFetchResult, StylesheetInstallationFailure, StylesheetInventoryError,
+    StylesheetInventoryStorage, StylesheetProtocolFailure, StylesheetRequestEvidence,
+    StylesheetResponseEvidence, StylesheetResponsePolicy, StylesheetResponseRejection,
+    StylesheetRetentionFailure, StylesheetSourceFailure,
+};
+pub use stylesheet_fetch_observation::StylesheetFetchSnapshotError;
+#[cfg(feature = "conformance-observation")]
+pub use stylesheet_fetch_observation::{
+    StylesheetFetchEntry, StylesheetFetchObservation, StylesheetFetchObservationError,
+    StylesheetLiveAcquisition,
+};
 mod parsed_document_observation;
 pub use crate::page::stylesheet_discovery::StylesheetDiscoverySnapshotError;
 #[cfg(feature = "conformance-observation")]
@@ -44,7 +62,7 @@ mod nav;
 mod state;
 mod status;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 mod ui;
 
 #[cfg(feature = "conformance-observation")]

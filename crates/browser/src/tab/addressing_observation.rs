@@ -134,15 +134,23 @@ impl Tab {
                 _ => None,
             },
             (core_types::ResourceKind::Css, Some(slot)) => {
-                let load = self.stylesheet_loads.get(&slot)?;
-                if load.request_id != request || load.issued_key.as_str() != url {
-                    return None;
+                if let Some(load) = self.stylesheet_loads.get(&slot) {
+                    if load.request_id != request || load.issued_key() != url {
+                        return None;
+                    }
+                    return Some(match &load.phase {
+                        StylesheetLoadPhase::Fetching(a) if a.response.is_none() => {
+                            AddressingRequestState::Pending
+                        }
+                        _ => AddressingRequestState::InProgress,
+                    });
                 }
-                Some(match load.phase {
-                    StylesheetLoadPhase::AwaitingStart => AddressingRequestState::Pending,
-                    StylesheetLoadPhase::Complete { .. } => AddressingRequestState::Complete,
-                    _ => AddressingRequestState::InProgress,
-                })
+                let result = self.page.stylesheet_fetch_result(slot)?;
+                let issued = result.request().request()?;
+                (issued.request_id() == request
+                    && result.request().issued_key()?.as_str() == url
+                    && self.page.stylesheet_installation_result(slot) == Some(Ok(())))
+                .then_some(AddressingRequestState::Complete)
             }
             _ => None,
         }

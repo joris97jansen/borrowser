@@ -235,3 +235,47 @@ impl PageState {
         Some(output)
     }
 }
+
+#[cfg(test)]
+mod unavailable_base_tests {
+    use super::*;
+    #[test]
+    fn aj7_ah8_unavailable_response_base_preserves_independent_reference_resolution() {
+        let sheet = css::parse_stylesheet_with_options(
+            "p{background:url(relative.svg),url(https:icons/logo.svg),url(https://cdn.test/absolute.svg),url('https://[::1')}",
+            &ParseOptions::stylesheet(),
+        );
+        let failure = BrowserUrl::parse("https://cdn.test:bad/main.css").unwrap_err();
+        let invalid = Err(failure);
+        for base in [CssBase::Response(None), CssBase::Response(Some(&invalid))] {
+            let source = CssSourceReferences {
+                owner: Id(1),
+                source: CssSource::Stylesheet {
+                    slot: core_types::StylesheetSlotId(1),
+                    id: StylesheetSourceId::from_browser_slot(1).unwrap(),
+                },
+                base,
+                condition_deferred: false,
+                discovery: css_refs::discover_stylesheet_resource_references(
+                    &sheet,
+                    &ParseOptions::stylesheet(),
+                ),
+            };
+            let outcomes = source
+                .discovery
+                .references
+                .iter()
+                .map(|reference| source.outcome(reference))
+                .collect::<Vec<_>>();
+            assert_eq!(outcomes.len(), 4);
+            assert!(matches!(outcomes[0], CssReferenceOutcome::UnresolvedBase));
+            assert!(matches!(outcomes[1], CssReferenceOutcome::UnresolvedBase));
+            assert!(
+                matches!(&outcomes[2],CssReferenceOutcome::Resolved{address,diagnostics}if address.url().as_str()=="https://cdn.test/absolute.svg"&&diagnostics.is_empty())
+            );
+            assert!(
+                matches!(&outcomes[3],CssReferenceOutcome::Failed(failure)if failure.kind==addressing::UrlFailureKind::InvalidInput(addressing::UrlParseError::InvalidIpv6Address)&&failure.diagnostics.is_empty())
+            );
+        }
+    }
+}

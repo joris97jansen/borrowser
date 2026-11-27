@@ -356,10 +356,11 @@ fn aj2_stylesheet_status_waits_for_all_installed_runtime_completions() {
     QUERY_WORK.with(|work| work.set((0, 0)));
     sheet_done(&mut tab, requests[0].0, &requests[0].1);
     assert_eq!(QUERY_WORK.with(|work| work.get()), (1, 2));
-    assert!(matches!(
-        tab.stylesheet_loads[&requests[0].0].phase,
-        StylesheetLoadPhase::Complete { .. }
-    ));
+    assert!(!tab.stylesheet_loads.contains_key(&requests[0].0));
+    assert_eq!(
+        tab.page.stylesheet_installation_result(requests[0].0),
+        Some(Ok(()))
+    );
     assert!(matches!(
         tab.stylesheet_loads[&requests[1].0].phase,
         StylesheetLoadPhase::AwaitingRuntime {
@@ -484,26 +485,31 @@ fn aj2_orphan_generation_provenance_and_phase_relationships_are_not_pending() {
         let (slot, _) = css_request(&commands);
         match case {
             "orphan" => {
-                let record = tab.stylesheet_loads[&slot].clone();
+                let record = tab.stylesheet_loads.remove(&slot).expect("issued fixture");
                 tab.stylesheet_loads
                     .insert(StylesheetSlotId(u64::MAX), record);
             }
             "generation" => tab.stylesheet_loads.get_mut(&slot).unwrap().request_id += 1,
-            "phase" | "provenance" => {
-                tab.stylesheet_loads.get_mut(&slot).unwrap().phase = StylesheetLoadPhase::Complete {
-                    response: response_facts(
-                        addressing::ResourceKind::Stylesheet,
-                        if case == "phase" {
-                            "https://example.test/dir/a.css"
-                        } else {
-                            "https://wrong.test/"
-                        }
-                        .into(),
-                        "https://cdn.test/a.css".into(),
-                        Some(200),
-                        None,
-                    ),
-                }
+            "phase" => {
+                tab.stylesheet_loads.get_mut(&slot).unwrap().phase =
+                    StylesheetLoadPhase::AwaitingRuntime {
+                        progress: CssRuntimeProgress::BlockReceived,
+                        abort_url: String::new(),
+                    };
+            }
+            "provenance" => {
+                let StylesheetLoadPhase::Fetching(a) =
+                    &mut tab.stylesheet_loads.get_mut(&slot).unwrap().phase
+                else {
+                    unreachable!()
+                };
+                a.response = Some(response_facts(
+                    addressing::ResourceKind::Stylesheet,
+                    "https://wrong.test/".into(),
+                    "https://cdn.test/a.css".into(),
+                    Some(200),
+                    None,
+                ));
             }
             _ => unreachable!(),
         }
@@ -519,10 +525,10 @@ fn aj2_orphan_generation_provenance_and_phase_relationships_are_not_pending() {
 }
 
 #[test]
-fn aj2_unavailable_css_base_keeps_usable_preview_css_and_stops_false_settlement() {
+fn aj2_unavailable_css_base_is_a_recoverable_acquisition_rejection() {
     for final_url in ["", "https://bad.test:invalid/a.css"] {
         let (mut tab, commands, parsed) =
-            preview("<!doctype html><link rel=stylesheet href=a.css><p id=p>text</p>");
+            preview("<!doctype html><link rel=stylesheet href=a.css><p>text</p>");
         let (slot, url) = css_request(&commands);
         complete_css_with_response(
             &mut tab,
@@ -539,62 +545,32 @@ fn aj2_unavailable_css_base_keeps_usable_preview_css_and_stops_false_settlement(
         finish_document(&mut tab, parsed);
         assert_eq!(
             tab.static_input_settlement(),
-            Ok(Settlement::EvidenceUnavailable)
+            Ok(Settlement::SettledInputsOnly)
         );
-        let base = if final_url.is_empty() {
-            "missing"
-        } else {
-            "invalid"
-        };
-        let snapshot = format!("{tab:?}");
-        assert!(snapshot.contains(&format!("request=complete response_base={base}")));
-        assert!(snapshot.contains(if final_url.is_empty() {
-            "stylesheet_response_base_unavailable: missing=1 invalid=0"
-        } else {
-            "stylesheet_response_base_unavailable: missing=0 invalid=1"
-        }));
-        assert!(
-            snapshot.contains("response_installation_eligibility: admitted-static-html-subset")
-        );
-        assert!(snapshot.contains("full_page_assembly: not-certified"));
-        assert_eq!(snapshot, format!("{tab:#?}"));
-        assert!(snapshot.len() <= MAX_SNAPSHOT_BYTES);
-        assert!(!snapshot.contains("bad.test"));
+        assert!(tab.page.css_stylesheets().is_empty());
         assert!(!tab.loading);
         assert!(tab.document_load.failure().is_none());
-        assert_eq!(tab.page.css_stylesheets().len(), 1);
-        assert_eq!(
-            super::support::current_element_color(&mut tab, "p"),
-            (0x12, 0x34, 0x56, 255)
-        );
-        let ctx = egui::Context::default();
-        ctx.begin_pass(egui::RawInput::default());
-        assert_eq!(
-            tab.ui_content(&ctx).unwrap(),
-            super::super::PageFrameStatus::Rendered
-        );
-        let _ = ctx.end_pass();
-        #[cfg(feature = "conformance-observation")]
         assert!(matches!(
-            tab.render_observed_frame(&ctx, egui::RawInput::default()),
-            Err(super::super::FrameObservationError::IncompleteDocument)
+            tab.page.stylesheet_fetch_result(slot).unwrap().outcome(),
+            crate::stylesheet_fetch::StylesheetFetchOutcome::Rejected(_)
         ));
+        assert_eq!(tab.page.pending_count(), 0);
+        let snapshot = tab.stylesheet_fetch_debug_snapshot().unwrap();
+        assert!(!snapshot.contains("bad.test"));
+        assert!(snapshot.contains("Rejected"));
+        assert_eq!(snapshot, tab.stylesheet_fetch_debug_snapshot().unwrap());
     }
 }
-
 #[test]
-fn aj2_unavailable_response_base_is_explained_even_beyond_the_row_limit() {
+fn aj2_quota_failure_is_preserved_even_beyond_the_row_limit() {
     let count = MAX_SNAPSHOT_SHEETS + 1;
-    let markup = format!(
-        "<!doctype html>{}",
-        (0..count)
-            .map(|i| format!("<link rel=stylesheet href=s{i}.css>"))
-            .collect::<String>()
-    );
+    let markup = (0..count)
+        .map(|i| format!("<link rel=stylesheet href=s{i}.css>"))
+        .collect::<String>();
     let (mut tab, commands, parsed) = preview(&markup);
-    let requests: Vec<_> = commands
+    let requests = commands
         .try_iter()
-        .filter_map(|command| match command {
+        .filter_map(|c| match c {
             CoreCommand::FetchStream {
                 stylesheet_slot_id: Some(slot),
                 request,
@@ -602,40 +578,23 @@ fn aj2_unavailable_response_base_is_explained_even_beyond_the_row_limit() {
             } => Some((slot, request.transport_target().as_str().to_owned())),
             _ => None,
         })
-        .collect();
-    assert_eq!(requests.len(), count);
+        .collect::<Vec<_>>();
+    assert_eq!(requests.len(), 32);
     finish_document(&mut tab, parsed);
-    for (ordinal, (slot, url)) in requests.into_iter().enumerate() {
-        let final_url = if ordinal == MAX_SNAPSHOT_SHEETS {
-            "https://PRIVATE_BASE:invalid/".into()
-        } else {
-            url.clone()
-        };
-        complete_css_with_response(
-            &mut tab,
-            slot,
-            response_facts(
-                addressing::ResourceKind::Stylesheet,
-                url,
-                final_url,
-                Some(200),
-                Some("text/css".into()),
-            ),
-            "p{color:#123456}",
-        );
+    for (slot, url) in requests {
+        complete_css(&mut tab, slot, &url, "p{color:red}");
     }
     assert_eq!(
         tab.static_input_settlement(),
-        Ok(Settlement::EvidenceUnavailable)
+        Ok(Settlement::SettledInputsOnly)
     );
-    let snapshot = format!("{tab:?}");
-    assert_eq!(snapshot.matches("  sheet[").count(), MAX_SNAPSHOT_SHEETS);
-    assert!(snapshot.contains("sheets_omitted: 1"));
-    assert!(snapshot.contains("stylesheet_response_base_unavailable: missing=0 invalid=1"));
-    assert!(!snapshot.contains("PRIVATE_BASE"));
-    assert_eq!(snapshot, format!("{tab:#?}"));
+    assert_eq!(tab.page.css_stylesheets().len(), 32);
+    let snapshot = tab.stylesheet_fetch_debug_snapshot().unwrap();
+    assert!(snapshot.contains("BodyReservationDenied"));
+    assert!(snapshot.contains("total=65"));
+    assert!(snapshot.contains("omitted="));
     assert!(snapshot.len() <= MAX_SNAPSHOT_BYTES);
-    assert_eq!(tab.page.css_stylesheets().len(), count);
+    assert_eq!(snapshot, tab.stylesheet_fetch_debug_snapshot().unwrap());
 }
 
 #[test]
@@ -702,7 +661,7 @@ fn aj2_snapshot_is_canonical_bounded_and_observational_and_checks_omitted_work()
     tab.set_repaint_handle(repaint.clone());
     let mut records: Vec<_> = tab.stylesheet_loads.drain().collect();
     records.sort_by_key(|(id, _)| id.0);
-    tab.stylesheet_loads.extend(records.iter().cloned());
+    tab.stylesheet_loads.extend(records);
     let before = (
         tab.dom_handle,
         tab.dom_version,
@@ -720,7 +679,7 @@ fn aj2_snapshot_is_canonical_bounded_and_observational_and_checks_omitted_work()
     );
     // Equivalent records, explicitly opposite insertion histories. Capture
     // both states rather than only checking a snapshot after reinsertion.
-    tab.stylesheet_loads.clear();
+    let records: Vec<_> = tab.stylesheet_loads.drain().collect();
     tab.stylesheet_loads.extend(records.into_iter().rev());
     assert_eq!(snapshot, format!("{tab:?}"));
     assert_eq!(snapshot, format!("{tab:#?}"));
@@ -755,19 +714,19 @@ fn aj2_snapshot_is_canonical_bounded_and_observational_and_checks_omitted_work()
         .last()
         .unwrap()
         .slot_id();
-    tab.stylesheet_loads.remove(&last); // Omitted row still participates in audit.
+    tab.page.take_stylesheet_fetch_for_tests(last); // Omitted quota-failed row still participates in audit.
     assert!(
-        matches!(tab.static_input_settlement(), Err(Failure::LoadStateInvariantViolation { relationship: LoadStateInvariant::SlotWithoutRequest, slot: Some(id), .. }) if id == last)
+        matches!(tab.static_input_settlement(), Err(Failure::LoadStateInvariantViolation { relationship: LoadStateInvariant::SlotPhase, slot: Some(id), .. }) if id == last)
     );
     for latched in [false, true] {
         if latched {
             tab.update_loading();
             assert!(
-                matches!(tab.document_load.failure(), Some(Failure::LoadStateInvariantViolation { slot: Some(id), slot_records: 70, request_records: 69, .. }) if *id == last)
+                matches!(tab.document_load.failure(), Some(Failure::LoadStateInvariantViolation { slot: Some(id), slot_records: 70, request_records: 32, .. }) if *id == last)
             );
         }
         let snapshot = format!("{tab:?}");
-        assert!(snapshot.contains("SlotWithoutRequest"));
+        assert!(snapshot.contains("SlotPhase"));
         assert!(snapshot.contains("invariant_slot: sheet[69] row=omitted"));
         assert_eq!(snapshot.matches("  sheet[").count(), MAX_SNAPSHOT_SHEETS);
         assert!(snapshot.len() <= MAX_SNAPSHOT_BYTES);
@@ -1142,9 +1101,35 @@ fn aj2_checked_frame_requires_runtime_settlement_and_rejects_invariant_errors() 
         .unwrap();
     assert!(!frame.element_styles().is_empty());
     drop(frame);
-    let record = tab.stylesheet_loads[&slot].clone();
-    tab.stylesheet_loads
-        .insert(StylesheetSlotId(u64::MAX), record);
+    // Corrupt only the live map after parser completion. A new parser publication
+    // at this point would correctly be rejected by the established contract.
+    let request = tab
+        .page
+        .stylesheet_fetch_result(slot)
+        .unwrap()
+        .request()
+        .request()
+        .unwrap()
+        .clone();
+    let request_id = request.request_id();
+    let issued_key = request.address().retrieval_key();
+    tab.stylesheet_loads.insert(
+        StylesheetSlotId(u64::MAX),
+        super::super::state::StylesheetLoadState {
+            request_id,
+            phase: StylesheetLoadPhase::Fetching(
+                crate::stylesheet_fetch::StylesheetFetchAccumulator {
+                    request,
+                    issued_key,
+                    origin_allowance: 0,
+                    response: None,
+                    policy: None,
+                    bytes: Vec::new(),
+                    observed_bytes: 0,
+                },
+            ),
+        },
+    );
     assert!(matches!(
         tab.render_observed_frame(&ctx, egui::RawInput::default()),
         Err(super::super::FrameObservationError::InvalidArtifacts)

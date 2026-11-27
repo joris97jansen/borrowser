@@ -21,6 +21,7 @@ pub enum DocumentPublicationPayload {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DocumentPublicationFailure {
+    ResourceUnavailable,
     DocumentModeChanged,
     GenerationMismatch,
     InvalidPayload,

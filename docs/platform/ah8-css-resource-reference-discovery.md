@@ -9,6 +9,17 @@ uncommitted and unpublished at that checkpoint. Historical local-override
 evidence below is distinct from the new
 immutable-source evidence.
 
+## Acquisition versus reference resolution
+
+[AJ7](aj7-deterministic-stylesheet-acquisition.md) requires usable final response
+provenance before installing external CSS. Missing/invalid final provenance now
+causes typed recoverable rejection with exact response/body evidence retained;
+no request/document fallback base is installed. AH8's lower-level unavailable-base
+classification remains independently tested through `CssSourceReferences::outcome`:
+relative and same-scheme references remain unresolved, independent absolute URLs
+resolve, and invalid absolute URLs keep their typed AH failure. AH9's two external
+unavailable-base fixture expectations migrate at Browser admission, not AH parsing.
+
 ## Ownership and observable outcome
 
 CSS produces authored resource occurrences from existing parsed declarations
@@ -121,10 +132,10 @@ request, generation, slot, MIME, completion and block-progress checks before the
 same admitted response is passed through PageState into stylesheet installation.
 The runtime event URL continues to authenticate the issued request.
 
-Each external attachment retains its parsed nonempty admitted `final_url`, with
-base-construction diagnostics, or its typed parse failure. Empty final URL means
-missing provenance. There is no `display_url()`/request/document-base fallback.
-Missing/invalid base provenance does not fail an otherwise accepted CSS load.
+Installed external attachments retain their parsed nonempty admitted `final_url`
+and base-construction diagnostics. AJ7 retains a missing/invalid outcome on the
+fetch result and rejects installation. There is no
+`display_url()`/request/document-base fallback.
 The original authored href, complete selected address, issued key, request
 identity and response metadata keep their existing responsibilities.
 

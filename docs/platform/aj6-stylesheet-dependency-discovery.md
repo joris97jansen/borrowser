@@ -9,6 +9,16 @@ local qualification results belong to the external review packet accompanying th
 candidate. This document does not certify independent implementation approval,
 hosted qualification, publication, merge, issue closure, or Milestone AJ completion.
 
+## Independent production acquisition
+
+[AJ7](aj7-deterministic-stylesheet-acquisition.md) changes production retention,
+acquisition and failure handling without invoking this observer or adopting its
+limits. Production keeps Unicode rel splitting and `str::trim` href preprocessing;
+missing/empty/invalid/unsupported sources retain ordered failure positions.
+Frozen selected addresses and source history survive retained attachments.
+AJ7 borrowed fetch views use the same committed-document coherence gate, but
+neither observer schedules loading or becomes an attachment authority.
+
 ## Ownership and entry points
 
 Browser owns on-demand discovery and candidate order. HTML supplies the committed

@@ -6,6 +6,7 @@ pub mod page;
 pub mod rendering;
 pub mod resources;
 pub mod shell;
+mod stylesheet_fetch;
 pub mod tab;
 pub mod view;
 

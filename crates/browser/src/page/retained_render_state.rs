@@ -47,7 +47,7 @@ fn initial_document_style_change() -> StyleChangeFacts {
 /// This groups the page-local rendering artifacts and invalidation metadata
 /// that survive across updates. Borrow-backed style trees, layout trees, and
 /// paint output remain outside this struct by contract.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub(super) struct RetainedRenderState {
     pub(super) render_epoch: RenderEpoch,
     pub(super) document_styles: DocumentStyleSet,

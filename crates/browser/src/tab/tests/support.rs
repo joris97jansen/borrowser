@@ -42,13 +42,17 @@ pub(super) fn complete_css(
     url: &str,
     text: &str,
 ) {
-    let response = response_facts(
-        addressing::ResourceKind::Stylesheet,
+    let original = tab.page.stylesheet_address(slot).expect("issued source");
+    let mut headers = net::HttpHeaders::new();
+    headers.append("content-type", b"text/css").unwrap();
+    let response = net::NetworkResponseInfo::http(
+        original,
         url.into(),
-        url.into(),
-        Some(200),
-        Some("text/css".into()),
-    );
+        Some(url.into()),
+        net::HttpStatus::try_from(200).unwrap(),
+        headers,
+    )
+    .unwrap();
     complete_css_with_response(tab, slot, response, text);
 }
 

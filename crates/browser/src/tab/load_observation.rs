@@ -5,6 +5,10 @@ use super::state::{
     CssRuntimeProgress, DocumentLoadFailure, DocumentParseStatus, LoadStateInvariant,
     StylesheetLoadPhase,
 };
+use crate::stylesheet_fetch::{
+    ATTACHMENTS, BODY_BYTES, BODY_POOL, METADATA_BYTES, METADATA_POOL, SOURCE_BYTES,
+    StylesheetFetchFailure, StylesheetFetchOutcome, StylesheetResponsePolicy, metadata_charge,
+};
 use core_types::StylesheetSlotId;
 use std::fmt::{self, Write};
 
@@ -87,13 +91,16 @@ impl Tab {
         }
 
         let mut pending = false;
-        let mut unavailable = false;
-        let mut matched_requests = 0;
+        let unavailable = false;
+        let mut matched_requests = 0usize;
+        let mut source_bytes = 0usize;
+        let mut metadata_bytes = 0usize;
+        let mut body_bytes = 0usize;
         let slots = self.page.stylesheet_lifecycle_slots();
         let slot_count = slots.len();
-        // Examine all relationships before returning Pending: earlier ordinary
-        // work must not hide a later invariant violation. One expected O(1)
-        // request lookup per slot; no registry copy or URL/key reconstruction.
+        if slot_count > ATTACHMENTS {
+            return Err(self.load_invariant(LoadStateInvariant::RetentionAccounting, None));
+        }
         for slot in slots {
             #[cfg(test)]
             QUERY_WORK.with(|work| {
@@ -101,15 +108,126 @@ impl Tab {
                 work.set((calls, visits + 1));
             });
             let id = slot.slot_id();
-            let load = self.stylesheet_loads.get(&id);
+            let live = self.stylesheet_loads.get(&id);
+            let result = slot.fetch_result();
+            if slot.body_provisional() {
+                return Err(self.load_invariant(LoadStateInvariant::RetentionAccounting, Some(id)));
+            }
+            source_bytes = source_bytes
+                .checked_add(slot.source_payload_charge().ok_or_else(|| {
+                    self.load_invariant(LoadStateInvariant::RetentionAccounting, Some(id))
+                })?)
+                .filter(|n| *n <= SOURCE_BYTES)
+                .ok_or_else(|| {
+                    self.load_invariant(LoadStateInvariant::RetentionAccounting, Some(id))
+                })?;
+
+            if slot.metadata_reserved() {
+                metadata_bytes = metadata_bytes
+                    .checked_add(METADATA_BYTES)
+                    .filter(|n| *n <= METADATA_POOL)
+                    .ok_or_else(|| {
+                        self.load_invariant(LoadStateInvariant::RetentionAccounting, Some(id))
+                    })?;
+            }
+            if slot.body_issued() {
+                body_bytes = body_bytes
+                    .checked_add(BODY_BYTES)
+                    .filter(|n| *n <= BODY_POOL)
+                    .ok_or_else(|| {
+                        self.load_invariant(LoadStateInvariant::RetentionAccounting, Some(id))
+                    })?;
+            }
             if !slot.is_external() {
-                if !slot.has_loaded_parse() || load.is_some() {
+                if !slot.has_loaded_parse()
+                    || live.is_some()
+                    || result.is_some()
+                    || slot.metadata_reserved()
+                    || slot.body_issued()
+                    || slot.installation_result().is_some()
+                {
                     return Err(self.load_invariant(LoadStateInvariant::SlotPhase, Some(id)));
                 }
                 continue;
             }
+            if let Some(result) = result {
+                if !result.coherent_evidence() {
+                    return Err(self.load_invariant(LoadStateInvariant::FetchEvidence, Some(id)));
+                }
+                if let StylesheetFetchOutcome::Failed(StylesheetFetchFailure::Source(failure)) =
+                    result.outcome
+                {
+                    if slot.source_failure() != Some(failure) {
+                        return Err(
+                            self.load_invariant(LoadStateInvariant::RequestProvenance, Some(id))
+                        );
+                    }
+                } else if slot.source_failure().is_some() {
+                    return Err(
+                        self.load_invariant(LoadStateInvariant::RequestProvenance, Some(id))
+                    );
+                }
+                if slot.resource_base().is_some_and(|base| {
+                    !result.is_ready()
+                        || result
+                            .response
+                            .response()
+                            .and_then(net::NetworkResponseInfo::response_url)
+                            != Some(base)
+                }) || (slot.has_loaded_parse() && slot.resource_base().is_none())
+                {
+                    return Err(
+                        self.load_invariant(LoadStateInvariant::RequestProvenance, Some(id))
+                    );
+                }
+
+                if result.request.request().is_some() != slot.metadata_reserved() {
+                    return Err(
+                        self.load_invariant(LoadStateInvariant::RetentionAccounting, Some(id))
+                    );
+                }
+                if result.request.enqueued() != slot.body_issued() {
+                    return Err(
+                        self.load_invariant(LoadStateInvariant::RetentionAccounting, Some(id))
+                    );
+                }
+                if let Some(request) = result.request.request() {
+                    if metadata_charge(
+                        request,
+                        result.request.origin_allowance(),
+                        result.response.response(),
+                    )
+                    .is_none_or(|n| n > METADATA_BYTES)
+                    {
+                        return Err(
+                            self.load_invariant(LoadStateInvariant::RetentionAccounting, Some(id))
+                        );
+                    }
+                    if slot.selected_address().is_none_or(|a| {
+                        a.kind() != request.address().kind() || a.url() != request.original_url()
+                    }) {
+                        return Err(
+                            self.load_invariant(LoadStateInvariant::RequestProvenance, Some(id))
+                        );
+                    }
+                    if request.request_id() != self.active_document_request_id().unwrap_or_default()
+                    {
+                        return Err(
+                            self.load_invariant(LoadStateInvariant::RequestGeneration, Some(id))
+                        );
+                    }
+                }
+            }
             if slot.is_failed() || slot.is_aborted() {
-                if load.is_some() {
+                let terminal_valid = result.is_some_and(|result| match result.outcome {
+                    StylesheetFetchOutcome::Ready => {
+                        matches!(slot.installation_result(), Some(Err(_)))
+                    }
+                    StylesheetFetchOutcome::Rejected(_) | StylesheetFetchOutcome::Failed(_) => {
+                        slot.installation_result().is_none()
+                    }
+                });
+                if live.is_some() || !terminal_valid {
                     return Err(self.load_invariant(LoadStateInvariant::SlotPhase, Some(id)));
                 }
                 continue;
@@ -117,48 +235,125 @@ impl Tab {
             if slot.selected_address().is_none() {
                 return Err(self.load_invariant(LoadStateInvariant::SlotPhase, Some(id)));
             }
-            let Some(load) = load else {
-                return Err(self.load_invariant(LoadStateInvariant::SlotWithoutRequest, Some(id)));
-            };
-            matched_requests += 1;
-            if Some(load.request_id) != self.active_document_request_id() {
-                return Err(self.load_invariant(LoadStateInvariant::RequestGeneration, Some(id)));
-            }
-            if let Some(accepted) = load.phase.accepted_response()
-                && accepted.requested_url() != load.issued_key.as_str()
-            {
-                return Err(self.load_invariant(LoadStateInvariant::RequestProvenance, Some(id)));
-            }
-            match &load.phase {
-                StylesheetLoadPhase::AwaitingStart | StylesheetLoadPhase::Receiving { .. } => {
-                    if !slot.is_pending() {
-                        return Err(self.load_invariant(LoadStateInvariant::SlotPhase, Some(id)));
+            match live {
+                Some(load) => {
+                    matched_requests += 1;
+                    if Some(load.request_id) != self.active_document_request_id() {
+                        return Err(
+                            self.load_invariant(LoadStateInvariant::RequestGeneration, Some(id))
+                        );
+                    }
+                    if !slot.body_issued() || !slot.metadata_reserved() {
+                        return Err(
+                            self.load_invariant(LoadStateInvariant::RetentionAccounting, Some(id))
+                        );
+                    }
+                    match &load.phase {
+                        StylesheetLoadPhase::Fetching(a) => {
+                            if a.request.request_id() != load.request_id {
+                                return Err(self.load_invariant(
+                                    LoadStateInvariant::RequestGeneration,
+                                    Some(id),
+                                ));
+                            }
+                            if metadata_charge(&a.request, a.origin_allowance, a.response.as_ref())
+                                .is_none_or(|n| n > METADATA_BYTES)
+                                || a.bytes.len() != a.observed_bytes
+                                || a.observed_bytes > BODY_BYTES
+                            {
+                                return Err(self.load_invariant(
+                                    LoadStateInvariant::RetentionAccounting,
+                                    Some(id),
+                                ));
+                            }
+                            if slot.resource_base().is_some()
+                                || a.response
+                                    .as_ref()
+                                    .and_then(net::NetworkResponseInfo::status)
+                                    .is_some_and(|status| status.has_null_body())
+                                    && a.observed_bytes != 0
+                                || a.response.is_none()
+                                    && (a.observed_bytes != 0 || !a.bytes.is_empty())
+                                || a.policy
+                                    != a.response.as_ref().map(|response| {
+                                        StylesheetResponsePolicy::classify(response, &a.request)
+                                    })
+                            {
+                                return Err(self
+                                    .load_invariant(LoadStateInvariant::FetchEvidence, Some(id)));
+                            }
+                            if result.is_some()
+                                || !slot.is_pending()
+                                || slot.installation_result().is_some()
+                            {
+                                return Err(
+                                    self.load_invariant(LoadStateInvariant::SlotPhase, Some(id))
+                                );
+                            }
+                            if slot.selected_address().is_none_or(|address| {
+                                address.kind() != a.request.address().kind()
+                                    || address.url() != a.request.original_url()
+                            }) || a.response.as_ref().is_some_and(|r| !a.identity_matches(r))
+                            {
+                                return Err(self.load_invariant(
+                                    LoadStateInvariant::RequestProvenance,
+                                    Some(id),
+                                ));
+                            }
+                        }
+                        StylesheetLoadPhase::AwaitingRuntime {
+                            progress,
+                            abort_url,
+                        } => {
+                            if (*progress == CssRuntimeProgress::AwaitingBlock
+                                && slot.resource_base().is_some())
+                                || result
+                                    .and_then(|r| r.request.issued_key())
+                                    .is_none_or(|key| key.as_str() != abort_url)
+                            {
+                                return Err(self.load_invariant(
+                                    LoadStateInvariant::RequestProvenance,
+                                    Some(id),
+                                ));
+                            }
+                            if (*progress == CssRuntimeProgress::AwaitingBlock
+                                && slot.resource_base().is_some())
+                                || !result.is_some_and(|r| r.is_ready())
+                                || slot.has_loaded_parse()
+                                    != (*progress == CssRuntimeProgress::BlockReceived)
+                                || slot.installation_result().is_some()
+                            {
+                                return Err(
+                                    self.load_invariant(LoadStateInvariant::SlotPhase, Some(id))
+                                );
+                            }
+                        }
                     }
                     pending = true;
                 }
-                StylesheetLoadPhase::AwaitingRuntime {
-                    progress,
-                    accept_body,
-                    ..
-                } => {
-                    let installed = *progress == CssRuntimeProgress::BlockReceived;
-                    if slot.has_loaded_parse() != installed || (installed && !accept_body) {
-                        return Err(self.load_invariant(LoadStateInvariant::SlotPhase, Some(id)));
+                None => {
+                    if !slot.has_loaded_parse()
+                        || slot.installation_result() != Some(Ok(()))
+                        || !result.is_some_and(|r| r.is_ready())
+                    {
+                        return Err(
+                            self.load_invariant(LoadStateInvariant::SlotWithoutRequest, Some(id))
+                        );
                     }
-                    pending = true;
-                }
-                StylesheetLoadPhase::Complete { response } => {
-                    if !slot.has_loaded_parse() {
-                        return Err(self.load_invariant(LoadStateInvariant::SlotPhase, Some(id)));
-                    }
-                    // Existing CSS admission permits these provenance gaps.
-                    // Observe the limitation; never retract usable preview CSS.
-                    unavailable |= !matches!(response.response_url(), Some(Ok(_)));
                 }
             }
         }
         if matched_requests != self.stylesheet_loads.len() {
             return Err(self.load_invariant(LoadStateInvariant::RequestWithoutSlot, None));
+        }
+        let (actual_source, actual_metadata, actual_body) = self.page.stylesheet_retention_usage();
+        if actual_source != source_bytes
+            || actual_metadata != metadata_bytes
+            || actual_body != body_bytes
+            || metadata_bytes > METADATA_POOL
+            || body_bytes > BODY_POOL
+        {
+            return Err(self.load_invariant(LoadStateInvariant::RetentionAccounting, None));
         }
         if response.is_none()
             && self.history.is_empty()
@@ -341,8 +536,8 @@ impl Tab {
                 offending_ordinal = Some(ordinal);
             }
             let request = self.stylesheet_loads.get(&slot.slot_id());
-            let response_base = match request.map(|load| &load.phase) {
-                Some(StylesheetLoadPhase::Complete { response }) => match response.response_url() {
+            let response_base = match slot.fetch_result().and_then(|r| r.response.response()) {
+                Some(response) => match response.response_url() {
                     None => {
                         missing_response_bases += 1;
                         "missing"
@@ -353,7 +548,7 @@ impl Tab {
                     }
                     Some(Ok(_)) => "parsed",
                 },
-                _ => "not-established",
+                None => "not-established",
             };
             if ordinal >= MAX_SNAPSHOT_SHEETS || ordinal != written {
                 continue;
@@ -368,9 +563,8 @@ impl Tab {
                 "aborted"
             };
             let phase = match request.map(|load| &load.phase) {
-                None => "not-issued-or-retired",
-                Some(StylesheetLoadPhase::AwaitingStart) => "awaiting-start",
-                Some(StylesheetLoadPhase::Receiving { .. }) => "receiving",
+                Some(StylesheetLoadPhase::Fetching(a)) if a.response.is_none() => "awaiting-start",
+                Some(StylesheetLoadPhase::Fetching(_)) => "receiving",
                 Some(StylesheetLoadPhase::AwaitingRuntime {
                     progress: CssRuntimeProgress::AwaitingBlock,
                     ..
@@ -379,8 +573,8 @@ impl Tab {
                     progress: CssRuntimeProgress::BlockReceived,
                     ..
                 }) => "awaiting-runtime-completion",
-                Some(StylesheetLoadPhase::AwaitingRuntime { .. }) => "awaiting-runtime-no-block",
-                Some(StylesheetLoadPhase::Complete { .. }) => "complete",
+                None if slot.installation_result() == Some(Ok(())) => "complete",
+                None => "not-issued-or-retired",
             };
             let row = format!(
                 "  sheet[{ordinal}]: source={} address={} state={state} request={phase} response_base={response_base}\n",

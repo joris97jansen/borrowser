@@ -11,6 +11,15 @@ Milestone AJ — Document Loading Lifecycle, Stylesheet Loading, and Static Page
 Architecture baseline: master `44097fafa00ca221f128d1ab4fc8a42188c1e83d`,
 inspected on 2026-11-22.
 
+## Acquisition and failure integration
+
+[AJ7](aj7-deterministic-stylesheet-acquisition.md) retains acquisition results on
+existing ordered attachments, separately from installation. Its live map admits
+only current network/runtime work; it is not a terminal-result registry. Prepared
+inventory admission precedes authoritative publication. Resource refusal latches
+the detailed inventory cause and preserves the preceding coherent preview while
+returning public `ResourceUnavailable`. Per-sheet failures remain recoverable.
+
 ## Scope, status, and authority
 
 AJ1 defines the architecture for assembling a static HTML/CSS page from an
