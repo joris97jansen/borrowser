@@ -331,7 +331,7 @@ fn decoded_css_for_aborted_stylesheet_slot_is_ignored() {
         request_id,
         stylesheet_slot_id: slot_id,
         url,
-        css_block: "p { color: red; }".to_string(),
+        decoded: super::support::decoded_text("p { color: red; }"),
     })
     .unwrap();
 

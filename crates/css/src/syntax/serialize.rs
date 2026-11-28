@@ -12,7 +12,7 @@ use std::fmt::Write;
 // invalidates existing golden files. Changes to parser/tokenizer behavior that
 // merely produce different content under the same serialization grammar should
 // update fixtures without changing the version.
-const SNAPSHOT_VERSION: u32 = 1;
+const SNAPSHOT_VERSION: u32 = 2;
 
 pub fn serialize_tokens_for_snapshot(input: &CssInput, tokens: &[CssToken]) -> String {
     let mut out = String::new();
@@ -187,6 +187,12 @@ pub(crate) fn serialize_tokenization_stats_for_snapshot(
     writeln!(out, "  diagnostics_emitted: {}", stats.diagnostics_emitted)
         .expect("write diagnostics_emitted");
     writeln!(out, "  hit_limit: {}", stats.hit_limit).expect("write hit_limit");
+    writeln!(
+        out,
+        "  had_invariant_violation: {}",
+        stats.had_invariant_violation
+    )
+    .expect("write integrity");
 }
 
 pub(crate) fn serialize_stats_for_snapshot(out: &mut String, stats: &ParseStats) {
@@ -202,6 +208,12 @@ pub(crate) fn serialize_stats_for_snapshot(out: &mut String, stats: &ParseStats)
     writeln!(out, "  diagnostics_emitted: {}", stats.diagnostics_emitted)
         .expect("write diagnostics_emitted");
     writeln!(out, "  hit_limit: {}", stats.hit_limit).expect("write hit_limit");
+    writeln!(
+        out,
+        "  had_invariant_violation: {}",
+        stats.had_invariant_violation
+    )
+    .expect("write integrity");
 }
 
 fn write_snapshot_header(out: &mut String, kind: &str) {

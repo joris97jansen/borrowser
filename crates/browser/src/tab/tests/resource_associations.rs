@@ -241,7 +241,7 @@ fn resource_associations_stylesheet_moves_media_source_changes_and_retired_respo
     tab.on_css_decoded_block(
         first,
         &fetched[0].1,
-        "p{color:blue}".into(),
+        super::support::decoded_text("p{color:blue}"),
         tab.active_document_request_id().expect("admitted fixture"),
     );
     assert!(!tab.stylesheet_loads.contains_key(&first));
@@ -290,7 +290,7 @@ fn resource_associations_clear_and_replacement_never_reuse_outstanding_slots() {
         request_id: tab.active_document_request_id().unwrap(),
         stylesheet_slot_id: old,
         url: "https://example.test/old/same.css".into(),
-        css_block: "p{color:red}".into(),
+        decoded: super::support::decoded_text("p{color:red}"),
     })
     .unwrap();
     assert!(tab.page.css_stylesheets().is_empty());
@@ -311,7 +311,7 @@ fn resource_associations_clear_and_replacement_never_reuse_outstanding_slots() {
     tab.on_css_decoded_block(
         new,
         "https://example.test/new/same.css",
-        "p{color:blue}".into(),
+        super::support::decoded_text("p{color:blue}"),
         tab.active_document_request_id().expect("admitted fixture"),
     );
     assert!(tab.page.css_stylesheets().is_empty());
@@ -860,9 +860,8 @@ fn resource_associations_runtime_retires_partial_css_on_document_lifecycle_bound
             }
         }
 
-        // FIFO CssDone is a deterministic barrier: a retained partial buffer
-        // would first emit CssDecodedBlock, whereas an aborted key emits only
-        // CssSheetDone. No sleeps or timeout-as-success checks are needed.
+        // Unknown Done is silent. The next admitted session below is the FIFO
+        // barrier: obsolete output would appear before its decoded outcome.
         runtime_tx
             .send(CoreCommand::CssDone {
                 tab_id: tab.tab_id,
@@ -871,15 +870,6 @@ fn resource_associations_runtime_retires_partial_css_on_document_lifecycle_bound
                 url: old_url.clone(),
             })
             .unwrap();
-        let old_done = events_rx
-            .recv_timeout(Duration::from_secs(5))
-            .expect("CSS runtime barrier");
-        assert!(
-            matches!(&old_done, CoreEvent::CssSheetDone { request_id, stylesheet_slot_id, .. } if *request_id == old_generation && *stylesheet_slot_id == old_slot),
-            "boundary={boundary}, event={old_done:?}"
-        );
-        tab.on_core_event(old_done).unwrap();
-
         if let Some(url) = next_fetch {
             assert_eq!(tab.page.document_url().unwrap().as_str(), url);
             let output = html::parse_document(
@@ -951,15 +941,6 @@ fn resource_associations_runtime_retires_partial_css_on_document_lifecycle_bound
         })
         .unwrap();
         assert!(rx.try_recv().is_err());
-        // Repeated old cleanup is idempotent and cannot remove the new key.
-        runtime_tx
-            .send(CoreCommand::CssAbort {
-                tab_id: tab.tab_id,
-                request_id: old_generation,
-                stylesheet_slot_id: old_slot,
-                url: old_url,
-            })
-            .unwrap();
         tab.on_core_event(CoreEvent::NetworkDone {
             tab_id: tab.tab_id,
             request_id: current_generation,
@@ -970,6 +951,15 @@ fn resource_associations_runtime_retires_partial_css_on_document_lifecycle_bound
         })
         .unwrap();
         runtime_tx.send(rx.try_recv().unwrap()).unwrap();
+        // Repeated old cleanup is idempotent and cannot remove the new key.
+        runtime_tx
+            .send(CoreCommand::CssAbort {
+                tab_id: tab.tab_id,
+                request_id: old_generation,
+                stylesheet_slot_id: old_slot,
+                url: old_url,
+            })
+            .unwrap();
         runtime_tx
             .send(rx.try_recv().expect("postDone runtime completion"))
             .unwrap();
@@ -977,7 +967,7 @@ fn resource_associations_runtime_retires_partial_css_on_document_lifecycle_bound
             .recv_timeout(Duration::from_secs(5))
             .expect("decoded CSS");
         assert!(
-            matches!(&decoded, CoreEvent::CssDecodedBlock { request_id, stylesheet_slot_id, css_block, .. } if *request_id == current_generation && *stylesheet_slot_id == new_slot && css_block == "p{color:green}")
+            matches!(&decoded, CoreEvent::CssDecodedBlock { request_id, stylesheet_slot_id, decoded, .. } if *request_id == current_generation && *stylesheet_slot_id == new_slot && decoded.text() == Ok("p{color:green}"))
         );
         tab.on_core_event(decoded).unwrap();
         let done = events_rx
@@ -1035,7 +1025,7 @@ fn resource_associations_parser_failure_retires_runtime_buffer_but_keeps_preview
         .recv_timeout(Duration::from_secs(5))
         .expect("loaded CSS decoded");
     assert!(
-        matches!(&loaded_block, CoreEvent::CssDecodedBlock { stylesheet_slot_id, css_block, .. } if *stylesheet_slot_id == loaded_slot && css_block == "p{color:red}")
+        matches!(&loaded_block, CoreEvent::CssDecodedBlock { stylesheet_slot_id, decoded, .. } if *stylesheet_slot_id == loaded_slot && decoded.text() == Ok("p{color:red}"))
     );
     tab.on_core_event(loaded_block).unwrap();
     let loaded_done = events_rx
@@ -1086,14 +1076,14 @@ fn resource_associations_parser_failure_retires_runtime_buffer_but_keeps_preview
             url: url.clone(),
         })
         .unwrap();
-    let barrier = events_rx
-        .recv_timeout(Duration::from_secs(5))
-        .expect("CSS runtime barrier");
+    drop(runtime_tx);
     assert!(
-        matches!(&barrier, CoreEvent::CssSheetDone { request_id, stylesheet_slot_id, .. } if *request_id == generation && *stylesheet_slot_id == slot),
-        "old partial CSS must not produce a decoded block: {barrier:?}"
+        matches!(
+            events_rx.recv_timeout(Duration::from_secs(5)),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        ),
+        "worker must drain without obsolete output"
     );
-    tab.on_core_event(barrier).unwrap();
 
     tab.on_core_event(CoreEvent::NetworkStart {
         tab_id: tab.tab_id,
@@ -1219,8 +1209,8 @@ fn resource_associations_completed_css_queued_before_parser_failure_still_applie
         .recv_timeout(Duration::from_secs(5))
         .expect("queued CSS decode");
     assert!(
-        matches!(&decoded, CoreEvent::CssDecodedBlock { request_id, stylesheet_slot_id, css_block, .. }
-        if *request_id == generation && *stylesheet_slot_id == slot && css_block == "p{color:red}")
+        matches!(&decoded, CoreEvent::CssDecodedBlock { request_id, stylesheet_slot_id, decoded, .. }
+        if *request_id == generation && *stylesheet_slot_id == slot && decoded.text() == Ok("p{color:red}"))
     );
     tab.on_core_event(decoded).unwrap();
     let done = events_rx

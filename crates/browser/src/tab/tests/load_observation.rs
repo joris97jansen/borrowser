@@ -113,7 +113,7 @@ fn install_awaiting_runtime(tab: &mut Tab, slot: StylesheetSlotId, url: &str) {
             request_id: generation,
             stylesheet_slot_id: slot,
             url: url.into(),
-            css_block: text.into(),
+            decoded: super::support::decoded_text(text),
         },
     ] {
         tab.on_core_event(event).unwrap();
@@ -345,7 +345,7 @@ fn aj2_stylesheet_status_waits_for_all_installed_runtime_completions() {
         assert!(matches!(
             tab.stylesheet_loads[slot].phase,
             StylesheetLoadPhase::AwaitingRuntime {
-                progress: CssRuntimeProgress::BlockReceived,
+                progress: CssRuntimeProgress::ParsedAwaitingDone,
                 ..
             }
         ));
@@ -364,7 +364,7 @@ fn aj2_stylesheet_status_waits_for_all_installed_runtime_completions() {
     assert!(matches!(
         tab.stylesheet_loads[&requests[1].0].phase,
         StylesheetLoadPhase::AwaitingRuntime {
-            progress: CssRuntimeProgress::BlockReceived,
+            progress: CssRuntimeProgress::ParsedAwaitingDone,
             ..
         }
     ));
@@ -493,7 +493,7 @@ fn aj2_orphan_generation_provenance_and_phase_relationships_are_not_pending() {
             "phase" => {
                 tab.stylesheet_loads.get_mut(&slot).unwrap().phase =
                     StylesheetLoadPhase::AwaitingRuntime {
-                        progress: CssRuntimeProgress::BlockReceived,
+                        progress: CssRuntimeProgress::ParsedAwaitingDone,
                         abort_url: String::new(),
                     };
             }

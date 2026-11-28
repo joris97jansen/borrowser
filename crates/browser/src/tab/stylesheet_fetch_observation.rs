@@ -43,6 +43,21 @@ pub struct StylesheetFetchEntry<'a> {
     owner: html::internal::Id,
 }
 impl<'a> StylesheetFetchObservation<'a> {
+    #[cfg(any(test, feature = "conformance-observation"))]
+    pub(super) fn entry(
+        tab: &'a Tab,
+        order: usize,
+        view: crate::document_style::StylesheetLifecycleView<'a>,
+    ) -> Option<StylesheetFetchEntry<'a>> {
+        view.is_external().then_some(StylesheetFetchEntry {
+            tab,
+            id: view.slot_id(),
+            order,
+            #[cfg(feature = "conformance-observation")]
+            owner: view.owner(),
+        })
+    }
+
     pub fn entries(&self) -> impl Iterator<Item = StylesheetFetchEntry<'a>> + '_ {
         self.tab
             .page
@@ -92,7 +107,7 @@ impl<'a> StylesheetFetchEntry<'a> {
             } => Some(StylesheetLiveAcquisition::AwaitingRuntime {
                 result: self.result()?,
                 cleanup_key: abort_url,
-                block_received: *progress == super::state::CssRuntimeProgress::BlockReceived,
+                block_received: *progress == super::state::CssRuntimeProgress::ParsedAwaitingDone,
             }),
         }
     }

@@ -433,6 +433,7 @@ pub(super) fn execute(
                     stylesheet_slot_id,
                     url,
                     bytes: forwarded,
+                    ..
                 } if *request_id == issued.request
                     && *stylesheet_slot_id == slot
                     && *url == declared.url

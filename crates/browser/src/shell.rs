@@ -343,6 +343,7 @@ impl UiApp for ShellApp {
             | CoreEvent::DomPatchUpdate { tab_id, .. }
             | CoreEvent::HtmlParseFinished { tab_id, .. }
             | CoreEvent::CssDecodedBlock { tab_id, .. }
+            | CoreEvent::CssRuntimeFailed { tab_id, .. }
             | CoreEvent::CssSheetDone { tab_id, .. } => *tab_id,
         };
         if let Some(tab) = self.tabs.iter_mut().find(|t| t.tab_id == sid) {

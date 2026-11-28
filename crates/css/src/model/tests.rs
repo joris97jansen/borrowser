@@ -497,3 +497,40 @@ fn declaration_value_contains_important(values: &[ValueComponent]) -> bool {
         _ => false,
     })
 }
+
+#[test]
+fn aj8_shared_semantic_classifier_and_partial_authored_resource_evidence() {
+    for (text, name, reason) in [
+        (
+            r"@\69mport 'a.css';",
+            "import",
+            crate::AtRuleSkipReason::ImportDeferred,
+        ),
+        (
+            r"@\6d edia screen {}",
+            "media",
+            crate::AtRuleSkipReason::MediaDeferred,
+        ),
+        (
+            r"@\5c 69mport 'a.css';",
+            r"\69mport",
+            crate::AtRuleSkipReason::Unknown,
+        ),
+    ] {
+        let parse = parse_stylesheet_with_options(text, &ParseOptions::stylesheet());
+        let Rule::At(rule) = &parse.stylesheet.rules[0] else {
+            panic!("at-rule")
+        };
+        assert_eq!(rule.name.as_deref(), Some(name));
+        assert_eq!(crate::classify_at_rule(rule), reason);
+    }
+    let mut options = ParseOptions::stylesheet();
+    options.limits.max_stylesheet_input_bytes = 25;
+    let parse = parse_stylesheet_with_options("@import 'kept.css'; p{color:red}", &options);
+    assert_eq!(
+        parse.completion(),
+        super::StylesheetParseCompletion::ResourceLimited
+    );
+    assert!(parse.input.as_str().contains("kept.css"));
+    println!("parameter_rows=4");
+}

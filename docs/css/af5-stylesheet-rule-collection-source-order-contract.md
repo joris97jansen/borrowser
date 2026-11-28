@@ -293,3 +293,12 @@ on the Browser attachment. It is distinct from original-request/CSSOM-location
 provenance. Authored discovery precedes collection filtering, preserves source
 identities/order and makes no effective-participation claim. No base fields or
 new acceptance rules are added to RuleCollection.
+
+## AJ8 input qualification
+
+[AJ8](../platform/aj8-ordered-static-stylesheet-set.md) supplies complete,
+integrity-valid, host-eligible slot parses in sparse source order. Raw media reaches
+CSS classification unchanged. The legacy parse-only compatibility slice additionally
+omits media-deferred entries because it cannot carry conditions. Limited/inactive
+parses remain inspectable through authored-source observation. Semantic at-rule name
+conversion and `classify_at_rule` are shared CSS-owned boundaries before execution.

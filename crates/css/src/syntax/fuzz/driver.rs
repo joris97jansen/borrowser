@@ -42,6 +42,11 @@ pub fn run_seeded_tokenizer_fuzz_case(
 
     let options = tokenizer_fuzz_options(&config);
     let tokenization = tokenize_str_with_options(&decoded, &options);
+    if tokenization.stats.had_invariant_violation {
+        return Err(CssSyntaxFuzzError::TokenStreamInvariantViolation {
+            detail: "tokenizer reported an invariant violation".into(),
+        });
+    }
     validate_css_token_stream(&tokenization.input, &tokenization.tokens, &options)?;
 
     let mut digest = mix_usize(0, tokenization.stats.input_bytes);

@@ -13,12 +13,19 @@ pub(super) fn parse_stylesheet_structured(input: &str, options: &ParseOptions) -
         input_bytes: tokenization.stats.input_bytes,
         diagnostics_emitted: tokenization.stats.diagnostics_emitted,
         hit_limit: tokenization.stats.hit_limit,
+        had_invariant_violation: tokenization.stats.had_invariant_violation,
         ..ParseStats::default()
     };
     append_diagnostics(options, &mut diagnostics, tokenization.diagnostics);
 
     let input = tokenization.input;
-    let tokens = tokenization.tokens;
+    #[allow(unused_mut)]
+    let mut tokens = tokenization.tokens;
+    #[cfg(test)]
+    if crate::syntax::integrity_tests::take(crate::syntax::integrity_tests::Fault::ParserMissingEof)
+    {
+        tokens.pop();
+    }
     if !validate_token_stream_invariants(options, &input, &tokens, 0, &mut diagnostics, &mut stats)
     {
         return StylesheetParse {
@@ -53,6 +60,7 @@ pub(super) fn parse_declaration_list_structured(
         input_bytes: tokenization.stats.input_bytes,
         diagnostics_emitted: tokenization.stats.diagnostics_emitted,
         hit_limit: tokenization.stats.hit_limit,
+        had_invariant_violation: tokenization.stats.had_invariant_violation,
         ..ParseStats::default()
     };
     append_offset_diagnostics(
@@ -63,7 +71,13 @@ pub(super) fn parse_declaration_list_structured(
     );
 
     let input = tokenization.input;
-    let tokens = tokenization.tokens;
+    #[allow(unused_mut)]
+    let mut tokens = tokenization.tokens;
+    #[cfg(test)]
+    if crate::syntax::integrity_tests::take(crate::syntax::integrity_tests::Fault::ParserMissingEof)
+    {
+        tokens.pop();
+    }
     if !validate_token_stream_invariants(
         options,
         &input,

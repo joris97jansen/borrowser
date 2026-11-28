@@ -305,6 +305,7 @@ name = "bus"
 version = "0.1.0"
 dependencies = [
  "core_types",
+ "encoding_rs",
  "html",
  "net",
 ]
@@ -2324,6 +2325,7 @@ version = "0.1.0"
 dependencies = [
  "bus",
  "core_types",
+ "encoding_rs",
  "tools",
 ]
 

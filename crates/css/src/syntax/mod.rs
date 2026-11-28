@@ -27,6 +27,8 @@ pub(crate) mod escape;
 #[cfg(any(test, feature = "css-fuzzing"))]
 mod fuzz;
 mod input;
+#[cfg(test)]
+pub(crate) mod integrity_tests;
 mod options;
 mod parser;
 mod results;

@@ -94,12 +94,21 @@ pub(super) fn complete_css_with_response(
         body: net::BodyProgress::try_new(ResourceKind::Css, text.len()).unwrap(),
     })
     .unwrap();
+    if !tab
+        .page
+        .stylesheet_fetch_result(slot)
+        .is_some_and(|r| r.is_ready())
+    {
+        return;
+    }
+    let decoded = decoded_ready(tab, slot);
+    assert_eq!(decoded.text(), Ok(text));
     tab.on_core_event(CoreEvent::CssDecodedBlock {
         tab_id,
         request_id,
         stylesheet_slot_id: slot,
         url: url.into(),
-        css_block: text.into(),
+        decoded,
     })
     .unwrap();
     tab.on_core_event(CoreEvent::CssSheetDone {
@@ -690,4 +699,35 @@ pub(super) fn finalized_parser_diagnostics() -> html::internal::HtmlParserDiagno
         .unwrap();
     parser.finish().unwrap();
     html::internal::take_runtime_parser_diagnostics(&mut parser).unwrap()
+}
+
+pub(super) fn decoded_text(text: &str) -> bus::css_decode::CssDecodedStylesheet {
+    let environment = runtime_css::decoding::stylesheet_environment(
+        bus::css_decode::CssEncodingLabel::Absent,
+        Some(bus::css_decode::CssEncoding::UTF8),
+    );
+    let decision =
+        runtime_css::decoding::select_stylesheet_decoding(text.as_bytes(), None, environment)
+            .unwrap();
+    runtime_css::decoding::decode_stylesheet(text.as_bytes(), decision).unwrap()
+}
+
+pub(super) fn decoded_ready(
+    tab: &Tab,
+    slot: core_types::StylesheetSlotId,
+) -> bus::css_decode::CssDecodedStylesheet {
+    let result = tab
+        .page
+        .stylesheet_fetch_result(slot)
+        .expect("Ready acquisition");
+    assert!(result.is_ready());
+    let bytes = result.body().bytes().expect("complete body");
+    runtime_css::decoding::decode_stylesheet(
+        bytes,
+        tab.page
+            .stylesheet_decoding(slot)
+            .expect("selected decoding")
+            .decision(),
+    )
+    .unwrap()
 }

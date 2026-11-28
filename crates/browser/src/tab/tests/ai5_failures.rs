@@ -335,19 +335,13 @@ fn ai5f_real_runtime_partial_failures_settle_each_consumer_without_sibling_compl
                     })
                     .unwrap();
                 drop(css_tx);
-                let mut terminal = false;
-                loop {
-                    match decoded.recv_timeout(Duration::from_secs(5)) {
-                        Ok(event @ CoreEvent::CssSheetDone { .. }) => {
-                            assert!(!terminal);
-                            terminal = true;
-                            tab.on_core_event(event).unwrap();
-                        }
-                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                        other => panic!("aborted text must not be decoded: {other:?}"),
-                    }
-                }
-                assert!(terminal);
+                assert!(
+                    matches!(
+                        decoded.recv_timeout(Duration::from_secs(5)),
+                        Err(mpsc::RecvTimeoutError::Disconnected)
+                    ),
+                    "unknown Done must not publish a prefix or terminal event"
+                );
                 assert_eq!(tab.page.pending_count(), 1);
                 assert!(!tab.stylesheet_loads.contains_key(&slot.unwrap()));
             }

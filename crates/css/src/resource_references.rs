@@ -88,12 +88,7 @@ pub fn discover_stylesheet_resource_references<'a>(
                 }
             }
             model::Rule::At(rule) => {
-                let name = rule
-                    .name
-                    .as_deref()
-                    .and_then(|s| decode(s, false))
-                    .map(|s| s.to_ascii_lowercase());
-                let (context, role) = match name.as_deref() {
+                let (context, role) = match rule.name.as_deref() {
                     Some("import") => (
                         CssResourceContext::Import,
                         CssResourceRole::StylesheetImport,

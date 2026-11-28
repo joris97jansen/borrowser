@@ -21,6 +21,7 @@ pub(crate) fn push_diagnostic(
     byte_offset: usize,
     message: impl Into<String>,
 ) {
+    stats.had_invariant_violation |= kind == DiagnosticKind::InvariantViolation;
     stats.diagnostics_emitted += 1;
     if !options.collect_diagnostics || diagnostics.len() >= options.limits.max_diagnostics {
         return;

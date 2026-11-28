@@ -26,13 +26,14 @@ impl PageState {
         dom: &html::Node,
         base: Option<&addressing::BrowserUrl>,
         replaced: bool,
+        document_encoding: Option<bus::css_decode::CssEncoding>,
     ) -> Result<
         crate::document_style::PreparedStylesheetReconcile,
-        crate::stylesheet_fetch::StylesheetInventoryError,
+        crate::document_style::StylesheetPreparationFailure,
     > {
         self.rendering
             .document_styles
-            .prepare_reconcile(dom, base, replaced)
+            .prepare_reconcile_with_environment(dom, base, replaced, document_encoding)
     }
     pub(crate) fn commit_document_stylesheets(
         &mut self,
@@ -56,7 +57,7 @@ impl PageState {
             };
         };
         let prepared = self
-            .prepare_document_stylesheets(dom, self.active_base_url(), false)
+            .prepare_document_stylesheets(dom, self.active_base_url(), false, None)
             .expect("valid fixture inventory");
         self.commit_document_stylesheets(prepared)
     }
@@ -66,6 +67,34 @@ impl PageState {
         id: StylesheetSlotId,
     ) -> Option<crate::document_style::StylesheetSourceObservation<'_>> {
         self.rendering.document_styles.source_observation(id)
+    }
+    pub(crate) fn stylesheet_environment(
+        &self,
+        id: StylesheetSlotId,
+    ) -> Option<bus::css_decode::CssEnvironmentEncoding> {
+        self.rendering.document_styles.environment(id)
+    }
+    pub(crate) fn stylesheet_decoding(
+        &self,
+        id: StylesheetSlotId,
+    ) -> Option<crate::document_style::StylesheetDecodingOutcome> {
+        self.rendering.document_styles.decoding(id)
+    }
+    pub(crate) fn set_stylesheet_decoding(
+        &mut self,
+        id: StylesheetSlotId,
+        outcome: crate::document_style::StylesheetDecodingOutcome,
+    ) {
+        self.rendering.document_styles.set_decoding(id, outcome);
+    }
+    pub(crate) fn set_css_runtime_receipt(
+        &mut self,
+        id: StylesheetSlotId,
+        receipt: crate::document_style::CssRuntimeReceipt,
+    ) {
+        self.rendering
+            .document_styles
+            .set_runtime_receipt(id, receipt);
     }
     pub(crate) fn stylesheet_fetch_result(
         &self,
@@ -179,6 +208,7 @@ impl PageState {
             .register_external_for_tests(absolute_url)
     }
 
+    #[cfg(test)]
     pub(crate) fn apply_css_block(
         &mut self,
         slot_id: StylesheetSlotId,
@@ -194,6 +224,18 @@ impl PageState {
         } else {
             None
         }
+    }
+
+    pub(crate) fn apply_css_parse(
+        &mut self,
+        id: StylesheetSlotId,
+        parse: StylesheetParse,
+        response: &net::NetworkResponseInfo,
+    ) -> Option<RenderInvalidationRequest> {
+        self.rendering
+            .document_styles
+            .install_external_parse(id, parse, response)
+            .then(|| self.apply_stylesheet_set_change())
     }
 
     pub(crate) fn mark_css_done(

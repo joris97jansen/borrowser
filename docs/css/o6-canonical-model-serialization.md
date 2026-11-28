@@ -127,3 +127,8 @@ These fixtures live under:
 - stylesheet/rule/declaration/value formatting is explicit and stable
 - model-layer canonicalization rules are defined in-repository
 - representative file-backed model fixtures exist and pass stably
+
+AJ8 advances this snapshot grammar to version 2 when adding the retention-independent
+`had_invariant_violation` statistic. Existing behavior expectations remain; affected
+goldens gain that explicit false/true field and the version header. This changes no
+other CSS snapshot grammar or historical qualification result.

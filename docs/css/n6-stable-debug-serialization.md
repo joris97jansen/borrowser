@@ -104,3 +104,8 @@ These fixtures live under:
 - parser output has stable test formatting
 - golden/regression fixtures exist for representative valid and malformed inputs
 - debug/serialization output is usable for future CSS milestone tests
+
+AJ8 advances this snapshot grammar to version 2 when adding the retention-independent
+`had_invariant_violation` statistic. Existing behavior expectations remain; affected
+goldens gain that explicit false/true field and the version header. This changes no
+other CSS snapshot grammar or historical qualification result.

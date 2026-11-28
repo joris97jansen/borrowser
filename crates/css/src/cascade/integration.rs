@@ -20,6 +20,7 @@ pub use self::cascade_diagnostic::{
 pub(crate) use self::collection::ActiveCollectedStyleRule;
 pub use self::collection::{
     AtRuleSkipReason, RuleCollection, RuleCollectionBuildError, RuleCollectionStorage,
+    classify_at_rule,
 };
 pub(crate) use self::collection::{CollectedRule, InactiveStyleRuleReason};
 pub use self::collection_diagnostic::{

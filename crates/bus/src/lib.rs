@@ -1,3 +1,4 @@
+pub mod css_decode;
 use core_types::{DomHandle, DomVersion, ResourceKind, StylesheetSlotId, TabId};
 use html::DomPatch;
 use net::{BodyProgress, NetworkErrorKind, NetworkResponseInfo};
@@ -85,6 +86,7 @@ pub enum CoreCommand {
         stylesheet_slot_id: StylesheetSlotId,
         url: String,
         bytes: Vec<u8>,
+        decision: css_decode::CssDecodingDecision,
     },
     CssDone {
         tab_id: TabId,
@@ -265,7 +267,14 @@ pub enum CoreEvent {
         request_id: u64,
         stylesheet_slot_id: StylesheetSlotId,
         url: String,
-        css_block: String,
+        decoded: css_decode::CssDecodedStylesheet,
+    },
+    CssRuntimeFailed {
+        tab_id: TabId,
+        request_id: u64,
+        stylesheet_slot_id: StylesheetSlotId,
+        url: String,
+        failure: css_decode::CssRuntimeFailure,
     },
     CssSheetDone {
         tab_id: TabId,
@@ -317,9 +326,13 @@ impl std::fmt::Debug for CoreEvent {
                 .debug_struct("HtmlParseFinished")
                 .field("success", &result.is_ok())
                 .finish_non_exhaustive(),
-            Self::CssDecodedBlock { css_block, .. } => f
+            Self::CssDecodedBlock { decoded, .. } => f
                 .debug_struct("CssDecodedBlock")
-                .field("bytes", &css_block.len())
+                .field("decoded", decoded)
+                .finish_non_exhaustive(),
+            Self::CssRuntimeFailed { failure, .. } => f
+                .debug_struct("CssRuntimeFailed")
+                .field("failure", failure)
                 .finish_non_exhaustive(),
             Self::CssSheetDone { .. } => f.debug_struct("CssSheetDone").finish_non_exhaustive(),
         }

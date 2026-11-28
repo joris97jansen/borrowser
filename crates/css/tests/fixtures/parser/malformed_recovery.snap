@@ -1,4 +1,4 @@
-version: 1
+version: 2
 stylesheet
 rule[0] qualified @5..26
   prelude
@@ -16,3 +16,4 @@ stats
   declarations_emitted: 1
   diagnostics_emitted: 1
   hit_limit: false
+  had_invariant_violation: false

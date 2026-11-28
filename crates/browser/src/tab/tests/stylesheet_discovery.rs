@@ -220,7 +220,8 @@ fn aj6_current_base_and_retained_attachment() {
 }
 #[test]
 fn aj6_observation_is_not_runtime_eligibility() {
-    // Preserve the legacy loader's Unicode rel splitting and whitespace filtering.
+    // Production preserves Unicode rel membership. AJ6 observes authored facts;
+    // AJ8 independently excludes alternate/disabled acquisition.
     let (tab, commands) = addressing_tab(
         "<!doctype html><link rel='alternate&#160;stylesheet' href=legacy.css><link rel=stylesheet href=' '><link rel=stylesheet disabled media=screen integrity=private href=other.css>",
     );
@@ -235,12 +236,9 @@ fn aj6_observation_is_not_runtime_eligibility() {
             _ => None,
         })
         .collect::<Vec<_>>();
-    assert_eq!(
-        issued,
-        [
-            "https://example.test/dir/legacy.css",
-            "https://example.test/dir/other.css"
-        ]
+    assert!(
+        issued.is_empty(),
+        "AJ8 excludes alternate and disabled attachments before acquisition"
     );
     let inventory = view(&tab).stylesheet_discovery().unwrap().unwrap();
     assert!(inventory.records()[0].dependency_order().is_none());

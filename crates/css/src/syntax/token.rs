@@ -195,7 +195,7 @@ mod tests {
         assert_eq!(
             serialize_tokens_for_snapshot(&input, &tokens),
             concat!(
-                "version: 1\n",
+                "version: 2\n",
                 "tokens\n",
                 "token[0] at-keyword(\"media\") @0..6\n",
                 "token[1] whitespace @6..7\n",

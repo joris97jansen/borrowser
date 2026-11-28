@@ -239,3 +239,15 @@ projections cannot qualify internal AJ7 evidence contracts. Resource-backed Chro
 assembly conformance remains AJ10. No cloud operations are part of AJ7 qualification.
 AJ8 decoding/parsing/static-set, AJ9 assembly/rendering, AJ10 conformance, broader
 selection/media/import/security semantics and HTTP cancellation remain deferred.
+
+## AJ8 downstream qualification
+
+[AJ8](aj8-ordered-static-stylesheet-set.md) refines downstream behavior: complete
+Ready bytes select a canonical CSS encoding; UTF-8 runtime handoff is one complete
+Chunk plus Done/Abort. Checked outcomes and actual terminal receipts remain distinct
+from acquisition/installation. Unsupported effective encoding rejects recoverably
+without installation. Excluded hosts begin NotRequested without reservations;
+prepared first eligibility dispatches at most once. Existing status/MIME/provenance,
+body admission, stale-event protection, accounting and first-fatal precedence remain.
+The corrected API is `prepare_reconcile_with_environment`; commit still only moves
+prepared owners. Historical AJ7 results are not rewritten.

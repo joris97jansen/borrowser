@@ -495,3 +495,8 @@ specified in [AJ5](aj5-parsed-document-and-parser-diagnostics.md). A successful
 parser terminal requires present finalized diagnostic evidence independently of
 capture completeness. This does not complete later stylesheet discovery or full
 static page assembly, and remains subject to independent implementation review.
+
+AJ8's [ordered static stylesheet contract](aj8-ordered-static-stylesheet-set.md)
+now specifies the local candidate's complete author-input boundary, host eligibility,
+byte decoding, parser completeness and passive observation. This qualifies the
+stylesheet foundation; AJ9 assembly and AJ10 conformance remain separate gates.

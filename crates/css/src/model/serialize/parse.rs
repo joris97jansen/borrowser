@@ -51,4 +51,10 @@ fn serialize_stats_for_snapshot(out: &mut String, stats: &ParseStats) {
     writeln!(out, "  diagnostics_emitted: {}", stats.diagnostics_emitted)
         .expect("write diagnostics_emitted");
     writeln!(out, "  hit_limit: {}", stats.hit_limit).expect("write hit_limit");
+    writeln!(
+        out,
+        "  had_invariant_violation: {}",
+        stats.had_invariant_violation
+    )
+    .expect("write integrity");
 }

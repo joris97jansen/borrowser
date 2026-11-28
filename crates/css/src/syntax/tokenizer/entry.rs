@@ -42,11 +42,18 @@ pub fn tokenize_str_with_options(input: &str, options: &ParseOptions) -> CssToke
     }
 
     let mut tokenizer = CssTokenizer::new(&tokenization.input, options);
+    #[cfg(test)]
+    if crate::syntax::integrity_tests::take(
+        crate::syntax::integrity_tests::Fault::TokenizerTextSpan,
+    ) {
+        tokenizer.inject_invalid_text_span_for_test();
+    }
     tokenizer.tokenize_all();
     tokenization.tokens = tokenizer.tokens;
     tokenization.stats.tokens_emitted = tokenization.tokens.len();
     tokenization.stats.diagnostics_emitted += tokenizer.stats.diagnostics_emitted;
     tokenization.stats.hit_limit |= tokenizer.stats.hit_limit;
+    tokenization.stats.had_invariant_violation |= tokenizer.stats.had_invariant_violation;
     append_diagnostics(
         options,
         &mut tokenization.diagnostics,
@@ -74,4 +81,5 @@ pub(super) fn push_tokenizer_diagnostic(
         message,
     );
     tokenization.stats.diagnostics_emitted += parse_stats.diagnostics_emitted;
+    tokenization.stats.had_invariant_violation |= parse_stats.had_invariant_violation;
 }

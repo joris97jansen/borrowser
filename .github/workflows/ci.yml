@@ -616,6 +616,15 @@ jobs:
             sed -nE 's/^test ([^ ]+) \.\.\. ok$/\1/p' "$evidence/$features-execution.log" | sort > "$evidence/$features-executed.txt"
             cmp "$evidence/$features-listed.txt" "$evidence/$features-executed.txt"
           done
+      - name: AJ8 ordered static stylesheet evidence
+        timeout-minutes: 8
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -I -B tools/ci/aj8_tests.py --evidence "$RUNNER_TEMP/aj8-debug/default"
+          python3 -I -B tools/ci/aj8_tests.py --exact --evidence "$RUNNER_TEMP/aj8-debug/exact"
+          cargo test -p browser --example aj8_stylesheet_probe --features conformance-observation --locked
+          python3 -I -B -m unittest discover -s tools/ci/tests -p 'test_aj8_*.py'
       - name: Clippy (deny warnings)
         run: |
           cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -673,6 +682,14 @@ jobs:
           path: ${{ runner.temp }}/aj5-debug/
           if-no-files-found: error
           retention-days: 14
+      - name: Retain AJ8 debug evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aj8-${{ github.job }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/aj8-debug/
+          if-no-files-found: error
+          retention-days: 14
 
   rust_release:
     name: Release, networking abort and benches
@@ -728,6 +745,15 @@ jobs:
           done
           cargo run -p browser --example aj5_document_probe --features conformance-observation --release --locked
           python3 -I -B tools/perf/aj5_diagnostics_probe.py --smoke-binary target/release/examples/aj5_document_probe --smoke-evidence "$evidence/loopback"
+      - name: AJ8 optimized static stylesheet and release protocol evidence
+        timeout-minutes: 8
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -I -B tools/ci/aj8_tests.py --release --evidence "$RUNNER_TEMP/aj8-release/default"
+          python3 -I -B tools/ci/aj8_tests.py --release --exact --evidence "$RUNNER_TEMP/aj8-release/exact"
+          cargo build -p browser --example aj8_stylesheet_probe --features conformance-observation --release --locked
+          python3 -I -B tools/perf/aj8_stylesheet_probe.py --binary target/release/examples/aj8_stylesheet_probe --evidence "$RUNNER_TEMP/aj8-release/loopback"
       - name: AI5 bounded HTTP/HTTPS release-abort qualification
         timeout-minutes: 6
         # Builds the feature-qualified example once, reusing release dependency
@@ -752,6 +778,14 @@ jobs:
         with:
           name: aj5-${{ github.job }}-${{ github.sha }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/aj5-release/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain AJ8 release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aj8-${{ github.job }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/aj8-release/
           if-no-files-found: error
           retention-days: 14
 

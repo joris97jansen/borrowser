@@ -1044,7 +1044,7 @@ fn document_addressing_publication_rejections_preserve_committed_state_and_scope
                 request_id: generation,
                 stylesheet_slot_id: unfinished,
                 url: issued_url.clone(),
-                css_block: "p{color:green}".into(),
+                decoded: super::support::decoded_text("p{color:green}"),
             },
             CoreEvent::CssSheetDone {
                 tab_id: tab.tab_id,

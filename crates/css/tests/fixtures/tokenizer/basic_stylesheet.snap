@@ -1,4 +1,4 @@
-version: 1
+version: 2
 tokens
 token[0] ident("div") @0..3
 token[1] comma @3..4
@@ -21,3 +21,4 @@ stats
   tokens_emitted: 15
   diagnostics_emitted: 0
   hit_limit: false
+  had_invariant_violation: false
