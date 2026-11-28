@@ -373,6 +373,7 @@ impl StyleRule {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AtRule {
     pub span: CssSpan,
+    /// Decoded, ASCII-lowercase semantic identifier; source spelling remains in input/spans.
     pub name: Option<String>,
     pub prelude: PreservedComponentList,
     pub block: Option<AtRuleBlock>,
@@ -424,7 +425,29 @@ pub struct StylesheetParse {
     pub stats: ParseStats,
 }
 
+/// Whole-stylesheet processing status, independent of diagnostic retention.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StylesheetParseCompletion {
+    Complete,
+    ResourceLimited,
+    InvariantViolation,
+}
+
 impl StylesheetParse {
+    /// Parser diagnostic retention omitted at least one produced diagnostic.
+    /// This says nothing about separate resource-discovery notice budgets.
+    pub fn diagnostics_omitted(&self) -> bool {
+        self.stats.diagnostics_emitted > self.diagnostics.len()
+    }
+    pub fn completion(&self) -> StylesheetParseCompletion {
+        if self.stats.had_invariant_violation {
+            StylesheetParseCompletion::InvariantViolation
+        } else if self.stats.hit_limit {
+            StylesheetParseCompletion::ResourceLimited
+        } else {
+            StylesheetParseCompletion::Complete
+        }
+    }
     pub fn to_debug_snapshot(&self) -> String {
         serialize_stylesheet_parse_for_snapshot(self)
     }

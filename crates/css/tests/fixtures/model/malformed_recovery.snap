@@ -1,4 +1,4 @@
-version: 1
+version: 2
 model-stylesheet
 origin: stylesheet
 span: @0..75
@@ -36,3 +36,4 @@ stats
   declarations_emitted: 2
   diagnostics_emitted: 1
   hit_limit: false
+  had_invariant_violation: false

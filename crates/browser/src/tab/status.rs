@@ -26,6 +26,7 @@ pub(super) fn write_document_failure_status(
                 .as_ref()
                 .and_then(NetworkResponseInfo::status_code),
         ),
+        StylesheetParserInvariant(_) => out.write_str("Stylesheet parser integrity failure"),
         StylesheetInventory(cause) => {
             write!(out, "Document stylesheet inventory unavailable: {cause:?}")
         }

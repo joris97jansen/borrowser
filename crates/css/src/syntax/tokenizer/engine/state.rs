@@ -10,6 +10,7 @@ use super::super::scan::{
 pub(in super::super) struct TokenizerStats {
     pub(in super::super) diagnostics_emitted: usize,
     pub(in super::super) hit_limit: bool,
+    pub(in super::super) had_invariant_violation: bool,
 }
 
 pub(in super::super) struct CssTokenizer<'a> {
@@ -22,6 +23,15 @@ pub(in super::super) struct CssTokenizer<'a> {
 }
 
 impl<'a> CssTokenizer<'a> {
+    #[cfg(test)]
+    pub(in super::super) fn inject_invalid_text_span_for_test(&mut self) {
+        let invalid = self.input.len_bytes() + 1;
+        let _ = self.safe_text_span(
+            invalid,
+            invalid,
+            "test-only internal payload span corruption",
+        );
+    }
     pub(in super::super) fn new(input: &'a CssInput, options: &'a ParseOptions) -> Self {
         Self {
             input,
@@ -114,6 +124,7 @@ impl<'a> CssTokenizer<'a> {
         byte_offset: usize,
         message: impl Into<String>,
     ) {
+        self.stats.had_invariant_violation |= kind == DiagnosticKind::InvariantViolation;
         self.stats.diagnostics_emitted += 1;
         if !self.options.collect_diagnostics
             || self.diagnostics.len() >= self.options.limits.max_diagnostics

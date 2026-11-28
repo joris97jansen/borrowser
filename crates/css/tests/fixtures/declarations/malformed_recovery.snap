@@ -1,4 +1,4 @@
-version: 1
+version: 2
 declarations
   - width: 10px
   - height: 20px
@@ -10,3 +10,4 @@ stats
   declarations_emitted: 2
   diagnostics_emitted: 1
   hit_limit: false
+  had_invariant_violation: false

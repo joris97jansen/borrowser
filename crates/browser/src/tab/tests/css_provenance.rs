@@ -242,7 +242,7 @@ fn event(
             request_id,
             stylesheet_slot_id: slot,
             url: url.into(),
-            css_block: "p{color:blue}".into(),
+            decoded: super::support::decoded_text("p{color:blue}"),
         },
         Event::SheetDone => CoreEvent::CssSheetDone {
             tab_id,
@@ -268,7 +268,7 @@ fn runtime_block(tab: &mut Tab, slot: StylesheetSlotId, url: &str, text: &str) {
         request_id: tab.active_document_request_id().expect("admitted fixture"),
         stylesheet_slot_id: slot,
         url: url.into(),
-        css_block: text.into(),
+        decoded: super::support::decoded_text(text),
     })
     .unwrap();
 }
@@ -453,8 +453,19 @@ fn ah6_css_redirect_control_duplicate_starts_and_terminal_events_preserve_respon
     let (mut tab, rx, slot, url) = fixture();
     let admitted = response(&url);
     start(&mut tab, slot, admitted.clone());
-    chunk(&mut tab, slot, &url);
-    done(&mut tab, slot, admitted.clone());
+    let text = "p{color:red;background-image:url(icon.png)}";
+    tab.on_css_network_chunk(
+        slot,
+        url.clone(),
+        text.as_bytes().to_vec(),
+        tab.active_document_request_id().unwrap(),
+    );
+    tab.on_css_network_done(
+        slot,
+        admitted.clone(),
+        net::BodyProgress::try_new(ResourceKind::Css, text.len()).unwrap(),
+        tab.active_document_request_id().unwrap(),
+    );
     let queued: Vec<_> = rx.try_iter().collect();
     assert_eq!(queued.len(), 2);
     assert!(queued.iter().all(|c| match c {

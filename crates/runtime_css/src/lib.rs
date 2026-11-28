@@ -1,248 +1,161 @@
-//! Stylesheet transport/assembly runtime.
-//!
-//! This runtime owns byte buffering and incremental UTF-8 assembly for external
-//! stylesheets. It does not own CSS tokenization or syntax parsing; it forwards
-//! fully decoded stylesheet text to the main integration path, where the
-//! `css::syntax` entry points are invoked.
-
+//! Complete-stylesheet transport runtime. CSS grammar remains in css.
+pub mod decoding;
+use bus::css_decode::{CssDecodingDecision, CssRuntimeFailure};
 use bus::{CoreCommand, CoreEvent};
 use core_types::{RequestId, StylesheetSlotId, TabId};
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender};
-use std::thread;
-use tools::utf8::{finish_utf8, push_utf8_chunk};
-
+use tools::common::MAX_STYLESHEET_BYTES;
 type Key = (TabId, RequestId, StylesheetSlotId);
-
-struct CssState {
-    carry: Vec<u8>,
-    text: String,
+struct PendingSheet {
+    issued_url: String,
+    bytes: Vec<u8>,
+    decision: CssDecodingDecision,
 }
 
 pub fn start_css_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent>) {
-    thread::spawn(move || {
-        let mut map: HashMap<Key, CssState> = HashMap::new();
-
-        while let Ok(cmd) = cmd_rx.recv() {
-            match cmd {
-                CoreCommand::CssChunk {
-                    tab_id,
-                    request_id,
-                    stylesheet_slot_id,
-                    url: _,
-                    bytes,
-                } => {
-                    let key = (tab_id, request_id, stylesheet_slot_id);
-                    let st = map.entry(key).or_insert(CssState {
-                        carry: Vec::new(),
-                        text: String::new(),
-                    });
-                    push_utf8_chunk(&mut st.text, &mut st.carry, &bytes);
-                }
-
-                CoreCommand::CssDone {
-                    tab_id,
-                    request_id,
-                    stylesheet_slot_id,
-                    url,
-                } => {
-                    let key = (tab_id, request_id, stylesheet_slot_id);
-                    if let Some(mut st) = map.remove(&key) {
-                        finish_utf8(&mut st.text, &mut st.carry);
-                        // Forward one decoded stylesheet text block. Syntax
-                        // parsing happens outside this runtime.
-                        let _ = evt_tx.send(CoreEvent::CssDecodedBlock {
+    std::thread::spawn(move || run(cmd_rx, evt_tx));
+}
+fn reserve_session(
+    map: &mut HashMap<Key, PendingSheet>,
+) -> Result<(), std::collections::TryReserveError> {
+    #[cfg(test)]
+    allocation_tests::before_session_reservation();
+    map.try_reserve(1)
+}
+fn run(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent>) {
+    let mut map: HashMap<Key, PendingSheet> = HashMap::new();
+    while let Ok(command) = cmd_rx.recv() {
+        match command {
+            CoreCommand::CssChunk {
+                tab_id,
+                request_id,
+                stylesheet_slot_id,
+                url,
+                bytes,
+                decision,
+            } => {
+                let key = (tab_id, request_id, stylesheet_slot_id);
+                let failure = if let Some(old) = map.remove(&key) {
+                    Some((old.issued_url, CssRuntimeFailure::DuplicateChunk))
+                } else if bytes.len() > MAX_STYLESHEET_BYTES {
+                    Some((url, CssRuntimeFailure::InputBound))
+                } else if bytes.len() != decision.delivered_bytes() {
+                    Some((url, CssRuntimeFailure::InputLength))
+                } else if !decision.effective_encoding().is_utf8()
+                    || decoding::validate_decision_for_body(&bytes, &decision).is_err()
+                {
+                    Some((url, CssRuntimeFailure::DecisionBodyMismatch))
+                } else if reserve_session(&mut map).is_err() {
+                    Some((url, CssRuntimeFailure::SessionReservation))
+                } else {
+                    map.insert(
+                        key,
+                        PendingSheet {
+                            issued_url: url,
+                            bytes,
+                            decision,
+                        },
+                    );
+                    None
+                };
+                if let Some((url, failure)) = failure
+                    && evt_tx
+                        .send(CoreEvent::CssRuntimeFailed {
                             tab_id,
                             request_id,
                             stylesheet_slot_id,
-                            url: url.clone(),
-                            css_block: st.text,
-                        });
-                    }
-
-                    let _ = evt_tx.send(CoreEvent::CssSheetDone {
-                        tab_id,
-                        request_id,
-                        stylesheet_slot_id,
-                        url: url.clone(),
-                    });
+                            url,
+                            failure,
+                        })
+                        .is_err()
+                {
+                    return;
                 }
-                CoreCommand::CssAbort {
-                    tab_id,
-                    request_id,
-                    stylesheet_slot_id,
-                    url,
-                } => {
-                    let _ = url;
-                    map.remove(&(tab_id, request_id, stylesheet_slot_id));
-                }
-                _ => {}
             }
+            CoreCommand::CssDone {
+                tab_id,
+                request_id,
+                stylesheet_slot_id,
+                url,
+            } => {
+                let Some(sheet) = map.remove(&(tab_id, request_id, stylesheet_slot_id)) else {
+                    continue;
+                };
+                if url != sheet.issued_url {
+                    if evt_tx
+                        .send(CoreEvent::CssRuntimeFailed {
+                            tab_id,
+                            request_id,
+                            stylesheet_slot_id,
+                            url: sheet.issued_url,
+                            failure: CssRuntimeFailure::CommandProvenance,
+                        })
+                        .is_err()
+                    {
+                        return;
+                    }
+                    continue;
+                }
+                match decoding::decode_stylesheet(&sheet.bytes, sheet.decision) {
+                    Ok(decoded) => {
+                        if evt_tx
+                            .send(CoreEvent::CssDecodedBlock {
+                                tab_id,
+                                request_id,
+                                stylesheet_slot_id,
+                                url: sheet.issued_url,
+                                decoded,
+                            })
+                            .is_err()
+                        {
+                            return;
+                        }
+                        if evt_tx
+                            .send(CoreEvent::CssSheetDone {
+                                tab_id,
+                                request_id,
+                                stylesheet_slot_id,
+                                url,
+                            })
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    Err(error) => {
+                        if evt_tx
+                            .send(CoreEvent::CssRuntimeFailed {
+                                tab_id,
+                                request_id,
+                                stylesheet_slot_id,
+                                url: sheet.issued_url,
+                                failure: CssRuntimeFailure::InvalidEvidence(error),
+                            })
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                }
+            }
+            CoreCommand::CssAbort {
+                tab_id,
+                request_id,
+                stylesheet_slot_id,
+                url,
+            } => {
+                let key = (tab_id, request_id, stylesheet_slot_id);
+                if map.get(&key).is_some_and(|s| s.issued_url == url) {
+                    map.remove(&key);
+                }
+            }
+            _ => {}
         }
-    });
+    }
 }
+#[cfg(test)]
+mod tests;
 
 #[cfg(test)]
-mod tests {
-    use super::start_css_runtime;
-    use bus::{CoreCommand, CoreEvent};
-    use core_types::StylesheetSlotId;
-    use std::sync::mpsc;
-    use std::time::Duration;
-
-    #[test]
-    fn css_abort_discards_buffered_stylesheet_without_emitting_events() {
-        let (cmd_tx, cmd_rx) = mpsc::channel();
-        let (evt_tx, evt_rx) = mpsc::channel();
-        start_css_runtime(cmd_rx, evt_tx);
-
-        cmd_tx
-            .send(CoreCommand::CssChunk {
-                tab_id: 1,
-                request_id: 7,
-                stylesheet_slot_id: StylesheetSlotId(1),
-                url: "https://example.com/site.css".to_string(),
-                bytes: b"body { color: red; }".to_vec(),
-            })
-            .expect("send CssChunk");
-        cmd_tx
-            .send(CoreCommand::CssAbort {
-                tab_id: 1,
-                request_id: 7,
-                stylesheet_slot_id: StylesheetSlotId(1),
-                url: "https://example.com/site.css".to_string(),
-            })
-            .expect("send CssAbort");
-
-        match evt_rx.recv_timeout(Duration::from_millis(200)) {
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
-            Ok(event) => panic!("unexpected CSS runtime event after abort: {event:?}"),
-            Err(err) => panic!("unexpected receive error: {err}"),
-        }
-    }
-
-    #[test]
-    fn css_done_emits_decoded_block_and_sheet_done() {
-        let (cmd_tx, cmd_rx) = mpsc::channel();
-        let (evt_tx, evt_rx) = mpsc::channel();
-        start_css_runtime(cmd_rx, evt_tx);
-
-        let url = "https://example.com/site.css".to_string();
-        cmd_tx
-            .send(CoreCommand::CssChunk {
-                tab_id: 1,
-                request_id: 7,
-                stylesheet_slot_id: StylesheetSlotId(1),
-                url: url.clone(),
-                bytes: b"body { color: red; }".to_vec(),
-            })
-            .expect("send CssChunk");
-        cmd_tx
-            .send(CoreCommand::CssDone {
-                tab_id: 1,
-                request_id: 7,
-                stylesheet_slot_id: StylesheetSlotId(1),
-                url: url.clone(),
-            })
-            .expect("send CssDone");
-
-        let first = evt_rx
-            .recv_timeout(Duration::from_secs(1))
-            .expect("first CSS runtime event");
-        let second = evt_rx
-            .recv_timeout(Duration::from_secs(1))
-            .expect("second CSS runtime event");
-
-        assert!(matches!(
-            first,
-            CoreEvent::CssDecodedBlock {
-                tab_id: 1,
-                request_id: 7,
-                stylesheet_slot_id: StylesheetSlotId(1),
-                url: ref event_url,
-                ref css_block,
-            } if event_url == &url && css_block.contains("color: red")
-        ));
-        assert!(matches!(
-            second,
-            CoreEvent::CssSheetDone {
-                tab_id: 1,
-                request_id: 7,
-                stylesheet_slot_id: StylesheetSlotId(1),
-                url: ref event_url,
-            } if event_url == &url
-        ));
-    }
-
-    #[test]
-    fn css_chunks_are_assembled_and_emitted_once_on_done() {
-        let (cmd_tx, cmd_rx) = mpsc::channel();
-        let (evt_tx, evt_rx) = mpsc::channel();
-        start_css_runtime(cmd_rx, evt_tx);
-
-        let url = "https://example.com/site.css".to_string();
-        for bytes in [
-            b"p { co".as_slice(),
-            b"lor: red; }".as_slice(),
-            b"div { color: blue; }".as_slice(),
-        ] {
-            cmd_tx
-                .send(CoreCommand::CssChunk {
-                    tab_id: 1,
-                    request_id: 7,
-                    stylesheet_slot_id: StylesheetSlotId(2),
-                    url: url.clone(),
-                    bytes: bytes.to_vec(),
-                })
-                .expect("send CssChunk");
-        }
-
-        match evt_rx.recv_timeout(Duration::from_millis(200)) {
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
-            Ok(event) => panic!("unexpected CSS runtime event before CssDone: {event:?}"),
-            Err(err) => panic!("unexpected receive error: {err}"),
-        }
-
-        cmd_tx
-            .send(CoreCommand::CssDone {
-                tab_id: 1,
-                request_id: 7,
-                stylesheet_slot_id: StylesheetSlotId(2),
-                url: url.clone(),
-            })
-            .expect("send CssDone");
-
-        let first = evt_rx
-            .recv_timeout(Duration::from_secs(1))
-            .expect("first CSS runtime event");
-        let second = evt_rx
-            .recv_timeout(Duration::from_secs(1))
-            .expect("second CSS runtime event");
-
-        assert!(matches!(
-            first,
-            CoreEvent::CssDecodedBlock {
-                tab_id: 1,
-                request_id: 7,
-                stylesheet_slot_id: StylesheetSlotId(2),
-                url: ref event_url,
-                ref css_block,
-            } if event_url == &url && css_block == "p { color: red; }div { color: blue; }"
-        ));
-        assert!(matches!(
-            second,
-            CoreEvent::CssSheetDone {
-                tab_id: 1,
-                request_id: 7,
-                stylesheet_slot_id: StylesheetSlotId(2),
-                url: ref event_url,
-            } if event_url == &url
-        ));
-
-        match evt_rx.recv_timeout(Duration::from_millis(200)) {
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
-            Ok(event) => panic!("unexpected extra CSS runtime event: {event:?}"),
-            Err(err) => panic!("unexpected receive error: {err}"),
-        }
-    }
-}
+mod allocation_tests;

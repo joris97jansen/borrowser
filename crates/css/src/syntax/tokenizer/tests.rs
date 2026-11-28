@@ -11,7 +11,7 @@ fn tokenizer_emits_core_stylesheet_tokens_deterministically() {
     assert_eq!(
         first.to_debug_snapshot(),
         concat!(
-            "version: 1\n",
+            "version: 2\n",
             "tokens\n",
             "token[0] ident(\"div\") @0..3\n",
             "token[1] comma @3..4\n",
@@ -34,6 +34,7 @@ fn tokenizer_emits_core_stylesheet_tokens_deterministically() {
             "  tokens_emitted: 15\n",
             "  diagnostics_emitted: 0\n",
             "  hit_limit: false\n",
+            "  had_invariant_violation: false\n",
         )
     );
 }

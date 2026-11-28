@@ -75,7 +75,7 @@ pub use cascade::{
     StylesheetOrder, StylesheetRuleOrder, StylesheetRuleRef, StylesheetSourceId,
     StylesheetSourceIdError, attach_styles, cascade_evaluation_diagnostic,
     cascade_property_registry, cascade_property_registry_metadata_debug_snapshot,
-    cascade_shorthand_registry, get_inline_style, is_css, resolve_cascade_style,
+    cascade_shorthand_registry, classify_at_rule, get_inline_style, is_css, resolve_cascade_style,
     resolve_document_styles, resolve_document_styles_from_cascade_inputs, resolve_initial_style,
     rule_collection_diagnostic, try_attach_styles,
     try_resolve_document_styles_from_cascade_inputs_with_limits,
@@ -115,9 +115,9 @@ pub use document_selector_matching::{
 pub use model::{
     AtRule, AtRuleBlock, Declaration, DeclarationBlock, DeclarationValue, ImportantAnnotation,
     PreservedBlock, PreservedComponentList, PropertyName, PropertyNameKind, Rule, StyleRule,
-    Stylesheet, StylesheetParse, ValueBlock, ValueComponent, ValueFunction, ValueSymbol, ValueText,
-    ValueToken, parse_stylesheet, parse_stylesheet_with_options,
-    serialize_declaration_for_snapshot, serialize_rule_for_snapshot,
+    Stylesheet, StylesheetParse, StylesheetParseCompletion, ValueBlock, ValueComponent,
+    ValueFunction, ValueSymbol, ValueText, ValueToken, parse_stylesheet,
+    parse_stylesheet_with_options, serialize_declaration_for_snapshot, serialize_rule_for_snapshot,
     serialize_stylesheet_for_snapshot, serialize_stylesheet_parse_for_snapshot,
     serialize_value_for_snapshot,
 };

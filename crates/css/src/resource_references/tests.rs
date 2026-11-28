@@ -271,3 +271,26 @@ fn resource_reference_bad_string_is_contextual_to_import_or_url() {
         3
     );
 }
+
+#[test]
+fn aj8_semantic_at_rule_names_are_not_unescaped_again_by_ah8() {
+    let import = sheet(r"@\69mport url(a.css);");
+    let literal_backslash = sheet(r"@\5c 69mport url(a.css);");
+    let imported = discover_stylesheet_resource_references(&import, &ParseOptions::stylesheet());
+    let unknown =
+        discover_stylesheet_resource_references(&literal_backslash, &ParseOptions::stylesheet());
+    assert_eq!(
+        imported.references[0].contexts,
+        [CssResourceContext::Import]
+    );
+    assert_eq!(
+        imported.references[0].role,
+        CssResourceRole::StylesheetImport
+    );
+    assert_eq!(
+        unknown.references[0].contexts,
+        [CssResourceContext::UnsupportedRule]
+    );
+    assert_eq!(unknown.references[0].role, CssResourceRole::Unknown);
+    assert_eq!(value(&unknown.references[0]), "a.css");
+}

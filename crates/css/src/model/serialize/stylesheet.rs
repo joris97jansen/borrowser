@@ -11,7 +11,7 @@ use crate::selectors::write_selector_parse_result_snapshot_body;
 use crate::syntax::CssInput;
 use std::fmt::Write;
 
-const SNAPSHOT_VERSION: u32 = 1;
+const SNAPSHOT_VERSION: u32 = 2;
 const SNAPSHOT_KIND_STYLESHEET: &str = "model-stylesheet";
 #[cfg(test)]
 const SNAPSHOT_KIND_DECLARATION_LIST: &str = "model-declaration-list";

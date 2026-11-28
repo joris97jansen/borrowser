@@ -18,9 +18,23 @@ use std::collections::HashMap;
 #[cfg(test)]
 use std::collections::HashSet;
 use std::sync::OnceLock;
+mod participation;
 mod reconcile;
-pub(crate) use reconcile::PreparedStylesheetReconcile;
+pub use participation::{
+    CssRuntimeReceipt, HostEligibility, InlineType, SheetTitle, StylesheetDecodingOutcome,
+};
+use participation::{Environment, LinkLabel, complete, contributes};
+#[cfg(test)]
+pub(crate) use reconcile::INJECT_INLINE_INTEGRITY;
+pub(crate) use reconcile::{PreparedStylesheetReconcile, StylesheetPreparationFailure};
 
+#[cfg(test)]
+thread_local! { static PROJECTION_CLONES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+fn clone_for_projection(parse: &StylesheetParse) -> StylesheetParse {
+    #[cfg(test)]
+    PROJECTION_CLONES.with(|n| n.set(n.get() + 1));
+    parse.clone()
+}
 const MINIMAL_UA_STYLESHEET: &str = r#"
 html, body, div, p, section, article, header, footer, main, nav, aside,
 h1, h2, h3, h4, h5, h6, ul, ol, menu, form, table, thead, tbody, tfoot,
@@ -88,6 +102,7 @@ pub(crate) struct StylesheetResourceSource<'a> {
 
 #[derive(Clone, Debug)]
 enum StylesheetSlotState {
+    NotRequested,
     Pending,
     Loaded(StylesheetParse),
     Failed,
@@ -98,6 +113,11 @@ struct StylesheetSlot {
     owner: Id,
     source: StylesheetSlotSource,
     media: Option<String>,
+    host: HostEligibility,
+    link_label: LinkLabel,
+    environment: Environment,
+    decoding: Option<StylesheetDecodingOutcome>,
+    runtime_receipt: Option<CssRuntimeReceipt>,
     state: StylesheetSlotState,
     fetch_result: Option<StylesheetFetchResult>,
     installation_result: Option<Result<(), StylesheetInstallationFailure>>,
@@ -137,12 +157,34 @@ impl<'a> StylesheetSourceObservation<'a> {
         self.reason
     }
 }
+#[derive(Clone, Copy)]
 pub(crate) struct StylesheetLifecycleView<'a> {
     id: StylesheetSlotId,
     slot: &'a StylesheetSlot,
 }
 
 impl<'a> StylesheetLifecycleView<'a> {
+    pub(crate) fn host(&self) -> HostEligibility {
+        self.slot.host
+    }
+    pub(crate) fn media(&self) -> Option<&'a str> {
+        self.slot.media.as_deref()
+    }
+    pub(crate) fn parse(&self) -> Option<&'a StylesheetParse> {
+        match &self.slot.state {
+            StylesheetSlotState::Loaded(p) => Some(p),
+            _ => None,
+        }
+    }
+    pub(crate) fn decoding(&self) -> Option<StylesheetDecodingOutcome> {
+        self.slot.decoding
+    }
+    pub(crate) fn runtime_receipt(&self) -> Option<CssRuntimeReceipt> {
+        self.slot.runtime_receipt
+    }
+    pub(crate) fn is_not_requested(&self) -> bool {
+        matches!(self.slot.state, StylesheetSlotState::NotRequested)
+    }
     pub(crate) fn slot_id(&self) -> StylesheetSlotId {
         self.id
     }
@@ -288,6 +330,27 @@ impl DocumentStyleSet {
     }
     pub(crate) fn slot_count(&self) -> usize {
         self.order.len()
+    }
+    pub(crate) fn environment(&self, id: StylesheetSlotId) -> Environment {
+        self.slots[&id].environment
+    }
+    pub(crate) fn decoding(&self, id: StylesheetSlotId) -> Option<StylesheetDecodingOutcome> {
+        self.slots.get(&id)?.decoding
+    }
+    pub(crate) fn set_decoding(
+        &mut self,
+        id: StylesheetSlotId,
+        outcome: StylesheetDecodingOutcome,
+    ) {
+        self.slots
+            .get_mut(&id)
+            .expect("current attachment")
+            .decoding = Some(outcome);
+    }
+    pub(crate) fn set_runtime_receipt(&mut self, id: StylesheetSlotId, receipt: CssRuntimeReceipt) {
+        let slot = self.slots.get_mut(&id).expect("current attachment");
+        assert!(slot.runtime_receipt.is_none());
+        slot.runtime_receipt = Some(receipt);
     }
     pub(crate) fn selected_address(&self, id: StylesheetSlotId) -> Option<&ResourceAddress> {
         match &self.slots.get(&id)?.source {
@@ -520,6 +583,11 @@ impl DocumentStyleSet {
                     )),
                 },
                 media: None,
+                host: HostEligibility::default(),
+                link_label: LinkLabel::Absent,
+                environment: None,
+                decoding: None,
+                runtime_receipt: None,
                 state: StylesheetSlotState::Pending,
                 fetch_result: None,
                 installation_result: None,
@@ -530,31 +598,44 @@ impl DocumentStyleSet {
         id
     }
 
+    #[cfg(test)]
     pub(crate) fn install_external_stylesheet(
         &mut self,
-        slot_id: StylesheetSlotId,
-        css_text: &str,
+        id: StylesheetSlotId,
+        text: &str,
         response: &net::NetworkResponseInfo,
     ) -> bool {
+        self.install_external_parse(
+            id,
+            parse_stylesheet_with_options(text, &ParseOptions::stylesheet()),
+            response,
+        )
+    }
+    pub(crate) fn install_external_parse(
+        &mut self,
+        slot_id: StylesheetSlotId,
+        parse: StylesheetParse,
+        response: &net::NetworkResponseInfo,
+    ) -> bool {
+        assert_ne!(
+            parse.completion(),
+            css::StylesheetParseCompletion::InvariantViolation
+        );
         let Some(slot) = self.slot_mut(slot_id) else {
             return false;
         };
-        if !matches!(slot.source, StylesheetSlotSource::External { .. }) {
-            return false;
-        }
-        if !matches!(
-            slot.state,
-            StylesheetSlotState::Pending | StylesheetSlotState::Loaded(_)
-        ) {
+        if !matches!(slot.source, StylesheetSlotSource::External { .. })
+            || !matches!(
+                slot.state,
+                StylesheetSlotState::Pending | StylesheetSlotState::Loaded(_)
+            )
+        {
             return false;
         }
         if let StylesheetSlotSource::External { resource_base, .. } = &mut slot.source {
             *resource_base = response.response_url().cloned().map(Box::new);
         }
-        slot.state = StylesheetSlotState::Loaded(parse_stylesheet_with_options(
-            css_text,
-            &ParseOptions::stylesheet(),
-        ));
+        slot.state = StylesheetSlotState::Loaded(parse);
         self.rebuild_loaded_stylesheets();
         true
     }
@@ -627,6 +708,9 @@ impl DocumentStyleSet {
             let StylesheetSlotState::Loaded(stylesheet) = &slot.state else {
                 continue;
             };
+            if !slot.host.participates() || !complete(stylesheet) {
+                continue;
+            }
             let order_index =
                 slot_index
                     .checked_add(1)
@@ -686,11 +770,16 @@ impl DocumentStyleSet {
         self.loaded_stylesheets.clear();
         let slots = &self.slots;
         self.loaded_stylesheets
-            .extend(self.order.iter().filter_map(|id| match &slots[id].state {
-                StylesheetSlotState::Loaded(stylesheet) => Some(stylesheet.clone()),
-                StylesheetSlotState::Pending
-                | StylesheetSlotState::Failed
-                | StylesheetSlotState::Aborted => None,
+            .extend(self.order.iter().filter_map(|id| {
+                let slot = &slots[id];
+                match &slot.state {
+                    StylesheetSlotState::Loaded(parse)
+                        if contributes(slot.host, slot.media.as_deref(), parse) =>
+                    {
+                        Some(clone_for_projection(parse))
+                    }
+                    _ => None,
+                }
             }));
     }
 }
@@ -832,7 +921,14 @@ mod af5_tests {
             changed.fetches.is_empty(),
             "media-only change must not refetch"
         );
-        assert_eq!(set.stylesheets().len(), 1, "loaded parse remains available");
+        assert!(
+            set.stylesheets().is_empty(),
+            "compatibility projection cannot carry deferred media"
+        );
+        assert!(
+            set.lifecycle_slots().next().unwrap().has_loaded_parse(),
+            "slot-owned parse remains inspectable"
+        );
         let inputs = set.stylesheet_collection_inputs().unwrap();
         assert_eq!(inputs[1].source_id(), source_id);
         assert_eq!(

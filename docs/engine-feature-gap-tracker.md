@@ -2046,3 +2046,29 @@ closure or full conformance. Earlier AJ1/AI8 descriptions and qualification coun
 remain historical; stylesheet HTTP applicability is now governed by AJ7. AJ8
 decoding/parsing, AJ9 assembly/rendering and AJ10 resource-backed conformance remain
 open, along with complete selection/media/import/security/cache/cancellation.
+
+## AJ8 local implementation candidate (#1139)
+
+[AJ8](platform/aj8-ordered-static-stylesheet-set.md) supplies ordered static author
+inputs through the existing DocumentStyleSet. It adds canonical UTF-8-subset byte
+selection/evidence, complete-body runtime outcomes/receipts, prepared host eligibility,
+CSS completeness/integrity and semantic at-rule classification, correct AF and
+compatibility contribution filtering, and bounded redacted passive observation.
+Acquisition, installation, parse availability and participation remain distinct.
+The corrected borrowed view correlates current document/attachment/CSS/fetch
+identities under controlled access; its v2 redacted text uses local identities and
+separates encoding selection from actual live runtime progress. Validation checks
+retained-base/decoded-length histories, and parser-integrity failures identify
+prospective inline versus admitted external attachments. Real internal producer
+fault tests complement Browser fatal-transition tests; no broader CSS fatal policy
+or additional authoritative inventory is introduced.
+
+AJ7 logical limits and stale-event/provenance rules remain. Inactive/limited parses
+retain legitimate AH8 partial authored observations. Local tests, actual loopback
+workers, isolated baseline comparisons and release supervision are candidate-bound
+external evidence; this entry does not claim they passed, hosted CI, issue closure,
+AJ9/AJ10 completion or full stylesheet/encoding/media/import/CSSOM/security support.
+AWS is not needed because AG's existing projections cannot qualify these internal
+contracts. No live operations are part of AJ8. Earlier qualification narratives
+remain historical; this candidate supersedes the prior missing AJ8 implementation
+description without closing its review/publication gates.

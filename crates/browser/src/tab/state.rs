@@ -96,6 +96,18 @@ pub(super) enum LoadStateInvariant {
     FetchEvidence,
 }
 
+/// A prospective inline slot is not evidence of an accepted publication.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum StylesheetParserInvariantSource {
+    ProspectiveInline {
+        owner: html::internal::Id,
+        slot: StylesheetSlotId,
+    },
+    AdmittedExternal {
+        slot: StylesheetSlotId,
+    },
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub(super) enum DocumentLoadFailure {
     Network {
@@ -112,6 +124,7 @@ pub(super) enum DocumentLoadFailure {
     },
     Publication(DocumentPublicationFailure),
     StylesheetInventory(crate::stylesheet_fetch::StylesheetInventoryError),
+    StylesheetParserInvariant(StylesheetParserInvariantSource),
     ResponseRequestMismatch(NetworkResponseInfo),
     ResponseUrlUnavailable(NetworkResponseInfo),
     UnsupportedDocumentCreation {
@@ -214,9 +227,10 @@ pub(super) enum StylesheetLoadPhase {
     },
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum CssRuntimeProgress {
-    AwaitingBlock,
-    BlockReceived,
+pub enum CssRuntimeProgress {
+    AwaitingOutcome,
+    ParsedAwaitingDone,
+    DecodeFailedAwaitingDone,
 }
 impl StylesheetLoadState {
     #[cfg(any(test, feature = "conformance-observation"))]

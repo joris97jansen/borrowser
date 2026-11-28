@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+encoding_rs = { version = "=0.8.35", default-features = false }
 bus = { path = "../bus" }
 core_types = { path = "../core_types" }
 tools = { path = "../tools" }

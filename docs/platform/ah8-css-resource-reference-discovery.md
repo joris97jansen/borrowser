@@ -357,3 +357,12 @@ commit/publication authorization.
 The recorded host failures do not waive a gate. AH8 and Milestone AH remain open;
 Borrowser was uncommitted and unpublished at that checkpoint. Required CI must
 pass before merge readiness is established.
+
+## AJ8 parsing qualification
+
+[AJ8](aj8-ordered-static-stylesheet-set.md) retains slot-owned inactive and
+resource-limited parses for legitimate partial authored evidence, while excluding
+them from active contribution. Such observations do not certify complete discovery.
+At-rule model names are semantic CSS names; AH8 consumes them once without a second
+unescape. Raw source/spans remain unchanged. External bases remain admitted final
+response facts; inline contexts remain the current committed document/base.

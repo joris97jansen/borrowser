@@ -233,3 +233,12 @@ assembly and AJ10 resource-backed conformance/closeout remain separate. No real
 media evaluator, alternate/named selection, imports, policy enforcement, loader
 trimming/tokenization correction, navigation/events, image/font loading, JS or
 other future capability is implemented here.
+
+## AJ8 participation qualification
+
+[AJ8](aj8-ordered-static-stylesheet-set.md) adds host eligibility and conservative
+participation to production attachments. AJ6 remains passive authored discovery;
+its candidate/dependency positions do not authorize acquisition. Initially disabled,
+alternate and named external attachments request nothing. Media classification is
+still CSS-owned, and inactive/partial authored evidence remains observable. Earlier
+AJ6 qualification results above remain historical.

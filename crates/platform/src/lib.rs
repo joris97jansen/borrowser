@@ -17,6 +17,9 @@ use winit::{
     window::{Theme, Window, WindowId},
 };
 
+// Keep bounded CoreEvent evidence inline; boxing this wrapper would add an
+// allocation to every bridged network/parser event.
+#[allow(clippy::large_enum_variant)]
 pub enum UserEvent {
     Core(CoreEvent),
     Repaint,

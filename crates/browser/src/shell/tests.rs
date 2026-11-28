@@ -175,8 +175,8 @@ fn stylesheet_runtime_tab_close_discards_old_buffer_and_does_not_touch_new_tab()
             }
         }
 
-        // CssDone is an ordered barrier: an old retained buffer would first
-        // emit CssDecodedBlock; the removed key emits only CssSheetDone.
+        // Unknown Done is silent. The next admitted session is the FIFO barrier:
+        // any surviving old output would precede its decoded outcome.
         runtime_tx
             .send(CoreCommand::CssDone {
                 tab_id: old_tab,
@@ -185,14 +185,6 @@ fn stylesheet_runtime_tab_close_discards_old_buffer_and_does_not_touch_new_tab()
                 url: old_url.clone(),
             })
             .unwrap();
-        let old_done = events_rx
-            .recv_timeout(Duration::from_secs(5))
-            .expect("old-key runtime barrier");
-        assert!(
-            matches!(&old_done, CoreEvent::CssSheetDone { tab_id, request_id, stylesheet_slot_id, .. } if *tab_id == old_tab && *request_id == old_generation && *stylesheet_slot_id == old_slot),
-            "partial CSS survived closed tab: {old_done:?}"
-        );
-        app.on_core_event(old_done);
         app.on_core_event(CoreEvent::NetworkChunk {
             tab_id: old_tab,
             request_id: old_generation,
@@ -240,7 +232,7 @@ fn stylesheet_runtime_tab_close_discards_old_buffer_and_does_not_touch_new_tab()
             .recv_timeout(Duration::from_secs(5))
             .expect("new stylesheet decoded");
         assert!(
-            matches!(&decoded, CoreEvent::CssDecodedBlock { tab_id, request_id, stylesheet_slot_id, css_block, .. } if *tab_id == new_tab && *request_id == generation && *stylesheet_slot_id == slot && css_block == "p{color:green}")
+            matches!(&decoded, CoreEvent::CssDecodedBlock { tab_id, request_id, stylesheet_slot_id, decoded, .. } if *tab_id == new_tab && *request_id == generation && *stylesheet_slot_id == slot && decoded.text() == Ok("p{color:green}"))
         );
         app.on_core_event(decoded);
         let done = events_rx

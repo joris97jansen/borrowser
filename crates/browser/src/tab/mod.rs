@@ -22,9 +22,13 @@ mod events;
 mod html;
 mod image;
 mod load_observation;
+mod static_stylesheet_observation;
 mod stylesheet_fetch_observation;
 #[cfg(feature = "conformance-observation")]
-pub use crate::document_style::StylesheetSourceObservation;
+pub use crate::document_style::{
+    CssRuntimeReceipt, HostEligibility, InlineType, SheetTitle, StylesheetDecodingOutcome,
+    StylesheetSourceObservation,
+};
 #[cfg(feature = "conformance-observation")]
 pub use crate::stylesheet_fetch::{
     StylesheetBodyEvidence, StylesheetCollectionStop, StylesheetErrorContext,
@@ -33,6 +37,11 @@ pub use crate::stylesheet_fetch::{
     StylesheetInventoryStorage, StylesheetProtocolFailure, StylesheetRequestEvidence,
     StylesheetResponseEvidence, StylesheetResponsePolicy, StylesheetResponseRejection,
     StylesheetRetentionFailure, StylesheetSourceFailure,
+};
+#[cfg(feature = "conformance-observation")]
+pub use state::CssRuntimeProgress;
+pub use static_stylesheet_observation::{
+    StaticStylesheetEntry, StaticStylesheetObservation, StaticStylesheetObservationError,
 };
 pub use stylesheet_fetch_observation::StylesheetFetchSnapshotError;
 #[cfg(feature = "conformance-observation")]

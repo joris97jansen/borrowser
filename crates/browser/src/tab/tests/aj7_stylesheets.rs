@@ -14,7 +14,7 @@ use net::{
 use std::sync::{Arc, atomic::AtomicBool, mpsc};
 use std::time::Duration;
 
-fn requests(rx: &mpsc::Receiver<CoreCommand>) -> Vec<(StylesheetSlotId, FetchRequest)> {
+pub(super) fn requests(rx: &mpsc::Receiver<CoreCommand>) -> Vec<(StylesheetSlotId, FetchRequest)> {
     rx.try_iter()
         .filter_map(|c| match c {
             CoreCommand::FetchStream {
@@ -27,7 +27,7 @@ fn requests(rx: &mpsc::Receiver<CoreCommand>) -> Vec<(StylesheetSlotId, FetchReq
         })
         .collect()
 }
-fn fixture() -> (
+pub(super) fn fixture() -> (
     Tab,
     mpsc::Receiver<CoreCommand>,
     StylesheetSlotId,
@@ -39,10 +39,10 @@ fn fixture() -> (
     let (slot, request) = requests(&rx).pop().unwrap();
     (tab, rx, slot, request)
 }
-fn key(request: &FetchRequest) -> &str {
+pub(super) fn key(request: &FetchRequest) -> &str {
     request.current_url().as_str().split('#').next().unwrap()
 }
-fn response(
+pub(super) fn response(
     request: &FetchRequest,
     status: u16,
     mime: Option<&[u8]>,
@@ -61,7 +61,7 @@ fn response(
     )
     .unwrap()
 }
-fn event(tab: &mut Tab, slot: StylesheetSlotId, event: NetEvent) {
+pub(super) fn event(tab: &mut Tab, slot: StylesheetSlotId, event: NetEvent) {
     let tab_id = tab.tab_id;
     let event = match event {
         NetEvent::Start {
@@ -119,7 +119,7 @@ fn event(tab: &mut Tab, slot: StylesheetSlotId, event: NetEvent) {
     };
     tab.on_core_event(event).unwrap();
 }
-fn acquire(
+pub(super) fn acquire(
     tab: &mut Tab,
     slot: StylesheetSlotId,
     request: FetchRequest,
@@ -149,7 +149,7 @@ fn acquire(
         mpsc::RecvTimeoutError::Disconnected
     );
 }
-fn fake(
+pub(super) fn fake(
     request: &FetchRequest,
     status: u16,
     mime: Option<&[u8]>,
@@ -211,7 +211,7 @@ fn done(
         },
     );
 }
-fn result(tab: &Tab, slot: StylesheetSlotId) -> &StylesheetFetchResult {
+pub(super) fn result(tab: &Tab, slot: StylesheetSlotId) -> &StylesheetFetchResult {
     tab.page.stylesheet_fetch_result(slot).unwrap()
 }
 fn no_css(rx: &mpsc::Receiver<CoreCommand>) {
@@ -228,7 +228,7 @@ fn runtime(tab: &mut Tab, slot: StylesheetSlotId, request: &FetchRequest, text: 
         request_id: request.request_id(),
         stylesheet_slot_id: slot,
         url: key(request).into(),
-        css_block: text.into(),
+        decoded: super::support::decoded_text(text),
     })
     .unwrap();
     if done {
@@ -2314,13 +2314,18 @@ fn aj7_actual_owner_map_allocator_refusal_preserves_preparation_state() {
             tab.page.dom.as_deref().unwrap(),
             tab.page.active_base_url(),
             false,
+            tab.document_load
+                .encoding_decision
+                .map(|_| bus::css_decode::CssEncoding::UTF8),
         )
     })
     .err()
     .unwrap();
     assert_eq!(
         error,
-        StylesheetInventoryError::Reservation(StylesheetInventoryStorage::Owners)
+        crate::document_style::StylesheetPreparationFailure::Inventory(
+            StylesheetInventoryError::Reservation(StylesheetInventoryStorage::Owners)
+        )
     );
     assert_eq!(tab.dom_handle, handle);
     assert_eq!(tab.dom_version, version);

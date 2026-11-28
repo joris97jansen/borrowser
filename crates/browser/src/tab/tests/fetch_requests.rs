@@ -465,6 +465,8 @@ fn ai2_command_envelope_matrix_and_nested_debug_are_safe() {
             stylesheet_slot_id: StylesheetSlotId(9),
             url: "SECRET_URL".into(),
             bytes: b"SECRET_BODY".to_vec(),
+            decision: runtime_css::decoding::select_stylesheet_decoding(b"SECRET_BODY", None, None)
+                .unwrap(),
         },
         CoreCommand::CssDone {
             tab_id: 1,

@@ -177,6 +177,21 @@ pub enum AtRuleSkipReason {
     UnresolvedName,
 }
 
+impl AtRuleSkipReason {
+    /// Source-free label shared by CSS and passive engine observations.
+    pub const fn stable_label(self) -> &'static str {
+        match self {
+            Self::MediaDeferred => "media-deferred",
+            Self::SupportsDeferred => "supports-deferred",
+            Self::ImportDeferred => "import-deferred",
+            Self::LayerDeferred => "layer-deferred",
+            Self::ScopeDeferred => "scope-deferred",
+            Self::Unknown => "unknown",
+            Self::UnresolvedName => "unresolved-name",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RuleCollectionStorage {
     Stylesheets,
@@ -410,7 +425,7 @@ impl<'source> RuleCollection<'source> {
                         rules.push(CollectedRule::SkippedAtRule(CollectedAtRule {
                             rule_ref,
                             name: at_rule.name.as_deref(),
-                            reason: at_rule_skip_reason(at_rule.name.as_deref()),
+                            reason: classify_at_rule(at_rule),
                         }))
                     }
                     model::Rule::Style(style_rule) => {
@@ -572,6 +587,11 @@ fn validate_collection_limit(
         });
     }
     Ok(())
+}
+
+/// Classify a semantic model at-rule without matching, cascade execution, or reparsing.
+pub fn classify_at_rule(rule: &model::AtRule) -> AtRuleSkipReason {
+    at_rule_skip_reason(rule.name.as_deref())
 }
 
 fn at_rule_skip_reason(name: Option<&str>) -> AtRuleSkipReason {

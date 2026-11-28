@@ -13,6 +13,10 @@ use core_types::ResourceKind;
 enum DocumentCommitFailure {
     Publication(DocumentPublicationFailure),
     StylesheetInventory(crate::stylesheet_fetch::StylesheetInventoryError),
+    StylesheetParserIntegrity {
+        owner: html::internal::Id,
+        slot: core_types::StylesheetSlotId,
+    },
 }
 impl From<DocumentPublicationFailure> for DocumentCommitFailure {
     fn from(e: DocumentPublicationFailure) -> Self {
@@ -25,6 +29,9 @@ impl DocumentCommitFailure {
         match self {
             Self::Publication(e) => e,
             Self::StylesheetInventory(_) => DocumentPublicationFailure::ResourceUnavailable,
+            Self::StylesheetParserIntegrity { .. } => {
+                DocumentPublicationFailure::InvariantViolation
+            }
         }
     }
 }
@@ -104,6 +111,15 @@ impl Tab {
                     Err(DocumentCommitFailure::Publication(error)) => {
                         self.on_document_publication_failure(error.clone());
                         return Err(error);
+                    }
+                    Err(DocumentCommitFailure::StylesheetParserIntegrity { owner, slot }) => {
+                        self.fail_document(DocumentLoadFailure::StylesheetParserInvariant(
+                            super::state::StylesheetParserInvariantSource::ProspectiveInline {
+                                owner,
+                                slot,
+                            },
+                        ));
+                        return Err(DocumentPublicationFailure::InvariantViolation);
                     }
                     Err(DocumentCommitFailure::StylesheetInventory(cause)) => {
                         self.fail_document(DocumentLoadFailure::StylesheetInventory(cause));
@@ -259,9 +275,18 @@ impl Tab {
                 request_id,
                 stylesheet_slot_id,
                 url,
-                css_block,
+                decoded,
             } if self.is_current(tab_id, request_id) => {
-                self.on_css_decoded_block(stylesheet_slot_id, &url, css_block, request_id);
+                self.on_css_decoded_block(stylesheet_slot_id, &url, decoded, request_id);
+            }
+            CoreEvent::CssRuntimeFailed {
+                tab_id,
+                request_id,
+                stylesheet_slot_id,
+                url,
+                failure,
+            } if self.is_current(tab_id, request_id) => {
+                self.on_css_runtime_failed(stylesheet_slot_id, &url, failure, request_id);
             }
             CoreEvent::CssSheetDone {
                 tab_id,
@@ -398,8 +423,19 @@ impl Tab {
                 &dom,
                 Some(addresses.active_base_url()),
                 mutation_facts.document_replaced(),
+                self.document_load
+                    .encoding_decision
+                    .map(|_| bus::css_decode::CssEncoding::UTF8),
             )
-            .map_err(DocumentCommitFailure::StylesheetInventory)?;
+            .map_err(|e| match e {
+                crate::document_style::StylesheetPreparationFailure::Inventory(e) => {
+                    DocumentCommitFailure::StylesheetInventory(e)
+                }
+                crate::document_style::StylesheetPreparationFailure::ParserIntegrity {
+                    owner,
+                    slot,
+                } => DocumentCommitFailure::StylesheetParserIntegrity { owner, slot },
+            })?;
         self.page.addresses = Some(addresses);
         self.dom_store = staged_store;
         self.dom_handle = Some(handle);

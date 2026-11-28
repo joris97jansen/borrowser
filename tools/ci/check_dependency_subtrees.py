@@ -42,6 +42,7 @@ COMMITTED_INPUTS = (
     "Makefile", ".github/workflows/ci.yml", ".github/workflows/rust-url-sync.yml",
     "tools/ci/check_rust_url_ureq_sync.py",
     "tools/perf/aj5_diagnostics_probe.py",
+    "tools/ci/aj8_tests.py", "tools/perf/aj8_stylesheet_probe.py",
 )
 # Unlike the fixed entry points above, admit every committed test/helper/fixture
 # under this directory, including future additions, and reject uncaptured files.

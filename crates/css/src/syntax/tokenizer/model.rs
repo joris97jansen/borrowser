@@ -8,6 +8,7 @@ pub struct CssTokenizationStats {
     pub tokens_emitted: usize,
     pub diagnostics_emitted: usize,
     pub hit_limit: bool,
+    pub had_invariant_violation: bool,
 }
 
 #[derive(Clone, Debug, Default)]

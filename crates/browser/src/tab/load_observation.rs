@@ -5,6 +5,7 @@ use super::state::{
     CssRuntimeProgress, DocumentLoadFailure, DocumentParseStatus, LoadStateInvariant,
     StylesheetLoadPhase,
 };
+use crate::document_style::{CssRuntimeReceipt, StylesheetDecodingOutcome};
 use crate::stylesheet_fetch::{
     ATTACHMENTS, BODY_BYTES, BODY_POOL, METADATA_BYTES, METADATA_POOL, SOURCE_BYTES,
     StylesheetFetchFailure, StylesheetFetchOutcome, StylesheetResponsePolicy, metadata_charge,
@@ -48,12 +49,21 @@ impl Tab {
     pub(super) fn static_input_settlement(
         &self,
     ) -> Result<StaticInputSettlement, DocumentLoadFailure> {
+        self.static_input_settlement_checked(false)
+    }
+    pub(super) fn validate_static_stylesheets(&self) -> Result<(), DocumentLoadFailure> {
+        self.static_input_settlement_checked(true).map(|_| ())
+    }
+    fn static_input_settlement_checked(
+        &self,
+        validate_failed: bool,
+    ) -> Result<StaticInputSettlement, DocumentLoadFailure> {
         #[cfg(test)]
         QUERY_WORK.with(|work| {
             let (calls, visits) = work.get();
             work.set((calls + 1, visits));
         });
-        if self.document_load.failure().is_some() {
+        if !validate_failed && self.document_load.failure().is_some() {
             return Ok(StaticInputSettlement::Failed);
         }
         let response = self.document_load.response.as_ref();
@@ -138,17 +148,103 @@ impl Tab {
                         self.load_invariant(LoadStateInvariant::RetentionAccounting, Some(id))
                     })?;
             }
+            if slot.parse().is_some_and(|p| {
+                p.completion() == css::StylesheetParseCompletion::InvariantViolation
+            }) {
+                return Err(self.load_invariant(LoadStateInvariant::SlotPhase, Some(id)));
+            }
             if !slot.is_external() {
-                if !slot.has_loaded_parse()
+                if !(slot.has_loaded_parse()
+                    || slot.is_not_requested() && !slot.host().parses_inline())
                     || live.is_some()
                     || result.is_some()
                     || slot.metadata_reserved()
                     || slot.body_issued()
                     || slot.installation_result().is_some()
+                    || slot.decoding().is_some()
+                    || slot.runtime_receipt().is_some()
                 {
                     return Err(self.load_invariant(LoadStateInvariant::SlotPhase, Some(id)));
                 }
                 continue;
+            }
+            if slot.is_not_requested() {
+                if slot.host().participates()
+                    || live.is_some()
+                    || result.is_some()
+                    || slot.metadata_reserved()
+                    || slot.body_issued()
+                    || slot.resource_base().is_some()
+                    || slot.decoding().is_some()
+                    || slot.runtime_receipt().is_some()
+                    || slot.installation_result().is_some()
+                {
+                    return Err(self.load_invariant(LoadStateInvariant::SlotPhase, Some(id)));
+                }
+                continue;
+            }
+            if let Some(outcome) = slot.decoding() {
+                if !outcome.coherent_report() {
+                    return Err(self.load_invariant(LoadStateInvariant::FetchEvidence, Some(id)));
+                }
+                let Some(result) = result.filter(|r| r.is_ready()) else {
+                    return Err(self.load_invariant(LoadStateInvariant::FetchEvidence, Some(id)));
+                };
+                let crate::stylesheet_fetch::StylesheetBodyEvidence::Complete(bytes) = &result.body
+                else {
+                    unreachable!()
+                };
+                let charset = match result
+                    .response
+                    .response()
+                    .expect("Ready response")
+                    .content_type()
+                {
+                    net::ResponseContentType::Parsed(t) => t.charset(),
+                    _ => None,
+                };
+                if runtime_css::decoding::select_stylesheet_decoding(
+                    bytes,
+                    charset,
+                    self.page.stylesheet_environment(id),
+                ) != Ok(outcome.decision())
+                {
+                    return Err(self.load_invariant(LoadStateInvariant::FetchEvidence, Some(id)));
+                }
+                if matches!(outcome, StylesheetDecodingOutcome::Rejected(d) if d.effective_encoding().is_utf8())
+                    || (!matches!(outcome, StylesheetDecodingOutcome::Rejected(_))
+                        && !outcome.decision().effective_encoding().is_utf8())
+                {
+                    return Err(self.load_invariant(LoadStateInvariant::FetchEvidence, Some(id)));
+                }
+            }
+            // A response base is installed only together with an accepted parse.
+            // It may survive retraction of that parse after a protocol abort, but
+            // selection or a failed decode never installs one.
+            if slot.resource_base().is_some()
+                && !slot
+                    .decoding()
+                    .is_some_and(StylesheetDecodingOutcome::succeeded)
+            {
+                return Err(self.load_invariant(LoadStateInvariant::RequestProvenance, Some(id)));
+            }
+            if let Some(parse) = slot.parse() {
+                let Some(StylesheetDecodingOutcome::Succeeded {
+                    report: bus::css_decode::CssDecodeReport::Finalized(report),
+                    ..
+                }) = slot.decoding()
+                else {
+                    return Err(self.load_invariant(LoadStateInvariant::FetchEvidence, Some(id)));
+                };
+                let retained = parse.input.len_bytes();
+                let emitted = report.emitted_utf8_bytes();
+                if retained != parse.stats.input_bytes
+                    || retained > emitted
+                    || (parse.completion() == css::StylesheetParseCompletion::Complete
+                        && retained != emitted)
+                {
+                    return Err(self.load_invariant(LoadStateInvariant::FetchEvidence, Some(id)));
+                }
             }
             if let Some(result) = result {
                 if !result.coherent_evidence() {
@@ -219,13 +315,25 @@ impl Tab {
                 }
             }
             if slot.is_failed() || slot.is_aborted() {
+                use crate::stylesheet_fetch::StylesheetInstallationFailure as I;
+                let outcome = slot.decoding();
+                let receipt = slot.runtime_receipt();
                 let terminal_valid = result.is_some_and(|result| match result.outcome {
-                    StylesheetFetchOutcome::Ready => {
-                        matches!(slot.installation_result(), Some(Err(_)))
-                    }
-                    StylesheetFetchOutcome::Rejected(_) | StylesheetFetchOutcome::Failed(_) => {
-                        slot.installation_result().is_none()
-                    }
+                    StylesheetFetchOutcome::Ready => match slot.installation_result() {
+                        None => matches!(outcome, Some(StylesheetDecodingOutcome::Rejected(_))) && receipt.is_none() && slot.resource_base().is_none(),
+                        Some(Ok(())) => false,
+                        Some(Err(I::Decode(f))) => matches!(outcome, Some(StylesheetDecodingOutcome::Failed { failure, .. }) if failure == f) && receipt == Some(CssRuntimeReceipt::Done) && slot.resource_base().is_none(),
+                        Some(Err(I::Runtime(f))) => matches!(outcome, Some(StylesheetDecodingOutcome::Selected(_))) && receipt == Some(CssRuntimeReceipt::Failed(f)) && slot.resource_base().is_none(),
+                        Some(Err(I::ParserIntegrity)) => self.document_load.failure().is_some() && outcome.is_some_and(StylesheetDecodingOutcome::succeeded) && receipt.is_none() && slot.resource_base().is_none(),
+                        Some(Err(I::InvalidDecodeEvidence(_))) => outcome.is_none_or(|o| matches!(o, StylesheetDecodingOutcome::Selected(_))) && receipt.is_none() && slot.resource_base().is_none(),
+                        Some(Err(I::HandoffAllocation | I::ChunkDeliveryUnavailable | I::DoneDeliveryUnavailable | I::UnexpectedRuntimeEvent)) => matches!(outcome, Some(StylesheetDecodingOutcome::Selected(_))) && receipt.is_none() && slot.resource_base().is_none(),
+                        Some(Err(I::RuntimeProvenanceMismatch)) => receipt.is_none() && match outcome {
+                            Some(StylesheetDecodingOutcome::Selected(_) | StylesheetDecodingOutcome::Failed { .. }) => slot.resource_base().is_none(),
+                            Some(StylesheetDecodingOutcome::Succeeded { .. }) => slot.resource_base().is_some() && slot.resource_base() == result.response.response().and_then(net::NetworkResponseInfo::response_url),
+                            _ => false,
+                        },
+                    },
+                    StylesheetFetchOutcome::Rejected(_) | StylesheetFetchOutcome::Failed(_) => slot.installation_result().is_none() && outcome.is_none() && receipt.is_none() && slot.resource_base().is_none(),
                 });
                 if live.is_some() || !terminal_valid {
                     return Err(self.load_invariant(LoadStateInvariant::SlotPhase, Some(id)));
@@ -285,6 +393,8 @@ impl Tab {
                             if result.is_some()
                                 || !slot.is_pending()
                                 || slot.installation_result().is_some()
+                                || slot.decoding().is_some()
+                                || slot.runtime_receipt().is_some()
                             {
                                 return Err(
                                     self.load_invariant(LoadStateInvariant::SlotPhase, Some(id))
@@ -305,7 +415,7 @@ impl Tab {
                             progress,
                             abort_url,
                         } => {
-                            if (*progress == CssRuntimeProgress::AwaitingBlock
+                            if (*progress != CssRuntimeProgress::ParsedAwaitingDone
                                 && slot.resource_base().is_some())
                                 || result
                                     .and_then(|r| r.request.issued_key())
@@ -316,12 +426,27 @@ impl Tab {
                                     Some(id),
                                 ));
                             }
-                            if (*progress == CssRuntimeProgress::AwaitingBlock
+                            if (*progress != CssRuntimeProgress::ParsedAwaitingDone
                                 && slot.resource_base().is_some())
                                 || !result.is_some_and(|r| r.is_ready())
                                 || slot.has_loaded_parse()
-                                    != (*progress == CssRuntimeProgress::BlockReceived)
+                                    != (*progress == CssRuntimeProgress::ParsedAwaitingDone)
                                 || slot.installation_result().is_some()
+                                || slot.runtime_receipt().is_some()
+                                || !match progress {
+                                    CssRuntimeProgress::AwaitingOutcome => matches!(
+                                        slot.decoding(),
+                                        Some(StylesheetDecodingOutcome::Selected(_))
+                                    ),
+                                    CssRuntimeProgress::ParsedAwaitingDone => slot
+                                        .decoding()
+                                        .is_some_and(StylesheetDecodingOutcome::succeeded),
+                                    CssRuntimeProgress::DecodeFailedAwaitingDone => {
+                                        slot.decoding()
+                                            .is_some_and(StylesheetDecodingOutcome::failed)
+                                            && slot.is_pending()
+                                    }
+                                }
                             {
                                 return Err(
                                     self.load_invariant(LoadStateInvariant::SlotPhase, Some(id))
@@ -334,6 +459,10 @@ impl Tab {
                 None => {
                     if !slot.has_loaded_parse()
                         || slot.installation_result() != Some(Ok(()))
+                        || slot.runtime_receipt() != Some(CssRuntimeReceipt::Done)
+                        || !slot
+                            .decoding()
+                            .is_some_and(StylesheetDecodingOutcome::succeeded)
                         || !result.is_some_and(|r| r.is_ready())
                     {
                         return Err(
@@ -354,6 +483,9 @@ impl Tab {
             || body_bytes > BODY_POOL
         {
             return Err(self.load_invariant(LoadStateInvariant::RetentionAccounting, None));
+        }
+        if self.document_load.failure().is_some() {
+            return Ok(StaticInputSettlement::Failed);
         }
         if response.is_none()
             && self.history.is_empty()
@@ -553,7 +685,9 @@ impl Tab {
             if ordinal >= MAX_SNAPSHOT_SHEETS || ordinal != written {
                 continue;
             }
-            let state = if slot.is_pending() {
+            let state = if slot.is_not_requested() {
+                "not-requested"
+            } else if slot.is_pending() {
                 "pending"
             } else if slot.has_loaded_parse() {
                 "loaded"
@@ -566,14 +700,18 @@ impl Tab {
                 Some(StylesheetLoadPhase::Fetching(a)) if a.response.is_none() => "awaiting-start",
                 Some(StylesheetLoadPhase::Fetching(_)) => "receiving",
                 Some(StylesheetLoadPhase::AwaitingRuntime {
-                    progress: CssRuntimeProgress::AwaitingBlock,
+                    progress: CssRuntimeProgress::AwaitingOutcome,
                     ..
                 }) => "awaiting-block",
                 Some(StylesheetLoadPhase::AwaitingRuntime {
-                    progress: CssRuntimeProgress::BlockReceived,
+                    progress: CssRuntimeProgress::ParsedAwaitingDone,
                     ..
                 }) => "awaiting-runtime-completion",
                 None if slot.installation_result() == Some(Ok(())) => "complete",
+                Some(StylesheetLoadPhase::AwaitingRuntime {
+                    progress: CssRuntimeProgress::DecodeFailedAwaitingDone,
+                    ..
+                }) => "decode-failed-awaiting-done",
                 None => "not-issued-or-retired",
             };
             let row = format!(

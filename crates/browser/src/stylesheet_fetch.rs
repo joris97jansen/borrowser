@@ -124,6 +124,10 @@ pub enum StylesheetInstallationFailure {
     DoneDeliveryUnavailable,
     RuntimeProvenanceMismatch,
     UnexpectedRuntimeEvent,
+    Decode(bus::css_decode::CssDecodeFailure),
+    Runtime(bus::css_decode::CssRuntimeFailure),
+    InvalidDecodeEvidence(bus::css_decode::CssDecodeEvidenceError),
+    ParserIntegrity,
 }
 
 // Keep request ownership inline; adding Box would add infallible per-record growth.

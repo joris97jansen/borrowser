@@ -28,6 +28,12 @@ pub(super) fn ensure_parse_stats_consistent(
     parse: &StylesheetParse,
     phase: &'static str,
 ) -> Result<(), CssSyntaxFuzzError> {
+    if parse.stats.had_invariant_violation {
+        return Err(CssSyntaxFuzzError::StructuralInvariantViolation {
+            phase,
+            detail: "parser reported an invariant violation".into(),
+        });
+    }
     if parse.stats.input_bytes != parse.input.len_bytes() {
         return Err(CssSyntaxFuzzError::StructuralInvariantViolation {
             phase,

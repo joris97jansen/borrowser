@@ -62,7 +62,7 @@ pub struct ParsedDocumentObservation<'tab> {
 
 impl<'tab> ParsedDocumentObservation<'tab> {
     /// The sole AJ6 committed-input admission. Lifecycle evidence remains separate.
-    fn committed_stylesheet_inputs(
+    pub(super) fn committed_stylesheet_inputs(
         &self,
     ) -> Result<Option<(&'tab Node, &'tab BrowserUrl)>, StylesheetDiscoveryError> {
         match (

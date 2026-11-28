@@ -183,3 +183,10 @@ to satisfy Clippy without altering policy. Required platform CI qualification an
 manual navigation qualification remain explicit limits. This candidate was left
 uncommitted for owner review; it does not close AJ or certify full
 HTML encoding conformance.
+
+## AJ8 stylesheet qualification
+
+[AJ8](aj8-ordered-static-stylesheet-set.md) consumes an actual retained AJ4
+encoding decision as document environment evidence. Every currently admitted AJ4
+variant denotes UTF-8; absence stays absent. CSS label resolution and byte selection
+are separate and do not change AJ4's HTML acceptance or decoder semantics.

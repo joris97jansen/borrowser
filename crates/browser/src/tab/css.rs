@@ -1,4 +1,8 @@
 use super::Tab;
+use crate::document_style::{CssRuntimeReceipt, StylesheetDecodingOutcome};
+use bus::css_decode::{CssDecodedStylesheet, CssRuntimeFailure};
+use runtime_css::decoding::{select_stylesheet_decoding, validate_decoded_stylesheet};
+
 use super::state::{CssRuntimeProgress, StylesheetLoadPhase, StylesheetLoadState};
 #[cfg(test)]
 use crate::stylesheet_fetch::{AllocationBoundary, allocation_refused};
@@ -20,6 +24,8 @@ thread_local! {
     pub(super) static DISCONNECT_BEFORE_CSS_DONE: std::cell::RefCell<Option<std::sync::mpsc::Receiver<CoreCommand>>> = const { std::cell::RefCell::new(None) };
 }
 
+#[cfg(test)]
+thread_local! { pub(super) static INJECT_PARSE_INTEGRITY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
 impl Tab {
     #[cfg(test)]
     pub(super) fn stylesheet_response_for_tests(
@@ -342,6 +348,48 @@ impl Tab {
             self.poke_redraw();
             return;
         }
+        let result = self
+            .page
+            .stylesheet_fetch_result(slot)
+            .expect("Ready evidence");
+        let StylesheetBodyEvidence::Complete(bytes) = &result.body else {
+            unreachable!("coherent Ready body")
+        };
+        let charset = match result
+            .response
+            .response()
+            .expect("selected response")
+            .content_type()
+        {
+            net::ResponseContentType::Parsed(t) => t.charset(),
+            _ => None,
+        };
+        let decision = match select_stylesheet_decoding(
+            bytes,
+            charset,
+            self.page.stylesheet_environment(slot),
+        ) {
+            Ok(d) => d,
+            Err(e) => {
+                self.page.finish_stylesheet_installation(
+                    slot,
+                    Err(StylesheetInstallationFailure::InvalidDecodeEvidence(e)),
+                );
+                self.page.mark_css_failed(slot);
+                self.update_loading();
+                return;
+            }
+        };
+        if !decision.effective_encoding().is_utf8() {
+            self.page
+                .set_stylesheet_decoding(slot, StylesheetDecodingOutcome::Rejected(decision));
+            self.page.mark_css_failed(slot);
+            self.update_loading();
+            self.poke_redraw();
+            return;
+        }
+        self.page
+            .set_stylesheet_decoding(slot, StylesheetDecodingOutcome::Selected(decision));
         let Some((chunk, done, abort_url)) = self.prepare_css_handoff(slot, request) else {
             self.page.finish_stylesheet_installation(
                 slot,
@@ -365,7 +413,7 @@ impl Tab {
             StylesheetLoadState {
                 request_id: request,
                 phase: StylesheetLoadPhase::AwaitingRuntime {
-                    progress: CssRuntimeProgress::AwaitingBlock,
+                    progress: CssRuntimeProgress::AwaitingOutcome,
                     abort_url,
                 },
             },
@@ -404,6 +452,7 @@ impl Tab {
                 stylesheet_slot_id: slot,
                 url: chunk_url,
                 bytes: copy,
+                decision: self.page.stylesheet_decoding(slot)?.decision(),
             },
             CoreCommand::CssDone {
                 tab_id: self.tab_id,
@@ -522,7 +571,7 @@ impl Tab {
         &mut self,
         slot: StylesheetSlotId,
         url: &str,
-        css_block: String,
+        decoded: CssDecodedStylesheet,
         request: RequestId,
     ) {
         if !self.accepts_css_runtime_event(slot, request) {
@@ -532,6 +581,7 @@ impl Tab {
             .page
             .stylesheet_fetch_result(slot)
             .expect("Ready evidence");
+        // Authentication precedes duplicate suppression, as in AJ7.
         if result
             .request
             .issued_key()
@@ -543,22 +593,85 @@ impl Tab {
             );
             return;
         }
-        if matches!(
+        if !matches!(
             self.stylesheet_loads[&slot].phase,
             StylesheetLoadPhase::AwaitingRuntime {
-                progress: CssRuntimeProgress::BlockReceived,
+                progress: CssRuntimeProgress::AwaitingOutcome,
                 ..
             }
         ) {
             return;
         }
-        let response = result
-            .response
-            .response()
-            .expect("selected Ready response")
-            .clone();
-        let work = self.page.apply_css_block(slot, &css_block, &response);
-        let StylesheetLoadPhase::AwaitingRuntime { progress, .. } = &mut self
+        let expected = self
+            .page
+            .stylesheet_decoding(slot)
+            .expect("selected decision")
+            .decision();
+        let StylesheetBodyEvidence::Complete(bytes) = &result.body else {
+            unreachable!()
+        };
+        if let Err(e) = validate_decoded_stylesheet(&expected, bytes, &decoded) {
+            self.fail_css_installation(
+                slot,
+                StylesheetInstallationFailure::InvalidDecodeEvidence(e),
+            );
+            return;
+        }
+        let (decision, report, text) = decoded.into_parts();
+        let (outcome, progress, work) = match text {
+            Err(failure) => (
+                StylesheetDecodingOutcome::Failed {
+                    decision,
+                    report,
+                    failure,
+                },
+                CssRuntimeProgress::DecodeFailedAwaitingDone,
+                None,
+            ),
+            Ok(text) => {
+                let outcome = StylesheetDecodingOutcome::Succeeded { decision, report };
+                #[allow(unused_mut)]
+                let mut parse =
+                    css::parse_stylesheet_with_options(&text, &css::ParseOptions::stylesheet());
+                #[cfg(test)]
+                INJECT_PARSE_INTEGRITY.with(|flag| {
+                    if flag.replace(false) {
+                        parse.stats.had_invariant_violation = true;
+                    }
+                });
+                self.page.set_stylesheet_decoding(slot, outcome);
+                if parse.completion() == css::StylesheetParseCompletion::InvariantViolation {
+                    // Latch the detailed first cause before any settlement query or
+                    // sibling cleanup can observe this temporary local transition.
+                    self.fail_document(
+                        super::state::DocumentLoadFailure::StylesheetParserInvariant(
+                            super::state::StylesheetParserInvariantSource::AdmittedExternal {
+                                slot,
+                            },
+                        ),
+                    );
+                    self.fail_css_installation(
+                        slot,
+                        StylesheetInstallationFailure::ParserIntegrity,
+                    );
+                    return;
+                }
+                let response = self
+                    .page
+                    .stylesheet_fetch_result(slot)
+                    .unwrap()
+                    .response
+                    .response()
+                    .unwrap()
+                    .clone();
+                let work = self.page.apply_css_parse(slot, parse, &response);
+                (outcome, CssRuntimeProgress::ParsedAwaitingDone, work)
+            }
+        };
+        self.page.set_stylesheet_decoding(slot, outcome);
+        let StylesheetLoadPhase::AwaitingRuntime {
+            progress: current, ..
+        } = &mut self
             .stylesheet_loads
             .get_mut(&slot)
             .expect("runtime admission")
@@ -566,8 +679,43 @@ impl Tab {
         else {
             unreachable!()
         };
-        *progress = CssRuntimeProgress::BlockReceived;
+        *current = progress;
         self.request_optional_render_work(work);
+    }
+    pub(super) fn on_css_runtime_failed(
+        &mut self,
+        slot: StylesheetSlotId,
+        url: &str,
+        failure: CssRuntimeFailure,
+        request: RequestId,
+    ) {
+        if !self.accepts_css_runtime_event(slot, request) {
+            return;
+        }
+        if self
+            .page
+            .stylesheet_fetch_result(slot)
+            .and_then(|r| r.request.issued_key())
+            .is_none_or(|key| key.as_str() != url)
+        {
+            self.fail_css_installation(
+                slot,
+                StylesheetInstallationFailure::RuntimeProvenanceMismatch,
+            );
+            return;
+        }
+        if !matches!(
+            self.stylesheet_loads[&slot].phase,
+            StylesheetLoadPhase::AwaitingRuntime {
+                progress: CssRuntimeProgress::AwaitingOutcome,
+                ..
+            }
+        ) {
+            return;
+        }
+        self.page
+            .set_css_runtime_receipt(slot, CssRuntimeReceipt::Failed(failure));
+        self.fail_css_installation(slot, StylesheetInstallationFailure::Runtime(failure));
     }
     pub(super) fn on_css_sheet_done(
         &mut self,
@@ -593,19 +741,32 @@ impl Tab {
             );
             return;
         }
-        if !matches!(
-            self.stylesheet_loads[&slot].phase,
-            StylesheetLoadPhase::AwaitingRuntime {
-                progress: CssRuntimeProgress::BlockReceived,
-                ..
-            }
-        ) {
+        let progress = match self.stylesheet_loads[&slot].phase {
+            StylesheetLoadPhase::AwaitingRuntime { progress, .. } => progress,
+            _ => unreachable!(),
+        };
+        if progress == CssRuntimeProgress::AwaitingOutcome {
             self.fail_css_installation(slot, StylesheetInstallationFailure::UnexpectedRuntimeEvent);
             return;
         }
         self.stylesheet_loads.remove(&slot);
-        self.page.finish_stylesheet_installation(slot, Ok(()));
-        self.page.mark_css_done(slot);
+        self.page
+            .set_css_runtime_receipt(slot, CssRuntimeReceipt::Done);
+        if progress == CssRuntimeProgress::DecodeFailedAwaitingDone {
+            let Some(StylesheetDecodingOutcome::Failed { failure, .. }) =
+                self.page.stylesheet_decoding(slot)
+            else {
+                unreachable!()
+            };
+            self.page.finish_stylesheet_installation(
+                slot,
+                Err(StylesheetInstallationFailure::Decode(failure)),
+            );
+            self.page.mark_css_failed(slot);
+        } else {
+            self.page.finish_stylesheet_installation(slot, Ok(()));
+            self.page.mark_css_done(slot);
+        }
         let settlement = self.update_loading();
         if self.document_load.failure().is_none() {
             self.last_status =

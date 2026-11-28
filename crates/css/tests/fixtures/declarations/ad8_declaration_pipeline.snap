@@ -1,7 +1,7 @@
 version: 3
 declaration-list-pipeline
 model-parse
-  version: 1
+  version: 2
   model-declaration-list
   declaration[0] @10..22
     name(kind=standard, text="width") @10..15
@@ -87,6 +87,7 @@ model-parse
     declarations_emitted: 11
     diagnostics_emitted: 1
     hit_limit: false
+    had_invariant_violation: false
 cascade
   cascade-evaluation
   rule-inputs: 1

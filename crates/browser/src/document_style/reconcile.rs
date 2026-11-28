@@ -1,4 +1,5 @@
 //! Fallible preparation reads the old inventory; commit only moves its owners.
+use super::participation::{HostEligibility, LinkLabel, contributes};
 use super::{
     BodyReservation, BrowserUrl, DocumentStyleSet, HashMap, Node, ParseOptions, ResourceAddress,
     ResourceCapability, ResourceKind, ResourceOperation, StylesheetParse,
@@ -21,7 +22,43 @@ use crate::stylesheet_fetch::{StylesheetBodyEvidence, StylesheetFetchOutcome};
 use crate::stylesheet_fetch::{
     StylesheetInventoryError as Error, StylesheetInventoryStorage as Storage,
 };
+use bus::css_decode::CssEncoding;
+use runtime_css::decoding::{resolve_stylesheet_label, stylesheet_environment};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum StylesheetPreparationFailure {
+    Inventory(Error),
+    ParserIntegrity {
+        owner: html::internal::Id,
+        slot: StylesheetSlotId,
+    },
+}
+impl From<Error> for StylesheetPreparationFailure {
+    fn from(e: Error) -> Self {
+        Self::Inventory(e)
+    }
+}
+#[cfg(test)]
+thread_local! { pub(crate) static INJECT_INLINE_INTEGRITY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+fn parse_inline(
+    text: &str,
+    owner: html::internal::Id,
+    slot: StylesheetSlotId,
+) -> Result<StylesheetParse, StylesheetPreparationFailure> {
+    #[allow(unused_mut)]
+    let mut parse = parse_stylesheet_with_options(text, &ParseOptions::stylesheet());
+    #[cfg(test)]
+    INJECT_INLINE_INTEGRITY.with(|flag| {
+        if flag.replace(false) {
+            parse.stats.had_invariant_violation = true;
+        }
+    });
+    if parse.completion() == css::StylesheetParseCompletion::InvariantViolation {
+        Err(StylesheetPreparationFailure::ParserIntegrity { owner, slot })
+    } else {
+        Ok(parse)
+    }
+}
 pub(crate) struct PreparedStylesheetReconcile {
     entries: Vec<PreparedSlot>,
     destination: HashMap<StylesheetSlotId, StylesheetSlot>,
@@ -41,11 +78,22 @@ enum PreparedSlot {
     Retained {
         id: StylesheetSlotId,
         media: PreparedMedia,
+        host: HostEligibility,
+        link_label: LinkLabel,
+        state: PreparedRetainedState,
     },
     New {
         id: StylesheetSlotId,
         slot: StylesheetSlot,
     },
+}
+// Bounded prepared Vec owns large values inline; boxing adds an unqualified
+// allocation per transition and weakens publication preparation.
+#[allow(clippy::large_enum_variant)]
+enum PreparedRetainedState {
+    Keep,
+    ParseInline(StylesheetParse),
+    BeginExternal(Option<StylesheetFetchResult>),
 }
 enum PreparedMedia {
     Keep,
@@ -150,12 +198,28 @@ pub(super) fn source_charge(source: &StylesheetSlotSource) -> Result<usize, Erro
     }
 }
 impl DocumentStyleSet {
+    #[cfg(test)]
     pub(crate) fn prepare_reconcile(
         &self,
         dom: &Node,
         base: Option<&BrowserUrl>,
         replaced: bool,
     ) -> Result<PreparedStylesheetReconcile, Error> {
+        self.prepare_reconcile_with_environment(dom, base, replaced, None)
+            .map_err(|e| match e {
+                StylesheetPreparationFailure::Inventory(e) => e,
+                StylesheetPreparationFailure::ParserIntegrity { .. } => {
+                    panic!("fixture parser invariant")
+                }
+            })
+    }
+    pub(crate) fn prepare_reconcile_with_environment(
+        &self,
+        dom: &Node,
+        base: Option<&BrowserUrl>,
+        replaced: bool,
+        document_encoding: Option<CssEncoding>,
+    ) -> Result<PreparedStylesheetReconcile, StylesheetPreparationFailure> {
         let mut owners = HashMap::new();
         if !self.slots.is_empty() {
             crate::stylesheet_fetch::inventory_growth(Storage::Owners)?;
@@ -166,7 +230,7 @@ impl DocumentStyleSet {
         if !replaced {
             for (id, s) in self.ordered_slots() {
                 if owners.insert(s.owner, id).is_some() {
-                    return Err(Error::ArithmeticOverflow);
+                    return Err(Error::ArithmeticOverflow.into());
                 }
             }
         }
@@ -188,7 +252,7 @@ impl DocumentStyleSet {
         let mut visited = 0usize;
         while let Some(node) = next.take() {
             if visited == ORDINARY_NODES {
-                return Err(Error::OrdinaryNodeLimit);
+                return Err(Error::OrdinaryNodeLimit.into());
             }
             visited += 1;
             let external = matches!(node,Node::Element{element}if element.namespace()==html::ElementNamespace::Html&&element.name()=="link")
@@ -196,8 +260,19 @@ impl DocumentStyleSet {
             let inline = matches!(node,Node::Element{element}if element.namespace()==html::ElementNamespace::Html&&element.name()=="style");
             if external || inline {
                 if p.entries.len() == ATTACHMENTS {
-                    return Err(Error::AttachmentLimit);
+                    return Err(Error::AttachmentLimit.into());
                 }
+                let host = HostEligibility::from_node(node, external);
+                let link_label = if external {
+                    resolve_stylesheet_label(node.attr("charset"))
+                } else {
+                    LinkLabel::Absent
+                };
+                let environment = if external {
+                    stylesheet_environment(link_label, document_encoding)
+                } else {
+                    None
+                };
                 let href = node.attr("href");
                 let media = node.attr("media");
                 let content = children(node);
@@ -211,7 +286,11 @@ impl DocumentStyleSet {
                                 ..
                             },
                             true,
-                        ) => *href_present == href.is_some() && old == href.unwrap_or(""),
+                        ) => {
+                            *href_present == href.is_some()
+                                && old == href.unwrap_or("")
+                                && self.slots[id].environment == environment
+                        }
                         _ => false,
                     }
                 });
@@ -228,16 +307,56 @@ impl DocumentStyleSet {
                     if slot.body_reservation != BodyReservation::None {
                         p.body_bytes = add(p.body_bytes, BODY_BYTES)?;
                     }
-                    reserve(&mut p.projection, 1, Storage::Projection)?;
-                    if let StylesheetSlotState::Loaded(parse) = &slot.state {
-                        p.projection.push(parse.clone());
+                    let state = if !external
+                        && host.parses_inline()
+                        && matches!(slot.state, StylesheetSlotState::NotRequested)
+                    {
+                        let StylesheetSlotSource::Inline(text) = &slot.source else {
+                            unreachable!()
+                        };
+                        PreparedRetainedState::ParseInline(parse_inline(text, node.id(), id)?)
+                    } else if external
+                        && host.participates()
+                        && matches!(slot.state, StylesheetSlotState::NotRequested)
+                    {
+                        let failure = super::StylesheetLifecycleView { id, slot }.source_failure();
+                        if failure.is_none() {
+                            reserve(&mut p.dispatch, 1, Storage::Dispatch)?;
+                            p.dispatch.push(id);
+                        }
+                        PreparedRetainedState::BeginExternal(failure.map(|f| {
+                            StylesheetFetchResult::unissued(
+                                StylesheetRequestEvidence::NotConstructed,
+                                StylesheetFetchFailure::Source(f),
+                            )
+                        }))
+                    } else {
+                        PreparedRetainedState::Keep
+                    };
+                    let prospective = match &state {
+                        PreparedRetainedState::ParseInline(p) => Some(p),
+                        PreparedRetainedState::Keep if host.parses_inline() => match &slot.state {
+                            StylesheetSlotState::Loaded(p) => Some(p),
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+                    if let Some(parse) = prospective.filter(|p| contributes(host, media, p)) {
+                        reserve(&mut p.projection, 1, Storage::Projection)?;
+                        p.projection.push(super::clone_for_projection(parse));
                     }
-                    if self.order.get(p.order.len()) != Some(&id) || slot.media.as_deref() != media
+                    if self.order.get(p.order.len()) != Some(&id)
+                        || slot.media.as_deref() != media
+                        || slot.host != host
+                        || !matches!(state, PreparedRetainedState::Keep)
                     {
                         p.changed = true;
                     }
                     p.entries.push(PreparedSlot::Retained {
                         id,
+                        host,
+                        link_label,
+                        state,
                         media: if slot.media.as_deref() == media {
                             PreparedMedia::Keep
                         } else {
@@ -279,7 +398,7 @@ impl DocumentStyleSet {
                         if failure.is_none() {
                             let base = base.expect("admitted base");
                             if add(value.len(), base.as_str().len())? > SOURCE_BYTES {
-                                return Err(Error::SourceLimit);
+                                return Err(Error::SourceLimit.into());
                             }
                             match base.resolve(value) {
                                 Ok(out) => {
@@ -333,33 +452,36 @@ impl DocumentStyleSet {
                         StylesheetSlotSource::Inline(text)
                     };
                     let state = match &source {
-                        StylesheetSlotSource::Inline(text) => StylesheetSlotState::Loaded(
-                            parse_stylesheet_with_options(text, &ParseOptions::stylesheet()),
-                        ),
-                        _ => {
-                            if failure.is_some() {
-                                StylesheetSlotState::Failed
-                            } else {
-                                StylesheetSlotState::Pending
-                            }
+                        StylesheetSlotSource::Inline(text) if host.parses_inline() => {
+                            StylesheetSlotState::Loaded(parse_inline(text, node.id(), id)?)
                         }
+                        StylesheetSlotSource::Inline(_) => StylesheetSlotState::NotRequested,
+                        _ if !host.participates() => StylesheetSlotState::NotRequested,
+                        _ if failure.is_some() => StylesheetSlotState::Failed,
+                        _ => StylesheetSlotState::Pending,
                     };
-                    reserve(&mut p.projection, 1, Storage::Projection)?;
-                    if let StylesheetSlotState::Loaded(parse) = &state {
-                        p.projection.push(parse.clone());
-                    }
-                    if failure.is_none()
-                        && let StylesheetSlotSource::External {
-                            address: Some(_), ..
-                        } = &source
+                    if let StylesheetSlotState::Loaded(parse) = &state
+                        && contributes(host, media, parse)
                     {
+                        reserve(&mut p.projection, 1, Storage::Projection)?;
+                        p.projection.push(super::clone_for_projection(parse));
+                    }
+                    if host.participates() && failure.is_none() && external {
                         reserve(&mut p.dispatch, 1, Storage::Dispatch)?;
                         p.dispatch.push(id);
+                    }
+                    if !host.participates() {
+                        failure = None;
                     }
                     let slot = StylesheetSlot {
                         owner: node.id(),
                         source,
                         media: optional_copy(media)?,
+                        host,
+                        link_label,
+                        environment,
+                        decoding: None,
+                        runtime_receipt: None,
                         state,
                         fetch_result: failure.map(|f| {
                             StylesheetFetchResult::unissued(
@@ -429,10 +551,32 @@ impl DocumentStyleSet {
         let mut old = std::mem::take(&mut self.slots);
         for entry in p.entries {
             let (id, slot) = match entry {
-                PreparedSlot::Retained { id, media } => {
+                PreparedSlot::Retained {
+                    id,
+                    media,
+                    host,
+                    link_label,
+                    state,
+                } => {
                     let mut slot = old.remove(&id).expect("prepared retained owner");
                     if let PreparedMedia::Replace(media) = media {
                         slot.media = media;
+                    }
+                    slot.host = host;
+                    slot.link_label = link_label;
+                    match state {
+                        PreparedRetainedState::Keep => {}
+                        PreparedRetainedState::ParseInline(parse) => {
+                            slot.state = StylesheetSlotState::Loaded(parse)
+                        }
+                        PreparedRetainedState::BeginExternal(result) => {
+                            slot.state = if result.is_some() {
+                                StylesheetSlotState::Failed
+                            } else {
+                                StylesheetSlotState::Pending
+                            };
+                            slot.fetch_result = result;
+                        }
                     }
                     (id, slot)
                 }
@@ -698,7 +842,8 @@ mod tests {
                 let base = BrowserUrl::parse("https://example.test/").unwrap().url;
                 REFUSE_ALLOCATION
                     .with(|point| point.set(Some(AllocationBoundary::Inventory(storage))));
-                REFUSE_MATCHING_ALLOCATION_AFTER.with(|remaining| remaining.set(1));
+                REFUSE_MATCHING_ALLOCATION_AFTER
+                    .with(|remaining| remaining.set(usize::from(storage != Storage::Projection)));
                 assert!(
                     matches!(set.prepare_reconcile(&tree.document,Some(&base),false),Err(Error::Reservation(actual))if actual==storage)
                 );
@@ -806,5 +951,90 @@ mod id_exhaustion_test {
         assert_eq!(set.next_slot_id, u64::MAX);
         assert_eq!(set.slot_count(), 0);
         assert_eq!(set.retention_usage(), (0, 0, 0));
+    }
+}
+
+#[cfg(test)]
+mod aj8_guards {
+    use super::*;
+    #[test]
+    fn aj8_sequential_projection_clone_and_prepared_commit_bounds() {
+        for (n, expected) in [(4, 10), (16, 136), (32, 528)] {
+            let mut output = html::parse_document(
+                format!(
+                    "<!doctype html>{}",
+                    "<link rel=stylesheet href=a.css>".repeat(n)
+                ),
+                html::HtmlParseOptions::default(),
+            )
+            .unwrap();
+            html::internal::assign_missing_full_model_ids_for_test(&mut output.document);
+            let base = BrowserUrl::parse("https://example.test/").unwrap().url;
+            let mut set = DocumentStyleSet::default();
+            let ids = set
+                .reconcile_from_dom(&output.document, Some(&base))
+                .fetches;
+            super::super::PROJECTION_CLONES.with(|c| c.set(0));
+            for id in ids {
+                assert!(set.install_external_stylesheet(id, "p{}", &super::super::test_response()));
+            }
+            assert_eq!(super::super::PROJECTION_CLONES.with(|c| c.get()), expected);
+            super::super::PROJECTION_CLONES.with(|c| c.set(0));
+            let prepared = set
+                .prepare_reconcile(&output.document, Some(&base), false)
+                .unwrap();
+            assert_eq!(super::super::PROJECTION_CLONES.with(|c| c.get()), n);
+            // At this point authoritative + old compatibility + prepared projection
+            // each owns N model graphs, including deep-cloned CssInput buffers.
+            assert_eq!(
+                set.slots.len() + set.loaded_stylesheets.len() + prepared.projection.len(),
+                3 * n
+            );
+            let (_, counts) =
+                crate::tab::tests::parsed_document_observation::allocation_work(|| {
+                    set.commit_reconcile(prepared)
+                });
+            assert_eq!(counts, [0, 0, 0]);
+            let mut replacement = html::parse_document(
+                format!(
+                    "<!doctype html>{}",
+                    "<style>p{color:blue}</style>".repeat(n)
+                ),
+                html::HtmlParseOptions::default(),
+            )
+            .unwrap();
+            html::internal::assign_missing_full_model_ids_for_test(&mut replacement.document);
+            let prepared = set
+                .prepare_reconcile(&replacement.document, Some(&base), true)
+                .unwrap();
+            let new_parses = prepared
+                .entries
+                .iter()
+                .filter(|entry| {
+                    matches!(
+                        entry,
+                        PreparedSlot::New {
+                            slot: StylesheetSlot {
+                                state: StylesheetSlotState::Loaded(_),
+                                ..
+                            },
+                            ..
+                        }
+                    )
+                })
+                .count();
+            assert_eq!(new_parses, n);
+            assert_eq!(
+                set.slots.len()
+                    + set.loaded_stylesheets.len()
+                    + new_parses
+                    + prepared.projection.len(),
+                4 * n
+            );
+            println!(
+                "AJ8 clone workload N={n} sequential={expected} retained_prepare_graphs={} commit_allocations=0",
+                3 * n
+            );
+        }
     }
 }

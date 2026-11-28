@@ -1167,7 +1167,7 @@ fn repeated_document_start_preserves_streaming_preview_and_stylesheet_work() {
         request_id: tab.active_document_request_id().unwrap(),
         stylesheet_slot_id: slot,
         url: css_url.into(),
-        css_block: String::new(),
+        decoded: super::support::decoded_text(""),
     })
     .unwrap();
     tab.on_core_event(CoreEvent::CssSheetDone {

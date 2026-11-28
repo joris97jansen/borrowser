@@ -14,7 +14,7 @@ fn stylesheet_parse_snapshot_is_stable() {
     assert_eq!(
         parse.to_debug_snapshot(),
         concat!(
-            "version: 1\n",
+            "version: 2\n",
             "stylesheet\n",
             "rule[0] qualified @0..43\n",
             "  prelude\n",
@@ -37,6 +37,7 @@ fn stylesheet_parse_snapshot_is_stable() {
             "  declarations_emitted: 2\n",
             "  diagnostics_emitted: 0\n",
             "  hit_limit: false\n",
+            "  had_invariant_violation: false\n",
         )
     );
 }
@@ -364,4 +365,28 @@ fn compatibility_declaration_wrapper_is_only_a_projection_of_structured_parse_ou
     let structured = parse_declarations_with_options(input, &ParseOptions::style_attribute());
 
     assert_eq!(parse_declarations(input), structured.declarations);
+}
+
+#[test]
+fn aj8_parser_integrity_survives_diagnostic_suppression() {
+    for collect in [false, true] {
+        let mut options = ParseOptions::stylesheet();
+        options.collect_diagnostics = collect;
+        options.limits.max_diagnostics = 0;
+        let mut stats = super::ParseStats::default();
+        let mut diagnostics = Vec::new();
+        super::push_diagnostic(
+            &options,
+            &mut diagnostics,
+            &mut stats,
+            super::DiagnosticSeverity::Error,
+            DiagnosticKind::InvariantViolation,
+            0,
+            "controlled invariant",
+        );
+        assert!(stats.had_invariant_violation);
+        assert!(!stats.hit_limit);
+        assert!(diagnostics.is_empty());
+        assert_eq!(stats.diagnostics_emitted, 1);
+    }
 }

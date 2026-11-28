@@ -5,7 +5,7 @@ pub enum DiagnosticSeverity {
 }
 
 impl DiagnosticSeverity {
-    pub(crate) fn snapshot_label(self) -> &'static str {
+    pub fn snapshot_label(self) -> &'static str {
         match self {
             Self::Warning => "warning",
             Self::Error => "error",
@@ -32,7 +32,7 @@ pub enum DiagnosticKind {
 }
 
 impl DiagnosticKind {
-    pub(crate) fn stable_code(self) -> &'static str {
+    pub fn stable_code(self) -> &'static str {
         match self {
             Self::UnexpectedEof => "unexpected-eof",
             Self::UnexpectedToken => "unexpected-token",

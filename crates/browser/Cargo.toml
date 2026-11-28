@@ -7,6 +7,7 @@ edition = "2024"
 conformance-observation = []
 
 [dependencies]
+runtime_css = { path = "../runtime_css" }
 addressing = { path = "../addressing" }
 app_api = { path = "../app_api" }
 bus = { path = "../bus" }
@@ -25,7 +26,6 @@ image = { workspace = true }
 
 [dev-dependencies]
 html = { path = "../html", features = ["dom-snapshot", "test-harness", "html5"] }
-runtime_css = { path = "../runtime_css" }
 runtime_net = { path = "../runtime_net" }
 runtime_parse = { path = "../runtime_parse" }
 log = "0.4"
@@ -38,4 +38,8 @@ required-features = ["conformance-observation"]
 
 [[example]]
 name = "aj5_document_probe"
+required-features = ["conformance-observation"]
+
+[[example]]
+name = "aj8_stylesheet_probe"
 required-features = ["conformance-observation"]

@@ -1,0 +1,19 @@
+StaticStylesheetSet v2 availability=committed document=local[0]
+sheet[0] owner=local[0] source=inline-unicode state=available host=missing title=missing disabled=false alternate=false media=active parse=complete decode=unicode runtime=not-live acquisition=absent installation=absent receipt=absent participation=eligible-static-input
+  provenance=current-document-base encoding_source=absent report=absent
+  diagnostics=1 parser_diagnostics_omitted=false integrity=false limited=false
+  diagnostic=invalid-declaration/warning
+  at-rule=import-deferred
+sheet[1] owner=local[1] source=external state=not-requested host=external title=missing disabled=true alternate=false media=active parse=unavailable decode=absent runtime=not-live acquisition=absent installation=absent receipt=absent participation=host-inactive
+  provenance=authored-request-only encoding_source=absent report=absent
+sheet[2] owner=local[2] source=external state=failed host=external title=missing disabled=false alternate=false media=active parse=unavailable decode=absent runtime=not-live acquisition=failed installation=absent receipt=absent participation=unavailable-or-incomplete
+  provenance=authored-request-only encoding_source=absent report=absent
+sheet[3] owner=local[3] source=inline-unicode state=not-requested host=unsupported-type title=missing disabled=false alternate=false media=active parse=unavailable decode=unicode runtime=not-live acquisition=absent installation=absent receipt=absent participation=host-inactive
+  provenance=current-document-base encoding_source=absent report=absent
+sheet[4] owner=local[4] source=inline-unicode state=available host=missing title=missing disabled=false alternate=false media=deferred parse=complete decode=unicode runtime=not-live acquisition=absent installation=absent receipt=absent participation=media-deferred
+  provenance=current-document-base encoding_source=absent report=absent
+  diagnostics=0 parser_diagnostics_omitted=false integrity=false limited=false
+sheet[5] owner=local[5] source=external state=available host=external title=missing disabled=false alternate=false media=active parse=complete decode=finalized runtime=not-live acquisition=ready installation=installed receipt=done participation=eligible-static-input
+  provenance=admitted-response-base encoding_source=environment report=finalized
+  diagnostics=0 parser_diagnostics_omitted=false integrity=false limited=false
+omitted_rows=0 truncated_rows=0 omitted_retained_diagnostics=0 omitted_at_rules=0 discovery=available-source-only

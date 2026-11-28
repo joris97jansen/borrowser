@@ -23,7 +23,22 @@ pub fn parse_stylesheet(input: &str) -> Stylesheet {
 /// The model is constructed from structured syntax-layer output. This entry
 /// point does not use compatibility adapters or raw-string reparsing.
 pub fn parse_stylesheet_with_options(input: &str, options: &ParseOptions) -> StylesheetParse {
-    let parse = syntax::parse_stylesheet_with_options(input, options);
+    #[allow(unused_mut)]
+    let mut parse = syntax::parse_stylesheet_with_options(input, options);
+    #[cfg(test)]
+    if crate::syntax::integrity_tests::take(crate::syntax::integrity_tests::Fault::ModelSelector)
+        && let Some(CssRule::Qualified(rule)) = parse.stylesheet.rules.first_mut()
+        && let Some(CssComponentValue::PreservedToken(token)) = rule.prelude.first_mut()
+    {
+        token.kind = CssTokenKind::Ident(CssTokenText::Owned(String::new()));
+    }
+    #[cfg(test)]
+    if crate::syntax::integrity_tests::take(crate::syntax::integrity_tests::Fault::ModelAtRuleName)
+        && let Some(CssRule::At(rule)) = parse.stylesheet.rules.first_mut()
+    {
+        let foreign = CssInput::from("x");
+        rule.name = CssTokenText::Span(foreign.span(0, 1).expect("foreign test input"));
+    }
     let mut diagnostics = parse.diagnostics;
     let mut stats = parse.stats;
     let stylesheet = build_stylesheet(
@@ -105,7 +120,7 @@ fn build_rule(
         }
         CssRule::At(rule) => Rule::At(AtRule {
             span: rule.span,
-            name: canonical_name(input, &rule.name),
+            name: canonical_name(input, &rule.name, stats),
             prelude: PreservedComponentList {
                 span: component_list_span(&rule.prelude),
                 values: rule.prelude.clone(),
@@ -132,6 +147,8 @@ fn append_selector_diagnostic(
         return;
     };
 
+    stats.had_invariant_violation |=
+        diagnostic.class() == SelectorDiagnosticClass::InvariantViolation;
     stats.diagnostics_emitted = stats.diagnostics_emitted.saturating_add(1);
     if diagnostic.class() == SelectorDiagnosticClass::LimitExceeded {
         stats.hit_limit = true;
@@ -162,9 +179,17 @@ fn append_selector_diagnostic(
     });
 }
 
-fn canonical_name(input: &CssInput, text: &CssTokenText) -> Option<String> {
-    text.resolve(input)
-        .map(|text| text.into_owned().to_ascii_lowercase())
+fn canonical_name(input: &CssInput, text: &CssTokenText, stats: &mut ParseStats) -> Option<String> {
+    let name = text
+        .resolve(input)
+        .and_then(|raw| syntax::escape::decode(&raw, false));
+    if name.is_none() {
+        stats.had_invariant_violation = true;
+    }
+    name.map(|mut name| {
+        name.make_ascii_lowercase();
+        name
+    })
 }
 
 fn build_declaration_block(

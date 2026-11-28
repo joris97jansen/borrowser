@@ -1,4 +1,4 @@
-version: 1
+version: 2
 tokens
 token[0] comment("") @0..2
 token[1] eof @2..2
@@ -9,3 +9,4 @@ stats
   tokens_emitted: 2
   diagnostics_emitted: 1
   hit_limit: false
+  had_invariant_violation: false
